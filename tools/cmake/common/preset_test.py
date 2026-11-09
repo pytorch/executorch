@@ -320,6 +320,34 @@ class TestPreset(CMakeTestCase):
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
 
+    def test_is_option_enabled_cached_string_false_literal_is_disabled(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(EXECUTORCH_TEST_OPTION OFF CACHE STRING "")
+            is_option_enabled(EXECUTORCH_TEST_OPTION EXECUTORCH_TEST_OPTION_ENABLED)
+            if(EXECUTORCH_TEST_OPTION_ENABLED)
+              message(FATAL_ERROR "Expected EXECUTORCH_TEST_OPTION to be disabled")
+            endif()
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_is_option_enabled_uncached_string_value_is_enabled(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(EXECUTORCH_TEST_OPTION "aten::add.out,aten::mm.out")
+            is_option_enabled(EXECUTORCH_TEST_OPTION EXECUTORCH_TEST_OPTION_ENABLED)
+            if(NOT EXECUTORCH_TEST_OPTION_ENABLED)
+              message(FATAL_ERROR "Expected EXECUTORCH_TEST_OPTION to be enabled")
+            endif()
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
     def test_check_required_options_on_if_on_off(self):
         """Test that when IF_ON is OFF, no checks are performed."""
 
@@ -342,6 +370,27 @@ class TestPreset(CMakeTestCase):
         """
         self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
         self.run_cmake()  # Should succeed
+
+    def test_check_required_options_on_cached_string_false_literal(self):
+        """Test that cached string OFF does not trigger required-option checks."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+
+            set(FEATURE_FLAG OFF CACHE STRING "")
+            set(REQUIRED_OPTION OFF)
+
+            check_required_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                REQUIRES
+                    REQUIRED_OPTION
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
 
     def test_check_required_options_on_all_required_on(self):
         """Test that when IF_ON is ON and all required options are ON, no error occurs."""
@@ -453,6 +502,27 @@ class TestPreset(CMakeTestCase):
                 CONFLICTS_WITH
                     CONFLICTING_OPTION1
                     CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_conflicting_options_on_cached_string_false_literal(self):
+        """Test that cached string OFF does not trigger conflict checks."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION OFF CACHE STRING "")
+
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION
             )
         """
         self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
