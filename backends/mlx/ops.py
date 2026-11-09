@@ -2611,8 +2611,7 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     Maps to mlx::take_along_axis, which broadcasts the index against x on the
     other axes. aten.gather instead reads only the first index.size(d) entries
-    of x there, so x is sliced to the index shape first where the two may
-    differ, with the stop read from the index when its size is symbolic.
+    of x there, so x is sliced to the index shape first where the two differ.
 
     Unlike eager, a bad index does not raise. Eager rejects any index outside
     [0, size - 1]; the runtime clamps it to [-size, size - 1] instead, and a
@@ -2633,7 +2632,25 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     require_static_int(dim, "dim", "aten.gather")
     axis = dim % len(x_shape)
-    x, _ = emit_leading_block(P, x, x_shape, index, index_shape, axis)
+    for d, (x_size, index_size) in enumerate(zip(x_shape, index_shape)):
+        if d == axis or statically_known_true(x_size == index_size):
+            continue
+        if not isinstance(index_size, int):
+            raise NotImplementedError(
+                f"aten.gather: index size {index_size} on dim {d} may differ "
+                f"from the input size {x_size}"
+            )
+        _, sliced = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(sliced),
+                axis=IntOrVid.from_literal(d),
+                start=IntOrVid.from_literal(0),
+                stop=IntOrVid.from_literal(index_size),
+            )
+        )
+        x = sliced
     out = P.make_or_get_slot(n)
     P.emit(
         TakeAlongAxisNode(

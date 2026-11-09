@@ -7829,156 +7829,6 @@ def _run_shape(
     return tuple(shape)
 
 
-class GatherViewModel(nn.Module):
-    """Model that gathers along a dimension, optionally from a transposed view."""
-
-    def __init__(self, dim: int = 0, transpose: bool = False):
-        super().__init__()
-        self.dim = dim
-        self.transpose = transpose
-
-    def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
-        if self.transpose:
-            x = x.transpose(0, 1)
-        return torch.gather(x, self.dim, index)
-
-
-@register_test
-class GatherShapeTest(OpTestCase):
-    """aten.gather shapes that GatherTest does not cover.
-
-    gather(self, dim, index) reads self at index positions along dim. The
-    index may be longer than self along dim and smaller than self on the
-    other axes; the output takes the index shape. ``dynamic`` maps an input to
-    ``{axis: (dim name, run size[, min, max])}``: the model is exported at the
-    static shapes and run at the run sizes. Pure data movement, so the
-    comparison is exact.
-    """
-
-    name = "gather_shape"
-    rtol = 0
-    atol = 0
-
-    def __init__(
-        self,
-        shape: Tuple[int, ...] = (4, 8),
-        dim: int = 1,
-        index_shape: Optional[Tuple[int, ...]] = None,
-        dtype: torch.dtype = torch.float32,
-        transpose: bool = False,
-        dynamic: Optional[Dict[str, Dict[int, tuple]]] = None,
-        expected_node_counts: Optional[Dict[str, int]] = None,
-    ):
-        self.shape = shape
-        self.dim = dim
-        self.index_shape = index_shape
-        self.dtype = dtype
-        self.transpose = transpose
-        self.dynamic = dynamic
-        self.expected_node_counts = expected_node_counts
-        parts = ["gather_shape", "x".join(str(s) for s in shape), f"dim{dim}"]
-        if index_shape is not None:
-            parts.append("idx" + "x".join(str(s) for s in index_shape))
-        if dtype != torch.float32:
-            parts.append(str(dtype).replace("torch.", ""))
-        if transpose:
-            parts.append("t")
-        if dynamic:
-            parts.append(_dynamic_tag(dynamic))
-        self.name = "_".join(parts)
-
-    @classmethod
-    def get_test_configs(cls) -> List["GatherShapeTest"]:
-        return [
-            # 1D, index longer than input along dim
-            cls(shape=(8,), dim=0, index_shape=(12,)),
-            # 3D: longer along dim, smaller on the other axes (size 1 included)
-            cls(shape=(2, 4, 8), dim=1, index_shape=(1, 6, 3)),
-            # 4D
-            cls(shape=(2, 3, 4, 8), dim=-1),
-            cls(shape=(2, 3, 4, 8), dim=2, index_shape=(2, 3, 2, 8)),
-            # half precision and bool inputs
-            cls(shape=(4, 8), dim=1, dtype=torch.float16),
-            cls(shape=(4, 8), dim=1, dtype=torch.bool),
-            # gather from a transposed (non-contiguous) view
-            cls(shape=(4, 8), dim=1, transpose=True),
-            # dynamic batch shared by input and index: nothing to narrow
-            cls(
-                shape=(4, 8),
-                dim=1,
-                dynamic={"x": {0: ("batch", 7)}, "index": {0: ("batch", 7)}},
-                expected_node_counts={"SliceNode": 0, "SymSizeNode": 0},
-            ),
-            # input dynamic along the gather axis (KV-length style)
-            cls(
-                shape=(4, 8),
-                dim=1,
-                index_shape=(4, 5),
-                dynamic={"x": {1: ("seq", 13)}},
-                expected_node_counts={"SliceNode": 0},
-            ),
-            # index dynamic along the gather axis
-            cls(shape=(4, 8), dim=1, dynamic={"index": {1: ("length", 11)}}),
-            # different symbols on input and index: stop read from the index
-            cls(
-                shape=(4, 8),
-                dim=1,
-                index_shape=(2, 5),
-                dynamic={"x": {0: ("a", 7)}, "index": {0: ("b", 3)}},
-                expected_node_counts={"SliceNode": 1, "SymSizeNode": 1},
-            ),
-            # symbolic index against a static input
-            cls(
-                shape=(4, 8),
-                dim=1,
-                index_shape=(2, 5),
-                dynamic={"index": {0: ("rows", 3, 1, 4)}},
-                expected_node_counts={"SliceNode": 1, "SymSizeNode": 1},
-            ),
-        ]
-
-    def create_model(self) -> nn.Module:
-        return GatherViewModel(dim=self.dim, transpose=self.transpose)
-
-    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        if not self.dynamic:
-            return None
-        return _dynamic_shapes(self.dynamic, ("x", "index"))
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return self._make_inputs(self.shape, self._index_shape())
-
-    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        if not self.dynamic:
-            return self.create_inputs()
-        return self._make_inputs(
-            _run_shape(self.shape, self.dynamic.get("x")),
-            _run_shape(self._index_shape(), self.dynamic.get("index")),
-        )
-
-    def _index_shape(self) -> Tuple[int, ...]:
-        if self.index_shape is not None:
-            return self.index_shape
-        if self.transpose:
-            return (self.shape[1], self.shape[0]) + self.shape[2:]
-        return self.shape
-
-    def _make_inputs(
-        self, shape: Tuple[int, ...], index_shape: Tuple[int, ...]
-    ) -> Tuple[torch.Tensor, ...]:
-        if self.dtype.is_floating_point:
-            x = torch.randn(shape, dtype=self.dtype)
-        elif self.dtype == torch.bool:
-            x = torch.rand(shape) > 0.5
-        else:
-            x = torch.randint(-8, 8, shape, dtype=self.dtype)
-        view_shape = list(shape)
-        if self.transpose:
-            view_shape[0], view_shape[1] = view_shape[1], view_shape[0]
-        index = torch.randint(0, view_shape[self.dim], index_shape, dtype=torch.long)
-        return (x, index)
-
-
 class ScatterModel(nn.Module):
     """Model that scatters src, a constant value or src.item() into x along a dim."""
 
@@ -8002,8 +7852,10 @@ class ScatterTest(OpTestCase):
 
     scatter(self, dim, index, src) writes src at index positions along dim.
     The index may be smaller than self on the other axes and smaller than
-    src on every axis. ``dynamic`` is as in GatherTest. Indices are unique
-    along dim so the result is well-defined, and the comparison is exact.
+    src on every axis. ``dynamic`` maps an input to
+    ``{axis: (dim name, run size[, min, max])}``: the model is exported at the
+    static shapes and run at the run sizes. Indices are unique along dim so
+    the result is well-defined, and the comparison is exact.
     """
 
     name = "scatter"
