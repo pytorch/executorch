@@ -946,11 +946,11 @@ Error defineFullyConnectedNode(
 };
 
 /*
-XNNPACK defines softmax only on fp32 and fp16 tensors. When a serialized
-softmax value is bf16, define an fp32 value for the softmax to use instead.
-Otherwise the softmax uses the value itself.
+XNNPACK defines some ops, such as softmax and reductions, only on fp32 and
+fp16 tensors. When a serialized value of such an op is bf16, define an fp32
+value for the op to use instead. Otherwise the op uses the value itself.
 */
-Error defineBf16SoftmaxFp32Value(
+Error defineFp32ValueForBf16(
     xnn_subgraph_t subgraph_ptr,
     const fb_xnnpack::XNNGraph* graph,
     uint32_t serialized_id,
@@ -980,7 +980,7 @@ Error defineSoftmaxNode(
   REMAP_ID(remapped_ids, graph_node->output_id(), sm_output);
 
   uint32_t softmax_input = XNN_INVALID_VALUE_ID;
-  ET_CHECK_OK_OR_RETURN_ERROR(defineBf16SoftmaxFp32Value(
+  ET_CHECK_OK_OR_RETURN_ERROR(defineFp32ValueForBf16(
       subgraph_ptr,
       graph,
       graph_node->input_id(),
@@ -988,7 +988,7 @@ Error defineSoftmaxNode(
       node,
       &softmax_input));
   uint32_t softmax_output = XNN_INVALID_VALUE_ID;
-  ET_CHECK_OK_OR_RETURN_ERROR(defineBf16SoftmaxFp32Value(
+  ET_CHECK_OK_OR_RETURN_ERROR(defineFp32ValueForBf16(
       subgraph_ptr,
       graph,
       graph_node->output_id(),
@@ -2089,36 +2089,57 @@ Error defineGenericReduceNode(
     const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
     const fb_xnnpack::_XNNStaticReduce* graph_node,
     xnn_reduce_operator op_type,
-    fb_xnnpack::XNodeUnion node_type,
-    uint32_t debug_handle) noexcept {
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  const char* name = fb_xnnpack::EnumNameXNodeUnion(node->xnode_union_type());
   ET_CHECK_OR_RETURN_ERROR(
       graph_node->reduction_axes() != nullptr,
       InvalidProgram,
       "%s: reduction_axes is null",
-      fb_xnnpack::EnumNameXNodeUnion(node_type));
+      name);
   std::vector<int64_t> reduction_axes =
       flatbufferDimsToVector<int64_t>(graph_node->reduction_axes());
 
   REMAP_ID(remapped_ids, graph_node->input_id(), reduce_input);
   REMAP_ID(remapped_ids, graph_node->output_id(), reduce_output);
 
+  uint32_t reduce_source = XNN_INVALID_VALUE_ID;
+  ET_CHECK_OK_OR_RETURN_ERROR(defineFp32ValueForBf16(
+      subgraph_ptr,
+      graph,
+      graph_node->input_id(),
+      reduce_input,
+      node,
+      &reduce_source));
+  uint32_t reduce_result = XNN_INVALID_VALUE_ID;
+  ET_CHECK_OK_OR_RETURN_ERROR(defineFp32ValueForBf16(
+      subgraph_ptr,
+      graph,
+      graph_node->output_id(),
+      reduce_output,
+      node,
+      &reduce_result));
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      convertIfDistinct(subgraph_ptr, reduce_input, reduce_source, node));
+
   xnn_status status = xnn_define_static_reduce_v2(
       subgraph_ptr,
       op_type,
       reduction_axes.size(),
       reduction_axes.data(),
-      reduce_input,
-      reduce_output,
+      reduce_source,
+      reduce_result,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
       "Failed to create %s node %i with code: %s",
-      fb_xnnpack::EnumNameXNodeUnion(node_type),
-      debug_handle,
+      name,
+      node->debug_handle(),
       xnn_status_to_string(status));
 
-  return Error::Ok;
+  return convertIfDistinct(subgraph_ptr, reduce_result, reduce_output, node);
 }
 
 #define _DEFINE_REDUCE_NODE(name, op_type)                        \
@@ -2127,14 +2148,13 @@ Error defineGenericReduceNode(
       const std::unordered_map<uint32_t, uint32_t>& remapped_ids, \
       const NodePtr node,                                         \
       const fb_xnnpack::XNNGraph* graph) noexcept {               \
-    MAYBE_UNUSED(graph);                                          \
     return defineGenericReduceNode(                               \
         subgraph_ptr,                                             \
         remapped_ids,                                             \
         node->xnode_union_as_XNN##name(),                         \
         op_type,                                                  \
-        node->xnode_union_type(),                                 \
-        node->debug_handle());                                    \
+        node,                                                     \
+        graph);                                                   \
   }
 
 /*

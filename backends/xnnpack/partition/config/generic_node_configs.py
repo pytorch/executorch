@@ -711,13 +711,12 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
         Mean Dim lowers to Global Average Pooling when it averages a 4D tensor
-        across the innermost dimensions with keepdim=True, and to a static mean
-        reduction otherwise.
+        that is not bf16 across the innermost dimensions with keepdim=True, and
+        to a static mean reduction otherwise, computed in fp32 for bf16.
         """
         if not self.check_common_constraints(node, ep):
             return False

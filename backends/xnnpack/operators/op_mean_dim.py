@@ -34,10 +34,11 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DI
 @register_node_visitor
 class MeanDim(NodeVisitor):
     """
-    mean.dim over the innermost dimensions of a 4D tensor with keepdim=True
-    (dims normalizing to [2, 3]) is lowered to Global Average Pooling on an
-    NHWC input. Any other mean.dim is lowered to a static mean reduction on
-    the NCHW input.
+    A mean.dim that is not bf16, over the innermost dimensions of a 4D tensor
+    with keepdim=True (dims normalizing to [2, 3]), is lowered to Global
+    Average Pooling on an NHWC input. Any other mean.dim is lowered to a
+    static mean reduction on the NCHW input, which the runtime computes in
+    fp32 for bf16.
     """
 
     target = "aten.mean.dim"

@@ -8,7 +8,9 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
+from executorch.export.utils import is_fbcode
 
 
 class TestMeanDim(unittest.TestCase):
@@ -29,6 +31,15 @@ class TestMeanDim(unittest.TestCase):
             else:
                 z = torch.mean(y, self.dims, keepdim=self.keepdim, dtype=self.dtype)
             return z
+
+    class GraphInputMeanDim(torch.nn.Module):
+        def __init__(self, dims, keepdim=True):
+            super().__init__()
+            self.dims = dims
+            self.keepdim = keepdim
+
+        def forward(self, x):
+            return torch.mean(x, self.dims, keepdim=self.keepdim)
 
     class RMSNorm(torch.nn.Module):
         def __init__(self, dim, eps=1e-6):
@@ -98,22 +109,36 @@ class TestMeanDim(unittest.TestCase):
         dynamic_shapes=None,
         global_avg_pool=False,
         num_runs=1,
+        module=None,
+        xnnpack_nodes=None,
     ):
+        """
+        A bf16 mean serializes as a bf16 XNNStaticMean with no converts; the
+        runtime computes it in fp32.
+        """
+        bf16 = inputs[0].dtype == torch.bfloat16
+        module = module or self.MeanDim(dims, keepdim=keepdim)
+        if xnnpack_nodes is None:
+            xnnpack_nodes = self._xnnpack_mean_nodes(global_avg_pool)
+        if bf16:
+            module = module.to(torch.bfloat16)
+            xnnpack_nodes = {"XNNConvert": 0, **xnnpack_nodes}
+        tol = 1e-2 if bf16 else 1e-3
         (
-            Tester(
-                self.MeanDim(dims, keepdim=keepdim),
-                inputs,
-                dynamic_shapes=dynamic_shapes,
-            )
+            Tester(module, inputs, dynamic_shapes=dynamic_shapes)
             .export()
             .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge_transform_and_lower()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=bf16)]
+                )
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
-            .check_xnnpack_node_count(self._xnnpack_mean_nodes(global_avg_pool))
+            .check_xnnpack_node_count(xnnpack_nodes)
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(num_runs=num_runs)
+            .run_method_and_compare_outputs(num_runs=num_runs, atol=tol, rtol=tol)
         )
 
     def _test_qs8_mean_dim(
@@ -341,6 +366,90 @@ class TestMeanDim(unittest.TestCase):
                         .serialize()
                         .run_method_and_compare_outputs(atol=2e-2 if quantize else 1e-3)
                     )
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_last_dim_3d(self):
+        inputs = (torch.randn(2, 64, 128).to(torch.bfloat16),)
+        self._test_mean_dim(inputs, dims=(-1,))
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_middle_dim_keepdim_false(self):
+        inputs = (torch.randn(2, 64, 128).to(torch.bfloat16),)
+        self._test_mean_dim(inputs, dims=(1,), keepdim=False)
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_global_avg_pool_shape(self):
+        """XNNPACK has no bf16 Global Average Pooling."""
+        for shape in ((1, 16, 32, 32), (1, 5, 4, 4)):
+            with self.subTest(shape=shape):
+                inputs = (torch.randn(*shape).to(torch.bfloat16),)
+                self._test_mean_dim(inputs)
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_channels_last_input(self):
+        """A channels_last input is copied to NCHW for the static mean."""
+        inputs = (
+            torch.randn(1, 16, 8, 8)
+            .to(torch.bfloat16)
+            .to(memory_format=torch.channels_last),
+        )
+        self._test_mean_dim(
+            inputs,
+            module=self.GraphInputMeanDim((-1, -2)),
+            xnnpack_nodes={
+                "XNNGlobalAvgPooling2d": 0,
+                "XNNStaticMean": 1,
+                "XNNStaticTranspose": 1,
+            },
+        )
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_small(self):
+        for shape in ((1, 1, 64), (2, 7, 16)):
+            with self.subTest(shape=shape):
+                inputs = (torch.randn(*shape).to(torch.bfloat16),)
+                self._test_mean_dim(inputs, dims=(-1,))
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_all_dims(self):
+        inputs = (torch.randn(2, 7, 16).to(torch.bfloat16),)
+        for keepdim in (True, False):
+            with self.subTest(keepdim=keepdim):
+                self._test_mean_dim(inputs, dims=None, keepdim=keepdim)
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_of_graph_input(self):
+        inputs = (torch.randn(2, 64, 128).to(torch.bfloat16),)
+        self._test_mean_dim(inputs, module=self.GraphInputMeanDim((-1,)))
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_mean_dim_dynamic(self):
+        seq = torch.export.Dim("seq", min=1, max=32)
+        for dims in ((-1,), (1,)):
+            with self.subTest(dims=dims):
+                inputs = (torch.randn(2, 7, 16).to(torch.bfloat16),)
+                self._test_mean_dim(
+                    inputs, dims=dims, dynamic_shapes=({1: seq},), num_runs=5
+                )
+
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
+    def test_bf16_rms_norm(self):
+        inputs = (torch.randn(2, 64, 128).to(torch.bfloat16),)
+        # The one convert casts the eps constant to bf16.
+        self._test_mean_dim(
+            inputs,
+            module=self.RMSNorm(128),
+            xnnpack_nodes={"XNNStaticMean": 1, "XNNConvert": 1},
+        )
+
+    def test_bf16_mean_dim_not_partitioned_without_enable_bf16(self):
+        inputs = (torch.randn(2, 64, 128).to(torch.bfloat16),)
+        (
+            Tester(self.MeanDim((-1,)).to(torch.bfloat16), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+        )
 
     def test_fp16_mean_dim_dtype_argument(self):
         """
