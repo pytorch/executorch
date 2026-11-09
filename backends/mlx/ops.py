@@ -22,6 +22,7 @@ import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_floordiv,
     emit_if_else,
+    emit_leading_block,
     emit_lifted_constant,
     emit_product,
     emit_quantized_biases,
@@ -2610,7 +2611,8 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     Maps to mlx::take_along_axis, which broadcasts the index against x on the
     other axes. aten.gather instead reads only the first index.size(d) entries
-    of x there, so x is sliced to the index shape first where the two differ.
+    of x there, so x is sliced to the index shape first where the two may
+    differ, with the stop read from the index when its size is symbolic.
 
     Unlike eager, a bad index does not raise. Eager rejects any index outside
     [0, size - 1]; the runtime clamps it to [-size, size - 1] instead, and a
@@ -2631,25 +2633,7 @@ def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     require_static_int(dim, "dim", "aten.gather")
     axis = dim % len(x_shape)
-    for d, (x_size, index_size) in enumerate(zip(x_shape, index_shape)):
-        if d == axis or statically_known_true(x_size == index_size):
-            continue
-        if not isinstance(index_size, int):
-            raise NotImplementedError(
-                f"aten.gather: index size {index_size} on dim {d} may differ "
-                f"from the input size {x_size}"
-            )
-        _, sliced = P.make_tmp_slot()
-        P.emit(
-            SliceNode(
-                x=P.slot_to_tid(x),
-                out=P.slot_to_tid(sliced),
-                axis=IntOrVid.from_literal(d),
-                start=IntOrVid.from_literal(0),
-                stop=IntOrVid.from_literal(index_size),
-            )
-        )
-        x = sliced
+    x, _ = emit_leading_block(P, x, x_shape, index, index_shape, axis)
     out = P.make_or_get_slot(n)
     P.emit(
         TakeAlongAxisNode(
@@ -2732,51 +2716,6 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-def _slice_to_shape(
-    P: MLXProgramBuilder,
-    x: Slot,
-    x_shape,
-    target_shape,
-    skip_axis: Optional[int],
-    op_name: str,
-) -> Slot:
-    """Narrow ``x`` to ``target_shape`` on every axis but ``skip_axis``.
-
-    aten.gather and aten.scatter allow the index to be smaller than the
-    tensor it is applied to (``index.size(d) <= self.size(d)`` for ``d != dim``,
-    and ``index.size(d) <= src.size(d)`` for every ``d``), and read only the
-    leading ``index.size(d)`` entries of the larger tensor. MLX broadcasts the
-    two operands instead, so the larger tensor is sliced down first. A static
-    target size can always be sliced to; a symbolic one has to be the same
-    symbol on both sides, since the slice stop is fixed at export time.
-    """
-    for axis, (have, want) in enumerate(zip(x_shape, target_shape)):
-        if axis == skip_axis:
-            continue
-        if isinstance(want, int):
-            if isinstance(have, int) and have == want:
-                continue
-        elif str(have) == str(want):
-            continue
-        else:
-            raise ValueError(
-                f"{op_name}: symbolic index size must match the input on axis "
-                f"{axis}, got {have} vs {want}"
-            )
-        _, sliced = P.make_tmp_slot()
-        P.emit(
-            SliceNode(
-                x=P.slot_to_tid(x),
-                out=P.slot_to_tid(sliced),
-                axis=P.to_int_or_vid(axis),
-                start=P.to_int_or_vid(0),
-                stop=P.to_int_or_vid(want),
-            )
-        )
-        x = sliced
-    return x
-
-
 @REGISTRY.register(target=[torch.ops.aten.scatter.src, torch.ops.aten.scatter.value])
 def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.scatter: out = self; out[index[i][j]][j] = src[i][j] for dim=0.
@@ -2784,13 +2723,17 @@ def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     scatter.src(self, dim, index, src) -> Tensor
     scatter.value(self, dim, index, value) -> Tensor
 
-    Maps to mlx::put_along_axis(a, indices, values, axis). ``src`` may be larger
-    than ``index`` (only its leading ``index.shape`` block is read), so it is
-    narrowed to the index shape; a scalar ``value`` becomes a 0-D constant that
-    MLX broadcasts. An index smaller than ``self`` on the non-scatter axes is
-    handled by the runtime (see exec_put_along_axis). With duplicate indices
+    Maps to mlx::put_along_axis(a, indices, values, axis). aten reads only the
+    leading ``index.shape`` block of ``src`` and writes only the leading block
+    of ``self`` on the non-scatter axes, while MLX broadcasts. So ``src`` is
+    sliced to that block, and when ``self`` is larger the scatter runs on its
+    leading block, which is then written back with SliceUpdateNode. A scalar
+    ``value`` becomes a 0-D tensor that MLX broadcasts. With duplicate indices
     along ``dim`` aten leaves the result unspecified; MLX keeps one of the
     writes.
+
+    Unlike eager, a bad index does not raise: the runtime clamps it to
+    [-size, size - 1] as for gather, so the write stays inside self.
     """
     args = P.args(n)
     require_args(args, 4, 4, "aten.scatter")
@@ -2803,35 +2746,51 @@ def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         raise ValueError("aten.scatter requires input and index shape metadata")
     ndim = len(x_meta.shape)
     if ndim == 0 or len(index_meta.shape) != ndim:
-        raise ValueError(
+        raise NotImplementedError(
             f"aten.scatter: index must have the same non-zero rank as input, got "
             f"{len(index_meta.shape)} vs {ndim}"
         )
-    if x_meta.dtype.itemsize == 8:
-        # mlx ScatterAxis has no GPU kernel for 8-byte element types.
-        raise ValueError(f"aten.scatter: {x_meta.dtype} input is not supported")
+    if x_meta.dtype == torch.int64:
+        # The only 8-byte dtype the delegate accepts; mlx ScatterAxis::eval_gpu
+        # has no kernel for 8-byte element types.
+        raise NotImplementedError(
+            f"aten.scatter: {x_meta.dtype} input is not supported"
+        )
     dim = dim % ndim
 
-    if isinstance(src, Slot):
+    if isinstance(src, Slot) and src.id_type == IdType.Tensor:
         src_meta = n.args[3].meta.get("val")
         if src_meta is None:
             raise ValueError("aten.scatter requires src shape metadata")
-        src = _slice_to_shape(
-            P, src, src_meta.shape, index_meta.shape, None, "aten.scatter"
-        )
+        src, _ = emit_leading_block(P, src, src_meta.shape, index, index_meta.shape)
     else:
         src = emit_lifted_constant(P, src, x_meta.dtype)
 
+    block, steps = emit_leading_block(P, x, x_meta.shape, index, index_meta.shape, dim)
     out = P.make_or_get_slot(n)
+    result = P.make_tmp_slot()[1] if steps else out
     P.emit(
         PutAlongAxisNode(
-            x=P.slot_to_tid(x),
+            x=P.slot_to_tid(block),
             indices=P.slot_to_tid(index),
             values=P.slot_to_tid(src),
-            out=P.slot_to_tid(out),
+            out=P.slot_to_tid(result),
             axis=dim,
         )
     )
+    for i, (dst, axis, stop) in enumerate(reversed(steps)):
+        update = result
+        result = out if i == len(steps) - 1 else P.make_tmp_slot()[1]
+        P.emit(
+            SliceUpdateNode(
+                dst=P.slot_to_tid(dst),
+                update=P.slot_to_tid(update),
+                out=P.slot_to_tid(result),
+                axis=P.to_int_or_vid(axis),
+                start=P.to_int_or_vid(0),
+                stop=stop,
+            )
+        )
     return out
 
 

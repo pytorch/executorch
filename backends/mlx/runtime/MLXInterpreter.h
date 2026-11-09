@@ -910,30 +910,19 @@ inline void exec_put_along_axis(
     ExecutionState& st,
     StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
-  const auto& indices = st.const_tensor_ref(n.indices);
-  const auto& values = st.const_tensor_ref(n.values);
-  const int rank = static_cast<int>(x.ndim());
-  int axis = normalize_axis(n.axis, rank, "PutAlongAxis");
-
-  // aten.scatter only touches the leading index.shape block of self on the
-  // non-scatter axes; mlx put_along_axis broadcasts instead, so scatter into
-  // that block and write it back.
-  Shape stop = x.shape();
-  bool narrowed = false;
-  for (int d = 0; d < rank; ++d) {
-    if (d != axis && indices.shape(d) != x.shape(d)) {
-      stop[static_cast<size_t>(d)] = indices.shape(d);
-      narrowed = true;
-    }
-  }
-  if (!narrowed) {
-    st.set_tensor(n.out, put_along_axis(x, indices, values, axis, s));
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "PutAlongAxis");
+  const int size = x.shape(axis);
+  if (size == 0) {
+    // x is empty, so there is nowhere to write.
+    st.set_tensor(n.out, x);
     return;
   }
-  Shape start(static_cast<size_t>(rank), 0);
-  array block =
-      put_along_axis(slice(x, start, stop, s), indices, values, axis, s);
-  st.set_tensor(n.out, slice_update(x, block, start, stop, s));
+  // Clamped like ScatterNode: mlx::put_along_axis would write out of range.
+  const auto indices =
+      clip(st.const_tensor_ref(n.indices), array(-size), array(size - 1), s);
+  const auto& values = st.const_tensor_ref(n.values);
+  st.set_tensor(n.out, put_along_axis(x, indices, values, axis, s));
 }
 
 inline void

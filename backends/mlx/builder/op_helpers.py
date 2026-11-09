@@ -239,6 +239,56 @@ def emit_shape(
     return out
 
 
+def emit_leading_block(
+    P: "MLXProgramBuilder",
+    x: Slot,
+    x_shape,
+    ref: Slot,
+    ref_shape,
+    skip_axis: Optional[int] = None,
+) -> "Tuple[Slot, list[Tuple[Slot, int, IntOrVid]]]":
+    """Slice ``x`` to its leading ``ref``-shaped block on every axis but ``skip_axis``.
+
+    Axes whose sizes are statically equal emit nothing. Otherwise a ``SliceNode``
+    is emitted with a literal stop for a static ``ref`` size and a ``SymSizeNode``
+    on ``ref`` for a symbolic one.
+
+    Returns the sliced slot and one ``(input, axis, stop)`` entry per emitted
+    slice, in order, so a caller can write the block back into ``x`` with
+    ``SliceUpdateNode`` in reverse order.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SliceNode,
+        SymSizeNode,
+    )
+    from torch.fx.experimental.symbolic_shapes import statically_known_true
+
+    steps = []
+    for axis, (have, want) in enumerate(zip(x_shape, ref_shape)):
+        if axis == skip_axis or statically_known_true(have == want):
+            continue
+        if isinstance(want, int):
+            stop = IntOrVid.from_literal(want)
+        else:
+            _, size = P.make_tmp_value_slot()
+            P.emit(SymSizeNode(a=P.slot_to_tid(ref), dim=axis, out=P.slot_to_vid(size)))
+            stop = P.to_int_or_vid(size)
+        _, sliced = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(sliced),
+                axis=IntOrVid.from_literal(axis),
+                start=IntOrVid.from_literal(0),
+                stop=stop,
+            )
+        )
+        steps.append((x, axis, stop))
+        x = sliced
+    return x, steps
+
+
 def emit_product(
     P: "MLXProgramBuilder",
     dims: "list[IntOrVid]",
