@@ -105,8 +105,12 @@ class GatedSuffixInput : public TestPreparedInput {
   }
   batching::PreparedInputPtr suffix(std::size_t start) const override {
     gate_.enter();
+    if (on_suffix) {
+      on_suffix(start);
+    }
     return TestPreparedInput::suffix(start);
   }
+  std::function<void(std::size_t)> on_suffix;
 
  private:
   Gate& gate_;
@@ -853,14 +857,20 @@ TEST_P(
   handle.wait();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(prepare_calls, 1u);
-  EXPECT_EQ(executor.full_accepts, mode == 3 ? 1u : 2u);
-  EXPECT_EQ(runtime->info().active_sessions, named ? 1u : 0u);
+  EXPECT_EQ(executor.full_accepts, mode >= 2 ? 1u : 2u);
+  EXPECT_EQ(runtime->info().active_sessions, named && mode != 2 ? 1u : 0u);
   const auto clones = executor.clones();
   ASSERT_EQ(clones.size(), mode == 3 ? 2u : 1u);
   if (mode == 3) {
     EXPECT_EQ(clones.back().prefix, (std::vector<Token>{1, 7, 7}));
   }
   EXPECT_LE(executor.peak_rows.load(), 2);
+  if (mode == 2) {
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(executor.feeds().size(), 1u);
+    return;
+  }
   ASSERT_FALSE(handle.error());
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
   EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, mode == 3 ? 3u : 0u);
@@ -1233,14 +1243,197 @@ TEST_F(PrefixReuseTest, PreferredSnapshotAcceptanceErrorFallsBackToLivePrefix) {
   const auto live = executor.feeds().back().session;
   submit(output(), {1, 7, 7, 7, 2, 3}, "other").wait();
   executor.throwing_view_start = 5;
+  const auto checked = executor.acceptance_calls[5];
   auto replacement = output();
   submit(replacement, {1, 7, 7, 7, 2, 9}).wait();
   ASSERT_TRUE(replacement->terminal);
   ASSERT_FALSE(replacement->terminal->error);
   EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 4u);
   EXPECT_EQ(executor.clones().back().source, live);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+}
+
+class SnapshotAcceptanceFailureTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<bool> {};
+
+TEST_P(SnapshotAcceptanceFailureTest, RequiredLookupPropagatesAcceptanceError) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 2, 3}, "cached").wait();
+  if (GetParam()) {
+    submit(output(), {9, 7, 7, 7, 8}).wait();
+  }
+  executor.throwing_view_start = 5;
+  const auto checked = executor.acceptance_calls[5];
+  const auto feeds = executor.feeds().size();
+  auto handle = submit(output(), {1, 7, 7, 7, 2, 9}, GetParam() ? "s" : "new");
+  handle.wait();
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+  EXPECT_EQ(executor.feeds().size(), feeds);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NewAndZeroPrefixReplacement,
+    SnapshotAcceptanceFailureTest,
+    ::testing::Bool());
+
+TEST_P(
+    SnapshotAcceptanceFailureTest,
+    ThrowingSuffixIsOptionalOnlyForPreferredLookup) {
+  executor.accept_prepared = true;
+  bool fail = false;
+  int failures = 0;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    auto prepared = std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation);
+    prepared->on_suffix = [&](std::size_t start) {
+      if (fail && start == 5) {
+        ++failures;
+        throw std::runtime_error("suffix construction failed");
+      }
+    };
+    return batching::PreparedInputPtr{prepared};
+  };
+  start();
+  submit(output(), {1, 2, 3, 4, 5, 6}, "cached").wait();
+  if (GetParam()) {
+    submit(output(), {1, 2, 3, 4, 9}).wait();
+  }
+  fail = true;
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 4, 5, 9}, GetParam() ? "s" : "new");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(failures, 1);
+  if (GetParam()) {
+    ASSERT_FALSE(handle.error());
+    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
+  } else {
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  }
 }
 #endif
+
+TEST_F(
+    PrefixReuseTest,
+    ShutdownDuringSuffixSelectionDoesNotTryAnotherCandidate) {
+  executor.accept_prepared = true;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation)};
+  };
+  start();
+  submit(output(), {1, 2, 3, 4}, "cached").wait();
+  const auto clones = executor.clone_calls.load();
+  const auto feeds = executor.feeds().size();
+  replacement_preparation.hold();
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 4, 5}, "new");
+  ASSERT_TRUE(replacement_preparation.wait());
+  auto shutdown = std::async(std::launch::async, [&] { runtime->shutdown(); });
+  EXPECT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  replacement_preparation.release();
+  handle.wait();
+  shutdown.get();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(executor.clone_calls.load(), clones);
+  EXPECT_EQ(executor.feeds().size(), feeds);
+}
+
+TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
+  config.prefix_cache_capacity = 3;
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 2, 3}, "a").wait();
+  submit(output(), {1, 7, 7, 7, 2, 4}, "b").wait();
+  submit(output(), {9, 7, 7, 7, 8}).wait();
+  executor.rejected_view_start = 5;
+  const auto checked = executor.acceptance_calls[5];
+  auto event = output();
+  submit(event, {1, 7, 7, 7, 2, 9}).wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+}
+
+TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 2}).wait();
+  executor.rejected_view_start = 5;
+  const auto checked = executor.acceptance_calls[5];
+  auto event = output();
+  submit(event, {1, 7, 7, 7, 2, 9}).wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+}
+
+class AdoptedSnapshotLruTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<std::pair<bool, bool>> {};
+
+TEST_P(AdoptedSnapshotLruTest, OnlyAdoptedMatchesSurviveEviction) {
+  const auto [replacement, cancel] = GetParam();
+  bool capture = false;
+  config.prefix_checkpoint_policy = [&](const auto& prompt, Position, bool) {
+    return capture
+        ? std::vector<PrefixCheckpoint>{{static_cast<Position>(prompt.size())}}
+        : std::vector<PrefixCheckpoint>{};
+  };
+  start();
+  if (replacement) {
+    submit(output(), {1, 2}).wait();
+  }
+  capture = true;
+  submit(output(), {1, 2, 3, 4}, std::nullopt).wait();
+  submit(output(), {8, 9, 10, 11}, std::nullopt).wait();
+  capture = false;
+  auto event = output();
+  if (cancel) {
+    executor.cloning.hold();
+  }
+  auto handle = submit(event, {1, 2, 3, 4, 5}, replacement ? "s" : "new");
+  if (cancel) {
+    ASSERT_TRUE(executor.cloning.wait());
+    handle.cancel();
+    executor.cloning.release();
+  }
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(event->terminal->error);
+  if (cancel) {
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  } else {
+    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
+  }
+  capture = true;
+  submit(output(), {6, 6, 6}, std::nullopt).wait();
+  capture = false;
+  auto probe = output();
+  submit(probe, {1, 2, 3, 4, 5}, std::nullopt).wait();
+  ASSERT_TRUE(probe->terminal);
+  ASSERT_FALSE(probe->terminal->error);
+  EXPECT_EQ(probe->terminal->stats.reused_prompt_tokens, cancel ? 0u : 4u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NewAndReplacement,
+    AdoptedSnapshotLruTest,
+    ::testing::Values(
+        std::make_pair(false, false),
+        std::make_pair(false, true),
+        std::make_pair(true, false),
+        std::make_pair(true, true)));
 
 TEST_F(PrefixReuseTest, LongerSnapshotWinsOverCloneableLivePrefix) {
   start();

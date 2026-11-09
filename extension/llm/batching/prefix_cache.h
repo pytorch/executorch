@@ -348,11 +348,8 @@ class ET_EXPERIMENTAL PrefixCache {
     return lookup_identity(copy_tokens(request));
   }
 
-  // Skip candidates that cannot improve on an already available prefix.
-  std::optional<PrefixMatch> lookup_identity(
-      const PrefixIdentity& request,
-      std::size_t longer_than = 0) {
-    auto match = find_identity(request, longer_than);
+  std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
+    auto match = find_identity(request);
     if (match) {
       touch(*match);
     }
@@ -361,6 +358,11 @@ class ET_EXPERIMENTAL PrefixCache {
 
   // Validate candidates before cloning, without refreshing recency. Call
   // touch() after adopting the match. The selector must not mutate this cache.
+  // Candidates arrive in descending length order, with repeated lengths
+  // allowed. Use immediately attempts a clone; failure advances to the next
+  // candidate. A successful clone returns before another selection. Stop and a
+  // miss both return nullopt; callers must retain any separate reason for
+  // stopping.
   std::optional<PrefixMatch> find_identity(
       const PrefixIdentity& request,
       std::size_t longer_than = 0,
@@ -404,22 +406,14 @@ class ET_EXPERIMENTAL PrefixCache {
             continue;
           }
         }
-#if ET_HAS_EXCEPTIONS
-        try {
-#endif
-          auto session =
-              candidate.entry->snapshot
-                  .clone_async(static_cast<Position>(candidate.matched))
-                  .get();
-          if (session) {
-            return PrefixMatch{
-                std::move(*session), candidate.matched, candidate.entry->id};
-          }
-#if ET_HAS_EXCEPTIONS
-        } catch (...) {
-          // A refused snapshot does not rule out the remaining candidates.
+        auto session =
+            candidate.entry->snapshot
+                .clone_async(static_cast<Position>(candidate.matched))
+                .get();
+        if (session) {
+          return PrefixMatch{
+              std::move(*session), candidate.matched, candidate.entry->id};
         }
-#endif
       }
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {

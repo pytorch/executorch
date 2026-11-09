@@ -783,6 +783,7 @@ struct ServingRuntime::Impl {
     }
     std::optional<batching::Session> cloned;
     std::optional<batching::PrefixMatch> match;
+    auto fallback_limit = upto ? upto : std::numeric_limits<std::size_t>::max();
     if (upto) {
       auto selection = lookup_prefix(request, match, upto);
       const auto* outcome = std::get_if<Selection>(&selection);
@@ -811,17 +812,15 @@ struct ServingRuntime::Impl {
           // Try a retained snapshot if the live source cannot be cloned.
         }
 #endif
+      } else {
+        fallback_limit = upto - 1;
       }
     }
     if (!cloned) {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto selection = lookup_prefix(
-          request,
-          match,
-          0,
-          upto ? upto : std::numeric_limits<std::size_t>::max());
+      auto selection = lookup_prefix(request, match, 0, fallback_limit);
       if (auto* outcome = std::get_if<Selection>(&selection);
           !outcome || *outcome != Selection::Selected) {
         return selection;
@@ -1023,6 +1022,8 @@ struct ServingRuntime::Impl {
     }
     auto original_delta = std::move(request->request.delta);
     SelectionResult result = Selection::Unavailable;
+    std::optional<std::size_t> previous_start;
+    SelectionResult selection = Selection::Unavailable;
     // A lookup clone uses the new request's reserved working-session slot.
 #if ET_HAS_EXCEPTIONS
     try {
@@ -1030,29 +1031,39 @@ struct ServingRuntime::Impl {
       match = prefix_cache_.find_identity(
           *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
             using Decision = batching::PrefixCache::MatchDecision;
+            if (request->cancelled.load()) {
+              result = Selection::Cancelled;
+              return Decision::Stop;
+            }
+            if (previous_start != start) {
 #if ET_HAS_EXCEPTIONS
-            try {
+              try {
 #endif
-              auto selection = select_input(request, start);
-              if (const auto* outcome = std::get_if<Selection>(&selection)) {
-                if (*outcome == Selection::Selected) {
-                  return Decision::Use;
-                }
-                if (*outcome == Selection::Unavailable) {
-                  return Decision::Skip;
-                }
-              } else if (
-                  std::get<ServingError>(selection).code !=
-                  ErrorCode::NotReady) {
+                selection = select_input(request, start);
+#if ET_HAS_EXCEPTIONS
+              } catch (...) {
+                selection = ServingError{
+                    ErrorCode::Internal, "prepared suffix selection failed"};
+              }
+#endif
+              previous_start = start;
+            }
+            if (const auto* outcome = std::get_if<Selection>(&selection)) {
+              if (*outcome == Selection::Selected) {
+                return Decision::Use;
+              }
+              if (*outcome == Selection::Unavailable) {
                 return Decision::Skip;
               }
-              result = std::move(selection);
-              return Decision::Stop;
-#if ET_HAS_EXCEPTIONS
-            } catch (...) {
+            } else if (
+                longer_than &&
+                std::get<ServingError>(selection).code != ErrorCode::NotReady) {
+              // Only the preferred lookup may ignore a new boundary's error;
+              // ordinary lookup retains the existing input-validation contract.
               return Decision::Skip;
             }
-#endif
+            result = selection;
+            return Decision::Stop;
           });
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
