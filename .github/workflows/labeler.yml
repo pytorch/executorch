@@ -1,4 +1,5 @@
 name: Labeler
+# Arm routing policy: .github/arm-ci.md.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
@@ -18,52 +19,74 @@ jobs:
       - name: Select Arm CI
         uses: actions/github-script@v7
         with:
+          retries: 2
           script: |
+            const FULL = 'ciflow/trunk';
+            const ARM = 'ciflow/trunk-arm';
             const pull = { ...context.repo, pull_number: context.issue.number };
             const issue = { ...context.repo, issue_number: context.issue.number };
             let pr = context.payload.pull_request;
             let files = [];
             let complete = false;
+            let reason = 'PR head or base kept changing while reading its diff.';
             try {
-              const { data: before } = await github.rest.pulls.get(pull);
-              files = await github.paginate(github.rest.pulls.listFiles, { ...pull, per_page: 100 });
-              ({ data: pr } = await github.rest.pulls.get(pull));
-              complete = before.head.sha === pr.head.sha &&
-                before.base.sha === pr.base.sha &&
-                files.length > 0 && files.length === pr.changed_files &&
-                new Set(files.map(file => file.filename)).size === files.length &&
-                files.every(file => file.filename &&
-                  (!['renamed', 'copied'].includes(file.status) || file.previous_filename));
+              for (let attempt = 0; attempt < 3; attempt++) {
+                files = [];
+                const { data: before } = await github.rest.pulls.get(pull);
+                pr = before;
+                if (pr.state !== 'open') return;
+                files = await github.paginate(github.rest.pulls.listFiles, { ...pull, per_page: 100 });
+                ({ data: pr } = await github.rest.pulls.get(pull));
+                if (before.head.sha !== pr.head.sha || before.base.sha !== pr.base.sha) continue;
+                complete = files.length === pr.changed_files &&
+                  new Set(files.map(file => file.filename)).size === files.length &&
+                  files.every(file => file.filename &&
+                    (!['renamed', 'copied'].includes(file.status) || file.previous_filename));
+                reason = 'The PR file list is incomplete.';
+                break;
+              }
             } catch (error) {
-              core.warning('Could not determine PR paths; requesting full trunk CI.');
+              reason = `Could not read the PR diff: ${error.message}`;
             }
             if (pr.state !== 'open') return;
 
             const paths = files.flatMap(file => [file.filename, file.previous_filename].filter(Boolean));
             const isArm = path => path.startsWith('backends/arm/') || path.startsWith('examples/arm/');
+            const touchesArm = paths.some(isArm);
             const labels = pr.labels.map(label => label.name);
-            let armOnly = complete && paths.every(isArm) && !labels.includes('ciflow/trunk');
-            if (armOnly) {
-              try {
-                const workflows = await Promise.all(['arm.yml', '_arm-trunk.yml'].map(file =>
-                  github.rest.repos.getContent({ ...context.repo,
-                    path: `.github/workflows/${file}`, ref: pr.head.sha })));
-                armOnly = workflows.every(({ data }) => data.type === 'file');
-              } catch (error) {
-                armOnly = false;
+            let selected = null;
+            if (!complete) {
+              if (!touchesArm && !labels.includes(ARM) && !labels.includes(FULL)) {
+                core.setFailed(`${reason} No CI labels were changed; re-run Labeler or request full CI explicitly.`);
+                return;
               }
+              core.warning(`${reason} Requesting full trunk CI for the existing CI request or observed Arm changes.`);
+              selected = FULL;
+            } else if (touchesArm) {
+              let armOnly = paths.every(isArm) && !labels.includes(FULL);
+              if (armOnly) {
+                try {
+                  const workflows = await Promise.all(['arm.yml', '_arm-trunk.yml'].map(file =>
+                    github.rest.repos.getContent({ ...context.repo,
+                      path: `.github/workflows/${file}`, ref: pr.head.sha })));
+                  armOnly = workflows.every(({ data }) => data.type === 'file');
+                } catch (error) {
+                  armOnly = false;
+                }
+              }
+              selected = armOnly ? ARM : FULL;
             }
-            const selected = !complete || paths.some(isArm)
-              ? (armOnly ? 'ciflow/trunk-arm' : 'ciflow/trunk')
-              : null;
+
             if (selected && !labels.includes(selected)) {
               await github.rest.issues.addLabels({ ...issue, labels: [selected] });
             }
-            if (!armOnly && labels.includes('ciflow/trunk-arm')) {
+            if (selected !== ARM && labels.includes(ARM)) {
               try {
-                await github.rest.issues.removeLabel({ ...issue, name: 'ciflow/trunk-arm' });
+                await github.rest.issues.removeLabel({ ...issue, name: ARM });
               } catch (error) {
                 if (error.status !== 404) throw error;
               }
             }
+
       - uses: actions/labeler@v5
+        if: ${{ !cancelled() }}

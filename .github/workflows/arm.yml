@@ -1,4 +1,6 @@
-name: Arm
+# Match trunk.yml so Dr. CI can compare these jobs with main.
+name: trunk
+run-name: Arm trunk (${{ github.ref_name }})
 
 on:
   push:

@@ -9,9 +9,6 @@ on:
       - ciflow/trunk/*
   pull_request:
     paths:
-      - .github/workflows/trunk.yml
-      - .github/workflows/_arm-trunk.yml
-      - .github/workflows/arm.yml
       - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/**
       - zephyr/**
