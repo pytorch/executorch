@@ -276,7 +276,7 @@ TEST(BenchmarkReference, Q8ConvolutionAppliesZeroPointsScalesBiasAndClamping) {
 }
 TEST(BenchmarkReference, RawAdditionBroadcastsAndAppliesAlpha) {
   const Json spec = {
-      {"shader", "binary_add_texture3d_float"},
+      {"shader", "binary_op_texture3d_float"},
       {"bindings",
        {{{"tensor", "out"}, {"access", "write"}},
         {{"tensor", "a"}},

@@ -50,84 +50,41 @@ class AnnotateQparamsPass(ExportPass):
         super().__init__()
         self.edge_program = edge_program
 
-    def _get_last_dqs(self, node: Node) -> List[Node]:
-        r"""From one Q-DQ node, find the last DQs in the quantization node chain.
-
-
-        need to consider such case:
-                    /--Q-DQ-node1
-            node->Q->DQ--node-node2
-                    \--Q-DQ-node3
-        This is a dfs implemention, so result will keep sorted
-        Args:
-            node (Node): Search DQ from this node.
-
-        Returns:
-            List[Node]: list of DQ node by original sequence
-        """
-
-        def _impl(node: Node, res_list: List[Node]):
-            if (
-                node.target not in QuantConstants.QUANT_OPS_KEY_MAP
-                and node.target not in QuantConstants.DEQUANT_OPS_KEY_MAP
-            ):
-                return
-            for user in node.users.keys():
-                if (
-                    user.target not in QuantConstants.QUANT_OPS_KEY_MAP
-                    and user.target not in QuantConstants.DEQUANT_OPS_KEY_MAP
-                ):
-                    res_list.append(node)
-                else:
-                    _impl(user, res_list)
-
-        res_list: List[Node] = []
-        for user in node.users:
-            _impl(user, res_list)
-        return res_list
+    @staticmethod
+    def _is_qdq(node: Node) -> bool:
+        return (
+            node.target in QuantConstants.QUANT_OPS_KEY_MAP
+            or node.target in QuantConstants.DEQUANT_OPS_KEY_MAP
+        )
 
     def _walk_qdq_chain_to_terminals(self, cur: Node) -> List[Node]:
-        r"""Walk forward from a Q/DQ node `cur` through the Q-DQ chain,
-        returning every terminal node (last Q/DQ node before a non-Q/DQ
-        consumer). Handles fan-out: the SAME quantized tensor is commonly
-        dequantized into multiple branches (e.g. one Q feeding two DQs for
-        two independent consumers) -- each branch is walked and its own
-        terminal is collected, instead of the chain silently stopping at
-        `cur` when it has more than one Q/DQ child.
+        r"""Walk forward from a Q/DQ node `cur` and return, in user order, the
+        last Q/DQ node before each non-Q/DQ consumer.
 
-        Mirrors the DFS shape of `_get_last_dqs`, applied starting from a
-        single Q/DQ node rather than its non-Q/DQ source.
+                    /--Q-DQ-node1
+            node->Q->DQ--node2
+                    \--Q-DQ-node3
+
+        A Q/DQ node that feeds both further Q/DQ nodes and a non-Q/DQ consumer
+        is the terminal of that consumer, so it is returned at that
+        consumer's position as well.
         """
-        next_nodes = [
-            u
-            for u in cur.users
-            if u.target in QuantConstants.QUANT_OPS_KEY_MAP
-            or u.target in QuantConstants.DEQUANT_OPS_KEY_MAP
-        ]
         terminals: List[Node] = []
-        """ `cur` may feed a non-Q/DQ consumer *and* further Q/DQ branches. It
-         still terminates the chain for that direct consumer, so collect it
-         as well as walking the branches."""
-        if not next_nodes or len(next_nodes) < len(cur.users):
-            terminals.append(cur)
-        for nxt in next_nodes:
-            terminals.extend(self._walk_qdq_chain_to_terminals(nxt))
+        for user in cur.users:
+            if self._is_qdq(user):
+                terminals.extend(self._walk_qdq_chain_to_terminals(user))
+            else:
+                terminals.append(cur)
         return terminals
 
-    def _collect_dq_nodes(self, node: Node) -> List[Node]:
-        """For each user of `node`, resolve it to a propagate candidate: a
-        non-Q user is used directly, a Q user is walked through its Q-DQ
-        chain (including fan-out) to find every terminal node."""
-        dq_nodes: List[Node] = []
+    def _get_last_dqs(self, node: Node) -> List[Node]:
+        """Terminals of every Q/DQ chain leaving `node`. Requantize params are
+        keyed by position in this list."""
+        terminals: List[Node] = []
         for user in node.users:
-            if user.target not in QuantConstants.QUANT_OPS_KEY_MAP:
-                # If user is a direct propagate node (not Q), collect it too
-                dq_nodes.append(user)
-                continue
-            # user is a Q node: walk through the Q-DQ chain (including any
-            # fan-out branches) to find every terminal node.
-            dq_nodes.extend(self._walk_qdq_chain_to_terminals(user))
-        return dq_nodes
+            if self._is_qdq(user):
+                terminals.extend(self._walk_qdq_chain_to_terminals(user))
+        return terminals
 
     def _is_propagatable(self, candidate: Node) -> bool:
         """True if `candidate` is a SharedQuant propagate node that is safe
@@ -163,21 +120,24 @@ class AnnotateQparamsPass(ExportPass):
         assert (
             quantize_attrs := node.meta.get("quantize_attrs")
         ), "Must be annotated node."
-        requantize_map: Dict[Node, Node] = node.meta.get("requantize", {})
-        # Walk through Q-DQ chains, handling multiple Q-DQ branches.
-        # For node->Q->DQ->op1 and node->Q->DQ->op3, we collect all last DQ nodes.
-        dq_nodes = self._collect_dq_nodes(node)
-        # Case1: ...-q-dq(cur)-propagate_node-node(not q-dq)
-        # Case2: propagate_node(propagated)-propagate_node-node(not q-dq)
-        for idx, dq_node in enumerate(dq_nodes):
-            # For the branch who need to be requantized, we propagate the requantize params
-            user_attrs = requantize_map.get(idx, quantize_attrs)
-            if dq_node.target in QuantConstants.DEQUANT_OPS_KEY_MAP:
-                self._propagate_into_dequant_users(dq_node, user_attrs)
-            elif self._is_propagatable(dq_node):
-                # dq_node is not a DQ but a propagate node directly connected to source
-                dq_node.meta["quantize_attrs"] = user_attrs
-                self._propagate_quant_params(dq_node)
+        requantize_map: Dict[int, Dict] = node.meta.get("requantize", {})
+        for user in node.users:
+            if not self._is_qdq(user):
+                # A propagate node directly connected to the source.
+                if self._is_propagatable(user):
+                    user.meta["quantize_attrs"] = quantize_attrs
+                    self._propagate_quant_params(user)
+        # Same order as _get_last_dqs, so idx matches the requantize keys. A
+        # terminal is listed once per consumer; propagate it once.
+        visited = set()
+        for idx, terminal in enumerate(self._get_last_dqs(node)):
+            if terminal in visited:
+                continue
+            visited.add(terminal)
+            if terminal.target in QuantConstants.DEQUANT_OPS_KEY_MAP:
+                self._propagate_into_dequant_users(
+                    terminal, requantize_map.get(idx, quantize_attrs)
+                )
 
     def _backward_propagate(self, node: Node):
         """Walk backward from `node`, copying its quantize_attrs into unannotated
