@@ -173,8 +173,9 @@ class ET_EXPERIMENTAL PrefixCache {
 
     // May block; serialize with capture_at. With wrap, collect on another
     // thread after on_capture notification, or wait for generation to finish.
-    // The PrefixCache must outlive collection.
-    bool collect() {
+    // The PrefixCache must outlive collection. retain=false drains a retired
+    // session's pending clone without publishing it back into the cache.
+    bool collect(bool retain = true) {
       auto state = state_;
       if (!state || !state->snapshot.valid()) {
         return false;
@@ -184,7 +185,7 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
         auto metadata = std::move(state->metadata);
         auto snapshot = state->snapshot.get();
-        if (!snapshot) {
+        if (!snapshot || !retain) {
           return false;
         }
         PrefixIdentity prefix;

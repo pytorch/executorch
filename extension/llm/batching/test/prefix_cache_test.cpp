@@ -775,6 +775,21 @@ TEST_F(PrefixCacheTest, WrappedCaptureOwnsMetadataUntilCollection) {
   EXPECT_TRUE(saved.expired());
 }
 
+TEST_F(PrefixCacheTest, RetiredCaptureDoesNotRepopulateClearedCache) {
+  auto source = open();
+  PrefixCache cache(1);
+  auto capture = cache.capture_prompt(source, {1, 2, 3});
+  run_callback(source, {1, 2, 3}, capture.wrap());
+  // Closing a serving session can clear its cache before control collects
+  // an already-queued clone. Drain that clone without retaining its state.
+  source = Session{};
+  cache.clear();
+  EXPECT_FALSE(capture.collect(false));
+  EXPECT_EQ(cache.size(), 0u);
+  EXPECT_FALSE(capture.collect());
+  EXPECT_FALSE(cache.lookup({1, 2, 3}));
+}
+
 TEST_F(PrefixCacheTest, ObserverMatchesMetadataAfterSkippingABoundary) {
   auto source = open();
   generate(source, Tokens(8, 7), 1);

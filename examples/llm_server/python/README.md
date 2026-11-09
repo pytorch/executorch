@@ -66,17 +66,23 @@ limit; choose a value supported by the export. Capacity defaults are
 `--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
 (the default) automatically allows one pending prompt capture per admitted request,
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
-this allowance. Add `--prefix-checkpoint-prompt-end` to retain later request boundaries
-as well as initial prompts; it requires `--prefix-cache-entries > 0`. This mode
-keeps the same concurrent capture allowance and skips already-retained prompt ends.
-The snapshot becomes reusable and its capture slot is released when the clone is
-collected, without waiting for the source request to finish decoding.
+this allowance. Alternatively, `--prefix-checkpoint-prompt-end` retains initial,
+continuation, and replacement prompt boundaries separately for each named session.
+`--prefix-cache-entries` defaults to eight snapshots per session; duplicates
+are skipped and LRU eviction stays within the owning session. Close/reset clears
+that session's snapshots. Anonymous requests neither use nor retain them.
+This mode reserves `max_sessions * prefix_cache_entries` snapshot rows,
+plus working sessions and capture slots. Eight sessions with eight checkpoints
+and automatic capture sizing need 80 rows in total. Capture slots are released
+after clone collection, without waiting for decoding to finish.
 Capture is best effort: occupied transient rows can prevent a snapshot.
 With periodic checkpoints enabled, automatic sizing uses at most two rows:
 checkpoint collection is serialized, but one replacement can overlap. Explicit
 values above two add unused row capacity in that mode.
 `--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
 `--prefix-checkpoint-interval`; the launcher and native worker reject that combination.
+Here `--prefix-cache-entries` sets the per-session limit and defaults to eight;
+without prompt-end mode it keeps its shared-cache meaning and defaults to zero.
 Logical sessions, packed decode width, and in-flight request capacity are independent
 limits. Python concurrency follows advertised request capacity, not the single
 native delivery thread. Python reads native async streams directly through bounded

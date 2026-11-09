@@ -157,15 +157,31 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
-def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch):
+@pytest.mark.parametrize("capacity", [8, 2])
+def test_prompt_end_capture_reaches_worker_with_session_capacity(
+    argv, launch, capacity
+):
     assert not serve._parse_args(argv).prefix_checkpoint_prompt_end
-    with pytest.raises(SystemExit):
-        serve._parse_args(argv + ["--prefix-checkpoint-prompt-end"])
-    serve.main(argv + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end"])
+    assert (
+        serve._parse_args(
+            argv + ["--prefix-checkpoint-prompt-end"]
+        ).prefix_cache_entries
+        == 8
+    )
+    serve.main(
+        argv
+        + [
+            "--prefix-checkpoint-prompt-end",
+            "--prefix-cache-entries",
+            str(capacity),
+        ]
+    )
     assert (
         "--prefix_checkpoint_prompt_end=true"
         in launch.stages["spawn"].call_args.args[0]
     )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_cache_entries") + 1] == str(capacity)
 
 
 def test_prompt_end_rejects_periodic_capture(argv, capsys):
@@ -173,14 +189,48 @@ def test_prompt_end_rejects_periodic_capture(argv, capsys):
         serve._parse_args(
             argv
             + [
-                "--prefix-cache-entries",
-                "3",
                 "--prefix-checkpoint-prompt-end",
                 "--prefix-checkpoint-interval",
                 "64",
             ]
         )
     assert "cannot be combined" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--prefix-cache-entries", "0"],
+        ["--prefix-cache-entries", "-1"],
+        ["--max-sessions", str(1 << 28)],
+        ["--prefix-cache-entries", str((1 << 31) - 1)],
+    ],
+)
+def test_session_checkpoint_limits_reject_invalid_combinations_and_row_overflow(
+    argv, options
+):
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + ["--prefix-checkpoint-prompt-end"] + options)
+
+
+def test_session_checkpoint_rows_include_every_sessions_budget(argv):
+    maximum = (1 << 31) - 1
+    # Two working rows + two checkpoint budgets + one transient row.
+    capacity = (maximum - 3) // 2
+    flags = [
+        "--prefix-checkpoint-prompt-end",
+        "--max-sessions",
+        "2",
+        "--prefix-capture-slots",
+        "1",
+        "--prefix-cache-entries",
+    ]
+    assert (
+        serve._parse_args(argv + flags + [str(capacity)]).prefix_cache_entries
+        == capacity
+    )
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + flags + [str(capacity + 1)])
 
 
 @pytest.mark.parametrize(

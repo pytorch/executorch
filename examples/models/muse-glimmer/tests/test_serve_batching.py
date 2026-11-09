@@ -60,26 +60,44 @@ def test_prompt_end_capture_is_opt_in_and_reaches_worker(arguments, capsys):
         "prefix_checkpoint_prompt_end" in flag
         for flag in serve_batching._worker_command(default)
     )
-    enabled = serve_batching._parse_args(
-        arguments + ["--prefix-cache-entries", "4", "--prefix-checkpoint-prompt-end"]
-    )
+    enabled = serve_batching._parse_args(arguments + ["--prefix-checkpoint-prompt-end"])
+    assert enabled.prefix_cache_entries == 8
     assert "--prefix_checkpoint_prompt_end=true" in serve_batching._worker_command(
         enabled
     )
+    assert "--prefix_cache_entries=8" in serve_batching._worker_command(enabled)
     with pytest.raises(SystemExit):
-        serve_batching._parse_args(arguments + ["--prefix-checkpoint-prompt-end"])
+        serve_batching._parse_args(
+            arguments
+            + ["--prefix-checkpoint-prompt-end", "--prefix-cache-entries", "0"]
+        )
     with pytest.raises(SystemExit):
         serve_batching._parse_args(
             arguments
             + [
-                "--prefix-cache-entries",
-                "4",
                 "--prefix-checkpoint-prompt-end",
                 "--prefix-checkpoint-interval",
                 "64",
             ]
         )
     assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_session_checkpoint_capacity_override_and_row_overflow(arguments):
+    args = serve_batching._parse_args(
+        arguments + ["--prefix-checkpoint-prompt-end", "--prefix-cache-entries", "2"]
+    )
+    assert "--prefix_cache_entries=2" in serve_batching._worker_command(args)
+    for capacity in (0, -1, (1 << 31) - 1):
+        with pytest.raises(SystemExit):
+            serve_batching._parse_args(
+                arguments
+                + [
+                    "--prefix-checkpoint-prompt-end",
+                    "--prefix-cache-entries",
+                    str(capacity),
+                ]
+            )
 
 
 def test_worker_forwards_mg_options(arguments):

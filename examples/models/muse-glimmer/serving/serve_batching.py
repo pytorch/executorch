@@ -76,9 +76,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-cache-entries",
         type=int,
-        default=0,
-        help="Opt-in prefix reuse for new sessions and prompt replacements; "
-        "requires batching executor cache-clone support.",
+        help="Retained snapshots: shared by default (0), per named session with prompt-end checkpoints (8)",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -90,7 +88,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-checkpoint-prompt-end",
         action="store_true",
-        help="Best-effort retention of each request's prompt end in the bounded prefix cache",
+        help="Retain prompt-end checkpoints separately for each named session",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -126,6 +124,8 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+    if args.prefix_cache_entries is None:
+        args.prefix_cache_entries = 8 if args.prefix_checkpoint_prompt_end else 0
     _validate_limits(
         parser,
         args,
@@ -202,7 +202,7 @@ def _worker_command(args):
         ("prefix_cache_entries", args.prefix_cache_entries),
         (
             "prefix_capture_slots",
-            args.prefix_capture_slots if args.prefix_cache_entries else None,
+            (args.prefix_capture_slots if args.prefix_cache_entries else None),
         ),
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
         (

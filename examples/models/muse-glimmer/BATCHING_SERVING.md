@@ -224,23 +224,29 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 ## Session Behavior
 
-Prefix caching is disabled unless `--prefix-cache-entries` is nonzero. When
-configured without other capture options, it retains initial prompts. Add
-`--prefix-checkpoint-prompt-end` to request snapshots of subsequent boundaries,
-including tool-result continuations and replacements. Repeated or branched requests
-can reuse those snapshots; new tool-result text still needs prefill. Exact prompt
-ends already in the cache are not cloned again.
-Snapshots become reusable and their capture slots are released after clone
-collection, without waiting for decoding to finish.
+Without prompt-end mode, nonzero `--prefix-cache-entries` enables shared prefix
+caching; without other capture options it retains initial prompts. `--prefix-checkpoint-prompt-end` instead
+retains prompt boundaries separately for each named session, including tool-result
+continuations and replacements. `--prefix-cache-entries` defaults to eight
+checkpoints per session. Repeated or branched requests using the same session ID can
+reuse its snapshots; other sessions and anonymous requests cannot. New tool-result
+text still needs prefill. Exact prompt ends already retained in that session are
+not cloned again. Close/reset, including idle-session eviction, clears its snapshots.
 
 Prompt-end-only capture preserves per-request capture concurrency and the default
-transient-row budget. All snapshots share the bounded cache and global LRU, so new
-boundaries can evict earlier prompts. Capture is best effort: concurrent captures
+transient-row budget. LRU eviction stays within each session, so one session cannot
+evict another's checkpoints. Capture slots are released after clone collection,
+without waiting for decoding to finish. Capture is best effort: concurrent captures
 or session replacements can occupy the available rows. Measure capture overhead
 and reuse for your workload before enabling it.
 
 `--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
-`--prefix-checkpoint-interval`; both the launcher and native worker reject it.
+`--prefix-checkpoint-interval`; both the launcher and native worker reject that combination.
+With prompt-end mode, `--prefix-cache-entries` is the per-session budget (default eight);
+without it, the same option is the shared-cache budget (default zero). This mode reserves
+`max_sessions * prefix_cache_entries` snapshot rows plus working sessions
+and capture slots: eight sessions, eight checkpoints each, and eight automatic
+capture slots require 80 physical rows. The feature remains disabled by default.
 Periodic checkpoints use one serialized lane and may skip a boundary while an
 earlier clone is pending. Automatic transient-row sizing is capped at two in
 periodic mode; prompt-end capture retains the ordinary concurrency budget.
@@ -339,7 +345,8 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 `--data-path` is required. Image artifacts read `pos_embed.bin` beside
 `model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
-pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
+pool: requests, shared `--prefix-cache-entries` snapshots or
+`max_sessions * prefix_cache_entries` per-session snapshots, and the resolved number of
 capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
 matches request concurrency, including prompt-end-only mode; periodic checkpoints
 cap the automatic count at two; a

@@ -60,6 +60,9 @@ struct TextRequest {
   std::size_t start_position = 0;
   bool started = false;
   bool capture_lane = false;
+  // Keep the per-session cache alive while a capture is in flight, including
+  // after close/reset. Retired captures are drained without publication.
+  std::shared_ptr<batching::PrefixCache> checkpoints;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
 
   void emit(GenerationEvent event) {
@@ -233,6 +236,7 @@ struct ServingRuntime::Impl {
     std::uint64_t incarnation = 0;
     RequestId active_request = 0;
     batching::PrefixIdentityPtr logical_history;
+    std::shared_ptr<batching::PrefixCache> checkpoints;
     bool dirty = false;
   };
 
@@ -263,17 +267,19 @@ struct ServingRuntime::Impl {
             config.max_events_per_request > 0 &&
             config.max_tokens_per_request > 0 &&
             !(config.prefix_checkpoint_prompt_end &&
-              config.uses_checkpoint_observer()) &&
+              (config.uses_checkpoint_observer() ||
+               !config.prefix_cache_capacity)) &&
+            config.required_executor_rows().has_value() &&
             config.prefix_checkpoint_interval <=
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
-            ((!config.uses_checkpoint_observer() &&
-              !config.prefix_checkpoint_prompt_end) ||
+            (!config.uses_checkpoint_observer() ||
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
         model_preparer_(std::move(model_preparer)),
         prefix_cache_(
-            config.prefix_cache_capacity,
+            config.prefix_checkpoint_prompt_end ? 0
+                                                : config.prefix_cache_capacity,
             config.prefix_cache_retention) {
     if (valid_config_) {
       runner_ =
@@ -376,9 +382,10 @@ struct ServingRuntime::Impl {
     complete(std::move(command.completion), std::move(error));
   }
 
-  LifecycleResult process(Command& command) {
+  LifecycleResult process(Command& command, bool keep_checkpoints = false) {
     std::optional<batching::Session> retired;
     batching::PrefixIdentityPtr retired_history;
+    std::shared_ptr<batching::PrefixCache> retired_checkpoints;
     Request cancelled;
     std::unique_lock<std::mutex> lock(mutex_);
     if (lifecycle_ != Lifecycle::Running) {
@@ -393,6 +400,7 @@ struct ServingRuntime::Impl {
         }
         retired = std::move(it->second.session);
         retired_history = std::move(it->second.logical_history);
+        retired_checkpoints = std::move(it->second.checkpoints);
         sessions_.erase(it);
       }
       lock.unlock();
@@ -400,6 +408,9 @@ struct ServingRuntime::Impl {
         cancelled->cancel();
       }
       retired.reset();
+      if (retired_checkpoints) {
+        retired_checkpoints->clear();
+      }
       return std::nullopt;
     }
     const bool opening = command.operation == Operation::Open;
@@ -430,6 +441,9 @@ struct ServingRuntime::Impl {
       it->second.active_request = 0;
       it->second.incarnation = next_incarnation_++;
       retired_history = std::move(it->second.logical_history);
+      if (!keep_checkpoints) {
+        retired_checkpoints = std::move(it->second.checkpoints);
+      }
       it->second.dirty = false;
       retired = std::move(it->second.session);
       it->second.session.reset();
@@ -442,6 +456,9 @@ struct ServingRuntime::Impl {
       cancelled->cancel();
     }
     retired.reset();
+    if (retired_checkpoints) {
+      retired_checkpoints->clear();
+    }
     std::optional<batching::Session> opened;
     LifecycleResult error;
 #if ET_HAS_EXCEPTIONS
@@ -919,7 +936,7 @@ struct ServingRuntime::Impl {
       slot.dirty = true;
     }
     if (match) {
-      prefix_cache_.touch(*match);
+      prefix_cache_for(request)->touch(*match);
     }
     return Selection::Selected;
   }
@@ -942,6 +959,9 @@ struct ServingRuntime::Impl {
       if (it != sessions_.end() && it->second.phase != SessionPhase::Open) {
         return ServingError{
             ErrorCode::NotReady, "session is unavailable; reset first"};
+      }
+      if (it != sessions_.end()) {
+        text.checkpoints = it->second.checkpoints;
       }
     }
     const auto& options = text.options;
@@ -1088,7 +1108,9 @@ struct ServingRuntime::Impl {
     }
     if (reset) {
       Command command{Operation::Reset, *request->request.key, {}, {}};
-      return process(command);
+      // A prompt replacement keeps earlier checkpoints in this session.
+      // Explicit lifecycle reset instead discards its checkpoint history.
+      return process(command, /*keep_checkpoints=*/true);
     }
     return std::nullopt;
   }
@@ -1101,8 +1123,8 @@ struct ServingRuntime::Impl {
     if (request->cancelled.load()) {
       return PrefixLookupStatus::Cancelled;
     }
-    if (!request->text || !request->text->prompt ||
-        config_.prefix_cache_capacity == 0) {
+    auto* cache = prefix_cache_for(request);
+    if (!request->text || !request->text->prompt || !cache) {
       return PrefixLookupStatus::Unavailable;
     }
     CheckedSuffix local;
@@ -1114,7 +1136,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      auto found = prefix_cache_.find_identity(
+      auto found = cache->find_identity(
           *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
             using Decision = batching::PrefixCache::MatchDecision;
             if (rejected_length == start) {
@@ -1149,13 +1171,29 @@ struct ServingRuntime::Impl {
     return PrefixLookupStatus::Unavailable;
   }
 
+  batching::PrefixCache* prefix_cache_for(const Request& request) {
+    if (config_.prefix_checkpoint_prompt_end) {
+      return request->text ? request->text->checkpoints.get() : nullptr;
+    }
+    return config_.prefix_cache_capacity ? &prefix_cache_ : nullptr;
+  }
+
   void collect_capture(const Request& request) {
     // Settle clones on control, outside locks, before releasing the shared row.
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
       if (request->text->prefix_capture) {
-        request->text->prefix_capture->collect();
+        bool retain = true;
+        if (config_.prefix_checkpoint_prompt_end) {
+          std::lock_guard<std::mutex> lock(mutex_);
+          const auto it = request->request.key
+              ? sessions_.find(SessionKey(*request->request.key))
+              : sessions_.end();
+          retain = it != sessions_.end() &&
+              it->second.checkpoints == request->text->checkpoints;
+        }
+        request->text->prefix_capture->collect(retain);
       }
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
@@ -1304,13 +1342,30 @@ struct ServingRuntime::Impl {
       return;
     }
     if (prefix) {
-      prefix_cache_.touch(prefix->match);
+      prefix_cache_for(request)->touch(prefix->match);
     }
     if (request->text) {
       request->text->start_position =
           static_cast<std::size_t>(session.position());
       request->text->started = true;
     }
+    if (config_.prefix_checkpoint_prompt_end && request->request.key &&
+        request->text && request->text->prompt && !it->second.checkpoints) {
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        auto checkpoints = std::make_shared<batching::PrefixCache>(
+            config_.prefix_cache_capacity, config_.prefix_cache_retention);
+        std::lock_guard<std::mutex> cache_lock(mutex_);
+        it->second.checkpoints = checkpoints;
+        request->text->checkpoints = std::move(checkpoints);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        // Checkpoint allocation is optional; generation can still proceed.
+      }
+#endif
+    }
+    auto* cache = prefix_cache_for(request);
     // The control thread alone owns Session objects. Rejection can invoke the
     // callback inline before this call returns; the mailbox needs no binding.
 #if ET_HAS_EXCEPTIONS
@@ -1382,9 +1437,9 @@ struct ServingRuntime::Impl {
 #endif
       } else if (
           (opening || config_.prefix_checkpoint_prompt_end) && request->text &&
-          request->text->prompt && config_.prefix_cache_capacity != 0 &&
+          request->text->prompt && cache &&
           (!config_.prefix_checkpoint_prompt_end ||
-           !prefix_cache_.contains_identity(*request->text->prompt)) &&
+           !cache->contains_identity(*request->text->prompt)) &&
           try_acquire_capture_lane()) {
         // Only a capture needs an extra row beyond the working-session slots.
         request->text->capture_lane = true;
@@ -1392,7 +1447,7 @@ struct ServingRuntime::Impl {
         try {
 #endif
           request->text->prefix_capture =
-              prefix_cache_.capture_identity(session, *request->text->prompt);
+              cache->capture_identity(session, *request->text->prompt);
           std::function<void()> on_capture;
           if (config_.prefix_checkpoint_prompt_end) {
             on_capture = [this, request] { enqueue_capture(request); };

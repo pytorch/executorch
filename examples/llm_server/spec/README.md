@@ -395,15 +395,21 @@ sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
 unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
 `min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
-their initial prompt. `--prefix_checkpoint_prompt_end=true` additionally requests
-continuation and replacement snapshots with the same concurrent allowance.
-It requires nonzero cache capacity and skips exact prompt ends already retained.
-Snapshots are published and their transient slots released after clone collection,
-without waiting for the request to finish decoding.
+their initial prompt. Alternatively, `--prefix_checkpoint_prompt_end=true` retains
+initial, continuation, and replacement snapshots separately for each named session.
+`--prefix_cache_entries=8` is the default per-session limit. This mode adds
+`max_sessions * prefix_cache_entries + C` physical rows. The existing
+`--prefix_cache_entries` flag now sets the per-session limit when prompt-end mode
+is enabled; otherwise it keeps the shared-cache meaning and default of zero.
+Exact prompt identities already retained
+within the session are not cloned again. Close/reset clears the session's snapshots,
+and anonymous requests neither reuse nor retain them. LRU eviction stays within
+each session. Transient slots are released after clone collection without waiting
+for the request to finish decoding.
 With periodic checkpoints enabled, automatic sizing uses at most two
 rows because checkpoint collection remains serialized and one replacement can
 overlap. A positive value overrides automatic sizing; values above two add unused
-row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
+row capacity in checkpoint mode. Disabling both cache modes reserves no capture rows.
 Capture is best effort. Prompt-end capture cannot be combined with a nonzero
 checkpoint interval or a custom checkpoint policy; invalid combinations are
 rejected. A C++ `prefix_checkpoint_policy` overrides the interval. Periodic/custom

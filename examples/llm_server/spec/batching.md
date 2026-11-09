@@ -41,13 +41,17 @@ speculative drafting/verification remain inside the runner and executor.
 of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
 Zero (the default) disables periodic capture. With prefix caching enabled and no
 other capture options, only initial prompts are retained.
-`--prefix-checkpoint-prompt-end` also requests snapshots of continuation and replacement
-prompt ends. It preserves per-request capture concurrency and cannot be combined
-with a nonzero interval or custom checkpoint policy. Snapshots become reusable and
-capture slots are released when their clones are collected, before decode completes.
+`--prefix-checkpoint-prompt-end` instead retains prompt ends within each named
+session, including continuations and replacements. `--prefix-cache-entries`
+defaults to eight per session. Checkpoints cannot be reused or evicted by another
+session, and close/reset clears them. Anonymous requests do not use this cache.
+This mode cannot be combined with a nonzero interval or custom checkpoint policy.
+In this mode `--prefix-cache-entries` sets the per-session limit (default eight);
+otherwise it sets the shared-cache limit (default zero). It reserves `max_sessions * prefix_cache_entries`
+snapshot rows in addition to working sessions and transient captures.
+Capture slots are released after clone collection, before decode completes.
 Capture is best effort: occupied transient rows can skip a boundary. Already-retained
-prompt ends are not cloned again. Retention uses global LRU; early checkpoints are
-not protected.
+prompt ends are not cloned again. Default retention uses LRU within each cache.
 
 C++ applications can customize two independent policies in
 [`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):

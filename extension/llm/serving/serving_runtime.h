@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -53,18 +54,20 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Shared snapshots for matching full prompts, including retries and the
-  // first generation after open/reset. Zero disables reuse. When enabled,
-  // provision max_sessions + prefix_cache_capacity + resolved_prefix_captures()
-  // rows.
+  // Retained snapshots: a shared limit normally, or a limit per named session
+  // with prefix_checkpoint_prompt_end. Zero disables caching and is invalid
+  // with prompt-end capture. Launchers default to eight in per-session mode.
+  // Explicit close/reset clears per-session snapshots. Provision
+  // required_executor_rows() rows when caching is enabled.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
-  // Best-effort capture at each request's prompt end, including continuations
-  // and replacements. Uses per-request capture admission, released after the
-  // clone is collected, without waiting for decode to finish. Requires cache
-  // capacity; cannot combine with an interval or custom checkpoint policy.
+  // Best-effort capture at each named session request's prompt end, including
+  // continuations and replacements. Uses per-request capture admission,
+  // released after the clone is collected, without waiting for decode to
+  // finish. Uses prefix_cache_capacity per named session; anonymous requests
+  // do not retain snapshots. Cannot combine with an interval or custom policy.
   bool prefix_checkpoint_prompt_end = false;
   // Override the interval with increasing checkpoints in
   // (start, prompt.size()]. Invalid or throwing policies skip capture. Requires
@@ -74,7 +77,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
       batching::Position start,
       bool opening)>
       prefix_checkpoint_policy = {};
-  // Empty uses global LRU without protected early checkpoints.
+  // Empty uses LRU within each cache without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
   // Transient rows shared by prompt capture and named-session replacement.
@@ -99,6 +102,28 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
     const auto concurrency = std::min(max_sessions, max_requests);
     return uses_checkpoint_observer() ? std::min(concurrency, std::size_t{2})
                                       : concurrency;
+  }
+
+  // Includes working sessions, retained snapshots, and transient captures.
+  // Overflow leaves the runtime invalid and must be rejected by workers.
+  std::optional<std::size_t> required_executor_rows() const {
+    const auto limit = std::numeric_limits<std::size_t>::max();
+    if (!max_sessions) {
+      return std::nullopt;
+    }
+    auto snapshots = prefix_cache_capacity;
+    if (prefix_checkpoint_prompt_end) {
+      if (prefix_cache_capacity > limit / max_sessions) {
+        return std::nullopt;
+      }
+      snapshots = max_sessions * prefix_cache_capacity;
+    }
+    const auto captures = resolved_prefix_captures();
+    if (snapshots > limit - max_sessions ||
+        captures > limit - max_sessions - snapshots) {
+      return std::nullopt;
+    }
+    return max_sessions + snapshots + captures;
   }
 };
 
