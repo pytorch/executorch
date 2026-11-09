@@ -405,6 +405,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":propagate_view_copy_permute_pass",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
