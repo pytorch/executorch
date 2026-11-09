@@ -678,6 +678,7 @@ struct ServingRuntime::Impl {
   }
 
   enum class Selection { Selected, Unavailable, Cancelled };
+  enum class PrefixLookupMode { Ordinary, Preferred };
   using SelectionResult = std::variant<Selection, ServingError>;
 
   SelectionResult select_input(const Request& request, std::size_t start) {
@@ -785,7 +786,8 @@ struct ServingRuntime::Impl {
     std::optional<batching::PrefixMatch> match;
     auto fallback_limit = upto ? upto : std::numeric_limits<std::size_t>::max();
     if (upto) {
-      auto selection = lookup_prefix(request, match, upto);
+      auto selection =
+          lookup_prefix(request, match, PrefixLookupMode::Preferred, upto);
       const auto* outcome = std::get_if<Selection>(&selection);
       if (!outcome || *outcome == Selection::Cancelled) {
         return selection;
@@ -820,7 +822,8 @@ struct ServingRuntime::Impl {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto selection = lookup_prefix(request, match, 0, fallback_limit);
+      auto selection = lookup_prefix(
+          request, match, PrefixLookupMode::Ordinary, 0, fallback_limit);
       if (auto* outcome = std::get_if<Selection>(&selection);
           !outcome || *outcome != Selection::Selected) {
         return selection;
@@ -1014,6 +1017,7 @@ struct ServingRuntime::Impl {
   SelectionResult lookup_prefix(
       const Request& request,
       std::optional<batching::PrefixMatch>& match,
+      PrefixLookupMode mode = PrefixLookupMode::Ordinary,
       std::size_t longer_than = 0,
       std::size_t at_most = std::numeric_limits<std::size_t>::max()) {
     if (!request->text || !request->text->prompt ||
@@ -1053,13 +1057,13 @@ struct ServingRuntime::Impl {
                 return Decision::Use;
               }
               if (*outcome == Selection::Unavailable) {
-                return Decision::Skip;
+                // Ordinary lookup preserves the existing cold-prefill fallback.
+                return mode == PrefixLookupMode::Preferred ? Decision::Skip
+                                                           : Decision::Stop;
               }
             } else if (
-                longer_than &&
+                mode == PrefixLookupMode::Preferred &&
                 std::get<ServingError>(selection).code != ErrorCode::NotReady) {
-              // Only the preferred lookup may ignore a new boundary's error;
-              // ordinary lookup retains the existing input-validation contract.
               return Decision::Skip;
             }
             result = selection;

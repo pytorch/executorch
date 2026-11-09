@@ -1282,6 +1282,75 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(
     SnapshotAcceptanceFailureTest,
+    UnavailableLongestSuffixFallsBackColdWithoutCheckingShorter) {
+  use_mixed_preparer();
+  start();
+  if (GetParam()) {
+    submit(output(), {9, 7, 7, 7, 8}).wait();
+  }
+  submit(output(), {1, 7, 7, 7, 9}, "shorter").wait();
+  const auto shorter = executor.clones().back().destination;
+  submit(output(), {1, 7, 7, 7, 2, 3}, "longer").wait();
+  executor.rejected_view_start = 5;
+  executor.throwing_view_start = 4;
+  const auto checked_longer = executor.acceptance_calls[5];
+  const auto checked_shorter = executor.acceptance_calls[4];
+  const auto cloned_shorter = executor.clone_attempts(shorter);
+  const std::vector<Token> prompt{1, 7, 7, 7, 2, 9};
+  auto event = output();
+  auto handle = submit(event, prompt, GetParam() ? "s" : "new");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error());
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, prompt.size());
+  EXPECT_EQ(executor.feeds().back().position, 0);
+  EXPECT_EQ(executor.feeds().back().tokens, prompt);
+  EXPECT_EQ(executor.acceptance_calls[5], checked_longer + 1);
+  EXPECT_EQ(executor.acceptance_calls[4], checked_shorter);
+  EXPECT_EQ(executor.clone_attempts(shorter), cloned_shorter);
+}
+
+TEST_P(
+    SnapshotAcceptanceFailureTest,
+    UnavailableLongestSuffixDoesNotConstructShorterSuffix) {
+  executor.accept_prepared = true;
+  bool fail = false;
+  int shorter_suffixes = 0;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    auto prepared = std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation);
+    prepared->on_suffix = [&](std::size_t start) {
+      if (fail && start == 4) {
+        ++shorter_suffixes;
+        throw std::runtime_error("shorter suffix construction failed");
+      }
+    };
+    return batching::PreparedInputPtr{prepared};
+  };
+  start();
+  if (GetParam()) {
+    submit(output(), {9, 8, 7}).wait();
+  }
+  submit(output(), {1, 2, 3, 4, 9}, "shorter").wait();
+  submit(output(), {1, 2, 3, 4, 5, 6}, "longer").wait();
+  executor.rejected_view_start = 5;
+  fail = true;
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 4, 5, 9}, GetParam() ? "s" : "new");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error());
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 6u);
+  EXPECT_EQ(shorter_suffixes, 0);
+}
+
+TEST_P(
+    SnapshotAcceptanceFailureTest,
     ThrowingSuffixIsOptionalOnlyForPreferredLookup) {
   executor.accept_prepared = true;
   bool fail = false;
@@ -1323,15 +1392,21 @@ TEST_F(
     PrefixReuseTest,
     ShutdownDuringSuffixSelectionDoesNotTryAnotherCandidate) {
   executor.accept_prepared = true;
+  std::map<std::size_t, int> suffix_calls;
   model_preparer = [&](const auto&,
                        PromptInput input) -> ModelPreparationResult {
-    return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
-        input.segments[0].get_tokens(), replacement_preparation)};
+    auto prepared = std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation);
+    prepared->on_suffix = [&](std::size_t start) { ++suffix_calls[start]; };
+    return batching::PreparedInputPtr{prepared};
   };
   start();
+  submit(output(), {1, 2, 3}, "shorter").wait();
   submit(output(), {1, 2, 3, 4}, "cached").wait();
   const auto clones = executor.clone_calls.load();
   const auto feeds = executor.feeds().size();
+  const auto checked_longer = suffix_calls[4];
+  const auto checked_shorter = suffix_calls[3];
   replacement_preparation.hold();
   auto event = output();
   auto handle = submit(event, {1, 2, 3, 4, 5}, "new");
@@ -1345,6 +1420,8 @@ TEST_F(
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
   EXPECT_EQ(executor.clone_calls.load(), clones);
   EXPECT_EQ(executor.feeds().size(), feeds);
+  EXPECT_EQ(suffix_calls[4], checked_longer + 1);
+  EXPECT_EQ(suffix_calls[3], checked_shorter);
 }
 
 TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
