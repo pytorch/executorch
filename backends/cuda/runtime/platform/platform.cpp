@@ -10,6 +10,7 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -155,14 +156,22 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
         temp_dir_error.message().c_str());
     return executorch::runtime::Error::AccessFailed;
   }
+  // The loader hands back an already loaded library when given the same path
+  // again, and libraries are never unloaded, so a path must not repeat within
+  // a process.
+  static std::atomic<uint64_t> counter{0};
+  const std::string prefix = "executorch_cuda_" +
+      std::to_string(counter.fetch_add(1, std::memory_order_relaxed)) + "_";
   const char* bytes = static_cast<const char*>(data);
+  size_t remaining = size;
   bool failed = false;
 #ifdef _WIN32
   std::random_device random;
-  char name[40];
-  snprintf(
-      name, sizeof(name), "executorch_cuda_%08x%08x.so", random(), random());
-  const std::filesystem::path path = temp_dir / name;
+  char suffix[24];
+  snprintf(suffix, sizeof(suffix), "%08x%08x.so", random(), random());
+  const std::filesystem::path path = temp_dir / (prefix + suffix);
+  const auto u8 = path.u8string();
+  const std::string utf8(u8.begin(), u8.end());
   HANDLE file = CreateFileW(
       path.c_str(),
       GENERIC_WRITE,
@@ -175,19 +184,21 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     const DWORD err = GetLastError();
     ET_LOG(
         Error,
-        "Failed to create a temporary file with error %lu: %s",
+        "Failed to create %s with error %lu: %s",
+        utf8.c_str(),
         err,
         format_win_error(err).c_str());
     return executorch::runtime::Error::AccessFailed;
   }
   // WriteFile takes a 32-bit length, so write in chunks.
   constexpr DWORD kMaxChunk = 1u << 30;
-  while (size > 0 && !failed) {
-    const DWORD chunk = size > kMaxChunk ? kMaxChunk : static_cast<DWORD>(size);
+  while (remaining > 0 && !failed) {
+    const DWORD chunk =
+        remaining > kMaxChunk ? kMaxChunk : static_cast<DWORD>(remaining);
     DWORD written = 0;
     if (WriteFile(file, bytes, chunk, &written, nullptr) && written > 0) {
       bytes += written;
-      size -= written;
+      remaining -= written;
     } else {
       failed = true;
     }
@@ -199,27 +210,29 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     const DWORD err = GetLastError();
     ET_LOG(
         Error,
-        "Failed to write a temporary file with error %lu: %s",
+        "Failed to write %s with error %lu: %s",
+        utf8.c_str(),
         err,
         format_win_error(err).c_str());
     DeleteFileW(path.c_str());
     return executorch::runtime::Error::AccessFailed;
   }
+  ET_LOG(Info, "Wrote %zu bytes to %s", size, utf8.c_str());
   return path;
 #else
   // mkostemps replaces the Xs with random characters and creates the file with
   // O_EXCL and mode 0600, retrying if the name is taken.
-  std::string path = (temp_dir / "executorch_cuda_XXXXXX.so").string();
+  std::string path = (temp_dir / (prefix + "XXXXXX.so")).string();
   const int fd = mkostemps(path.data(), /*suffixlen=*/3, O_CLOEXEC);
   if (fd == -1) {
     ET_LOG(Error, "Failed to create %s: %s", path.c_str(), strerror(errno));
     return executorch::runtime::Error::AccessFailed;
   }
-  while (size > 0 && !failed) {
-    const ssize_t written = write(fd, bytes, size);
+  while (remaining > 0 && !failed) {
+    const ssize_t written = write(fd, bytes, remaining);
     if (written > 0) {
       bytes += written;
-      size -= static_cast<size_t>(written);
+      remaining -= static_cast<size_t>(written);
     } else if (written == 0 || errno != EINTR) {
       failed = true;
     }
@@ -232,6 +245,7 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     unlink(path.c_str());
     return executorch::runtime::Error::AccessFailed;
   }
+  ET_LOG(Info, "Wrote %zu bytes to %s", size, path.c_str());
   return std::filesystem::path(path);
 #endif
 }
@@ -263,14 +277,6 @@ executorch::runtime::Result<void*> get_function(
 
   return (void*)fn; // This I think is technically ub on windows. We should
                     // probably explicitly pack the bytes.
-}
-
-int32_t get_process_id() {
-#ifdef _WIN32
-  return GetCurrentProcessId();
-#else
-  return getpid();
-#endif
 }
 
 void* aligned_alloc(size_t alignment, size_t size) {
