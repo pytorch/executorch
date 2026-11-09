@@ -74,6 +74,17 @@ class Pow_TensorTensor(torch.nn.Module):
         ),
     }
 
+    test_data_mixed = {
+        "int32_float32": lambda: (
+            torch.tensor([1, 2, 3], dtype=torch.int32),
+            torch.tensor([1.5, 2.0, 0.5]),
+        ),
+        "float32_int32": lambda: (
+            torch.tensor([1.5, 2.0, 3.5]),
+            torch.tensor([1, 2, 3], dtype=torch.int32),
+        ),
+    }
+
     test_data_quant = {
         "positive_base_positive_exp": lambda: (
             torch.rand(2, 3, 4) * 1.5 + 0.25,
@@ -179,7 +190,9 @@ POW_TENSOR_TENSOR_INT_EXIR_OPS = [
 
 @common.parametrize(
     "test_data",
-    Pow_TensorTensor.test_data | Pow_TensorTensor.test_data_bf16,
+    Pow_TensorTensor.test_data
+    | Pow_TensorTensor.test_data_bf16
+    | Pow_TensorTensor.test_data_mixed,
     x_fail,
     strict=False,
 )
@@ -347,6 +360,21 @@ def test_pow_tensor_tensor_u55_INT(
     test_data: Pow_TensorTensor.input_t,
 ):
     pipeline = EthosU55PipelineINT[Pow_TensorTensor.input_t](
+        Pow_TensorTensorPositiveBase(),
+        test_data(),
+        POW_TENSOR_TENSOR_INT_ATEN_OPS,
+        POW_TENSOR_TENSOR_INT_EXIR_OPS,
+        qtol=4,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorTensor.test_data_quant)
+@common.XfailIfNoCorstone320
+def test_pow_tensor_tensor_u85_INT(
+    test_data: Pow_TensorTensor.input_t,
+):
+    pipeline = EthosU85PipelineINT[Pow_TensorTensor.input_t](
         Pow_TensorTensorPositiveBase(),
         test_data(),
         POW_TENSOR_TENSOR_INT_ATEN_OPS,

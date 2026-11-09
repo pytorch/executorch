@@ -484,6 +484,8 @@ def get_symmetric_a16w8_quantization_config(
         is_per_channel=is_per_channel,
         is_qat=is_qat,
         is_dynamic=is_dynamic,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
     )
 
     if is_dynamic:
@@ -930,32 +932,19 @@ class TOSAQuantizer(Quantizer):
             if node.op != "call_function":
                 continue
 
-            devices = set()
+            devices: set[str] = set()
             for arg_node in node.all_input_nodes:
                 meta_val = arg_node.meta.get("val", None)
                 if meta_val is None:
                     continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+                values = (
+                    meta_val if isinstance(meta_val, (tuple, list)) else (meta_val,)
+                )
+                devices.update(
+                    str(value.device)
+                    for value in values
+                    if isinstance(value, torch.Tensor)
+                )
 
                 if len(devices) > 1:
                     raise ValueError(
@@ -1267,7 +1256,14 @@ class _TOSAQuantizerV2(ComposableQuantizer):
             )
 
         self.pattern_matcher = PatternMatcher(support_dict)
-        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        excluded_targets = TOSAQuantizationConfig.SHARED_INPUT_ACT_QSPEC_PATTERNS
+        self.shared_qspec_quantizer = SharedQspecQuantizer(
+            targets=[
+                target
+                for target in SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT
+                if target not in excluded_targets
+            ]
+        )
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None
         self._quantizers: List[Quantizer] = []

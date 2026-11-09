@@ -9,7 +9,7 @@
 
 import itertools
 import unittest
-from typing import Any, Callable, cast, List, Optional, Tuple, Type
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Type
 
 import executorch.exir as exir
 
@@ -25,13 +25,21 @@ except ModuleNotFoundError:
     del logging
 
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    ExecutorchProgramManager,
+    memory,
+    to_edge,
+)
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.error import InternalError
+from executorch.exir.inplace_aliasing import is_inplace_node
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
     _extend_storage_base_lifetimes,
-    _is_inplace_node,
+    _reserve_memory_for_views,
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
@@ -50,12 +58,18 @@ from executorch.exir.passes import (  # noqa
     ToOutVarPass,
 )
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
+from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.schema import DeviceType
+from executorch.exir.sym_util import EnumerationBudget, eval_upper_bound
 from executorch.exir.tensor import TensorSpec
+from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
+    _load_for_executorch_from_buffer,
+)
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
 from torch import nn
+from torch._dynamo.source import ConstantSource
 from torch.ao.quantization import (  # @manual=//caffe2:torch
     float_qparams_weight_only_qconfig,
 )
@@ -75,8 +89,11 @@ from torch.export import export
 from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
+from torch.fx.experimental.symbolic_shapes import DimDynamic, ShapeEnv
 from torch.nn import functional as F
 from torch.utils import _pytree as pytree
+from torch.utils._sympy.numbers import int_oo
+from torch.utils._sympy.value_ranges import bound_sympy
 
 
 def swap_modules(
@@ -665,6 +682,44 @@ class TestMisc(unittest.TestCase):
         self.assertEqual(reference_output, actual_output)
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
 
+    @parameterized.expand(itertools.product([greedy, naive], [False, True]))
+    def test_mutable_buffer_allocation_with_unallocated_io(
+        self, algo: Callable[..., MemoryAlgoResult], alloc_mutable_buffers: bool
+    ) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache", torch.ones(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache.add_(x)
+                return self.cache + 1
+
+        program = to_edge(export(Model(), (torch.ones(4),), strict=True)).to_executorch(
+            ExecutorchBackendConfig(
+                emit_mutable_buffer_names=not alloc_mutable_buffers,
+                memory_planning_pass=MemoryPlanningPass(
+                    memory_planning_algo=MemoryPlanningAlgorithmSuite(algo_list=[algo]),
+                    alloc_graph_input=False,
+                    alloc_graph_output=False,
+                    alloc_mutable_buffers=alloc_mutable_buffers,
+                ),
+            )
+        )
+        nodes = list(program.exported_program().graph.nodes)
+        cache = next(node for node in nodes if node.target == "b_cache")
+        copy = next(
+            node for node in nodes if node.target == torch.ops.aten.copy_.default
+        )
+        self.assertIs(copy.meta["spec"], cache.meta["spec"])
+        self.assertEqual(cache.meta["spec"].mem_id is not None, alloc_mutable_buffers)
+        self.assertEqual(
+            cache.meta["spec"].mem_offset is not None, alloc_mutable_buffers
+        )
+        plan = program.executorch_program.execution_plan[0]
+        for value_id in (*plan.inputs, *plan.outputs):
+            self.assertIsNone(plan.values[value_id].val.allocation_info)
+
     def test_mutation_not_double_allocated(self) -> None:
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
@@ -683,7 +738,7 @@ class TestMisc(unittest.TestCase):
         # The mutable buffer (5x5 float32 = 100 bytes) should not be
         # double allocated. After the upstream emit dedup
         # (`_emit_spec` reusing value_id when two FX nodes share a
-        # TensorSpec via the planner's `_alias_inplace_result_specs`),
+        # TensorSpec via `alias_inplace_result_specs`),
         # the `copy_` writeback's "out" arg uses the SAME value_id as
         # its "self" arg (the buffer), rather than creating a separate
         # Value at the same (mem_id, offset).
@@ -802,7 +857,7 @@ class TestMisc(unittest.TestCase):
 
         Then assert that no other planned tensor's allocation overlaps
         either buffer's storage region. This pins the schema-driven
-        ``_alias_inplace_result_specs`` path for non-default ops: the
+        ``alias_inplace_result_specs`` path for non-default ops: the
         ``index_copy_`` result spec must be aliased to the buffer's
         spec, otherwise the planner would carve out a separate
         allocation that could land inside the buffer's slot.
@@ -872,7 +927,7 @@ class TestMisc(unittest.TestCase):
         # Lower with run_reinplace_pass=False — the pass already ran
         # with our custom set above. Memory planning should now
         # correctly alias the index_copy_ result spec onto the buffer
-        # placeholder spec via _alias_inplace_result_specs.
+        # placeholder spec via alias_inplace_result_specs.
         et = edge.to_executorch(
             ExecutorchBackendConfig(
                 emit_mutable_buffer_names=True,
@@ -1871,6 +1926,71 @@ class TestStorageBaseMemoryPlanning(unittest.TestCase):
 
 
 class TestInPlaceElemWise(unittest.TestCase):
+    @parameterized.expand(itertools.product([greedy, naive], [False, True]))
+    def test_inplace_result_lifetime(
+        self, algo: Callable[..., MemoryAlgoResult], return_cache: bool
+    ) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x, indices, values):
+                cache = torch.zeros_like(x).index_put((indices,), values)
+                scratch = x + 10
+                result = cache + scratch
+                return (result, cache) if return_cache else result
+
+        inputs = (
+            torch.arange(8, dtype=torch.float32),
+            torch.tensor([0, 3]),
+            torch.tensor([9.0, 17.0]),
+        )
+        program = to_edge(export(Model(), inputs, strict=True)).to_executorch(
+            ExecutorchBackendConfig(
+                run_reinplace_pass=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    memory_planning_algo=MemoryPlanningAlgorithmSuite(algo_list=[algo])
+                ),
+            )
+        )
+        nodes = list(program.exported_program().graph.nodes)
+        inplace_node = next(node for node in nodes if is_inplace_node(node))
+        cache_spec = inplace_node.meta["spec"]
+        self.assertIs(cache_spec, inplace_node.args[0].meta["spec"])
+        last_use = max(nodes.index(user) for user in inplace_node.users)
+        self.assertEqual(cache_spec.lifetime[1], last_use)
+        if return_cache:
+            self.assertIs(nodes[-1].meta["spec"][1], cache_spec)
+
+        scratch, result = [
+            node for node in nodes if node.target == torch.ops.aten.add.out
+        ]
+        self.assertGreaterEqual(cache_spec.lifetime[1], nodes.index(result))
+        self.assertFalse(Verifier.storage_overlap(cache_spec, scratch.meta["spec"]))
+
+    def test_unaliased_inplace_result_fails_planning(self) -> None:
+        class UnaliasingPlanner(MemoryPlanningPass):
+            def run(self, graph_module, graph_signature=None):
+                for node in graph_module.graph.nodes:
+                    if is_inplace_node(node):
+                        node.meta["spec"] = TensorSpec.from_tensor(node.meta["val"])
+                return super().run(graph_module, graph_signature)
+
+        class Model(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return torch.zeros_like(x).index_put((indices,), values) + x
+
+        inputs = (
+            torch.arange(8, dtype=torch.float32),
+            torch.tensor([0, 3]),
+            torch.tensor([9.0, 17.0]),
+        )
+        edge = to_edge(export(Model(), inputs, strict=True))
+        with self.assertRaisesRegex(InternalError, "does not share the TensorSpec"):
+            edge.to_executorch(
+                ExecutorchBackendConfig(
+                    run_reinplace_pass=True,
+                    memory_planning_pass=UnaliasingPlanner(),
+                )
+            )
+
     def _run_inplace_pipeline(
         self,
         model: torch.nn.Module,
@@ -1914,7 +2034,7 @@ class TestInPlaceElemWise(unittest.TestCase):
                 continue
             if node.target == torch.ops.aten.add.out:
                 add_spec = node.meta["spec"]
-            if _is_inplace_node(node):
+            if is_inplace_node(node):
                 inplace_node_found = True
                 self.assertIs(node.meta["spec"], add_spec)
 
@@ -1959,7 +2079,7 @@ class TestInPlaceElemWise(unittest.TestCase):
         inplace_nodes = [
             node
             for node in gm.graph.nodes
-            if node.op == "call_function" and _is_inplace_node(node)
+            if node.op == "call_function" and is_inplace_node(node)
         ]
         self.assertEqual(len(inplace_nodes), 2)
 
@@ -2006,8 +2126,356 @@ class TestInPlaceElemWise(unittest.TestCase):
         )
 
         has_inplace = any(
-            _is_inplace_node(node)
+            is_inplace_node(node)
             for node in gm.graph.nodes
             if node.op == "call_function"
         )
         self.assertFalse(has_inplace)
+
+
+def _ranged_symint(
+    shape_env: ShapeEnv, name: str, hint: int, low: int, high: int
+) -> torch.SymInt:
+    symbol = shape_env.create_symbol(
+        hint, ConstantSource(name), dynamic_dim=DimDynamic.DYNAMIC
+    )
+    shape_env.constrain_symbol_range(symbol, compiler_min=low, compiler_max=high)
+    symint = shape_env.create_symintnode(symbol, hint=hint)
+    assert isinstance(symint, torch.SymInt)
+    return symint
+
+
+def _window(s: torch.SymInt) -> torch.SymInt:
+    # Padding to a multiple of 8 and splitting into windows, as shifted-window
+    # attention does. The result is always 8.
+    padded = 4 * s + (8 - (4 * s) % 8) % 8
+    return padded // (padded // 8)
+
+
+class TestDynamicShapeUpperBound(unittest.TestCase):
+    def test_enumerates_small_ranges(self) -> None:
+        """Interval arithmetic bounds the window size far above 8, so memory
+        planning sized window attention buffers thousands of times too big."""
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        w = _ranged_symint(shape_env, "w", 5, 2, 16)
+
+        for size, exact in ((_window(h), 8), (_window(h) * _window(w), 64)):
+            self.assertGreater(
+                bound_sympy(size.node.expr, shape_env.var_to_range).upper, exact
+            )
+            self.assertEqual(eval_upper_bound(size, EnumerationBudget(1024)), exact)
+
+    def test_enumerates_ranges_that_fit_under_the_cap(self) -> None:
+        """Two symbols in [8, 32] have 625 combinations, so trying values far
+        below their minimums would push them past the cap of 1024."""
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 8, 8, 32)
+        w = _ranged_symint(shape_env, "w", 9, 8, 32)
+
+        size = _window(h) * _window(w)
+        self.assertGreater(
+            bound_sympy(size.node.expr, shape_env.var_to_range).upper, 64
+        )
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(1024)), 64)
+
+    def test_covers_values_below_the_shape_env_minimum(self) -> None:
+        """The ShapeEnv holds a declared minimum of 0 or 1 as 2, but the program
+        still runs at 0 and 1."""
+        shape_env = ShapeEnv()
+        s = _ranged_symint(shape_env, "s", 4, 2, 16)
+
+        for size, largest in (
+            # Largest at 1 (32), above every value in [2, 16] (at most 21).
+            (((s + 7) // 8) * (64 // (s + 1)), 32),
+            # Largest at 0, and within the interval bound of 70.
+            (64 // (s + 1) + 7 * (s % 8), 64),
+        ):
+            self.assertEqual(eval_upper_bound(size, EnumerationBudget(1024)), largest)
+
+    def test_enumerates_when_interval_bound_is_unbounded(self) -> None:
+        """Interval arithmetic gives no bound for a window over a range that starts
+        below the window size, so the size was planned by its trace value."""
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        w = _ranged_symint(shape_env, "w", 5, 2, 16)
+        padded = w + (7 - w % 7) % 7
+        # The window size is always 7, and h % 9 is largest at h = 8.
+        size = (h % 9) * (padded // (padded // 7))
+
+        self.assertIs(bound_sympy(size.node.expr, shape_env.var_to_range).upper, int_oo)
+        self.assertEqual(eval_upper_bound(size), 4 * 7)
+        # The trace value is too small, so this does not depend on the budget.
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 8 * 7)
+        # Largest at h = 0, below the ShapeEnv minimum.
+        size = (64 // (h + 1)) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 64 * 7)
+        # Not an integer at h = 0 and 1, so it is tried again from the minimum.
+        size = 2 ** ((h - 2) // 4) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 8 * 7)
+        # Values 2 below the minimum would make 33 * 33 combinations, over the cap,
+        # but 1 below still fits and reaches the largest value, at a = 1.
+        a = _ranged_symint(shape_env, "a", 4, 2, 32)
+        b = _ranged_symint(shape_env, "b", 5, 2, 32)
+        padded = b + (7 - b % 7) % 7
+        size = (64 // a) * (padded // (padded // 7))
+        self.assertEqual(eval_upper_bound(size, EnumerationBudget(0)), 64 * 7)
+
+    def test_memory_planning_bounds_size_with_no_interval_bound(self) -> None:
+        class WindowsTimesWidth(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                h = x.shape[0]
+                padded = h + (7 - h % 7) % 7
+                return x.new_ones(padded // (padded // 7) * y.shape[0])
+
+        model = WindowsTimesWidth()
+        program = to_edge(
+            export(
+                model,
+                (torch.randn(12, 4), torch.randn(3, 4)),
+                dynamic_shapes=(
+                    {0: torch.export.Dim("h", min=1, max=32)},
+                    {0: torch.export.Dim("w", min=1, max=32)},
+                ),
+            )
+        ).to_executorch()
+
+        # The trace value is 7 * 3, but the largest inputs need 7 * 32. Starting 2
+        # below the minimum would make 33 * 33 combinations, over the cap.
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for x, y in (
+            (torch.randn(12, 4), torch.randn(3, 4)),
+            (torch.randn(32, 4), torch.randn(32, 4)),
+        ):
+            torch.testing.assert_close(runtime.forward([x, y])[0], model(x, y))
+
+    def test_keeps_interval_bound(self) -> None:
+        shape_env = ShapeEnv()
+        large = _ranged_symint(shape_env, "large", 4, 2, 2000)
+        s = _ranged_symint(shape_env, "s", 4, 2, 16)
+        unbacked = shape_env.create_unbacked_symint()
+        torch._check(unbacked >= 0)
+        torch._check(unbacked <= 16)
+        unbounded = shape_env.create_unbacked_symint()
+        torch._check(unbounded >= 0)
+
+        for size in (
+            # More values than one size may try, though within the budget.
+            _window(large),
+            # A float result at s = 0, which sympy gives for TruncToInt(0).
+            torch.sym_int(s / 3) + _window(s + 1),
+            # No // or %. Interval arithmetic overshoots here too, but it is close
+            # for most such sizes, so they are not enumerated.
+            s * (16 - s),
+            # No upper bound to try up to. Interval arithmetic gives 49, while the
+            # largest value is 12.
+            (unbounded % 8) * (7 - unbounded % 8),
+            # A negative power at s = 0 and s = 1.
+            _window(s) + 2 ** ((s - 2) // 4),
+            # A division by zero in the branch not taken at unbacked = 0.
+            torch.sym_min(torch.sym_ite(unbacked > 0, s // unbacked, 2 * s), 64),
+            # Largest at 1 (40), above the interval bound (30), which wins.
+            (s % 2 + 1) * (60 // (s + 2)),
+        ):
+            self.assertEqual(
+                eval_upper_bound(size, EnumerationBudget(64 * 1024)),
+                int(bound_sympy(size.node.expr, shape_env.var_to_range).upper),
+            )
+
+    def test_budget_limits_combinations_across_sizes(self) -> None:
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        w = _ranged_symint(shape_env, "w", 5, 2, 16)
+        t = _ranged_symint(shape_env, "t", 4, 2, 10)
+        budget = EnumerationBudget(300)
+
+        # 17 x 17 = 289 combinations fit, and the same size again costs nothing,
+        # which leaves exactly enough for the 11 combinations of the next size.
+        for _ in range(2):
+            self.assertEqual(eval_upper_bound(_window(h) * _window(w), budget), 64)
+        self.assertEqual(eval_upper_bound(_window(t), budget), 8)
+        # 17 more do not fit, so this size keeps the interval bound.
+        size = _window(h)
+        self.assertEqual(
+            eval_upper_bound(size, budget),
+            int(bound_sympy(size.node.expr, shape_env.var_to_range).upper),
+        )
+
+    def test_budget_charges_combinations_evaluated(self) -> None:
+        shape_env = ShapeEnv()
+        large = _ranged_symint(shape_env, "large", 4, 2, 1000)
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        budget = EnumerationBudget(1001)
+
+        # 1001 combinations fit, but the first one reaches the interval bound, so
+        # only it is charged and the next size still fits.
+        self.assertEqual(eval_upper_bound(large // 2, budget), 500)
+        self.assertEqual(eval_upper_bound(_window(h), budget), 8)
+
+    def test_one_budget_covers_the_whole_pass(self) -> None:
+        shape_env = ShapeEnv()
+        h = _ranged_symint(shape_env, "h", 4, 2, 16)
+        w = _ranged_symint(shape_env, "w", 5, 2, 16)
+        sym_shape_eval_pass = ConstraintBasedSymShapeEvalPass(enumeration_budget=17)
+
+        # 17 combinations fit the first size only, even though the second one is
+        # in a submodule. The second run starts with the other size, which fits
+        # only because every run gets a new budget.
+        for first, second in ((h, w), (w, h)):
+            graph_modules = []
+            specs = []
+            for symbol in (first, second):
+                graph = torch.fx.Graph()
+                spec = TensorSpec(torch.float32, torch.Size([_window(symbol)]))
+                graph.placeholder("x").meta["spec"] = spec
+                graph.output(None)
+                graph_modules.append(torch.fx.GraphModule(torch.nn.Module(), graph))
+                specs.append(spec)
+            graph_modules[0].add_module("submodule", graph_modules[1])
+            sym_shape_eval_pass(graph_modules[0])
+            interval = bound_sympy(_window(second).node.expr, shape_env.var_to_range)
+            self.assertEqual(specs[0].shape, [8])
+            self.assertEqual(specs[1].shape, [int(interval.upper)])
+
+    def test_memory_planning_uses_exact_window_size(self) -> None:
+        class Windows(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                h = x.shape[1]
+                x = torch.nn.functional.pad(x, (0, 0, 0, (8 - h % 8) % 8))
+                return x.view(x.shape[0], x.shape[1] // 8, -1, x.shape[2]) * 2
+
+        model = Windows()
+        h = torch.export.Dim("h", min=1, max=16) * 4
+
+        def plan(enumeration_budget: int) -> Tuple[ExecutorchProgramManager, int, int]:
+            program = to_edge(
+                export(model, (torch.randn(1, 20, 4),), dynamic_shapes=({1: h},))
+            ).to_executorch(
+                ExecutorchBackendConfig(
+                    sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(
+                        enumeration_budget=enumeration_budget
+                    )
+                )
+            )
+            graph = program.exported_program().graph_module.graph
+            result = graph.output_node().args[0][0]
+            size = result.meta["val"].shape[2]
+            interval = bound_sympy(size.node.expr, size.node.shape_env.var_to_range)
+            return program, result.meta["spec"].shape[2], int(interval.upper)
+
+        program, planned, interval = plan(64 * 1024)
+        self.assertGreater(interval, 8)
+        self.assertEqual(planned, 8)
+        # 4 is below the minimum the ShapeEnv keeps for the symbol.
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for size in (4, 64):
+            x = torch.randn(1, size, 4)
+            torch.testing.assert_close(runtime.forward([x])[0], model(x))
+
+        # A budget of 0 keeps the interval bound.
+        _, planned, interval = plan(0)
+        self.assertEqual(planned, interval)
+
+
+class TestViewPlanning(unittest.TestCase):
+    def _assert_loads(
+        self,
+        model: torch.nn.Module,
+        example: Tuple[torch.Tensor, ...],
+        dynamic_shapes: Tuple[Dict[int, Any], ...],
+        config: ExecutorchBackendConfig,
+        inputs: List[Tuple[torch.Tensor, ...]],
+    ) -> List[torch.fx.Node]:
+        program = to_edge(
+            export(model, example, dynamic_shapes=dynamic_shapes)
+        ).to_executorch(config)
+
+        views = [
+            node
+            for node in program.exported_program().graph_module.graph.nodes
+            if node.op == "call_function" and node.target == memory.view
+        ]
+        # Each dim of the first view is bounded on its own, so it is planned larger
+        # than the tensor it points into, which must make room for every view.
+        base = views[0].args[0].meta["spec"]
+        self.assertGreater(views[0].meta["spec"].nbytes(), base.nbytes())
+        for view in views:
+            self.assertGreaterEqual(base.allocated_memory, view.meta["spec"].nbytes())
+
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for args in inputs:
+            torch.testing.assert_close(
+                runtime.forward(list(args))[0], model(*args), rtol=1e-4, atol=1e-4
+            )
+        return views
+
+    def test_view_planned_larger_than_base_loads(self) -> None:
+        class PadThenSplit(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                h = x.shape[1]
+                x = torch.nn.functional.pad(x, (0, 0, 0, (8 - h % 8) % 8))
+                # These run in place, so their results live in the product's memory.
+                x = torch.softmax(torch.softmax(x * 2, -1), -1)
+                windows = x.view(x.shape[0], x.shape[1] // 8, -1, x.shape[2])
+                return windows.sum(-1) + x.view(-1).sum()
+
+        h = torch.export.Dim("h", min=1, max=16) * 4
+        # With interval bounds, the windows view's window dim is bounded by 71.
+        views = self._assert_loads(
+            PadThenSplit(),
+            (torch.randn(1, 20, 4),),
+            ({1: h},),
+            ExecutorchBackendConfig(
+                reinplace_extra_ops=frozenset({exir_ops.edge.aten._softmax.default}),
+                sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(
+                    enumeration_budget=0
+                ),
+            ),
+            [(torch.randn(1, 4, 4),), (torch.randn(1, 64, 4),)],
+        )
+        self.assertEqual(len(views), 2)
+        self.assertIsNotNone(views[0].args[0].meta["spec"].storage_base)
+
+    def test_view_over_enumeration_cap_loads(self) -> None:
+        class SplitThenMerge(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                h = x.shape[0]
+                padded = h + (8 - h % 8) % 8
+                windows = x.new_ones(padded // (padded // 8), y.shape[0], 4)
+                return windows.view(-1, 4).sum(0)
+
+        h = torch.export.Dim("h", min=1, max=32)
+        w = torch.export.Dim("w", min=1, max=32)
+        # The base's window dim is enumerated to 8, but the view's merged dim has
+        # too many combinations and keeps the interval bound.
+        self._assert_loads(
+            SplitThenMerge(),
+            (torch.randn(20, 4), torch.randn(12, 4)),
+            ({0: 4 * h}, {0: 4 * w}),
+            ExecutorchBackendConfig(),
+            [
+                (torch.randn(4, 4), torch.randn(4, 4)),
+                (torch.randn(128, 4), torch.randn(128, 4)),
+            ],
+        )
+
+    def test_reserves_room_up_the_storage_chain(self) -> None:
+        root = TensorSpec.from_tensor(torch.empty(48, dtype=torch.uint8))
+        storage = TensorSpec.from_tensor(torch.empty(32, dtype=torch.uint8))
+        storage.storage_base = root
+        storage.storage_base_offset = 16
+        base = TensorSpec.from_tensor(torch.empty(16, dtype=torch.uint8))
+        base.storage_base = storage
+        base.storage_base_offset = 16
+        view = _ViewSpec(base, [16])
+        view.shape = [64]
+
+        graph = Graph()
+        node = graph.call_function(memory.view, (graph.placeholder("base"), [64]))
+        node.meta["spec"] = view
+        graph.output(())
+        _reserve_memory_for_views(GraphModule({}, graph))
+
+        self.assertEqual(base.allocated_memory, 64)
+        self.assertEqual(storage.allocated_memory, 16 + 64)
+        self.assertEqual(root.allocated_memory, 16 + 16 + 64)

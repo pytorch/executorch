@@ -220,6 +220,7 @@ def define_common_targets():
     _common_op_test("op_atan_test", ["aten", "portable"])
     _common_op_test("op_atan2_test", ["aten", "portable"])
     _common_op_test("op_atanh_test", ["aten", "portable"])
+    _common_op_test("op_avg_pool1d_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
     _common_op_test("op_bitwise_left_shift_test", ["portable"])
@@ -229,7 +230,14 @@ def define_common_targets():
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_bucketize_test", ["portable"])
-    _common_op_test("op_cat_test", ["aten", "portable"])
+    _common_op_test("op_cat_test", ["aten"])
+    _common_op_test(
+        "op_cat_test",
+        ["portable"],
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    )
     _common_op_test("op_cdist_forward_test", ["aten", "portable"])
     _common_op_test("op_ceil_test", ["aten", "portable"])
     _common_op_test("op_clamp_test", ["aten", "portable"])
@@ -240,11 +248,13 @@ def define_common_targets():
     _common_op_test("op_copy_test", ["aten", "portable"])
     _common_op_test("op_cos_test", ["aten", "portable"])
     _common_op_test("op_cosh_test", ["aten", "portable"])
+    _common_op_test("op_cummin_test", ["aten", "portable"])
     _common_op_test("op_cumsum_test", ["aten", "portable"])
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
     _common_op_test("op_diagonal_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
     _common_op_test("op_elu_test", ["aten", "portable", "optimized"])
+    _common_op_test("op_embedding_bag_test", ["aten", "portable"])
     _common_op_test("op_embedding_test", ["aten", "portable"])
     _common_op_test("op_empty_test", ["aten", "portable"])
     _common_op_test("op_eq_test", ["aten", "portable"])
@@ -349,7 +359,7 @@ def define_common_targets():
     _common_op_test("op_squeeze_copy_test", ["aten", "portable"])
     _common_op_test("op_stack_test", ["aten", "portable"])
     _common_op_test("op_sub_test", ["aten", "portable", "optimized"])
-    _common_op_test("op_sum_test", ["aten", "portable"])
+    _common_op_test("op_sum_test", ["aten", "portable", "optimized"])
     _common_op_test("op_t_copy_test", ["aten", "portable"])
     _common_op_test("op_tan_test", ["aten", "portable"])
     _common_op_test("op_tanh_test", ["aten", "portable"])
@@ -361,6 +371,7 @@ def define_common_targets():
     _common_op_test("op_unbind_copy_test", ["aten", "portable"])
     _common_op_test("op_unfold_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
+    _common_op_test("op_upsample_bicubic2d_aa_test", ["portable"])
     _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
     _common_op_test("op_upsample_bilinear2d_aa_test", ["portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])

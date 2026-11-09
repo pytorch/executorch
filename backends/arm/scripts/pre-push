@@ -41,6 +41,13 @@ RUN_DOCGEN=0
 
 is_docgen_trigger_file() {
     local file_path="$1"
+    local output_path
+    for output_path in "${DOCGEN_OUTPUTS[@]}"; do
+        if [[ "$file_path" == "$output_path" ]]; then
+            return 0
+        fi
+    done
+
     case "${file_path}" in
         backends/arm/common/arm_compile_spec.py|\
         backends/arm/ethosu/*.py|\
@@ -57,21 +64,30 @@ is_docgen_trigger_file() {
 }
 
 run_docgen_check() {
-    local FAILED=0
+    local docgen_status=0
 
     echo -e "${INFO} Running Arm docgen"
     if ! python backends/arm/scripts/docgen/docgen.py; then
         echo -e "${ERROR} Failed to run Arm docgen"
-        FAILED=1
-    elif ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}"; then
+        return 1
+    fi
+
+    local untracked_outputs
+    untracked_outputs=$(git ls-files --others -- "${DOCGEN_OUTPUTS[@]}")
+    if ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}" || \
+        [[ -n "$untracked_outputs" ]]; then
         echo -e "${ERROR} Arm docgen updated generated documentation." >&2
         echo -e "${INFO} Review and commit the regenerated docs before pushing."
         git diff HEAD -- "${DOCGEN_OUTPUTS[@]}"
-        FAILED=1
+        if [[ -n "$untracked_outputs" ]]; then
+            echo -e "${INFO} Untracked generated documentation:"
+            echo "$untracked_outputs"
+        fi
+        docgen_status=1
     else
         echo -e "${SUCCESS} Arm docgen OK"
     fi
-    return "$FAILED"
+    return "$docgen_status"
 }
 
 run_op_support_checks() {
@@ -190,7 +206,7 @@ for COMMIT in ${COMMITS}; do
     fi
 
     commit_files=$(git diff-tree --no-commit-id --name-only \
-        --diff-filter=ACMR ${COMMIT} -r)
+        --diff-filter=ACDMR ${COMMIT} -r)
     if [[ $RUN_DOCGEN -eq 0 ]]; then
         for committed_file in $commit_files; do
             if is_docgen_trigger_file "${committed_file}"; then

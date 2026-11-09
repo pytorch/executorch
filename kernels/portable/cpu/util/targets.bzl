@@ -412,7 +412,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
 
     # Utility functions that can be used by operators that perform reduction

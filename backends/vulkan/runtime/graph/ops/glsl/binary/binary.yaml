@@ -1,0 +1,34 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# The op is selected at dispatch through the op_type specialization constant.
+binary:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    IS_COMPARISON_OP: 0
+  shader_variants:
+    # Bitwise ops only exist for uint8; uint8 has no arithmetic ops.
+    - NAME: binary_op
+      generate_variant_forall:
+        STORAGE:
+          - VALUE: buffer
+          - VALUE: texture3d
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+          - VALUE: uint8
+    - NAME: binary_cmp
+      IS_COMPARISON_OP: 1
+      generate_variant_forall:
+        STORAGE:
+          - VALUE: buffer
+          - VALUE: texture3d
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32

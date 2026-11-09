@@ -13,7 +13,7 @@
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
-#include <cstdio>
+#include <cstring>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
@@ -115,6 +115,8 @@ class BackendDelegate final {
 
     out->backend_ = backend;
     out->handle_ = nullptr;
+    out->scratch_ = Span<const Span<uint8_t>>();
+    out->has_call_site_ = false;
     // Pass a pointer to this buffer to the backend. It's safe for the backend
     // to point its handle to this object, since it will outlive the backend.
     new (&out->segment_) FreeableBuffer(std::move(processed_data.get()));
@@ -141,6 +143,25 @@ class BackendDelegate final {
     if (backend_ != nullptr) {
       backend_->destroy(handle_);
     }
+  }
+
+  /// The memory-planned scratch this delegate's call site declared, resolved
+  /// at load time. Empty unless it declared any.
+  Span<const Span<uint8_t>> scratch() const {
+    return scratch_;
+  }
+
+  void set_scratch(Span<const Span<uint8_t>> scratch) {
+    scratch_ = scratch;
+  }
+
+  /// Whether an instruction already calls this delegate.
+  bool has_call_site() const {
+    return has_call_site_;
+  }
+
+  void add_call_site() {
+    has_call_site_ = true;
   }
 
   Error Execute(
@@ -228,6 +249,8 @@ class BackendDelegate final {
   FreeableBuffer segment_;
   const BackendInterface* backend_;
   DelegateHandle* handle_;
+  Span<const Span<uint8_t>> scratch_;
+  bool has_call_site_;
 };
 
 /**
@@ -266,6 +289,48 @@ Result<InstructionArgs> gen_instruction_arguments(
     arg_list[i] = &values[arg_idx];
   }
   return InstructionArgs(arg_list, num_args);
+}
+
+/**
+ * Resolves the memory-planned scratch a delegate call declared into the byte
+ * ranges the backend will see. Done once at load time: planned addresses are
+ * fixed for the lifetime of the Method.
+ */
+Result<Span<const Span<uint8_t>>> gen_delegate_scratch(
+    MemoryAllocator* method_allocator,
+    HierarchicalAllocator* planned_memory,
+    const flatbuffers::Vector<
+        flatbuffers::Offset<executorch_flatbuffer::DelegateScratch>>* scratch) {
+  const size_t num_scratch = scratch->size();
+  Span<uint8_t>* buffers =
+      method_allocator->allocateList<Span<uint8_t>>(num_scratch);
+  if (buffers == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+  for (size_t i = 0; i < num_scratch; ++i) {
+    const auto* buffer = scratch->Get(i);
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer->allocation() != nullptr,
+        InvalidProgram,
+        "Delegate scratch %" ET_PRIsize_t " has no allocation",
+        i);
+    if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
+      ET_CHECK_OR_RETURN_ERROR(
+          buffer->size() <= SIZE_MAX,
+          NotSupported,
+          "size_t cannot hold delegate scratch %" ET_PRIsize_t " size %" PRIu64,
+          i,
+          buffer->size());
+    }
+    const size_t nbytes = static_cast<size_t>(buffer->size());
+    Result<void*> data = deserialization::getMemPlannedPtr(
+        buffer->allocation(), nbytes, planned_memory);
+    if (!data.ok()) {
+      return data.error();
+    }
+    buffers[i] = Span<uint8_t>(static_cast<uint8_t*>(data.get()), nbytes);
+  }
+  return Span<const Span<uint8_t>>(buffers, num_scratch);
 }
 
 Result<bool> parse_cond_value(const EValue& cond_value) {
@@ -691,6 +756,109 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
 
 namespace {
 /**
+ * Validates that t_src's physical layout matches t_dst's, which must already
+ * be resized to t_src's sizes. set_input() copies or shares t_src's buffer
+ * under t_dst's layout, so a mismatched source would be silently
+ * reinterpreted. A source with the default contiguous layout is only warned
+ * about, since callers commonly wrap data that is already in the method's
+ * layout in a default tensor just to pass its shape.
+ */
+ET_NODISCARD Error validate_input_tensor_layout(
+    const executorch::aten::Tensor& t_dst,
+    const executorch::aten::Tensor& t_src,
+    [[maybe_unused]] Span<const executorch::aten::DimOrderType>
+        expected_dim_order,
+    size_t input_idx) {
+  const auto dim = t_src.dim();
+  if (dim == 0 || t_src.numel() == 0) {
+    return Error::Ok;
+  }
+
+  auto src_strides = t_src.strides();
+#ifndef USE_ATEN_LIB
+  std::array<executorch::aten::StridesType, kTensorDimensionLimit>
+      derived_strides{};
+  if (src_strides.empty()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        static_cast<size_t>(dim) <= kTensorDimensionLimit,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has unsupported rank %zd.",
+        input_idx,
+        dim);
+    std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+        default_dim_order{};
+    for (ssize_t i = 0; i < dim; ++i) {
+      default_dim_order[i] = static_cast<executorch::aten::DimOrderType>(i);
+    }
+    const auto src_dim_order = t_src.dim_order();
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        dim_order_to_stride(
+            t_src.sizes().data(),
+            src_dim_order.empty() ? default_dim_order.data()
+                                  : src_dim_order.data(),
+            dim,
+            derived_strides.data()),
+        "Failed to compute strides for input %" ET_PRIsize_t,
+        input_idx);
+    src_strides = {derived_strides.data(), static_cast<size_t>(dim)};
+  }
+#endif
+
+  auto dst_strides = t_dst.strides();
+#ifdef USE_ATEN_LIB
+  std::array<executorch::aten::StridesType, kTensorDimensionLimit>
+      expected_strides{};
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(dim) <= kTensorDimensionLimit &&
+          expected_dim_order.size() == static_cast<size_t>(dim),
+      InvalidArgument,
+      "Input %" ET_PRIsize_t " has unsupported rank %zd.",
+      input_idx,
+      dim);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      dim_order_to_stride(
+          t_src.sizes().data(),
+          expected_dim_order.data(),
+          dim,
+          expected_strides.data()),
+      "Failed to compute expected strides for input %" ET_PRIsize_t,
+      input_idx);
+  dst_strides = {expected_strides.data(), static_cast<size_t>(dim)};
+#endif
+  bool matches = true;
+  bool src_is_contiguous = true;
+  int64_t contiguous_stride = 1;
+  for (ssize_t i = dim - 1; i >= 0; --i) {
+    if (t_src.size(i) > 1) {
+      matches = matches && src_strides[i] == dst_strides[i];
+      src_is_contiguous =
+          src_is_contiguous && src_strides[i] == contiguous_stride;
+    }
+    contiguous_stride *= t_src.size(i);
+  }
+
+  if (matches) {
+    return Error::Ok;
+  }
+  if (src_is_contiguous) {
+    ET_LOG(
+        Debug,
+        "Input %" ET_PRIsize_t
+        " has the default contiguous layout but the method expects a "
+        "different dim order; treating its data as already in the expected "
+        "layout. Pass a tensor with the method's dim order to avoid this.",
+        input_idx);
+    return Error::Ok;
+  }
+  ET_LOG(
+      Error,
+      "Input %" ET_PRIsize_t
+      " has strides that do not match the method's expected layout.",
+      input_idx);
+  return Error::InvalidArgument;
+}
+
+/**
  * Private/helper method for populating operator_name from the Operator.
  * operator_name is a char pointer that is already allocated. The size of
  * of this buffer is of size operator_name_size.
@@ -704,26 +872,29 @@ Error populate_operator_name(
 
   ET_CHECK_OR_RETURN_ERROR(
       op->name() != nullptr, InvalidProgram, "Missing operator name");
-  int cx = snprintf(
-      operator_name,
-      operator_name_size,
-      "%s%s%s",
-      op->name()->c_str(),
-      // Don't append any overload if the overload string is empty.
-      has_overload ? "." : "",
-      has_overload ? op->overload()->c_str() : "");
-  ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
+  // Avoid pulling printf formatting code into builds that otherwise omit it.
+  const size_t name_size = strlen(op->name()->c_str());
+  const size_t overload_size =
+      has_overload ? strlen(op->overload()->c_str()) : 0;
+  const uint64_t needed_size = static_cast<uint64_t>(name_size) +
+      overload_size + (has_overload ? 1 : 0) + 1;
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<size_t>(cx) < operator_name_size,
+      needed_size <= operator_name_size,
       Internal,
-      "Operator name %s%s%s with length %d "
-      "truncated to %" ET_PRIsize_t " due to internal buffer limit.",
+      "Operator name %s%s%s exceeds internal buffer limit of %" ET_PRIsize_t,
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
-      cx,
       operator_name_size);
 
+  memcpy(operator_name, op->name()->c_str(), name_size);
+  size_t pos = name_size;
+  if (has_overload) {
+    operator_name[pos++] = '.';
+    memcpy(operator_name + pos, op->overload()->c_str(), overload_size);
+    pos += overload_size;
+  }
+  operator_name[pos] = '\0';
   return Error::Ok;
 }
 } // namespace
@@ -954,6 +1125,7 @@ Error Method::init(
     // makes it safe for errors to return without updating any state.
     n_delegate_ = 0;
 
+    const auto method_meta = this->method_meta();
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
 
@@ -970,7 +1142,8 @@ Error Method::init(
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
           /*named_data_map=*/named_data_map,
-          /*runtime_specs=*/delegate_runtime_specs);
+          /*runtime_specs=*/delegate_runtime_specs,
+          /*method_meta=*/&method_meta);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -1070,10 +1243,10 @@ Error Method::init(
             }
           } break;
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
-            const auto arg_idxs =
+            const auto* delegate_call =
                 static_cast<const executorch_flatbuffer::DelegateCall*>(
-                    instr_args)
-                    ->args();
+                    instr_args);
+            const auto arg_idxs = delegate_call->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr,
                 InvalidProgram,
@@ -1088,6 +1261,41 @@ Error Method::init(
               return res.error();
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
+
+            const auto delegate_index = delegate_call->delegate_index();
+            ET_CHECK_OR_RETURN_ERROR(
+                delegate_index >= 0 &&
+                    static_cast<size_t>(delegate_index) < n_delegate_,
+                InvalidProgram,
+                "Delegate index %" PRId32 " >= num delegates %" ET_PRIsize_t,
+                delegate_index,
+                n_delegate_);
+            BackendDelegate& delegate = delegates_[delegate_index];
+            const auto scratch = delegate_call->scratch();
+            const bool has_scratch = scratch != nullptr && scratch->size() > 0;
+            // Scratch is planned for one call site and kept on the delegate, so
+            // a delegate with scratch must not serve any other call site.
+            ET_CHECK_OR_RETURN_ERROR(
+                !delegate.has_call_site() ||
+                    (!has_scratch && delegate.scratch().empty()),
+                InvalidProgram,
+                "Delegate %" PRId32 " has scratch and more than one call site",
+                delegate_index);
+            delegate.add_call_site();
+            if (has_scratch) {
+              Result<Span<const Span<uint8_t>>> buffers = gen_delegate_scratch(
+                  method_allocator, memory_manager_->planned_memory(), scratch);
+              if (!buffers.ok()) {
+                ET_LOG(
+                    Error,
+                    "Failed to resolve delegate scratch for chain %" ET_PRIsize_t
+                    " instruction %" ET_PRIsize_t,
+                    i,
+                    instr_idx);
+                return buffers.error();
+              }
+              delegate.set_scratch(buffers.get());
+            }
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
             auto index =
@@ -1239,13 +1447,55 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        tensor_meta.error(),
+        "Error getting tensor metadata at input %" ET_PRIsize_t,
+        input_idx);
+
+    // For DYNAMIC_BOUND the serialized sizes are the per-dimension upper
+    // bound, but numel_bound_ is initialized to their product, so the resize
+    // below only rejects shapes whose total numel exceeds it. A shape that
+    // trades size between dimensions stays under that product and would
+    // otherwise be accepted. Rank mismatches are left to resize_tensor.
+    const auto* s_tensor = serialization_plan_->values()
+                               ->Get(get_input_index(input_idx))
+                               ->val_as_Tensor();
+    if (s_tensor->shape_dynamism() ==
+        executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND) {
+      const Span<const int32_t> bound_sizes = tensor_meta->sizes();
+      if (static_cast<size_t>(t_src.dim()) == bound_sizes.size()) {
+        for (size_t i = 0; i < bound_sizes.size(); ++i) {
+          ET_CHECK_OR_RETURN_ERROR(
+              t_src.size(i) <= bound_sizes[i],
+              InvalidArgument,
+              "Input %" ET_PRIsize_t " dimension %" ET_PRIsize_t
+              " is %" ET_PRIssize_t " but its upper bound is %" PRId32 ".",
+              input_idx,
+              i,
+              static_cast<ssize_t>(t_src.size(i)),
+              bound_sizes[i]);
+        }
+      }
+    }
+
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        validate_input_tensor_layout(
+            t_dst, t_src, tensor_meta->dim_order(), input_idx),
+        "Error validating tensor layout at input %" ET_PRIsize_t,
+        input_idx);
+#ifdef USE_ATEN_LIB
+    // resize_tensor() reset t_dst to contiguous strides, but its data is about
+    // to be t_src's bytes, which kernels must read with t_src's strides.
+    t_dst.unsafeGetTensorImpl()->set_sizes_and_strides(
+        t_src.sizes(), t_src.strides());
+#endif
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
@@ -1394,13 +1644,14 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
     return Error::InvalidArgument;
   }
 
+  // A later call can grow a dynamic output back to its upper bound.
   ET_CHECK_OR_RETURN_ERROR(
-      t.nbytes() <= size,
+      tensor_meta->nbytes() <= size,
       InvalidArgument,
       "buffer size: %" ET_PRIsize_t
-      " is smaller then expected tensor size: %" ET_PRIsize_t,
+      " is smaller than the largest output size: %" ET_PRIsize_t,
       size,
-      t.nbytes());
+      tensor_meta->nbytes());
 
   // Set data
   return internal::set_tensor_data(t, buffer, size);
@@ -1521,7 +1772,8 @@ Error Method::execute_instruction() {
       BackendExecutionContext backend_execution_context(
           /*event_tracer=*/event_tracer_,
           /*temp_allocator=*/temp_allocator_,
-          /*method_name=*/serialization_plan_->name()->c_str());
+          /*method_name=*/serialization_plan_->name()->c_str(),
+          /*scratch_buffers=*/delegates_[delegate_idx].scratch());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx]);

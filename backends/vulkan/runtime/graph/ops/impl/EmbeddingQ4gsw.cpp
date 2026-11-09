@@ -9,8 +9,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/QuantizedLinear.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QuantizationConfig.h>
@@ -69,6 +69,10 @@ void add_embedding_q4gsw_node(
     const ValueRef embed_dim_ref) {
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(indices) == WHCN::kWidthDim);
+  if (graph.is_buffer_storage(indices)) {
+    VK_CHECK_COND(graph.is_contiguous(indices));
+  }
+  VK_CHECK_COND(graph.dim_of(indices) <= 3);
   VK_CHECK_COND(
       graph.get_int(embed_dim_ref) % 32 == 0,
       "embed_dim must be a multiple of 32");
@@ -94,7 +98,11 @@ void add_embedding_q4gsw_node(
       PushConstantDataInfo(&is_linear_weight, sizeof(is_linear_weight)),
   };
 
-  vkapi::ParamsBindList param_ubos = {graph.sizes_ubo(out)};
+  vkapi::ParamsBindList param_ubos = {
+      graph.sizes_ubo(out), graph.buffer_meta_ubo(weight_scales)};
+  if (graph.is_buffer_storage(indices)) {
+    param_ubos.append(graph.buffer_meta_ubo(indices));
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,

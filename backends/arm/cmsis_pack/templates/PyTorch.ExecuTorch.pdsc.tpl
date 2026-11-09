@@ -182,11 +182,10 @@
 %{CORTEX_M_OPERATOR_COMPONENTS}%
 
     <!-- ==================== Backends ==================== -->
-    
-    <!-- Ethos-U Backend (Cortex-M host, bare-metal) -->
-    <!-- Ships only EthosUBackend_Cortex_M.cpp. The Cortex-A/Linux host
-         variant is intentionally not exposed in this pack and may be
-         added in a follow-up release. -->
+
+    <!-- Ethos-U Backend (core driver, bare-metal) -->
+    <!-- Ships only EthosUBackend_CoreDriver.cpp. The Linux driver variant is
+         intentionally not exposed in this pack and may be added later. -->
     <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Backend EthosU" Cversion="%{RELEASE_VERSION}%" condition="Ethos-U">
       <description>ExecuTorch Ethos-U NPU Backend - Cortex-M host (bare-metal). Hardware acceleration for Ethos-U55/U65</description>
       <RTE_Components_h>
@@ -197,7 +196,7 @@
         #define ET_USE_ETHOS_U_BACKEND 1
       </Pre_Include_Global_h>
       <files>
-%{ETHOS_U_BACKEND_CORTEX_M_FILES}%
+%{ETHOS_U_BACKEND_CORE_DRIVER_FILES}%
       </files>
     </component>
 

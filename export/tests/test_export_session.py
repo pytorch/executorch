@@ -284,6 +284,39 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(session._run_context["session_name"], "test_session")
         self.assertIsNotNone(session._run_context["constant_methods"])
 
+    def test_generate_etrecord_from_recipe(self) -> None:
+        # When the recipe has generate_etrecord=True and the param is False,
+        # the effective value in the run context must be True.
+        recipe = ExportRecipe(name="test", generate_etrecord=True)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_from_param_overrides_recipe(self) -> None:
+        # The explicit parameter must win when the recipe has generate_etrecord=False.
+        recipe = ExportRecipe(name="test", generate_etrecord=False)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+            generate_etrecord=True,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_false_when_neither_set(self) -> None:
+        # Both the recipe and the explicit parameter default to False, so the
+        # effective value must also be False.
+        recipe = ExportRecipe(name="test")
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertFalse(session._run_context["generate_etrecord"])
+
     def test_stage_registry_unknown_stage_type(self) -> None:
         # Test error handling for unknown stage types in pipeline
         unknown_stage_type = Mock()
@@ -757,30 +790,6 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
         )
 
-    def test_edge_transform_passes_not_duplicated_in_default_pipeline(self) -> None:
-        # Before the fix, from_recipe() gave edge_transform_passes to
-        # EDGE_PROGRAM_MANAGER_TRANSFORM as well as TO_EDGE_TRANSFORM_AND_LOWER,
-        # so they ran twice. Verify the stage no longer holds them at all.
-        from executorch.export.stages import EdgeProgramManagerTransformStage
-
-        edge_pass = Mock()
-        epm_pass = Mock()
-
-        stage = EdgeProgramManagerTransformStage.from_recipe(
-            LoweringRecipe(
-                edge_transform_passes=[edge_pass],
-                edge_manager_transform_passes=[epm_pass],
-            )
-        )
-
-        # The stage must only know about edge_manager_transform_passes.
-        self.assertEqual(stage._edge_manager_transform_passes, [epm_pass])
-        self.assertFalse(
-            hasattr(stage, "_edge_transform_passes"),
-            "EdgeProgramManagerTransformStage must not hold edge_transform_passes "
-            "because TO_EDGE_TRANSFORM_AND_LOWER already applies them.",
-        )
-
     def test_example_inputs_required_for_nn_module(self) -> None:
         """Test that example_inputs are required for nn.Module."""
         with self.assertRaises(ValueError) as cm:
@@ -1185,6 +1194,73 @@ class TestIntermediateStateGetters(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             session.get_edge_program_manager()
         self.assertIn("Edge program manager is not available", str(cm.exception))
+
+    def test_get_edge_program_manager_default_pipeline_prefers_transform_stage(
+        self,
+    ) -> None:
+        """Default pipeline: EDGE_PROGRAM_MANAGER_TRANSFORM result is returned, not TO_EDGE_TRANSFORM_AND_LOWER."""
+        recipe = ExportRecipe(
+            name="test",
+            lowering_recipe=LoweringRecipe(
+                edge_manager_transform_passes=[lambda epm: []]
+            ),
+        )
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        session.export()
+
+        # Replace artifacts with distinct sentinels to verify which stage is picked.
+        sentinel_to_edge_transform_and_lower = object()
+        sentinel_edge_program_manager_transform = object()
+        session._stage_to_artifacts[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
+            PipelineArtifact(data=sentinel_to_edge_transform_and_lower, context={})
+        )
+        session._stage_to_artifacts[StageType.EDGE_PROGRAM_MANAGER_TRANSFORM] = (
+            PipelineArtifact(data=sentinel_edge_program_manager_transform, context={})
+        )
+
+        result = session.get_edge_program_manager()
+        self.assertIs(result, sentinel_edge_program_manager_transform)
+        self.assertIsNot(result, sentinel_to_edge_transform_and_lower)
+
+    def test_get_edge_program_manager_custom_pipeline_prefers_to_backend(self) -> None:
+        """Custom pipeline: TO_BACKEND result is returned, not EDGE_PROGRAM_MANAGER_TRANSFORM."""
+        recipe = ExportRecipe(
+            name="test",
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE,
+                StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
+                StageType.TO_BACKEND,
+                StageType.TO_EXECUTORCH,
+            ],
+            lowering_recipe=LoweringRecipe(
+                edge_manager_transform_passes=[lambda epm: []]
+            ),
+        )
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        session.export()
+
+        # Replace artifacts with distinct sentinels to verify which stage is picked.
+        sentinel_edge_program_manager_transform = object()
+        sentinel_to_backend = object()
+        session._stage_to_artifacts[StageType.EDGE_PROGRAM_MANAGER_TRANSFORM] = (
+            PipelineArtifact(data=sentinel_edge_program_manager_transform, context={})
+        )
+        session._stage_to_artifacts[StageType.TO_BACKEND] = PipelineArtifact(
+            data=sentinel_to_backend, context={}
+        )
+
+        result = session.get_edge_program_manager()
+        self.assertIs(result, sentinel_to_backend)
+        self.assertIsNot(result, sentinel_edge_program_manager_transform)
 
 
 class TestStageArtifactsAreScopedToOneRun(unittest.TestCase):

@@ -12,6 +12,7 @@ from .annotate_unbind import AnnotateUnbind
 from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
+from .convert_complex_stft import ConvertComplexStft
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
@@ -53,6 +54,7 @@ from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
+from .fuse_batch_norm_with_conv import FuseBatchNormWithConv
 from .fuse_consecutive_cast import FuseConsecutiveCast
 from .fuse_consecutive_reshape import FuseConsecutiveReshape
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
@@ -84,6 +86,7 @@ __all__ = [
     BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -125,6 +128,7 @@ __all__ = [
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
     FuseConsecutiveTranspose,

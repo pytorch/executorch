@@ -13,7 +13,7 @@ from executorch.backends.nxp.backend.ops_aliases import Exp
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-from executorch.backends.nxp.tests.dataset_creator import (
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
     LinearRampDatasetCreator,
     RandomDatasetCreator,
 )

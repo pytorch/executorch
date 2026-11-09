@@ -9,13 +9,14 @@ import executorch.backends.arm.operator_support.convolution_support  # noqa: F40
 import executorch.backends.arm.operator_support.pool_2d_support  # noqa: F401
 import executorch.backends.arm.operator_support.reduce_sum_support  # noqa: F401
 
-import executorch.backends.arm.operator_support.sym_size_int_support  # noqa: F401
 import pytest
 import torch
+from executorch.backends.arm.operator_support.slice_copy_support import (
+    SliceCopySupported,
+)
 from executorch.backends.arm.operator_support.symint_arithmetic_support import (
     SymIntArithmeticSupport,
 )
-
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -44,6 +45,15 @@ class Conv2d(torch.nn.Module):
     def __init__(self, stride: int = 1, padding: int = 1) -> None:
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 4, 3, padding=padding, stride=stride)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+class TransposeConv2d(torch.nn.Module):
+    def __init__(self, groups: int = 1) -> None:
+        super().__init__()
+        self.conv = torch.nn.ConvTranspose2d(4, 4, 2, stride=2, groups=groups)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
@@ -259,6 +269,29 @@ def test_without_shape_extension_accepts_symbolic_spatial_conv2d_without_input_a
     node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
 
     assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+@pytest.mark.parametrize("groups,expected", [(1, True), (2, False)])
+def test_without_shape_extension_symbolic_spatial_transpose_conv2d(groups, expected):
+    exported_program = _exported_program(
+        TransposeConv2d(groups),
+        (torch.randn(2, 4, 8, 10),),
+        dynamic_shapes=(
+            {
+                0: Dim("batch", min=1, max=4),
+                2: Dim("height", min=2, max=16),
+                3: Dim("width", min=2, max=16),
+            },
+        ),
+    )
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
+
+    assert (
+        node.meta.get("delegation_tag") in partition_result.partition_tags
+    ) is expected
 
 
 def test_without_shape_extension_rejects_symbolic_spatial_conv2d_needing_input_adjustment():
@@ -604,3 +637,51 @@ def test_shape_extension_rejects_non_symint_arithmetic():
     )
 
     assert support.is_node_supported({}, arithmetic_node) is False
+
+
+def test_shape_extension_rejects_slice_with_symbolic_bound():
+    class SymbolicBoundSlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, x.shape[0], 1)
+
+    inputs = (torch.randn(4, 5),)
+    exported_program = _exported_program(
+        SymbolicBoundSlice(),
+        inputs,
+        dynamic_shapes=({0: Dim("batch", min=2, max=5)},),
+    )
+    support, reporter = _support("TOSA-1.1+FP+shape", exported_program)
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False
+    assert "Symbolic slice bounds" in reporter.get_table_report()
+
+
+def test_shape_extension_rejects_slice_with_empty_unsliced_dimension():
+    class SliceSecondDimension(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, 3, 1)
+
+    exported_program = _exported_program(SliceSecondDimension(), (torch.randn(0, 5),))
+    reporter = WhyNoPartitionReporter()
+    support = SliceCopySupported(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), reporter
+    )
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False
+
+
+def test_shape_extension_rejects_empty_slice():
+    class EmptySlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, -6, 1)
+
+    exported_program = _exported_program(EmptySlice(), (torch.randn(2, 5),))
+    reporter = WhyNoPartitionReporter()
+    support = SliceCopySupported(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), reporter
+    )
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False

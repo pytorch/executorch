@@ -12,9 +12,12 @@
 using printf_size_t = unsigned long;
 
 #ifdef ETHOSU
-#include <ethosu_driver.h>
+#include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
 #include <executorch/runtime/platform/log.h>
-#include <pmu_ethosu.h>
+#if defined(ET_ARM_ETHOSU_PMU_STATS)
+#include <executorch/backends/arm/runtime/EthosUExecutionStats.h>
+#include <executorch/runtime/platform/assert.h>
+#endif
 
 namespace {
 
@@ -27,21 +30,86 @@ static inline uint64_t arm_pmu_cycles() {
 #endif
 }
 
-#if defined(ETHOSU55) || defined(ETHOSU65)
-const uint32_t ethosu_pmuCountersUsed = 4;
-#elif defined(ETHOSU85)
-const uint32_t ethosu_pmuCountersUsed = 7;
-#else
-#error No NPU target defined
-#endif
-
 uint32_t ethosu_delegation_count = 0;
 uint64_t ethosu_ArmCycleCountStart = 0;
 uint64_t ethosu_ArmBackendExecuteCycleCountStart = 0;
 uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCount = 0;
+
+#if defined(ET_ARM_ETHOSU_PMU_STATS)
+using executorch::backends::arm::EthosUExecutionRecord;
+using executorch::backends::arm::EthosUExecutionStats;
+using executorch::backends::arm::EthosUStatsBuffer;
+
+constexpr size_t kMaxPmuRecordsPerInference = 16;
+constexpr size_t kMaxProfiledDevices = 1;
+
+std::array<EthosUExecutionRecord, kMaxPmuRecordsPerInference> ethosu_pmuRecords;
+EthosUStatsBuffer ethosu_pmuBuffer{
+    ethosu_pmuRecords.data(),
+    ethosu_pmuRecords.size()};
+
+struct DevicePmuTotals {
+  EthosUExecutionStats stats{};
+  uint64_t invocations = 0;
+  uint64_t failures = 0;
+};
+std::array<DevicePmuTotals, kMaxProfiledDevices> ethosu_deviceTotals;
+size_t ethosu_deviceCount = 0;
+bool ethosu_deviceCapacityExceeded = false;
+bool ethosu_recordCapacityExceeded = false;
 uint64_t ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+struct DelegatePmuTotals {
+  uintptr_t handle = 0;
+  DevicePmuTotals totals;
+};
+std::array<DelegatePmuTotals, ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES>
+    ethosu_delegatePmuTotals;
+size_t ethosu_delegatePmuCount = 0;
+bool ethosu_delegatePmuCapacityExceeded = false;
+#endif
+
+bool same_layout(
+    const EthosUExecutionStats& left,
+    const EthosUExecutionStats& right) {
+  if (left.device_identifier != right.device_identifier ||
+      left.product != right.product || left.platform != right.platform ||
+      left.counter_count != right.counter_count) {
+    return false;
+  }
+  for (uint32_t slot = 0; slot < left.counter_count; ++slot) {
+    if (left.counters[slot].event_id != right.counters[slot].event_id) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void accumulate_pmu_totals(
+    DevicePmuTotals& totals,
+    const EthosUExecutionRecord& record) {
+  if (totals.invocations == 0) {
+    totals.stats = record.stats;
+    totals.stats.cycle_count = 0;
+    totals.stats.cycle_overflow = false;
+    for (uint32_t slot = 0; slot < totals.stats.counter_count; ++slot) {
+      totals.stats.counters[slot].value = 0;
+      totals.stats.counters[slot].overflow = false;
+    }
+  }
+  ++totals.invocations;
+  totals.failures += !record.success;
+  totals.stats.cycle_count += record.stats.cycle_count;
+  totals.stats.cycle_overflow |= record.stats.cycle_overflow;
+  for (uint32_t slot = 0; slot < record.stats.counter_count; ++slot) {
+    totals.stats.counters[slot].value += record.stats.counters[slot].value;
+    totals.stats.counters[slot].overflow |=
+        record.stats.counters[slot].overflow;
+  }
+}
+#endif
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
 struct IOCopyStats {
   uint64_t calls = 0;
@@ -56,7 +124,6 @@ struct DelegateStats {
   uint64_t backend_invocations = 0;
   uint64_t npu_invocations = 0;
   uint64_t pmu_cycles = 0;
-  std::array<uint64_t, ethosu_pmuCountersUsed> pmu_events{};
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
   IOCopyStats input_copies;
   IOCopyStats output_copies;
@@ -84,12 +151,6 @@ DelegateStats* get_delegate_stats(const void* handle) {
   return &stats;
 }
 #endif
-std::array<uint64_t, ethosu_pmuCountersUsed> ethosu_pmuEventCounts = {0};
-
-// ethosu_pmuCountersUsed should match numbers of counters setup in
-// ethosu_inference_begin() and not be more then the HW supports
-static_assert(ETHOSU_PMU_NCOUNTERS >= ethosu_pmuCountersUsed);
-
 } // namespace
 
 extern "C" {
@@ -131,82 +192,14 @@ void EthosUBackend_delegate_end() {
 }
 #endif
 
-// Callback invoked at start of NPU execution
-void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
-  // Enable PMU
-  ETHOSU_PMU_Enable(drv);
-  ETHOSU_PMU_PMCCNTR_CFG_Set_Stop_Event(drv, ETHOSU_PMU_NPU_IDLE);
-  ETHOSU_PMU_PMCCNTR_CFG_Set_Start_Event(drv, ETHOSU_PMU_NPU_ACTIVE);
-
-  // Setup 4 counters
-#if defined(ETHOSU55) || defined(ETHOSU65)
-  ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED);
-  ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED);
-  ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN);
-  ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_NPU_IDLE);
-  // Enable the 4 counters
-  ETHOSU_PMU_CNTR_Enable(
-      drv,
-      ETHOSU_PMU_CNT1_Msk | ETHOSU_PMU_CNT2_Msk | ETHOSU_PMU_CNT3_Msk |
-          ETHOSU_PMU_CNT4_Msk);
-#elif defined(ETHOSU85)
-  ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED);
-  ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN);
-  ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED);
-  ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN);
-  ETHOSU_PMU_Set_EVTYPER(drv, 4, ETHOSU_PMU_NPU_IDLE);
-  ETHOSU_PMU_Set_EVTYPER(drv, 5, ETHOSU_PMU_MAC_ACTIVE);
-  ETHOSU_PMU_Set_EVTYPER(drv, 6, ETHOSU_PMU_WD_ACTIVE);
-  // Enable the 7 counters
-  ETHOSU_PMU_CNTR_Enable(
-      drv,
-      ETHOSU_PMU_CNT1_Msk | ETHOSU_PMU_CNT2_Msk | ETHOSU_PMU_CNT3_Msk |
-          ETHOSU_PMU_CNT4_Msk | ETHOSU_PMU_CNT5_Msk | ETHOSU_PMU_CNT6_Msk |
-          ETHOSU_PMU_CNT7_Msk);
-#else
-#error No NPU target defined
-#endif
-
-  ETHOSU_PMU_CNTR_Enable(drv, ETHOSU_PMU_CCNT_Msk);
-  ETHOSU_PMU_CYCCNT_Reset(drv);
-
-  // Reset all counters
-  ETHOSU_PMU_EVCNTR_ALL_Reset(drv);
-
-  // Save Cortex-M cycle clock to calculate total CPU cycles used in
-  // ethosu_inference_end()
+void EthosUBackend_npu_begin() {
   ethosu_ArmWhenNPURunCycleCountStart = arm_pmu_cycles();
 }
 
-// Callback invoked at end of NPU execution
-void ethosu_inference_end(struct ethosu_driver* drv, void*) {
-  ethosu_delegation_count++;
-#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
-  const uint64_t pmu_cycles = ETHOSU_PMU_Get_CCNTR(drv);
-  ethosu_pmuCycleCount += pmu_cycles;
-  if (ethosu_activeDelegate != nullptr) {
-    ethosu_activeDelegate->npu_invocations++;
-    ethosu_activeDelegate->pmu_cycles += pmu_cycles;
-  }
-#else
-  ethosu_pmuCycleCount += ETHOSU_PMU_Get_CCNTR(drv);
-#endif
-
-  for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
-#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
-    const uint64_t event_count = ETHOSU_PMU_Get_EVCNTR(drv, i);
-    ethosu_pmuEventCounts[i] += event_count;
-    if (ethosu_activeDelegate != nullptr) {
-      ethosu_activeDelegate->pmu_events[i] += event_count;
-    }
-#else
-    ethosu_pmuEventCounts[i] += ETHOSU_PMU_Get_EVCNTR(drv, i);
-#endif
-  }
-  ETHOSU_PMU_Disable(drv);
-  // Add Cortex-M cycle clock used during this NPU execution
+void EthosUBackend_npu_end() {
   ethosu_ArmWhenNPURunCycleCount +=
-      (arm_pmu_cycles() - ethosu_ArmWhenNPURunCycleCountStart);
+      arm_pmu_cycles() - ethosu_ArmWhenNPURunCycleCountStart;
+  ++ethosu_delegation_count;
 }
 
 // Callback invoked at start of ArmBackend::execute()
@@ -224,8 +217,59 @@ void EthosUBackend_execute_end() {
 }
 }
 
+void ConsumeMeasurements() {
+#if defined(ET_ARM_ETHOSU_PMU_STATS)
+  for (size_t index = 0; index < ethosu_pmuBuffer.size; ++index) {
+    const EthosUExecutionRecord& record = ethosu_pmuBuffer.records[index];
+    ethosu_pmuCycleCount += record.stats.cycle_count;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    if (auto* delegate = get_delegate_stats(
+            reinterpret_cast<const void*>(record.delegate_handle))) {
+      ++delegate->npu_invocations;
+      delegate->pmu_cycles += record.stats.cycle_count;
+    }
+    DelegatePmuTotals* delegate_totals = nullptr;
+    for (size_t entry = 0; entry < ethosu_delegatePmuCount; ++entry) {
+      auto& candidate = ethosu_delegatePmuTotals[entry];
+      if (candidate.handle == record.delegate_handle &&
+          same_layout(candidate.totals.stats, record.stats)) {
+        delegate_totals = &candidate;
+        break;
+      }
+    }
+    if (delegate_totals == nullptr &&
+        ethosu_delegatePmuCount < ethosu_delegatePmuTotals.size()) {
+      delegate_totals = &ethosu_delegatePmuTotals[ethosu_delegatePmuCount++];
+      delegate_totals->handle = record.delegate_handle;
+    }
+    if (delegate_totals != nullptr) {
+      accumulate_pmu_totals(delegate_totals->totals, record);
+    } else {
+      ethosu_delegatePmuCapacityExceeded = true;
+    }
+#endif
+    DevicePmuTotals* totals = nullptr;
+    for (size_t device = 0; device < ethosu_deviceCount; ++device) {
+      if (same_layout(ethosu_deviceTotals[device].stats, record.stats)) {
+        totals = &ethosu_deviceTotals[device];
+        break;
+      }
+    }
+    if (totals == nullptr && ethosu_deviceCount < ethosu_deviceTotals.size()) {
+      totals = &ethosu_deviceTotals[ethosu_deviceCount++];
+    }
+    if (totals == nullptr) {
+      ethosu_deviceCapacityExceeded = true;
+      continue;
+    }
+    accumulate_pmu_totals(*totals, record);
+  }
+  ethosu_recordCapacityExceeded |= ethosu_pmuBuffer.reset();
+#endif
+}
+
 void StartMeasurements() {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   // StopMeasurements() disables the cycle counter after each measurement.
   // Server mode starts a new measurement for every inference.
   ARM_PMU_Enable();
@@ -233,8 +277,38 @@ void StartMeasurements() {
 #endif
   ethosu_delegation_count = 0;
   ethosu_ArmBackendExecuteCycleCount = 0;
+  ethosu_ArmWhenNPURunCycleCountStart = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PMU_STATS)
+#if defined(ET_ARM_ETHOSU55_65_PMU_EVENTS)
+  constexpr ethosu_pmu_event_type u55_u65_pmu_events[] = {
+      ET_ARM_ETHOSU55_65_PMU_EVENTS};
+  ET_CHECK_MSG(
+      executorch::backends::arm::set_ethosu55_65_pmu_events(
+          u55_u65_pmu_events) == executorch::runtime::Error::Ok,
+      "Invalid Ethos-U55/U65 PMU event configuration");
+#endif
+#if defined(ET_ARM_ETHOSU85_PMU_EVENTS)
+  constexpr ethosu_pmu_event_type u85_pmu_events[] = {
+      ET_ARM_ETHOSU85_PMU_EVENTS};
+  ET_CHECK_MSG(
+      executorch::backends::arm::set_ethosu85_pmu_events(u85_pmu_events) ==
+          executorch::runtime::Error::Ok,
+      "Invalid Ethos-U85 PMU event configuration");
+#endif
+  ethosu_deviceTotals = {};
+  ethosu_deviceCount = 0;
+  ethosu_deviceCapacityExceeded = false;
+  ethosu_recordCapacityExceeded = false;
   ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  ethosu_delegatePmuTotals = {};
+  ethosu_delegatePmuCount = 0;
+  ethosu_delegatePmuCapacityExceeded = false;
+#endif
+  ethosu_pmuBuffer.reset();
+  executorch::backends::arm::set_ethosu_stats_buffer(&ethosu_pmuBuffer);
+#endif
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
   ethosu_inputCopyStats = {};
   ethosu_outputCopyStats = {};
@@ -246,36 +320,52 @@ void StartMeasurements() {
   ethosu_delegateCapacityExceeded = false;
 #endif
 
-  for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
-    ethosu_pmuEventCounts[i] = 0;
-  }
   ethosu_ArmCycleCountStart = arm_pmu_cycles();
 }
 
-void StopMeasurements(int num_inferences) {
+void StopMeasurements(size_t num_inferences) {
 #if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
 #endif
+  if (num_inferences == 0) {
+    ET_LOG(Error, "Cannot report measurements without completed inferences");
+    return;
+  }
+  if (!executorch::backends::arm::ethosu_execution_metrics_enabled()) {
+    ET_LOG(
+        Info,
+        "WARNING: Ethos-U execution metrics are not linked; NPU delegations, "
+        "wait cycles, and CPU/NPU ratios are incorrect");
+  }
   uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
+  const bool cpu_timing_available =
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
+      true;
+#else
+      false;
+#endif
+  if (!cpu_timing_available) {
+    ET_LOG(Info, "CPU timing and CPU/NPU ratios: N/A (CPU PMU is not present)");
+  }
 
   // Number of comand streams handled by the NPU
-  ET_LOG(Info, "NPU Inferences : %d", num_inferences);
+  ET_LOG(
+      Info, "NPU Inferences : %lu", static_cast<printf_size_t>(num_inferences));
   ET_LOG(
       Info,
       "NPU delegations: %" PRIu32 " (%.2f per inference)",
       ethosu_delegation_count,
       (double)ethosu_delegation_count / num_inferences);
-  ET_LOG(Info, "Profiler report, CPU cycles per operator:");
-  // This is number of CPU cycles for the ethos-u operator from start to finish
-  // in the framework If there is more then one commandstream the time is added
-  // together
-  ET_LOG(
-      Info,
-      "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
-      ethosu_ArmBackendExecuteCycleCount,
-      (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+  if (cpu_timing_available) {
+    ET_LOG(Info, "Profiler report, CPU cycles per operator:");
+    ET_LOG(
+        Info,
+        "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
+        ethosu_ArmBackendExecuteCycleCount,
+        (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+  }
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
   const uint64_t io_copy_calls =
       ethosu_inputCopyStats.calls + ethosu_outputCopyStats.calls;
@@ -302,65 +392,85 @@ void StopMeasurements(int num_inferences) {
       ethosu_outputCopyStats.calls,
       ethosu_outputCopyStats.bytes);
 #endif
-  // We could print a list of the cycles used by the other delegates here in the
-  // future but now we only print ethos-u: this means that "Operator(s) total:
-  // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
-  ET_LOG(
-      Info,
-      "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
-      ethosu_ArmBackendExecuteCycleCount,
-      (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
-  // Total CPU cycles used in the executorch method->execute()
-  // Other delegates and no delegates are counted in this
-  ET_LOG(
-      Info,
-      "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
-      cycle_count,
-      (double)cycle_count / num_inferences);
-
-  ET_LOG(
-      Info,
-      "NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency");
-
-  // Avoid division with zero if arm_pmu_cycles() is not enabled properly.
-  if (cycle_count == 0) {
-    ET_LOG(Info, "Inference CPU ratio: ?.?? %%");
-    ET_LOG(Info, "Inference NPU ratio: ?.?? %%");
-  } else {
+  // Only the Ethos-U backend is included in the operator total.
+  if (cpu_timing_available) {
     ET_LOG(
         Info,
-        "Inference CPU ratio: %.2f %%",
-        100.0 * (cycle_count - ethosu_ArmWhenNPURunCycleCount) / cycle_count);
+        "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
+        ethosu_ArmBackendExecuteCycleCount,
+        (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
     ET_LOG(
         Info,
-        "Inference NPU ratio: %.2f %%",
-        100.0 * ethosu_ArmWhenNPURunCycleCount / cycle_count);
+        "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
+        cycle_count,
+        (double)cycle_count / num_inferences);
+    if (cycle_count == 0 || ethosu_ArmWhenNPURunCycleCount > cycle_count) {
+      ET_LOG(Info, "Inference CPU ratio: N/A");
+      ET_LOG(Info, "Inference NPU ratio: N/A");
+    } else {
+      ET_LOG(
+          Info,
+          "NOTE: CPU/NPU ratios use CPU-clock time inside NPU callbacks, not NPU utilization");
+      ET_LOG(
+          Info,
+          "Inference CPU ratio: %.2f %%",
+          100.0 * (cycle_count - ethosu_ArmWhenNPURunCycleCount) / cycle_count);
+      ET_LOG(
+          Info,
+          "Inference NPU ratio: %.2f %%",
+          100.0 * ethosu_ArmWhenNPURunCycleCount / cycle_count);
+    }
+    ET_LOG(
+        Info,
+        "cpu_wait_for_npu_cntr : %" PRIu64 " CPU cycles (%.2f per inference)",
+        ethosu_ArmWhenNPURunCycleCount,
+        (double)ethosu_ArmWhenNPURunCycleCount / num_inferences);
   }
 
-  // CPU cycles used by NPU, e.g. number of CPU cycles used between
-  // ethosu_inference_begin() and ethosu_inference_end()
-  // If there is more then one commandstream the time is added together
-  ET_LOG(
-      Info,
-      "cpu_wait_for_npu_cntr : %" PRIu64 " CPU cycles (%.2f per inference)",
-      ethosu_ArmWhenNPURunCycleCount,
-      (double)ethosu_ArmWhenNPURunCycleCount / num_inferences);
-
+#if defined(ET_ARM_ETHOSU_PMU_STATS)
   ET_LOG(Info, "Ethos-U PMU report:");
+  for (size_t device = 0; device < ethosu_deviceCount; ++device) {
+    const DevicePmuTotals& totals = ethosu_deviceTotals[device];
+    const EthosUExecutionStats& stats = totals.stats;
+    ET_LOG(
+        Info,
+        "Ethos-U NPU 0x%" PRIxPTR ": product %" PRIu32 ", invocations %" PRIu64
+        ", failures %" PRIu64,
+        stats.device_identifier,
+        stats.product,
+        totals.invocations,
+        totals.failures);
+    ET_LOG(
+        Info,
+        "Ethos-U NPU 0x%" PRIxPTR " PMU cycles: %" PRIu64 " (overflow: %u)",
+        stats.device_identifier,
+        stats.cycle_count,
+        static_cast<unsigned>(stats.cycle_overflow));
+    for (uint32_t slot = 0; slot < stats.counter_count; ++slot) {
+      const auto& counter = stats.counters[slot];
+      ET_LOG(
+          Info,
+          "Ethos-U NPU 0x%" PRIxPTR " PMU counter %" PRIu32 " event %" PRIu32
+          ": %" PRIu64 " (overflow: %u)",
+          stats.device_identifier,
+          slot,
+          counter.event_id,
+          counter.value,
+          static_cast<unsigned>(counter.overflow));
+    }
+  }
   ET_LOG(
       Info,
-      "ethosu_pmu_cycle_cntr : % " PRIu64 " (%.2f per inference)",
+      "ethosu_pmu_cycle_cntr : %" PRIu64 " (%.2f per inference)",
       ethosu_pmuCycleCount,
       (double)ethosu_pmuCycleCount / num_inferences);
-
-  for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
-    ET_LOG(
-        Info,
-        "ethosu_pmu_cntr%lu : %" PRIu64 " (%.2f per inference)",
-        static_cast<printf_size_t>(i),
-        ethosu_pmuEventCounts[i],
-        (double)ethosu_pmuEventCounts[i] / num_inferences);
+  if (ethosu_recordCapacityExceeded) {
+    ET_LOG(Error, "Ethos-U PMU record buffer overflowed; samples were lost");
   }
+  if (ethosu_deviceCapacityExceeded) {
+    ET_LOG(Error, "Ethos-U PMU device/layout capacity exceeded");
+  }
+#endif
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
   ET_LOG(Info, "Ethos-U per-delegate PMU report:");
   for (size_t delegate_id = 0; delegate_id < ethosu_delegateCount;
@@ -378,13 +488,25 @@ void StopMeasurements(int num_inferences) {
         "Ethos-U delegate %lu PMU cycles: %" PRIu64,
         static_cast<printf_size_t>(delegate_id),
         stats.pmu_cycles);
-    for (size_t event = 0; event < ethosu_pmuCountersUsed; ++event) {
-      ET_LOG(
-          Info,
-          "Ethos-U delegate %lu PMU counter %lu: %" PRIu64,
-          static_cast<printf_size_t>(delegate_id),
-          static_cast<printf_size_t>(event),
-          stats.pmu_events[event]);
+    for (size_t entry = 0; entry < ethosu_delegatePmuCount; ++entry) {
+      const DelegatePmuTotals& pmu_totals = ethosu_delegatePmuTotals[entry];
+      if (pmu_totals.handle != reinterpret_cast<uintptr_t>(stats.handle)) {
+        continue;
+      }
+      const EthosUExecutionStats& pmu = pmu_totals.totals.stats;
+      for (uint32_t slot = 0; slot < pmu.counter_count; ++slot) {
+        const auto& counter = pmu.counters[slot];
+        ET_LOG(
+            Info,
+            "Ethos-U delegate %lu NPU 0x%" PRIxPTR " PMU counter %" PRIu32
+            " event %" PRIu32 ": %" PRIu64 " (overflow: %u)",
+            static_cast<printf_size_t>(delegate_id),
+            pmu.device_identifier,
+            slot,
+            counter.event_id,
+            counter.value,
+            static_cast<unsigned>(counter.overflow));
+      }
     }
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
     ET_LOG(
@@ -408,17 +530,9 @@ void StopMeasurements(int num_inferences) {
         "Ethos-U per-delegate profiling exceeded its capacity of %lu delegates",
         static_cast<printf_size_t>(ethosu_delegateStats.size()));
   }
-#endif
-#if defined(ETHOSU55) || defined(ETHOSU65)
-  ET_LOG(
-      Info,
-      "Ethos-U PMU Events:[ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
-#elif defined(ETHOSU85)
-  ET_LOG(
-      Info,
-      "Ethos-U PMU Events:[ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE, ETHOSU_PMU_MAC_ACTIVE, ETHOSU_PMU_WD_ACTIVE]");
-#else
-#error No NPU target defined
+  if (ethosu_delegatePmuCapacityExceeded) {
+    ET_LOG(Error, "Ethos-U per-delegate PMU device/layout capacity exceeded");
+  }
 #endif
 }
 
@@ -427,7 +541,10 @@ void StopMeasurements(int num_inferences) {
 void StartMeasurements() {}
 
 // cppcheck-suppress unusedFunction
-void StopMeasurements(int num_inferences) {
+void ConsumeMeasurements() {}
+
+// cppcheck-suppress unusedFunction
+void StopMeasurements(size_t num_inferences) {
   (void)num_inferences;
 }
 

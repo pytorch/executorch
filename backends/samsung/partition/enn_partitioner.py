@@ -23,6 +23,7 @@ from executorch.backends.samsung.serialization.compile_options import (
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
+from executorch.backends.transforms.addmm_mm_to_linear import addmm_can_be_linear
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -40,7 +41,6 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 SUPPORTED_OPS = [
     # support because preprocess in backend
-    exir_ops.edge.aten.addmm.default,
     exir_ops.edge.aten.add.Scalar,
     exir_ops.edge.aten.sub.Scalar,
     exir_ops.edge.aten.mul.Scalar,
@@ -80,6 +80,19 @@ class EnnOperatorSupport(OperatorSupportBase):
             "output",
         ]:
             return False
+
+        if node.target == exir_ops.edge.aten.addmm.default:
+            # ENN has no addmm, so take only an addmm that preprocess removes.
+            # It folds an addmm of constants away, and AddmmToLinearTransform
+            # turns an addmm into a linear when addmm_can_be_linear allows it.
+            # ConstantPropPass runs before that transform and folds the
+            # transpose of a constant weight, so such an addmm stays an addmm.
+            if node in self.nodes_in_const_subgraph:
+                return True
+            return (
+                addmm_can_be_linear(node)
+                and node.args[2] not in self.nodes_in_const_subgraph
+            )
 
         if node.target in SUPPORTED_OPS:
             return True
@@ -201,5 +214,6 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.silu.default,
             torch.ops.aten.pad.default,
+            torch.ops.aten.floor_divide.default,
         ]
         return (ops_not_to_decompose, None)

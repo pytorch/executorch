@@ -16,9 +16,17 @@
 #
 cmake_minimum_required(VERSION 3.26)
 
-set(CMAKE_CXX_STANDARD 17)
+# The .cu shims include vendored c10's safe_numerics.h, whose MSVC-only branch
+# needs C++20 (see the top-level CMakeLists.txt). cxx_std_20 on executorch_core
+# does not reach nvcc, so the CUDA standard has to be raised here too.
+if(WIN32)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -162,6 +170,15 @@ endif()
 
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
+  # nvcc compiles host code with cl.exe on Windows, and the CCCL that ships with
+  # CUDA 13.2 and newer stops with an #error under cl.exe's traditional
+  # preprocessor. The standard one is what CCCL asks for, and older toolkits
+  # accept it too.
+  if(WIN32)
+    add_compile_options(
+      "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>"
+    )
+  endif()
 endif()
 
 # Centralize Windows/MSVC checks used throughout this file.
@@ -232,22 +249,14 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
-  list(
-    APPEND
-    _aoti_cuda_shim_sources
-    runtime/shims/int4mm.cu
-    runtime/shims/int4_plain_mm.cu
-    runtime/shims/int5_plain_mm.cu
-    runtime/shims/int6_plain_mm.cu
-    runtime/shims/int8_plain_mm.cu
-    runtime/shims/sort.cu
-    runtime/shims/rand.cu
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/index.cu
+       runtime/shims/int4mm.cu runtime/shims/sort.cu runtime/shims/rand.cu
   )
 endif()
 
@@ -301,10 +310,9 @@ if(_cuda_is_msvc_toolchain)
 else()
   # The whole-archive pair is PRIVATE so it applies to this library's own link
   # and does not replay at the link of anything that links this one. In PUBLIC
-  # scope the archive was extracted again by each consumer, so the translation
-  # unit holding SlimTensor's per-device current stream thread_local landed in
-  # three shipped binaries, and one copy per process is what makes that state
-  # agree. The MSVC branch above uses PRIVATE for the same reason.
+  # scope the archive was extracted again by each consumer, so its objects
+  # landed in three shipped binaries. The MSVC branch above uses PRIVATE for the
+  # same reason.
   target_link_libraries(
     aoti_cuda_shims
     PRIVATE cuda_platform -Wl,--whole-archive aoti_common_shims_slim
@@ -327,7 +335,21 @@ endif()
 # appends to any INSTALL_RPATH the caller set rather than replacing it, so a
 # source install keeps its own paths.
 if(EXECUTORCH_BUILD_SHARED)
+  if(_cuda_is_windows_msvc)
+    # In the shared layout the delegate is its own DLL and links this one.
+    # Export everything, as every other shipped DLL does, not only the shims
+    # marked AOTI_SHIM_EXPORT.
+    set_target_properties(
+      aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+  endif()
   executorch_target_shipped_runtime_path(aoti_cuda_shims)
+  if(_cuda_is_msvc_toolchain)
+    # cuda_platform already resolves the runtime from the shared library here;
+    # the helper also puts it first on the link line, as the delegate and
+    # extension_cuda do.
+    executorch_target_link_shared_runtime(aoti_cuda_shims)
+  endif()
 endif()
 
 install(
@@ -341,10 +363,11 @@ set(_aoti_cuda_backend_sources
     runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
     runtime/cuda_weight_cache.cpp
 )
-if(_cuda_is_msvc_toolchain)
-  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
-  # symbols exported from aoti_cuda_shims.dll.
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
+# The off-graph KV cache builds on the LLM extension's neutral cache.
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
+       runtime/cuda_kv_pool.cpp
+  )
 endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
@@ -393,11 +416,19 @@ target_link_libraries(
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
          extension_cuda ${CMAKE_DL_LIBS}
 )
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
+  target_compile_definitions(
+    aoti_cuda_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
+  )
+endif()
 
 if(_cuda_is_msvc_toolchain)
-  # cuda_backend.cpp uses SlimTensor CUDA utilities (e.g. getCurrentCUDAStream)
-  # from aoti_common_shims_slim via headers; propagate the static lib so final
-  # MSVC links (e.g. parakeet_runner) can resolve those C++ symbols.
+  # The shims DLL compiles these sources itself (aoti_common_shims_slim_obj),
+  # and cuda_backend.cpp still needs the SlimTensor headers and definitions that
+  # come with the static library. So the program carries a second copy of that
+  # code, which must hold no state; the current stream lives in extension_cuda
+  # for that reason.
   target_link_libraries(
     aoti_cuda_backend
     PRIVATE aoti_cuda_shims
@@ -462,4 +493,43 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_output_copy SOURCES runtime/test/test_cuda_output_copy.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_output_copy PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_backend_execute SOURCES
+    runtime/test/test_cuda_backend_execute.cpp EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_backend_execute PRIVATE CUDA_AVAILABLE=1)
+  # sort.cu and rand.cu are compiled only under this condition (see
+  # _aoti_cuda_shim_sources), so the test that calls them is too.
+  if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
+    et_cxx_test(
+      test_cuda_sort_rand SOURCES runtime/test/test_cuda_sort_rand.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
+  et_cxx_test(
+    test_cuda_current_stream SOURCES runtime/test/test_cuda_current_stream.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_current_stream PRIVATE CUDA_AVAILABLE=1)
+
+  if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    et_cxx_test(
+      test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+    et_cxx_test(
+      test_cuda_cache_routing SOURCES runtime/test/test_cuda_cache_routing.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_cache_routing PRIVATE CUDA_AVAILABLE=1)
+  endif()
 endif()

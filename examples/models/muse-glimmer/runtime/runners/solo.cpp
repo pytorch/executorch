@@ -119,6 +119,10 @@ DEFINE_bool(
     cuda_graph,
     true,
     "Enable CUDA graph capture for the decode method. CUDA only; default on.");
+DEFINE_int64(
+    offgraph_initial_capacity,
+    512,
+    "Initial token capacity for growable flat off-graph KV caches.");
 DEFINE_string(
     nll_tokens_file,
     "",
@@ -425,6 +429,7 @@ static int run_engine_generation(llm::Stats& stats) {
   config.max_sessions = 1;
   config.eos_id = FLAGS_eos_id;
   config.enable_cuda_graph = FLAGS_cuda_graph;
+  config.offgraph_initial_capacity = FLAGS_offgraph_initial_capacity;
   config.artifact_mode = llm::MuseGlimmerArtifactMode::Auto;
 
   auto engine_result = llm::MuseGlimmerEngine::create(config);

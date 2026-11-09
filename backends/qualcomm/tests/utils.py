@@ -15,6 +15,9 @@ import numpy as np
 import torch
 import torchao
 from executorch import exir
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 
 from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
@@ -36,6 +39,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchLpaiTargetEnv,
 )
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -44,14 +50,17 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    generate_qnn_executorch_option,
     get_qnn_context_binary_alignment,
     get_soc_to_chipset_map,
+    qnn_edge_config,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import make_output_dir
 
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -660,6 +669,37 @@ class TestQNN(unittest.TestCase):
                         f"{tmp_dir}/{self.dsp_heap_profile_filename}",
                         callback=validate_heap_profile,
                     )
+
+    def assert_batch_norm_folded(self, module, sample_inputs):
+        """In fp16 a surviving BatchNorm multiplies the convolution's rounding
+        error by its per-channel scale, so it has to be folded into the
+        preceding convolution before lowering.
+
+        Runs the pipeline the lowering runs, without the partitioner: once the
+        graph is partitioned it holds nothing but the delegate call, so a
+        BatchNorm inside the payload would go unnoticed.
+        """
+        exported_program = torch.export.export(module, sample_inputs, strict=True)
+        backend_type = flatbuffer_to_option(
+            generate_qnn_executorch_option(self.compiler_specs)
+        ).backend_options.backend_type
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
+        edge_prog_mgr = to_edge_transform_and_lower(
+            {"forward": pass_manager.transform_for_export_pipeline(exported_program)},
+            transform_passes={
+                "forward": pass_manager.get_to_edge_transform_passes(
+                    exported_program, compiler_specs=self.compiler_specs
+                )
+            },
+            partitioner=None,
+            compile_config=qnn_edge_config(),
+        )
+        survivors = [
+            node
+            for node in edge_prog_mgr.exported_program().graph.nodes
+            if node.op == "call_function" and "batch_norm" in str(node.target)
+        ]
+        self.assertFalse(survivors, f"BatchNorm survived the fold: {survivors}")
 
     def lower_module_and_test_output(
         self,

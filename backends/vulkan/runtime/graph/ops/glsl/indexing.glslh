@@ -80,40 +80,9 @@ bool is_channels_last(const int hashed_layout) {
 #define get_outer_packed_dim_block_size(layout) (((layout) >> 28) & 0xF)
 #define get_batch_concat_dim(layout) (((layout) >> 12) & 0xF)
 
-// Safe ivec4 component access via if/else chain. Avoids dynamic vector
-// indexing (v[index]) on UBO-backed ivec4 members, which crashes on Adreno 740
-// when the index is a specialization constant with value 1 or 2.
-int safe_idx(const ivec4 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  if (idx == 2) return v.z;
-  return v.w;
-}
-
-// Safe uvec4 component access via if/else chain. Same rationale as safe_idx
-// for ivec4 — avoids dynamic vector indexing on UBO-backed uvec4 members.
-uint safe_idx(const uvec4 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  if (idx == 2) return v.z;
-  return v.w;
-}
-
-// Safe ivec3 component access via if/else chain. Same rationale as safe_idx
-// for ivec4.
-int safe_idx(const ivec3 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  return v.z;
-}
-
-// Safe ivec4 component write via if/else chain. Companion to safe_idx for
-// cases where we need to set a component by a spec-const-derived index.
-void safe_set(inout ivec4 v, const int idx, const int val) {
-  if (idx == 0) { v.x = val; }
-  else if (idx == 1) { v.y = val; }
-  else if (idx == 2) { v.z = val; }
-  else { v.w = val; }
+uint safe_idx(const uvec4 lower, const uvec4 upper, const int idx) {
+  if (idx < 4) return safe_idx(lower, idx);
+  return safe_idx(upper, idx - 4);
 }
 
 //
@@ -140,19 +109,19 @@ uint numel(const BufferMetadata meta) {
 }
 
 uint dim_order_at(const BufferMetadata meta, const int dim) {
-  return meta.dim_order[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.dim_order[0], meta.dim_order[1], dim);
 }
 
 uint dim_order_at(const BufferMetadata meta, const uint dim) {
-  return meta.dim_order[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.dim_order[0], meta.dim_order[1], int(dim));
 }
 
 uint stride_at(const BufferMetadata meta, const int dim) {
-  return meta.strides[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.strides[0], meta.strides[1], dim);
 }
 
 uint stride_at(const BufferMetadata meta, const uint dim) {
-  return meta.strides[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.strides[0], meta.strides[1], int(dim));
 }
 
 uint width(const BufferMetadata meta) {
@@ -164,11 +133,25 @@ uint height(const BufferMetadata meta) {
 }
 
 uint size_at(const BufferMetadata meta, const int dim) {
-  return meta.sizes[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.sizes[0], meta.sizes[1], dim);
 }
 
 uint size_at(const BufferMetadata meta, const uint dim) {
-  return meta.sizes[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.sizes[0], meta.sizes[1], int(dim));
+}
+
+// Number of leading non-padding lanes in a vec4 buffer texel; may fall outside
+// [0, 4]. Assumes the packed dim has stride 1, so the lanes lie along it.
+int num_valid_lanes(
+    const uint texel_idx,
+    const BufferMetadata meta,
+    const int packed_dim) {
+  const uint packed_dim_size = size_at(meta, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return 4;
+  }
+  return int(packed_dim_size) -
+      int(mul_4(texel_idx) % align_up_4(packed_dim_size));
 }
 
 bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
@@ -189,6 +172,7 @@ bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
 }
 
 bool out_of_bounds(const uint bufi, const BufferMetadata meta) {
+  // Buffer offsets are bounded by physical padded numel.
   return bufi >= meta.ndim_numel[1];
 }
 
@@ -203,8 +187,57 @@ struct TextureMetadata {
   int packed_dim;
 };
 
+int size_at(const TextureMetadata meta, const int dim) {
+  return safe_idx(meta.sizes, dim);
+}
+
 bool out_of_bounds(const ivec3 pos, const TextureMetadata meta) {
   return any(greaterThanEqual(pos, meta.limits));
+}
+
+// Assumes in-bounds texels, standard axis mapping, and packed_dim in [0, 2].
+bool texel_has_padding_simple(
+    const ivec3 pos,
+    const TextureMetadata meta,
+    const int packed_dim) {
+  const int packed_dim_size = safe_idx(meta.sizes, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return false;
+  }
+  const int packed_dim_idx = safe_idx(pos, packed_dim) * 4;
+  const int packed_idx = packed_dim == 2 && meta.sizes.w > 1
+      ? packed_dim_idx % (div_up_4(packed_dim_size) * 4)
+      : packed_dim_idx;
+  return packed_idx + 3 >= packed_dim_size;
+}
+
+// Same assumptions as texel_has_padding_simple.
+int num_valid_lanes(
+    const ivec3 pos,
+    const TextureMetadata meta,
+    const int packed_dim) {
+  if (!texel_has_padding_simple(pos, meta, packed_dim)) {
+    return 4;
+  }
+  return mod_4(safe_idx(meta.sizes, packed_dim));
+}
+
+vec4 mask_padding_lanes(const vec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(vec4(0), texel, valid_lanes);
+}
+
+ivec4 mask_padding_lanes(const ivec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(ivec4(0), texel, valid_lanes);
+}
+
+uvec4 mask_padding_lanes(const uvec4 texel, const int valid_lane_count) {
+  const bvec4 valid_lanes = lessThan(
+      ivec4(0, 1, 2, 3), ivec4(valid_lane_count));
+  return mix(uvec4(0), texel, valid_lanes);
 }
 
 //
@@ -233,6 +266,7 @@ uint x(const TensorIndex tidx) {
 }
 
 bool out_of_bounds(const TensorIndex tidx, const BufferMetadata meta) {
+  // Tensor coordinates use logical sizes; in-range buffer offsets can be padding.
   return any(greaterThanEqual(tidx.data[0], meta.sizes[0])) ||
          any(greaterThanEqual(tidx.data[1], meta.sizes[1]));
 }
@@ -320,15 +354,50 @@ TensorIndex linear_idx_to_tensor_idx(
   TensorIndex tidx;
   initialize(tidx);
   int dim = int_ndim(meta);
+  // An implicit packed dim leads the dim order, ahead of the logical dims.
+  if (dim_order_at(meta, 0) >= uint(dim)) {
+    dim++;
+  }
   int i = 0;
   for (int d = max(dim - 1, 0); d >= 0; d--) {
-    uint dim_idx = meta.dim_order[div_4(d)][mod_4(d)];
-    uint dim_stride = meta.strides[div_4(dim_idx)][mod_4(dim_idx)];
+    uint dim_idx = dim_order_at(meta, d);
+    uint dim_stride = stride_at(meta, dim_idx);
 
     tidx.data[div_4(dim_idx)][mod_4(dim_idx)] = linear_idx / dim_stride;
     linear_idx = linear_idx % dim_stride;
   }
   return tidx;
+}
+
+bool has_same_physical_element_order(
+    const BufferMetadata outp,
+    const BufferMetadata inp,
+    const int outp_layout,
+    const int inp_layout) {
+  if (numel(outp) != numel(inp)) {
+    return false;
+  }
+  if (are_equal(outp, inp)) {
+    return true;
+  }
+  // Layout hashes encode only the first four dimension-order entries.
+  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout) ||
+      outp.dim_order[1] != uvec4(4, 5, 6, 7) ||
+      inp.dim_order[1] != uvec4(4, 5, 6, 7)) {
+    return false;
+  }
+  if (get_packed_dim(outp_layout) == 0 && get_packed_dim(inp_layout) == 0 &&
+      width(outp) == width(inp)) {
+    return true;
+  }
+  uint outp_logical_numel = 1;
+  uint inp_logical_numel = 1;
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    outp_logical_numel *= size_at(outp, d);
+    inp_logical_numel *= size_at(inp, d);
+  }
+  return outp_logical_numel == numel(outp) &&
+         inp_logical_numel == numel(inp);
 }
 
 TensorIndex linear_idx_to_tensor_idx_contig_case(
@@ -424,7 +493,7 @@ TensorIndex4D texel_idx_to_tensor4d_idx(
   uint remaining = block_idx;
   [[unroll]] for (int d = 3; d >= 0; d--) {
     int dim_idx = extract_4b(hashed_layout, d);
-    uint dim_stride = meta.strides[0][dim_idx];
+    uint dim_stride = safe_idx(meta.strides[0], dim_idx);
     tidx.data[dim_idx] = int(remaining / dim_stride);
     remaining = remaining % dim_stride;
   }
@@ -449,6 +518,65 @@ uint tensor_idx_to_linear_idx(
 
   return lin_idx;
 }
+
+// tidx indexes the first element of a vec4 buffer texel. Same assumptions as
+// the texel index overload.
+int num_valid_lanes(
+    const TensorIndex tidx,
+    const BufferMetadata meta,
+    const int packed_dim) {
+  const uint packed_dim_size = size_at(meta, packed_dim);
+  if (mod_4(packed_dim_size) == 0) {
+    return 4;
+  }
+  return int(packed_dim_size) - int(idx_at(tidx, packed_dim));
+}
+
+// Zeroes the padding lanes of a vec4 texel, located from the texel's index.
+// Tensors whose packed dim needs no padding return the texel after one uniform
+// check.
+#define define_mask_padding_lanes_fns(vec4_type)                          \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const uint texel_idx,                                               \
+      const BufferMetadata meta,                                          \
+      const int packed_dim) {                                             \
+    const int valid_lane_count =                                          \
+        num_valid_lanes(texel_idx, meta, packed_dim);                     \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }                                                                       \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const TensorIndex tidx,                                             \
+      const BufferMetadata meta,                                          \
+      const int packed_dim) {                                             \
+    const int valid_lane_count = num_valid_lanes(tidx, meta, packed_dim); \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }                                                                       \
+                                                                          \
+  vec4_type mask_padding_lanes(                                           \
+      const vec4_type texel,                                              \
+      const ivec3 pos,                                                    \
+      const TextureMetadata meta,                                         \
+      const int packed_dim) {                                             \
+    const int valid_lane_count = num_valid_lanes(pos, meta, packed_dim);  \
+    if (valid_lane_count >= 4) {                                          \
+      return texel;                                                       \
+    }                                                                     \
+    return mask_padding_lanes(texel, valid_lane_count);                   \
+  }
+
+define_mask_padding_lanes_fns(vec4)
+define_mask_padding_lanes_fns(ivec4)
+define_mask_padding_lanes_fns(uvec4)
 
 void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
   tidx.data[0] = min(tidx.data[0], meta.sizes[0] - 1);
@@ -562,7 +690,7 @@ uint tensor4d_idx_to_linear_idx(
     const TensorIndex4D tidx) {
   uint lin_idx = 0;
   for (int d = 0; d < 4; ++d) {
-    lin_idx += meta.strides[0][d] * tidx.data[d];
+    lin_idx += safe_idx(meta.strides[0], d) * tidx.data[d];
   }
   return lin_idx;
 }
@@ -637,7 +765,7 @@ int tensor4d_idx_to_block_idx(
   // Compute block-space linear index
   int block_idx = 0;
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[0][d]) * tidx.data[d];
+    block_idx += int(safe_idx(meta.strides[0], d)) * tidx.data[d];
   }
   return block_idx;
 }
@@ -732,10 +860,10 @@ int tensor_idx_to_block_idx(
   // Compute block-space linear index over all 8 dims
   int block_idx = 0;
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[0][d]) * int(tidx.data[0][d]);
+    block_idx += int(safe_idx(meta.strides[0], d)) * int(tidx.data[0][d]);
   }
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[1][d]) * int(tidx.data[1][d]);
+    block_idx += int(safe_idx(meta.strides[1], d)) * int(tidx.data[1][d]);
   }
   return block_idx;
 }

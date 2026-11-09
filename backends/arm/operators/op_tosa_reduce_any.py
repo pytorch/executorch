@@ -33,10 +33,8 @@ class AnyVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target, [inputs[0], output], ts.DType.BOOL, self.tosa_spec
-        )
+        validate_same_dtype(self.target, [inputs[0], output])
+        validate_valid_dtype(self.target, [inputs[0], output], ts.DType.BOOL)
 
         attr = ts.TosaSerializerAttribute()
         attr.ReduceAnyAttribute(node.kwargs["axis"])

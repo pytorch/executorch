@@ -99,6 +99,38 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
             atol=1e-03,
         )
 
+    def test_calibration_shape_eager_sdpa_matches_reference(self):
+        torch.manual_seed(123)
+        bsz = 1
+        seqlen = 3
+        n_heads = 16
+        head_dim = 128
+        dim = n_heads * head_dim
+        max_context_len = 2048
+        dtype = torch.float32
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        q = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=dtype)
+        k_val = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=dtype)
+        v_val = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=dtype)
+        kv_cache = CustomKVCache(bsz, max_context_len, n_heads, head_dim, dtype=dtype)
+        sdpa = SDPACustom(dim)
+        for _ in range(3):
+            k, v = kv_cache.update(input_pos, k_val, v_val)
+            output = sdpa(input_pos, q, k, v, bsz, seqlen, None)
+            num_valid = input_pos[0].item() + seqlen
+            reference = (
+                F.scaled_dot_product_attention(
+                    q,
+                    k[:, :, :num_valid, :],
+                    v[:, :, :num_valid, :],
+                    is_causal=True,
+                )
+                .transpose(1, 2)
+                .contiguous()
+                .view(bsz, seqlen, dim)
+            )
+            torch.testing.assert_close(output, reference, rtol=1e-4, atol=1e-4)
+
     def test_bfloat16_custom_sdpa_export_has_no_dtype_conversions(self):
         bsz = 1
         seqlen = 3

@@ -36,16 +36,14 @@ if hasattr(ts.Op, "MAX_POOL2D_ADAPTIVE"):
             output: TosaArg,
         ) -> None:
             validate_num_inputs(self.target, inputs, [4])
-            validate_same_dtype(self.target, [inputs[0], output], ts)
+            validate_same_dtype(self.target, [inputs[0], output])
 
             input_tensor, kernel, stride, pad = inputs
 
             supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
             if self.tosa_spec.support_extension("int16"):
                 supported.append(ts.DType.INT16)
-            validate_valid_dtype(
-                self.target, [input_tensor, output], supported, self.tosa_spec
-            )
+            validate_valid_dtype(self.target, [input_tensor, output], supported)
 
             attr = ts.TosaSerializerAttribute()
             attr.MaxPool2dAdaptiveAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)

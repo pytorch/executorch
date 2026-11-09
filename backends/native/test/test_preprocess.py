@@ -93,6 +93,7 @@ class PtnConstantHandoffTest(unittest.TestCase):
             graph_signature=object(),
             state_dict={},
             constants={},
+            range_constraints={},
         )
 
         with patch(

@@ -9,11 +9,16 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
 #include <zip.h>
+
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 
 namespace ptn {
 namespace {
@@ -42,6 +47,19 @@ using ZipFileHandle = std::unique_ptr<zip_file_t, ZipFileDeleter>;
     const std::string& operation) {
   throw std::runtime_error(
       "zip: " + operation + ": " + zip_file_strerror(file));
+}
+
+constexpr uint32_t kLocalHeaderSignature = 0x04034b50;
+constexpr size_t kLocalHeaderSize = 30;
+constexpr uint16_t kDataDescriptorFlag = 1 << 3;
+
+uint16_t read_u16(const uint8_t* p) {
+  return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+uint32_t read_u32(const uint8_t* p) {
+  return static_cast<uint32_t>(read_u16(p)) |
+      (static_cast<uint32_t>(read_u16(p + 2)) << 16);
 }
 
 ZipHandle open_path(const std::string& path) {
@@ -87,15 +105,22 @@ ZipHandle open_memory(ByteSpan bytes) {
 } // namespace
 
 struct ZipReader::Impl {
-  explicit Impl(ZipHandle handle) : archive(std::move(handle)) {}
+  explicit Impl(ZipHandle handle, ByteSpan bytes = {})
+      : archive(std::move(handle)), memory(bytes) {}
 
   ZipHandle archive;
+  // The archive itself when memory-backed; empty when file-backed.
+  ByteSpan memory;
+  mutable std::mutex mutex;
 };
 
 ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
   const zip_int64_t count = zip_get_num_entries(impl_->archive.get(), 0);
   if (count < 0) {
     throw_zip(impl_->archive.get(), "cannot enumerate members");
+  }
+  if (static_cast<uint64_t>(count) > detail::kMaxPackageMembers) {
+    throw ResourceLimitError("zip: member count exceeds package limit");
   }
 
   names_.reserve(static_cast<size_t>(count));
@@ -119,14 +144,61 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
     if (stat.encryption_method != ZIP_EM_NONE) {
       throw std::runtime_error("zip: member is encrypted: " + name);
     }
+    if (stat.size > detail::kMaxPackageBytes) {
+      throw ResourceLimitError(
+          "zip: member exceeds package size limit: " + name);
+    }
     if (stat.size > std::numeric_limits<size_t>::max()) {
       throw std::runtime_error("zip: member is too large: " + name);
     }
-    if (!entries_.emplace(name, Entry{index, static_cast<size_t>(stat.size)})
-             .second) {
+    const Entry entry{index, static_cast<size_t>(stat.size), std::nullopt};
+    if (!entries_.emplace(name, entry).second) {
       throw std::runtime_error("zip: duplicate member name: " + name);
     }
     names_.push_back(name);
+  }
+  if (!impl_->memory.empty()) {
+    locate_member_data();
+  }
+}
+
+// libzip does not expose where member data starts, so walk the local headers.
+// Accept only a simple layout: stored members contiguous from offset zero in
+// central-directory order. Otherwise leave offsets unset and read via libzip.
+void ZipReader::locate_member_data() {
+  const ByteSpan archive = impl_->memory;
+  std::vector<size_t> offsets;
+  offsets.reserve(names_.size());
+  size_t position = 0;
+  for (const std::string& name : names_) {
+    if (archive.size() - position < kLocalHeaderSize) {
+      return;
+    }
+    const uint8_t* header = archive.data() + position;
+    const size_t name_size = read_u16(header + 26);
+    const size_t extra_size = read_u16(header + 28);
+    if (read_u32(header) != kLocalHeaderSignature ||
+        (read_u16(header + 6) & kDataDescriptorFlag) != 0 ||
+        read_u16(header + 8) != ZIP_CM_STORE) {
+      return;
+    }
+    const size_t name_start = position + kLocalHeaderSize;
+    if (archive.size() - name_start < name_size + extra_size ||
+        std::string_view(
+            reinterpret_cast<const char*>(archive.data() + name_start),
+            name_size) != name) {
+      return;
+    }
+    const size_t data = name_start + name_size + extra_size;
+    const size_t size = entries_.find(name)->second.size;
+    if (archive.size() - data < size) {
+      return;
+    }
+    offsets.push_back(data);
+    position = data + size;
+  }
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    entries_.find(names_[i])->second.data_offset = offsets[i];
   }
 }
 
@@ -139,12 +211,20 @@ ZipReader ZipReader::open(const std::string& path) {
 }
 
 ZipReader ZipReader::open(ByteSpan archive) {
-  return ZipReader(std::make_unique<Impl>(open_memory(archive)));
+  return ZipReader(std::make_unique<Impl>(open_memory(archive), archive));
 }
 
 std::optional<size_t> ZipReader::member_size(std::string_view name) const {
   const Entry* entry = find_entry(name);
   return entry == nullptr ? std::nullopt : std::optional<size_t>(entry->size);
+}
+
+std::optional<ByteSpan> ZipReader::member_bytes(std::string_view name) const {
+  const Entry* entry = find_entry(name);
+  if (entry == nullptr || !entry->data_offset) {
+    return std::nullopt;
+  }
+  return impl_->memory.subspan(*entry->data_offset, entry->size);
 }
 
 std::vector<uint8_t> ZipReader::read(std::string_view name) const {
@@ -185,7 +265,15 @@ void ZipReader::read_entry_into(
   if (destination.empty()) {
     return;
   }
+  if (entry.data_offset) {
+    std::memcpy(
+        destination.data(),
+        impl_->memory.data() + *entry.data_offset + offset,
+        destination.size());
+    return;
+  }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry.index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
@@ -218,6 +306,7 @@ void ZipReader::verify(std::string_view name) const {
     throw std::runtime_error("zip: no member named " + std::string(name));
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry->index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {

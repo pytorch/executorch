@@ -52,7 +52,9 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
+    ReplaceEmptyLikePass,
 )
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -73,6 +75,9 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -208,7 +213,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
@@ -753,11 +760,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
 
 
@@ -788,6 +797,8 @@ def edge_to_executorch_passes(
             skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
             enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
+            error_on_per_call_copies=device_cfg.error_on_per_call_copies,
+            skip_h2d_for_constants=device_cfg.skip_h2d_for_constants,
         ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
@@ -818,8 +829,10 @@ def _generate_edge_program(
     program = remove_unused_parameters_pass(program)
 
     if not config._skip_dim_order:
-        # Normalize constants and buffers before MemoryFormatOpsPass rewrites
-        # preserve-format copies, which cannot represent arbitrary dim orders.
+        # Normalize constants, buffers, parameters and inputs before
+        # partitioning, so a delegate sees the layout the program stores, and before
+        # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
+        # represent arbitrary dim orders.
         program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
             program
         )
@@ -833,6 +846,13 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
+    empty_like = torch.ops.aten.empty_like.default
+    if (
+        empty_like not in (preserve_ops or [])
+        and empty_like not in config.preserve_ops
+        and contains_any_call_fn_target_op(program.graph_module, [empty_like])
+    ):
+        passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
     if not config._skip_dim_order:
         passes.append(MemoryFormatOpsPass())
@@ -865,7 +885,10 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize tensor constants introduced by the preceding passes.
+    # Normalize tensor constants introduced by the preceding passes. With
+    # _skip_dim_order this is the only call, so it fixes the layout of
+    # parameters, buffers, constants and inputs, but ops computed from them
+    # keep the old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1190,7 +1213,16 @@ def _gen_edge_manager_for_partitioners(
                     # functionalized the graph. This second call only applies
                     # operator decompositions from the remaining table, so it is
                     # safe to skip when none of those targets occur in the graph.
-                    if contains_any_call_fn_target_op(program.graph_module, table):
+                    # Unless the config preserves it, empty_like does not
+                    # count: ReplaceEmptyLikePass lowers any that is left.
+                    not_counted = (
+                        set()
+                        if torch.ops.aten.empty_like.default in config.preserve_ops
+                        else {torch.ops.aten.empty_like.default}
+                    )
+                    if contains_any_call_fn_target_op(
+                        program.graph_module, table.keys() - not_counted
+                    ):
                         program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
@@ -1224,6 +1256,8 @@ def _gen_edge_manager_for_partitioners(
                     _restore_transformed_ops_to_aten_ops(program)
             ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
 
+        # Edge programs have no complex dtypes for ops such as mul.
+        ReplaceComplexWithRealPass()(program)
         edge_programs[name] = _generate_edge_program(
             config,
             program,
@@ -1315,6 +1349,14 @@ def to_edge_transform_and_lower(  # noqa: C901
     or wrong behavior.
 
     This API is the primary recommended way to lower to the CPU based XNNPack backend.
+
+    Unlike to_edge, it replaces complex numbers with real numbers before it builds the
+    Edge programs, since the Edge dialect has no complex dtypes for ops such as mul. A
+    complex tensor becomes a real tensor with a last dim of size 2 that holds its real and
+    imaginary parts, as torch.view_as_real gives. This includes complex constants,
+    parameters and buffers, so the returned programs store them in that layout. A program
+    that the pass cannot rewrite completely keeps all its complex numbers. See
+    ReplaceComplexWithRealPass.
 
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
@@ -1471,6 +1513,8 @@ def to_edge(
                 EXIRATenDialectVerifier(
                     edge_compile_config=config,
                     class_only=False,
+                    # ReplaceEmptyLikePass lowers it in _generate_edge_program.
+                    core_aten_ops_exception_list=[torch.ops.aten.empty_like.default],
                 )(gm)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in ATen dialect.")

@@ -39,7 +39,7 @@ class ClampVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
         supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.BF16, ts.DType.FP32]
         if self.tosa_spec.support_extension("int16"):
             supported_dtypes.append(ts.DType.INT16)
@@ -47,7 +47,6 @@ class ClampVisitor(NodeVisitor):
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         node_input_dtype = node.meta["val"].dtype

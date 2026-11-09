@@ -176,7 +176,6 @@ Java:
 ```java
 LlmGenerationConfig genConfig = LlmGenerationConfig.create()
     .seqLen(2048)
-    .temperature(0.8f)
     .echo(false)
     .build();
 
@@ -187,14 +186,13 @@ Kotlin:
 ```kotlin
 val genConfig = LlmGenerationConfig.create()
     .seqLen(2048)
-    .temperature(0.8f)
     .echo(false)
     .build()
 
 module.generate("Once upon a time", genConfig, callback)
 ```
 
-`LlmGenerationConfig` exposes `echo`, `maxNewTokens`, `seqLen`, `temperature`, `numBos`, `numEos`, and `warming`. Defaults match the C++ `GenerationConfig` documented in [Running LLMs with C++](run-with-c-plus-plus.md).
+`LlmGenerationConfig` exposes `echo`, `maxNewTokens`, `seqLen`, `temperature`, `numBos`, `numEos`, and `warming`. For text-only models, omitting `temperature` uses the `LlmModule` temperature when decoding after prefill (0.8f by default with `LlmModuleConfig`). Set `.temperature(0.8f)` to override the module temperature for those tokens. The first generated token is selected greedily during prefill regardless of this setting. Previously, omitting the generation temperature selected 0.8f for decoding even when the module had a different temperature. The other defaults match the C++ `GenerationConfig` documented in [Running LLMs with C++](run-with-c-plus-plus.md).
 
 #### Stopping Generation
 

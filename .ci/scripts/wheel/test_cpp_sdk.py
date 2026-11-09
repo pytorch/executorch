@@ -25,6 +25,28 @@ import sys
 import tempfile
 from pathlib import Path
 
+_WINDOWS = sys.platform == "win32"
+
+# Long enough for an honest run to load a model, short enough that an application which
+# never exits fails as a named timeout inside the job's limit rather than hanging the job.
+_RUN_TIMEOUT = 300
+# An export traces and lowers a model, which is slower than running one.
+_EXPORT_TIMEOUT = 900
+
+# Windows has no runtime search path, so an application finds the shipped DLLs only
+# beside itself. This is the copy step the documentation tells a Windows consumer to add,
+# appended to each consumer project so the checks exercise the documented setup.
+_WINDOWS_DLL_COPY = """
+if(WIN32)
+  add_custom_command(
+    TARGET consumer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:consumer>
+            $<TARGET_FILE_DIR:consumer>
+    COMMAND_EXPAND_LISTS
+  )
+endif()
+"""
+
 # Exports the model to a .pte and prints the reference outputs, so the C++ side can
 # be compared against eager PyTorch rather than merely checked for not crashing.
 #
@@ -71,6 +93,12 @@ if mode == "quantized":
     import executorch as _executorch
 
     _root = Path(list(_executorch.__path__)[0]) / "kernels" / "quantized"
+    if sys.platform == "win32":
+        # Loaded directly, so register the shipped DLLs' directory the way
+        # executorch.kernels.quantized does before its own load.
+        import os
+
+        os.add_dll_directory(str(_root.parents[1] / "lib"))
     _libs = sorted(_root.glob("*quantized_ops_aot_lib.*"))
     assert len(_libs) == 1, f"expected one ahead-of-time library, found {_libs}"
     torch.ops.load_library(str(_libs[0]))
@@ -262,12 +290,15 @@ def _consumer_cmake(components) -> str:
         f"target_link_libraries(consumer PRIVATE executorch::{name})"
         for name in components
     )
-    return f"""cmake_minimum_required(VERSION 3.28)
+    return (
+        f"""cmake_minimum_required(VERSION 3.28)
 project(consumer CXX)
 find_package(executorch REQUIRED COMPONENTS {requested})
 add_executable(consumer consumer.cpp)
 {links}
 """
+        + _WINDOWS_DLL_COPY
+    )
 
 
 def _mach_o_runtime_paths(binary) -> list:
@@ -295,11 +326,16 @@ def _mach_o_runtime_paths(binary) -> list:
 
 def _dynamic_lib_suffix() -> str:
     """The loadable library suffix on this platform, including the dot."""
+    if _WINDOWS:
+        return ".dll"
     return ".dylib" if sys.platform == "darwin" else ".so"
 
 
 def _library_file_name(base_name: str) -> str:
     """The file name a library has on this platform."""
+    if _WINDOWS:
+        # PE names carry no lib prefix.
+        base_name = re.sub(r"^lib", "", base_name)
     return f"{base_name}{_dynamic_lib_suffix()}"
 
 
@@ -308,9 +344,13 @@ def _recorded_dependencies(binary) -> str:
 
     readelf prints the ELF dynamic section, otool -l the Mach-O load commands. Both
     carry the same facts: a dependency entry and a runtime search path entry, named
-    NEEDED and RUNPATH on ELF, LC_LOAD_DYLIB and LC_RPATH on Mach-O.
+    NEEDED and RUNPATH on ELF, LC_LOAD_DYLIB and LC_RPATH on Mach-O. A PE binary
+    records only the DLLs it imports, which dumpbin lists.
     """
-    if sys.platform == "darwin":
+    if _WINDOWS:
+        tool, args = _visual_studio_tool("dumpbin.exe"), ["/dependents"]
+        needed = "dumpbin"
+    elif sys.platform == "darwin":
         tool, args = _tool("otool"), ["-l"]
         needed = "otool"
     else:
@@ -343,6 +383,65 @@ def _tool(name: str) -> str:
     return str(beside) if beside.is_file() else name
 
 
+def _visual_studio_tool(tool_name: str) -> str:
+    """Locate dumpbin.exe or clang++.exe from Visual Studio, whether or not its environment is set.
+
+    These checks run from a plain interpreter, so vcvars has not put dumpbin or the
+    bundled LLVM on PATH. vswhere is what Visual Studio installs to answer exactly this.
+    Only those two tools are known here; add a search pattern for any other.
+    """
+    found = shutil.which(tool_name)
+    if found:
+        return found
+    vswhere = (
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe"
+    )
+    assert vswhere.is_file(), f"Visual Studio is needed to find {tool_name}"
+    pattern = {
+        "dumpbin.exe": r"VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe",
+        "clang++.exe": r"VC\Tools\Llvm\x64\bin\clang++.exe",
+    }[tool_name]
+    matches = subprocess.run(
+        [str(vswhere), "-latest", "-products", "*", "-find", pattern],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    matches = [line.strip() for line in matches if line.strip()]
+    assert matches, f"the installed Visual Studio has no {tool_name}"
+    return matches[-1]
+
+
+def _cxx() -> str:
+    """The compiler driver the direct header and link probes use.
+
+    On Windows the clang++ that ships with Visual Studio, which accepts the same flags
+    as elsewhere and finds the MSVC headers and libraries on its own.
+    """
+    return _visual_studio_tool("clang++.exe") if _WINDOWS else _tool("c++")
+
+
+def _cmake_build(cmake: str, build_dir: Path, config: str = "Release") -> list:
+    """The build command for a consumer project.
+
+    The configuration is named for the multi-config Visual Studio generator, which
+    otherwise builds Debug. A Debug consumer uses the debug C++ library, whose types are
+    laid out differently from the Release one the shipped DLLs use, which the runtime
+    target's headers refuse at compile time. Single-config generators ignore it.
+    """
+    return [cmake, "--build", str(build_dir), "--config", config]
+
+
+def _executable(build_dir: Path, name: str) -> Path:
+    """Where a consumer build leaves its executable."""
+    if _WINDOWS:
+        return build_dir / "Release" / f"{name}.exe"
+    return build_dir / name
+
+
 def _loader_clean_environment() -> dict:
     """The environment with every loader override removed.
 
@@ -359,7 +458,19 @@ def _loader_clean_environment() -> dict:
         "DYLD_FALLBACK_LIBRARY_PATH",
         "DYLD_INSERT_LIBRARIES",
     )
-    return {key: value for key, value in os.environ.items() if key not in overrides}
+    environment = {
+        key: value for key, value in os.environ.items() if key not in overrides
+    }
+    if _WINDOWS:
+        # The Windows loader also searches PATH, so an entry reaching the installed
+        # package would find the DLLs the application is supposed to bring itself.
+        package = str(_installed_package_dir()).lower()
+        environment["PATH"] = os.pathsep.join(
+            entry
+            for entry in environment.get("PATH", "").split(os.pathsep)
+            if not entry.lower().startswith(package)
+        )
+    return environment
 
 
 def _installed_package_dir() -> Path:
@@ -398,6 +509,7 @@ def _export(work_dir: Path, mode: str) -> tuple:
         capture_output=True,
         text=True,
         check=False,
+        timeout=_EXPORT_TIMEOUT,
     )
     assert result.returncode == 0, (
         f"exporting the {mode} model failed, so the C++ side cannot be checked "
@@ -438,7 +550,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         f"installed package:\n{configured.stdout[-2000:]}\n{configured.stderr[-2000:]}"
     )
     built = subprocess.run(
-        [_tool("cmake"), "--build", str(build_dir)],
+        _cmake_build(_tool("cmake"), build_dir),
         capture_output=True,
         text=True,
         check=False,
@@ -447,7 +559,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         f"a consumer requesting {list(components)} compiled against the shipped "
         f"headers but did not link:\n{built.stdout[-3000:]}\n{built.stderr[-3000:]}"
     )
-    consumer = build_dir / "consumer"
+    consumer = _executable(build_dir, "consumer")
     assert consumer.is_file(), f"the build produced no {consumer}"
     return consumer
 
@@ -484,6 +596,7 @@ def _run_consumer(
         text=True,
         check=False,
         env=environment,
+        timeout=_RUN_TIMEOUT,
     )
     assert result.returncode == 0, (
         "the C++ application built against the installed wheel did not run "
@@ -528,6 +641,7 @@ def test_runtime_alone_links_but_cannot_compute(work_dir: Path) -> None:
         text=True,
         check=False,
         env=environment,
+        timeout=_RUN_TIMEOUT,
     )
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (
@@ -550,6 +664,87 @@ def test_kernels_component_runs_a_model(work_dir: Path) -> None:
     )
     output = _run_consumer(consumer, model, reference, work_dir)
     print(f"✓ a C++ app linking executorch::kernels_optimized runs a model ({output})")
+
+
+def test_thread_pool_consumer_exits(work_dir: Path) -> None:
+    """An application using the thread pool exits, run after run.
+
+    On Windows the pool used to be torn down at exit after the process had already
+    terminated its workers, waiting on a lock a dead worker held, and about half the runs
+    never exited. Five runs catch that almost every time, and each run is bounded by the
+    timeout in _run_consumer, so a regression fails as a named timeout here.
+    """
+    model, reference = _export(work_dir, "plain")
+    consumer = _build_consumer(
+        work_dir, "with-thread-pool", ["runtime", "kernels_optimized", "threadpool"]
+    )
+    runs = 5
+    for _ in range(runs):
+        _run_consumer(consumer, model, reference, work_dir)
+    print(f"✓ an application using the thread pool exited cleanly {runs} runs in a row")
+
+
+def test_mismatched_configuration_is_refused_on_windows(work_dir: Path) -> None:
+    """A consumer built in the other configuration from the DLLs fails to compile.
+
+    The DLLs use the C++ library of the configuration the wheel was built in, and a
+    program in the other configuration uses the other library, whose types are laid out
+    differently, so the two mixed would corrupt memory. The package states which one it
+    has, and the runtime headers refuse the mismatch; this builds the opposite of what the
+    installed package states and expects that refusal.
+    """
+    package_dir = _installed_package_dir()
+    config_text = (
+        package_dir / "share" / "cmake" / "executorch-config.cmake"
+    ).read_text()
+    debug_package = "ET_PREBUILT_DEBUG_CRT" in config_text
+    assert debug_package or "ET_PREBUILT_RELEASE_CRT" in config_text, (
+        "the installed package config states neither C++ library, so a consumer built in "
+        "the wrong configuration would not be caught"
+    )
+    wrong, needed = ("Release", "Debug") if debug_package else ("Debug", "Release")
+    source_dir = work_dir / "mismatched-consumer"
+    build_dir = work_dir / "mismatched-consumer-build"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "consumer.cpp").write_text(_CONSUMER_SOURCE)
+    (source_dir / "CMakeLists.txt").write_text(
+        _consumer_cmake(["runtime", "kernels_optimized"])
+    )
+    configured = subprocess.run(
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={package_dir / 'share' / 'cmake'}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (
+        configured.returncode == 0
+    ), f"the {wrong} consumer could not configure:\n{configured.stdout[-2000:]}"
+    built = subprocess.run(
+        _cmake_build(_tool("cmake"), build_dir, wrong),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = built.stdout + built.stderr
+    assert built.returncode != 0, (
+        f"a {wrong} consumer built against {needed} DLLs, so the debug and release C++ "
+        "libraries would meet in one process and corrupt memory instead of failing here"
+    )
+    assert f"build this program as {needed}" in output, (
+        f"the {wrong} consumer failed, but not on the C++ library check the runtime "
+        f"headers are meant to raise:\n{output[-2000:]}"
+    )
+    print(
+        f"✓ a {wrong} consumer of {needed} DLLs is refused at compile time instead of "
+        "mixing C++ libraries"
+    )
 
 
 def test_delegated_model_needs_the_delegate_component(work_dir: Path) -> None:
@@ -606,6 +801,7 @@ def test_delegated_model_needs_the_delegate_component(work_dir: Path) -> None:
         text=True,
         check=False,
         env=environment,
+        timeout=_RUN_TIMEOUT,
     )
     assert result.returncode != 0, (
         "a delegated program ran in an application that never linked the delegate, so "
@@ -624,6 +820,32 @@ def test_delegated_model_needs_the_delegate_component(work_dir: Path) -> None:
         "✓ the same delegated model fails without executorch::backend_xnnpack, "
         "so the component is what registers it"
     )
+
+
+def test_consumer_is_relocatable_on_windows(work_dir: Path) -> None:
+    """The Windows form of the relocation check.
+
+    A PE binary records no search path and no absolute location for a DLL, only its
+    name, and the loader looks beside the executable first. So the whole check is that
+    the application runs from somewhere else with the DLLs next to it and the installed
+    package out of reach.
+    """
+    model, reference = _export(work_dir, "plain")
+    consumer = _build_consumer(work_dir, "relocate", ["runtime", "kernels_optimized"])
+    dynamic = _recorded_dependencies(consumer)
+    assert _library_file_name("libexecutorch") in dynamic, (
+        "the application records no dependency on the shipped runtime, so it is not "
+        f"linking what the wheel ships:\n{dynamic}"
+    )
+    package_dir = _installed_package_dir()
+    deployed = work_dir / "deployed"
+    deployed.mkdir(parents=True, exist_ok=True)
+    moved = deployed / consumer.name
+    shutil.copy2(consumer, moved)
+    for library in sorted((package_dir / "lib").glob("*.dll")):
+        shutil.copy2(library, deployed / library.name)
+    output = _run_consumer(moved, model, reference, work_dir)
+    print(f"✓ the application still runs deployed away from the wheel ({output})")
 
 
 def test_consumer_is_relocatable(work_dir: Path) -> None:
@@ -766,20 +988,23 @@ def test_one_registry_in_the_cpp_process(work_dir: Path) -> None:
     # variable under test is how many further component libraries are linked, not
     # whether the program executes.
     lean = backends_seen("registry-lean", ["runtime", "kernels_optimized"])
-    full = backends_seen(
-        "registry-full",
-        ["runtime", "kernels_optimized", "threadpool", "etdump", "backend_xnnpack"],
-    )
+    # The profiler is not offered on Windows, so the full set there is one smaller.
+    full_components = ["runtime", "kernels_optimized", "threadpool", "backend_xnnpack"]
+    if not _WINDOWS:
+        full_components.insert(3, "etdump")
+    full = backends_seen("registry-full", full_components)
     # The delegate genuinely adds one backend, so the counts differ by exactly that.
     # What must not happen is the count resetting or doubling, which is what a second
     # registry in the process looks like.
     assert full == lean + 1, (
         f"an application linking two components sees {lean} registered backends while "
-        f"one linking five, of which exactly one registers a backend, sees {full}. A "
-        "component is carrying its own registry rather than resolving the shared one."
+        f"one linking {len(full_components)}, of which exactly one registers a backend, "
+        f"sees {full}. A component is carrying its own registry rather than resolving "
+        "the shared one."
     )
     print(
-        f"✓ one shared registry: {lean} backends with two components, {full} with five"
+        f"✓ one shared registry: {lean} backends with two components, {full} with "
+        f"{len(full_components)}"
     )
 
 
@@ -895,6 +1120,49 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
     requested and linked but not used.
     """
     package_dir = _installed_package_dir()
+    if _WINDOWS:
+        # The Windows wheel is built without the event tracer, so the component is
+        # deliberately not offered. Requiring it has to fail at configure time rather
+        # than hand a consumer a profiler that records nothing. The same project without
+        # etdump has to configure, and the failure has to name etdump, so this passes
+        # only for the reason it states rather than for any configure failure.
+        config_dir = package_dir / "share" / "cmake"
+
+        def configure(name, components):
+            source_dir = work_dir / name
+            source_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "consumer.cpp").write_text("int main() { return 0; }\n")
+            (source_dir / "CMakeLists.txt").write_text(_consumer_cmake(components))
+            return subprocess.run(
+                [
+                    _tool("cmake"),
+                    "-S",
+                    str(source_dir),
+                    "-B",
+                    str(work_dir / f"{name}-build"),
+                    f"-DCMAKE_PREFIX_PATH={config_dir}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        without = configure("without-etdump", ["runtime"])
+        assert without.returncode == 0, (
+            "the control project without etdump did not configure, so the etdump refusal "
+            f"below would say nothing:\n{(without.stdout + without.stderr)[-1500:]}"
+        )
+        configured = configure("with-etdump", ["runtime", "etdump"])
+        assert configured.returncode != 0, (
+            "a consumer requiring executorch::etdump configured on Windows, where the "
+            "wheel is built without the event tracer and the profiler records nothing"
+        )
+        assert "etdump" in configured.stdout + configured.stderr, (
+            "requiring etdump failed to configure, but not with a message about etdump:\n"
+            f"{(configured.stdout + configured.stderr)[-1500:]}"
+        )
+        print("✓ executorch::etdump is not offered on Windows")
+        return
     # Globbed, not an exact name: the library carries a version suffix outside a wheel build, and an exact
     # match would silently skip this check there. The profiler is required elsewhere in this suite, so its
     # absence is a fault rather than a reason to skip.
@@ -937,7 +1205,7 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
         f"{configured.stdout[-1500:]}\n{configured.stderr[-1500:]}"
     )
     built = subprocess.run(
-        [_tool("cmake"), "--build", str(build_dir)],
+        _cmake_build(_tool("cmake"), build_dir),
         capture_output=True,
         text=True,
         check=False,
@@ -975,26 +1243,56 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         # tests a configuration no consumer of this package is ever in.
         "-DC10_USING_CUSTOM_GENERATED_MACROS",
     ]
-    # Deliberately no CUDA toolkit include directory. A CUDA wheel's own headers have to compile
-    # against nothing but the wheel, the same as every other header here. Adding the builder's toolkit
-    # would measure the build machine rather than the consumer, and a header that only compiles that way
-    # fails in the consumer's project instead of here.
-    # Headers a wheel-only consumer cannot compile and is not expected to. Each needs something outside the
-    # package: a platform that is not the one being built for, or a third-party library the wheel does not
-    # carry. They ship because a source build includes them, and holding them to this rule would report a
-    # defect with no available fix.
+    cuda_headers = (
+        "executorch/extension/cuda/cuda_allocator.h",
+        "executorch/extension/cuda/runtime_api.h",
+    )
+    cuda_includes = []
+    if any(
+        (package_dir / "lib").glob(
+            _library_file_name("libexecutorch_extension_cuda") + "*"
+        )
+    ):
+        for header in cuda_headers:
+            assert (include_root / header).is_file(), f"{header} is not shipped"
+        # Only these headers require toolkit types. Use the consumer's toolkit
+        # search, not the compiler's default path or the builder's Torch headers.
+        toolkit_source = work_dir / "cuda-toolkit"
+        toolkit_source.mkdir(parents=True, exist_ok=True)
+        toolkit_build = work_dir / "cuda-toolkit-build"
+        (toolkit_source / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.19)\n"
+            "project(toolkit CXX)\n"
+            "find_package(CUDAToolkit REQUIRED)\n"
+            'file(WRITE "${CMAKE_BINARY_DIR}/includes.txt" "${CUDAToolkit_INCLUDE_DIRS}")\n'
+        )
+        command = [
+            _tool("cmake"),
+            "-S",
+            str(toolkit_source),
+            "-B",
+            str(toolkit_build),
+        ]
+        if os.environ.get("CUDA_HOME"):
+            command.append(f"-DCUDAToolkit_ROOT={os.environ['CUDA_HOME']}")
+        subprocess.run(command, capture_output=True, text=True, check=True)
+        cuda_includes = [
+            f"-I{directory}"
+            for directory in (toolkit_build / "includes.txt").read_text().split(";")
+            if directory
+        ]
+    source = work_dir / "header_probe.cpp"
     needs_more_than_the_wheel = (
         # These ship because other shipped headers include them, so they cannot be left out, and they do
         # not compile on their own: each needs a third-party library the wheel links but publishes no
         # headers for, or a platform other than the one being built for.
-        "mman_windows.h",  # a Windows compatibility shim, needs the MinGW headers
+        *(() if _WINDOWS else ("mman_windows.h",)),  # a Windows compatibility shim
         # These say in their own text that they must not be included directly, and name the header to
         # include instead. Including one anyway is a use error rather than a packaging defect.
         "c10/util/complex_math.h",
         "torch/headeronly/util/complex_utils.h",
     )
 
-    source = work_dir / "header_probe.cpp"
     broken = []
     skipped_but_fine = []
     compiled = 0
@@ -1006,7 +1304,14 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
             f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n"
         )
         result = subprocess.run(
-            [_tool("c++"), "-std=c++20", *includes, "-fsyntax-only", str(source)],
+            [
+                _cxx(),
+                "-std=c++20",
+                *includes,
+                *(cuda_includes if relative.as_posix() in cuda_headers else []),
+                "-fsyntax-only",
+                str(source),
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -1044,6 +1349,90 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     )
 
 
+def test_cuda_allocator_component(
+    work_dir: Path, *, late_toolkit: bool = False
+) -> None:
+    """Supply allocator headers without making consumers link another CUDA runtime."""
+    package = _installed_package_dir()
+    if not any(
+        (package / "lib").glob(_library_file_name("libexecutorch_extension_cuda") + "*")
+    ):
+        print("- no CUDA extension is shipped; skipping its allocator consumer")
+        return
+
+    name = "cuda-allocator-late-toolkit" if late_toolkit else "cuda-allocator-consumer"
+    source_dir = work_dir / name
+    source_dir.mkdir(parents=True, exist_ok=True)
+    allocator_dir = source_dir / "child" if late_toolkit else source_dir
+    allocator_dir.mkdir(exist_ok=True)
+    (allocator_dir / "consumer.cpp").write_text(
+        "#include <executorch/extension/cuda/cuda_allocator.h>\n"
+        "using namespace executorch::extension::cuda;\n"
+        "int main() {\n"
+        "  return CudaAllocator::instance().device_type() ==\n"
+        "      executorch::runtime::etensor::DeviceType::CUDA ? 0 : 1;\n"
+        "}\n"
+    )
+    consumer_cmake = _consumer_cmake(["extension_cuda"])
+    if late_toolkit:
+        (allocator_dir / "CMakeLists.txt").write_text(
+            "set(CMAKE_DISABLE_FIND_PACKAGE_CUDAToolkit FALSE)\n" + consumer_cmake
+        )
+        consumer_cmake = (
+            "cmake_minimum_required(VERSION 3.28)\n"
+            "project(consumer CXX)\n"
+            "set(CMAKE_DISABLE_FIND_PACKAGE_CUDAToolkit TRUE)\n"
+            "find_package(executorch REQUIRED COMPONENTS extension_cuda)\n"
+            "add_subdirectory(child)\n"
+        )
+    (source_dir / "empty.cpp").write_text("int main() { return 0; }\n")
+    consumer_cmake += (
+        "add_executable(empty empty.cpp)\n"
+        "target_link_libraries(empty PRIVATE executorch::extension_cuda)\n"
+        'if(CMAKE_SYSTEM_NAME STREQUAL "Linux")\n'
+        '  target_link_options(empty PRIVATE "-Wl,--no-as-needed")\n'
+        "endif()\n"
+    )
+    (source_dir / "CMakeLists.txt").write_text(consumer_cmake)
+    build_dir = work_dir / f"{name}-build"
+    configure = [
+        _tool("cmake"),
+        "-S",
+        str(source_dir),
+        "-B",
+        str(build_dir),
+        f"-DCMAKE_PREFIX_PATH={package}",
+    ]
+    if os.environ.get("CUDA_HOME"):
+        configure.append(f"-DCUDAToolkit_ROOT={os.environ['CUDA_HOME']}")
+    for command in (configure, _cmake_build(_tool("cmake"), build_dir)):
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, (
+            "a consumer linking only executorch::extension_cuda could not build:\n"
+            f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+    allocator_build = build_dir / "child" if late_toolkit else build_dir
+    subprocess.run(
+        [str(_executable(allocator_build, "consumer"))],
+        env=_loader_clean_environment(),
+        check=True,
+        timeout=_RUN_TIMEOUT,
+    )
+    if sys.platform.startswith("linux"):
+        empty = _executable(build_dir, "empty")
+        dynamic = _recorded_dependencies(empty)
+        assert not any(
+            "NEEDED" in line and "libcudart" in line for line in dynamic.splitlines()
+        ), f"an empty CUDA component consumer directly links the toolkit runtime:\n{dynamic}"
+        subprocess.run(
+            [str(empty)],
+            env=_loader_clean_environment(),
+            check=True,
+            timeout=_RUN_TIMEOUT,
+        )
+    print(f"✓ CUDA allocator consumer passes (late toolkit: {late_toolkit})")
+
+
 def test_shipped_headers_have_implementations(work_dir: Path) -> None:
     """A header that compiles but has no implementation in any shipped library is unusable.
 
@@ -1078,6 +1467,15 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
             "int main() { float data[4] = {}; auto tensor = make_tensor_ptr({2, 2}, data); "
             "return tensor->numel() == 4 ? 0 : 1; }\n"
         ),
+        # The C platform layer. clock.h's inline ticks_to_ns() calls et_pal_ticks_to_ns_multiplier(),
+        # which the runtime defines weakly so an application can override it. A weak definition was left
+        # out of the Windows DLL's export list, so this linked on Linux and macOS and not on Windows.
+        "runtime/platform/clock.h": (
+            "#include <executorch/runtime/platform/clock.h>\n"
+            "#include <executorch/runtime/platform/platform.h>\n"
+            "int main() { return executorch::runtime::ticks_to_ns(et_pal_current_ticks()) >= 0 "
+            "? 0 : 1; }\n"
+        ),
         # The profiler, which lives in its own library rather than in the runtime. Included because a
         # dead declaration shipped on this class for a while and the probes above could not reach it:
         # they link the runtime only, so no etdump symbol was ever resolved here.
@@ -1109,6 +1507,15 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
         "-DC10_USING_CUSTOM_GENERATED_MACROS",
     ]
     library_dir = package / "lib"
+    if _WINDOWS:
+        # The profiler is not offered on Windows and ships no import library there.
+        del probes["devtools/etdump/etdump_flatcc.h"]
+
+    def shipped(name: str) -> bool:
+        if _WINDOWS:
+            return (library_dir / f"{name}.lib").is_file()
+        return (library_dir / (f"lib{name}" + _dynamic_lib_suffix())).is_file()
+
     unresolved = []
     for header, program in probes.items():
         assert (
@@ -1118,12 +1525,13 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
         source.write_text(program)
         result = subprocess.run(
             [
-                _tool("c++"),
-                "-std=c++17",
+                _cxx(),
+                # The Windows runtime headers need C++20, as the imported targets state.
+                "-std=c++20" if _WINDOWS else "-std=c++17",
                 *includes,
                 str(source),
                 "-o",
-                str(work_dir / "link_probe"),
+                str(work_dir / ("link_probe.exe" if _WINDOWS else "link_probe")),
                 f"-L{library_dir}",
                 "-lexecutorch",
                 # The component libraries too, not only the runtime. Linking the runtime alone left
@@ -1136,16 +1544,20 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
                         "executorch_kernels_optimized",
                         "executorch_threadpool",
                     )
-                    if (library_dir / (f"lib{name}" + _dynamic_lib_suffix())).is_file()
+                    if shipped(name)
                 ],
-                f"-Wl,-rpath,{library_dir}",
+                # PE records no search path; nothing here runs the probe anyway.
+                *([] if _WINDOWS else [f"-Wl,-rpath,{library_dir}"]),
             ],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode != 0:
-            missing = re.findall(r"undefined reference to `([^']+)'", result.stderr)
+            missing = re.findall(
+                r"undefined (?:reference to `([^']+)'|symbol: (.+))", result.stderr
+            )
+            missing = [first or second for first, second in missing]
             unresolved.append(f"{header}: {sorted(set(missing))[:3] or 'did not link'}")
 
     assert not unresolved, (
@@ -1215,7 +1627,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         f"{configured.stdout[-1500:]}{configured.stderr[-1500:]}"
     )
     built = subprocess.run(
-        [_tool("cmake"), "--build", str(build_dir)],
+        _cmake_build(_tool("cmake"), build_dir),
         capture_output=True,
         text=True,
         check=False,
@@ -1241,7 +1653,8 @@ def _provision_pre_328_cmake(work_dir: Path) -> str:
         return override
 
     venv_dir = work_dir / "pre-328-cmake"
-    binary = venv_dir / "bin" / "cmake"
+    scripts = venv_dir / ("Scripts" if _WINDOWS else "bin")
+    binary = scripts / ("cmake.exe" if _WINDOWS else "cmake")
     if not binary.is_file():
         try:
             subprocess.run(
@@ -1251,7 +1664,7 @@ def _provision_pre_328_cmake(work_dir: Path) -> str:
             )
             subprocess.run(
                 [
-                    str(venv_dir / "bin" / "pip"),
+                    str(scripts / ("pip.exe" if _WINDOWS else "pip")),
                     "install",
                     "--quiet",
                     "cmake==3.24.*",
@@ -1327,6 +1740,15 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         "target_compile_definitions(consumer PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})\n"
         "target_link_libraries(consumer PRIVATE ${EXECUTORCH_LIBRARIES})\n"
         "set_target_properties(consumer PROPERTIES CXX_STANDARD ${EXECUTORCH_CXX_STANDARD})\n"
+        # No imported targets on this route, so no TARGET_RUNTIME_DLLS either. A Windows
+        # consumer copies the DLLs from the directory the package reports, plus any the
+        # package lists separately because they ship elsewhere.
+        "if(WIN32)\n"
+        '  file(GLOB _dlls "${EXECUTORCH_RUNTIME_LIBRARY_DIR}/*.dll")\n'
+        "  add_custom_command(TARGET consumer POST_BUILD COMMAND ${CMAKE_COMMAND} -E "
+        "copy_if_different ${_dlls} ${EXECUTORCH_RUNTIME_DLLS_EXTRA} "
+        "$<TARGET_FILE_DIR:consumer>)\n"
+        "endif()\n"
     )
     build_dir = work_dir / "pre-328-build"
     for command in (
@@ -1338,7 +1760,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
             str(build_dir),
             f"-DCMAKE_PREFIX_PATH={config.parent}",
         ],
-        [old_cmake, "--build", str(build_dir)],
+        _cmake_build(old_cmake, build_dir),
     ):
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         assert result.returncode == 0, (
@@ -1347,7 +1769,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
             f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
         )
 
-    consumer = build_dir / "consumer"
+    consumer = _executable(build_dir, "consumer")
     assert consumer.is_file(), f"the build produced no {consumer}"
     # Run it. Linking proves the variables name the right files; only executing proves
     # they also leave the program able to find them at run time, which is the half of
@@ -1361,7 +1783,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         "a consumer built through EXECUTORCH_LIBRARIES on pre-3.28 CMake does not "
         f"depend on the runtime:\n{dependencies}"
     )
-    assert "libexecutorch_kernels_optimized" in dependencies, (
+    assert _library_file_name("libexecutorch_kernels_optimized") in dependencies, (
         "the pre-3.28 aggregate does not carry the CPU kernels, so a consumer built "
         "through it would fail at run time with operators reported missing"
     )
@@ -1468,7 +1890,7 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
             str(build_dir),
             f"-DCMAKE_PREFIX_PATH={config.parent}",
         ],
-        [_tool("cmake"), "--build", str(build_dir)],
+        _cmake_build(_tool("cmake"), build_dir),
     ):
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         assert result.returncode == 0, (
@@ -1476,16 +1898,16 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
             f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
         )
 
-    consumer = build_dir / "consumer"
+    consumer = _executable(build_dir, "consumer")
     dependencies = _recorded_dependencies(consumer)
-    assert "libexecutorch_kernels_quantized" not in dependencies, (
+    assert _library_file_name("libexecutorch_kernels_quantized") not in dependencies, (
         "an application that linked only ${EXECUTORCH_LIBRARIES} depends on the "
         "quantized kernels. That library collides with the export-time plugin, so it "
         "has to be opted into by name rather than handed to every consumer."
     )
     # The rest of the aggregate still has to be there, or this would pass by shipping
     # nothing at all.
-    assert "libexecutorch_kernels_optimized" in dependencies, (
+    assert _library_file_name("libexecutorch_kernels_optimized") in dependencies, (
         "the aggregate no longer carries the CPU kernels, so an application linking it "
         "would fail at run time with the operators reported missing"
     )
@@ -1494,19 +1916,152 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
     )
 
 
+def _cmake_compile_definitions(work_dir: Path) -> list:
+    """The compile definitions the installed CMake package hands a consumer."""
+    config = _installed_package_dir() / "share" / "cmake" / "executorch-config.cmake"
+    source_dir = work_dir / "definitions-probe"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.19)\n"
+        "project(probe NONE)\n"
+        "find_package(executorch REQUIRED)\n"
+        'message(STATUS "DEFINITIONS=${EXECUTORCH_COMPILE_DEFINITIONS}")\n'
+    )
+    result = subprocess.run(
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(work_dir / "definitions-probe-build"),
+            f"-DCMAKE_PREFIX_PATH={config.parent}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        "could not read the compile definitions from the installed CMake package:\n"
+        f"{result.stdout[-2000:]}{result.stderr[-2000:]}"
+    )
+    line = next(
+        entry for entry in result.stdout.splitlines() if "DEFINITIONS=" in entry
+    )
+    return [d for d in line.split("DEFINITIONS=", 1)[1].split(";") if d]
+
+
+def test_pkg_config_builds_a_consumer(work_dir: Path) -> None:
+    """A program built from the flags pkg-config prints finds, links and runs the runtime.
+
+    Meson, Autotools and plain Makefiles read pkg-config files rather than CMake packages. The
+    kernels are named on the command line because the file describes only the runtime, the same
+    split as the CMake components. pkg-config itself comes from the pkgconf package on PyPI, so
+    the check does not depend on one the build machine happens to have.
+    """
+    pc_dir = _installed_package_dir() / "lib" / "pkgconfig"
+    if _WINDOWS:
+        # Not shipped on Windows: the file's link flags are GNU-style and a DLL records no
+        # search path for them to point at. Asserted rather than skipped, so a Windows wheel
+        # that starts shipping a file no Windows build system can use fails here.
+        assert not (pc_dir / "executorch.pc").exists(), (
+            f"the Windows wheel ships {pc_dir / 'executorch.pc'}, whose GNU-style link flags "
+            "no Windows consumer can use"
+        )
+        print("✓ no pkg-config file is shipped on Windows")
+        return
+    assert (pc_dir / "executorch.pc").is_file(), (
+        f"the wheel ships no pkg-config file in {pc_dir}, so a build system that reads "
+        "pkg-config cannot find the runtime"
+    )
+    venv_dir = work_dir / "pkgconf-venv"
+    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    subprocess.run(
+        [str(venv_dir / "bin" / "pip"), "install", "--quiet", "pkgconf"], check=True
+    )
+    pkg_config = str(venv_dir / "bin" / "pkg-config")
+
+    # PKG_CONFIG_LIBDIR alone, so a system executorch.pc cannot be found instead of this one.
+    environment = dict(os.environ, PKG_CONFIG_LIBDIR=str(pc_dir))
+    environment.pop("PKG_CONFIG_PATH", None)
+    result = subprocess.run(
+        [pkg_config, "--cflags", "--libs", "executorch"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.returncode == 0, (
+        "pkg-config --cflags --libs executorch failed against the installed file:\n"
+        f"{result.stdout[-2000:]}{result.stderr[-2000:]}"
+    )
+    flags = result.stdout.split()
+
+    # Both routes describe the same libraries, so they must agree on the definitions. A
+    # missing one fails silently for the consumer: ET_EVENT_TRACER_ENABLED changes the
+    # layout of the tracer scope classes, and without ET_USE_THREADPOOL parallel_for is serial.
+    pc_definitions = sorted(f[2:] for f in flags if f.startswith("-D"))
+    cmake_definitions = sorted(_cmake_compile_definitions(work_dir))
+    assert pc_definitions == cmake_definitions, (
+        f"the pkg-config file defines {pc_definitions}, but the CMake package in the same "
+        f"wheel defines {cmake_definitions}"
+    )
+
+    source = work_dir / "pkg-config-consumer.cpp"
+    source.write_text(_CONSUMER_SOURCE)
+    consumer = work_dir / "pkg-config-consumer"
+    if sys.platform == "darwin":
+        kernels = ["-lexecutorch_kernels_optimized"]
+    else:
+        kernels = [
+            "-Wl,--push-state,--no-as-needed",
+            "-lexecutorch_kernels_optimized",
+            "-Wl,--pop-state",
+        ]
+    built = subprocess.run(
+        [
+            _tool("c++"),
+            "-std=c++17",
+            str(source),
+            "-o",
+            str(consumer),
+            *flags,
+            *kernels,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, (
+        f"a program built with the pkg-config flags did not compile and link:\n"
+        f"{built.stdout[-3000:]}{built.stderr[-3000:]}"
+    )
+    model, reference = _export(work_dir, "plain")
+    output = _run_consumer(consumer, model, reference, work_dir)
+    print(f"✓ a C++ app built from pkg-config flags runs a model ({output})")
+
+
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
     test_profiler_component_is_usable(work_dir)
     test_every_shipped_header_compiles(work_dir)
+    test_cuda_allocator_component(work_dir)
+    test_cuda_allocator_component(work_dir, late_toolkit=True)
     test_shipped_headers_have_implementations(work_dir)
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_cannot_compute(work_dir)
     test_kernels_component_runs_a_model(work_dir)
+    test_pkg_config_builds_a_consumer(work_dir)
+    test_thread_pool_consumer_exits(work_dir)
+    if _WINDOWS:
+        test_mismatched_configuration_is_refused_on_windows(work_dir)
     test_pre_3_28_route_builds_a_consumer_through_variables(work_dir)
     test_quantized_kernels_component_runs_a_model(work_dir)
     test_aggregate_variable_excludes_the_quantized_kernels(work_dir)
     test_delegated_model_needs_the_delegate_component(work_dir)
-    test_consumer_is_relocatable(work_dir)
+    if _WINDOWS:
+        test_consumer_is_relocatable_on_windows(work_dir)
+    else:
+        test_consumer_is_relocatable(work_dir)
     test_one_registry_in_the_cpp_process(work_dir)
 
 

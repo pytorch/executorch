@@ -16,17 +16,15 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
-    is_quant,
-    tag_as_implicit_q_dq,
-)
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
+    why_not_x2_nearest_upsample,
 )
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -34,6 +32,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.utils import is_shape_dynamic, WhyNoPartition
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import free_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -163,18 +162,28 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
-            # Tag input nodes (dq nodes) as implicit q/dq nodes
-            for dq_input in node.all_input_nodes:
-                if is_dequant(dq_input):
-                    tag_as_implicit_q_dq(dq_input)
-
-            # Tag node_output (q node) as an implicit q/dq node
-            if is_quant(node_output):
-                tag_as_implicit_q_dq(node_output)
-
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
+
+
+class BroadcastBinaryConfig(GenericNodePartitionerConfig):
+    """
+    A binary op whose rank < 4 constant operands are delegated with it, so
+    they are serialized as constant data and laid out as NHWC ahead of time
+    instead of being reshaped and transposed at every inference. Any other
+    constant operand stays a delegate input, as for every other op.
+    """
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        deps = super().get_node_and_deps(node, ep)
+        return deps + [
+            input_node
+            for input_node in node.all_input_nodes
+            if is_foldable_broadcast_operand(ep, input_node)
+        ]
 
 
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
@@ -208,7 +217,7 @@ class HardtanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class AddConfig(GenericNodePartitionerConfig):
+class AddConfig(BroadcastBinaryConfig):
     target_name = "add.Tensor"
 
     def __init__(self, **kwargs):
@@ -245,6 +254,7 @@ class AbsConfig(GenericNodePartitionerConfig):
 
 class AvgPoolingConfig(GenericNodePartitionerConfig):
     target_name = "avg_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -352,7 +362,7 @@ class ClampConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class DivConfig(GenericNodePartitionerConfig):
+class DivConfig(BroadcastBinaryConfig):
     target_name = "div.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -368,9 +378,35 @@ class EluConfig(GenericNodePartitionerConfig):
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.elu.default
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+        # XNNPACK's ELU has only alpha, stored in the compute dtype. An alpha
+        # that overflows it gives NaN, and on x86 an infinite, zero or
+        # subnormal alpha is also mishandled. SELU decomposes to elu with
+        # scale != 1.
+        alpha, scale, input_scale = (
+            node.args[i] if len(node.args) > i else node.kwargs.get(name, 1)
+            for i, name in enumerate(("alpha", "scale", "input_scale"), start=1)
+        )
+        finfo = torch.finfo(node.meta["val"].dtype)
+        if (
+            isinstance(alpha, bool)
+            or not finfo.tiny <= alpha <= finfo.max
+            or scale != 1
+            or input_scale != 1
+        ):
+            why(
+                node,
+                reason="ELU only supports a positive normal alpha, scale = 1 and input_scale = 1",
+            )
+            return False
+        return True
+
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -432,14 +468,14 @@ class SiluConfig(GenericNodePartitionerConfig):
         )
 
 
-class MulConfig(GenericNodePartitionerConfig):
+class MulConfig(BroadcastBinaryConfig):
     target_name = "mul.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MaximumConfig(GenericNodePartitionerConfig):
+class MaximumConfig(BroadcastBinaryConfig):
     target_name = "maximum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -448,6 +484,7 @@ class MaximumConfig(GenericNodePartitionerConfig):
 
 class MaxPool2dConfig(GenericNodePartitionerConfig):
     target_name = "max_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -482,6 +519,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -500,6 +538,26 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class UpsampleNearest2dConfig(GenericNodePartitionerConfig):
+    target_name = "upsample_nearest2d.vec"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        reason = why_not_x2_nearest_upsample(node)
+        if reason is not None:
+            why(node, reason=reason)
+            return False
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.upsample_nearest2d.vec
 
 
 class ExpConfig(GenericNodePartitionerConfig):
@@ -609,7 +667,8 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support dim order conversion partitioning, not DType conversions
+        Partitions dim order conversions, and fp32 <-> fp16 and fp32 <-> bf16
+        dtype casts that keep the dim order.
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -619,13 +678,29 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         input_dtype = input_node.meta["val"].dtype
         output_dtype = node.meta["val"].dtype
 
-        # Return False if doing dtype conversion
         if input_dtype != output_dtype:
-            why(
-                node,
-                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            # A dtype cast is lowered to an XNNPACK convert node. XNNPACK has
+            # no fp16 <-> bf16 convert, and bf16 also needs enable_bf16, which
+            # check_common_constraints enforces.
+            supported_cast = {input_dtype, output_dtype} in (
+                {torch.float32, torch.float16},
+                {torch.float32, torch.bfloat16},
             )
-            return False
+            if not supported_cast:
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+                )
+                return False
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
+            )
+            if not same_dim_order:
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} cannot also change the dim order",
+                )
+                return False
 
         return True
 
@@ -635,6 +710,7 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -682,7 +758,7 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MinimumConfig(GenericNodePartitionerConfig):
+class MinimumConfig(BroadcastBinaryConfig):
     target_name = "minimum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -816,7 +892,7 @@ class ConstantPadConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
-class SubConfig(GenericNodePartitionerConfig):
+class SubConfig(BroadcastBinaryConfig):
     target_name = "sub.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -898,6 +974,10 @@ class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
         input_rank = len(node.args[0].meta["val"].shape)
         if dim != -1 and dim != input_rank:
             why(node, reason="unsqueeze_copy only supported on the trailing dimension")
+            return False
+
+        if sum(bool(free_symbols(d)) for d in node.meta["val"].shape) > 1:
+            why(node, reason="XNNPACK reshape only supports one dynamic dimension")
             return False
 
         return True

@@ -138,7 +138,7 @@ def _shape_symbols(shape) -> Set[str]:
 
 def graph_input_names(program, entrypoint: str = MAIN_ENTRYPOINT) -> List[str]:
     """Names of the converted coreai graph's inputs (in argument order)."""
-    graph = program.get_graph(entrypoint)
+    graph = program._get_graph(entrypoint)
     names = []
     for attr in graph.arg_attrs:
         if "coreai.name" in attr:
@@ -166,31 +166,46 @@ def _eval_dim(dim, subs: Dict[str, int], uname: str, axis: int) -> int:
             f"substitution; enumerate those dims too, or leave this input "
             f"fully dynamic"
         )
-    return int(resolved)
+    value = int(resolved)
+    if value <= 0:
+        values = ", ".join(sorted(f"{s}={v}" for s, v in mapping.items()))
+        raise ValueError(
+            f"input '{uname}' dim {axis} is {expr}, which is {value} when "
+            f"{values}; Core AI needs every dim to be positive, so drop that "
+            "enumerated value"
+        )
+    return value
 
 
 def apply_enumerated_shapes(
     program,
     edge_program: ExportedProgram,
     enumerations: Dict[str, Sequence[int]],
-) -> None:
+    *,
+    input_names: Sequence[str],
+    entrypoint: str = MAIN_ENTRYPOINT,
+) -> Dict[str, Dict[str, tuple]]:
     """Attach enumerated shapes to the coreai program (all delivery modes).
 
     ``enumerations`` is ``{symbol_name: [value, ...]}`` (from
     :func:`resolve_input_enumerations`).  For each of this subgraph's user inputs
     we read its symbolic shape from ``edge_program`` and substitute every
     combination of the enumerated symbol values, then attach the resulting shapes
-    via ``set_static_shape_config``.  Inputs are matched to coreai graph inputs by
-    name (the converter names each coreai input after its edge placeholder).
+    via ``set_static_shape_config``. ``input_names`` are the names the converter
+    was given for the user inputs, in boundary order.
+
+    Returns ``{key: {input_name: shape}}`` for the attached specializations, or
+    an empty dict when this subgraph has nothing enumerated. ``entrypoint`` is
+    erased and replaced by one function named ``f"{entrypoint}_{key}"`` per key.
     """
     if not enumerations:
-        return
+        return {}
 
     placeholders = {
         n.name: n for n in edge_program.graph.nodes if n.op == "placeholder"
     }
     user_inputs = list(edge_program.graph_signature.user_inputs)
-    coreai_names = set(graph_input_names(program))
+    coreai_names = set(graph_input_names(program, entrypoint))
 
     # Every entry has to name every boundary input, since
     # set_static_shape_config treats a key as a whole-graph shape: an input left
@@ -198,24 +213,24 @@ def apply_enumerated_shapes(
     # (a batch dim, say) would not be held equal.
     boundary_inputs = []
     active_symbols = set()
-    for uname in user_inputs:
-        # Match edge user inputs to coreai graph inputs by name; skip anything
-        # that isn't a coreai tensor input (e.g. a taken-over constant).
-        if not isinstance(uname, str) or uname not in coreai_names:
+    for uname, converted_name in zip(user_inputs, input_names):
+        # Skip anything that isn't a coreai tensor input (e.g. a taken-over
+        # constant).
+        if not isinstance(uname, str) or converted_name not in coreai_names:
             continue
         node = placeholders.get(uname)
         val = node.meta.get("val") if node is not None else None
         if not hasattr(val, "shape"):
             continue
         dims = list(val.shape)
-        boundary_inputs.append((uname, dims))
+        boundary_inputs.append((converted_name, dims))
         active_symbols |= _shape_symbols(dims) & set(enumerations)
 
     if not active_symbols:
         # Nothing here is enumerated, so there is nothing to specialize. Routine
         # under multi-partition lowering, and legitimate when the enumerated
         # input is not delegated at all.
-        return
+        return {}
 
     # One axis per enumerated symbol, shared across every input that uses it.
     # _eval_dim rejects any boundary dim left symbolic, so a specialization
@@ -241,4 +256,5 @@ def apply_enumerated_shapes(
             len(shapes_config),
             active,
         )
-        program.set_static_shape_config(MAIN_ENTRYPOINT, shapes_config)
+        program.set_static_shape_config(entrypoint, shapes_config)
+    return shapes_config

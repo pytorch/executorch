@@ -131,6 +131,18 @@ class OpenAITranscriptState:
             else:
                 continue
             norm.append([name, _normalize_tool_args(args)])
+        if isinstance(content, list):
+            content = [
+                {key: value for key, value in part.items() if key != "cache_control"}
+                for part in content
+            ]
+            if (
+                len(content) == 1
+                and set(content[0]) == {"type", "text"}
+                and content[0]["type"] == "text"
+                and isinstance(content[0]["text"], str)
+            ):
+                content = content[0]["text"]
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
@@ -139,6 +151,32 @@ class OpenAITranscriptState:
         if reasoning_content is None:
             return None
         return hashlib.sha256(reasoning_content.encode("utf-8")).digest()
+
+    @classmethod
+    def _history_fingerprints(cls, messages: list[ChatMessage], stored: dict):
+        digest = hashlib.sha256()
+        prefixes = [digest.hexdigest()]
+        turn = 0
+        for m in messages:
+            reasoning = cls._reasoning_fingerprint(m.reasoning_content)
+            if m.role == "assistant":
+                if m.reasoning_content is None and turn in stored:
+                    reasoning = stored[turn]["reasoning_fp"]
+                turn += 1
+            entry = json.dumps(
+                [
+                    m.role,
+                    m.name,
+                    m.tool_call_id,
+                    cls._assistant_fingerprint(m.content, m.tool_calls),
+                    reasoning.hex() if reasoning is not None else None,
+                ],
+                ensure_ascii=False,
+            ).encode()
+            digest.update(len(entry).to_bytes(8, "big"))
+            digest.update(entry)
+            prefixes.append(digest.hexdigest())
+        return prefixes
 
     def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
@@ -266,6 +304,7 @@ class OpenAITranscriptState:
         rendered_prompt: str,
         tools,
         template_kwargs,
+        history_messages: Optional[list[ChatMessage]] = None,
     ) -> PromptInput:
         """Return a PromptInput: token-ID segments when this session has faithful
         stored ids for matching prior assistant turns, else the plain rendered
@@ -273,12 +312,16 @@ class OpenAITranscriptState:
         records and only spliced when its content/tool calls and any supplied
         reasoning string match what we returned, and we kept faithful ids for it.
         Omitted or null reasoning permits reuse; a string edit invalidates the tail.
+        ``history_messages`` preserves source content before model normalization,
+        such as image URLs replaced with placeholders for rendering.
         Falls back to text on a sentinel collision or a render that
         dropped/duplicated a sentinel."""
         stored = self._turns.get(session_id or "")
         if not stored:
             return PromptInput(text=rendered_prompt)
+        history_messages = messages if history_messages is None else history_messages
         # Missing records render as text without shifting later turn indices.
+        prefixes = self._history_fingerprints(history_messages, stored)
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
         for k, pos in enumerate(positions):
@@ -286,10 +329,14 @@ class OpenAITranscriptState:
             if record is None:
                 continue
             m = messages[pos]
-            if self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"] or (
-                m.reasoning_content is not None
-                and self._reasoning_fingerprint(m.reasoning_content)
-                != record["reasoning_fp"]
+            if (
+                record.get("history_fp") != prefixes[pos]
+                or self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"]
+                or (
+                    m.reasoning_content is not None
+                    and self._reasoning_fingerprint(m.reasoning_content)
+                    != record["reasoning_fp"]
+                )
             ):
                 # Discard the stale tail without shifting subsequent turn indices.
                 self._turns[session_id or ""] = {
@@ -349,17 +396,19 @@ class OpenAITranscriptState:
         session_id: Optional[str],
         content,
         tool_calls,
-        generated_token_ids: list,
+        generated_token_ids: Optional[list[int]],
         prior_turns: int,
         preamble: str = "",
         reasoning_content: Optional[str] = None,
+        request_messages: list[ChatMessage],
     ) -> None:
         """Record this turn's {fingerprint, generated ids, generation preamble} at
         `prior_turns` (the assistant-turn count of the request it answers).
         Records at/after that index are dropped first, so a regenerated/branched
         turn replaces stale records rather than shadowing later hits. ids is None
         when the worker omitted them (stop-trimmed -> non-resumable), kept for
-        positional alignment. `reasoning_content` is the client-visible value,
+        positional alignment. An explicit [] is a known-empty, resumable turn.
+        `reasoning_content` is the client-visible value,
         including None when the client opted out. `preamble` is the generation
         scaffold (e.g. the Qwen3 `<think>` block) reproduced ahead of the spliced
         ids next request."""
@@ -369,9 +418,12 @@ class OpenAITranscriptState:
         for index in [index for index in turns if index >= prior_turns]:
             del turns[index]
         turns[prior_turns] = {
+            "history_fp": self._history_fingerprints(request_messages, turns)[-1],
             "fp": self._assistant_fingerprint(content, tool_calls),
             "reasoning_fp": self._reasoning_fingerprint(reasoning_content),
-            "ids": list(generated_token_ids) if generated_token_ids else None,
+            "ids": (
+                list(generated_token_ids) if generated_token_ids is not None else None
+            ),
             "preamble": preamble,
         }
 

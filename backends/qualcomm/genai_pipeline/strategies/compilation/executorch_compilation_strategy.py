@@ -81,9 +81,7 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
         and compile specs, which is additive to ``CompilationInputConfig``, so
         deferring costs nothing structurally. Per the layering used throughout
         this package, the fan-out belongs in this *strategy* -- adapters stay
-        thin 1:1 wrappers over one graph. ``CompilationOutputConfig.artifact_paths``
-        likewise stays a ``List`` here and becomes graph-name-keyed with the same
-        change.
+        thin 1:1 wrappers over one graph.
 
     Args:
         compiler_adapter: Injectable adapter for compilation operations.
@@ -163,8 +161,9 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
             )
 
             logger.info(
-                "Compilation completed: %d artifact(s) produced",
+                "Compilation completed: %d artifact(s) produced (%s)",
                 len(result.artifact_paths),
+                ", ".join(sorted(map(str, result.artifact_paths))),
             )
 
             return CompilationOutputConfig(

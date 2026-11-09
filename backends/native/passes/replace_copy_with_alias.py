@@ -10,6 +10,7 @@ import torch
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 _COPY_SUFFIX = "_copy"
 
@@ -114,6 +115,31 @@ def _recompute_view_val(
     return result if isinstance(result, torch.Tensor) else None
 
 
+def _representable_view_val(
+    alias_op: torch._ops.OpOverload, node: Node
+) -> torch.Tensor | None:
+    """Return the aliased view's value if TensorMeta can describe it, else None."""
+    from executorch.backends.native.serialization.graph_serialize import _dim_order
+
+    new_val = _recompute_view_val(alias_op, node)
+    if new_val is None:
+        return None
+    # TensorMeta cannot describe an offset into the source storage.
+    if not statically_known_true(new_val.storage_offset() == 0):
+        return None
+    # Avoid adding shape guards for potentially zero strides.
+    if not all(statically_known_true(s != 0) for s in new_val.stride()):
+        return None
+    # TensorMeta serializes only dim_order, not strides, so an aliased view
+    # whose layout is not dim-order expressible (e.g. a gapped last-dim
+    # slice) cannot be represented; leave it as a materialized copy.
+    try:
+        _dim_order(new_val)
+    except ValueError:
+        return None
+    return new_val
+
+
 class ReplaceCopyWithAliasPass(ExportPass):
     """Rewrite functional ``*_copy`` view ops into aliasing view ops.
 
@@ -134,15 +160,13 @@ class ReplaceCopyWithAliasPass(ExportPass):
     Multi-output views (``split``/``unbind``) are left as copies for now — their
     getitem consumers need handling this pass does not yet do.
 
-    A view is also left as a copy when its aliased layout is not dim-order
-    expressible (e.g. a gapped last-dim slice): the serialized TensorMeta records
-    only dim_order, not strides, so such a layout cannot be represented and must
-    stay a materialized (contiguous) copy.
+    A view is also left as a copy when it has a nonzero or dynamic storage offset,
+    or when its aliased layout is not dim-order expressible (e.g. a gapped
+    last-dim slice). The serialized TensorMeta records neither storage offsets nor
+    strides, so those layouts cannot be represented and must stay materialized.
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
-        from executorch.backends.native.serialization.graph_serialize import _dim_order
-
         graph = graph_module.graph
         modified = False
 
@@ -160,15 +184,8 @@ class ReplaceCopyWithAliasPass(ExportPass):
             if not isinstance(node.meta.get("val"), torch.Tensor):
                 continue
 
-            new_val = _recompute_view_val(alias_op, node)
+            new_val = _representable_view_val(alias_op, node)
             if new_val is None:
-                continue
-            # TensorMeta serializes only dim_order, not strides, so an aliased view
-            # whose layout is not dim-order expressible (e.g. a gapped last-dim
-            # slice) cannot be represented; leave it as a materialized copy.
-            try:
-                _dim_order(new_val)
-            except ValueError:
                 continue
 
             node.target = alias_op

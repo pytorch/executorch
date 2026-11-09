@@ -53,6 +53,7 @@
 //                resumable
 //                ...optional model-specific terminal stats}
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
+//       Close also includes "existed": bool (false for an already-absent key).
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
 //                                              // unsupported_session
 
@@ -699,6 +700,7 @@ inline void worker_handle_request(
   int64_t num_generated = 0;
   std::string finish = "length"; // EOS or stop string -> "stop"
   bool stop_string = false; // a request stop string was matched
+  std::optional<std::string> matched_stop;
   bool cancelled = false;
   bool cancellation_sealed = false;
   auto seal_cancellation = [&]() {
@@ -746,7 +748,9 @@ inline void worker_handle_request(
       buf.erase(0, cut);
     }
     bool stop_hit = false;
-    const size_t safe = stop_safe_prefix_len(pending, stops, stop_hit);
+    size_t matched = std::string::npos;
+    const size_t safe =
+        stop_safe_prefix_len(pending, stops, stop_hit, &matched);
     if (stop_hit) {
       // The request is terminal as soon as the stop sequence is recognized.
       // Seal before worker_emit(), which may block while flushing stdout.
@@ -759,6 +763,7 @@ inline void worker_handle_request(
     if (stop_hit) {
       finish = "stop"; // reached a stop string: drop it and everything after
       stop_string = true;
+      matched_stop = stops[matched];
       // Trimming at the stop means the next turn's prompt won't be an exact
       // token extension of resident, so force a reset (no false prefix match).
       //
@@ -799,6 +804,8 @@ inline void worker_handle_request(
       {"reused_prompt_tokens", reused},
       {"prefilled_prompt_tokens", prefilled},
       {"session_reset_reason", plan.reason}};
+  done["matched_stop"] =
+      matched_stop ? nlohmann::json(*matched_stop) : nlohmann::json(nullptr);
   if (cancelled) {
     done["cancelled"] = true;
   }
@@ -884,8 +891,8 @@ class WorkerSessions {
   }
 
   // Destroy a named session (freeing its per-session state); idempotent.
-  void close_named(const std::string& id) {
-    named_.erase(id);
+  bool close_named(const std::string& id) {
+    return named_.erase(id) != 0;
   }
 
   // Clear a named session's context (reset KV/recurrent + resident ids) while
@@ -964,8 +971,9 @@ inline int run_worker_stdio_loop(
           throw std::runtime_error("session_id required for op");
         }
         if (op == "close") {
-          sessions.close_named(id);
-          worker_emit({{"closed", true}, {"session_id", id}});
+          const bool existed = sessions.close_named(id);
+          worker_emit(
+              {{"closed", true}, {"session_id", id}, {"existed", existed}});
         } else if (op == "reset") {
           // idempotent (no-op if absent); only acks success if the reset took
           if (sessions.reset_named(id) != ::executorch::runtime::Error::Ok) {

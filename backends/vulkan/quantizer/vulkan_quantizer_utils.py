@@ -201,7 +201,12 @@ def _convert_scalars_to_attrs(model: torch.fx.GraphModule) -> torch.fx.GraphModu
         args = list(n.args)
         new_args = []
         for i in range(len(args)):
-            if isinstance(args[i], torch.fx.Node):
+            # Only FP32 binary ops need scalar lifting for quantization. Other
+            # dtypes must retain Python scalar promotion and rounding semantics.
+            if (
+                isinstance(args[i], torch.fx.Node)
+                or n.meta["val"].dtype != torch.float32
+            ):
                 new_args.append(args[i])
                 continue
             prefix = "_tensor_constant_"

@@ -186,10 +186,18 @@ inline void exec_take_along_axis(
     const TakeAlongAxisNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      take_along_axis(
-          st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "TakeAlongAxis");
+  const int size = x.shape(axis);
+  const auto& indices = st.const_tensor_ref(n.indices);
+  // An empty axis has no position to clamp to.
+  if (size == 0 && indices.size() != 0) {
+    throw std::runtime_error("TakeAlongAxis: cannot take from an empty axis");
+  }
+  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
+  const auto clamped = clip(indices, array(-size), array(size - 1), s);
+  st.set_tensor(n.out, take_along_axis(x, clamped, axis, s));
 }
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -338,8 +346,8 @@ inline void exec_update_and_attend(
   // The cache places the step and attends over whatever storage its layout
   // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
-  // One position per query token, read host-side so the cache stays pure graph
-  // + integer bookkeeping. Every layer of a step reads the same position
+  // Read positions host-side so the cache stays pure graph + integer
+  // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
@@ -350,10 +358,6 @@ inline void exec_update_and_attend(
     throw std::runtime_error("update_and_attend: position must be contiguous");
   }
   const int length = static_cast<int>(pos.size());
-  if (length != static_cast<int>(q.shape(2))) {
-    throw std::runtime_error(
-        "update_and_attend: position must hold one entry per query token");
-  }
   std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:
@@ -902,6 +906,66 @@ inline void exec_scatter_add(
 }
 
 inline void
+exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const int rank = static_cast<int>(x.ndim());
+
+  if (n.indices.size() != n.axes.size()) {
+    throw std::runtime_error(
+        "ScatterNode: indices count (" + std::to_string(n.indices.size()) +
+        ") must match axes count (" + std::to_string(n.axes.size()) + ")");
+  }
+
+  for (auto axis : n.axes) {
+    if (axis < 0 || axis >= rank) {
+      throw std::runtime_error(
+          "ScatterNode: axis " + std::to_string(axis) +
+          " out of range for input with ndim " + std::to_string(rank));
+    }
+  }
+
+  std::vector<array> indices;
+  indices.reserve(n.indices.size());
+  size_t index_ndim = 0;
+  for (auto tid : n.indices) {
+    indices.push_back(st.const_tensor_ref(tid));
+    index_ndim = std::max(index_ndim, indices.back().ndim());
+  }
+
+  // mlx::scatter checks neither the index values nor where a slice ends, and
+  // either one out of range would write outside x. The handler always emits
+  // a slice of size 1 on each indexed axis.
+  const auto& updates = st.const_tensor_ref(n.updates);
+  for (auto axis : n.axes) {
+    const auto dim = index_ndim + static_cast<size_t>(axis);
+    if (updates.ndim() <= dim || updates.shape()[dim] != 1) {
+      throw std::runtime_error(
+          "ScatterNode: updates must have size 1 on indexed axis " +
+          std::to_string(axis));
+    }
+  }
+  // Clamped on the device: a host range check has to wait for indices that
+  // are computed on the device, which made a MoE block several times slower.
+  for (size_t i = 0; i < indices.size(); ++i) {
+    const int size = x.shape(n.axes[i]);
+    if (size == 0) {
+      // x is empty, so there is nowhere to write.
+      st.set_tensor(n.out, x);
+      return;
+    }
+    indices[i] = clip(indices[i], array(-size), array(size - 1), s);
+  }
+
+  if (n.reduce == "none") {
+    st.set_tensor(n.out, scatter(x, indices, updates, n.axes, s));
+  } else if (n.reduce == "sum") {
+    st.set_tensor(n.out, scatter_add(x, indices, updates, n.axes, s));
+  } else {
+    throw std::runtime_error("ScatterNode: unsupported reduce: " + n.reduce);
+  }
+}
+
+inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
@@ -1215,7 +1279,8 @@ inline void exec_slice_update(
   // st.set_tensor does a std::move. Keeping for now, but should investigate and
   // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
-  array& dst = st.tensor_ref(n.dst);
+  // Only the in-place form writes dst. Otherwise dst may be a constant.
+  const array& dst = st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
 
   const int rank = static_cast<int>(dst.ndim());
@@ -1256,9 +1321,10 @@ inline void exec_slice_update(
       return;
     }
     if (n.step == 1) {
-      dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+      st.tensor_ref(n.dst) =
+          slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
     } else {
-      dst = slice_update(
+      st.tensor_ref(n.dst) = slice_update(
           dst, upd, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s);
     }
 
@@ -1860,6 +1926,13 @@ exec_cumsum(const CumsumNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_cummax(const CummaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(
+      n.out, cummax(x, n.axis, /*reverse=*/false, /*inclusive=*/true, s));
+}
+
+inline void
 exec_stack(const StackNode& n, ExecutionState& st, StreamOrDevice s) {
   std::vector<array> tensors;
   for (auto tid : n.tensors) {
@@ -2014,6 +2087,17 @@ class Interpreter {
     }
     const auto& chain = prog.instruction_chains[chain_idx];
     const size_t threshold = eval_threshold_bytes_;
+
+    // Drop a temp as soon as this chain is done with it: ExecutionState holds
+    // every value a chain produces, and an AOT plan that assigns one slot per
+    // instruction leaves a long chain holding all of them. The table is built
+    // once at load; an empty one means this chain opts out.
+    const std::vector<uint32_t>* last_use = nullptr;
+    if (chain_idx < st.temp_last_use.size() &&
+        !st.temp_last_use[chain_idx].empty()) {
+      last_use = &st.temp_last_use[chain_idx];
+    }
+
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
@@ -2026,24 +2110,50 @@ class Interpreter {
         dispatch(instr, st, stream);
       }
       st.end_op();
+
+      // Account before releasing: a shrinking op's widest tensor is often an
+      // input it was the last to read. SCAN and IF already accumulated their
+      // own child instructions through the shared counter; charging the parent
+      // for them again would double count.
+      if (threshold != 0 && instr.op != OpCode::SCAN &&
+          instr.op != OpCode::IF) {
+        accumulate_instruction_bytes(instr, st, pending_bytes);
+      }
+
+      // Release before evaluating, so the barrier skips dead temps.
+      if (last_use != nullptr) {
+        release_temp_slots(instr, st, *last_use, static_cast<uint32_t>(idx));
+      }
+
       ++idx;
 
-      if (threshold != 0) {
-        // SCAN and IF already accumulated their own child instructions through
-        // the shared counter; charging the parent for them again would double
-        // count.
-        if (instr.op != OpCode::SCAN && instr.op != OpCode::IF) {
-          accumulate_instruction_bytes(instr, st, pending_bytes);
-        }
-        if (!accumulate_only && pending_bytes >= threshold) {
-          evaluate_state_tensors(st);
-          pending_bytes = 0;
-        }
+      if (threshold != 0 && !accumulate_only && pending_bytes >= threshold) {
+        evaluate_state_tensors(st);
+        pending_bytes = 0;
       }
     }
   }
 
  private:
+  // Drop every temp whose last use in this chain is the instruction just run.
+  // Ids run Constant -> Input -> Output -> MutableBuffer -> Temp, so
+  // `>= mutable_buffer_end` is neither a method output nor a caller-visible
+  // buffer and dropping one cannot be observed from outside the chain.
+  static void release_temp_slots(
+      const Instruction& instr,
+      ExecutionState& st,
+      const std::vector<uint32_t>& last_use,
+      uint32_t idx) {
+    for_each_tid(instr, [&](Tid id) {
+      if (id.idx >= st.mutable_buffer_end) {
+        const uint32_t slot = st.tensor_index(id);
+        if (last_use[slot] == idx) {
+          st.tensors[slot].reset();
+        }
+      }
+    });
+  }
+
   // Charge `pending_bytes` for one instruction. The estimate is the largest
   // per-execution tensor the instruction touches, which tracks the size of what
   // it just produced without needing to know which tid is its output.
@@ -2540,6 +2650,9 @@ class Interpreter {
       case OpCode::CUMSUM:
         ops::exec_cumsum(std::get<CumsumNode>(instr.node), st, s);
         break;
+      case OpCode::CUMMAX:
+        ops::exec_cummax(std::get<CummaxNode>(instr.node), st, s);
+        break;
       case OpCode::STACK:
         ops::exec_stack(std::get<StackNode>(instr.node), st, s);
         break;
@@ -2576,6 +2689,9 @@ class Interpreter {
         break;
       case OpCode::SCATTER_ADD:
         ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER:
+        ops::exec_scatter(std::get<ScatterNode>(instr.node), st, s);
         break;
       case OpCode::GATHER_MM:
         ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);

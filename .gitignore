@@ -18,6 +18,7 @@ cmake-ios-out/
 cmake-out*
 cmake-out-android/
 backends/webgpu/third-party/
+backends/arm/test/models/neural_graphics_data/
 build-android/
 build-x86/
 build-direct/
@@ -77,6 +78,7 @@ xcuserdata/
 /devtools/bundled_program/serialize/*.fbs
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
+/extension/pybindings/_C.pyi
 /include/
 /share/
 /version.py

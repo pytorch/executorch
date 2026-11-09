@@ -126,6 +126,9 @@ class ModelArgs:
     local_rope_theta: Optional[float] = (
         None  # For sliding window attention. e.g., gemma3-1b
     )
+    rope_parameters: Optional[Dict[str, Dict[str, Any]]] = (
+        None  # Per-layer-type RoPE configs. e.g., {"full_attention": {"rope_theta": 5000000, "partial_rotary_factor": 0.25}}
+    )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
@@ -184,9 +187,15 @@ class ModelArgs:
     normalize_tok_embeddings: bool = False
     scale_query_by: float = 1.0
     use_attn_o_gate: bool = False
+    headwise_attn_output_gate: bool = False
     use_attn_o_norm: bool = False
     use_residual_gate: bool = False
     use_ffn_learnable_scales: bool = False
+    # Zero-centered gamma: the checkpoint stores gamma offset by -1, so the
+    # effective scale is ``weight + 1``. rlformers applies this in
+    # RMSNormWithInputScale; ignoring it silently rescales every post-FFN norm.
+    norm_zero_centered_gamma: bool = False
+    output_norm_gain_center_type: str = "one"
     output_soft_cap_temp: Optional[float] = None
     output_linear_intermediate_dim: int = 0
 

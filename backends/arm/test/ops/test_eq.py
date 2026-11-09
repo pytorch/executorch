@@ -71,7 +71,54 @@ test_data_tensor = {
     "eq_tensor_rank3_randn": lambda: op_eq_tensor_rank3_randn,
     "eq_tensor_rank4_randn": lambda: op_eq_tensor_rank4_randn,
 }
-
+test_data_tensor_bool = {
+    "eq_bool": lambda: Equal(
+        torch.tensor([[True], [False], [True]]),
+        torch.tensor([[True, False, True]]),
+    ),
+}
+test_data_tensor_mixed = {
+    "eq_int16_float32": lambda: Equal(
+        torch.tensor([[-2], [0], [2]], dtype=torch.int16),
+        torch.tensor([[-1.5, 0, 1.5]]),
+    ),
+    "eq_float32_int16": lambda: Equal(
+        torch.tensor([[-2.0], [0.0], [2.0]]),
+        torch.tensor([[-2, 0, 2]], dtype=torch.int16),
+    ),
+    "eq_int32_float32": lambda: Equal(
+        torch.tensor([[-2], [0], [2]], dtype=torch.int32),
+        torch.tensor([[-1.5, 0, 1.5]]),
+    ),
+    "eq_float32_int32": lambda: Equal(
+        torch.tensor([[-2.0], [0.0], [2.0]]),
+        torch.tensor([[-2, 0, 2]], dtype=torch.int32),
+    ),
+}
+test_data_tensor_promoted = {
+    "eq_int16_float16_rounded": lambda: Equal(
+        torch.tensor([2049], dtype=torch.int16),
+        torch.tensor([2048], dtype=torch.float16),
+    ),
+    "eq_int16_bfloat16_rounded": lambda: Equal(
+        torch.tensor([257], dtype=torch.int16),
+        torch.tensor([256], dtype=torch.bfloat16),
+    ),
+}
+test_data_tensor_int = {
+    "eq_int8": lambda: Equal(
+        torch.tensor([-128, -1, 0, 127], dtype=torch.int8),
+        torch.tensor([-127, -1, 1, 127], dtype=torch.int8),
+    ),
+    "eq_int8_int16": lambda: Equal(
+        torch.tensor([-128, -1, 0, 127], dtype=torch.int8),
+        torch.tensor([-128, -1, 1, 127], dtype=torch.int16),
+    ),
+    "eq_int16": lambda: Equal(
+        torch.tensor([-32768, -129, 128, 32767], dtype=torch.int16),
+        torch.tensor([-32767, -129, 129, 32767], dtype=torch.int16),
+    ),
+}
 test_data_tensor_bf16 = {
     "eq_tensor_rank2_rand_bf16": lambda: Equal(
         torch.rand(4, 5, dtype=torch.bfloat16),
@@ -115,7 +162,13 @@ test_data_scalar_fp16 = {
 
 
 @common.parametrize(
-    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+    "test_module",
+    test_data_tensor
+    | test_data_tensor_bool
+    | test_data_tensor_bf16
+    | test_data_tensor_fp16
+    | test_data_tensor_mixed
+    | test_data_tensor_promoted,
 )
 def test_eq_scalar_tosa_FP_tensor(test_module):
     pipeline = TosaPipelineFP[input_t](
@@ -142,7 +195,7 @@ def test_eq_scalar_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_int)
 def test_eq_scalar_tosa_INT_tensor(test_module):
     pipeline = TosaPipelineINT[input_t](
         test_module(),
@@ -150,6 +203,20 @@ def test_eq_scalar_tosa_INT_tensor(test_module):
         Equal.aten_op_Tensor,
         Equal.exir_op,
         frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor_mixed)
+def test_eq_scalar_tosa_INT_FP_mixed(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_extensions=["FP"],
+        frobenius_threshold=None,
         cosine_threshold=None,
     )
     pipeline.run()
@@ -286,7 +353,11 @@ def test_eq_scalar_u85_INT_16a8w(test_module):
 
 
 @common.parametrize(
-    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+    "test_module",
+    test_data_tensor
+    | test_data_tensor_bf16
+    | test_data_tensor_fp16
+    | test_data_tensor_mixed,
 )
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_no_quant_tensor(test_module):
@@ -315,7 +386,10 @@ def test_eq_scalar_vgf_no_quant(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize(
+    "test_module",
+    test_data_tensor | test_data_tensor_mixed,
+)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_quant_tensor(test_module):
     pipeline = VgfPipeline[input_t](

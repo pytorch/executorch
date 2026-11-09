@@ -106,7 +106,7 @@ bool check_cat_args(
     int64_t dim,
     Tensor& out);
 
-void get_cat_out_target_size(
+bool get_cat_out_target_size(
     executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     executorch::aten::SizesType* out_sizes,

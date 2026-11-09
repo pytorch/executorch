@@ -22,10 +22,10 @@ pip install . --no-deps
 cd ..
 rm -rf neural-graphics-model-gym
 
-# Prepare the fixed NSS artifacts before pytest. The calibration data is
-# generated from raw 128x128 training frames; evaluation retains the
-# deployment-resolution input.
+# Prepare fixed neural-graphics artifacts before pytest. NFRU calibration and
+# evaluation retain the native autoencoder input resolution.
 python3 -c '
-from executorch.backends.arm.scripts.generate_neural_graphics_test_data import generate_test_datasets_from_scratch
+from executorch.backends.arm.scripts.generate_neural_graphics_test_data import generate_nfru_test_datasets_from_scratch, generate_test_datasets_from_scratch
 generate_test_datasets_from_scratch()
+generate_nfru_test_datasets_from_scratch()
 '

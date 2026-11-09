@@ -6,7 +6,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import ctypes
 import random
 import unittest
 from types import SimpleNamespace
@@ -267,6 +266,8 @@ class TestSerialization(unittest.TestCase):
             shaders=[],
         )
         const_tensors = self._generate_random_const_tensors(5)
+        const_tensors.append(torch.randn(3, 4, 4)[1])
+        const_tensors.append(torch.randn(3, 4, 4)[1].t())
 
         serialized_binary = serialize_vulkan_graph(vk_graph, const_tensors, [])
 
@@ -305,14 +306,7 @@ class TestSerialization(unittest.TestCase):
 
             constant_data_bytes = constant_data_payload[offset : offset + length]
 
-            array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
-            array = ctypes.cast(
-                tensor.untyped_storage().data_ptr(),
-                ctypes.POINTER(array_type),
-            ).contents
-
-            tensor_bytes = bytes(array)
-            self.assertEqual(constant_data_bytes, tensor_bytes)
+            self.assertEqual(constant_data_bytes, tensor.numpy().tobytes())
 
     def test_serialize_deserialize_vkgraph(self) -> None:
         in_vk_graph = VkGraph(
@@ -371,6 +365,14 @@ class TestSerialization(unittest.TestCase):
                 VkValue(value=Double(double_val=1.5)),
             ]
         )
+
+    def test_serialize_deserialize_signed_zero(self) -> None:
+        values = [
+            VkValue(Double(-0.0)),
+            VkValue(Double(0.0)),
+            VkValue(DoubleList([-0.0, 0.0])),
+        ]
+        self.assertEqual(repr(self._round_trip(values).values), repr(values))
 
     def test_serialize_deserialize_non_finite_floats_in_list(self) -> None:
         # json only emits a float as a chunk of its own inside an object; in a

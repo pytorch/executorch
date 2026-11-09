@@ -21,7 +21,11 @@ from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.exir._serialize._named_data_store import NamedDataStore
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    DelegateScratchSpec,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
@@ -76,7 +80,7 @@ class EthosUBackend(BackendDetails):
         return vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() <= logging.INFO,
+            verbose=logger.isEnabledFor(logging.DEBUG),
             intermediate_path=compile_spec._get_intermediate_path(),
             block_placements=(
                 compile_spec.external_block_placements.to_block_placements()
@@ -114,11 +118,40 @@ class EthosUBackend(BackendDetails):
         # which can be passed on to next compilation step.
         tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
+        unused_inputs = [
+            node.name
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+            and not node.users
+            and node.name in edge_program.graph_signature.user_inputs
+        ]
+        if unused_inputs:
+            raise RuntimeError(
+                "A delegate input is not used after lowering, for example an "
+                "input that only gives its shape to zeros_like or full_like, or "
+                "that copy_ overwrites. Vela removes unused inputs, but the "
+                "Ethos-U runtime binds delegate arguments by position, so this "
+                f"delegate would compute on the wrong tensors. Unused: {unused_inputs}"
+            )
+
         compile_result = EthosUBackend._compile_tosa_flatbuffer(
             tosa_preprocess.processed_bytes, compile_spec
         )
+        scratch_specs = (
+            [
+                DelegateScratchSpec(
+                    nbytes=compile_result.scratch_size,
+                    label="ethosu_scratch",
+                )
+            ]
+            if compile_result.scratch_size > 0 and compile_spec.plan_delegate_scratch
+            else []
+        )
         if not compile_result.external_blocks:
-            return PreprocessResult(processed_bytes=compile_result.processed_bytes)
+            return PreprocessResult(
+                processed_bytes=compile_result.processed_bytes,
+                scratch_specs=scratch_specs,
+            )
 
         data_store = NamedDataStore()
         for external_block in compile_result.external_blocks:
@@ -131,4 +164,5 @@ class EthosUBackend(BackendDetails):
         return PreprocessResult(
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
+            scratch_specs=scratch_specs,
         )

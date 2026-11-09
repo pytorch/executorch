@@ -93,6 +93,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_atan.cpp",
     "kernels/portable/cpu/op_atan2.cpp",
     "kernels/portable/cpu/op_atanh.cpp",
+    "kernels/portable/cpu/op_avg_pool1d.cpp",
     "kernels/portable/cpu/op_avg_pool2d.cpp",
     "kernels/portable/cpu/op_bitwise_and.cpp",
     "kernels/portable/cpu/op_bitwise_not.cpp",
@@ -111,6 +112,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_copy.cpp",
     "kernels/portable/cpu/op_cos.cpp",
     "kernels/portable/cpu/op_cosh.cpp",
+    "kernels/portable/cpu/op_cummin.cpp",
     "kernels/portable/cpu/op_cumsum.cpp",
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",
@@ -229,6 +231,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_unbind_copy.cpp",
     "kernels/portable/cpu/op_unfold_copy.cpp",
     "kernels/portable/cpu/op_unsqueeze_copy.cpp",
+    "kernels/portable/cpu/op_upsample_bicubic2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_nearest2d.cpp",
@@ -343,6 +346,7 @@ EXTENSION_EVALUE_UTIL_SRCS = [
 EXTENSION_FLAT_TENSOR_SRCS = [
     "extension/flat_tensor/flat_tensor_data_map.cpp",
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
+    "extension/flat_tensor/serialize/serialize.cpp",
 ]
 
 EXTENSION_MEMORY_ALLOCATOR_SRCS = [
@@ -351,6 +355,7 @@ EXTENSION_MEMORY_ALLOCATOR_SRCS = [
 
 EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
+    "extension/module/ptn_module.cpp",
 ]
 
 EXTENSION_NAMED_DATA_MAP_SRCS = [
@@ -387,12 +392,11 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
 TRAIN_XOR_SRCS = [
-    # REVIEW: removing this breaks the build; where is it supposed to come from?
-    "extension/flat_tensor/serialize/serialize.cpp",
     "extension/training/examples/XOR/train.cpp",
 ]
 
@@ -420,14 +424,32 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNWeightsCacheManager.cpp",
     "runtime/XNNWorkspaceManager.cpp",
     "runtime/XnnpackBackendOptions.cpp",
+]
+
+XNNPACK_PROFILER_BUCK_SRCS = [
     "runtime/profiling/XNNProfiler.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
 
+XNNPACK_PROFILER_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_PROFILER_BUCK_SRCS]
+
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
+
+CPU_RUNTIME_BUCK_SRCS = [
+    "runtime/KernelProvider.cpp",
+    "runtime/CPUPlan.cpp",
+    "runtime/op_helpers/Convolution.cpp",
+]
+
+# CpuBackend with the default provider composition: XNNPACK and Reference.
+CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
+    "runtime/CPUBackend.cpp",
+    "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+]]
 
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",

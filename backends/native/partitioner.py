@@ -45,9 +45,22 @@ _SUPPORTED_NON_CORE_OPS = [
     # GGUF weight dequantize stays in the delegate; the serializer folds it into a
     # PackedQuant weight on the consuming op.
     torch.ops.torchao.dequantize_gguf.default,
+    torch.ops.torchao.choose_qparams_affine.default,
+    torch.ops.torchao.quantize_affine.default,
+    torch.ops.torchao.dequantize_affine.default,
     rope_op,
     torch.ops.aten.rms_norm.default,
 ]
+
+# A SymInt, and any op arg that references one, is an execution-time value. An
+# engine must use its current value on every execute, not the one seen at load,
+# or reject the graph at load.
+_SUPPORTED_SYMBOLIC_OPS = {
+    operator.add,
+    operator.floordiv,
+    operator.mul,
+    operator.sub,
+}
 
 # Maps a control-flow higher-order op to the arg indices of its branch submodule
 # get_attr nodes (cond's true and false fns).
@@ -72,25 +85,12 @@ class NativeSupportedOperators(OperatorSupportBase):
             return False
         if node.op != "call_function":
             return False
-        # getitem only unpacks a multi-output node's result (e.g. split/chunk); it
-        # is not a real op. Claim it so a supported multi-output op and its
-        # unpackers stay in one partition -- otherwise every getitem is a partition
-        # boundary and fused-projection models (chunked gate_up / qkv) fragment into
-        # many delegates.
-        #
-        # Only claim it when the producer is claimed too. partition() passes
-        # allows_single_node_partition=True, which disables the capability
-        # partitioner's filter that would otherwise drop getitem-only partitions
-        # (getitem counts as non-compute there). Claiming unconditionally can
-        # therefore emit a delegate holding no computation, fed by a tuple crossing
-        # the delegate boundary.
-        if node.target is operator.getitem:
-            producer = node.args[0] if node.args else None
-            return isinstance(producer, Node) and self.is_node_supported(
-                submodules, producer
-            )
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
+        if node.target is operator.getitem:
+            return self._is_getitem_supported(submodules, node)
+        if node.target in _SUPPORTED_SYMBOLIC_OPS:
+            return True
 
         from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
@@ -102,6 +102,35 @@ class NativeSupportedOperators(OperatorSupportBase):
                 return True
             return torch.Tag.core in target.tags or torch.Tag.view_copy in target.tags
         return False
+
+    def _is_getitem_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: Node
+    ) -> bool:
+        # Tuple projections are folded into their producer during serialization.
+        if len(node.args) < 2:
+            return False
+        producer, index = node.args[:2]
+        if (
+            not isinstance(producer, Node)
+            or not isinstance(index, int)
+            or isinstance(index, bool)
+            or index < 0
+        ):
+            return False
+        values = producer.meta.get("val")
+        if not isinstance(values, (tuple, list)) or index >= len(values):
+            return False
+        if not self.is_node_supported(submodules, producer):
+            return False
+        return (
+            sum(
+                user.target is operator.getitem
+                and len(user.args) >= 2
+                and user.args[1] == index
+                for user in producer.users
+            )
+            == 1
+        )
 
 
 def _branch_graph_module(gm: GraphModule, node: Node) -> Optional[GraphModule]:

@@ -24,7 +24,7 @@ void inline _typed_quantized_linear(
     const Tensor& weight,
     const Tensor& bias,
     int64_t src_zero_point,
-    const Tensor& weight_zero_point_t,
+    const std::optional<Tensor>& weight_zero_point_t,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
@@ -34,7 +34,9 @@ void inline _typed_quantized_linear(
   const int32_t* __restrict__ bias_data = bias.const_data_ptr<int32_t>();
   T* __restrict__ out_data = out.mutable_data_ptr<T>();
 
-  int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
+  const int32_t weight_zero_point = weight_zero_point_t.has_value()
+      ? weight_zero_point_t->const_data_ptr<int32_t>()[0]
+      : 0;
 
   // input comes in shape [batch_size, in_dim]
   // weight comes in shape [out_dim, in_dim]
@@ -80,7 +82,7 @@ void quantized_linear_out(
     const Tensor& weight,
     const Tensor& bias,
     int64_t src_zero_point,
-    const Tensor& weight_zero_point_t,
+    const std::optional<Tensor>& weight_zero_point_t,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,

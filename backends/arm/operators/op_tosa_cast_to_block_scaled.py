@@ -77,7 +77,6 @@ class CastToBlockScaledVisitor(NodeVisitor):
             self.target,
             input_tensor,
             [ts.DType.FP32, ts.DType.BF16, ts.DType.FP16],
-            self.tosa_spec,
         )
 
         if not isinstance(node.meta.get("val"), tuple) or len(node.meta["val"]) != 2:

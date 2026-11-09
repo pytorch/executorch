@@ -18,7 +18,6 @@ form was preserved -- so the worker's exact-token prefix check lands.
 import os
 
 import pytest
-
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.openai_transcript import (
     OpenAITranscriptState,
@@ -147,6 +146,7 @@ def _scaffold_before(segs, ids):
 def test_nothink_ordinary_append_inserts_scaffold():
     st = OpenAITranscriptState(_FakeQwen(default_thinking=False))
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -172,6 +172,7 @@ def test_nothink_ordinary_append_inserts_scaffold():
 def test_think_ordinary_append_inserts_open_scaffold():
     st = OpenAITranscriptState(_FakeQwen(default_thinking=True))
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -199,6 +200,7 @@ def test_think_toolloop_normalizes_preserved_scaffold():
     # (wrong scaffold) and not append a second one (double-insert).
     st = OpenAITranscriptState(_FakeQwen(default_thinking=True))
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -224,6 +226,7 @@ def test_think_toolloop_normalizes_preserved_scaffold():
 def test_no_scaffold_template_is_unchanged():
     st = OpenAITranscriptState(_FakePlain())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -251,6 +254,7 @@ def test_non_qwen_header_no_scaffold_still_splices():
     gen_ids = enc("a1")
     resident = enc(fake.render(_msgs(("user", "u1")))) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -276,6 +280,7 @@ def test_non_qwen_header_no_scaffold_still_splices():
 def test_custom_assistant_header_inserts_scaffold():
     st = OpenAITranscriptState(_FakeGemma())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -299,10 +304,11 @@ def test_custom_assistant_header_inserts_scaffold():
 def test_stop_trimmed_turn_falls_back_to_text():
     st = OpenAITranscriptState(_FakeQwen())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
-        generated_token_ids=[],  # stop-trimmed -> ids None -> not resumable
+        generated_token_ids=None,  # stop-trimmed -> ids None -> not resumable
         prior_turns=0,
         preamble=NOTHINK,
     )
@@ -322,6 +328,7 @@ def test_stop_trimmed_turn_falls_back_to_text():
 def test_fingerprint_mismatch_falls_back_to_text():
     st = OpenAITranscriptState(_FakeQwen())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -345,6 +352,7 @@ def test_fingerprint_mismatch_falls_back_to_text():
 def test_mode_switch_uses_per_turn_scaffold():
     st = OpenAITranscriptState(_FakeQwen())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -353,6 +361,7 @@ def test_mode_switch_uses_per_turn_scaffold():
         preamble=NOTHINK,  # turn 1 generated no-think
     )
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1"), ("assistant", "a1"), ("user", "u2")),
         session_id="s",
         content="a2",
         tool_calls=None,
@@ -422,6 +431,7 @@ def test_tool_turn_splices_despite_reserialized_args():
     # fingerprint-match and splice -- not prune to a text fallback.
     st = OpenAITranscriptState(_FakeQwen())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content=None,
         tool_calls=[
@@ -478,6 +488,7 @@ def test_gemma_tool_span_ignores_close_marker_inside_string(header):
         ),
     )
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="",
         tool_calls=[call],
@@ -584,6 +595,7 @@ def test_gemma_real_template_warm_resume_prefix_with_bos_prefix():
     first_prompt = tmpl.render(_msgs(("user", "u1")))
     resident = [tok.bos_token_id] + enc(first_prompt) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content=content,
         tool_calls=None,
@@ -631,6 +643,7 @@ def test_gemma_real_template_post_tool_splices_call_and_keeps_tool_response():
     first_prompt = tmpl.render(_msgs(("user", "Run echo hello42")), tools=tools)
     resident = [tok.bos_token_id] + enc(first_prompt) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "Run echo hello42")),
         session_id="s",
         content="",
         tool_calls=[call],
@@ -673,6 +686,7 @@ def test_token_level_exact_prefix_ordinary(thinking):
     gen_prompt1 = tmpl.render(_msgs(("user", "u1")), template_kwargs=kw)
     resident = enc(gen_prompt1) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content=content,
         tool_calls=None,
@@ -708,6 +722,7 @@ def test_token_level_exact_prefix_toolloop_think():
     gen_prompt1 = tmpl.render(_msgs(("user", "u1")), template_kwargs=kw)
     resident = enc(gen_prompt1) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content=content,
         tool_calls=None,
@@ -800,6 +815,7 @@ def test_thinking_turn_splice_reproduces_resident_prefix():
     )
     resident, gen_ids = _harmony_resident(fake, raw)
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -839,6 +855,7 @@ def test_plain_turn_splice_reproduces_resident_prefix():
     raw = " to=user<|message|>a1"
     resident, gen_ids = _harmony_resident(fake, raw)
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -900,6 +917,7 @@ def test_reasoning_echo_must_match_when_explicit(
         )
     resident, gen_ids = _harmony_resident(fake, raw)
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -951,6 +969,7 @@ def test_reasoning_edit_invalidates_stored_tail_without_later_resurrection():
         gen_ids = enc(raw)
         generated.append(gen_ids)
         st.record_assistant_turn(
+            request_messages=msgs + _msgs(("user", f"u{i}")),
             session_id="s",
             content=f"a{i}",
             tool_calls=None,
@@ -1022,6 +1041,7 @@ def test_harmony_bpe_splice_preserves_resident_ids_and_full_prompt(thinking):
 
     st = OpenAITranscriptState(fake)
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="ab",
         tool_calls=None,
@@ -1116,6 +1136,7 @@ def test_user_header_literal_does_not_truncate_conversation():
     # instead of deleting KEEP and the role boundary while splicing.
     st = OpenAITranscriptState(_FakeMismatchedHeader())
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "Explain <|im_start|>assistant\nKEEP")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -1152,6 +1173,7 @@ def test_splice_requires_verified_header_to_preserve_full_prompt(header):
     gen_ids = enc(" to=user<|message|>a1")
     resident = enc(fake.render(_msgs(("user", "plain question")))) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", "plain question")),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -1193,6 +1215,7 @@ def test_mistral_bracket_terminator_tail_falls_back(u1):
     gen_ids = enc("a1")
     resident = enc(fake.render(_msgs(("user", u1)))) + gen_ids
     st.record_assistant_turn(
+        request_messages=_msgs(("user", u1)),
         session_id="s",
         content="a1",
         tool_calls=None,
@@ -1247,6 +1270,7 @@ def test_non_chatml_header_configuration_preserves_generated_bpe_tokens(
     assert generated != enc("ab")
     resident = enc(first_prompt) + generated
     state.record_assistant_turn(
+        request_messages=_msgs(("user", "u1")),
         session_id="s",
         content="ab",
         tool_calls=None,
@@ -1355,6 +1379,7 @@ def test_glimmer_real_template_thinking_turn_splice_reproduces_resident():
     )
     gen_ids = enc(raw)
     st.record_assistant_turn(
+        request_messages=_msgs(("user", u1)),
         session_id="s",
         content=visible,
         tool_calls=None,

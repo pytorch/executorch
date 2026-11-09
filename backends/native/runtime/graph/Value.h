@@ -81,8 +81,12 @@ class Value {
 
   // The empty dim_order_hint is what makes the tensor contiguous.
   Value(std::string name, ScalarType dtype, std::vector<int64_t> sizes)
-      : value_(TensorMeta{dtype, std::move(sizes), {}}),
-        name(std::move(name)) {}
+      : name(std::move(name)) {
+    TensorMeta meta;
+    meta.dtype = dtype;
+    meta.sizes = std::move(sizes);
+    value_ = std::move(meta);
+  }
 
   Value(std::string name, Scalar value)
       : value_(value), name(std::move(name)) {}
@@ -107,6 +111,7 @@ class Value {
   }
 
   // Typed payload accessors: throw std::runtime_error unless the kind matches.
+  TensorMeta& tensor_meta();
   const TensorMeta& tensor_meta() const;
   const Scalar& scalar() const;
   const std::vector<ValueId>& content_ids() const;
