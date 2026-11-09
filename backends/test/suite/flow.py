@@ -92,6 +92,12 @@ def _register_flow(
         return []
 
 
+def _load_cpu() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.cpu import CPU_FP32_TEST_FLOW
+
+    return [CPU_FP32_TEST_FLOW]
+
+
 def _load_xnnpack() -> list[TestFlow]:
     from executorch.backends.test.suite.flows.xnnpack import (
         XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
@@ -207,6 +213,7 @@ def all_flows() -> dict[str, TestFlow]:
 
     flows = (
         [PORTABLE_TEST_FLOW]
+        + _register_flow(_load_cpu, "CPU")
         + _register_flow(_load_xnnpack, "XNNPACK")
         + _register_flow(_load_coreml, "Core ML")
         + _register_flow(_load_vulkan, "Vulkan")
@@ -219,6 +226,13 @@ def all_flows() -> dict[str, TestFlow]:
     )
 
     try:
+        from executorch.backends.test.suite.flows.coreai import COREAI_TEST_FLOWS
+
+        flows += COREAI_TEST_FLOWS
+    except ImportError as e:
+        logger.info(f"Skipping CoreAI flow registration: {e}")
+
+    try:
         from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
 
         flows += [
@@ -226,5 +240,18 @@ def all_flows() -> dict[str, TestFlow]:
         ]
     except Exception as e:
         logger.info(f"Skipping MLX flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.samsung import (
+            SAMSUNG_A8W8_TEST_FLOW,
+            SAMSUNG_TEST_FLOW,
+        )
+
+        flows += [
+            SAMSUNG_TEST_FLOW,
+            SAMSUNG_A8W8_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping SAMSUNG flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

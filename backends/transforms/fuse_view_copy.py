@@ -7,6 +7,7 @@
 
 # pyre-strict
 
+from collections.abc import Callable
 from typing import Set, Type
 
 import torch
@@ -66,15 +67,31 @@ class FuseViewCopyTransform(ExportPass):
         exir_ops.edge.aten.log.default,
     ]
 
-    def _find_view_copy_chain(
-        self, start_node: torch.fx.Node, ops: list[EdgeOpOverload]
-    ) -> tuple[torch.fx.Node, list[torch.fx.Node], list[torch.fx.Node]]:
+    def __init__(
+        self,
+        extra_fusible_ops: set[EdgeOpOverload] | None = None,
+        target_filters: (
+            dict[
+                EdgeOpOverload,
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ]
+            | None
+        ) = None,
+    ) -> None:
+        super().__init__()
+        self._fusible_ops = set(self.UNARY_ELEMENTWISE_OPS)
+        if extra_fusible_ops:
+            self._fusible_ops |= extra_fusible_ops
+        self._target_filters = target_filters or {}
+
+    def _find_view_copy_chain(self, start_node: torch.fx.Node) -> list[torch.fx.Node]:
         """Collect a fusible chain starting at ``start_node``.
 
         Returns:
             list[torch.fx.Node]: View nodes following ``node`` that can be removed.
         """
 
+        ops = self._fusible_ops | {self.VIEW_OP}
         end_node = start_node
         view_nodes: list[torch.fx.Node] = []
         while (
@@ -89,6 +106,46 @@ class FuseViewCopyTransform(ExportPass):
             end_node = end_node_user
 
         return view_nodes
+
+    def _passes_target_filters(
+        self,
+        start_node: torch.fx.Node,
+        final_view_node: torch.fx.Node,
+    ) -> bool:
+        """Check caller-provided legality predicates for one fusion candidate.
+
+        A predicate receives the operator node and the final view that would be
+        folded into ``start_node``. This lets a backend opt in operators whose
+        legality depends on the resulting shape.
+        """
+        node = start_node
+        while node is not final_view_node:
+            assert len(node.users) == 1
+            node = next(iter(node.users))
+            target_filter = self._target_filters.get(node.target)
+            if target_filter is not None and not target_filter(node, final_view_node):
+                return False
+        return True
+
+    @staticmethod
+    def _shape_is_available_at(
+        shape: object,
+        node: torch.fx.Node,
+        order: dict[torch.fx.Node, int],
+    ) -> bool:
+        """Whether every element of ``shape`` is already defined before ``node``.
+
+        A view's shape is not always a list of ints: under dynamic shapes a
+        dimension is a node computing a symbolic size. Giving ``node`` the shape
+        of a later view moves that shape's arguments backwards in the graph, so
+        it is only valid when they are available at ``node`` to begin with.
+        """
+        if not isinstance(shape, (list, tuple)):
+            return True
+        node_pos = order[node]
+        return all(
+            order[dim] < node_pos for dim in shape if isinstance(dim, torch.fx.Node)
+        )
 
     def _merge_view_copy_chains(
         self, graph: torch.fx.Graph
@@ -109,9 +166,22 @@ class FuseViewCopyTransform(ExportPass):
                 modified.
         """
         modified = False
-        ops: list[EdgeOpOverload] = self.UNARY_ELEMENTWISE_OPS + [self.VIEW_OP]
+        # Nothing below inserts or moves nodes, so a single ordering snapshot
+        # stays valid for the whole sweep.
+        order = {n: i for i, n in enumerate(graph.nodes)}
         for node in graph.find_nodes(op="call_function", target=self.VIEW_OP):
-            view_nodes_to_remove = self._find_view_copy_chain(node, ops)
+            view_nodes_to_remove = self._find_view_copy_chain(node)
+
+            # Fuse the longest prefix of the chain whose shape `node` can
+            # actually take on; a later view whose shape is computed after
+            # `node` has to stay where it is.
+            while view_nodes_to_remove and (
+                not self._shape_is_available_at(
+                    view_nodes_to_remove[-1].args[1], node, order
+                )
+                or not self._passes_target_filters(node, view_nodes_to_remove[-1])
+            ):
+                view_nodes_to_remove.pop()
 
             if len(view_nodes_to_remove) > 0:
                 modified = True

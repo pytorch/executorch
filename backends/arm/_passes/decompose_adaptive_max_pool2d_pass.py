@@ -7,13 +7,14 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.dialect.ops.max_pool2d import (
     compute_max_pool2d_output_shape,
 )
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, NodeMetadata
+from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeAdaptiveMaxPool2dPass(ArmOpTargetedPass):
@@ -103,10 +104,7 @@ class DecomposeAdaptiveMaxPool2dPass(ArmOpTargetedPass):
         return remainder_range.is_singleton() and remainder_range.upper in (0, 1)
 
     def _decompose_irregular(self, x, output_size_h: int, output_size_w: int, meta):
-        metadata_dict = dict(meta.data)
-        metadata_dict["input_qparams"] = {}
-        metadata_dict["output_qparams"] = {}
-        meta_with_no_qparams = NodeMetadata(metadata_dict)
+        meta_with_no_qparams = meta_without_qparams(meta)
 
         x_nhwc = super().call_operator(
             exir_ops.edge.aten.permute_copy.default,

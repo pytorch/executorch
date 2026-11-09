@@ -5,8 +5,10 @@
 - `/export` - Export model to .pte
 - `/building` - Build runners or C++ libs
 - `/profile` - Profile execution
+- `/arm` - Develop, debug, or understand the Arm TOSA, VGF, and Ethos-U backends and examples (`.claude/skills/arm/SKILL.md`)
 - `/cortex-m` - Build, test, or develop the Cortex-M backend
 - `/binary-size` - Analyze and reduce binary size
+- `/pr-review` - Review a pull request
 - `/qualcomm` - Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend
 - `/executorch-kb` - Search tribal knowledge base (known issues, quant recipes, debugging guides)
 

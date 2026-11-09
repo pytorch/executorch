@@ -8,6 +8,201 @@ This Python module, named `portable_lib`, provides a set of functions and classe
 pip install . --no-build-isolation
 ```
 
+## Portable tensor mode
+
+Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
+arrays or other dense objects implementing Python's buffer protocol, including
+`ctypes` arrays, `array.array`, and complex NumPy arrays. CPU and
+CUDA `torch.Tensor` inputs are inspected through their public Python attributes
+instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
+provide CPU or CUDA allocations directly; their device indices are preserved.
+A DLPack capsule, such as the one `array.__dlpack__()` returns, can be passed
+directly too; an input consumes it, so it cannot be passed again. Tensor
+protocols can be mixed within the same call.
+
+Tensor inputs must have dense storage. In the portable bindings, an input laid
+out in a different dimension order than the exported method, for example a
+channels-last tensor for a contiguous method or a transposed array, is copied
+into the exported layout: on the host for buffers and CPU DLPack tensors, and by
+torch on the tensor's own device for torch tensors. Read-only buffers are
+copied too, in any layout. A non-torch CUDA DLPack input must already be in the
+exported layout. The ATen bindings do not convert inputs, and their runtime
+reads every input as contiguous, so pass contiguous inputs there.
+
+Pass an input again after changing it. A method exported with the default
+memory planning copies every input into its own memory, and a converted input
+is a copy too. Only a method exported with
+`MemoryPlanningPass(alloc_graph_input=False)` reads an unconverted, writable
+input in place, and only such an input sees the method's own in-place updates.
+CUDA inputs require a method
+exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
+execution can share the caller's device allocation.
+`method_meta().input_tensor_meta(i).device()` tells where the method expects
+input `i`, as `"cpu"` or `"cuda:N"`, and `output_tensor_meta(i).device()` does
+the same for its outputs.
+
+When PyTorch is available, importing `portable_lib` imports it and portable
+bindings return `torch.Tensor` outputs. When it cannot be imported, the default
+output type is `ExecuTorchResult`. Output conversion uses Python APIs and
+DLPack; the extension does not link against PyTorch.
+`clone_outputs=True` returns storage that later executions do not overwrite,
+on the output's original device. With `clone_outputs=False`, results share
+runtime or input storage and later execution may overwrite that storage.
+
+A CUDA output that fills memory the bindings allocated for it is returned
+without a copy when `clone_outputs=True`. That needs a method exported with
+`MemoryPlanningPass(alloc_graph_output=False)`, so the method does not plan its
+outputs into its own memory;
+`method_meta().output_tensor_meta(i).is_memory_planned()` tells whether output
+`i` is planned. A planned CUDA output read with
+`clone_outputs=True` costs a new allocation, a device-to-device copy, and a
+wait for the device. The result keeps that memory, so a
+method writes its next execution into a second buffer, and the two take turns;
+a module allocates new memory each call. Within one execution, reading the
+outputs again with `clone_outputs=True` returns the same object, so an in-place
+change to one read shows in the other; a `clone_outputs=False` read is a
+separate borrowed view. In torch output mode such a result is a view of memory
+torch does not own, so it cannot grow with `resize_()` and cannot be shared
+through `torch.multiprocessing`. Call `.clone()` for a normal torch tensor.
+
+An `ExecuTorchResult`'s `dtype` is the dtype's name as torch spells it, such as
+`"float32"` or `"bfloat16"`.
+`method_meta().output_tensor_meta(i).dtype_name()` gives the same name before
+the method runs.
+
+`Method.get_attribute()` returns a view of mutable state. A constant can sit
+in read-only memory, so it comes back read-only: NumPy and the buffer protocol
+see it as read-only, and a DLPack export copies it, unless the consumer asks
+for no copy through DLPack 1.0, which marks it read-only. In torch output mode
+a constant comes back as a copy, since a torch tensor cannot be read-only.
+
+Calls on a shared method or module are serialized. A sequence of separate
+`set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
+held by the caller around the whole sequence: `set_inputs` hides the outputs
+until the next `execute`, so another thread's call can land in between.
+
+A run may reuse the memory of inputs that export planned, or write an input in
+place. So each `execute` installs such inputs again from what the caller
+passed, or from the copy the bindings made when an input needed converting. A
+module does the same for inputs kept from an earlier call. A change to the
+storage of a torch tensor or buffer input is then refused; a DLPack producer
+must keep its memory in place while the bindings hold it. A result returned
+with `clone_outputs=False` lives in the method's output memory, so passing it
+back in as an input means each run reads what the run before it wrote there;
+pass a copied result instead.
+
+To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
+environment variable before importing the bindings. The setting is fixed when
+the extension loads, so importing PyTorch later does not change the output type.
+
+```python
+import os
+
+os.environ["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+from executorch.extension.pybindings import portable_lib
+```
+
+`ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
+the Python buffer protocol so NumPy can read them without another copy. Without
+the environment setting, the bindings fall back to `ExecuTorchResult` if
+PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
+successfully. ATen-mode bindings continue to return native PyTorch tensors
+directly.
+
+```python
+output = module.forward([numpy_input])[0]
+result = np.asarray(output)
+```
+
+CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA results
+remain on CUDA and can be passed to another DLPack consumer or back into
+ExecuTorch without moving the data to the CPU. `__dlpack__` takes the DLPack
+1.0 keywords `max_version`, `dl_device`, and `copy`, so a call such as
+`np.from_dlpack(result, copy=False)` works. A consumer that passes `stream=-1`
+orders the work itself, so that export skips the device wait.
+
+Without torch or another DLPack library, `to_host()` copies a result to CPU
+memory, and `ExecuTorchResult.from_host()` copies a CPU buffer to a CUDA device
+for a method whose inputs live there:
+
+```python
+from executorch.extension.pybindings.portable_lib import ExecuTorchResult
+
+device_input = ExecuTorchResult.from_host(numpy_input, device_index=0)
+output = method([device_input])[0]
+result = np.asarray(output.to_host())
+```
+
+Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
+of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
+Bindings built without CUDA support synchronize through Python Torch instead,
+so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
+and return borrowed CUDA results.
+
+Execution is synchronous at the Python boundary: a call returns after its device
+work has finished, so its outputs are ready on any stream. How long a call with
+only host inputs and outputs waits depends on where it runs:
+
+- Inside an `executorch.runtime.cuda.stream()` block with a non-blocking stream,
+  such as `executorch.runtime.cuda.Stream()`, it waits for that stream. A
+  blocking stream, such as a `cupy.cuda.Stream()` with default flags, also waits
+  for work on CUDA's legacy default stream, which is also the default stream of
+  torch.
+- Outside a block, a program's copies between host and GPU memory run on the
+  legacy default stream, so the call waits for work on every blocking stream of
+  the device, for example delegates running on another thread.
+
+In both cases, the CUDA delegate copies an output whose memory layout has to
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams. An older export keeps its
+weights in one blob, and copying that blob waits for the whole device.
+
+The waits below, for CUDA inputs and outputs, are for the whole device
+(`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
+work queued on that device, for example by torch. Before it runs, a call waits
+once for each device that holds a non-empty CUDA input or output. Another
+library may still be writing such an input: a torch CUDA tensor, a CUDA DLPack
+input, or a result of these bindings passed back in, which can share memory a
+caller handed to that library. It may also still be reading the memory of an
+output from an earlier call, which this call writes again. After it runs, a call
+waits once for each device that holds a CUDA input or output, since the method
+may have updated an input in place. Each cloned CUDA output waits once more for
+its copy. A torch CUDA input in another layout also waits before torch copies it
+into the exported layout. Reading a CUDA result through `__dlpack__` or
+`to_host()` waits once as well. In CUDA-enabled bindings a wait holds the GIL,
+so other Python threads pause until it ends, and a queued CUDA host callback
+that needs the GIL makes the wait hang. Bindings built without CUDA wait through
+`torch.cuda.synchronize`, which releases the GIL. On an idle device a wait is
+short: `cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
+synchronization has no C++ ATen dependency.
+
+For bfloat16 inputs, raw byte buffers use the shape declared by the exported
+method. NumPy and PEP 3118 do not define bfloat16, so the buffer protocol shows
+a bfloat16 result as 16-bit unsigned integers in its real shape and layout.
+Other dtypes NumPy lacks, such as float8, are shown the same way, as integers of
+the same width. NumPy converts that view as integers, so
+`np.asarray(out, dtype=np.float32)` gives the bit patterns as numbers, not the
+bfloat16 values. DLPack consumers, such as `torch.from_dlpack(out)`, receive the
+original bfloat16 dtype. A bfloat16 result passed back in is read through DLPack
+too, so it keeps its dtype, shape, and dim order. A bfloat16 input does not
+accept 16-bit integers, so that integer data is never read as bfloat16 by
+mistake; pass the result itself or raw bytes.
+
+```python
+import cupy as cp
+
+cuda_input = cp.ones((1, 3, 224, 224), dtype=cp.float32)
+output = cuda_module.forward([cuda_input], clone_outputs=False)[0]
+cuda_output = cp.from_dlpack(output)
+```
+
+The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
+modes on a GPU. It checks device allocations, DLPack stream ordering, channels
+last views, cloning, and borrowed output lifetimes using a CUDA delegate.
+Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
+GPU hardware or a missing CUDA backend as a failure.
+
 # Link Backends
 
 Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the Vulkan backend:
@@ -28,8 +223,10 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 ## Classes
 ### ExecuTorchModule
 - `plan_execute()`: Plan and execute.
-- `run_method()`: Run method.
-- `forward()`: Forward. This takes a pytree-flattend PyTorch-tensor-based input.
+- `run_method()`: Run a method with PyTorch tensors, Python buffer objects such
+  as NumPy arrays, or DLPack producers, including mixed tensor protocols.
+- `forward()`: Forward. A single buffer may be passed directly; multiple
+  inputs are passed as a flat sequence.
 - `has_etdump()`: Check if etdump is available.
 - `write_etdump_result_to_file()`: Write etdump result to a file.
 - `__call__()`: Call method.
@@ -37,4 +234,50 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-All functions and methods are guarded by a call guard that redirects `cout` and `cerr` to the Python environment.
+Runtime logs go straight to the process's stderr as they are logged. On Windows,
+a console shows text that is not ASCII in its own code page, so such text can
+look wrong there. If Python has replaced `sys.stderr`, for example with pytest's
+`capsys`, `contextlib.redirect_stderr` or in a Jupyter notebook, the lines go to
+`sys.stderr` instead, a little later. The lines a binding call logs wait until
+the call returns. A line logged outside any binding call, for example by the LLM
+runner, goes to `sys.stderr` soon after. If Python's main thread logged it, that
+thread writes it itself, before the lines of its next binding call. But if
+earlier lines of the main thread still wait for the bindings' thread, this line
+follows them there. A line from another thread also goes to the bindings'
+thread, which the bindings start for this. It writes to whatever `sys.stderr` is
+at that moment. Outside a call, only a thread that holds the GIL can tell where
+`sys.stderr` goes, so a line from a thread that does not hold it, such as one
+the LLM runner logs while it generates, goes to the process's stderr. The lines
+wait rather than go to Python at once because a backend can log while it holds a
+lock, and writing to Python at that moment could deadlock with another thread.
+
+On Linux and macOS, a line also waits once the process's stderr is a pipe or
+socket that stays full for 100 ms, so a thread that holds the GIL does not hang
+on it while a Python thread in the same process empties it, as under
+`wurlitzer.pipes()`. The rest of a binding call's lines then wait for the call
+to return. A thread that holds the GIL and logs outside a call does not wait for
+room itself. It hands the line to the bindings' thread, which writes it a line
+at a time without the GIL. While it writes, a binding call's lines wait for the
+call to return. A terminal is written at once, since its reader is normally
+another process. The process can still hang if another writer fills the
+process's stderr right after the check for room, if a thread that does not hold
+the GIL logs outside a call while a Python thread in the same process empties a
+full stderr and a binding call holds the GIL waiting for that thread, or if a
+Python thread in the same process reads a terminal that is the process's stderr.
+On macOS, a pipe that has not grown past 16 KiB takes a line only once the line
+fits in 512 bytes beside what the pipe holds, because macOS reports room in such
+a pipe that it may not have.
+
+Up to 1 MiB of lines wait at a time; past that, about the newest 512 KiB to
+1 MiB are kept, with a note of how many earlier bytes were left out. A fatal
+line goes straight to the process's stderr while it has room, with the lines its
+binding call kept, since an abort usually follows. Any crash or hang of the
+process, including that abort, or an `os._exit()` loses the lines still waiting.
+Once Python starts to exit, the lines still waiting are written, and later lines
+logged outside a call go to the process's stderr while it has room. Lines for
+the process's stderr are left out instead if the bindings' thread is still
+writing to it then.
+
+On Linux with Python before 3.13.8, a daemon thread never writes through Python,
+because at exit Python can stop such a thread in the middle of that write, which
+crashes the process. The bindings' thread writes its lines instead.

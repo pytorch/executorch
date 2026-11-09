@@ -45,6 +45,10 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -h
   PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel -m SM8750 --backend htp
   ```
+  To quantize for an HTP Flexible Context Binary, pass every target SoC:
+  ```bash
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel -m SM8650 SM8750 --backend htp
+  ```
 * Artifacts for quantized .pt2 file
   - `cli_example/quantize_output/simple_model_quantized.pt2`
 
@@ -56,6 +60,10 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
   # `pip install pydot` if package is missing
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -h
   PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a cli_example/quantize_output/simple_model_quantized.pt2 -o cli_example/compile_output -m SM8750
+  ```
+  To generate one HTP FCB containing multiple target contexts:
+  ```bash
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a cli_example/quantize_output/simple_model_quantized.pt2 -o cli_example/compile_output -m SM8650 SM8750 --backend htp
   ```
 * (Optional) Compile pre-generated context binary to .pte program
   ```bash
@@ -77,6 +85,14 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
 * Artifacts for .pte file and figure of graph information
   - `cli_example/execute_output/output_{data_index}_{output_index}.pt`.<br/>
   `data_index` represents the sequence of dataset, `output_index` stands for the order of graph output.
+
+## HTP Profiling Examples
+
+These examples demonstrate Qualcomm HTP profiling flows:
+
+* `htp_profiling_on_device_op_trace_online.py`: on-device OpTrace with `online_prepare=True`.
+* `htp_profiling_on_device_op_trace_offline.py`: on-device OpTrace with `online_prepare=False` and `profile_level=3`.
+* `htp_profiling_on_host_hextimate.py`: host-side Hextimate.
 
 # Generate ET Record
 This section describes how to generate an ET record for a .pte program using the provided script.

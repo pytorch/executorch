@@ -692,3 +692,48 @@ TEST_F(AOTITorchReinterpretTensorSlimTest, ChainedViews_CUDA) {
   EXPECT_EQ(aoti_torch_delete_tensor_object(view1), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(view2), Error::Ok);
 }
+
+// Inductor allocates some buffers with a larger shape and then calls
+// aoti_torch_as_strided to give them their logical shape.
+TEST_F(AOTITorchReinterpretTensorSlimTest, AsStridedKeepsStorageOffset_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  std::vector<int64_t> sizes = {4, 4};
+  Tensor* orig_tensor = createTestTensor(
+      sizes,
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(orig_tensor, nullptr);
+
+  // Rows 1 to 3 of the 4x4 tensor.
+  std::vector<int64_t> offset_sizes = {3, 4};
+  std::vector<int64_t> strides = {4, 1};
+  Tensor* offset_view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          orig_tensor, 2, offset_sizes.data(), strides.data(), 4, &offset_view),
+      Error::Ok);
+
+  std::vector<int64_t> new_sizes = {2, 3};
+  Tensor* view_tensor = nullptr;
+  EXPECT_EQ(
+      aoti_torch_as_strided(
+          offset_view, new_sizes.data(), strides.data(), &view_tensor),
+      Error::Ok);
+  ASSERT_NE(view_tensor, nullptr);
+
+  EXPECT_EQ(view_tensor->dim(), 2);
+  EXPECT_EQ(view_tensor->size(0), 2);
+  EXPECT_EQ(view_tensor->size(1), 3);
+  EXPECT_EQ(view_tensor->stride(0), 4);
+  EXPECT_EQ(view_tensor->stride(1), 1);
+  EXPECT_EQ(view_tensor->data_ptr(), offset_view->data_ptr());
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(orig_tensor), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(offset_view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view_tensor), Error::Ok);
+}

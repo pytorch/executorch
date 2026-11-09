@@ -7,6 +7,9 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
+
 # Some ARM/TOSA-adjacent tests import modules that require tosa_serializer.
 # Install from a local tosa-tools checkout when available. If absent in this
 # checkout layout, clone the pinned upstream tag and install from there.
@@ -25,6 +28,8 @@ if ! python -c "import tosa_serializer" >/dev/null 2>&1; then
     "${TOSA_TOOLS_DIR}"
   python -c "import tosa_serializer"
 fi
+
+bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
 
 # Run pytest with coverage
 pytest -n auto --cov=./ --cov-report=xml

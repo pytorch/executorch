@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +17,11 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 input_t = tuple[torch.Tensor]
 test_data_t = tuple[Callable[[], input_t], tuple[float, float, float, torch.dtype]]
@@ -173,6 +178,75 @@ class LinspaceAdd(torch.nn.Module):
     }
 
 
+class _LinspaceToFloatAdd(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        values = torch.linspace(0.0, 1.0, x.shape[0], dtype=torch.float64)
+        return values.to(torch.float32) + x
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    ((torch.float32, True), (torch.float64, False)),
+)
+def test_linspace_preservation_depends_on_dtype(
+    dtype: torch.dtype, expected: bool
+) -> None:
+    exported_program = torch.export.export(
+        LinspaceAdd(0.0, 1.0, 10, dtype),
+        (torch.randn(10),),
+    )
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    _, filter_fn = partitioner.ops_to_not_decompose(exported_program)
+    linspace = next(
+        node
+        for node in exported_program.graph.nodes
+        if node.target == torch.ops.aten.linspace.default
+    )
+
+    assert filter_fn is not None
+    assert filter_fn(linspace) is expected
+
+
+def test_ops_to_not_decompose_are_not_preserved_for_fp64() -> None:
+    exported_program = torch.export.export(
+        LinspaceAdd(0.0, 1.0, 10, torch.float32),
+        (torch.randn(10),),
+    )
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    ops_to_not_decompose, filter_fn = partitioner.ops_to_not_decompose(exported_program)
+    graph = torch.fx.Graph()
+    fake_tensor = FakeTensorMode().from_tensor(torch.empty(1, dtype=torch.float64))
+
+    assert filter_fn is not None
+    for op in ops_to_not_decompose:
+        node = graph.call_function(op)
+        node.meta["val"] = fake_tensor
+        assert not filter_fn(node), f"FP64 {op} should be decomposed"
+
+
+def test_linspace_fp64_decomposes_for_portable_fallback() -> None:
+    inputs = (torch.randn(10),)
+    exported_program = torch.export.export(_LinspaceToFloatAdd(), inputs)
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+
+    edge_manager = to_edge_transform_and_lower(
+        exported_program,
+        partitioner=[partitioner],
+    )
+    targets = {
+        node.target
+        for node in edge_manager.exported_program().graph.nodes
+        if node.op == "call_function"
+    }
+
+    assert exir_ops.edge.aten.linspace.default not in targets
+    assert exir_ops.edge.aten.arange.start_step in targets
+
+    program = edge_manager.to_executorch().executorch_program
+    operators = {(op.name, op.overload) for op in program.execution_plan[0].operators}
+    assert not any("linspace" in name for name, _ in operators)
+
+
 @common.parametrize("test_data", LinspaceAdd.test_data)
 def test_linspace_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
@@ -193,6 +267,18 @@ def test_linspace_tosa_INT(test_data: test_data_t):
         input_data(),
         LinspaceAdd.aten_op,
         LinspaceAdd.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
+@common.XfailIfNoCorstone300
+def test_linspace_u55_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = EthosU55PipelineINT[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
     )
     pipeline.run()
 
@@ -256,3 +342,13 @@ def test_arange_vgf_no_quant():
 @pytest.mark.skip(reason=skip_str)
 def test_arange_vgf_quant():
     pass
+
+
+@common.XfailIfNoCorstone320
+def test_linspace_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
+        LinspaceAdd(0.0, 15.0, 20, torch.float32),
+        (torch.randn(20),),
+        LinspaceAdd.aten_op,
+    )
+    pipeline.run()

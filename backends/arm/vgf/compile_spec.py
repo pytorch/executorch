@@ -4,12 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 if TYPE_CHECKING:
     from executorch.backends.arm.vgf.check_env import VgfEnvironmentReport
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(init=False)
 class VgfCompileSpec(ArmCompileSpec):
     """Normalise inputs and populate the underlying Arm compile spec.
 
@@ -26,13 +27,24 @@ class VgfCompileSpec(ArmCompileSpec):
             target. Strings are parsed via ``TosaSpecification.create_from_string``.
             Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
         compiler_flags (list[str] | None): Optional converter-backend flags.
+        emit_debug_info (bool): Preserve Model Converter debug information in
+            the generated VGF. Defaults to ``False``.
+        alias_buffer_mutations (bool): Whether eligible mutable buffers should
+            be delegated as persistent VGF state. Defaults to ``False``.
 
     """
+
+    alias_buffer_mutations: bool = False
+
+    _EMIT_DEBUG_INFO_KEY = "vgf_emit_debug_info"
+    _ALIAS_BUFFER_MUTATIONS_KEY = "alias_buffer_mutations"
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
+        emit_debug_info: bool = False,
+        alias_buffer_mutations: bool = False,
     ):
         if tosa_spec is None:
             tosa_spec = TosaSpecification.create_from_string(
@@ -44,12 +56,52 @@ class VgfCompileSpec(ArmCompileSpec):
         if compiler_flags is None:
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
+        self.emit_debug_info = emit_debug_info
+        self.alias_buffer_mutations = alias_buffer_mutations
         # intermediate handling needed until release 2027.02 of tosa-tools
         self._set_tosa_dev_mode(True)
         self._validate()
 
+    def _to_list(self):
+        """Return compile specs including VGF-specific settings."""
+        compile_specs = super()._to_list()
+        if self.emit_debug_info:
+            compile_specs.append(CompileSpec(self._EMIT_DEBUG_INFO_KEY, b"True"))
+        compile_specs.append(
+            CompileSpec(
+                self._ALIAS_BUFFER_MUTATIONS_KEY,
+                str(bool(self.alias_buffer_mutations)).encode(),
+            )
+        )
+        return compile_specs
+
+    def __eq__(self, other):
+        """Compare all settings that affect the serialized compile spec."""
+        if not isinstance(other, VgfCompileSpec):
+            return NotImplemented
+        return self._to_list() == other._to_list()
+
+    @classmethod
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
+        """Restore VGF-specific settings from serialized compile specs."""
+        emit_debug_info = specs.get(cls._EMIT_DEBUG_INFO_KEY)
+        compile_spec.emit_debug_info = (
+            str(emit_debug_info).lower() in ("1", "true", "yes")
+            if emit_debug_info is not None
+            else False
+        )
+        value = specs.pop(cls._ALIAS_BUFFER_MUTATIONS_KEY, "False")
+        specs.pop("mutable_buffer_pairs", None)
+        compile_spec.alias_buffer_mutations = str(value).lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
     def _validate(self):
         """Validate the configuration against VGF-supported TOSA profiles."""
+        if type(self.emit_debug_info) is not bool:
+            raise ValueError("emit_debug_info must be a bool.")
         tosa_version = self.tosa_spec.version  # type: ignore[attr-defined]
         tosa_profiles = self.tosa_spec.profiles  # type: ignore[attr-defined]
 

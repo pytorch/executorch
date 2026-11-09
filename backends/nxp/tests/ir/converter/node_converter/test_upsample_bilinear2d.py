@@ -8,8 +8,15 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    AddTensor,
+    ExecutorchDelegateCall,
+    UpsampleBilinear2D,
+)
 
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
@@ -17,11 +24,6 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    AddTensor,
-    ExecutorchDelegateCall,
-    UpsampleBilinear2D,
-)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 

@@ -73,6 +73,12 @@ class TensorInfo final {
    */
   std::string_view name() const;
 
+  /**
+   * Returns the device the program places the tensor on. Tensors without a
+   * device annotation are on the CPU.
+   */
+  etensor::Device device() const;
+
  private:
   // Let MethodMeta create TensorInfo.
   friend class MethodMeta;
@@ -86,6 +92,7 @@ class TensorInfo final {
    * @param[in] scalar_type The scalar type of the tensor.
    * @param[in] is_memory_planned Whether the tensor's memory was planned.
    * @param[in] name The fully qualified name of the tensor.
+   * @param[in] device The device the program places the tensor on.
    * @returns A Result containing the TensorInfo on success, or an error on
    * failure.
    */
@@ -94,7 +101,8 @@ class TensorInfo final {
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
-      std::string_view name);
+      std::string_view name,
+      etensor::Device device);
 
   TensorInfo(
       Span<const int32_t> sizes,
@@ -102,7 +110,8 @@ class TensorInfo final {
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
       std::string_view name,
-      size_t nbytes);
+      size_t nbytes,
+      etensor::Device device);
 
   /**
    * The sizes of the tensor.
@@ -131,6 +140,9 @@ class TensorInfo final {
 
   /// The size in bytes of the tensor.
   size_t nbytes_;
+
+  /// The device the program places the tensor on.
+  etensor::Device device_;
 };
 
 /**
@@ -148,6 +160,16 @@ class MethodMeta final {
   MethodMeta& operator=(const MethodMeta&) = default;
   MethodMeta& operator=(MethodMeta&& other) = default;
   ~MethodMeta() = default;
+
+  /**
+   * Creates metadata over a serialized execution plan after validating it.
+   *
+   * `data` and its backing storage must outlive the returned view. This is
+   * intended for format adapters that synthesize an ExecuTorch metadata view.
+   */
+  static Result<MethodMeta> from_serialized_execution_plan(
+      const void* data,
+      size_t size);
 
   /**
    * Get the name of this method.

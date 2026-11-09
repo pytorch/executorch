@@ -102,6 +102,18 @@ Key topics:
 - PTD file format specification
 - Custom file format handling
 
+## ExecuTorch Native
+
+Experimental: export a model to a single `.ptn` file and run it on one of
+several engines.
+
+**→ {doc}`native-overview` — ExecuTorch Native**
+
+Key topics:
+
+- Export with `to_native` and the `.ptn` file
+- Runtime engines
+
 ## Next Steps
 
 After exploring advanced topics:
@@ -122,4 +134,5 @@ backend-delegate-advanced
 runtime-integration-advanced
 compiler-ir-advanced
 file-formats-advanced
+native-overview
 ```

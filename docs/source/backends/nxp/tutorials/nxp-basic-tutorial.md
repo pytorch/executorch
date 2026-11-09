@@ -13,14 +13,14 @@ You need to install the ExecuTorch. Please follow the tutorial to install the Ex
 
 
 In addition to this, you will need to install the eIQ Neutron Simulator, called NSYS,
-and the Neutron Converter for generating the byte-code for the eIQ Neutron NPU, 
+and the Neutron Compiler for generating the byte-code for the eIQ Neutron NPU, 
 during the model conversion in ExecuTorch AoT flow. 
 To install the eIQ Neutron dependencies, run:
 ```bash
 examples/nxp/setup.sh
 ```
 This will install: 
-* Neutron Converter, for converting the Neutron IR to Neutron byte-code 
+* Neutron Compiler, for compiling the Neutron IR to Neutron byte-code 
 * eIQ Neutron SDK, containing the eIQ Neutron runtimes (driver and firmware) for various NXP SoC and simulator 
 * eIQ NSYS, the Neutron behavioral simulator
 

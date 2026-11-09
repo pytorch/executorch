@@ -8,6 +8,7 @@ from typing import Dict, Tuple
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes import (
+    DeduplicateConstShapesPass,
     EnsureUniqueOutputNodesPass,
     FuseDuplicateUsersPass,
     InsertRescalePass,
@@ -20,6 +21,9 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
+)
+from executorch.backends.transforms.fuse_duplicate_users_pass import (
+    DO_NOT_FUSE_DUPLICATE_META_KEY,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -129,11 +133,35 @@ def _graph_with_users_not_in_node_order() -> GraphModule:
     return GraphModule(torch.nn.Module(), graph)
 
 
+def _graph_with_erased_node_still_queued() -> GraphModule:
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(1))
+    first_neg = _set_val(
+        graph.call_function(torch.ops.aten.neg.default, (x,)), torch.ones(1)
+    )
+    second_neg = _set_val(
+        graph.call_function(torch.ops.aten.neg.default, (x,)), torch.ones(1)
+    )
+    first_relu = _set_val(
+        graph.call_function(torch.ops.aten.relu.default, (first_neg,)), torch.ones(1)
+    )
+    second_relu = _set_val(
+        graph.call_function(torch.ops.aten.relu.default, (second_neg,)), torch.ones(1)
+    )
+    output = graph.output((first_relu, second_relu))
+    output.meta["val"] = (torch.ones(1), torch.ones(1))
+    graph.lint()
+    return GraphModule(torch.nn.Module(), graph)
+
+
+def _nodes_with_target(graph_module, target):
+    return [node for node in graph_module.graph.nodes if node.target == target]
+
+
 def _add_node_names(graph_module):
     return [
         node.name
-        for node in graph_module.graph.nodes
-        if node.target == torch.ops.aten.add.Tensor
+        for node in _nodes_with_target(graph_module, torch.ops.aten.add.Tensor)
     ]
 
 
@@ -161,6 +189,39 @@ def test_fuse_duplicate_users_preserves_graph_order_for_representative():
     result.graph_module.graph.lint()
     assert result.modified
     assert len(_add_node_names(result.graph_module)) == 1
+
+
+def test_fuse_duplicate_users_honors_do_not_fuse_marker():
+    graph_module = _graph_with_users_not_in_node_order()
+    marked_node = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == torch.ops.aten.add.Tensor
+    )
+    marked_node.meta[DO_NOT_FUSE_DUPLICATE_META_KEY] = True
+
+    result = FuseDuplicateUsersPass()(graph_module)
+
+    result.graph_module.graph.lint()
+    assert not result.modified
+    assert len(_add_node_names(result.graph_module)) == 2
+
+
+def test_fuse_duplicate_users_skips_erased_queued_nodes():
+    result = FuseDuplicateUsersPass()(_graph_with_erased_node_still_queued())
+
+    neg_nodes = _nodes_with_target(result.graph_module, torch.ops.aten.neg.default)
+    relu_nodes = _nodes_with_target(result.graph_module, torch.ops.aten.relu.default)
+    output = next(
+        node for node in result.graph_module.graph.nodes if node.op == "output"
+    )
+
+    result.graph_module.graph.lint()
+    assert result.modified
+    assert len(neg_nodes) == 1
+    assert len(relu_nodes) == 1
+    assert relu_nodes[0].args[0] is neg_nodes[0]
+    assert output.args[0] == (relu_nodes[0], relu_nodes[0])
 
 
 def test_fuse_duplicate_users_keeps_identical_rescale_users():
@@ -222,8 +283,9 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
         for index, pass_type in enumerate(pass_types)
         if pass_type is RemoveNoopPass
     )
-    assert pass_types[post_noop_index + 1 : post_noop_index + 4] == [
+    assert pass_types[post_noop_index + 1 : post_noop_index + 5] == [
         FuseDuplicateUsersPass,
         InsertRescalePass,
+        DeduplicateConstShapesPass,
         EnsureUniqueOutputNodesPass,
     ]

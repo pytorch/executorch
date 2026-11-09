@@ -5,7 +5,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(CMAKE_CXX_STANDARD 17)
+# Setting this unconditionally used to override the top-level project's choice,
+# which broke the Windows build once the vendored c10 started needing C++20 --
+# see the note beside CMAKE_CXX_STANDARD in the root CMakeLists.txt. Guarded so
+# a configure from the root inherits, and a standalone configure still picks the
+# right standard for its platform.
+if(NOT CMAKE_CXX_STANDARD)
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

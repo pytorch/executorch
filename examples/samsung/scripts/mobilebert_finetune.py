@@ -12,6 +12,7 @@ import torch
 
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
+    PerformanceMode,
 )
 from executorch.backends.samsung.utils.export_utils import (
     to_edge_transform_and_lower_to_enn,
@@ -30,10 +31,13 @@ class MobileBertFinetune:
         self.tokenizer = self.load_tokenizer()
 
     def load_tokenizer(self):
-        return AutoTokenizer.from_pretrained("google/mobilebert-uncased")
+        return AutoTokenizer.from_pretrained(
+            "google/mobilebert-uncased",
+            do_lower_case=True,
+        )
 
     def get_example_inputs(self):
-        encoding = self.tokenizer.encode_plus(
+        encoding = self.tokenizer(
             "Hello, my dog is cute",
             add_special_tokens=True,
             max_length=128,
@@ -44,9 +48,17 @@ class MobileBertFinetune:
             padding="max_length",
         )
 
+        input_ids = encoding["input_ids"]
+        attention_mask = encoding["attention_mask"].to(torch.float32)
+
+        batch_size, seq_len = attention_mask.shape
+        attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)  # [batch, 1, 1, seq]
+        attention_mask = attention_mask.repeat(1, 1, seq_len, 1)  # [batch, 1, seq, seq]
+        attention_mask = (1.0 - attention_mask) * torch.finfo(attention_mask.dtype).min
+
         return (
-            encoding["input_ids"],
-            encoding["attention_mask"].to(torch.float32),
+            input_ids,
+            attention_mask,
         )
 
     def build_loader_from_dataset(self, dataset, batch_size, usage="train"):
@@ -70,7 +82,7 @@ class MobileBertFinetune:
             TensorDataset,
         )
 
-        encoded_dataset = self.tokenizer.batch_encode_plus(
+        encoded_dataset = self.tokenizer(
             dataset.text.values.tolist(),
             return_attention_mask=True,
             truncation=True,
@@ -105,7 +117,7 @@ class MobileBertFinetune:
 
         return data_loader
 
-    def get_finetune_mobilebert(self, artifacts_dir):
+    def get_finetune_mobilebert(self, artifacts_dir, batch_size=64):
         # Pretrained bert's output ranges in a large scale. It is challenge for enn backend to support directly.
         # Please finetune mobilebert on specific tasks, make sure that bert's output and hidden states are friendly
         # to resource-constraint device.
@@ -126,7 +138,7 @@ class MobileBertFinetune:
         labels_set = train_data.label.unique()
 
         train_data_loader = self.build_loader_from_dataset(
-            train_data, batch_size=64, usage="train"
+            train_data, batch_size=batch_size, usage="train"
         )
 
         val_url = "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/test.tsv"
@@ -135,7 +147,7 @@ class MobileBertFinetune:
             BytesIO(content), delimiter="\t", header=None, names=["text", "label"]
         )
         val_data_loader = self.build_loader_from_dataset(
-            val_data, batch_size=64, usage="val"
+            val_data, batch_size=batch_size, usage="val"
         )
 
         artifacts_dir = artifacts_dir if artifacts_dir is not None else "./mobilebert"
@@ -245,7 +257,9 @@ if __name__ == "__main__":
     example_inputs = mobilebert_finetune.get_example_inputs()
     output = model(*example_inputs)
 
-    compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
+    compile_specs = [
+        gen_samsung_backend_compile_spec(args.chipset, PerformanceMode.HIGH_PERFORMANCE)
+    ]
     edge = to_edge_transform_and_lower_to_enn(
         model, example_inputs, compile_specs=compile_specs
     )

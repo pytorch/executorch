@@ -10,10 +10,13 @@
 import atexit
 import contextlib
 import importlib.resources
+import json
+import math
 import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 
@@ -270,7 +273,12 @@ def _get_flatc_path() -> str:
 
         for package, resource_name in (
             (__package__, _FLATC_RESOURCE_NAME),
-            ("executorch.data.bin", "flatc"),
+            # The wheel installs flatc under the name setup.py's
+            # get_executable_name() gives it, which has a .exe suffix on Windows.
+            (
+                "executorch.data.bin",
+                "flatc.exe" if sys.platform == "win32" else "flatc",
+            ),
         ):
             try:
                 flatc_resource = importlib.resources.files(package).joinpath(
@@ -337,6 +345,36 @@ def _run_flatc(args: Sequence[str]) -> None:
     subprocess.run([_get_flatc_path()] + list(args), check=True)
 
 
+def _replace_non_finite_in_json(content: bytes) -> bytes:
+    """Rewrites non-finite floats into a form that flatc can parse.
+
+    Python's `json` module emits the literals `Infinity`, `-Infinity`, and
+    `NaN` for non-finite floats. Those are a Python extension; RFC 8259 has no
+    representation for them, and flatc's JSON parser rejects them. flatc does
+    accept the quoted forms "inf", "-inf", and "nan" for float fields, so
+    convert to those. Returns `content` unchanged if it holds no such values.
+    """
+    if b"Infinity" not in content and b"NaN" not in content:
+        return content
+
+    def convert(value: object) -> object:
+        if isinstance(value, float) and not math.isfinite(value):
+            if math.isnan(value):
+                return "nan"
+            return "inf" if value > 0 else "-inf"
+        if isinstance(value, dict):
+            return {key: convert(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        return value
+
+    # json.loads accepts the same non-standard literals that json.dumps emits,
+    # so this round-trip only rewrites the values convert() replaces. Parsing
+    # rather than pattern-matching the text avoids corrupting string fields
+    # that happen to contain "Infinity" or "NaN".
+    return json.dumps(convert(json.loads(content))).encode("utf-8")
+
+
 def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
     """Serializes JSON data to a binary flatbuffer file.
 
@@ -346,8 +384,17 @@ def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
             If the schema inclues other schema files, they must be present in
             the same directory.
         json_path: Path to the data to serialize, as JSON data whose structure
-            matches the schema.
+            matches the schema. Rewritten in place if it contains non-finite
+            floats; flatc derives the output filename from this path, so the
+            data cannot be sanitized into a differently-named file.
     """
+    with open(json_path, "rb") as json_file:
+        content = json_file.read()
+    sanitized = _replace_non_finite_in_json(content)
+    if sanitized != content:
+        with open(json_path, "wb") as json_file:
+            json_file.write(sanitized)
+
     _run_flatc(
         [
             "--binary",

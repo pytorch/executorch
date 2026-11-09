@@ -19,6 +19,9 @@ concurrency:
 jobs:
   test-qnn:
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: qnn
       flows: >-
@@ -28,4 +31,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.8xlarge.memory
+      runner-linux: mt-l-x86iavx512-32-256

@@ -1,6 +1,8 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 fbcode_target(_kind = runtime.python_library,
     name = "core",
     srcs = [
@@ -24,6 +26,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":core",
         "//caffe2:torch",
+        "//executorch/backends/arm:ao_ext",
         "//executorch/backends/arm/tosa:resize_utils",
         "//executorch/backends/arm/tosa:tosa",
     ],

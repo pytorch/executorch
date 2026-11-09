@@ -10,6 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 bool SharedObject::has_user(const ValueRef idx) const {

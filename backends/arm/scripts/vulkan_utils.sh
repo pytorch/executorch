@@ -180,5 +180,5 @@ function setup_path_vulkan() {
     else
         prepend_env_in_setup_path LD_LIBRARY_PATH "${vulkan_sdk_arch_root}/lib"
     fi
-    prepend_env_in_setup_path VULKAN_SDK "${vulkan_sdk_arch_root}"
+    set_env_in_setup_path VULKAN_SDK "${vulkan_sdk_arch_root}"
 }

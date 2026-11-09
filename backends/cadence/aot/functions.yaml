@@ -265,12 +265,12 @@
     - arg_meta: null
       kernel_name: impl::generic::dequantize_per_tensor_asym32s_out
 
-- func: cadence::quantized_conv2d_nchw.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
+- func: cadence::quantized_conv2d_nchw.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor? weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_conv2d_nchw_out
 
-- func: cadence::quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
+- func: cadence::quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor? weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_conv2d_nhwc_out
@@ -284,7 +284,7 @@
     - arg_meta: null
       kernel_name: impl::generic::quantized_layer_norm_per_tensor_out
 
-- func: cadence::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+- func: cadence::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_linear_out
@@ -474,7 +474,7 @@
     - arg_meta: null
       kernel_name: impl::generic::quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out
 
-- func: cadence::quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+- func: cadence::quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_fully_connected_out
@@ -493,6 +493,11 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out
+
+- func: cadence::quantized_fully_connected_packed.out(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_fully_connected_packed_out
 
 - func: cadence::requantize.out(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)
   kernels:

@@ -6,6 +6,9 @@
 
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
+)
 from executorch.backends.arm._passes.rewrite_upsample import RewriteUpsamplePass
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -23,20 +26,47 @@ def _is_upsample_node_tosa_supported(
     tosa_spec: TosaSpecification,
     *,
     align_corners: bool,
+    resize_mode: str,
 ) -> bool:
     input_node = ensure_type(fx.Node, node.args[0])
     input_size_yx = get_first_fake_tensor(input_node).shape[2:]
     output_size_yx = get_first_fake_tensor(node).shape[2:]
 
+    scale_factors_yx: tuple[float | None, float | None] = (None, None)
+    if resize_mode == "nearest" and node.args[2] is not None:
+        scale_factors = node.args[2]
+        if not isinstance(scale_factors, (list, tuple)) or len(scale_factors) != 2:
+            support_check.reporter.report_reject(
+                node, "Nearest upsample requires two spatial scale factors."
+            )
+            return False
+        scale_y, scale_x = scale_factors
+        if not isinstance(scale_y, (float, int)) or not isinstance(
+            scale_x, (float, int)
+        ):
+            support_check.reporter.report_reject(
+                node, "Nearest upsample requires constant scale factors."
+            )
+            return False
+        scale_factors_yx = (float(scale_y), float(scale_x))
+
     try:
         scale_y_n, scale_y_d, offset_y, border_y = (
             RewriteUpsamplePass.get_resize_parameters_1d(
-                input_size_yx[0], output_size_yx[0], align_corners
+                input_size_yx[0],
+                output_size_yx[0],
+                align_corners,
+                resize_mode,
+                scale_factors_yx[0],
             )
         )
         scale_x_n, scale_x_d, offset_x, border_x = (
             RewriteUpsamplePass.get_resize_parameters_1d(
-                input_size_yx[1], output_size_yx[1], align_corners
+                input_size_yx[1],
+                output_size_yx[1],
+                align_corners,
+                resize_mode,
+                scale_factors_yx[1],
             )
         )
     except RuntimeError as err:
@@ -70,7 +100,7 @@ class UpsampleNearest2dSupported(SupportedTOSAOperatorCheck):
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
         return _is_upsample_node_tosa_supported(
-            self, node, tosa_spec, align_corners=False
+            self, node, tosa_spec, align_corners=False, resize_mode="nearest"
         )
 
 
@@ -85,7 +115,10 @@ class UpsampleBilinear2dSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
+        if is_exact_tosa_boundary_bilinear_downscale(node, tosa_spec):
+            return True
+
         align_corners = ensure_type(bool, node.args[2])
         return _is_upsample_node_tosa_supported(
-            self, node, tosa_spec, align_corners=align_corners
+            self, node, tosa_spec, align_corners=align_corners, resize_mode="bilinear"
         )

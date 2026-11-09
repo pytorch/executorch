@@ -30,7 +30,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_weight_tile.glslh"
+#include "gemm/tile_utils/linear_fp_weight_tile.glslh"
 
 #ifndef SDPA_V_BUF
 #define SDPA_V_BUF t_v

@@ -4,9 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Test that tosa_supported_operators reject operators that are not
-# quantized properly. This is typically a consequence of a torch op
-# such a Softplus that is decompsed into many other ops without
-# surrounding q/dq nodes.
+# quantized properly after decomposition.
 
 import torch
 from executorch.backends.arm.test import common
@@ -48,11 +46,7 @@ test_data: dict[str, input_t1] = {
 
 
 class SoftplusModule(torch.nn.Module):
-    """Module containing an addition followed by a Softplus.
-
-    Softplus is currently not supported by TosaBackend.
-
-    """
+    """Addition followed by Softplus for FP decomposition and INT lowering."""
 
     def __init__(self):
         super().__init__()
@@ -85,8 +79,6 @@ class LinearResidualModule(torch.nn.Module):
         return x1 + x3
 
 
-# Softplus is decomposed which messes up the quantization. This test tests that CheckProperQuantization does not
-# partition nodes where quantization is not as expected.
 @common.parametrize("test_data", test_data)
 def test_softplus_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
@@ -106,15 +98,7 @@ def test_softplus_tosa_INT(test_data: input_t1):
         SoftplusModule(),
         test_data=test_data,
         aten_op=softplus_aten_op,
-        exir_op=softplus_exir_op,
-    )
-    pipeline.pop_stage("check_not.exir")
-    # check that all ops in softplus_exir_op except add are rejected
-    pipeline.add_stage_after(
-        "to_edge_transform_and_lower",
-        pipeline.tester.check,
-        softplus_exir_op[1:],
-        suffix="exir_post_partition",
+        exir_op="executorch_exir_dialects_edge__ops_aten_softplus_default",
     )
     pipeline.run()
 

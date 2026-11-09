@@ -19,7 +19,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.quantizer import QuantizationConfig
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
@@ -129,7 +129,8 @@ def _adjust_weight_qspec_for_conv_transpose(
     if (
         node.target != torch.ops.aten.conv_transpose2d.input
         or weight_qspec is None
-        or weight_qspec.qscheme != torch.per_channel_symmetric
+        or weight_qspec.qscheme
+        not in (torch.per_channel_symmetric, torch.per_channel_affine)
     ):
         return weight_qspec
 
@@ -556,6 +557,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.silu.default,
+    torch.ops.aten.softplus.default,
     torch.ops.aten.silu_.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
@@ -575,6 +577,7 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze_.dim,
+    torch.ops.aten.squeeze_copy.dims,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
     torch.ops.aten.unbind.int,
@@ -611,6 +614,7 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
+    torch.ops.aten.roll.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
     torch.ops.aten.upsample_bilinear2d.vec,

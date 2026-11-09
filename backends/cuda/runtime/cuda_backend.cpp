@@ -43,13 +43,15 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/utils.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 
 namespace executorch::backends::cuda {
 
@@ -86,6 +88,81 @@ constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
+
+bool CudaGraphState::start_warmup() {
+  if (!CudaAllocator::memory_pools_supported(-1)) {
+    return false;
+  }
+  phase = CudaGraphPhase::Warmup;
+  warmup_remaining = kCudaGraphWarmupSteps;
+  return true;
+}
+
+// Advances the off-graph KV cache past a step's tokens. Every successful exit
+// of execute() ends here, and only those: a run that failed never wrote its
+// tokens, and committing them would desynchronise the cache's length from the
+// history the kernels actually hold.
+Error commit_offgraph_kv_step(CudaDelegateHandle* handle, int64_t width) {
+  if (handle->kv_cache == nullptr) {
+    return Error::Ok;
+  }
+  return handle->kv_cache->commit_step(width);
+}
+
+// A per-method actual key overrides the artifact's logical role. Without that
+// override, the logical role names a load-time option containing the actual
+// key; it is never itself used as a process-global registry ID.
+Result<std::string> resolve_cuda_cache_key(
+    const BackendInitContext& context,
+    ArrayRef<CompileSpec> compile_specs) {
+  constexpr const char* option =
+      ::executorch::extension::llm::cache::kCacheKeyOption;
+  std::optional<std::string> logical;
+  for (const CompileSpec& spec : compile_specs) {
+    if (std::strcmp(spec.key, option) != 0) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !logical && spec.value.buffer != nullptr && spec.value.nbytes > 0,
+        InvalidArgument,
+        "init: duplicate or empty logical CUDA cache key");
+    std::string_view value(
+        static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
+    if (value.back() == '\0') {
+      value.remove_suffix(1);
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !value.empty() && value.size() < runtime::kMaxOptionKeyLength &&
+            value.find('\0') == std::string_view::npos && value != option,
+        InvalidArgument,
+        "init: invalid logical CUDA cache key");
+    logical = std::string(value);
+  }
+  const auto actual = context.get_runtime_spec<const char*>(option);
+  ET_CHECK_OR_RETURN_ERROR(
+      actual.ok() || actual.error() == Error::NotFound || !logical,
+      InvalidArgument,
+      "init: CUDA cache runtime override must be a string");
+  if (actual.ok() && actual.get() != nullptr && *actual.get() != '\0') {
+    return std::string(actual.get());
+  }
+  if (!logical) {
+    return std::string{};
+  }
+  const auto mapped = context.get_runtime_spec<const char*>(logical->c_str());
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      mapped.error(),
+      "init: logical CUDA cache '%s' requires a string runtime mapping to an "
+      "installed cache key, or a per-method '%s' override",
+      logical->c_str(),
+      option);
+  ET_CHECK_OR_RETURN_ERROR(
+      mapped.get() != nullptr && *mapped.get() != '\0',
+      InvalidArgument,
+      "init: logical CUDA cache '%s' has an empty runtime mapping",
+      logical->c_str());
+  return std::string(mapped.get());
+}
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -137,33 +214,6 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
     return method_in_csv(method_name, cuda_graph_method_);
-  }
-
-  // Create the shared CUDA stream. Called when use_shared_cuda_stream option
-  // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
-  void create_shared_cuda_stream() {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    if (shared_cuda_stream_ != nullptr) {
-      return; // Already created
-    }
-    shared_cuda_stream_ = cuda::create_cuda_stream();
-    if (shared_cuda_stream_ == nullptr) {
-      ET_LOG(Error, "Failed to create shared CUDA stream");
-      return;
-    }
-    ET_LOG(Info, "Created shared CUDA stream: %p", *shared_cuda_stream_);
-  }
-
-  // Get the shared CUDA stream. Returns nullptr if not in shared mode.
-  std::shared_ptr<cudaStream_t> get_shared_cuda_stream() const {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    return shared_cuda_stream_;
-  }
-
-  // Check if we're using shared CUDA stream mode.
-  bool is_using_shared_cuda_stream() const {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    return shared_cuda_stream_ != nullptr;
   }
 
   // Enable the legacy dense-blob per-FQN cache. New FQN artifacts use
@@ -220,6 +270,13 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
+    {
+      auto res =
+          get_function(so_handle, "AOTInductorModelContainerRunSingleThreaded");
+      handle->run_single_threaded = res.ok()
+          ? reinterpret_cast<AOTInductorModelContainerRunFunc>(res.get())
+          : nullptr;
+    }
     LOAD_OPTIONAL_SYMBOL(
         get_num_constants, AOTInductorModelContainerGetNumConstants);
     LOAD_OPTIONAL_SYMBOL(
@@ -229,6 +286,13 @@ class ET_EXPERIMENTAL CudaBackend final
         AOTInductorModelContainerGetConstantOriginalFQN);
     LOAD_OPTIONAL_SYMBOL(
         get_constant_dtype, AOTInductorModelContainerGetConstantDtype);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_type, AOTInductorModelContainerGetConstantType);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_from_folded,
+        AOTInductorModelContainerGetConstantFromFolded);
     LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
@@ -262,9 +326,20 @@ class ET_EXPERIMENTAL CudaBackend final
             "effect; ignoring it.",
             kSkipCopyOutputToCpuForMethod);
       } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
+        // Refused rather than ignored: this option was the only thing ordering
+        // methods driven from different threads, so silently dropping it would
+        // give such a caller unordered device work and wrong results. Methods
+        // now run on the calling thread's stream, which orders methods called
+        // from one thread but not across threads; a caller that needs that must
+        // order the calls itself.
         if (auto* val = std::get_if<bool>(&option.value)) {
           if (*val) {
-            create_shared_cuda_stream();
+            ET_LOG(
+                Error,
+                "Option %s is deprecated and no longer orders methods across "
+                "threads. See the comment at this check for what to do instead.",
+                kUseSharedCudaStream);
+            return Error::NotSupported;
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
@@ -320,13 +395,24 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+    std::optional<OffGraphKVStepWidth> kv_step_width;
     for (const CompileSpec& spec : compile_specs) {
+      if (std::strcmp(spec.key, kOffGraphKVStepWidthSpec) == 0) {
+        auto parsed = parse_offgraph_kv_step_width(std::string_view(
+            static_cast<const char*>(spec.value.buffer), spec.value.nbytes));
+        ET_CHECK_OK_OR_RETURN_ERROR(parsed.error());
+        kv_step_width = parsed.get();
+      }
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
             spec.value.nbytes); // no nullptr guarantee, so pass size
       }
     }
+
+    const auto resolved_cache_key =
+        resolve_cuda_cache_key(context, compile_specs);
+    ET_CHECK_OK_OR_RETURN_ERROR(resolved_cache_key.error());
 
     std::string so_blob_key;
     std::string weights_blob_key;
@@ -338,7 +424,46 @@ class ET_EXPERIMENTAL CudaBackend final
           CudaWeightCache::parse(
               processed->data(), processed->size(), fqn_weights),
           "Malformed CUDA FQN weight metadata");
-      so_blob_key = fqn_weights.so_blob_key;
+      size_t variant_index = 0;
+      bool uses_ptx_fallback = false;
+      uint32_t current_sm = 0;
+      if (!(fqn_weights.variants.size() == 1 &&
+            fqn_weights.variants[0].target_sm == 0)) {
+#if defined(EXECUTORCH_USE_HIP)
+        ET_LOG(
+            Error,
+            "Multi-SM CUDA AOTI metadata is not supported by the ROCm runtime");
+        return Error::NotSupported;
+#else
+        int device_index = 0;
+        cudaDeviceProp device_properties{};
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&device_index));
+        ET_CUDA_CHECK_OR_RETURN_ERROR(
+            cudaGetDeviceProperties(&device_properties, device_index));
+        current_sm = static_cast<uint32_t>(
+            device_properties.major * 10 + device_properties.minor);
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            CudaWeightCache::select_variant(
+                fqn_weights, current_sm, variant_index, uses_ptx_fallback),
+            "Failed to select a CUDA AOTI variant for sm%u",
+            current_sm);
+#endif
+      }
+      const auto& variant = fqn_weights.variants[variant_index];
+      so_blob_key = variant.so_blob_key;
+      if (variant.target_sm == 0) {
+        ET_LOG(Info, "Selected untargeted CUDA AOTI variant");
+      } else if (uses_ptx_fallback) {
+        ET_LOG(
+            Info,
+            "Selected sm%u CUDA AOTI PTX fallback (compute_%u) for sm%u",
+            variant.target_sm,
+            variant.ptx_compute,
+            current_sm);
+      } else {
+        ET_LOG(
+            Info, "Selected native sm%u CUDA AOTI variant", variant.target_sm);
+      }
     } else {
       ET_CHECK_OK_OR_RETURN_ERROR(
           executorch::backends::aoti::resolve_blob_keys(
@@ -367,6 +492,22 @@ class ET_EXPERIMENTAL CudaBackend final
         ("executorch_cuda_" + to_string(get_process_id()) + "_" +
          to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
          ".so");
+
+    // A failed init returns no handle, so destroy() never runs for it. Remove
+    // the file here unless init succeeds.
+    bool keep_so_file = false;
+    executorch::backends::aoti::ScopeGuard remove_so_file([&]() noexcept {
+      if (keep_so_file) {
+        return;
+      }
+      std::error_code remove_error;
+      filesystem::remove(so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          so_path.c_str(),
+          remove_error.message().c_str());
+    });
 
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
@@ -417,6 +558,46 @@ class ET_EXPERIMENTAL CudaBackend final
     ET_LOG(Info, "container_handle = %p", container_handle);
 
     handle->container_handle = container_handle;
+    if (has_fqn_weights) {
+      handle->offgraph_kv_sizes =
+          CudaWeightCache::offgraph_kv_sizes(fqn_weights);
+    }
+
+    // Runtime-owned off-graph buffers must capture their AOTI names before
+    // the serialized constants update installs the ordinary weight set.
+    //
+    // Resolve each delegate's logical cache role through this method's load
+    // options. The explicit actual-key override retains the ordinary runner
+    // contract; a logical name is never used directly as a registry ID.
+    //
+    // The key alone does not decide it, though: a program whose storage was
+    // lowered off-graph carries no bytes for it, so running one without a cache
+    // would hand its kernels unbound memory. That requirement is read from the
+    // program's own constants and checked whether or not a key was passed.
+    const char* cache_key =
+        resolved_cache_key->empty() ? nullptr : resolved_cache_key->c_str();
+    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
+    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
+    if (cache_key != nullptr) {
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          attach_offgraph_kv_cache(*handle, cache_key, kv_step_width));
+#else
+      ET_LOG(
+          Error,
+          "init: an off-graph KV cache was supplied, but this CUDA backend was "
+          "built without EXECUTORCH_BUILD_EXTENSION_LLM");
+      return Error::NotSupported;
+#endif
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !needs_offgraph_kv.get() || handle->kv_cache != nullptr,
+        InvalidArgument,
+        "init: method '%s' keeps its KV cache off-graph but no cache was "
+        "installed under the '%s' backend option (a CUDA backend built without "
+        "EXECUTORCH_BUILD_EXTENSION_LLM cannot run it)",
+        method_name.c_str(),
+        ::executorch::extension::llm::cache::kCacheKeyOption);
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
@@ -432,44 +613,54 @@ class ET_EXPERIMENTAL CudaBackend final
           load_constants_legacy(handle, named_data_map, weights_blob_key));
     }
 
-    // Use shared CUDA stream if enabled via options, otherwise create one.
-    // A shared stream ensures proper ordering across multiple methods
-    // (e.g., encoder, decoder, sampler) when using skip-copy optimization.
-    if (is_using_shared_cuda_stream()) {
-      // Shared stream mode: all handles share the same stream.
-      handle->cuda_stream = get_shared_cuda_stream();
-      ET_LOG(
-          Info,
-          "Using shared CUDA stream %p for method %s",
-          handle->get_cuda_stream(),
-          method_name.c_str());
-    } else {
-      // Per-handle stream mode: each handle owns its own stream.
-      handle->cuda_stream = cuda::create_cuda_stream();
-      if (handle->cuda_stream == nullptr) {
-        delete handle;
-        return Error::Internal;
-      }
-      ET_LOG(
-          Info,
-          "Created new CUDA stream %p for method %s",
-          handle->get_cuda_stream(),
-          method_name.c_str());
-    }
+    // Handles on one thread share that thread's stream, so one delegate's
+    // output is ordered against the next one's read, which a stream per handle
+    // left unordered. cudaStreamPerThread is a different stream on each host
+    // thread, so this orders delegates called from the same thread and not
+    // delegates called from different ones. The TensorRT delegate falls back to
+    // the same stream, in its executorch backend, so a split program on one
+    // thread is ordered too.
+    handle->cuda_stream = cudaStreamPerThread;
+    ET_LOG(
+        Info,
+        "Using the per-thread CUDA stream %p for method %s",
+        handle->get_cuda_stream(),
+        method_name.c_str());
 
-    // Initialize CUDA graph state if enabled for this method.
+    // Initialize CUDA graph state if enabled for this method. Not on a device
+    // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
-      ET_LOG(
-          Info,
-          "CUDA graph enabled for method '%s' (warmup=%d)",
-          method_name.c_str(),
-          kCudaGraphWarmupSteps);
+      const std::string host_constants = describe_host_constants(handle);
+      if (!host_constants.empty()) {
+        // A graph records only the device work of the capture call. Host code,
+        // such as the choice of a torch.cond branch on a flag in host memory,
+        // would be fixed at its value from that call.
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s', but %s; running without a "
+            "CUDA graph",
+            method_name.c_str(),
+            host_constants.c_str());
+      } else if (handle->cuda_graph_state.start_warmup()) {
+        ET_LOG(
+            Info,
+            "CUDA graph enabled for method '%s' (warmup=%d)",
+            method_name.c_str(),
+            kCudaGraphWarmupSteps);
+      } else {
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s' but this device has no "
+            "memory pools; running without a CUDA graph",
+            method_name.c_str());
+      }
     }
 
     mutable_state_note_handle(handle);
 
+    live_handles_.fetch_add(1, std::memory_order_acq_rel);
+
+    keep_so_file = true;
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -487,23 +678,24 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->get_num_outputs(handle->container_handle, &n_outputs);
 
     // Run on the caller-selected stream when one is active on this thread (e.g.
-    // a CUDA green-context stream), otherwise the handle's own stream. Every
+    // a CUDA green-context stream), otherwise the per-thread stream. Every
     // kernel and boundary copy reads getCurrentCUDAStream, so installing the
     // choice here routes the whole execution; restore the prior selection on
     // return so a caller stream does not linger for later work on this thread.
     const std::optional<cudaStream_t> caller_stream =
         executorch::extension::cuda::getCallerStream();
 
-    // A captured CUDA graph is bound to its capture stream and cannot be safely
-    // replayed on a different, caller-provided stream.
+    // Replaying a captured graph on a caller-provided stream is not itself a
+    // CUDA error, but the static buffers this path pins are shared by every
+    // replay, so two callers on two streams would race over them. Refused
+    // rather than synchronized, which predates this change.
     ET_CHECK_OR_RETURN_ERROR(
         !(caller_stream &&
           handle->cuda_graph_state.phase != CudaGraphPhase::Disabled),
         NotSupported,
         "CUDA graph is not supported together with a caller-provided CUDA stream.");
 
-    // Snapshot the prior selection without creating one (peek, not get), so the
-    // restore is exact and we don't leak a stream just to snapshot.
+    // Snapshot the prior selection with peek, not get, so the restore is exact.
     std::optional<cudaStream_t> prev_stream;
     if (caller_stream) {
       prev_stream = peekCurrentCUDAStream(0);
@@ -530,15 +722,16 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // Verify device info on all memory-planned, ET-driven IO tensors.
+    // Verify device info on all ET-driven IO tensors.
     // All input and output tensors should have device_type = CUDA, which
     // is set during serialization by PropagateDevicePass based on the
     // target_device compile spec from CudaPartitioner.
     //
     // Under device memory planning, these tensors are GPU-resident: their
-    // storage lives in a planned CUDA arena. The backend wraps them in place
-    // and performs no host<->device copies — graph-level et_copy ops handle
-    // any host<->device transfers outside the delegate.
+    // storage lives in a planned CUDA arena, or in a buffer the caller set for
+    // an input or output that is not memory planned. The backend wraps them
+    // in place and performs no host<->device copies; graph-level et_copy ops
+    // handle any host<->device transfers outside the delegate.
     for (size_t i = 0; i < n_inputs + n_outputs; i++) {
       auto* tensor = &(args[i]->toTensor());
       auto device_type = tensor->unsafeGetTensorImpl()->device_type();
@@ -550,29 +743,58 @@ class ET_EXPERIMENTAL CudaBackend final
           i,
           static_cast<int>(device_type));
 
+      // A method output that is not memory planned has no buffer until the
+      // caller sets one, and the run below cannot wrap a null pointer.
+      const void* data_ptr = tensor->const_data_ptr();
+      ET_CHECK_OR_RETURN_ERROR(
+          data_ptr != nullptr,
+          InvalidArgument,
+          "Method '%s': CUDA delegate %s %zu has no data buffer.%s",
+          handle->method_name.c_str(),
+          i < n_inputs ? "input" : "output",
+          i < n_inputs ? i : i - n_inputs,
+          i < n_inputs ? ""
+                       : " If it is a method output that is not memory "
+                         "planned, set a CUDA buffer for it with "
+                         "Method::set_output_data_ptr or Module::set_output.");
+
       // device_type above is only metadata. Also verify the storage actually
       // lives in CUDA device memory, so a CUDA-typed tensor that is secretly
       // backed by host memory is caught here instead of corrupting the run.
-      const void* data_ptr = tensor->const_data_ptr();
-      if (data_ptr != nullptr) {
-        cudaPointerAttributes attributes{};
-        const cudaError_t attr_err =
-            cudaPointerGetAttributes(&attributes, data_ptr);
-        ET_CHECK_OR_RETURN_ERROR(
-            attr_err == cudaSuccess &&
-                (attributes.type == cudaMemoryTypeDevice ||
-                 attributes.type == cudaMemoryTypeManaged),
-            InvalidArgument,
-            "Tensor %zu has device_type=CUDA but its data pointer %p is not "
-            "backed by CUDA device memory (cudaPointerGetAttributes err=%d, "
-            "cudaMemoryType=%d).",
-            i,
-            data_ptr,
-            static_cast<int>(attr_err),
-            static_cast<int>(attributes.type));
-      }
+      cudaPointerAttributes attributes{};
+      const cudaError_t attr_err =
+          cudaPointerGetAttributes(&attributes, data_ptr);
+      ET_CHECK_OR_RETURN_ERROR(
+          attr_err == cudaSuccess &&
+              (attributes.type == cudaMemoryTypeDevice ||
+               attributes.type == cudaMemoryTypeManaged),
+          InvalidArgument,
+          "Tensor %zu has device_type=CUDA but its data pointer %p is not "
+          "backed by CUDA device memory (cudaPointerGetAttributes err=%d, "
+          "cudaMemoryType=%d).",
+          i,
+          data_ptr,
+          static_cast<int>(attr_err),
+          static_cast<int>(attributes.type));
     }
 
+    // The cache has to grow, and its storage be rebound, before the compiled
+    // program reads it -- and nothing inside that program can call back out, so
+    // the step is driven from here rather than by the runner.
+    int64_t kv_step_width = 0;
+    if (handle->kv_cache != nullptr) {
+      const auto step_width = read_offgraph_kv_step_width(
+          handle->kv_step_width, Span<EValue*>(args.data(), n_inputs));
+      ET_CHECK_OK_OR_RETURN_ERROR(step_width.error());
+      kv_step_width = step_width.get();
+      // Growth is ordered on the stream this step runs on, which was just
+      // installed as current above.
+      const Result<cudaStream_t> step_stream = getCurrentCUDAStream(0);
+      ET_CHECK_OK_OR_RETURN_ERROR(step_stream.error());
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
+      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
@@ -586,14 +808,26 @@ class ET_EXPERIMENTAL CudaBackend final
       // Copy new input data (GPU-resident) into static input buffers (D2D)
       for (size_t i = 0; i < n_inputs; i++) {
         auto* et_input = &(args[i]->toTensor());
+        const auto sizes = et_input->sizes();
+        const auto& captured = handle->cuda_graph_state.static_input_sizes[i];
         ET_CHECK_OR_RETURN_ERROR(
-            et_input->nbytes() ==
-                handle->cuda_graph_state.static_input_nbytes[i],
+            sizes.size() == captured.size(),
             InvalidArgument,
-            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
+            "CUDA graph replay: input %zu has %zu dims, captured with %zu",
             i,
-            handle->cuda_graph_state.static_input_nbytes[i],
-            et_input->nbytes());
+            sizes.size(),
+            captured.size());
+        for (size_t d = 0; d < sizes.size(); d++) {
+          ET_CHECK_OR_RETURN_ERROR(
+              sizes[d] == captured[d],
+              InvalidArgument,
+              "CUDA graph replay: input %zu has size %lld in dim %zu, "
+              "captured with %lld",
+              i,
+              static_cast<long long>(sizes[d]),
+              d,
+              static_cast<long long>(captured[d]));
+        }
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),
@@ -623,20 +857,182 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
 
-      return Error::Ok;
+      return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
-    // ---------------------------------------------------------------
-    // Normal path (also used for WARMUP and CAPTURE phases)
-    // ---------------------------------------------------------------
-    bool is_capture_step =
+    const bool is_capture_step =
         (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
          handle->cuda_graph_state.warmup_remaining == 0);
+    bool graph_launched = false;
+    Error error = run_once(
+        handle, args, n_inputs, n_outputs, is_capture_step, graph_launched);
+    if (error != Error::Ok && is_capture_step && !graph_launched) {
+      // A capture records kernels without running them, so until the new graph
+      // runs, the inputs and any state the program updates are untouched. A
+      // program that keeps state in host memory, where host code does run
+      // during a capture, never gets here: init leaves its graph off.
+      ET_LOG(
+          Info,
+          "CUDA graph: capture failed for '%s'; running this call and later "
+          "ones without a graph",
+          handle->method_name.c_str());
+      // The capture guard turned graphs off, so later calls run eagerly too.
+      ET_DCHECK(handle->cuda_graph_state.phase == CudaGraphPhase::Disabled);
+      error = run_once(
+          handle,
+          args,
+          n_inputs,
+          n_outputs,
+          /*is_capture_step=*/false,
+          graph_launched);
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(error);
+    return commit_offgraph_kv_step(handle, kv_step_width);
+  }
 
+  void destroy(DelegateHandle* handle_) const override {
+    if (handle_ == nullptr) {
+      return;
+    }
+    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
+
+    mutable_state_forget_handle(handle);
+    if (handle->kv_cache != nullptr) {
+      handle->kv_cache->forget_handle(handle);
+    }
+
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion and
+    // defer cleanup to the OS. The corresponding shared library must remain
+    // loaded as well: the leaked container still owns objects whose code and
+    // process-wide state live in that library, so dlclose/FreeLibrary can
+    // invalidate them and crash during multi-method teardown.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
+    // AOTInductorModelContainerDelete(handle->container_handle);
+
+    // Remove the temporary shared library file
+    if (!handle->so_path.empty()) {
+      std::error_code remove_error;
+      std::filesystem::remove(handle->so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          handle->so_path.c_str(),
+          remove_error.message().c_str());
+    }
+
+    delete handle;
+
+    // The allocator lets the device pool keep freed memory so that repeated
+    // delegate execution does not pay to map it again. Nothing is running on
+    // this backend once the last handle is gone, so hand that memory back
+    // rather than hold it for the life of the process.
+    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Only frees the driver has already observed can be released, so without
+      // this the trim gives back nothing rather than less. A device wait rather
+      // than a stream wait because the frees went to whichever stream was
+      // current when the storage was released, which is not necessarily one
+      // this handle recorded, and teardown is not bound to the thread that ran
+      // the method either.
+      const cudaError_t sync_err = cudaDeviceSynchronize();
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceSynchronize before releasing the pool failed: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
+      // This also releases unused blocks cached by other allocator users.
+      CudaAllocator::release_cached_memory(-1);
+    }
+  }
+
+ private:
+  // Names a constant of the program in host memory, or says that the
+  // constants could not be listed, since unknown counts as host memory.
+  // Empty when every constant is on the device.
+  static std::string describe_host_constants(cuda::CudaDelegateHandle* handle) {
+    const char* unlisted = "its constants could not be listed";
+    if (handle->extract_constants_map == nullptr) {
+      return unlisted;
+    }
+    std::unordered_map<std::string, AtenTensorHandle> constants;
+    if (handle->extract_constants_map(
+            handle->container_handle,
+            reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
+            /*use_inactive=*/false) != Error::Ok) {
+      return unlisted;
+    }
+    for (const auto& [fqn, tensor] : constants) {
+      if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
+        return "constant '" + fqn + "' is in host memory";
+      }
+    }
+    return "";
+  }
+
+  // Runs the program once. On the capture step it captures the CUDA graph
+  // instead, then launches it once, and sets graph_launched once that launch
+  // is queued.
+  Error run_once(
+      cuda::CudaDelegateHandle* handle,
+      Span<EValue*> args,
+      size_t n_inputs,
+      size_t n_outputs,
+      bool is_capture_step,
+      bool& graph_launched) const {
     // Wrrap them as SlimTensors for AOTI execution without any host<->device
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
     std::vector<SlimTensor*> slim_outputs(n_outputs);
+
+    // Undoes a capture attempt that an early return would otherwise abandon.
+    //
+    // The buffers this attempt pinned would otherwise stay in their vectors
+    // with the phase still at warmup and no steps left, so the next call
+    // captures again and appends a second set. Replay then reads the second set
+    // while the input copies target the first, and every execute returns
+    // whatever those buffers held at capture time, with nothing reporting an
+    // error.
+    //
+    // Ending the capture itself is a separate guard, declared after the tensor
+    // cleanup below so that it runs before it: freeing a device buffer on a
+    // still-capturing stream fails with invalid argument and leaks the block.
+    //
+    // Disarmed once the capture step has fully succeeded.
+    class CaptureGuard {
+     public:
+      ~CaptureGuard() {
+        if (state_ == nullptr) {
+          return;
+        }
+        // Free what this attempt pinned and disable graphs for this method, so
+        // a capture that cannot succeed is tried once rather than on every
+        // later call for the life of the process. Eager execution is correct,
+        // just slower.
+        state_->release();
+        state_->phase = CudaGraphPhase::Disabled;
+        state_->warmup_remaining = 0;
+        (void)cudaGetLastError();
+      }
+      // Before capture begins. From here a failure still unwinds the pinned
+      // buffers.
+      void arm(cuda::CudaGraphState* state) {
+        state_ = state;
+      }
+      void disarm() {
+        state_ = nullptr;
+      }
+
+     private:
+      cuda::CudaGraphState* state_ = nullptr;
+    } capture_guard;
+
+    if (is_capture_step) {
+      capture_guard.arm(&handle->cuda_graph_state);
+    }
 
     // Process input tensors: wrap the GPU-resident ETensor buffers directly.
     for (size_t i = 0; i < n_inputs; i++) {
@@ -656,14 +1052,18 @@ class ET_EXPERIMENTAL CudaBackend final
             i,
             cudaGetErrorString(merr));
 
+        // Tracked before the seeding copy, so a failed copy still unwinds
+        // through the guard instead of leaking this allocation.
+        handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
+        handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
+        handle->cuda_graph_state.static_input_sizes.emplace_back(
+            et_input->sizes().begin(), et_input->sizes().end());
+
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
             static_ptr,
             et_input->const_data_ptr(),
             nbytes,
             cudaMemcpyDeviceToDevice));
-
-        handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
-        handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
 
         slim_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
             static_ptr, et_input);
@@ -689,6 +1089,18 @@ class ET_EXPERIMENTAL CudaBackend final
 
     bool run_called = false;
 
+    // AOTI puts the same handle in every slot of an output that it returns
+    // more than once, for example y.detach() returned twice. So only the last
+    // slot that holds a handle deletes it, as PyTorch's AOTI runner does.
+    const auto delete_output = [&](size_t i) noexcept {
+      for (size_t j = i + 1; j < slim_outputs.size(); j++) {
+        if (slim_outputs[j] == slim_outputs[i]) {
+          return;
+        }
+      }
+      delete slim_outputs[i];
+    };
+
     // Scope guard: deletes any non-null slim_outputs on exit. Normal paths
     // null entries as they take ownership, so the guard only fires on
     // early-return error paths. Also cleans up inputs if run() was never
@@ -699,10 +1111,47 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       for (size_t i = 0; i < slim_outputs.size(); i++) {
         if (slim_outputs[i]) {
-          delete slim_outputs[i];
+          delete_output(i);
         }
       }
     });
+
+    // Ends a capture that an early return would otherwise leave running.
+    // Declared after `cleanup` so it is destroyed before it: a device buffer
+    // freed on a still-capturing stream fails with invalid argument and leaks
+    // the block.
+    //
+    // Leaving the stream capturing matters because handles share the per-thread
+    // stream: the next delegate on this thread would have its kernels captured
+    // instead of run, and later synchronizes would fail.
+    class EndCaptureGuard {
+     public:
+      ~EndCaptureGuard() {
+        if (stream_ == nullptr) {
+          return;
+        }
+        cudaGraph_t abandoned = nullptr;
+        if (cudaStreamEndCapture(stream_, &abandoned) == cudaSuccess) {
+          if (abandoned != nullptr) {
+            (void)cudaGraphDestroy(abandoned);
+          }
+        } else {
+          // Clears the sticky error so the next unrelated CUDA call on this
+          // thread does not inherit it. This clears whatever error is pending,
+          // not only the one from above.
+          (void)cudaGetLastError();
+        }
+      }
+      void arm(cudaStream_t stream) {
+        stream_ = stream;
+      }
+      void disarm() {
+        stream_ = nullptr;
+      }
+
+     private:
+      cudaStream_t stream_ = nullptr;
+    } end_capture_guard;
 
     // Run the AOTI container.
     // NOTE: run() steals input handles (RAII wraps them at the start of
@@ -725,16 +1174,22 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaStreamBeginCapture failed: %s",
           cudaGetErrorString(cerr));
+      end_capture_guard.arm(cuda_stream);
     }
 
-    AOTIRuntimeError error = handle->run(
-        handle->container_handle,
-        reinterpret_cast<Tensor**>(slim_inputs.data()),
-        n_inputs,
-        reinterpret_cast<Tensor**>(slim_outputs.data()),
-        n_outputs,
-        static_cast<void*>(cuda_stream),
-        nullptr);
+    const auto run =
+        handle->cuda_graph_state.phase != CudaGraphPhase::Disabled &&
+            handle->run_single_threaded != nullptr
+        ? handle->run_single_threaded
+        : handle->run;
+    AOTIRuntimeError error =
+        run(handle->container_handle,
+            reinterpret_cast<Tensor**>(slim_inputs.data()),
+            n_inputs,
+            reinterpret_cast<Tensor**>(slim_outputs.data()),
+            n_outputs,
+            static_cast<void*>(cuda_stream),
+            nullptr);
     run_called = true;
 
     // Delete orphaned pre-created outputs that run() replaced.
@@ -746,21 +1201,68 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        Internal,
-        "AOTInductorModelContainerRun failed with error code %d",
-        error);
+    if (error != Error::Ok) {
+      // A failed capture is retried without a graph, which reports a real
+      // failure at Error.
+      if (is_capture_step) {
+        ET_LOG(
+            Info,
+            "AOTInductorModelContainerRun failed during CUDA graph capture "
+            "with error code %d",
+            error);
+      } else {
+        ET_LOG(
+            Error,
+            "AOTInductorModelContainerRun failed with error code %d",
+            error);
+      }
+      return Error::Internal;
+    }
 
     if (is_capture_step) {
       // End capture → instantiate graph
       cudaError_t gerr =
           cudaStreamEndCapture(cuda_stream, &handle->cuda_graph_state.graph);
+      // The stream has left capture either way, so the guard must not end it
+      // again; the state guard below still unwinds what the attempt pinned.
+      end_capture_guard.disarm();
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
           "cudaStreamEndCapture failed: %s",
           cudaGetErrorString(gerr));
+
+      // Warmup checks this too, but the capture step's inputs can differ.
+      // The outputs belong to the captured graph, so leave them to it.
+      for (size_t i = 0; i < n_outputs; i++) {
+        if (pre_run_outputs[i] != slim_outputs[i] &&
+            !output_is_raw_copyable(
+                slim_outputs[i], &(args[i + n_inputs]->toTensor()))) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Info,
+              "CUDA graph: output %zu of '%s' is not laid out like its "
+              "ETensor",
+              i,
+              handle->method_name.c_str());
+          return Error::NotSupported;
+        }
+        // Replay copies raw bytes and never resizes, so the ETensor takes the
+        // captured shape here and keeps it for every replay.
+        const Error resize_err =
+            executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+                args[i + n_inputs]->toTensor(), slim_outputs[i]->sizes());
+        if (resize_err != Error::Ok) {
+          std::fill(slim_outputs.begin(), slim_outputs.end(), nullptr);
+          ET_LOG(
+              Info,
+              "CUDA graph: cannot resize output %zu of '%s' to its captured "
+              "shape",
+              i,
+              handle->method_name.c_str());
+          return resize_err;
+        }
+      }
 
       gerr = cudaGraphInstantiate(
           &handle->cuda_graph_state.graph_exec,
@@ -772,11 +1274,15 @@ class ET_EXPERIMENTAL CudaBackend final
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
 
-      // Record static output pointers (stable under graph replay)
+      // Record static output pointers (stable under graph replay). Releasing
+      // them from slim_outputs here, before the copies below, keeps the cleanup
+      // guard from deleting buffers the AOTI runtime owns if one of those
+      // copies fails.
       for (size_t i = 0; i < n_outputs; i++) {
         SlimTensor* out = slim_outputs[i];
         handle->cuda_graph_state.static_output_ptrs.push_back(out->data_ptr());
         handle->cuda_graph_state.static_output_nbytes.push_back(out->nbytes());
+        slim_outputs[i] = nullptr;
       }
 
       handle->cuda_graph_state.phase = CudaGraphPhase::Replay;
@@ -792,6 +1298,8 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      graph_launched = true;
+      handle->cuda_graph_state.note_graph_allocations();
 
       // Copy capture-step outputs into the planned GPU ET buffers (D2D).
       for (size_t i = 0; i < n_outputs; i++) {
@@ -802,11 +1310,12 @@ class ET_EXPERIMENTAL CudaBackend final
             handle->cuda_graph_state.static_output_nbytes[i],
             cudaMemcpyDeviceToDevice,
             cuda_stream));
-        // Don't delete — static buffers are owned by the AOTI runtime.
-        slim_outputs[i] = nullptr;
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cuda_stream));
 
+      // Last failure point is behind us, so the captured state is now the state
+      // the next call should replay from.
+      capture_guard.disarm();
       return Error::Ok;
     }
 
@@ -839,16 +1348,27 @@ class ET_EXPERIMENTAL CudaBackend final
       if (pre_run_outputs[i] == slim_outputs[i]) {
         // Case (a): AOTI wrote directly into our planned ET buffer. The result
         // is already in place — nothing to copy, just drop the view wrapper.
-        delete slim_outputs[i];
+        delete_output(i);
       } else {
         // Case (b): AOTI returned its own buffer. D2D copy the result into the
         // planned GPU ET buffer, then free AOTI's buffer.
+        //
+        // A graph replay could not land this output, so run the method eagerly.
+        if (handle->cuda_graph_state.phase == CudaGraphPhase::Warmup &&
+            !output_is_raw_copyable(slim_outputs[i], et_output)) {
+          handle->cuda_graph_state.phase = CudaGraphPhase::Disabled;
+          ET_LOG(
+              Info,
+              "CUDA graph: disabled for '%s', output %zu is not laid out like its ETensor",
+              handle->method_name.c_str(),
+              i);
+        }
         ET_CHECK_OK_OR_RETURN_ERROR(
             copy_slimtensor_to_device_etensor_async(
                 slim_outputs[i], et_output, cuda_stream),
             "Failed to D2D copy GPU output %zu into ETensor",
             i);
-        delete slim_outputs[i];
+        delete_output(i);
       }
       slim_outputs[i] = nullptr;
     }
@@ -856,60 +1376,17 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
-  void destroy(DelegateHandle* handle_) const override {
-    if (handle_ == nullptr) {
-      return;
-    }
-    cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
-
-    mutable_state_forget_handle(handle);
-
-    // The CUDA stream is managed by shared_ptr in the handle.
-    // It will be automatically destroyed when the last handle using it
-    // is destroyed. Just reset our reference.
-    handle->cuda_stream.reset();
-
-    // NOTE: AOTInductorModelContainerDelete does not work correctly with
-    // multiple .so files. Deleting one container frees shared resources,
-    // which causes segmentation faults when attempting to delete other
-    // containers. As a workaround, we skip explicit container deletion and
-    // defer cleanup to the OS. The corresponding shared library must remain
-    // loaded as well: the leaked container still owns objects whose code and
-    // process-wide state live in that library, so dlclose/FreeLibrary can
-    // invalidate them and crash during multi-method teardown.
-    // TODO(gasoonjia): Find a proper solution for safe container deletion.
-    // AOTInductorModelContainerDelete(handle->container_handle);
-
-    // Remove the temporary shared library file
-    if (!handle->so_path.empty()) {
-      std::error_code remove_error;
-      std::filesystem::remove(handle->so_path, remove_error);
-      ET_CHECK_OR_LOG_ERROR(
-          !remove_error,
-          "Failed to remove temporary shared library %s: %s",
-          handle->so_path.c_str(),
-          remove_error.message().c_str());
-    }
-
-    delete handle;
-  }
-
- private:
   mutable std::mutex cuda_graph_method_mutex_;
   std::string cuda_graph_method_;
-
-  // Shared CUDA stream for all methods. When set (non-null), all methods use
-  // the same stream to ensure proper ordering across methods that hand off
-  // GPU-resident tensors (e.g. encoder -> decoder -> sampler). Created when
-  // use_shared_cuda_stream option is set to true. Managed via shared_ptr so
-  // it's automatically cleaned up when last handle is destroyed.
-  mutable std::mutex cuda_stream_mutex_;
-  std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
 
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
   // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
+
+  // Delegates alive right now. The device memory pool is shared, so it can only
+  // be released once none of them are left.
+  mutable std::atomic<size_t> live_handles_{0};
 
   // ---------------------------------------------------------------
   // Per-weight constant cache.
@@ -1048,7 +1525,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Step 1: Enumerate constants and partition into cached/uncached
     size_t num_constants = 0;
-    handle->get_num_constants(handle->container_handle, &num_constants);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->get_num_constants(handle->container_handle, &num_constants),
+        "Failed to enumerate CUDA AOTI constants for method '%s'",
+        method_name.c_str());
     if (num_constants == 0) {
       ET_LOG(Info, "No constants for method '%s'", method_name.c_str());
       return Error::Ok;
@@ -1227,14 +1707,28 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
-  // Legacy constant loading: load the entire blob without caching.
-  // Used as fallback when constant management APIs are unavailable.
+  // Binds the whole weights blob at once, without the per-constant cache. Used
+  // for artifacts whose payload names one blob rather than individual
+  // constants, and it also refuses the load when that blob is needed and
+  // unavailable.
   Error load_constants_legacy(
       cuda::CudaDelegateHandle* handle,
       const NamedDataMap* named_data_map,
       const std::string& weights_blob_key) const {
+    // A library built before external weights cannot bind one, so there is
+    // nothing to do here whether or not a blob was supplied.
+    if (handle->update_constants_from_blob == nullptr) {
+      ET_LOG(
+          Info,
+          "weights_blob '%s' is not used: this library cannot bind one",
+          weights_blob_key.c_str());
+      return Error::Ok;
+    }
+
+    // Fetched only once it is known to be wanted: a file-backed data map reads
+    // the whole segment here, which is gigabytes for a large model.
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
-    if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
+    if (buffer_res.ok()) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
       const void* weights_blob = buffer_res->data();
       auto update_err = handle->update_constants_from_blob(
@@ -1246,9 +1740,35 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
       buffer_res->Free();
     } else {
+      // Without the blob the container's constant pointers stay null and the
+      // failure resurfaces much later as an illegal access inside a generated
+      // kernel, so report it here instead. A model with no constants needs
+      // nothing bound and stays valid, which the count below decides; the count
+      // is an optional symbol, so without it that cannot be established.
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->get_num_constants != nullptr,
+          NotSupported,
+          "weights_blob '%s' is unavailable and this library cannot report its "
+          "constant count",
+          weights_blob_key.c_str());
+      size_t num_constants = 0;
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          handle->get_num_constants(handle->container_handle, &num_constants),
+          "Failed to enumerate CUDA AOTI constants");
+      if (num_constants != 0) {
+        ET_LOG(
+            Error,
+            "weights_blob '%s' is unavailable, but the model has %zu constant(s) "
+            "to bind",
+            weights_blob_key.c_str(),
+            num_constants);
+        // The status from the data map, so a corrupt or unreadable sidecar is
+        // not reported as an absent one.
+        return buffer_res.error();
+      }
       ET_LOG(
           Info,
-          "weights_blob '%s' not found or update fn is null",
+          "weights_blob '%s' is unavailable, and the model has no constants",
           weights_blob_key.c_str());
     }
     return Error::Ok;
@@ -1282,7 +1802,7 @@ class ET_EXPERIMENTAL CudaBackend final
 namespace executorch::backends {
 namespace {
 auto cls = cuda::CudaBackend();
-executorch::runtime::Backend backend{"CudaBackend", &cls};
+executorch::runtime::Backend backend{cuda::kCudaBackendId, &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 

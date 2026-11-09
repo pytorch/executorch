@@ -417,6 +417,39 @@ TEST_F(OpGridSampler2dTest, DType) {
 // Error case tests
 //
 
+TEST_F(OpGridSampler2dTest, MismatchedOutShapeIsResized) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.make({1, 1, 2, 2}, {1.0, 2.0, 3.0, 4.0});
+  const auto grid = tf.make(
+      {1, 2, 2, 2},
+      {
+          -0.5,
+          -0.5, // Sample pixel (0,0) -> 1.0
+          0.5,
+          -0.5, // Sample pixel (1,0) -> 2.0
+          -0.5,
+          0.5, // Sample pixel (0,1) -> 3.0
+          0.5,
+          0.5 // Sample pixel (1,1) -> 4.0
+      });
+  // Deliberately wrong shape with enough bound; the kernel must resize out to
+  // {1, 1, 2, 2} instead of writing past it.
+  auto out = tf.zeros(
+      {1, 1, 1, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+
+  op_grid_sampler_2d_out(
+      input,
+      grid,
+      0, // bilinear
+      0, // zeros padding
+      false,
+      out);
+
+  const auto expected = tf.make({1, 1, 2, 2}, {1.0, 2.0, 3.0, 4.0});
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpGridSampler2dTest, InvalidInputRankDies) {
   TensorFactory<ScalarType::Float> tf;
 

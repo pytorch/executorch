@@ -34,14 +34,25 @@ CONFIGS = {
 
 
 class ConvWithClampModule(nn.Module):
-    def __init__(self, ic, oc, k, stride, padding, dilation, bias) -> None:
+    def __init__(
+        self, ic, oc, k, stride, padding, dilation, bias, groups=1, act="relu6"
+    ) -> None:
         super().__init__()
         self.c = nn.Conv2d(
-            ic, oc, k, stride=stride, padding=padding, dilation=dilation, bias=bias
+            ic,
+            oc,
+            k,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            groups=groups,
         )
+        # relu6 -> clamp [0, 6]; relu -> clamp [0, +inf) (no upper bound).
+        self.act = {"relu6": nn.functional.relu6, "relu": nn.functional.relu}[act]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.relu6(self.c(x))
+        return self.act(self.c(x))
 
 
 def _det(shape):

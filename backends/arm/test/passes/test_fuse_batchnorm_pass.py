@@ -8,7 +8,10 @@ from typing import cast, ClassVar, Dict, Protocol, Tuple
 import torch
 from executorch.backends.arm._passes.fuse_batch_norm2d_pass import FuseBatchNorm2dPass
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
+    TosaPipelineFP,
+)
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -104,6 +107,47 @@ class MergeTwosOfTwoBN(torch.nn.Module):
         return x
 
 
+class MergeConvTransposeBN(torch.nn.Module):
+    ops_before_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+    ops_after_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    def __init__(
+        self,
+        groups: int = 1,
+        bias: bool = False,
+        affine: bool = True,
+        in_channels: int = 4,
+        out_channels: int = 6,
+    ) -> None:
+        super().__init__()
+        self.conv_transpose2d = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=2,
+            stride=2,
+            groups=groups,
+            bias=bias,
+        )
+        self.batch_norm2d = torch.nn.BatchNorm2d(out_channels, affine=affine)
+        self.batch_norm2d.running_mean = torch.rand(out_channels)
+        self.batch_norm2d.running_var = torch.rand(out_channels)
+        if affine:
+            self.batch_norm2d.weight = torch.nn.Parameter(torch.rand(out_channels))
+            self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(out_channels))
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, self.conv_transpose2d.in_channels, 8, 8),)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.batch_norm2d(self.conv_transpose2d(x))
+
+
 class MergeMultipleUsersBN(torch.nn.Module):
     ops_before_pass: ClassVar[Dict[str, int]] = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
@@ -148,11 +192,41 @@ class MergeMultipleUsersBN(torch.nn.Module):
         return z, a
 
 
+class SharedConvTwoBN(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv2d = torch.nn.Conv2d(3, 4, kernel_size=3, padding=1)
+        self.batch_norm2d_1 = torch.nn.BatchNorm2d(4)
+        self.batch_norm2d_2 = torch.nn.BatchNorm2d(4)
+        for batch_norm in (self.batch_norm2d_1, self.batch_norm2d_2):
+            batch_norm.running_mean = torch.rand(4) * 2 - 1
+            batch_norm.running_var = torch.rand(4) + 0.5
+
+    def forward(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.batch_norm2d_1(self.conv2d(x)), self.batch_norm2d_2(self.conv2d(y))
+
+
 modules: Dict[str, ModuleWithBatchNormAttrs] = {
     "merge_one_of_two_bn_affine": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(True)),
     "merge_one_of_two_bn": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(False)),
     "merge_two_of_two_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeTwosOfTwoBN(True)
+    ),
+    "merge_conv_transpose_bn": cast(ModuleWithBatchNormAttrs, MergeConvTransposeBN()),
+    "merge_grouped_conv_transpose_bn": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2)
+    ),
+    "merge_grouped_conv_transpose_bn_bias": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, bias=True)
+    ),
+    "merge_grouped_conv_transpose_bn_no_affine": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, affine=False)
+    ),
+    "merge_grouped_conv_transpose_bn_equal_channels": cast(
+        ModuleWithBatchNormAttrs,
+        MergeConvTransposeBN(groups=2, in_channels=4, out_channels=4),
     ),
     "merge_multiple_users_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeMultipleUsersBN(True)
@@ -189,4 +263,17 @@ def test_fuse_batch_norm2d_tosa_FP_bf16_skips_fusion() -> None:
         passes_with_exported_program=[FuseBatchNorm2dPass],
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+def test_fuse_batch_norm2d_tosa_FP_shared_conv() -> None:
+    """One Conv2d is called twice and each call feeds its own batch norm, so the
+    two folds share a weight but each needs its own fused weight and bias.
+    """
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor, torch.Tensor]](
+        SharedConvTwoBN().eval(),
+        (torch.randn(1, 3, 8, 8), torch.randn(1, 3, 8, 8)),
+        aten_op=[],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 2, "MUL": 0, "SUB": 0})
     pipeline.run()

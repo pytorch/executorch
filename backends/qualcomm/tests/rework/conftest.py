@@ -32,6 +32,7 @@ from executorch.backends.qualcomm.export_utils import (
     get_qnn_context_binary_alignment,
     prepare_pt2e,
     QnnConfig,
+    QnnExecuTorchBackendType,
     QnnQuantizer,
     setup_common_args_and_variables,
     SimpleADB,
@@ -269,7 +270,7 @@ def qnn_config(global_setup, request):
             f'invalid configuration detected, fall back to emulator workload:\n"{e}"'
         )
         config = QnnConfig(
-            soc_model="unknown", build_folder="build-x86", compile_only=True
+            soc_model="unknown", build_folder="build-x86", enable_x86_64=True
         )
 
     return config
@@ -349,6 +350,7 @@ def invoke_remote(
     qnn_config: QnnConfig,
     executorch_prog: ExecutorchProgramManager,
     callback: callable,
+    inputs: Tuple[torch.Tensor] = None,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
         pte_fname = f"{tmp_dir}/qnn_executorch_test.pte"
@@ -363,7 +365,7 @@ def invoke_remote(
             pte_path=[pte_fname],
             workspace=f"/data/local/tmp/{device_workspace}",
         )
-        adb.push()
+        adb.push(inputs=[inputs] if inputs is not None else None)
         callback(adb)
 
 
@@ -374,6 +376,7 @@ def verify_output_remote(
     executorch_prog: ExecutorchProgramManager,
     metrics: Metrics,
     qnn_config: QnnConfig,
+    output_callback=None,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
         ref_outputs = _get_expected_output(module=module, inputs=inputs)
@@ -407,7 +410,10 @@ def verify_output_remote(
         )
         adb.push(inputs=[inputs], init_env=False)
         adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-        adb.execute(method_index=getattr(qnn_config, "method_index", 0))
+        adb.execute(
+            method_index=getattr(qnn_config, "method_index", 0),
+            output_callback=output_callback,
+        )
         adb.pull(host_output_path=tmp_dir, callback=post_process)
         metrics.assert_close(device_output=device_outputs, ref_output=ref_outputs)
 
@@ -417,6 +423,7 @@ def verify_output_emulator(
     inputs: Tuple[torch.Tensor],
     executorch_prog: ExecutorchProgramManager,
     metrics: Metrics,
+    output_callback=None,
     **_: Any,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -452,6 +459,8 @@ def verify_output_emulator(
             env=env,
             cwd=tmp_dir,
         )
+        if output_callback:
+            output_callback(proc)
         assert (
             proc.returncode == 0
         ), f"qnn_executorch_runner return {proc.returncode}, STDOUT=\n {proc.stdout}"
@@ -476,9 +485,26 @@ def export_and_verify(
     quantizer: QnnQuantizer,
     compile_specs: List[Any],
     metrics: Metrics,
+    output_callback=None,
 ):
     with calibrate(module, [inputs], quantizer) as exported_module:
-        if quantizer is not None:
+        fake_tensors = (
+            [
+                node.meta["val"]
+                for node in exported_module.graph.nodes
+                if node.op == "call_function" and "val" in node.meta
+            ]
+            if quantizer
+            else []
+        )
+        dtypes = set()
+        for tensor in fake_tensors:
+            if isinstance(tensor, (tuple, list)):
+                dtypes.update([n.dtype for n in tensor])
+            else:
+                dtypes.add(tensor.dtype)
+
+        if quantizer and {torch.float, torch.float32} & dtypes:
             nodes = {node.target for node in exported_module.graph.nodes}
             q_and_dq = {
                 torch.ops.quantized_decomposed.quantize_per_tensor.default,
@@ -505,21 +531,41 @@ def export_and_verify(
         )
     )
     execution_plan = executorch_prog.executorch_program.execution_plan[0]
+
+    def validate():
+        match qnn_config.backend:
+            case QnnExecuTorchBackendType.kHtpBackend:
+                return len(execution_plan.operators) == 0
+            case QnnExecuTorchBackendType.kGpuBackend:
+                return len(execution_plan.operators) == 0
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                aten_op_names = {
+                    op.name
+                    for op in execution_plan.operators
+                    if "quantize" not in op.name
+                }
+                return len(aten_op_names) == 0
+            case _:
+                return True
+
     assert all(
         [
-            len(execution_plan.delegates) == 1,
-            execution_plan.delegates[0].id == "QnnBackend",
-            len(execution_plan.operators) == 0,
+            (
+                len(execution_plan.delegates) == 1
+                and execution_plan.delegates[0].id == "QnnBackend"
+            ),
+            validate(),
         ]
     ), EXPECT_NOT_FULLY_DELEGATED
 
-    mode = "emulator" if qnn_config.build_folder == "build-x86" else "remote"
+    mode = "emulator" if qnn_config.enable_x86_64 else "remote"
     globals()[f"verify_output_{mode}"](
         module=module,
         inputs=inputs,
         executorch_prog=executorch_prog,
         metrics=metrics,
         qnn_config=qnn_config,
+        output_callback=output_callback,
     )
 
 

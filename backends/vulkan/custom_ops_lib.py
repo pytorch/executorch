@@ -1068,14 +1068,32 @@ def embedding_q4gsw_impl(
         unpacked = torch.stack([low, high], dim=-1).reshape(weight.shape[0], -1)
     else:
         unpacked = torch.stack([high, low], dim=-1).reshape(weight.shape[0], -1)
-    # Dequantize using per-group scales
-    num_groups = weight_scales.shape[1] if weight_scales.dim() > 1 else 1
+    # The runtime shader indexes scales as [vocab_size, groups_per_row].
+    vocab_size = weight.shape[0]
+    if weight_scales.dim() == 1:
+        if weight_scales.shape[0] != vocab_size:
+            raise ValueError(
+                "embedding_q4gsw weight_scales must contain one scale per row"
+            )
+        # Per-row scales form a single group, so group_size spans the full row.
+        num_groups = 1
+        scales = weight_scales.reshape(vocab_size, 1, 1)
+    elif weight_scales.dim() == 2:
+        if weight_scales.shape[0] != vocab_size:
+            raise ValueError(
+                "embedding_q4gsw weight_scales first dimension must match weight rows"
+            )
+        num_groups = weight_scales.shape[1]
+        scales = weight_scales.unsqueeze(-1)
+    else:
+        raise ValueError("embedding_q4gsw weight_scales must be 1-D or 2-D")
+
+    if group_size <= 0 or num_groups * group_size != unpacked.shape[1]:
+        raise ValueError(
+            "embedding_q4gsw group_size and weight_scales must tile embedding rows"
+        )
+
     unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
-    scales = (
-        weight_scales.unsqueeze(-1)
-        if weight_scales.dim() > 1
-        else weight_scales.reshape(1, 1, 1)
-    )
     dequantized = unpacked_groups.float() * scales.float()
     dequantized = dequantized.reshape(weight.shape[0], -1)
     return torch.nn.functional.embedding(indices, dequantized)
@@ -1130,6 +1148,18 @@ lib.define(
 )
 lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
 sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
+################
+## swiglu ##
+################
+
+
+def swiglu_impl(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
+    return (gate * torch.sigmoid(gate)) * up
+
+
+lib.define("swiglu(Tensor gate, Tensor up) -> Tensor")
+lib.impl("swiglu", swiglu_impl, "CompositeExplicitAutograd")
 
 ################
 ## rms_norm ##
@@ -1319,3 +1349,133 @@ lib.define(f"{name}(Tensor latent, Tensor scales, int group_size) -> Tensor")
 lib.impl(name, q4gsw_requant_impl, "CompositeExplicitAutograd")
 lib.impl(name, q4gsw_requant_meta, "Meta")
 q4gsw_requant_op = getattr(getattr(torch.ops, namespace), name)
+
+
+################
+## warp_blend ##
+################
+
+
+def _warp_blend_warp(img: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    # Bilinear warp by a pixel-unit flow field with border padding, written as
+    # a normalized grid + grid_sample (align_corners=True). The Vulkan shader
+    # samples at out_px + flow directly, which is the same coordinate.
+    _, _, height, width = img.shape
+    xs = torch.linspace(-1.0, 1.0, width, dtype=img.dtype, device=img.device)
+    ys = torch.linspace(-1.0, 1.0, height, dtype=img.dtype, device=img.device)
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
+    base_grid = torch.stack((grid_x, grid_y), dim=-1).unsqueeze(0)
+    # A 1-pixel axis has no extent to scale by; border padding clamps every
+    # sample to it, so any scale gives the same result.
+    norm_scale = torch.tensor(
+        [2.0 / max(width - 1.0, 1.0), 2.0 / max(height - 1.0, 1.0)],
+        dtype=img.dtype,
+        device=img.device,
+    )
+    grid = base_grid + flow.permute(0, 2, 3, 1) * norm_scale
+    return torch.nn.functional.grid_sample(
+        img, grid, mode="bilinear", padding_mode="border", align_corners=True
+    )
+
+
+def warp_blend_impl(
+    img0: torch.Tensor,
+    img1: torch.Tensor,
+    flow: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    # img0/img1: [N, C, Hout, Wout]. flow: [N, 4, Hin, Win] displacements in
+    # flow pixels (ch 0,1 warp img0; ch 2,3 warp img1). mask: [N, 1, Hin, Win]
+    # logits. A smaller flow/mask is bilinearly upsampled to the output size and
+    # the displacement rescaled per axis; the shader does the same in place.
+    _, _, out_h, out_w = img0.shape
+    _, _, in_h, in_w = flow.shape
+    if in_h != out_h or in_w != out_w:
+        flow = torch.nn.functional.interpolate(
+            flow, size=(out_h, out_w), mode="bilinear", align_corners=False
+        )
+        sx = out_w / in_w
+        sy = out_h / in_h
+        flow = flow * torch.tensor(
+            [sx, sy, sx, sy], dtype=flow.dtype, device=flow.device
+        ).view(1, 4, 1, 1)
+        mask = torch.nn.functional.interpolate(
+            mask, size=(out_h, out_w), mode="bilinear", align_corners=False
+        )
+    warped0 = _warp_blend_warp(img0, flow[:, :2])
+    warped1 = _warp_blend_warp(img1, flow[:, 2:4])
+    m = torch.sigmoid(mask)
+    merged = warped0 * m + warped1 * (1.0 - m)
+    return torch.clamp(merged, 0.0, 1.0)
+
+
+def warp_blend_meta(
+    img0: torch.Tensor,
+    img1: torch.Tensor,
+    flow: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    return torch.empty_like(img0)
+
+
+name = "warp_blend"
+lib.define(f"{name}(Tensor img0, Tensor img1, Tensor flow, Tensor mask) -> Tensor")
+lib.impl(name, warp_blend_impl, "CompositeExplicitAutograd")
+# Export only needs the output shape; tracing the reference would specialize
+# H and W through linspace and the grid scale.
+lib.impl(name, warp_blend_meta, "Meta")
+warp_blend_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant.
+def warp_blend_out_impl(
+    img0: torch.Tensor,
+    img1: torch.Tensor,
+    flow: torch.Tensor,
+    mask: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = warp_blend_impl(img0, img1, flow, mask)
+    return out
+
+
+name = "warp_blend.out"
+lib.define(
+    f"{name}(Tensor img0, Tensor img1, Tensor flow, Tensor mask, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, warp_blend_out_impl, "CompositeExplicitAutograd")
+
+##########
+## warp ##
+##########
+
+
+def warp_impl(input: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    # input: [N, C, H, W]; flow: [N, 2, H, W] displacement in pixels.
+    return _warp_blend_warp(input, flow)
+
+
+def warp_meta(input: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+    return torch.empty_like(input)
+
+
+name = "warp"
+lib.define(f"{name}(Tensor input, Tensor flow) -> Tensor")
+lib.impl(name, warp_impl, "CompositeExplicitAutograd")
+lib.impl(name, warp_meta, "Meta")
+warp_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant.
+def warp_out_impl(
+    input: torch.Tensor,
+    flow: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    out = warp_impl(input, flow)
+    return out
+
+
+name = "warp.out"
+lib.define(f"{name}(Tensor input, Tensor flow, *, Tensor(a!) out) -> Tensor(a!)")
+lib.impl(name, warp_out_impl, "CompositeExplicitAutograd")

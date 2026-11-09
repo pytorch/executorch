@@ -13,7 +13,7 @@ from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 class AddBatchSizeFor3DInputPool2DOps(PassBase):
     """Adds batch size dimension for aten.adaptive_avg_pool2d.default, aten.avg_pool2d.default
-    and aten.max_pool2d.default ops with 3D input, as the Neutron Converter is unable to convert these ops with 3D input.
+    and aten.max_pool2d.default ops with 3D input, as the Neutron Compiler is unable to compile these ops with 3D input.
 
                                                                    │
                                                             ┌──────▼──────┐

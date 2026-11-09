@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import Conv2dModule
+from executorch.backends.nxp.tests.simple_models import Conv2dModule
 
 
 def test_conv2d_partitioner():

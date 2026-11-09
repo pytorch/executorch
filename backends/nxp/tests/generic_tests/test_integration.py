@@ -5,14 +5,14 @@
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
+from executorch.backends.nxp.backend.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
-from executorch.backends.nxp.tests.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.use_qat import *  # noqa F401
 
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_quantized_executorch_program,
 )
-from executorch.backends.nxp.tests.models import ConvFCSoftmaxModule
+from executorch.backends.nxp.tests.simple_models import ConvFCSoftmaxModule
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNet
 

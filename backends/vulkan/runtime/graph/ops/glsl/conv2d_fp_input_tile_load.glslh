@@ -11,21 +11,21 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
 
 VEC4_T load_fp_input_texel(const Conv2dTensorIndex tidx) {
 #ifdef INPUT_BUFFER
-  VEC4_T texel = VEC4_T(0);
   const int c_idx = mul_4(tidx.data.z);
-  const int c_stride = input_sizes.y * input_sizes.x;
-
-  const int base_buf_i = c_idx * c_stride + tidx.data.y * input_sizes.x + tidx.data.x;
+  const uint c_stride = stride_at(inp, 2);
+  const uint base_buf_i = uint(c_idx) * c_stride +
+      uint(tidx.data.y) * stride_at(inp, 1) +
+      uint(tidx.data.x) * stride_at(inp, 0);
   const int limit = min(input_sizes.z - c_idx, 4);
-
-  for (int i = 0; i < limit; i++) {
-    texel[i] = t_fp_input[base_buf_i + i * c_stride];
-  }
-  return texel;
+  return VEC4_T(
+      t_fp_input[base_buf_i],
+      limit > 1 ? t_fp_input[base_buf_i + c_stride] : T(0),
+      limit > 2 ? t_fp_input[base_buf_i + 2u * c_stride] : T(0),
+      limit > 3 ? t_fp_input[base_buf_i + 3u * c_stride] : T(0));
 #else
   return texelFetch(t_fp_input, tidx.data, 0);
 #endif

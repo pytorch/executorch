@@ -60,3 +60,18 @@ def test_grid_sampler_vgf_no_quant(test_data):
         run_on_vulkan_runtime=False,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite, xfails=xfails, strict=False)
+@common.SkipIfNoModelConverter
+def test_grid_sampler_vgf_quant(test_data):
+    test_data = test_data()
+    pipeline = VgfPipeline[input_t](
+        GridSampler2d(),
+        test_data,
+        aten_op,
+        exir_op,
+        quantize=True,
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.run()

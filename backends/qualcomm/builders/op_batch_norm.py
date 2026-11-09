@@ -29,6 +29,7 @@ class BatchNorm(NodeVisitor):
     target = [
         "aten._native_batch_norm_legit_no_training.default",
         "aten._native_batch_norm_legit.no_stats",
+        "aten._native_batch_norm_legit_functional.default",
     ]
 
     def __init__(self, *args) -> None:

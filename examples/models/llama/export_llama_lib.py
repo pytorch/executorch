@@ -14,8 +14,10 @@ import copy
 import json
 import logging
 import math
+import os
 import re
 import shlex
+import tempfile
 from functools import partial
 from importlib import resources as _resources
 from json import JSONDecodeError
@@ -24,7 +26,6 @@ from typing import Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.devtools.backend_debug import print_delegation_info
-from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
@@ -37,6 +38,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
+    get_samsung_partitioner,
     get_tosa_partitioner,
     get_vgf_partitioner,
     get_vulkan_partitioner,
@@ -114,11 +116,16 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_5_4b",
     "phi_4_mini",
     "smollm2",
+    "smollm2_360m",
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
     "lfm2_5_350m",  # hybrid
     "lfm2_5_1_2b",  # hybrid
+    "spark_x2_5_1_7b",  # hybrid
+    "spark_x2_5_4b",  # hybrid
+    "spark_x2_6_1_7b",  # hybrid
+    "spark_x2_6_4b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -127,6 +134,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM2-135M",
+    "smollm2_360m": "HuggingFaceTB/SmolLM2-360M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
@@ -138,6 +146,10 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
     "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
+    "spark_x2_5_1_7b": "XHToken/Spark-X2.5-1.7B",
+    "spark_x2_5_4b": "XHToken/Spark-X2.5-4B",
+    "spark_x2_6_1_7b": "XHToken/Spark-X2.6-1.7B",
+    "spark_x2_6_4b": "XHToken/Spark-X2.6-4B",
 }
 
 
@@ -455,8 +467,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--xnnpack-extended-ops",
-        action="store_true",
-        help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Delegate more operators beyond DQLinear to the xnnpack backend. On by "
+        "default; pass --no-xnnpack-extended-ops to delegate DQLinear only. Requires "
+        "-X or --xnnpack to be set.",
     )
     parser.add_argument(
         "--xnnpack-enable-bf16",
@@ -591,8 +606,8 @@ def build_args_parser() -> argparse.ArgumentParser:
             "Replace eager MoE feed-forward modules with the "
             "`llama::quantized_moe_ffn` portable-runtime custom op (INT4 "
             "weights, INT8 dyn-quant activations via torchao). On aarch64 "
-            "with ENABLE_QUANTIZED_MOE_FFN the optimized torchao kernel is "
-            "used; otherwise a portable reference fallback runs."
+            "an optimized runtime build uses the torchao kernel; otherwise "
+            "a portable reference fallback runs."
         ),
     )
 
@@ -660,6 +675,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If true, stops right after torch.export() and saves the exported model.",
     )
+
+    parser.add_argument(
+        "--samsung",
+        action="store_true",
+        help="Delegate llama3_2 to enn backend (Samsung Exynos), please use it --kv_cache=True",
+    )
+
+    parser.add_argument(
+        "--samsung_chipset",
+        default="E9965",
+        help="Samsung chipset, i.e. E9955, E9965, etc",
+        type=str,
+    )
     return parser
 
 
@@ -711,10 +739,12 @@ def export_llama(  # noqa: C901
             from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import convert_weights
-        elif model_name == "smollm2":
+        elif model_name in ("smollm2", "smollm2_360m"):
             from executorch.examples.models.smollm2 import convert_weights
         elif model_name.startswith("lfm2"):
             from executorch.examples.models.lfm2 import convert_weights
+        elif model_name.startswith("spark_x2_"):
+            from executorch.examples.models.spark_x2_5 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
@@ -762,7 +792,6 @@ def _ensure_static_kvq_out_variants(llm_config: LlmConfig) -> None:
         libraries = [llm_config.export.so_library]
     else:
         import glob
-        import os
 
         import executorch
         from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
@@ -959,6 +988,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
             mlx=llm_config.backend.mlx.enabled,
+            samsung=llm_config.backend.samsung.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -1157,7 +1187,7 @@ def _to_edge_and_lower_llama_xnnpack(
     pt2e_quant_params,
     quantizers,
     quant_dtype,
-    xnnpack_extended_ops: bool = False,
+    xnnpack_extended_ops: bool = True,
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
@@ -1172,21 +1202,21 @@ def _to_edge_and_lower_llama_xnnpack(
         )
     )
 
-    modelname = f"xnnpack_dq_{modelname}"
-
     if xnnpack_extended_ops:
         partitioners.append(
             get_xnnpack_partitioner(
                 dynamic_quant_only_partitioner=False, enable_bf16=enable_bf16
             )
         )
-        modelname = f"xnnpack_{modelname}"
+
+    modelname = (
+        f"xnnpack_{modelname}" if xnnpack_extended_ops else f"xnnpack_dq_{modelname}"
+    )
 
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
         builder_exported.generate_etrecord = True
 
@@ -1212,6 +1242,53 @@ def _to_edge_and_lower_llama_xnnpack(
     return builder.to_executorch(
         passes=additional_passes, external_constants_tag=gen_tag_fn
     )
+
+
+def _etrecord_path_beside_model(builder) -> str:
+    """Where to write the etrecord so it lands beside the model.
+
+    `save_pte_program` uses an output name ending in `.pte` as the path verbatim, ignoring
+    `output_dir`, so the model's own directory is the only reliable anchor. Falls back to
+    `output_dir` before the model is saved.
+    """
+    saved = builder.get_saved_pte_filename()
+    directory = os.path.dirname(saved) if saved else builder.output_dir
+    return os.path.join(directory, "etrecord.bin")
+
+
+def _save_etrecord_if_generated(builder) -> None:
+    """Write the etrecord the lowering produced, if there is one.
+
+    The record goes beside the model rather than under `output_dir`, because an output name
+    ending in `.pte` is used as the path verbatim and so bypasses `output_dir`.
+
+    A failed write costs the record and not the export, because a debug artifact must not
+    cost a caller the model. The record is staged under a temporary name and moved into
+    place, so a failure part way cannot leave a half-written record under the real name.
+    """
+    try:
+        etrecord = builder.export_program.get_etrecord()
+    except RuntimeError:
+        # Not generated, which is the normal case.
+        return
+
+    path = _etrecord_path_beside_model(builder)
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=os.path.dirname(path) or ".", suffix=".bin", delete=False
+        ) as temporary:
+            staged = temporary.name
+        try:
+            etrecord.save(staged)
+            os.replace(staged, path)
+        except BaseException:
+            os.unlink(staged)
+            raise
+    except Exception as error:
+        logging.warning("Could not write %s: %s", path, error)
+        return
+
+    logging.info("Generated %s", path)
 
 
 def _to_edge_and_lower_llama_openvino(
@@ -1388,6 +1465,31 @@ def _to_edge_and_lower_llama_coreml(
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_samsung(
+    builder_exported,
+    modelname,
+    additional_passes,
+    samsung_chipset: str = "E9965",
+    use_kv_cache: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    partitioners = []
+
+    partitioners.append(get_samsung_partitioner(samsung_chipset, use_kv_cache))
+
+    modelname = f"samsung_{modelname}"
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    builder = builder_exported.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1420,6 +1522,8 @@ def _to_edge_and_lower_llama(  # noqa: C901
     generate_etrecord: bool = False,
     verbose: bool = False,
 ):
+    # Set before the edge export, because that is where the record is created.
+    builder_exported.generate_etrecord = generate_etrecord
     builder_exported_to_edge = builder_exported.pt2e_quantize(
         quantizers
     ).export_to_edge()
@@ -1528,9 +1632,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-        logging.info("Generating etrecord")
-        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
-        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1543,15 +1644,8 @@ def _to_edge_and_lower_llama(  # noqa: C901
         builder = builder.to_executorch(
             passes=additional_passes,
         )
-
-        # Generate ETRecord
-        if edge_manager_copy:
-            generate_etrecord_func(
-                et_record="etrecord.bin",
-                edge_dialect_program=edge_manager_copy,
-                executorch_program=builder.export_program,
-            )
-            logging.info("Generated etrecord.bin")
+        # The record rides along with the program, so _save_etrecord_if_generated writes it
+        # after the model like every other path.
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
@@ -1693,6 +1787,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
         first_builder.dtype,
     )
     first_builder.save_to_pte(output_file)
+    _save_etrecord_if_generated(first_builder)
 
     return first_builder
 
@@ -1828,6 +1923,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.samsung.enabled:
+        builder = _to_edge_and_lower_llama_samsung(
+            builder_exported,
+            modelname,
+            additional_passes,
+            samsung_chipset=llm_config.backend.samsung.samsung_chipset,
+            use_kv_cache=llm_config.model.use_kv_cache,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1873,6 +1977,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         builder.dtype,
     )
     builder.save_to_pte(output_file)
+    _save_etrecord_if_generated(builder)
     return builder
 
 
@@ -2016,6 +2121,7 @@ def _get_source_transforms(  # noqa
     coreml_ios: int = 15,
     vulkan: bool = False,
     mlx: bool = False,
+    samsung: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -2232,6 +2338,10 @@ def _get_source_transforms(  # noqa
             transforms.append(transform_attention_mha_to_mlx)
             transforms.append(replace_et_kv_cache_with_mlx)
             transforms.append(replace_rms_norm_with_native_rms_norm)
+
+        elif samsung:
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
 
     if local_global_attention:
         transforms.append(

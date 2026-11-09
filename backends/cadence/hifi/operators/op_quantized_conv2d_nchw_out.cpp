@@ -748,7 +748,7 @@ void quantized_conv2d_nchw_out(
     IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
@@ -780,8 +780,9 @@ void quantized_conv2d_nchw_out(
   }
 
   const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
-  const int32_t weight_zero_point_int =
-      weight_zero_point.const_data_ptr<int32_t>()[0];
+  const int32_t weight_zero_point_int = weight_zero_point.has_value()
+      ? weight_zero_point->const_data_ptr<int32_t>()[0]
+      : 0;
 
   bool optimized = 0;
 

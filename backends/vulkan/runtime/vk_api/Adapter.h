@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -12,10 +14,16 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+// vk_api.h must precede SharedVulkanDevice.h: Volk requires VK_NO_PROTOTYPES
+// before the first inclusion of Vulkan headers.
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
+
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/AdapterCapabilityOverrides.h>
 
 #include <array>
 
@@ -63,6 +71,11 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  // Borrow only the queue registered in shared_device.
+  explicit Adapter(
+      executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
@@ -78,7 +91,17 @@ class Adapter final {
     VkQueue handle;
   };
 
+  friend class ScopedAdapterCapabilityOverride;
+
  private:
+  // First member => released last, after caches, VMA, and borrowed
+  // DeviceHandle.
+  executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device_;
+  // Filled before device creation; these are enabled, not available,
+  // extensions.
+  std::vector<std::string> enabled_device_extensions_;
+  executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures
+      enabled_device_features_;
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
   std::mutex queue_usage_mutex_;
@@ -102,9 +125,30 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
+  // Test-only capability overrides; empty unless a ScopedCapabilityOverride
+  // is live.
+  AdapterCapabilityOverrides capability_overrides_;
 
  public:
   // Physical Device metadata
+
+  inline VkInstance instance_handle() const {
+    return instance_;
+  }
+
+  inline const std::vector<std::string>& enabled_device_extensions() const {
+    return enabled_device_extensions_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures&
+  enabled_device_features() const {
+    return enabled_device_features_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDevicePtr&
+  shared_device() const {
+    return shared_device_;
+  }
 
   inline VkPhysicalDevice physical_handle() const {
     return physical_device_.handle;
@@ -150,6 +194,8 @@ class Adapter final {
 
   Queue request_queue();
   void return_queue(Queue&);
+  // All queue host operations, including waits, use the shared queue mutex.
+  void wait_idle(const Queue&);
 
   // Caches
 
@@ -184,6 +230,8 @@ class Adapter final {
   }
 
   // Physical Device Features
+
+  bool supports_spirv_capability(uint32_t capability);
 
   inline bool supports_16bit_storage_buffers() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
@@ -231,13 +279,50 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
-  inline bool supports_int8_dot_product() {
+  inline bool supports_int8_dot_product() const {
+    if (capability_overrides_.int8_dot_product.has_value()) {
+      return *capability_overrides_.int8_dot_product;
+    }
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
     return physical_device_.shader_int_dot_product_features
                .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_signed_packed4x8_dot() const {
+    if (capability_overrides_.signed_packed4x8_dot.has_value()) {
+      return *capability_overrides_.signed_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_unsigned_packed4x8_dot() const {
+    if (capability_overrides_.unsigned_packed4x8_dot.has_value()) {
+      return *capability_overrides_.unsigned_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated ==
+        VK_TRUE;
 #else
     return false;
 #endif /* VK_KHR_shader_integer_dot_product */

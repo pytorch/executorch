@@ -321,15 +321,21 @@ function(arm_runner_configure_ethos_u_platform)
     )
   endif()
 
-  arm_ethos_u_default_fetch("${ARG_SDK_PATH}" _fetch_ethos_u_default)
+  arm_ethos_u_default_fetch(
+    "${ARG_SDK_PATH}" _fetch_ethos_u_default SYSTEM_CONFIG
+    "${ARG_SYSTEM_CONFIG}"
+  )
   option(FETCH_ETHOS_U_CONTENT "Fetch Ethos-U dependencies"
          ${_fetch_ethos_u_default}
   )
   arm_ensure_ethos_u_content(
     "${ARG_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+    SYSTEM_CONFIG "${ARG_SYSTEM_CONFIG}"
   )
-  add_corstone_subdirectory(${ARG_SYSTEM_CONFIG} ${ARG_SDK_PATH})
-  configure_timing_adapters(${ARG_SYSTEM_CONFIG} ${ARG_MEMORY_MODE})
+  add_corstone_subdirectory(
+    "${ARG_SYSTEM_CONFIG}" "${ARG_SDK_PATH}" "${ARG_MEMORY_MODE}"
+  )
+  configure_timing_adapters("${ARG_SYSTEM_CONFIG}" "${ARG_MEMORY_MODE}")
   foreach(_platform_variable TARGET_BOARD ETHOSU_MODEL ETHOSU_ARENA)
     if(DEFINED ${_platform_variable})
       set(${_platform_variable}
@@ -365,6 +371,28 @@ function(arm_runner_require_baremetal_targets)
     )
   endif()
 
+endfunction()
+
+function(arm_runner_check_lock_free_atomics OUT_VAR)
+  if(NOT OUT_VAR)
+    message(FATAL_ERROR "OUT_VAR is required.")
+  endif()
+
+  include(CheckCXXSourceCompiles)
+  # Check the selected CPU again if the build directory is reconfigured.
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES TARGET_CPU)
+  unset(_arm_runner_lock_free_atomics CACHE)
+  check_cxx_source_compiles(
+    "#include <atomic>
+     static_assert(std::atomic<bool>::is_always_lock_free);
+     static_assert(std::atomic<void*>::is_always_lock_free);
+     int main() { return 0; }"
+    _arm_runner_lock_free_atomics
+  )
+  set(${OUT_VAR}
+      ${_arm_runner_lock_free_atomics}
+      PARENT_SCOPE
+  )
 endfunction()
 
 function(_arm_runner_verify_targets_exist)

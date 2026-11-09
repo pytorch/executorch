@@ -221,6 +221,12 @@ OP_CASES = {
         (torch.randn(1, 3, 4, 5), torch.randn(1, 3, 4, 5)),
         None,
     ),
+    "expand_as": OpCase(
+        torch.ops.aten.expand_as.default,
+        _build_module(lambda x, y: torch.ops.aten.expand_as.default(x, y)),
+        (torch.randn(1, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
     "select": OpCase(
         torch.ops.aten.select.int,
         _build_module(lambda x, y: torch.ops.aten.select.int(x, 1, 0)),
@@ -280,6 +286,12 @@ OP_CASES = {
     "flip": OpCase(
         torch.ops.aten.flip.default,
         _build_module(lambda x, y: torch.ops.aten.flip.default(x, [2])),
+        (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
+    "roll": OpCase(
+        torch.ops.aten.roll.default,
+        _build_module(lambda x, y: torch.ops.aten.roll.default(x, [1], [2])),
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
         None,
     ),
@@ -708,6 +720,7 @@ xfails: dict[str, xfail_type] = {
     "where_default": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "while_loop": "MLETORCH-1866: Support higher-order operators",
     "cond": "MLETORCH-1866: Support higher-order operators",
+    "roll": "MLETORCH-2563: Support roll operator",
 }
 
 
@@ -716,7 +729,10 @@ xfails: dict[str, xfail_type] = {
     OP_CASES,
     xfails=xfails,
     strict=False,
-    skips={"while_loop": "Has been observed to hang randomly."},
+    skips={
+        "while_loop": "Has been observed to hang randomly.",
+        "dropout": "Not training, so it folds away and no node survives to carry int8.",
+    },
 )
 def test_shared_qspec_portable_int8_ops(op_case: OpCase) -> None:
     tester = CortexMTester(op_case.module, op_case.example_inputs)

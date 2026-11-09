@@ -27,7 +27,7 @@ main() {
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -Bcmake-out .
-  cmake --build cmake-out --target install --config Release -j16
+  cmake --build cmake-out --target install --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
   local example_dir=backends/cadence
   local build_dir="cmake-out/${example_dir}"
@@ -46,7 +46,7 @@ main() {
     -DPYTHON_EXECUTABLE="$(which python3)" \
     -B"${build_dir}" \
     "${example_dir}"
-  cmake --build "${build_dir}" --config Release -j16
+  cmake --build "${build_dir}" --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
   local runner="${PWD}/${build_dir}/cadence_runner"
   if [[ ! -f "${runner}" ]]; then

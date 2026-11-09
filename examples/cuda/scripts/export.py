@@ -19,6 +19,7 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.extension.export_util.utils import save_pte_program
 
@@ -51,6 +52,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--cuda_include_ptx",
+        choices=("ON", "OFF"),
+        help="Explicitly enable or disable PTX in the exported CUDA AOTI library",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="Seed model initialization and example input generation",
+    )
 
     args = parser.parse_args()
     return args
@@ -73,6 +84,9 @@ def main():
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+
     (
         model,
         example_args,
@@ -87,9 +101,12 @@ def main():
         dynamic_shapes=dynamic_shapes,
     )
 
-    partitioner = CudaPartitioner(
-        [CudaBackend.generate_method_name_compile_spec(args.model_name)]
-    )
+    compile_specs = [CudaBackend.generate_method_name_compile_spec(args.model_name)]
+    if args.cuda_include_ptx is not None:
+        compile_specs.append(
+            CompileSpec("cuda_include_ptx", args.cuda_include_ptx.encode())
+        )
+    partitioner = CudaPartitioner(compile_specs)
 
     et_prog = to_edge_transform_and_lower(
         exported_programs,

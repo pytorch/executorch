@@ -47,9 +47,9 @@ narrowed to 6-bit). The weight stays symmetric (no zero) and the planar ql/qh
 layout is UNCHANGED.
 
 The pack/unpack helpers (:func:`pack_int6`, :func:`unpack_int6`) must stay in
-lockstep with ``int6_plain_mm.cuh`` (the decode kernel) — the per-32-weight
-``hi_even``/``hi_odd`` byte order is the single most error-prone detail and is
-covered by the pack round-trip and the C++ gtest.
+lockstep with ``triton/kernels/int6_quantized_gemm.py`` (the decode kernels) —
+the per-32-weight ``hi_even``/``hi_odd`` byte order is the single most
+error-prone detail and is covered by the pack round-trip and the kernel tests.
 """
 
 from typing import List, Optional, Tuple

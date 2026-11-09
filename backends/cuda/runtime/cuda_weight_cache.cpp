@@ -124,6 +124,7 @@ bool is_supported_dtype(int32_t dtype) {
     case 4: // Long
     case 5: // Half
     case 6: // Float
+    case 7: // Double
     case 11: // Bool
     case 15: // BFloat16
       return true;
@@ -134,6 +135,63 @@ bool is_supported_dtype(int32_t dtype) {
 
 bool is_supported_device_type(int32_t device_type) {
   return device_type == 0 || device_type == 1; // CPU or CUDA
+}
+
+bool is_offgraph_kv_fqn(const std::string& fqn) {
+  return fqn.rfind(kOffGraphKVFqnPrefix, 0) == 0;
+}
+
+// torch::aot_inductor::ConstantType.
+constexpr int32_t kAotiParameter = 1;
+constexpr int32_t kAotiBuffer = 2;
+constexpr int32_t kAotiTensorConstant = 3;
+
+bool can_check_constants_bound(const CudaDelegateHandle& handle) {
+  return handle.get_constant_type && handle.get_constant_from_folded &&
+      handle.get_constant_data_size;
+}
+
+// The same rule as AOTI's validate_full_update, without its warning for each
+// absent buffer: folded constants, buffers, tensor constants and empty
+// parameters may be absent, every other constant must be bound.
+Error check_constants_bound(
+    const CudaDelegateHandle& handle,
+    size_t num_constants,
+    const std::unordered_set<std::string>& bound) {
+  for (size_t index = 0; index < num_constants; ++index) {
+    bool from_folded = false;
+    int32_t type = 0;
+    size_t data_size = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_from_folded(
+            handle.container_handle, index, &from_folded),
+        "Failed to read CUDA AOTI constant folding at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_type(handle.container_handle, index, &type),
+        "Failed to read CUDA AOTI constant type at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_data_size(
+            handle.container_handle, index, &data_size),
+        "Failed to read CUDA AOTI constant size at index %zu",
+        index);
+    if (from_folded || type == kAotiBuffer || type == kAotiTensorConstant ||
+        (type == kAotiParameter && data_size == 0)) {
+      continue;
+    }
+    const char* name = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_name(handle.container_handle, index, &name),
+        "Failed to read CUDA AOTI constant name at index %zu",
+        index);
+    ET_CHECK_OR_RETURN_ERROR(
+        name != nullptr && bound.count(name) != 0,
+        InvalidProgram,
+        "CUDA AOTI constant '%s' has no bound FQN weight",
+        name == nullptr ? "<unnamed>" : name);
+  }
+  return Error::Ok;
 }
 
 } // namespace
@@ -152,9 +210,51 @@ Error CudaWeightCache::parse(
   }
 
   MetadataReader reader(data, size);
-  if (!reader.skip(kFormatMagicSize) ||
-      !reader.read_string(metadata.so_blob_key) ||
-      metadata.so_blob_key.empty()) {
+  if (!reader.skip(kFormatMagicSize)) {
+    return Error::InvalidProgram;
+  }
+
+  metadata.variants.clear();
+  uint32_t num_variants = 0;
+  constexpr uint32_t kMaxVariants = 256;
+  if (!reader.read_u32(num_variants) || num_variants == 0 ||
+      num_variants > kMaxVariants) {
+    return Error::InvalidProgram;
+  }
+  metadata.variants.reserve(num_variants);
+  std::unordered_set<uint32_t> target_sms;
+  bool found_fallback = false;
+  bool regular_has_ptx = false;
+  for (uint32_t index = 0; index < num_variants; ++index) {
+    Variant variant;
+    uint32_t flags = 0;
+    if (!reader.read_u32(variant.target_sm) ||
+        !reader.read_u32(variant.ptx_compute) ||
+        variant.ptx_compute > variant.target_sm || !reader.read_u32(flags) ||
+        (flags & ~1U) != 0 || !reader.read_string(variant.so_blob_key) ||
+        variant.so_blob_key.empty()) {
+      return Error::InvalidProgram;
+    }
+    variant.fallback_only = (flags & 1U) != 0;
+    if (variant.target_sm == 0) {
+      if (num_variants != 1 || variant.ptx_compute != 0 ||
+          variant.fallback_only) {
+        return Error::InvalidProgram;
+      }
+    } else if (variant.fallback_only) {
+      if (variant.ptx_compute == 0 || found_fallback) {
+        return Error::InvalidProgram;
+      }
+      found_fallback = true;
+    } else {
+      if (!target_sms.emplace(variant.target_sm).second) {
+        return Error::InvalidProgram;
+      }
+      regular_has_ptx |= variant.ptx_compute != 0;
+    }
+    metadata.variants.push_back(std::move(variant));
+  }
+  if (num_variants > 1 && regular_has_ptx) {
     return Error::InvalidProgram;
   }
 
@@ -202,6 +302,45 @@ Error CudaWeightCache::parse(
   return reader.empty() ? Error::Ok : Error::InvalidProgram;
 }
 
+Error CudaWeightCache::select_variant(
+    const Metadata& metadata,
+    uint32_t current_sm,
+    size_t& variant_index,
+    bool& uses_ptx_fallback) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !metadata.variants.empty(), InvalidProgram, "CUDA AOTI has no variants");
+
+  if (metadata.variants.size() == 1 && metadata.variants[0].target_sm == 0) {
+    variant_index = 0;
+    uses_ptx_fallback = false;
+    return Error::Ok;
+  }
+
+  for (size_t index = 0; index < metadata.variants.size(); ++index) {
+    if (!metadata.variants[index].fallback_only &&
+        metadata.variants[index].target_sm == current_sm) {
+      variant_index = index;
+      uses_ptx_fallback = false;
+      return Error::Ok;
+    }
+  }
+
+  for (size_t index = 0; index < metadata.variants.size(); ++index) {
+    const Variant& variant = metadata.variants[index];
+    if (variant.ptx_compute != 0 && variant.ptx_compute <= current_sm &&
+        (variant.fallback_only || metadata.variants.size() == 1)) {
+      variant_index = index;
+      uses_ptx_fallback = true;
+      return Error::Ok;
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      false,
+      NotSupported,
+      "CUDA AOTI has no native or PTX variant compatible with sm%u",
+      current_sm);
+}
+
 Error CudaWeightCache::validate_view(const Entry& entry) {
   uint64_t item_size = 0;
   switch (static_cast<aoti::slim::c10::ScalarType>(entry.dtype)) {
@@ -220,6 +359,7 @@ Error CudaWeightCache::validate_view(const Entry& entry) {
       item_size = 4;
       break;
     case aoti::slim::c10::ScalarType::Long:
+    case aoti::slim::c10::ScalarType::Double:
       item_size = 8;
       break;
     default:
@@ -403,6 +543,17 @@ Error CudaWeightCache::acquire_storage(
   return Error::Ok;
 }
 
+std::unordered_map<std::string, std::vector<int64_t>>
+CudaWeightCache::offgraph_kv_sizes(const Metadata& metadata) {
+  std::unordered_map<std::string, std::vector<int64_t>> sizes;
+  for (const Entry& entry : metadata.entries) {
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      sizes.emplace(entry.fqn, entry.sizes);
+    }
+  }
+  return sizes;
+}
+
 Error CudaWeightCache::load(
     CudaDelegateHandle* handle,
     const NamedDataMap* named_data_map,
@@ -479,6 +630,7 @@ Error CudaWeightCache::load(
   pairs.reserve(metadata.entries.size());
   std::unordered_set<std::string> bound_fqns;
   size_t reused_storages = 0;
+  size_t external_storages = 0;
   handle->fqn_weight_tensors.reserve(metadata.entries.size());
 
   for (const Entry& entry : metadata.entries) {
@@ -505,6 +657,11 @@ Error CudaWeightCache::load(
         InvalidProgram,
         "CUDA FQN weight '%s' appears more than once in serialized metadata",
         entry.fqn.c_str());
+
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      ++external_storages;
+      continue;
+    }
 
     std::shared_ptr<CudaWeightStorage> storage;
     bool reused = false;
@@ -547,19 +704,34 @@ Error CudaWeightCache::load(
     }
   }
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      handle->update_user_managed_constant_buffer_pairs(
-          handle->container_handle,
-          pairs.data(),
-          pairs.size(),
-          /*use_inactive=*/false,
-          /*validate_full_update=*/true),
-      "Failed to bind CUDA FQN weights");
+  if (!pairs.empty()) {
+    // Off-graph KV constants are AOTI buffers bound later by the KV pool, so
+    // they are allowed to be absent here, while every weight must be supplied.
+    const bool check_here = can_check_constants_bound(*handle);
+    if (check_here) {
+      std::unordered_set<std::string> bound_names;
+      for (const auto& pair : pairs) {
+        bound_names.emplace(pair.name);
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          check_constants_bound(*handle, num_constants, bound_names),
+          "CUDA FQN weights do not cover the AOTI library");
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->update_user_managed_constant_buffer_pairs(
+            handle->container_handle,
+            pairs.data(),
+            pairs.size(),
+            /*use_inactive=*/false,
+            /*validate_full_update=*/!check_here),
+        "Failed to bind CUDA FQN weights");
+  }
   ET_LOG(
       Info,
-      "Loaded %zu CUDA FQN weights (%zu reused across methods)",
-      metadata.entries.size(),
-      reused_storages);
+      "Loaded %zu CUDA FQN weights (%zu reused, %zu runtime-owned)",
+      metadata.entries.size() - external_storages,
+      reused_storages,
+      external_storages);
   return Error::Ok;
 }
 

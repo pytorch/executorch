@@ -18,6 +18,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -33,6 +35,23 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_pad_default"
 input_t1 = Tuple[torch.Tensor]  # Input x
 
 test_data_suite = {
+    "crop_end": lambda: (torch.rand(1, 4, 16), (0, -1), 0, "constant"),
+    "crop_start": lambda: (torch.rand(1, 4, 16), (-2, 0), 0, "constant"),
+    "crop_both": lambda: (torch.rand(1, 4, 16), (-1, -2), 0, "constant"),
+    "crop_penultimate_dim": lambda: (
+        torch.rand(1, 16, 4),
+        (0, 0, 0, -1),
+        0,
+        "constant",
+    ),
+    "crop_and_pad": lambda: (torch.rand(1, 4, 16), (-2, 3), 2, "constant"),
+    "crop_shift": lambda: (torch.rand(1, 4, 16), (-1, 1), -0.5, "constant"),
+    "crop_multidim": lambda: (
+        torch.rand(1, 3, 8, 10),
+        (-1, 2, 3, -2),
+        1,
+        "constant",
+    ),
     "4dim_last1dim": lambda: (
         torch.rand(1, 1, 16, 16),
         (1, 1, 0, 0, 0, 0, 0, 0),
@@ -98,6 +117,38 @@ test_data_suite = {
         None,
         "circular",
     ),
+    **{
+        f"{mode}_{case}": lambda mode=mode, shape=shape, pad=pad: (
+            torch.rand(shape),
+            pad,
+            None,
+            mode,
+        )
+        for mode in ("reflect", "replicate", "circular")
+        for case, (shape, pad) in {
+            "crop_end": ((1, 3, 6), (0, -2)),
+            "crop_start": ((1, 3, 6), (-2, 0)),
+            "crop_both": ((1, 3, 6), (-1, -2)),
+            "crop_and_pad": ((1, 3, 6), (-2, 3)),
+            "pad_and_crop": ((1, 3, 6), (3, -2)),
+            "crop_shift": ((1, 3, 6), (-1, 1)),
+            "crop_multidim": ((1, 3, 6, 6), (-1, 2, 3, -2)),
+            "crop_penultimate_dim": ((1, 3, 6, 6), (0, 0, -2, 1)),
+        }.items()
+    },
+    **{
+        f"{mode}_{case}": lambda mode=mode, pad=pad: (
+            torch.rand(1, 3, 6),
+            pad,
+            None,
+            mode,
+        )
+        for mode in ("reflect", "replicate")
+        for case, pad in {
+            "crop_all_left": (-6, 2),
+            "crop_all_right": (2, -6),
+        }.items()
+    },
 }
 
 test_data_suite_bf16 = {
@@ -157,10 +208,8 @@ class ConstantPadND(torch.nn.Module):
         self.value = value
         self.mode = mode
         nonzero_idx = len(pad)
-        for i in range(0, len(pad), 2):
-            if pad[i] + pad[i + 1] == 0:
-                nonzero_idx = i
-                break
+        while nonzero_idx >= 2 and pad[nonzero_idx - 2 : nonzero_idx] == (0, 0):
+            nonzero_idx -= 2
         self.pad = pad[:nonzero_idx]
 
     def forward(self, x: torch.Tensor):
@@ -344,6 +393,34 @@ def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
     pipeline.run()
 
 
+@common.XfailIfNoCorstone300
+def test_constant_pad_nd_u55_INT():
+    inp, padding, value, mode = test_data_suite["4dim_last2dim"]()
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantPadND(padding, value, mode),
+        (inp,),
+        aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_no_quant_fp8(test_data: Tuple):
+    test_data, padding, value, mode, _ = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value, mode),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )
@@ -387,4 +464,34 @@ def test_constant_pad_nd_vgf_quant_a16w8(test_data: Tuple):
         tosa_extensions=["int16"],
     )
     pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_pad_u85_INT():
+    input_tensor = torch.rand(1, 1, 16, 16)
+    padding = (1, 0, 1, 0)
+    pipeline = EthosU85PipelineINT[input_t1](
+        ConstantPadND(padding, value=2, mode="constant"),
+        (input_tensor,),
+        aten_op,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_constant_pad_nd_u85_INT():
+    class AtenConstantPadND(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            return torch.ops.aten.constant_pad_nd.default(
+                x,
+                (1, 0, 1, 0),
+                1.0,
+            )
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        AtenConstantPadND(),
+        (torch.rand(1, 1, 16, 16),),
+        "torch.ops.aten.constant_pad_nd.default",
+    )
     pipeline.run()

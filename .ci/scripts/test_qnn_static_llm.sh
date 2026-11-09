@@ -25,7 +25,7 @@ export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
 export PYTHONPATH=".."
 cp schema/program.fbs exir/_serialize/program.fbs
 cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
-cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor*.so backends/qualcomm/python
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3

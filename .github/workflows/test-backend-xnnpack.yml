@@ -11,6 +11,11 @@ on:
       - ciflow/nightly/*
   pull_request:
   workflow_dispatch:
+    inputs:
+      save-goldens:
+        description: 'Write and package the models-suite goldens (Android test fixture)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -19,6 +24,9 @@ concurrency:
 jobs:
   test-xnnpack:
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: xnnpack
       flows: >-
@@ -28,3 +36,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
+      # The nightly keeps writing goldens: they are what the Android instrumentation
+      # test pins (android_test_setup.sh), and a fresh key must exist before the pin
+      # ages out of S3. Every other run skips them.
+      save-goldens: ${{ inputs.save-goldens == true || github.event_name == 'schedule' }}

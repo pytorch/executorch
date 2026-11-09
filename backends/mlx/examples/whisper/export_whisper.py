@@ -122,14 +122,17 @@ class WhisperSelfAttentionWithCache(nn.Module):
         # Update KV cache
         k_cache, v_cache = self.kv_cache.update(pos_int, k, v)
 
-        # Explicit windowing: slice cache to valid positions
-        end_pos = pos_int + T
-        k_win = k_cache[:, :, :end_pos, :]
-        v_win = v_cache[:, :, :end_pos, :]
-
-        # SDPA with causal mask
-        attn_out = F.scaled_dot_product_attention(
-            q, k_win, v_win, attn_mask=None, is_causal=True, scale=self.scale
+        # The cache-aware op slices the cache to start_pos + query length itself, and
+        # applies the causal mask the kernel wants for a cached decode step. Passing
+        # a hand-sliced window with is_causal instead means something different: torch
+        # would let the new token see only the first cached key.
+        attn_out = torch.ops.mlx.custom_sdpa(
+            q,
+            k_cache,
+            v_cache,
+            start_pos=pos_int,
+            is_causal=True,
+            scale=self.scale,
         )
 
         # Reshape back
