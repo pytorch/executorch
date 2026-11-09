@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
 )
 from executorch.backends.xnnpack.utils.utils import (
+    COMPUTED_PARAM_TAG,
     get_input_node,
     is_depthwise_conv,
     is_getitem,
@@ -38,6 +39,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 )
 from executorch.exir.backend.utils import WhyNoPartition
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
 from torch.fx.experimental.symbolic_shapes import free_symbols, statically_known_true
 from torch.fx.passes.utils.source_matcher_utils import (
@@ -47,6 +49,77 @@ from torch.fx.passes.utils.source_matcher_utils import (
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
+
+
+def get_static_param_deps(  # noqa: C901
+    ep: ExportedProgram, node: torch.fx.Node, user: torch.fx.Node
+) -> Optional[List[torch.fx.Node]]:
+    """
+    Returns the nodes to partition with user for node to be a static param, or
+    None. That is node itself if it is a param. Otherwise it is node and the
+    unmutated params it is computed from with pure ATen ops, such as the weight
+    of a conv under weight_norm. Preprocess folds node into a param that
+    replaces them without growing the program, so only node and the params may
+    have users outside of the computation, and only user, and node may not be
+    larger than the params it frees. The computing nodes add user's name to
+    their COMPUTED_PARAM_TAG set.
+    """
+    if is_param_node(ep, node):
+        return [node]
+
+    signature = ep.graph_signature
+    mutated_buffers = set(signature.buffers_to_mutate.values())
+    deps = {}
+    pending = [node]
+    while pending:
+        dep = pending.pop()
+        if dep in deps:
+            continue
+        deps[dep] = None
+        if dep.op == "placeholder" and is_param_node(ep, dep):
+            if signature.inputs_to_buffers.get(dep.name) in mutated_buffers:
+                why(user, f"{dep} is a mutated buffer")
+                return None
+            # Folding would move data tagged for an external file into the PTE.
+            if dep.meta.get("custom", {}).get("delegate_constant_tag") is not None:
+                why(user, f"{dep} is tagged for an external data file")
+                return None
+            continue
+        # Preprocess runs these ops on CPU, and a custom op may only have a fake kernel.
+        if (
+            dep.op != "call_function"
+            or dep.is_impure()
+            or is_quant(dep)
+            or is_dequant(dep)
+            or is_qparam(dep)
+            or not (
+                is_getitem(dep)
+                or (
+                    isinstance(dep.target, (torch._ops.OpOverload, EdgeOpOverload))
+                    and dep.target.namespace in ("aten", "dim_order_ops")
+                )
+            )
+        ):
+            why(user, f"{dep} is neither a param nor an op that can be folded into one")
+            return None
+        pending.extend(dep.all_input_nodes)
+
+    for dep in deps:
+        for u in dep.users:
+            if u not in deps and not (
+                u is user and (dep is node or dep.op == "placeholder")
+            ):
+                why(user, f"{dep} is also used by {u}")
+                return None
+    removed = [dep for dep in deps if dep.op == "placeholder" and user not in dep.users]
+    if node.meta["val"].nbytes > sum(param.meta["val"].nbytes for param in removed):
+        why(user, f"folding {node} would grow the program")
+        return None
+
+    for dep in deps:
+        if dep.op == "call_function":
+            dep.meta.setdefault(COMPUTED_PARAM_TAG, set()).add(user.name)
+    return list(deps)
 
 
 class GEMMConfig(XNNPartitionerConfig):
@@ -147,10 +220,10 @@ class GEMMConfig(XNNPartitionerConfig):
         if precision == ConfigPrecisionType.FP32:
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
-            if not is_param_node(ep, weight_node):
-                why(node, "Expected weight to be a static param")
+            weight_deps = get_static_param_deps(ep, weight_node, node)
+            if weight_deps is None:
                 return (False, [])
-            gemm_deps.append(weight_node)
+            gemm_deps.extend(weight_deps)
 
             return (True, gemm_deps)
         else:
@@ -245,10 +318,10 @@ class GEMMConfig(XNNPartitionerConfig):
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
-                if not is_param_node(ep, bias_node):
-                    why(node, "Expected bias to be a static param")
+                bias_deps = get_static_param_deps(ep, bias_node, node)
+                if bias_deps is None:
                     return (False, [])
-                gemm_deps.append(bias_node)
+                gemm_deps.extend(bias_deps)
 
         return (True, gemm_deps)
 
