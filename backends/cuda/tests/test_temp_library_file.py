@@ -12,6 +12,7 @@ by its owner, and it has to be removed once the program is freed.
 """
 
 import os
+import signal
 import stat
 import tempfile
 import unittest
@@ -79,6 +80,32 @@ class TestTempLibraryFile(unittest.TestCase):
             )
 
             del method, program
+            self.assertEqual(os.listdir(tmpdir), [])
+
+    def test_failed_write_leaves_no_file(self) -> None:
+        import resource
+
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir, tempfile.TemporaryDirectory() as tmpdir:
+            path = self._lower(outdir)
+            program = Runtime.get().load_program(path)
+
+            # A file size limit far below the library size makes the write fail
+            # partway; with SIGXFSZ ignored, write() reports EFBIG instead.
+            old_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+            old_handler = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+            try:
+                resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024, old_limit[1]))
+                with patch.dict(os.environ, {"TMPDIR": tmpdir}):
+                    with self.assertRaisesRegex(
+                        RuntimeError, r"Failed to load method forward, error: 0x:?22"
+                    ):
+                        program.load_method("forward")
+            finally:
+                resource.setrlimit(resource.RLIMIT_FSIZE, old_limit)
+                signal.signal(signal.SIGXFSZ, old_handler)
+
             self.assertEqual(os.listdir(tmpdir), [])
 
     def test_missing_temp_dir_is_a_load_error(self) -> None:
