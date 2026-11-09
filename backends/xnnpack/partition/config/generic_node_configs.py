@@ -408,7 +408,6 @@ class EluConfig(GenericNodePartitionerConfig):
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
