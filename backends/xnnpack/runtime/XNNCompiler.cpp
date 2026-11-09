@@ -938,6 +938,72 @@ Error defineFullyConnectedNode(
 };
 
 /*
+XNNPACK defines softmax only on fp32 and fp16 tensors. When a serialized
+softmax value is bf16, define an fp32 value with the same shape for the
+softmax to use instead. The caller converts between the bf16 value and the
+fp32 value around the softmax, so the delegate boundary stays bf16.
+Non-bf16 values are used as-is.
+*/
+Error defineBf16SoftmaxFp32Value(
+    xnn_subgraph_t subgraph_ptr,
+    const fb_xnnpack::XNNGraph* graph,
+    uint32_t serialized_id,
+    uint32_t remapped_id,
+    const NodePtr node,
+    uint32_t* fp32_id) noexcept {
+  *fp32_id = remapped_id;
+  const auto* value = getSerializedTensorValue(graph, serialized_id);
+  if (value == nullptr || value->datatype() != DataType::xnn_datatype_bf16) {
+    return Error::Ok;
+  }
+  // Like defineTensor(), treat a null dims vector as rank 0.
+  std::vector<size_t> dims;
+  if (value->dims() != nullptr) {
+    dims = flatbufferDimsToVector<size_t>(value->dims());
+  }
+  xnn_status status = xnn_define_tensor_value(
+      subgraph_ptr,
+      xnn_datatype_fp32,
+      dims.size(),
+      dims.data(),
+      /*data=*/nullptr,
+      /*external_id=*/XNN_INVALID_VALUE_ID,
+      /*flags=*/0,
+      fp32_id);
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to define the fp32 value for bf16 softmax node %i: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+  return Error::Ok;
+}
+
+/*
+Converts between the bf16 value and the fp32 value that
+defineBf16SoftmaxFp32Value() defined for it. Does nothing when the softmax
+uses the value itself.
+*/
+Error convertBf16SoftmaxValue(
+    xnn_subgraph_t subgraph_ptr,
+    uint32_t from_id,
+    uint32_t to_id,
+    const NodePtr node) noexcept {
+  if (from_id == to_id) {
+    return Error::Ok;
+  }
+  xnn_status status =
+      xnn_define_convert(subgraph_ptr, from_id, to_id, /*flags=*/0);
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to convert the value of bf16 softmax node %i: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+  return Error::Ok;
+}
+
+/*
 Define serialized softmax node into the subgraph, using the remapped ids
 to map the serialized ids, to the new ids generated when defining
 the tensor value
@@ -947,14 +1013,32 @@ Error defineSoftmaxNode(
     const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
     const NodePtr node,
     const fb_xnnpack::XNNGraph* graph) noexcept {
-  MAYBE_UNUSED(graph);
-
   auto graph_node = node->xnode_union_as_XNNSoftmax();
   REMAP_ID(remapped_ids, graph_node->input_id(), sm_input);
   REMAP_ID(remapped_ids, graph_node->output_id(), sm_output);
 
+  uint32_t softmax_input = XNN_INVALID_VALUE_ID;
+  ET_CHECK_OK_OR_RETURN_ERROR(defineBf16SoftmaxFp32Value(
+      subgraph_ptr,
+      graph,
+      graph_node->input_id(),
+      sm_input,
+      node,
+      &softmax_input));
+  uint32_t softmax_output = XNN_INVALID_VALUE_ID;
+  ET_CHECK_OK_OR_RETURN_ERROR(defineBf16SoftmaxFp32Value(
+      subgraph_ptr,
+      graph,
+      graph_node->output_id(),
+      sm_output,
+      node,
+      &softmax_output));
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      convertBf16SoftmaxValue(subgraph_ptr, sm_input, softmax_input, node));
+
   xnn_status status = xnn_define_softmax(
-      subgraph_ptr, sm_input, sm_output, graph_node->flags());
+      subgraph_ptr, softmax_input, softmax_output, graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
@@ -962,7 +1046,7 @@ Error defineSoftmaxNode(
       node->debug_handle(),
       xnn_status_to_string(status));
 
-  return Error::Ok;
+  return convertBf16SoftmaxValue(subgraph_ptr, softmax_output, sm_output, node);
 }
 
 Error defineGlobalAvgPooling2dNode(

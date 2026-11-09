@@ -406,7 +406,8 @@ class EluConfig(GenericNodePartitionerConfig):
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
-    supports_bf16 = False
+    # XNNPACK has no bf16 softmax; the runtime computes it in fp32 and
+    # converts at the delegate boundary (see defineSoftmaxNode).
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
