@@ -53,7 +53,9 @@ def main(args):
         )
 
     module = (
-        AutoModelForImageClassification.from_pretrained("google/efficientnet-b0")
+        AutoModelForImageClassification.from_pretrained(
+            "google/efficientnet-b0", use_safetensors=True
+        )
         .eval()
         .to("cpu")
     )

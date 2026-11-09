@@ -81,7 +81,7 @@ def main(args):
 
     module = (
         AutoModelForImageClassification.from_pretrained(
-            "apple/mobilevitv2-1.0-imagenet1k-256"
+            "apple/mobilevitv2-1.0-imagenet1k-256", use_safetensors=True
         )
         .eval()
         .to("cpu")

@@ -131,6 +131,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
         "google/mobilebert-uncased",
         num_labels=len(labels),
         return_dict=False,
+        use_safetensors=True,
     )
 
     # tokenize dataset
