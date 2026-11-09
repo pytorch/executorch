@@ -10,7 +10,7 @@ pin moves and the generated wrapper starts calling something new:
 
 ```
 nm --defined-only aoti_cuda_shims.lib \
-  | sed -n 's/.* T _\?\(aoti_torch_[a-z_0-9]*\)$/\1/p' \
+  | sed -n 's/.* T _\?\(aoti_torch_[A-Za-z_0-9]*\)$/\1/p' \
   | sort -u > exports.txt
 # add the new names to exports.txt, then
 { echo 'LIBRARY aoti_cuda_shims.dll'; echo 'EXPORTS'; sed 's/^/    /' exports.txt; } \

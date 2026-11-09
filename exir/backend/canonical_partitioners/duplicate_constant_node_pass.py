@@ -6,32 +6,32 @@
 
 import copy
 import logging
-from typing import Optional, Set
+from typing import Dict, List, Optional, Set
 
 import torch
-from torch._export.utils import get_buffer, get_lifted_tensor_constant, get_param
 
 from torch.export import ExportedProgram
-from torch.export.exported_program import InputSpec, TensorArgument
-from torch.export.graph_signature import InputKind
+from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 
 
-def _get_attribute_or_constants(
-    exported_program: ExportedProgram, node: torch.fx.Node
-) -> Optional[torch.Tensor]:
-    # get either attribute node or constant constant
-    maybe_param = get_param(exported_program, node)
-    maybe_buffer = get_buffer(exported_program, node)
-    maybe_lifted_tensor = get_lifted_tensor_constant(exported_program, node)
-
-    constant_or_attribute = None
-    if maybe_param is not None:
-        constant_or_attribute = maybe_param
-    elif maybe_buffer is not None:
-        constant_or_attribute = maybe_buffer
-    elif maybe_lifted_tensor is not None:
-        constant_or_attribute = maybe_lifted_tensor
-    return constant_or_attribute
+def _users_reading_a_copy(
+    node: torch.fx.Node, order: Dict[torch.fx.Node, int]
+) -> List[List[torch.fx.Node]]:
+    """
+    The users of node that read a copy of it, in groups that share one. The
+    users with the same delegation tag, or with none, form a group, so each
+    program takes a constant once: for example, a program that lists the
+    same lifted constant twice fails to unlift. The group with the graph
+    output keeps the original, which the output specs name, and otherwise
+    the group of the first user in graph order does.
+    """
+    groups: Dict[Optional[str], List[torch.fx.Node]] = {}
+    # Rewiring a user for another constant moves it to the end of node.users.
+    for user in sorted(node.users, key=order.__getitem__):
+        groups.setdefault(user.meta.get("delegation_tag"), []).append(user)
+    output = any(user.op == "output" for user in node.users)
+    keeper = None if output else next(iter(groups), None)
+    return [users for tag, users in groups.items() if tag != keeper]
 
 
 # TODO: add other passes to duplicate call_function nodes
@@ -41,26 +41,42 @@ def duplicate_constant_node(
     """
     A pass to duplicate the attributes/constants node (the candidate_node) in the graph. Mostly used for duplicating light-weight data.
     If the data is too large, try tag it with "no_copy" to prevent high memory usage and make it as part of the output.
+    A mutated buffer is never copied, because a copy would not see its updates: this raises instead.
+    Users with the same delegation tag, or with none, share one placeholder, so tag the
+    users before calling it: on a graph without tags it makes no copies.
 
     Args:
         exported_program: the exported program to be modified. If constants nodes are copied, they will be added as new
-        placeholder and the state_dict will be updated
+        placeholders that share the original target
         candidate_node: the name of the constant node to be duplicated
 
     Returns:
         The set of the names of the new constant nodes
     """
-    to_be_copied = [
-        node
+    return duplicate_constant_nodes(exported_program, {candidate_node})
+
+
+def duplicate_constant_nodes(
+    exported_program: ExportedProgram, candidate_nodes: Set[str]
+) -> Set[str]:
+    """
+    duplicate_constant_node for several constant nodes at once. It recompiles
+    and validates the program once, rather than once per node, which matters
+    on a large graph with many shared constants.
+
+    Returns:
+        The set of the names of the new constant nodes
+    """
+    if not any(
+        node.op == "placeholder" and node.name in candidate_nodes
         for node in exported_program.graph.nodes
-        if node.name == candidate_node and node.op == "placeholder"
-    ]
-    if len(to_be_copied) == 0:
+    ):
         logging.info("no constant node to be copied")
         return set()
     new_input_specs = []
     old_signature = exported_program.graph_signature
     copied_nodes = set()
+    order = {node: i for i, node in enumerate(exported_program.graph.nodes)}
 
     placeholder_idx = -1
     for node in exported_program.graph.nodes:
@@ -70,16 +86,30 @@ def duplicate_constant_node(
         placeholder_idx += 1
         old_input_spec = old_signature.input_specs[placeholder_idx]
         old_input_spec_copy = copy.deepcopy(old_input_spec)
-        if node == to_be_copied[0]:
+        if node.name in candidate_nodes:
             constant_or_attribute_node = node
-            constant_or_attribute = _get_attribute_or_constants(exported_program, node)
-            if constant_or_attribute is None:
+            # The input spec kind answers this without get_param, get_buffer and
+            # get_lifted_tensor_constant, which rebuild a dict on every call.
+            if old_input_spec.kind not in (
+                InputKind.PARAMETER,
+                InputKind.BUFFER,
+                InputKind.CONSTANT_TENSOR,
+            ):
                 raise RuntimeError(
                     f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                 )
-            users = list(node.users.keys())
-            for ith in range(1, len(node.users)):
-                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith - 1}"
+            if (
+                old_signature.inputs_to_buffers.get(node.name)
+                in old_signature.buffers_to_mutate.values()
+            ):
+                raise RuntimeError(
+                    f"mutated buffer ({node}) cannot be copied, because a copy "
+                    "would not see its updates. Tag it only when every node "
+                    "that reads or writes it has the same tag, as "
+                    "tag_mutated_buffer does, or leave it untagged."
+                )
+            for ith, group in enumerate(_users_reading_a_copy(node, order)):
+                copy_constant_or_attribute_fqn = node.name + f"_copy_{ith}"
                 with exported_program.graph.inserting_before(
                     constant_or_attribute_node
                 ):
@@ -97,42 +127,15 @@ def duplicate_constant_node(
                     copied_constant_or_attribute_node.meta["val"] = (
                         constant_or_attribute_node.meta["val"]
                     )
-                    new_args = tuple(
-                        [
-                            (
-                                arg
-                                if arg != constant_or_attribute_node
-                                else copied_constant_or_attribute_node
-                            )
-                            for arg in users[ith].args
-                        ]
-                    )
-                    new_kwargs = {
-                        key: (
-                            value
-                            if value != constant_or_attribute_node
-                            else copied_constant_or_attribute_node
+                    # This also reaches a constant that an op such as cat or
+                    # index_put reads from a list.
+                    for user in group:
+                        user.replace_input_with(
+                            constant_or_attribute_node,
+                            copied_constant_or_attribute_node,
                         )
-                        for key, value in users[ith].kwargs.items()
-                    }
-                    users[ith].args = new_args
-                    users[ith].kwargs = new_kwargs
-                    if old_input_spec.kind == InputKind.CONSTANT_TENSOR:
-                        exported_program.constants[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
-                    elif (
-                        old_input_spec.kind == InputKind.BUFFER
-                        and old_input_spec.persistent is False
-                    ):
-                        # non persistent buffer will be in the .constants
-                        exported_program.constants[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
-                    else:
-                        exported_program.state_dict[copy_constant_or_attribute_fqn] = (
-                            copy.deepcopy(constant_or_attribute)
-                        )
+                    # The copy keeps the original target, so it reads the
+                    # original tensor and needs no data of its own.
                     new_input_specs.append(
                         InputSpec(
                             kind=old_input_spec.kind,

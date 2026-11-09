@@ -173,10 +173,9 @@ class ConvBN(torch.nn.Module):
         return self.relu6(self.bn(self.conv(x)))
 
 
-class UnfoldableBN(torch.nn.Module):
-    """Batch norms no convolution can absorb: one reads a convolution output
-    that is also read elsewhere, one the sole reader of a convolution whose
-    weight is shared, one a ReLU."""
+class SharedConvBN(torch.nn.Module):
+    """Batch norms reading a shared convolution output, a convolution with
+    shared weights, and a ReLU."""
 
     def __init__(self):
         super().__init__()
@@ -305,6 +304,8 @@ def _run_ggml(
     resize: bool = False,
     max_cached_graphs: int = 1,
     graph_ops: collections.Counter | None = None,
+    method: str = "forward",
+    allow_activation_quant_for_weight_only: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -325,6 +326,7 @@ def _run_ggml(
     command = [
         f"--device={os.environ.get('GGML_PTN_DEVICE', 'cpu')}",
         f"--package={package}",
+        f"--method={method}",
         f"--inputs={';'.join(input_steps)}",
         f"--outputs={';'.join(output_steps)}",
         f"--max_cached_graphs={max_cached_graphs}",
@@ -333,18 +335,14 @@ def _run_ggml(
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
     if graph_ops is not None:
         command.append("--print_graph_ops")
-    env = dict(os.environ)
+    if allow_activation_quant_for_weight_only:
+        command.append("--allow_activation_quant_for_weight_only")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
-        # Shared libraries the runner needs may ship beside it.
-        env["LD_LIBRARY_PATH"] = (
-            f"{Path(runner).parent}:{env.get('LD_LIBRARY_PATH', '')}"
-        )
         result = subprocess.run(
             [str(runner), *command],
             capture_output=True,
             text=True,
             timeout=300,
-            env=env,
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
@@ -392,15 +390,35 @@ class GgmlOpsTest(unittest.TestCase):
         # block scale on GPUs. Test the weight layout tightly with exact
         # activations, then separately bound the randomized requantization loss.
         gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
-        self._check(model, (representable,), atol=5e-4, rtol=2e-4 if gpu else 1e-5)
-        self._check(model, (torch.randn(2, 256) / 8,), atol=0.35, rtol=0.02)
+        self._check(
+            model,
+            (representable,),
+            atol=5e-4,
+            rtol=2e-4 if gpu else 1e-5,
+            allow_activation_quant_for_weight_only=True,
+        )
+        self._check(
+            model,
+            (torch.randn(2, 256) / 8,),
+            atol=0.35,
+            rtol=0.02,
+            allow_activation_quant_for_weight_only=True,
+        )
 
     def test_gguf_q6_k_embedding(self):
         model = torch.nn.Embedding(8, 256)
         model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
 
-    def _check(self, model, inputs, atol=1e-5, rtol=1e-5, graph_ops=None):
+    def _check(
+        self,
+        model,
+        inputs,
+        atol=1e-5,
+        rtol=1e-5,
+        graph_ops=None,
+        allow_activation_quant_for_weight_only=False,
+    ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
         with torch.no_grad():
@@ -411,14 +429,21 @@ class GgmlOpsTest(unittest.TestCase):
             package = outdir / "model.ptn"
             to_native(torch.export.export(model, inputs)).save(str(package))
             (outputs,) = _run_ggml(
-                package, [inputs], outdir, len(expected), graph_ops=graph_ops
+                package,
+                [inputs],
+                outdir,
+                len(expected),
+                graph_ops=graph_ops,
+                allow_activation_quant_for_weight_only=(
+                    allow_activation_quant_for_weight_only
+                ),
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
             self.assertEqual(shape, tuple(reference.shape))
             actual = torch.frombuffer(bytearray(raw), dtype=reference.dtype)
             torch.testing.assert_close(
-                actual.reshape(shape), reference, atol=atol, rtol=rtol
+                actual.reshape(shape), reference, atol=atol, rtol=rtol, equal_nan=True
             )
 
     def _run_exported(self, model, example, inputs):
@@ -594,6 +619,9 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_tanh(self):
+        self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
+
     def test_gelu(self):
         ops = collections.Counter()
         self._check(Lambda(F.gelu), (torch.randn(2, 3, 4) * 3.0,), graph_ops=ops)
@@ -616,6 +644,18 @@ class GgmlOpsTest(unittest.TestCase):
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
 
+    def test_exp(self):
+        self._check(Lambda(torch.exp), (torch.randn(3, 1, 1).clamp(max=4.6),))
+
+    def test_exp_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(torch.exp),
+                    (torch.randn(2, 3, 4, dtype=dtype),),
+                    rtol=rtol,
+                )
+
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
@@ -627,6 +667,17 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_sqrt(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        self._check(Lambda(torch.sqrt), (x,))
+        self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
+
+    def test_sqrt_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32"):
+            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
 
     def test_conv2d(self):
         self._check(
@@ -732,15 +783,16 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["SQRT"] + ops["MUL"], 0)
 
-    def test_unfoldable_batch_norms(self):
+    def test_batch_norms_with_shared_convolution(self):
         ops = collections.Counter()
         self._check(
-            UnfoldableBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
+            SharedConvBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
         )
-        # Scale and shift come from load; each graph has three batch norms
-        # (one scale multiply each) and two convolutions.
+        # AOT folds the shared-weight branch; two batch norm scales and two
+        # convolutions remain in each graph.
         self.assertEqual(ops["SQRT"], 0)
-        self.assertEqual(2 * ops["MUL"], 3 * ops["MUL_MAT"])
+        self.assertGreater(ops["MUL_MAT"], 0)
+        self.assertEqual(ops["MUL"], ops["MUL_MAT"])
 
     def test_batch_norm_of_computed_statistics(self):
         # Statistics computed in the graph cannot fold at load.
@@ -767,6 +819,41 @@ class GgmlOpsTest(unittest.TestCase):
         norm.running_var.uniform_(0.5, 2.0)
         self._check(norm, (torch.randn(1, 4, 5, 6),), atol=1e-5)
 
+    def test_batch_norm_statistics_written_by_another_method(self):
+        class Update(torch.nn.Module):
+            def __init__(self, bn):
+                super().__init__()
+                self.bn = bn
+
+            def forward(self, delta):
+                self.bn.running_mean.add_(delta)
+                return self.bn.running_mean + 1
+
+        model = ConvBN(groups=1, bias=True).eval()
+        methods = {
+            "predict": (model, (torch.randn(1, 8, 9, 9),)),
+            "update": (Update(model.bn), (torch.randn(8),)),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(
+                {
+                    name: torch.export.export(module, inputs)
+                    for name, (module, inputs) in methods.items()
+                }
+            ).save(str(package))
+            for name, (module, inputs) in methods.items():
+                with self.subTest(method=name), torch.no_grad():
+                    expected = copy.deepcopy(module)(*inputs)
+                    ((raw, shape),) = _run_ggml(
+                        package, [inputs], outdir, 1, method=name
+                    )[0]
+                    actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                    torch.testing.assert_close(
+                        actual.reshape(shape), expected, atol=1e-4, rtol=1e-5
+                    )
+
     def test_max_pool2d(self):
         self._check(
             torch.nn.MaxPool2d(3, stride=2, padding=1), (torch.randn(1, 4, 11, 9),)
@@ -785,6 +872,12 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_mean_trailing_dims(self):
         self._check(Lambda(lambda x: x.mean(dim=(-1, -2))), (torch.randn(2, 3, 4, 5),))
+
+    def test_sum_trailing_dims(self):
+        self._check(
+            Lambda(lambda x: x.sum(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
+        )
+        self._check(Lambda(lambda x: x.sum(dim=[2, 3])), (torch.randn(2, 3, 4, 5),))
 
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
@@ -846,6 +939,56 @@ class GgmlOpsTest(unittest.TestCase):
                 return self.embedding(indices.squeeze(0))
 
         self._check(SqueezedEmbedding(), (torch.tensor([[1, 3, 9]]),))
+
+    def test_embedding_arange_indices(self):
+        class PositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(1, 10, 2)) + x
+
+        self._check(PositionEmbedding(), (torch.randn(5, 8),))
+
+    def test_embedding_arange_indices_rejects_out_of_bounds(self):
+        class InvalidPositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(-1, 4)) + x
+
+        with self.assertRaisesRegex(AssertionError, "arange row index"):
+            # Export does not execute the invalid gather; the runner must reject it.
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                x = torch.randn(5, 8)
+                package = outdir / "model.ptn"
+                ep = torch.export.export(InvalidPositionEmbedding().eval(), (x,))
+                to_native(ep).save(str(package))
+                _run_ggml(package, [(x,)], outdir, 1)
+
+    def test_repeated_row_gather_rechecks_indices(self):
+        class RepeatedRowGather(Embedding):
+            def forward(self, indices):
+                return self.embedding.weight[indices.unsqueeze(0).repeat(2, 1)]
+
+        model = RepeatedRowGather().eval()
+        inputs = (torch.tensor([1, 3, 9]),)
+        self._check(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, inputs)).save(str(package))
+            for invalid in (-1, 10):
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(AssertionError, "row index is outside"):
+                        _run_ggml(
+                            package,
+                            [inputs, (torch.tensor([1, invalid, 3]),)],
+                            outdir,
+                            1,
+                        )
+
+    def test_repeat_tiles_non_singleton_dimensions(self):
+        self._check(
+            Lambda(lambda x: x.repeat(2, 3, 2)),
+            (torch.arange(6, dtype=torch.float32).reshape(2, 3),),
+        )
 
     def test_rms_norm(self):
         self._check(RMSNorm(), (torch.randn(2, 3, 16),))

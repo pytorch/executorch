@@ -21,6 +21,7 @@ using executorch::runtime::CompileSpec;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
@@ -53,6 +54,16 @@ typedef struct IO {
   bool owns_memory = true;
   bool owns_image_memory = true;
   bool is_input;
+
+  // Describes the actual host-mapped boundary VkDeviceMemory: a tensor,
+  // storage buffer, or image staging buffer. Alias-backed IOs inherit the
+  // alias group's allocation properties. Independent of external-host-import
+  // metadata; only isolated tensor boundaries can be exposed to the Method.
+  VkDeviceSize memory_allocation_size = 0;
+  uint32_t memory_type_index = UINT32_MAX;
+  VkMemoryPropertyFlags memory_property_flags = 0;
+  bool memory_properties_known = false;
+  bool owned_mapped_boundary_eligible = false;
 } IO;
 
 typedef struct PersistentMappedMemory {
@@ -141,6 +152,15 @@ class VgfRepr {
    */
   void free_vgf();
 
+  // Terminal per-representation state. Some execution/cleanup failures
+  // synchronously free this VgfRepr's Vulkan resources while the runtime
+  // still owns the DelegateHandle. Such a handle remains destructible but
+  // must never be executed again.
+  bool is_execution_valid() const {
+    return execution_valid_;
+  }
+  void invalidate_execution_state();
+
   /*
    * input and outputs from the VGF - these are memory mapped and populated
    * with the EValues coming the backend execute call
@@ -201,6 +221,20 @@ class VgfRepr {
     return host_memory_import_capabilities_;
   }
 
+  // Expose only isolated VGF-owned tensor boundary allocations. The caller
+  // never owns the returned mapping. Cache maintenance is explicit because
+  // HOST_VISIBLE memory is not necessarily HOST_COHERENT on mobile GPUs.
+  executorch::runtime::Error get_owned_mapped_boundary_buffer(
+      bool input,
+      size_t argument_index,
+      VgfMappedBoundaryBuffer* buffer) const;
+  bool is_owned_mapped_io_pointer(
+      size_t io_index,
+      const void* pointer,
+      size_t logical_nbytes) const;
+  bool flush_io_host_writes(size_t io_index);
+  bool invalidate_io_host_reads(size_t io_index);
+
   // Resource-management seam for execute().
   VgfZeroCopyImportResult try_import_zero_copy_candidate(
       size_t io_index,
@@ -217,9 +251,24 @@ class VgfRepr {
   bool activate_imported_binding(size_t io_index);
   bool activate_owned_binding(size_t io_index);
   bool is_import_active(size_t io_index) const;
+
+  // Host pointers passed through EValue are caller-owned and are guaranteed
+  // only for the duration of execute(). Restore owned descriptor bindings and
+  // release every imported Vulkan object before control returns to the caller.
   bool flush_boundary_bindings(
       executorch::runtime::EventTracer* event_tracer = nullptr);
-
+  // Execution-scoped host-import cleanup. On every normal return,
+  // no caller-owned EValue storage remains imported by Vulkan. false means
+  // this VgfRepr was synchronously torn down, marked invalid, and is no
+  // longer reusable. If
+  // GPU completion cannot be established, cleanup fail-stops instead of
+  // returning while a live import may still reference caller memory.
+  bool release_execution_zero_copy_imports();
+  // End the lifetime of every host allocation imported for the current
+  // execute() call. Any imported descriptor is first restored to the owned
+  // tensor view; imported Vulkan objects are destroyed only after no queued
+  // work can still use them. The next execute_vgf() re-records the command
+  // buffer through the existing dirty-binding path.
   ~VgfRepr() {
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
@@ -231,6 +280,9 @@ class VgfRepr {
   }
 
  private:
+  // false after terminal cleanup; the DelegateHandle remains valid only
+  // for destroy().
+  bool execution_valid_ = true;
   // Basic Vulkan objects passed to us and re-used
   VkInstance vk_instance;
   VkPhysicalDevice vk_physical;

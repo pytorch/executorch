@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 import re
 from typing import Any, List
 
@@ -17,6 +18,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     INT,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
+    OPT_AT_SCALAR,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -24,6 +26,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_STRING,
     OPT_TENSOR_LIST,
     STRING,
 )
@@ -31,7 +34,7 @@ from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
-from torchgen.model import Argument, NativeFunction
+from torchgen.model import Argument, BaseTy, BaseType, NativeFunction, OptionalType
 
 ##########################
 ## Test Suite Generation ##
@@ -57,7 +60,7 @@ catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {{
 
 
 def init_list_str(pylist: Any) -> str:
-    if pylist == "[]":
+    if pylist == "[]" or pylist == [] or pylist == ():
         return "{" + "}"
 
     if not isinstance(pylist, (list, tuple)):
@@ -78,6 +81,8 @@ def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
         return inputs[i]
     else:
         assert arg.default is not None
+        if arg.type in (BaseType(BaseTy.str), OptionalType(BaseType(BaseTy.str))):
+            return ast.literal_eval(arg.default)
         return arg.default
 
 
@@ -199,6 +204,10 @@ class CorrectnessTestGen:
                 ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == AT_SCALAR:
             ret_str += f"{data};"
+        elif cpp_type == OPT_AT_SCALAR:
+            ret_str += (
+                "std::nullopt;" if str(data) == "None" else f"at::Scalar({data});"
+            )
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
         elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF:
@@ -219,6 +228,10 @@ class CorrectnessTestGen:
                 ret_str += f"{str(data)};"
         elif cpp_type == STRING:
             ret_str += f'std::string_view("{data}");'
+        elif cpp_type == OPT_STRING:
+            ret_str += (
+                "std::nullopt;" if data is None else f'std::string_view("{data}");'
+            )
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT
@@ -300,6 +313,17 @@ at::Tensor make_casted_randint_tensor(
   // For some reason range needs to be passed in as explicit variables
   // otherwise 0s will be generated.
   return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
+at::Tensor make_nonzero_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int64_t low = 1,
+    int64_t high = 20) {{
+  // Draws from [low, high), replacing zeros so the values can be divisors.
+  const at::Tensor values =
+      at::randint(low, high, sizes, at::device(at::kCPU).dtype(dtype));
+  return values.masked_fill(values == 0, 1);
 }}
 
 at::Tensor make_rand_tensor(

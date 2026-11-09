@@ -98,6 +98,28 @@ TEST(InsertPrepackTest, PrepacksConstantSliceInput) {
       method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
 }
 
+TEST(InsertPrepackTest, PrepacksConstantToCopyInput) {
+  Method method = make_method();
+  method.graph.node(2).target = "torch.ops.aten._to_copy.default";
+
+  EXPECT_EQ(insert_prepack_nodes(method), 1);
+  EXPECT_EQ(
+      method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
+}
+
+TEST(InsertPrepackTest, PrepacksConstantCloneAndClampInputs) {
+  for (const char* target :
+       {"torch.ops.aten.clone.default", "torch.ops.aten.clamp.default"}) {
+    SCOPED_TRACE(target);
+    Method method = make_method();
+    method.graph.node(2).target = target;
+
+    EXPECT_EQ(insert_prepack_nodes(method), 1);
+    EXPECT_EQ(
+        method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
+  }
+}
+
 TEST(InsertPrepackTest, LeavesSelfPrepackingOpUntouched) {
   Method method = make_method();
   method.graph.node(2).target = "torch.ops.aten.linear.default";
