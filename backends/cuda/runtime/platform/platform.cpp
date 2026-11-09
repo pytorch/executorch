@@ -17,11 +17,16 @@
 #ifdef _WIN32
 #include <malloc.h>
 #include <windows.h>
+#include <cstdio>
+#include <random>
 #include <string>
 #else // Posix
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #endif
 
 #ifdef _WIN32
@@ -135,6 +140,100 @@ executorch::runtime::Error close_library(void* lib_handle) {
   }
 #endif
   return executorch::runtime::Error::Ok;
+}
+
+executorch::runtime::Result<std::filesystem::path> write_temp_library(
+    const void* data,
+    size_t size) {
+  std::error_code temp_dir_error;
+  const std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path(temp_dir_error);
+  if (temp_dir_error) {
+    ET_LOG(
+        Error,
+        "Failed to find the temporary directory: %s",
+        temp_dir_error.message().c_str());
+    return executorch::runtime::Error::AccessFailed;
+  }
+  const char* bytes = static_cast<const char*>(data);
+  bool failed = false;
+#ifdef _WIN32
+  std::random_device random;
+  char name[40];
+  snprintf(
+      name, sizeof(name), "executorch_cuda_%08x%08x.so", random(), random());
+  const std::filesystem::path path = temp_dir / name;
+  HANDLE file = CreateFileW(
+      path.c_str(),
+      GENERIC_WRITE,
+      0,
+      nullptr,
+      CREATE_NEW,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    const DWORD err = GetLastError();
+    ET_LOG(
+        Error,
+        "Failed to create a temporary file with error %lu: %s",
+        err,
+        format_win_error(err).c_str());
+    return executorch::runtime::Error::AccessFailed;
+  }
+  // WriteFile takes a 32-bit length, so write in chunks.
+  constexpr DWORD kMaxChunk = 1u << 30;
+  while (size > 0 && !failed) {
+    const DWORD chunk = size > kMaxChunk ? kMaxChunk : static_cast<DWORD>(size);
+    DWORD written = 0;
+    if (WriteFile(file, bytes, chunk, &written, nullptr) && written > 0) {
+      bytes += written;
+      size -= written;
+    } else {
+      failed = true;
+    }
+  }
+  if (!CloseHandle(file)) {
+    failed = true;
+  }
+  if (failed) {
+    const DWORD err = GetLastError();
+    ET_LOG(
+        Error,
+        "Failed to write a temporary file with error %lu: %s",
+        err,
+        format_win_error(err).c_str());
+    DeleteFileW(path.c_str());
+    return executorch::runtime::Error::AccessFailed;
+  }
+  return path;
+#else
+  // mkostemps replaces the Xs with random characters and creates the file with
+  // O_EXCL and mode 0600, retrying if the name is taken.
+  std::string path = (temp_dir / "executorch_cuda_XXXXXX.so").string();
+  const int fd = mkostemps(path.data(), /*suffixlen=*/3, O_CLOEXEC);
+  if (fd == -1) {
+    ET_LOG(Error, "Failed to create %s: %s", path.c_str(), strerror(errno));
+    return executorch::runtime::Error::AccessFailed;
+  }
+  while (size > 0 && !failed) {
+    const ssize_t written = write(fd, bytes, size);
+    if (written > 0) {
+      bytes += written;
+      size -= static_cast<size_t>(written);
+    } else if (written == 0 || errno != EINTR) {
+      failed = true;
+    }
+  }
+  if (close(fd) != 0) {
+    failed = true;
+  }
+  if (failed) {
+    ET_LOG(Error, "Failed to write %s: %s", path.c_str(), strerror(errno));
+    unlink(path.c_str());
+    return executorch::runtime::Error::AccessFailed;
+  }
+  return std::filesystem::path(path);
+#endif
 }
 
 executorch::runtime::Result<void*> get_function(
