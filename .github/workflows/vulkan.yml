@@ -119,17 +119,15 @@ jobs:
         done
 
         # Operator coverage (mirrors test-vulkan-operators-linux, on real hardware).
-        # etvk_bench runs GPU microbenchmarks that rely on GPU timestamp queries,
-        # so it requires the hardware selected above.
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark/build_and_run.sh
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=add
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q4gsw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=choose_qparams_per_row --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/qdq --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/clone --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/binary --set=correctness
+        # etvk_ops_bench validates each operator's correctness cases on the GPU
+        # selected above.
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
+        for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+            --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
+        done
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build vulkan_sdpa_av_test
 

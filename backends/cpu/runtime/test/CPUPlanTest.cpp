@@ -7,6 +7,8 @@
 #include <executorch/backends/cpu/runtime/CPUPlan.h>
 #include <executorch/backends/cpu/runtime/providers/reference/ReferenceProvider.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
 
 #include <gtest/gtest.h>
 
@@ -15,10 +17,57 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
+
+struct TraceRun {
+  std::vector<std::string> delegates;
+  std::vector<std::string> metadata;
+  std::vector<std::string> kernels;
+};
+
+std::vector<TraceRun> read_trace(etdump::ETDumpGen& tracer) {
+  const auto result = tracer.get_etdump_data();
+  std::unique_ptr<void, decltype(&free)> data(result.buf, &free);
+  std::vector<TraceRun> runs;
+  if (!data) {
+    return runs;
+  }
+  size_t size = 0;
+  const auto run_data =
+      etdump_ETDump_run_data(etdump_ETDump_as_root_with_identifier(
+          flatbuffers_read_size_prefix(result.buf, &size),
+          etdump_ETDump_file_identifier));
+  for (size_t run = 0; run < etdump_RunData_vec_len(run_data); ++run) {
+    auto& trace = runs.emplace_back();
+    const auto events =
+        etdump_RunData_events(etdump_RunData_vec_at(run_data, run));
+    for (size_t index = 0; index < etdump_Event_vec_len(events); ++index) {
+      const auto event =
+          etdump_Event_profile_event(etdump_Event_vec_at(events, index));
+      EXPECT_LE(
+          etdump_ProfileEvent_start_time(event),
+          etdump_ProfileEvent_end_time(event));
+      if (const auto name = etdump_ProfileEvent_delegate_debug_id_str(event)) {
+        trace.delegates.emplace_back(name);
+        const auto bytes = etdump_ProfileEvent_delegate_debug_metadata(event);
+        trace.metadata.emplace_back(
+            reinterpret_cast<const char*>(bytes),
+            flatbuffers_uint8_vec_len(bytes));
+      } else {
+        trace.kernels.emplace_back(etdump_ProfileEvent_name(event));
+      }
+    }
+  }
+  return runs;
+}
 
 class CPUPlanTest : public ::testing::Test {
  protected:
@@ -50,6 +99,17 @@ class CPUPlanTest : public ::testing::Test {
         {"self", ptn::TensorArg{in}}, {"approximate", ptn::StringArg{"tanh"}}};
     node.outputs = {{ptn::OutputValueKind::Tensor, out, {}}};
     graph.nodes.push_back(std::move(node));
+  }
+  void sum_gelu_out() {
+    value("x", true);
+    value("y", true);
+    value("sum");
+    value("gelu");
+    value("out");
+    add("sum", 0, 1, 2);
+    gelu("gelu", 2, 3);
+    add("out", 2, 3, 4);
+    finish({4});
   }
   void finish(std::vector<ptn::ValueId> outputs) {
     graph.output_ids = std::move(outputs);
@@ -85,6 +145,421 @@ class CPUPlanTest : public ::testing::Test {
 
 // Cppcheck cannot expand GTest fixture macros without build headers.
 // cppcheck-suppress-begin syntaxError
+class XNNLayoutTest : public CPUPlanTest {
+ protected:
+  ptn::ValueId tensor(
+      std::vector<int64_t> shape,
+      ptn::ValueRole role = ptn::ValueRole::Intermediate) {
+    const auto id = static_cast<ptn::ValueId>(graph.values.size());
+    graph.values.emplace_back(
+        std::to_string(id), ptn::ScalarType::Float, std::move(shape));
+    graph.values.back().role = role;
+    if (role == ptn::ValueRole::UserInput) {
+      graph.input_ids.push_back(id);
+    }
+    return id;
+  }
+
+  ptn::ValueId operation(
+      const char* target,
+      std::vector<ptn::Argument> arguments,
+      std::vector<int64_t> shape) {
+    const auto output = tensor(std::move(shape));
+    ptn::Node node;
+    node.name = "layout_" + std::to_string(graph.nodes.size());
+    node.target = target;
+    for (auto& argument : arguments) {
+      node.inputs.push_back({"", std::move(argument)});
+    }
+    node.outputs = {{ptn::OutputValueKind::Tensor, output, {}}};
+    graph.nodes.push_back(std::move(node));
+    return output;
+  }
+
+  ptn::ValueId convolution(
+      ptn::ValueId input,
+      ptn::ValueId weight,
+      ptn::ValueId bias,
+      int64_t groups = 1) {
+    auto shape = graph.value(input).tensor_meta().sizes;
+    const auto filter = graph.value(weight).tensor_meta().sizes;
+    shape[1] = filter[0];
+    return operation(
+        "torch.ops.aten.convolution.default",
+        {ptn::TensorArg{input},
+         ptn::TensorArg{weight},
+         bias == ptn::kInvalid ? ptn::Argument(ptn::NoneArg{})
+                               : ptn::Argument(ptn::TensorArg{bias}),
+         ptn::IntListArg{{1, 1}, {}},
+         ptn::IntListArg{{filter[2] / 2, filter[3] / 2}, {}},
+         ptn::IntListArg{{1, 1}, {}},
+         ptn::BoolArg{false},
+         ptn::IntListArg{{0, 0}, {}},
+         ptn::IntArg{groups}},
+        shape);
+  }
+
+  ptn::ValueId activation(const char* target, ptn::ValueId input) {
+    return operation(
+        target,
+        {ptn::TensorArg{input}},
+        graph.value(input).tensor_meta().sizes);
+  }
+
+  ptn::ValueId binary(
+      const char* target,
+      ptn::ValueId lhs,
+      ptn::ValueId rhs,
+      const std::vector<int64_t>& shape) {
+    std::vector<ptn::Argument> arguments{
+        ptn::TensorArg{lhs}, ptn::TensorArg{rhs}};
+    if (std::string_view(target) == "torch.ops.aten.add.Tensor") {
+      arguments.emplace_back(ptn::IntArg{1});
+    }
+    return operation(target, std::move(arguments), shape);
+  }
+
+  void check(
+      std::vector<ptn::ValueId> outputs,
+      const std::vector<std::string>& providers = {"XNNPACK"}) {
+    finish(std::move(outputs));
+    alignas(128) std::array<uint8_t, 256 * 1024> memory{};
+    MemoryAllocator test_allocator(memory.size(), memory.data());
+    std::vector<Buffer> reference_buffers(graph.values.size());
+    for (size_t id = 0; id < graph.values.size(); ++id) {
+      const auto role = graph.values[id].role;
+      if (role != ptn::ValueRole::Parameter &&
+          role != ptn::ValueRole::ConstantTensor &&
+          role != ptn::ValueRole::Buffer) {
+        continue;
+      }
+      const auto bytes = tensor_bytes(graph.values[id]).get();
+      auto constant = allocate_buffer(test_allocator, bytes);
+      auto reference_constant = allocate_buffer(test_allocator, bytes);
+      ASSERT_TRUE(constant.ok());
+      ASSERT_TRUE(reference_constant.ok());
+      buffers[id] = constant.get();
+      reference_buffers[id] = reference_constant.get();
+      auto* data = static_cast<float*>(constant->data);
+      for (size_t index = 0; index < graph.values[id].tensor_meta().numel();
+           ++index) {
+        data[index] = (float((index * 7 + id) % 17) - 8) / 32;
+      }
+      std::memcpy(reference_constant->data, constant->data, bytes);
+    }
+    CPUPlan plan(graph, buffers, configuration, execution);
+    auto reference_configuration = configuration;
+    reference_configuration.preferences = {{"Reference", ""}};
+    reference_configuration.force = true;
+    CPUPlan reference(
+        graph, reference_buffers, reference_configuration, ExecutionContext{});
+    ASSERT_EQ(reference.select(), Error::Ok);
+    ASSERT_EQ(plan.select(), Error::Ok);
+    ASSERT_EQ(plan.steps().size(), providers.size());
+    for (size_t index = 0; index < providers.size(); ++index) {
+      EXPECT_EQ(plan.steps()[index].provider->name(), providers[index]);
+    }
+    for (auto id : preparation_only_constants) {
+      EXPECT_FALSE(plan.can_release_constant(id));
+    }
+    ASSERT_EQ(plan.prepare(test_allocator), Error::Ok);
+    ASSERT_EQ(reference.prepare(test_allocator), Error::Ok);
+    for (auto id : runtime_constants) {
+      EXPECT_FALSE(plan.can_release_constant(id)) << id;
+    }
+    for (auto id : preparation_only_constants) {
+      ASSERT_TRUE(plan.can_release_constant(id)) << id;
+      std::memset(buffers[id].data, 0xFF, buffers[id].readable_bytes);
+      buffers[id] = {};
+    }
+    auto binding_ids = graph.input_ids;
+    for (auto id : graph.output_ids) {
+      const auto role = graph.value(id).role;
+      if (role != ptn::ValueRole::Parameter &&
+          role != ptn::ValueRole::ConstantTensor &&
+          role != ptn::ValueRole::Buffer) {
+        binding_ids.push_back(id);
+      }
+    }
+    std::vector<Buffer> originals;
+    std::vector<Buffer> replacements;
+    for (auto id : binding_ids) {
+      originals.push_back(buffers[id]);
+      auto replacement =
+          allocate_buffer(test_allocator, tensor_bytes(graph.value(id)).get());
+      ASSERT_TRUE(replacement.ok());
+      replacements.push_back(replacement.get());
+    }
+    for (int run = 0; run < 3; ++run) {
+      for (size_t binding = 0; binding < binding_ids.size(); ++binding) {
+        buffers[binding_ids[binding]] =
+            run == 1 ? replacements[binding] : originals[binding];
+      }
+      for (size_t input = 0; input < graph.input_ids.size(); ++input) {
+        const auto id = graph.input_ids[input];
+        const auto count = graph.value(id).tensor_meta().numel();
+        for (size_t index = 0; index < count; ++index) {
+          const float value =
+              (float((index * 13 + input) % 31) - 15) / 8 + float(run) / 4;
+          static_cast<float*>(buffers[id].data)[index] = value;
+          static_cast<float*>(reference_buffers[id].data)[index] = value;
+        }
+      }
+      ASSERT_EQ(plan.execute(execution), Error::Ok);
+      ASSERT_EQ(reference.execute(ExecutionContext{}), Error::Ok);
+      for (auto id : graph.output_ids) {
+        SCOPED_TRACE(id);
+        EXPECT_TRUE(graph.value(id).tensor_meta().is_contiguous());
+        const auto* actual = static_cast<const float*>(buffers[id].data);
+        const auto* expected =
+            static_cast<const float*>(reference_buffers[id].data);
+        for (size_t index = 0; index < graph.value(id).tensor_meta().numel();
+             ++index) {
+          EXPECT_NEAR(
+              actual[index],
+              expected[index],
+              2e-5f * std::max(1.0f, std::abs(expected[index])))
+              << index;
+        }
+      }
+    }
+    for (auto id : runtime_constants) {
+      const bool required = std::any_of(
+          plan.steps().begin(), plan.steps().end(), [id](const auto& step) {
+            return std::any_of(
+                step.storage.values.begin(),
+                step.storage.values.end(),
+                [id](const auto& value) {
+                  return value.id == id && !value.preparation_only;
+                });
+          });
+      if (required) {
+        const auto original = buffers[id];
+        buffers[id] = {};
+        EXPECT_EQ(plan.execute(execution), Error::InvalidArgument) << id;
+        buffers[id] = original;
+      }
+    }
+  }
+
+  std::vector<ptn::ValueId> preparation_only_constants;
+  std::vector<ptn::ValueId> runtime_constants;
+};
+
+TEST_F(XNNLayoutTest, ConvolutionPackedConstantsSurvivePoisoningAndRebinding) {
+  struct Case {
+    int64_t channels, output_channels, groups, kernel;
+  };
+  const std::array<Case, 7> cases{
+      {{3, 3, 1, 3},
+       {3, 3, 1, 1},
+       {3, 3, 3, 3},
+       {3, 3, 3, 1},
+       {1, 1, 1, 3},
+       {4, 4, 2, 3},
+       {3, 6, 3, 3}}};
+  for (const auto& [channels, output_channels, groups, kernel] : cases) {
+    for (const bool with_bias : {false, true}) {
+      SCOPED_TRACE(::testing::PrintToString(std::make_tuple(
+          channels, output_channels, groups, kernel, with_bias)));
+      graph = {};
+      buffers.clear();
+      const auto input = tensor({2, channels, 4, 5}, ptn::ValueRole::UserInput);
+      const auto weight = tensor(
+          {output_channels, channels / groups, kernel, kernel},
+          ptn::ValueRole::Parameter);
+      const auto bias = with_bias
+          ? tensor({output_channels}, ptn::ValueRole::Buffer)
+          : ptn::kInvalid;
+      preparation_only_constants = {weight};
+      if (with_bias) {
+        preparation_only_constants.push_back(bias);
+      }
+      check({convolution(input, weight, bias, groups)});
+    }
+  }
+}
+
+TEST_F(XNNLayoutTest, ConvolutionSharesPackedWeightsAndBiasAcrossRegions) {
+  for (const bool depthwise : {false, true}) {
+    for (const int64_t kernel : {1, 3}) {
+      SCOPED_TRACE(::testing::PrintToString(std::make_pair(depthwise, kernel)));
+      graph = {};
+      buffers.clear();
+      const auto input = tensor({2, 3, 4, 5}, ptn::ValueRole::UserInput);
+      const auto weight = tensor(
+          {3, depthwise ? 1 : 3, kernel, kernel},
+          ptn::ValueRole::ConstantTensor);
+      const auto bias = tensor({3}, ptn::ValueRole::Parameter);
+      const auto first = convolution(input, weight, bias, depthwise ? 3 : 1);
+      const auto middle = operation(
+          "torch.ops.aten.gelu.default",
+          {ptn::TensorArg{first}, ptn::StringArg{"tanh"}},
+          {2, 3, 4, 5});
+      preparation_only_constants = {weight, bias};
+      check(
+          {first, convolution(middle, weight, bias, depthwise ? 3 : 1)},
+          {"XNNPACK", "Reference", "XNNPACK"});
+    }
+  }
+}
+
+TEST_F(XNNLayoutTest, ConvolutionAndLinearSharePackedBias) {
+  const auto input = tensor({2, 3, 4, 5}, ptn::ValueRole::UserInput);
+  const auto weight = tensor({3, 3, 3, 3}, ptn::ValueRole::Parameter);
+  const auto bias = tensor({3}, ptn::ValueRole::ConstantTensor);
+  const auto first = convolution(input, weight, bias);
+  const auto linear_weight = tensor({3, 5}, ptn::ValueRole::Parameter);
+  const auto output = operation(
+      "torch.ops.aten.linear.default",
+      {ptn::TensorArg{first},
+       ptn::TensorArg{linear_weight},
+       ptn::TensorArg{bias}},
+      {2, 3, 4, 3});
+  preparation_only_constants = {weight, bias, linear_weight};
+  check({first, output});
+}
+
+TEST_F(XNNLayoutTest, ConvolutionRetainsMixedPackedAndUnpackedConsumers) {
+  for (const std::string use :
+       {"unary",
+        "nhwc_binary",
+        "linear_input",
+        "conv_input",
+        "bias_binary",
+        "bias_linear_input",
+        "reference",
+        "output"}) {
+    SCOPED_TRACE(use);
+    graph = {};
+    buffers.clear();
+    const std::vector<int64_t> shape{3, 3, 3, 3};
+    const auto input = tensor(shape, ptn::ValueRole::UserInput);
+    const auto weight = tensor(shape, ptn::ValueRole::Parameter);
+    const auto bias = tensor({3}, ptn::ValueRole::ConstantTensor);
+    const auto first = convolution(input, weight, bias);
+    std::vector<ptn::ValueId> outputs{first};
+    std::vector<std::string> providers{"XNNPACK"};
+    preparation_only_constants = {bias};
+    runtime_constants = {weight};
+    if (use == "unary") {
+      outputs.push_back(activation("torch.ops.aten.relu.default", weight));
+      providers.emplace_back("XNNPACK");
+    } else if (use == "nhwc_binary") {
+      outputs.push_back(
+          binary("torch.ops.aten.add.Tensor", first, weight, shape));
+    } else if (use == "linear_input") {
+      const auto linear_weight = tensor({3, 3}, ptn::ValueRole::Parameter);
+      preparation_only_constants.push_back(linear_weight);
+      outputs.push_back(operation(
+          "torch.ops.aten.linear.default",
+          {ptn::TensorArg{weight},
+           ptn::TensorArg{linear_weight},
+           ptn::TensorArg{bias}},
+          shape));
+      providers.emplace_back("XNNPACK");
+    } else if (use == "conv_input") {
+      outputs.push_back(convolution(weight, weight, bias));
+      providers.emplace_back("XNNPACK");
+    } else if (use == "bias_binary") {
+      outputs.push_back(
+          binary("torch.ops.aten.add.Tensor", first, bias, shape));
+      preparation_only_constants = {weight};
+      runtime_constants = {bias};
+    } else if (use == "bias_linear_input") {
+      const auto linear_weight = tensor({3, 3}, ptn::ValueRole::Parameter);
+      outputs.push_back(operation(
+          "torch.ops.aten.linear.default",
+          {ptn::TensorArg{bias},
+           ptn::TensorArg{linear_weight},
+           ptn::TensorArg{bias}},
+          {3}));
+      providers.emplace_back("XNNPACK");
+      preparation_only_constants = {weight, linear_weight};
+      runtime_constants = {bias};
+    } else if (use == "reference") {
+      for (auto id : {weight, bias}) {
+        outputs.push_back(operation(
+            "torch.ops.aten.gelu.default",
+            {ptn::TensorArg{id}, ptn::StringArg{"tanh"}},
+            graph.value(id).tensor_meta().sizes));
+        providers.emplace_back("Reference");
+      }
+      preparation_only_constants.clear();
+      runtime_constants = {weight, bias};
+    } else {
+      outputs.push_back(weight);
+      outputs.push_back(bias);
+      preparation_only_constants.clear();
+      runtime_constants = {weight, bias};
+    }
+    check(outputs, providers);
+  }
+}
+
+TEST_F(XNNLayoutTest, DepthwiseRetainsWeightUsedByPrivateBroadcastTranspose) {
+  const auto input = tensor({3, 3, 3, 3}, ptn::ValueRole::UserInput);
+  const auto weight = tensor({3, 1, 3, 3}, ptn::ValueRole::Parameter);
+  const auto bias = tensor({3}, ptn::ValueRole::ConstantTensor);
+  const auto first = convolution(input, weight, bias, 3);
+  const auto output =
+      binary("torch.ops.aten.mul.Tensor", first, weight, {3, 3, 3, 3});
+  const auto last = convolution(output, weight, bias, 3);
+  preparation_only_constants = {bias};
+  runtime_constants = {weight};
+  check({first, last});
+}
+
+TEST_F(XNNLayoutTest, DepthwiseRetainsSharedBiasAndConstantOutputs) {
+  for (const bool expose_constants : {false, true}) {
+    SCOPED_TRACE(expose_constants);
+    graph = {};
+    buffers.clear();
+    const std::vector<int64_t> shape{2, 3, 4, 3};
+    const auto input = tensor(shape, ptn::ValueRole::UserInput);
+    const auto weight = tensor({3, 1, 3, 3}, ptn::ValueRole::Parameter);
+    const auto bias = tensor({3}, ptn::ValueRole::ConstantTensor);
+    const auto first = convolution(input, weight, bias, 3);
+    if (expose_constants) {
+      preparation_only_constants.clear();
+      runtime_constants = {weight, bias};
+      check({first, weight, bias});
+    } else {
+      preparation_only_constants = {weight};
+      runtime_constants = {bias};
+      check({binary("torch.ops.aten.add.Tensor", first, bias, shape)});
+    }
+  }
+}
+
+TEST_F(XNNLayoutTest, BmmReleasesOnlyAConstantRightHandSide) {
+  const std::vector<int64_t> shape{2, 3, 3};
+  for (const std::string use : {"rhs", "lhs", "both"}) {
+    SCOPED_TRACE(use);
+    graph = {};
+    buffers.clear();
+    const auto input = tensor(shape, ptn::ValueRole::UserInput);
+    const auto constant = tensor(shape, ptn::ValueRole::Parameter);
+    const auto lhs = use == "rhs" ? input : constant;
+    const auto rhs = use == "lhs" ? input : constant;
+    auto output = operation(
+        "torch.ops.aten.bmm.default",
+        {ptn::TensorArg{lhs}, ptn::TensorArg{rhs}},
+        shape);
+    if (use == "both") {
+      output = binary("torch.ops.aten.add.Tensor", output, input, shape);
+    }
+    preparation_only_constants.clear();
+    runtime_constants.clear();
+    if (use == "rhs") {
+      preparation_only_constants.push_back(constant);
+    } else {
+      runtime_constants.push_back(constant);
+    }
+    check({output});
+  }
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
@@ -392,6 +867,168 @@ TEST_F(CPUPlanTest, RetainsConstantsWithRuntimeConsumersOrGraphOutputs) {
       EXPECT_EQ(plan.execute(execution), Error::InvalidArgument);
     }
   }
+}
+
+TEST_F(CPUPlanTest, TracesEveryStepAndXNNPACKOperatorOnEachExecution) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  sum_gelu_out();
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (int run = 0; run < 2; ++run) {
+    tracer.create_event_block("forward");
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+  }
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 2);
+  const auto& names = runs[0].delegates;
+  EXPECT_EQ(
+      runs[0].kernels, (std::vector<std::string>{"native_call_gelu.out"}));
+  ASSERT_EQ(names.size(), 5);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:sum");
+  EXPECT_EQ(names[2], "Reference/registry:gelu");
+  EXPECT_EQ(names[3], "XNNPACK/subgraph:out");
+  const auto suffix = names[1].rfind(" #1");
+  ASSERT_EQ(suffix, names[1].size() - 3) << names[1];
+  EXPECT_EQ(names[4], names[1].substr(0, suffix) + " #2");
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  const std::string add_shapes = R"({"inputs":[[11],[11]],"outputs":[[11]]})";
+#else
+  const std::string add_shapes;
+#endif
+  EXPECT_EQ(runs[0].metadata[1], add_shapes);
+  EXPECT_EQ(runs[0].metadata[4], add_shapes);
+  EXPECT_EQ(runs[1].delegates, names);
+  EXPECT_EQ(runs[1].metadata, runs[0].metadata);
+}
+
+TEST_F(CPUPlanTest, MethodOnlyProfilingTracesStepsWithoutXNNPACKOperators) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  sum_gelu_out();
+  etdump::ETDumpGen tracer;
+  tracer.set_event_tracer_profiling_level(
+      EventTracerProfilingLevel::kProfileMethodOnly);
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  EXPECT_EQ(
+      runs[0].delegates,
+      (std::vector<std::string>{
+          "XNNPACK/subgraph:sum",
+          "Reference/registry:gelu",
+          "XNNPACK/subgraph:out"}));
+  EXPECT_TRUE(runs[0].kernels.empty());
+}
+
+TEST_F(CPUPlanTest, XNNPACKRunSubmitsTraceLeftOpenByPreviousRun) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  value("x", true);
+  value("y", true);
+  value("sum");
+  add("sum", 0, 1, 2);
+  finish({2});
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  auto& executable = *plan.steps()[0].executable;
+  ASSERT_EQ(executable.run(execution), Error::Ok);
+  ASSERT_EQ(executable.run(execution), Error::Ok);
+  executable.submit_trace();
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  const auto& names = runs[0].delegates;
+  ASSERT_EQ(names.size(), 4);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:sum");
+  EXPECT_EQ(names[2], names[1]);
+  EXPECT_EQ(names[3], names[1]);
+}
+
+TEST_F(CPUPlanTest, StepTraceNameCountsTheRegionsRemainingNodes) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  value("x", true);
+  value("y", true);
+  value("sum");
+  value("out");
+  add("sum", 0, 1, 2);
+  add("out", 2, 1, 3);
+  finish({3});
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].trace_name, "XNNPACK/subgraph:sum+1");
+}
+
+TEST_F(XNNLayoutTest, TracesEachXNNPACKOperatorWithItsOwnShapes) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  const auto x = tensor({2, 3}, ptn::ValueRole::UserInput);
+  const auto y = tensor({1, 3}, ptn::ValueRole::UserInput);
+  const auto sum = binary("torch.ops.aten.add.Tensor", x, y, {2, 3});
+  // XNNPACK merges the reshapes into one operator, so events follow XNNPACK's
+  // operators rather than the region's nodes.
+  const auto flat = operation(
+      "torch.ops.aten.view_copy.default",
+      {ptn::TensorArg{sum}, ptn::IntListArg{{6}, {}}},
+      {6});
+  const auto tall = operation(
+      "torch.ops.aten.view_copy.default",
+      {ptn::TensorArg{flat}, ptn::IntListArg{{3, 2}, {}}},
+      {3, 2});
+  const auto out = operation(
+      "torch.ops.aten.permute_copy.default",
+      {ptn::TensorArg{tall}, ptn::IntListArg{{1, 0}, {}}},
+      {2, 3});
+  finish({out});
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  const auto& names = runs[0].delegates;
+  ASSERT_EQ(names.size(), 4);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:layout_0+3");
+  EXPECT_EQ(names[1].rfind("Add", 0), 0) << names[1];
+  EXPECT_EQ(names[2].rfind("Static Reshape", 0), 0) << names[2];
+  EXPECT_EQ(names[3].rfind("Transpose", 0), 0) << names[3];
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  const std::vector<std::string> metadata{
+      "",
+      R"({"inputs":[[2,3],[1,3]],"outputs":[[2,3]]})",
+      R"({"inputs":[[2,3]],"outputs":[[3,2]]})",
+      R"({"inputs":[[3,2]],"outputs":[[2,3]]})"};
+#else
+  const std::vector<std::string> metadata(4);
+#endif
+  EXPECT_EQ(runs[0].metadata, metadata);
 }
 
 TEST_F(

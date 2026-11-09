@@ -168,6 +168,36 @@ TEST(BenchmarkReference, GroupedConvolutionHonorsStridePaddingAndDilation) {
   EXPECT_EQ(result.at("y"), (std::vector<double>{5, 11, 5, 19, 19, -41}));
 }
 
+TEST(BenchmarkReference, ConvWithClampClampsConvolutionOutput) {
+  const Json spec = {
+      {"operator", "et_vk.conv_with_clamp.default"},
+      {"args",
+       {{{"tensor", "x"}},
+        {{"tensor", "w"}},
+        {{"tensor", "b"}},
+        {{"int_list", {1, 1}}},
+        {{"int_list", {0, 0}}},
+        {{"int_list", {1, 1}}},
+        {{"bool", false}},
+        {{"int_list", {0, 0}}},
+        {{"int", 1}},
+        {{"float", -0.25}},
+        {{"float", 0.5}},
+        {{"tensor", "y"}}}},
+      {"tensors",
+       {{"x", tensor({1, 1, 1, 3})},
+        {"w", tensor({1, 1, 1, 1})},
+        {"b", tensor({1})},
+        {"y", tensor({1, 1, 1, 3})}}}};
+  const auto result = reference_outputs(
+      spec,
+      {},
+      {{"x", bytes<float>({-1, 0.25, 2})},
+       {"w", bytes<float>({1})},
+       {"b", bytes<float>({0})}});
+  EXPECT_EQ(result.at("y"), (std::vector<double>{-0.25, 0.25, 0.5}));
+}
+
 TEST(BenchmarkReference, Q4LinearUnpacksNibblesAndUsesPerGroupScales) {
   const Json spec = {
       {"operator", "et_vk.q4gsw_linear.default"},
@@ -246,7 +276,7 @@ TEST(BenchmarkReference, Q8ConvolutionAppliesZeroPointsScalesBiasAndClamping) {
 }
 TEST(BenchmarkReference, RawAdditionBroadcastsAndAppliesAlpha) {
   const Json spec = {
-      {"shader", "binary_add_texture3d_float"},
+      {"shader", "binary_op_texture3d_float"},
       {"bindings",
        {{{"tensor", "out"}, {"access", "write"}},
         {{"tensor", "a"}},

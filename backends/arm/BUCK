@@ -85,6 +85,7 @@ fbcode_target(
         "ethosu/__init__.py",
         "ethosu/backend.py",
         "ethosu/compile_spec.py",
+        "ethosu/parse_delegate_metadata.py",
         "ethosu/partitioner.py",
     ],
     deps = [

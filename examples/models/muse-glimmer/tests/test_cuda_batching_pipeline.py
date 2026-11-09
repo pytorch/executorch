@@ -174,6 +174,22 @@ class BatchingStepForwardTest(unittest.TestCase):
         self.assertEqual(manifest["max_write"], 8)
         self.assertEqual(len(manifest["layers"]), TINY_CONFIG.n_layers)
 
+    def test_cuda_batching_rejects_vision_fp32_mm(self) -> None:
+        from executorch.examples.models.muse_glimmer.export.export_solo import (
+            export_and_lower,
+        )
+
+        model = build_random_tiny_model()
+        with self.assertRaisesRegex(ValueError, "vision_fp32_mm"):
+            export_and_lower(
+                model,
+                TINY_CONFIG,
+                ".",
+                backend="cuda",
+                use_offgraph_kv_cache=True,
+                vision_fp32_mm="triton",
+            )
+
 
 class BatchingExportTest(unittest.TestCase):
     MAX_STEP = 16
@@ -183,6 +199,96 @@ class BatchingExportTest(unittest.TestCase):
     def setUp(self) -> None:
         if not torch.cuda.is_available():
             self.skipTest("CUDA required")
+
+    def test_vision_adds_embedding_methods_over_the_same_cache(self) -> None:
+        """Images add vision, embed_text and one dynamic embeddings forward."""
+        try:
+            import gguf  # noqa: F401
+        except ImportError:
+            self.skipTest("gguf package required")
+        from executorch.backends.cuda.passes.lower_offgraph_kv import (
+            OFFGRAPH_KV_COMPILE_SPEC,
+            OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+        )
+        from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+            load_mmproj_vision_model,
+        )
+        from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
+            _mmproj_vision_config,
+            build_mmproj_gguf,
+        )
+        from executorch.exir.lowered_backend_module import get_lowered_submodules
+
+        with (
+            tempfile.TemporaryDirectory() as ckpt_dir,
+            tempfile.TemporaryDirectory() as out_dir,
+        ):
+            save_checkpoint(ckpt_dir)
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+            mmproj = os.path.join(ckpt_dir, "mmproj.gguf")
+            build_mmproj_gguf(mmproj)
+            vision, pos_table, _ = load_mmproj_vision_model(
+                mmproj, config=_mmproj_vision_config(), backend="cuda"
+            )
+            program = export_cuda_batching(
+                model,
+                config,
+                out_dir,
+                max_step_tokens=self.MAX_STEP,
+                forward_sizes=self.FORWARD_SIZES,
+                max_cells=self.MAX_CELLS,
+                vision_model=vision,
+                pos_embed_table=pos_table,
+                max_vision_patches=64,
+            )
+            self.assertTrue(os.path.exists(os.path.join(out_dir, "pos_embed.bin")))
+            methods = set(program.methods)
+            self.assertLessEqual(
+                {"forward_from_embeddings", "embed_text", "vision_encoder"}, methods
+            )
+            embeddings = program.exported_program("forward_from_embeddings")
+            lowered = get_lowered_submodules(embeddings.graph_module)
+            self.assertEqual(len(lowered), 1)
+            specs = {spec.key: spec.value for spec in lowered[0][1].compile_specs}
+            # Same cache and step-width contract as the token forwards.
+            others = get_lowered_submodules(
+                program.exported_program("forward_others").graph_module
+            )[0][1].compile_specs
+            self.assertEqual(
+                specs[OFFGRAPH_KV_COMPILE_SPEC],
+                {s.key: s.value for s in others}[OFFGRAPH_KV_COMPILE_SPEC],
+            )
+            self.assertEqual(specs[OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC], b"1:0")
+            for name in ("embed_text", "vision_encoder"):
+                sub = get_lowered_submodules(
+                    program.exported_program(name).graph_module
+                )
+                self.assertEqual(len(sub), 1, name)
+                self.assertNotIn(
+                    OFFGRAPH_KV_COMPILE_SPEC,
+                    {spec.key for spec in sub[0][1].compile_specs},
+                    name,
+                )
+
+            from executorch.runtime import Runtime, Verification
+
+            loaded = Runtime.get().load_program(
+                os.path.join(out_dir, "model.pte"), verification=Verification.Minimal
+            )
+            meta = loaded.metadata("forward_from_embeddings")
+            self.assertEqual(meta.num_inputs(), 3)
+            self.assertEqual(
+                meta.input_tensor_meta(0).sizes(), (1, self.MAX_STEP, TINY_CONFIG.dim)
+            )
+            self.assertEqual(
+                loaded.load_method("has_vision_encoder").execute([])[0], True
+            )
+            self.assertEqual(
+                loaded.load_method("get_vision_hidden_size").execute([])[0],
+                TINY_CONFIG.dim,
+            )
 
     def test_exports_forward_methods_over_a_cell_cache(self) -> None:
         from executorch.backends.cuda.passes.lower_offgraph_kv import (
