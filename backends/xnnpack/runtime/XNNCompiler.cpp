@@ -819,11 +819,62 @@ const fb_xnnpack::XNNTensorValue* getSerializedTensorValue(
 }
 
 /*
+Defines an internal fp32 value with the shape of a serialized value, for an op
+that XNNPACK computes only in fp32 on bf16 data. The caller converts between
+the two values with convertIfDistinct(), so the delegate boundary stays bf16.
+*/
+Error defineFp32ValueLike(
+    xnn_subgraph_t subgraph_ptr,
+    const fb_xnnpack::XNNTensorValue* value,
+    const NodePtr node,
+    uint32_t* fp32_id) noexcept {
+  // Like defineTensor(), treat a null dims vector as rank 0.
+  std::vector<size_t> dims;
+  if (value->dims() != nullptr) {
+    dims = flatbufferDimsToVector<size_t>(value->dims());
+  }
+  xnn_status status = xnn_define_tensor_value(
+      subgraph_ptr,
+      xnn_datatype_fp32,
+      dims.size(),
+      dims.data(),
+      /*data=*/nullptr,
+      /*external_id=*/XNN_INVALID_VALUE_ID,
+      /*flags=*/0,
+      fp32_id);
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to define an fp32 value for bf16 node %i: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+  return Error::Ok;
+}
+
+Error convertIfDistinct(
+    xnn_subgraph_t subgraph_ptr,
+    uint32_t from_id,
+    uint32_t to_id,
+    const NodePtr node) noexcept {
+  if (from_id == to_id) {
+    return Error::Ok;
+  }
+  xnn_status status =
+      xnn_define_convert(subgraph_ptr, from_id, to_id, /*flags=*/0);
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to convert a value of bf16 node %i: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+  return Error::Ok;
+}
+
+/*
 XNNPACK multiplies bf16 matrices only into an fp32 result. When the serialized
 graph multiplies bf16 matrices into a bf16 output, define an fp32 value for the
-op to write instead, which convertBf16MatMulResult() then converts into the
-output, so the delegate boundary stays bf16. Otherwise the op writes the output
-itself.
+op to write instead, which the caller converts into the output. Otherwise the
+op writes the output itself.
 */
 Error defineBf16MatMulResult(
     xnn_subgraph_t subgraph_ptr,
@@ -844,50 +895,7 @@ Error defineBf16MatMulResult(
       output->datatype() != DataType::xnn_datatype_bf16) {
     return Error::Ok;
   }
-  // Like defineTensor(), treat a null dims vector as rank 0.
-  std::vector<size_t> dims;
-  if (output->dims() != nullptr) {
-    dims = flatbufferDimsToVector<size_t>(output->dims());
-  }
-  xnn_status status = xnn_define_tensor_value(
-      subgraph_ptr,
-      xnn_datatype_fp32,
-      dims.size(),
-      dims.data(),
-      /*data=*/nullptr,
-      /*external_id=*/XNN_INVALID_VALUE_ID,
-      /*flags=*/0,
-      result_id);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Failed to define the fp32 result of bf16 node %i: %s",
-      node->debug_handle(),
-      xnn_status_to_string(status));
-  return Error::Ok;
-}
-
-/*
-Converts the fp32 result that defineBf16MatMulResult() defined into the bf16
-output. Does nothing when the op wrote the output itself.
-*/
-Error convertBf16MatMulResult(
-    xnn_subgraph_t subgraph_ptr,
-    uint32_t result_id,
-    uint32_t remapped_output_id,
-    const NodePtr node) noexcept {
-  if (result_id == remapped_output_id) {
-    return Error::Ok;
-  }
-  xnn_status status = xnn_define_convert(
-      subgraph_ptr, result_id, remapped_output_id, /*flags=*/0);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Failed to convert the result of bf16 node %i to bf16: %s",
-      node->debug_handle(),
-      xnn_status_to_string(status));
-  return Error::Ok;
+  return defineFp32ValueLike(subgraph_ptr, output, node, result_id);
 }
 
 /*
@@ -934,15 +942,13 @@ Error defineFullyConnectedNode(
       node->debug_handle(),
       xnn_status_to_string(status));
 
-  return convertBf16MatMulResult(subgraph_ptr, fc_result, fc_output, node);
+  return convertIfDistinct(subgraph_ptr, fc_result, fc_output, node);
 };
 
 /*
 XNNPACK defines softmax only on fp32 and fp16 tensors. When a serialized
-softmax value is bf16, define an fp32 value with the same shape for the
-softmax to use instead. The caller converts between the bf16 value and the
-fp32 value around the softmax, so the delegate boundary stays bf16.
-Non-bf16 values are used as-is.
+softmax value is bf16, define an fp32 value for the softmax to use instead.
+Otherwise the softmax uses the value itself.
 */
 Error defineBf16SoftmaxFp32Value(
     xnn_subgraph_t subgraph_ptr,
@@ -956,51 +962,7 @@ Error defineBf16SoftmaxFp32Value(
   if (value == nullptr || value->datatype() != DataType::xnn_datatype_bf16) {
     return Error::Ok;
   }
-  // Like defineTensor(), treat a null dims vector as rank 0.
-  std::vector<size_t> dims;
-  if (value->dims() != nullptr) {
-    dims = flatbufferDimsToVector<size_t>(value->dims());
-  }
-  xnn_status status = xnn_define_tensor_value(
-      subgraph_ptr,
-      xnn_datatype_fp32,
-      dims.size(),
-      dims.data(),
-      /*data=*/nullptr,
-      /*external_id=*/XNN_INVALID_VALUE_ID,
-      /*flags=*/0,
-      fp32_id);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Failed to define the fp32 value for bf16 softmax node %i: %s",
-      node->debug_handle(),
-      xnn_status_to_string(status));
-  return Error::Ok;
-}
-
-/*
-Converts between the bf16 value and the fp32 value that
-defineBf16SoftmaxFp32Value() defined for it. Does nothing when the softmax
-uses the value itself.
-*/
-Error convertBf16SoftmaxValue(
-    xnn_subgraph_t subgraph_ptr,
-    uint32_t from_id,
-    uint32_t to_id,
-    const NodePtr node) noexcept {
-  if (from_id == to_id) {
-    return Error::Ok;
-  }
-  xnn_status status =
-      xnn_define_convert(subgraph_ptr, from_id, to_id, /*flags=*/0);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Failed to convert the value of bf16 softmax node %i: %s",
-      node->debug_handle(),
-      xnn_status_to_string(status));
-  return Error::Ok;
+  return defineFp32ValueLike(subgraph_ptr, value, node, fp32_id);
 }
 
 /*
@@ -1035,7 +997,7 @@ Error defineSoftmaxNode(
       &softmax_output));
 
   ET_CHECK_OK_OR_RETURN_ERROR(
-      convertBf16SoftmaxValue(subgraph_ptr, sm_input, softmax_input, node));
+      convertIfDistinct(subgraph_ptr, sm_input, softmax_input, node));
 
   xnn_status status = xnn_define_softmax(
       subgraph_ptr, softmax_input, softmax_output, graph_node->flags());
@@ -1046,7 +1008,7 @@ Error defineSoftmaxNode(
       node->debug_handle(),
       xnn_status_to_string(status));
 
-  return convertBf16SoftmaxValue(subgraph_ptr, softmax_output, sm_output, node);
+  return convertIfDistinct(subgraph_ptr, softmax_output, sm_output, node);
 }
 
 Error defineGlobalAvgPooling2dNode(
@@ -1877,7 +1839,7 @@ Error defineBatchMatrixMultiplyNode(
       node->debug_handle(),
       xnn_status_to_string(status));
 
-  return convertBf16MatMulResult(subgraph_ptr, bmm_result, bmm_out, node);
+  return convertIfDistinct(subgraph_ptr, bmm_result, bmm_out, node);
 }
 
 /*
