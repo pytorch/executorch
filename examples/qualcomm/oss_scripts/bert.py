@@ -47,7 +47,7 @@ def main(args):
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
         attention_mask = create_bidirectional_mask(
             config=module.config,
-            input_embeds=module.bert.embeddings(random_ids),
+            inputs_embeds=module.bert.embeddings(random_ids),
             attention_mask=torch.zeros((1, 100), dtype=torch.float32),
         )
         inputs = [
@@ -68,7 +68,7 @@ def main(args):
                 input_ids,
                 create_bidirectional_mask(
                     config=module.config,
-                    input_embeds=module.bert.embeddings(input_ids),
+                    inputs_embeds=module.bert.embeddings(input_ids),
                     attention_mask=attention_mask,
                 ),
             )

@@ -48,7 +48,7 @@ def main(args):
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
         attention_mask = create_bidirectional_mask(
             config=module.config,
-            input_embeds=module.roberta.embeddings(random_ids),
+            inputs_embeds=module.roberta.embeddings(random_ids),
             attention_mask=torch.zeros((1, 100), dtype=torch.float32),
         )
         inputs = [
@@ -69,7 +69,7 @@ def main(args):
                 input_ids,
                 create_bidirectional_mask(
                     config=module.config,
-                    input_embeds=module.roberta.embeddings(input_ids),
+                    inputs_embeds=module.roberta.embeddings(input_ids),
                     attention_mask=attention_mask,
                 ),
             )
@@ -117,7 +117,7 @@ def main(args):
     sample_input["input_ids"] = sample_input["input_ids"].to(torch.int32)
     sample_input["attention_mask"] = create_bidirectional_mask(
         config=module.config,
-        input_embeds=module.roberta.embeddings(sample_input["input_ids"]),
+        inputs_embeds=module.roberta.embeddings(sample_input["input_ids"]),
         attention_mask=sample_input["attention_mask"],
     )
     sample_input = tuple(sample_input.values())
