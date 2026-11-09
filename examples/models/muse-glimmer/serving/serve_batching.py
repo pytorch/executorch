@@ -20,6 +20,7 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from executorch.examples.llm_server.python.hud.worker_logs import capture_worker_logs
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
@@ -219,40 +220,52 @@ def build_app_from_args(args):
 
     @asynccontextmanager
     async def serving_factory():
-        worker = await spawn_multiplexed_worker(
-            _worker_command(args),
-            max_request_bytes=args.max_request_bytes,
-            max_message_bytes=_MAX_MESSAGE_BYTES,
-        )
-        runtime = None
-        try:
-            runtime = SessionRuntime(worker)
-            yield legacy.MuseGlimmerServingChat(
-                runtime,
-                template,
-                args.model_id,
-                max_context=args.max_context,
-                evict_idle_sessions=args.evict_idle_sessions,
-                streaming_preflight_timeout=args.streaming_preflight_timeout,
-                api_dialect=args.api_dialect,
-                max_image_bytes=args.max_image_bytes,
-                tool_detector_cls=legacy._tool_detector(args.tool_parser),
-                prompt_token_offset=1,
-                content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
-                reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
-                streaming_parser_factory=MuseGlimmerStreamParser,
-                tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
-                reasoning_token_counter=template.count_reasoning_tokens,
+        async with capture_worker_logs() as stderr:
+            worker = await spawn_multiplexed_worker(
+                _worker_command(args),
+                stderr=stderr,
+                max_request_bytes=args.max_request_bytes,
+                max_message_bytes=_MAX_MESSAGE_BYTES,
             )
-        finally:
-            if runtime is None:
-                await SessionRuntime._finish_cleanup(
-                    asyncio.create_task(worker.close())
+            runtime = None
+            try:
+                runtime = SessionRuntime(worker)
+                yield legacy.MuseGlimmerServingChat(
+                    runtime,
+                    template,
+                    args.model_id,
+                    max_context=args.max_context,
+                    evict_idle_sessions=args.evict_idle_sessions,
+                    streaming_preflight_timeout=args.streaming_preflight_timeout,
+                    api_dialect=args.api_dialect,
+                    max_image_bytes=args.max_image_bytes,
+                    tool_detector_cls=legacy._tool_detector(args.tool_parser),
+                    prompt_token_offset=1,
+                    content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
+                    reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
+                    streaming_parser_factory=MuseGlimmerStreamParser,
+                    tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
+                    reasoning_token_counter=template.count_reasoning_tokens,
                 )
-            else:
-                await runtime.aclose_worker()
+            finally:
+                if runtime is None:
+                    await SessionRuntime._finish_cleanup(
+                        asyncio.create_task(worker.close())
+                    )
+                else:
+                    await runtime.aclose_worker()
 
-    return build_app(None, args.model_id, serving_factory=serving_factory)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    return build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+        hud=True,
+        listen_address=f"http://{host}:{args.port}",
+    )
 
 
 def main(argv=None):

@@ -21,7 +21,9 @@ from executorch.backends.transforms.fused_quant.test.helpers import (
     create_per_tensor_qparams,
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.backends.transforms.utils import add_constant, get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch import fx
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 
@@ -39,7 +41,9 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             )
         )
 
-    def test_decomposes_per_channel_convolution(self) -> None:
+    def _per_channel_convolution(
+        self,
+    ) -> tuple[ExportedProgram, torch.Tensor, torch.Tensor]:
         inp = torch.randint(-8, 8, (1, 2, 6, 6), dtype=torch.int8)
         weight = torch.randint(-8, 8, (3, 2, 3, 3), dtype=torch.int8)
         builder = ProgramBuilder()
@@ -75,7 +79,10 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             ),
         )
         builder.output([convolution])
-        program = builder.get_program()
+        return builder.get_program(), inp, weight
+
+    def test_decomposes_per_channel_convolution(self) -> None:
+        program, inp, weight = self._per_channel_convolution()
         expected = program.module()(inp, weight)
 
         decomposed = DecomposeFusedQuant()(program)
@@ -113,6 +120,31 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             ),
             1,
         )
+
+    def test_decomposes_per_channel_qparams_added_by_add_constant(self) -> None:
+        # Passes such as SplitLinearAtSlices add qparams with add_constant, which
+        # gives the node export's c_ prefix.
+        program, inp, weight = self._per_channel_convolution()
+        convolution = program.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.fused_quant.convolution.default
+        )[0]
+        for name in ("weight_scale", "weight_zero_point"):
+            qparam = get_arg(convolution, name, fx.Node)
+            value = get_constant(program, qparam)
+            assert value is not None
+            convolution.replace_input_with(
+                qparam,
+                add_constant(program, name, value, qparam, InputKind.CONSTANT_TENSOR),
+            )
+        expected = program.module()(inp, weight)
+
+        decomposed = DecomposeFusedQuant()(program)
+
+        self.assertTrue(decomposed.modified)
+        self.assert_bit_exact(
+            expected, decomposed.exported_program.module()(inp, weight)
+        )
+        self._assert_no_fused_quant_ops(decomposed.exported_program)
 
     def test_preserves_transposed_convolution_arguments(self) -> None:
         inp = torch.randn(1, 2, 4, 4)
@@ -313,3 +345,39 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             "only per-tensor and per-channel quantization are supported",
         ):
             DecomposeFusedQuant()(program)
+
+    def test_rejects_non_constant_per_tensor_qparams_before_rewriting(self) -> None:
+        inp = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        builder = ProgramBuilder()
+        inp_node = builder.placeholder("inp", inp)
+        dynamic_scale = builder.placeholder("dynamic_scale", torch.tensor(0.5))
+        zero_point = builder.placeholder(
+            "zero_point", torch.tensor(0), input_kind=InputKind.CONSTANT_TENSOR
+        )
+        first = builder.call_operator(
+            exir_ops.edge.fused_quant.relu.default,
+            args=(
+                inp_node,
+                *create_per_tensor_qparams(builder, dtype=torch.float32),
+                *create_per_tensor_qparams(builder),
+            ),
+        )
+        second = builder.call_operator(
+            exir_ops.edge.fused_quant.relu.default,
+            args=(
+                first,
+                dynamic_scale,
+                zero_point,
+                torch.float32,
+                -128,
+                127,
+                *create_per_tensor_qparams(builder),
+            ),
+        )
+        builder.output([second])
+        program = builder.get_program()
+        before = str(program.graph)
+
+        with self.assertRaisesRegex(ValueError, "must be a lifted constant"):
+            DecomposeFusedQuant()(program)
+        self.assertEqual(str(program.graph), before)

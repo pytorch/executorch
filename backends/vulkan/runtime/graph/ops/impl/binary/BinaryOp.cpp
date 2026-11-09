@@ -66,11 +66,14 @@ void add_binary_op_node(
   ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
   check_binary_op_args(graph, arg1, arg2, out);
+  if (!graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(arg1));
+    VK_CHECK_COND(graph.has_standard_axis_map(arg2));
+    VK_CHECK_COND(graph.has_standard_axis_map(out));
+  }
 
   float alpha_val = 1.0f;
-  // String is checked since floor_div passes in an unused string argument in
-  // place of alpha
-  if (is_valid(alpha) && !graph.val_is_string(alpha)) {
+  if (is_valid(alpha)) {
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
@@ -84,26 +87,10 @@ void add_binary_op_node(
   vkapi::ParamsBindList ubos = {
       graph.meta_ubo(out), graph.meta_ubo(arg1), graph.meta_ubo(arg2)};
 
-  // Detect packed-dim broadcasting for texture path
-  int32_t in_broadcast_packed = 0;
-  int32_t other_broadcast_packed = 0;
-  if (!graph.is_buffer_storage(out)) {
-    in_broadcast_packed = is_packed_dim_broadcasted(graph, out, arg1) ? 1 : 0;
-    other_broadcast_packed =
-        is_packed_dim_broadcasted(graph, out, arg2) ? 1 : 0;
-  }
-
-  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
-  const int32_t out_layout = graph.hashed_layout_of(out);
-  const bool should_broadcast = graph.sizes_of(arg1) != out_sizes ||
-      graph.sizes_of(arg2) != out_sizes ||
-      graph.hashed_layout_of(arg1) != out_layout ||
-      graph.hashed_layout_of(arg2) != out_layout;
-
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
+      default_pick_vec4_gwg,
       default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{arg1, arg2}, vkapi::kRead}},
@@ -112,13 +99,10 @@ void add_binary_op_node(
       // Push Constants
       {{PushConstantDataInfo(&alpha_val, sizeof(float))}},
       // Specialization Constants
-      {out_layout,
+      {graph.hashed_layout_of(out),
        graph.hashed_layout_of(arg1),
        graph.hashed_layout_of(arg2),
-       in_broadcast_packed,
-       other_broadcast_packed,
-       static_cast<int32_t>(op_type),
-       should_broadcast ? 1 : 0},
+       static_cast<int32_t>(op_type)},
       // Resize Args
       {},
       // Resizing Logic
@@ -145,9 +129,18 @@ void add_binary_op_node(
 DEFINE_BINARY_OP_WITH_ALPHA_FN(add, kAdd);
 DEFINE_BINARY_OP_WITH_ALPHA_FN(sub, kSub);
 
-// Floor div does not have an alpha, but a string argument (which is unused) is
-// passed in at the same location as the alpha argument in other op.
-DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide, kFloorDivide);
+void floor_divide(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // div.Tensor_mode is implemented for rounding_mode="floor" only.
+  VK_CHECK_COND(
+      graph.val_is_string(args[2]) && graph.extract_string(args[2]) == "floor");
+  return add_binary_op_node(
+      graph,
+      args[0],
+      args[1],
+      kDummyValueRef,
+      args[3],
+      BinaryOpType::kFloorDivide);
+}
 
 DEFINE_BINARY_OP_FN(mul, kMul);
 DEFINE_BINARY_OP_FN(swiglu, kSwiglu);
