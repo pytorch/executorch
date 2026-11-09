@@ -394,6 +394,55 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[0], 4);
 }
 
+TEST_F(ProviderTest, XNNPACKFreesBroadcastLinearBiasAfterPacking) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values.emplace_back(
+      "weight", ptn::ScalarType::Float, std::vector<int64_t>{2, 3});
+  graph.values[1].role = ptn::ValueRole::Parameter;
+  graph.values.emplace_back(
+      "bias", ptn::ScalarType::Float, std::vector<int64_t>{1});
+  graph.values[2].role = ptn::ValueRole::Parameter;
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{1, 2});
+  ptn::Node node;
+  node.name = "linear";
+  node.target = "torch.ops.aten.linear.default";
+  node.inputs = {
+      {"input", ptn::TensorArg{0}},
+      {"weight", ptn::TensorArg{1}},
+      {"bias", ptn::TensorArg{2}}};
+  node.outputs = {{ptn::OutputValueKind::Tensor, 3, {}}};
+  graph.nodes.push_back(std::move(node));
+  for (const auto& value : graph.values) {
+    auto storage = allocate_buffer(allocator, tensor_bytes(value).get());
+    ASSERT_TRUE(storage.ok());
+    buffers.push_back(storage.get());
+  }
+  std::fill_n(static_cast<float*>(buffers[0].data), 3, 1);
+  std::fill_n(static_cast<float*>(buffers[1].data), 6, 2);
+  *static_cast<float*>(buffers[2].data) = 0.5f;
+  PreparationContext context{
+      graph, buffers, allocator, private_bytes, execution_context};
+  auto provider = create_xnnpack_provider();
+  auto executable =
+      provider->implementations()[0]->compile({{0}, {0, 1, 2}, {3}}, context);
+  ASSERT_TRUE(executable.ok());
+  EXPECT_EQ(private_bytes, 2 * sizeof(float) + kReadableTail);
+  ASSERT_EQ(provider->finish(), Error::Ok);
+  EXPECT_EQ(
+      provider->released_private_constant_bytes(),
+      2 * sizeof(float) + kReadableTail);
+  ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+  std::memset(buffers[2].data, 0xFF, buffers[2].readable_bytes);
+  buffers[2] = {};
+  ASSERT_EQ(executable.get()->bind(), Error::Ok);
+  ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 6.5f);
+  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[1], 6.5f);
+}
+
 TEST_F(ProviderTest, BufferAllocationAndOffsetExtentAreExplicit) {
   auto allocated = allocate_buffer(allocator, 36);
   ASSERT_TRUE(allocated.ok());
