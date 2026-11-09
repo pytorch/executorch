@@ -1143,6 +1143,9 @@ jobs:
         trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
         source .ci/scripts/setup-samsung-linux-deps.sh
 
+        # Graph-level pass unit tests (no device needed)
+        python -m unittest discover -s backends/samsung/test/passes -p "test_*.py"
+
         # Check if device was reserved
         if [[ "${DEVICE_ACQUIRED:-0}" != "1" ]]; then
           echo "::warning::Skipping tests - no Samsung device available"
