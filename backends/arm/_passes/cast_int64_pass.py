@@ -180,22 +180,21 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             for user in node.users
         )
 
-    def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
+    def _keeps_int64(self, node: torch.fx.Node) -> bool:
+        if not is_buffer(self.exported_program, node):
+            return False
         tosa_spec = get_context_spec()
-        keep_int64 = tosa_spec.support_integer() and tosa_spec.support_extension(
-            "int64"
+        return (
+            tosa_spec.support_integer()
+            and tosa_spec.support_extension("int64")
+            and self._users_compute_in_int64(node)
         )
+
+    def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
         converted = 0
         for node in graph_module.graph.nodes:
-            if not self._is_cast_candidate(node):
-                continue
-            if (
-                keep_int64
-                and is_buffer(self.exported_program, node)
-                and self._users_compute_in_int64(node)
-            ):
-                continue
-            converted += self._cast_constant_to_int32(node)
+            if self._is_cast_candidate(node) and not self._keeps_int64(node):
+                converted += self._cast_constant_to_int32(node)
         return converted
 
     def call(self, graph_module: torch.fx.GraphModule):
