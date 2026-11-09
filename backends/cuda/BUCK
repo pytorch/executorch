@@ -130,6 +130,7 @@ fbcode_target(
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/passes:replace_complex_with_real_pass",
         "//executorch/backends/aoti:aoti_backend",
     ],
 )

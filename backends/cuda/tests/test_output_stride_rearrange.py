@@ -316,6 +316,17 @@ class _MaskedCounter(nn.Module):
         return self.calls.clone(), x[mask]
 
 
+class _ConstantRow(nn.Module):
+    """AOTI returns a part of a constant through aoti_torch_clone."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.randn(3, 4))
+
+    def forward(self, x):
+        return self.table[1], x * 2
+
+
 class _HostFlag(nn.Module):
     """A torch.cond on a flag the program keeps in host memory and updates on
     every call."""
@@ -530,6 +541,20 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             with self.subTest(call=i):
                 self.assertIsInstance(out, torch.Tensor)
                 torch.testing.assert_close(out, torch.tensor([i + 1.0]))
+
+    def test_constant_copy_runs_without_a_graph(self):
+        # A capture cannot record the copy that returns a part of a constant,
+        # so the capture call has to run without a graph.
+        torch.manual_seed(0)
+        module = _ConstantRow().eval()
+        inputs = [torch.randn(4) for _ in range(6)]
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, (inputs[0],), inputs)
+        self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
+        for i, out in enumerate(outputs):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, module.table[1])
 
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)

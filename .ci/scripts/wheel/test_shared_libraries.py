@@ -81,14 +81,14 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 _CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
 _CUDA_EXTENSION_SYMBOLS = (
     "executorch::extension::cuda::getCallerStream",
+    "executorch::extension::cuda::internal::getCurrentCUDAStream",
     "executorch::extension::cuda::CudaAllocator::instance",
 )
 
-# The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
-# genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
-# every consumer's link, so the guard's thread_local and these shims landed in three shipped binaries
-# at once, and a stream selected through one copy was invisible to the other two. The row above cannot
-# catch that, because its symbol only ever existed in one unconditionally shared library.
+# The AOTI shim layer. This is what was once genuinely duplicated: extracting the shims with a PUBLIC
+# whole-archive replayed the extraction at every consumer's link, so these shims, and the current-stream
+# thread_local that then lived with them, landed in three shipped binaries at once, and a stream selected
+# through one copy was invisible to the other two. That state now lives in the extension library above.
 _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_empty_strided",
     "aoti_torch_delete_tensor_object",
@@ -1217,7 +1217,7 @@ def _wheel_cuda_train() -> str:
     """The CUDA train the installed wheel was built for, or "" for a CPU wheel.
 
     Read from the local version segment, which is the only place the wheel states what
-    it was built for. `1.5.0+cu126` gives "126".
+    it was built for. `1.5.0+cu132` gives "132".
     """
     local = importlib.metadata.version("executorch").partition("+")[2]
     return local[2:] if local.startswith("cu") else ""
@@ -1360,7 +1360,7 @@ _OWNED_COMPONENTS = (
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel
-    # tagged +cu126 carrying no CUDA library at all passed every check in this file,
+    # tagged +cu132 carrying no CUDA library at all passed every check in this file,
     # while a fixed True would fail every CPU wheel. The marker is the string these
     # rows are keyed on below.
     (
@@ -1457,7 +1457,7 @@ def test_each_component_has_one_owner() -> None:
     shipped = {path.name for path in _shipped_shared_objects(_installed_package_dir())}
     for what, symbols, owner, required in _OWNED_COMPONENTS:
         # Resolved here rather than in the table, because it depends on the installed
-        # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
+        # wheel. A fixed False let a wheel tagged +cu132 ship with no CUDA library at
         # all and still pass, which is the whole point of the conditional rows.
         required = _resolve_required(required)
         present = any(name.startswith(owner) for name in shipped)

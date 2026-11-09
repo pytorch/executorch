@@ -26,14 +26,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "unused", "0")}
 
 void main() {
-  uint inp_bufi = linear_idx_from_gid();
-  if (inp_bufi>= numel(inp)) {
+  const uint nchwi = linear_idx_from_gid();
+  const TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, nchwi);
+  if (out_of_bounds(inp_tidx, inp)) {
     return;
   }
 
-  TensorIndex inp_tidx = linear_idx_to_tensor_idx(inp, inp_bufi);
-
-  uint nchwi = tensor_idx_to_contiguous_idx(inp, inp_tidx);
+  const uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
 
   nchw_buf[nchwi] = DST_T(t_inp[inp_bufi]);
 }

@@ -57,6 +57,14 @@ tensor_arg(const Json& spec, size_t index, const TensorMap& tensors) {
   return tensors.at(spec.at("args").at(index).at("tensor").get<std::string>());
 }
 
+bool int8_dot_product(const Json& spec) {
+  const Json context = spec.value("reference_context", Json::object());
+  require(context.is_object(), "Reference context must be an object");
+  const Json dot = context.value("int8_dot_product", Json(true));
+  require(dot.is_boolean(), "Reference int8_dot_product must be boolean");
+  return dot.get<bool>();
+}
+
 } // namespace reference
 
 namespace {

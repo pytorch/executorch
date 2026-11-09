@@ -170,6 +170,9 @@ from .insert_rescales_pass import (  # noqa
     InsertRescaleInt32Pass,
     InsertRescalePass,
 )
+from .insert_sym_size_int_for_input_dims_pass import (  # noqa
+    InsertSymSizeIntForInputDimsPass,
+)
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa
 from .lower_int16_rsqrt_pass import LowerInt16RsqrtPass  # noqa

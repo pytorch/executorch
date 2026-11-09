@@ -218,8 +218,8 @@ TEST(
       registry.shader_memory("q4gsw_linear_gemm__tin__float"),
       registry.shader_memory("q4gsw_linear_gemm__float"));
   EXPECT_EQ(
-      registry.shader_compute("binary_add_buffer_float"),
-      registry.shader_compute("binary_add_texture3d_float"));
+      registry.shader_compute("binary_op_buffer_float"),
+      registry.shader_compute("binary_op_texture3d_float"));
 }
 
 TEST(
@@ -422,7 +422,7 @@ TEST(
   EXPECT_EQ(copied.memory_bytes, 64);
   EXPECT_EQ(copied.compute_flops, 0);
   const Json add = {
-      {"shader_name", "binary_add_texture3d_float"},
+      {"shader_name", "binary_op_texture3d_float"},
       {"bindings",
        {{"a", tensor({2, 1}, "float32", "read", "texture3d")},
         {"b", tensor({3}, "float32", "read", "texture3d")},
