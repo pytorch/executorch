@@ -852,6 +852,7 @@ def define_common_targets():
             "test/test_permute_optimization_passes.py",
         ],
         deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
             "//caffe2:torch",
             "//executorch/backends/test:graph_builder",
             "//executorch/exir:lib",
