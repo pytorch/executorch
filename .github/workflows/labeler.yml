@@ -23,11 +23,13 @@ jobs:
           script: |
             const FULL = 'ciflow/trunk';
             const ARM = 'ciflow/trunk-arm';
+            const isArm = path => path.startsWith('backends/arm/') || path.startsWith('examples/arm/');
             const pull = { ...context.repo, pull_number: context.issue.number };
             const issue = { ...context.repo, issue_number: context.issue.number };
             let pr = context.payload.pull_request;
             let files = [];
             let complete = false;
+            let observedArm = false;
             let reason = 'PR head or base kept changing while reading its diff.';
             try {
               for (let attempt = 0; attempt < 3; attempt++) {
@@ -36,6 +38,8 @@ jobs:
                 pr = before;
                 if (pr.state !== 'open') return;
                 files = await github.paginate(github.rest.pulls.listFiles, { ...pull, per_page: 100 });
+                observedArm ||= files.some(file =>
+                  [file.filename, file.previous_filename].filter(Boolean).some(isArm));
                 ({ data: pr } = await github.rest.pulls.get(pull));
                 if (before.head.sha !== pr.head.sha || before.base.sha !== pr.base.sha) continue;
                 complete = files.length === pr.changed_files &&
@@ -51,12 +55,11 @@ jobs:
             if (pr.state !== 'open') return;
 
             const paths = files.flatMap(file => [file.filename, file.previous_filename].filter(Boolean));
-            const isArm = path => path.startsWith('backends/arm/') || path.startsWith('examples/arm/');
             const touchesArm = paths.some(isArm);
             const labels = pr.labels.map(label => label.name);
             let selected = null;
             if (!complete) {
-              if (!touchesArm && !labels.includes(ARM) && !labels.includes(FULL)) {
+              if (!observedArm && !labels.includes(ARM) && !labels.includes(FULL)) {
                 core.setFailed(`${reason} No CI labels were changed; re-run Labeler or request full CI explicitly.`);
                 return;
               }
