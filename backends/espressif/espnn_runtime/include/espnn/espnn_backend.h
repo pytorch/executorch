@@ -38,9 +38,13 @@ struct DelegateStats {
 /**
  * Registers EspNNBackend with the ExecuTorch runtime.
  *
- * Registration also happens from a static initializer when the component is
- * linked whole-archive; calling this is only needed when the linker could
- * drop that initializer. Safe to call more than once.
+ * Registration also happens from a static initializer once the delegate is
+ * linked: when the espnn_runtime component is linked whole-archive or, in the
+ * generated ExecuTorch ESP-IDF component, when the kernel bundle records
+ * EspNNBackend or the project calls executorch_add_backend(EspNNBackend).
+ * Without either, that component does not link the delegate, and calls to
+ * these functions fail to link. Calling this is only needed when the linker
+ * could drop the initializer. Safe to call more than once.
  *
  * @retval true The backend is registered.
  */
