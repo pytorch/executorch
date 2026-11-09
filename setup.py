@@ -1136,11 +1136,9 @@ def _torchao_requirement() -> str:
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
 
-    version = module.TORCHAO_NIGHTLY_VERSION
-    if (
-        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
-        and not module.torchao_from_source()
-    ):
+    torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
+    version = module.get_torchao_version(torch_url)
+    if torch_url.endswith("/cu134") and not module.torchao_from_source():
         version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
@@ -1172,9 +1170,8 @@ def _base_dependencies() -> List[str]:
         # The MLX backend needs it too, though indirectly: it registers a torchao operator that
         # only exists once torchao has been imported.
         #
-        # The lower bound is the nightly install_requirements.py pins, so that installing this
-        # package over a development checkout leaves that pin in place. A bound at the stable
-        # release instead would evict it, because a dev release sorts below its own final.
+        # Match the version selected by install_requirements.py so installing the
+        # package preserves the CPU release or the selected nightly.
         #
         # The upper bound is what makes naming a pre-release safe. A specifier that names one
         # accepts pre-releases for this requirement, so without the bound pip would resolve a
@@ -2915,6 +2912,9 @@ class CustomBuild(build):
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
+                # VGF can configure the registry target without linking it.
+                # Only Vulkan requires this DSO in the Python wheel today.
+                cmake_build_args += ["--target", "executorch_vulkan_shared_runtime"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
                 cmake_build_args += ["--target", "cmsis_nn"]
@@ -3253,6 +3253,15 @@ setup(
                         # is not built. This flag is set only when it actually is.
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
+                ),
+                # The Vulkan delegate requires one shared registry DSO even
+                # when its own library is static. VGF currently configures this
+                # target but does not use it, so do not ship it for VGF-only wheels.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/vulkan_shared/%BUILD_TYPE%/",
+                    src_name=get_dynamic_lib_name("executorch_vulkan_shared_runtime"),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_VULKAN"],
                 ),
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreai/",

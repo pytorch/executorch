@@ -337,11 +337,24 @@ way, because they sit next to the runtime library.
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
   points somewhere else. Run the `python -c` line on its own and check the folder exists.
+- `os.path.dirname(executorch.__file__)` fails with a `TypeError`: the `executorch` package has no
+  `__init__.py`, so its `__file__` is `None`. Use `executorch.__path__[0]` instead, as the command
+  above does.
 - The program builds but fails to load the model: the path is relative, so run it from the folder
   containing the `.pte` file.
 - A missing operator at run time: add a kernel component, usually
   `executorch::kernels_optimized`.
 - The model fails to load complaining about a backend: link the backend it was exported for.
+- The model fails to load because data is missing, for example the CUDA backend reports
+  `... is missing from named data`: the model expects its weights in a separate `.ptd` file. Pass that
+  file as the second argument, for example `Module module("model.pte", "aoti_cuda_blob.ptd");`. If
+  the export saved only `program.buffer`, no `.ptd` was written. Save the program with
+  `save_pte_program`, as [the CUDA section](#running-on-a-gpu-with-the-cuda-package) does.
+- A GPU model fails on its first run because an output has no buffer: it was exported with
+  `alloc_graph_output=False`, so it has no memory of its own for its outputs. Give each output a
+  buffer with `set_output` before the first run: GPU memory if the export skipped the output copy
+  (`skip_d2h_for_method_outputs=True`), host memory otherwise. See
+  [Keeping inputs and outputs on the GPU](#keeping-inputs-and-outputs-on-the-gpu).
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
   CMake the package still works, but you name variables instead of targets, and you have to pass on
   the definitions and the C++ standard requirement yourself:
@@ -477,8 +490,8 @@ save_pte_program(program, "model", ".")
 
 `save_pte_program` is used instead of writing the buffer by hand because the CUDA backend puts its
 model weights in a **separate data file** next to `model.pte`. The compiled GPU code stays
-inside `model.pte`. Writing only the program file loses the weights, so the model then fails when it
-runs.
+inside `model.pte`. For a model with weights, writing only the program file leaves them out, and the
+model then fails to load.
 
 The backend chooses that file's name, so check what was written:
 
@@ -514,6 +527,56 @@ reach fewer cards in that range than the x86_64 ones, so a card at or above `(8,
 outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
+
+#### Keeping inputs and outputs on the GPU
+
+A model can be exported to keep its inputs and outputs on the GPU, so the runtime does not copy
+them between CPU and GPU memory on every run.
+[The CUDA backend guide](backends/cuda/cuda-overview.md#activation-memory-who-owns-the-gpu-copies)
+shows how. Such a model takes GPU tensors. If it was also exported with `alloc_graph_output=False`,
+as the guide recommends, it has no memory of its own for its outputs, and without a GPU buffer for
+each output the run fails. Give each output one with `set_output`, once, before the first run. Its
+second argument, the output's index, defaults to 0, which is what the example below uses:
+
+```cpp
+using namespace executorch::aten;
+using namespace executorch::extension;
+using namespace executorch::runtime;
+
+// a, b and sum point to GPU memory, for example from cudaMalloc.
+auto x = from_blob(a, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto y = from_blob(b, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+auto out = from_blob(sum, {2, 2}, ScalarType::Float, DeviceType::CUDA);
+
+// Every run then writes its result to sum.
+if (module.set_output(out) != Error::Ok) {
+  return 1;
+}
+const auto result = module.forward({x, y});
+if (!result.ok()) {
+  return 1;
+}
+```
+
+The result is in `sum`, in GPU memory. Copy it to the host, for example with `cudaMemcpy`, before
+you read it on the CPU.
+
+`forward` can return before the GPU has finished. The model runs on `cudaStreamPerThread`, the
+default stream of the thread that calls `forward`, and a `cudaMemcpy` on that thread waits for it.
+Before `forward`, call `cudaStreamSynchronize` on each stream of yours that wrote the inputs or still
+reads the previous result. After `forward`, call `cudaStreamSynchronize(cudaStreamPerThread)` on the
+same thread before a stream of yours reads the result or overwrites the inputs. To run the model on
+your own stream instead, see "Choosing the CUDA stream" under
+[Performance Options in the TensorRT guide](backends/tensorrt/tensorrt-overview.md#performance-options).
+It works for a model that uses only the CUDA backend too, and it lists the limits.
+
+Calling the CUDA runtime yourself, for example `cudaMalloc` and `cudaMemcpy`, needs the CUDA Toolkit
+when you build. Add these lines at the end of `CMakeLists.txt`:
+
+```cmake
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(app PRIVATE CUDA::cudart)
+```
 
 #### CUDA on Windows
 

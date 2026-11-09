@@ -43,6 +43,9 @@ struct ET_EXPERIMENTAL PackedStep {
   std::vector<std::int32_t> seq_ids;
   // Per input: the token whose logits it wants, or -1 for none.
   std::vector<int> logit_indices;
+  // Some input is a PreparedInput: its rows hold placeholder tokens, so the
+  // step must run from the executor's materialized embeddings.
+  bool prepared = false;
 };
 
 // The logits rows a forward over tokens [offset, offset + length) must select:

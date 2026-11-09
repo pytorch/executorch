@@ -911,11 +911,13 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             return True
 
         if node.target == exir_ops.edge.aten.convolution.default:
-            return (
-                bool(node.args[6])
-                or bool(get_slices_convolution(node))
-                or has_dynamic_conv_padding(node)
-            )
+            if node.args[6]:
+                groups = node.args[8]
+                return bool(groups != 1)
+            return bool(get_slices_convolution(node)) or has_dynamic_conv_padding(node)
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            groups = node.args[6]
+            return bool(groups != 1)
         if node.target in (
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.max_pool2d.default,
@@ -1355,7 +1357,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
 
         input_node = typing.cast(torch.fx.Node, node.args[0])
         input_tensor = get_first_fake_tensor(input_node)
-        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+        input_dtype = input_tensor.dtype
+        if input_node.target in DQ_OPS:
+            # The quantizer annotated argmax's input: the dequantize is folded
+            # before lowering and TOSA ARGMAX sees the quantized dtype.
+            dq_input = typing.cast(torch.fx.Node, input_node.args[0])
+            input_dtype = get_first_fake_tensor(dq_input).dtype
+        if not self._is_tosa_argmax_dtype_supported(node, input_dtype):
             return False
 
         input_rank = len(input_tensor.shape)
