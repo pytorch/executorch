@@ -307,17 +307,19 @@ class CatConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support concatenation of 2 - 5 tensors
+        Only support concatenation of 2 or more tensors. Concatenations of more
+        than 5 tensors are split by DecomposeConcatenate during preprocessing.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        num_tensors = len(node.all_input_nodes)
+        # all_input_nodes deduplicates, so cat([x, x]) has one input node.
+        num_tensors = len(node.args[0])
 
-        if not (num_tensors >= 2):
+        if num_tensors < 2:
             why(
                 node,
-                reason=f"only support concatenation of > 2 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of at least 2 tensors, got {num_tensors}",
             )
             return False
 
