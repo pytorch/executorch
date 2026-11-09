@@ -30,9 +30,9 @@ executorch::runtime::Error close_library(void* lib_handle);
  * and it is created exclusively, so an existing file is never opened or
  * overwritten. Outside Windows, only the current user can read or write it.
  * The directory is std::filesystem::temp_directory_path(), which honors TMPDIR
- * on POSIX. A caller that loads the file by path relies on that directory
- * being private to the user or sticky, as /tmp is. The caller removes the
- * file when it is no longer needed.
+ * on POSIX. A caller that loads the file by path relies on only the user and
+ * root being able to rename the file or any directory on its path, as with
+ * /tmp. The caller removes the file when it is no longer needed.
  *
  * @param[in] data The library contents.
  * @param[in] size The size of the library contents, in bytes.
