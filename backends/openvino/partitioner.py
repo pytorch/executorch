@@ -104,10 +104,11 @@ def _remove_copies_of_inputs(
     OpenVINO would return the input itself, and when the runtime binds the
     output buffers after the inputs, its CPU plugin does not write such an
     output and can overwrite the input with the output buffer's old contents.
-    Copies used only inside the partition stay, where OpenVINO can fold them.
-    A copy of a constant that only this partition reads stays too, since the
-    constant is not a partition input. Such a copy still leaves when it is not
-    in the default dim order, when its type is not in dtypes, the types
+    A copy into another dim order leaves too. OpenVINO would return a
+    transpose of the input instead, but that was checked only on the CPU.
+    Copies used only inside the partition stay. A copy of a constant that only
+    this partition reads stays too, since the constant is not a partition
+    input. Such a copy still leaves when its type is not in dtypes, the types
     OpenVINO can return, or when another output also returns that constant,
     since OpenVINO's PyTorch frontend cannot convert two outputs of one
     constant.
@@ -136,7 +137,6 @@ def _remove_copies_of_inputs(
                 source in constants
                 and returns[source] == 1
                 and all(user in partition.nodes for user in source.users)
-                and node.meta["val"].is_contiguous()
                 and node.meta["val"].dtype in dtypes
             )
         ]

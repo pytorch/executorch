@@ -19,8 +19,8 @@ def channels_last(x):
     return x.clone(memory_format=torch.channels_last)
 
 
-# The clone in the input cases runs on CPU, so the partition gets a
-# channels-last input.
+# In the input cases the clone is returned, so it runs on the CPU and the
+# partition gets a channels-last input.
 CASES = {
     "output": lambda m, x: (x * 2).to(memory_format=torch.channels_last),
     "input to mean": lambda m, x: (y := channels_last(x), y.mean((2, 3))),
@@ -39,21 +39,62 @@ CASES = {
 
 class TestDimOrder(BaseOpenvinoOpTest):
 
+    def check(self, module, inputs, **kwargs):
+        program = self.execute_layer_test(module, inputs, **kwargs)
+        return [
+            op.name for op in program.executorch_program.execution_plan[0].operators
+        ]
+
+    def check_case(self, name, inputs, **kwargs):
+        operators = self.check(Model(CASES[name]), inputs, **kwargs)
+        if name.startswith("input"):
+            self.assertIn("dim_order_ops::_clone_dim_order", operators)
+
     def test_channels_last_at_partition_edge(self):
         x = torch.randn(2, 3, 6, 5)
-        for name, forward in CASES.items():
+        for name in CASES:
             with self.subTest(case=name):
-                self.execute_layer_test(Model(forward), (x,))
+                self.check_case(name, (x,))
 
-    def test_channels_last_with_dynamic_sizes(self):
+    def test_channels_last_program_input(self):
+        x = torch.randn(2, 3, 6, 5).to(memory_format=torch.channels_last)
         cases = {
-            "output": CASES["output"],
-            "input to mean": CASES["input to mean"],
+            "mean": lambda m, x: x.mean((2, 3)),
+            "conv": lambda m, x: m.conv(x),
         }
         for name, forward in cases.items():
             with self.subTest(case=name):
-                self.execute_layer_test(
-                    Model(forward),
+                self.assertEqual(self.check(Model(forward), (x,)), [])
+
+    def test_channels_last_3d_program_input(self):
+        # ExecuTorch cannot export a copy into channels_last_3d, so a 5-D
+        # channels-last tensor reaches a partition only as a program input.
+        x = torch.randn(2, 3, 4, 5, 6).to(memory_format=torch.channels_last_3d)
+        module = Model(lambda m, x: x.mean((2, 3, 4)))
+        self.assertEqual(self.check(module, (x,)), [])
+
+    def test_channels_last_input_after_int_input(self):
+        class IntAndChannelsLast(torch.nn.Module):
+            def forward(self, x, n, w):
+                n = n.item()
+                torch._check(n >= 1)
+                torch._check(n <= x.shape[0])
+                y = channels_last(w)
+                return y, x[:n].sum(0) + y.mean((2, 3))
+
+        # The partition gets x, then the int, then the channels-last clone.
+        x, w = torch.randn(4, 3), torch.randn(2, 3, 6, 5)
+        self.execute_layer_test(
+            IntAndChannelsLast(),
+            (x, torch.tensor(3), w),
+            more_inputs=((x, torch.tensor(4), w),),
+        )
+
+    def test_channels_last_with_dynamic_sizes(self):
+        for name in ("output", "input to mean"):
+            with self.subTest(case=name):
+                self.check_case(
+                    name,
                     (torch.randn(2, 3, 6, 5),),
                     more_inputs=((torch.randn(2, 3, 3, 5),),),
                     dynamic_shapes=({2: Dim("h", min=2, max=8)},),
@@ -61,8 +102,10 @@ class TestDimOrder(BaseOpenvinoOpTest):
 
     def test_channels_last_with_size_one_dims(self):
         # ExecuTorch keeps a channels-last dim order when only C or only H and W
-        # are 1, though the bytes are then laid out as if contiguous.
+        # are 1, though the bytes are then laid out as if contiguous. The
+        # lowering and the runtime must pick the same dim order, or the runtime
+        # passes sizes the compiled model does not take.
         for shape in ((2, 1, 4, 5), (2, 3, 1, 1)):
             for name in ("output", "input to mean", "input to flatten"):
                 with self.subTest(shape=shape, case=name):
-                    self.execute_layer_test(Model(CASES[name]), (torch.randn(shape),))
+                    self.check_case(name, (torch.randn(shape),))

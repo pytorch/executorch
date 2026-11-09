@@ -5,6 +5,7 @@
  *  LICENSE file in the root directory of this source tree.
  */
 
+#include <array>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -178,6 +180,16 @@ FuncPtr load_symbol(void* handle, const char* name) {
   return reinterpret_cast<FuncPtr>(sym);
 }
 #endif
+
+// An older ExecuTorch lowered a partition input or output in another dim
+// order without a transpose, so its compiled shape differs from the sizes the
+// runtime now passes.
+const char* reexport_hint(const exa::Tensor& tensor) {
+  return exr::is_contiguous_dim_order(tensor.dim_order().data(), tensor.dim())
+      ? ""
+      : ". It is not in the default dim order, so if an older ExecuTorch "
+        "lowered this .pte, export it again";
+}
 
 } // namespace
 
@@ -524,6 +536,12 @@ exr::Error OpenvinoBackend::execute(
     // inside the infer_request until it is freed or overwritten.
     ov_.tensor_free(tensor);
     if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to bind input %zu (status=%d)%s",
+          i,
+          status,
+          args[i]->isTensor() ? reexport_hint(args[i]->toTensor()) : "");
       return exr::Error::Internal;
     }
   }
@@ -566,6 +584,12 @@ exr::Error OpenvinoBackend::execute(
       ov_.tensor_free(tensor);
     }
     if (status != OV_STATUS_OK) {
+      ET_LOG(
+          Error,
+          "OpenVINO: failed to bind output %zu (status=%d)%s",
+          i,
+          status,
+          reexport_hint(output_tensor));
       return exr::Error::Internal;
     }
   }
@@ -650,13 +674,14 @@ exr::Error OpenvinoBackend::copy_output(
   }
   // OpenVINO gives the sizes in memory order.
   auto dim_order = output.dim_order();
-  std::unique_ptr<int64_t[]> sizes(new int64_t[shape.rank]);
+  std::array<exa::SizesType, exr::kTensorDimensionLimit> sizes{};
   for (int64_t d = 0; d < shape.rank; d++) {
-    sizes[dim_order[d]] = shape.dims[d];
+    sizes[dim_order[d]] = static_cast<exa::SizesType>(shape.dims[d]);
   }
   exr::Error error = exr::resize_tensor(
       output,
-      exa::ArrayRef<int64_t>(sizes.get(), static_cast<size_t>(shape.rank)));
+      exa::ArrayRef<exa::SizesType>(
+          sizes.data(), static_cast<size_t>(shape.rank)));
   ov_.shape_free(&shape);
   if (error != exr::Error::Ok) {
     return error;

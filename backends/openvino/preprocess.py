@@ -32,6 +32,7 @@ from openvino.frontend.pytorch.utils import (  # type: ignore[import-untyped]
     pt_to_ov_type_map,
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+from torch.export.graph_signature import OutputKind
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 # The values of the inference_precision compile spec. The runtime
@@ -95,13 +96,14 @@ def _non_default_dim_order(val) -> Optional[tuple]:
     default."""
     if not isinstance(val, torch.Tensor):
         return None
-    order = tuple(dim_order_from_stride(val.stride(), tuple(val.shape)))
+    order = dim_order_from_stride(val.stride(), tuple(val.shape))
     return order if order != tuple(range(val.dim())) else None
 
 
 def _partition_inputs(edge_program: ExportedProgram):
-    """The type, shape and dim order of each partition input, in the order
-    the runtime passes them, and the positions of the int inputs."""
+    """The type and shape of each partition input, in the order the runtime
+    passes them, the positions of the int inputs, and the dim order of each
+    tensor input that is not in the default one, by position."""
     input_names = edge_program.graph_signature.user_inputs
     input_types: list[torch.dtype] = []
     input_shapes = []
@@ -126,6 +128,26 @@ def _partition_inputs(edge_program: ExportedProgram):
                 f"{type(val).__name__}; only tensors and ints are supported"
             )
     return input_types, input_shapes, int_inputs, input_dim_orders
+
+
+def _output_dim_orders(edge_program: ExportedProgram) -> dict[int, tuple]:
+    """The dim order of each partition output that is not in the default one,
+    by its position among the outputs of edge_program.module(), which returns
+    only the user outputs."""
+    outputs = [
+        node
+        for node, spec in zip(
+            edge_program.graph.output_node().args[0],
+            edge_program.graph_signature.output_specs,
+        )
+        if spec.kind == OutputKind.USER_OUTPUT
+    ]
+    return {
+        i: order
+        for i, node in enumerate(outputs)
+        if isinstance(node, torch.fx.Node)
+        and (order := _non_default_dim_order(node.meta.get("val")))
+    }
 
 
 @final
@@ -159,15 +181,6 @@ class OpenvinoBackend(BackendDetails):
                 f"'{requested_precision}', expected one of {', '.join(_PRECISIONS)}"
             )
 
-        # OpenVINO computes in the default dim order, so a partition input or
-        # output in another one gets a transpose, and the runtime passes its
-        # bytes with the sizes in memory order.
-        output_dim_orders = {
-            i: order
-            for i, node in enumerate(edge_program.graph.output_node().args[0])
-            if isinstance(node, torch.fx.Node)
-            and (order := _non_default_dim_order(node.meta.get("val")))
-        }
         for pass_cls in [
             DimOrderOpsRevertPass,
             DecomposeFloorDividePass,
@@ -180,6 +193,7 @@ class OpenvinoBackend(BackendDetails):
         input_types, input_shapes, int_inputs, input_dim_orders = _partition_inputs(
             edge_program
         )
+        output_dim_orders = _output_dim_orders(edge_program)
 
         module = edge_program.module()
         FoldConstantCumsumPass()(module)
@@ -205,6 +219,9 @@ class OpenvinoBackend(BackendDetails):
         for i in int_inputs:
             ppp.input(i).tensor().set_shape([1])
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
+        # OpenVINO computes in the default dim order, so a partition input or
+        # output in another one gets a transpose, and the runtime passes its
+        # bytes with the sizes in memory order.
         for i, dim_order in input_dim_orders.items():
             inverse = [dim_order.index(d) for d in range(len(dim_order))]
             ppp.input(i).preprocess().convert_layout(inverse)

@@ -106,12 +106,20 @@ In OpenVINO 2026.4.1, the CPU plugin's `min(dim)` and `max(dim)` can return a
 later index on ties than PyTorch, which returns the first one. This happens with
 float32 as well as integer dtypes such as int32 and uint8.
 
+## Dim order
+
+OpenVINO computes every tensor in the default dim order. When a partition input
+or output is in another dim order, such as `channels_last`, the lowering adds a
+transpose to it, and the runtime passes OpenVINO its sizes in memory order. A
+`.pte` lowered by an older ExecuTorch, without these transposes, must be
+exported again: if it has such an input or output, the runtime fails to bind it
+and logs an error.
+
 ## Copies
 
 OpenVINO turns a copy, such as `x.clone()`, into nothing, so a partition that returns
 a copy would return its input. The backend handles only these returned copies: a
-`clone()` or a full slice such as `x[:, :]` of a partition input or a constant, in
-the default dim order.
+`clone()` or a full slice such as `x[:, :]` of a partition input or a constant.
 
 - A copy of a partition input (a real input, a buffer copied before the program
   changes it, or a value computed outside OpenVINO) runs on the CPU, outside
@@ -135,10 +143,11 @@ clone that runs on the CPU works only without a `memory_format` or with
 `torch.contiguous_format`. With `torch.preserve_format` it fails at run time,
 and with `torch.channels_last` it fails at export.
 
-Any other returned copy is not handled. It can come back with wrong values, or
-make ops in the partition that read it return wrong values, without an error.
-Examples are a copy made with `.to()`, a copy in another dim order such as
-`channels_last`, and a copy of a value computed inside the partition. A copy of
+Any other returned copy in the default dim order is not handled. It can come
+back with wrong values, or make ops in the partition that read it return wrong
+values, without an error. Examples are a copy made with `.to()` and a copy of a
+value computed inside the partition. A copy into another dim order gets a
+transpose like any other output, so it is handled. A copy of
 a value that the partition also returns, such as `self.buf.clone()` after the
 program changes `self.buf`, fails to lower.
 
