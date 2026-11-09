@@ -43,7 +43,7 @@ python -m executorch.extension.llm.export.export_llm \
 
 To perform a basic export of Llama3.2, we will first need to download the checkpoint file (`consolidated.00.pth`) and params file (`params.json`). You can find these from the [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B/tree/main/original).
 
-Then, we specify the `model_class`, `checkpoint` (path to checkpoint file), and `params` (path to params file) as arguments. Additionally, later when we run the exported .pte with our runner APIs, the runner will need to know about the bos and eos ids for this model to know when to terminate. These are exposed through bos and eos getter methods in the .pte, which we can add by specifying bos and eos ids in a `metadata` argument. The values for these tokens can usually be found in the model's `tokenizer_config.json` on Hugging Face.
+Then, we specify the `model_family`, `checkpoint` (path to checkpoint file), and `params` (path to params file) as arguments. Additionally, later when we run the exported .pte with our runner APIs, the runner will need to know about the bos and eos ids for this model to know when to terminate. These are exposed through bos and eos getter methods in the .pte, which we can add by specifying bos and eos ids in a `metadata` argument. The values for these tokens can usually be found in the model's `tokenizer_config.json` on Hugging Face.
 
 Save the following YAML as `path/to/config.yaml`, replacing the placeholder file
 paths. Paths inside the configuration are relative to your current working
@@ -52,7 +52,7 @@ directory unless you use absolute paths. Run the shell command separately.
 ```yaml
 # path/to/config.yaml
 base:
-  model_class: llama3_2
+  model_family: llama3_2
   checkpoint: path/to/consolidated.00.pth
   params: path/to/params.json
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
@@ -76,7 +76,7 @@ For the other supported LLMs, the checkpoint will be downloaded from Hugging Fac
 ```yaml
 # path/to/config.yaml
 base:
-  model_class: llama3_2
+  model_family: llama3_2
   checkpoint: path/to/consolidated.00.pth
   params: path/to/params.json
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
@@ -122,7 +122,7 @@ To quantize embeddings, specify either `embedding_quantize: <bitwidth>,<groupsiz
 ```yaml
 # path/to/config.yaml
 base:
-  model_class: llama3_2
+  model_family: llama3_2
   checkpoint: path/to/consolidated.00.pth
   params: path/to/params.json
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
@@ -153,7 +153,7 @@ Backend options are defined by [`BackendConfig`](https://github.com/pytorch/exec
 ```yaml
 # path/to/config.yaml
 base:
-  model_class: llama3_2
+  model_family: llama3_2
   checkpoint: path/to/consolidated.00.pth
   params: path/to/params.json
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'

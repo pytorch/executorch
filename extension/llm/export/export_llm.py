@@ -16,7 +16,7 @@ Export an LLM with ExecuTorch. Currently follows the following steps:
 
 Example usage using full CLI arguments:
 python -m extension.llm.export.export_llm \
-    base.model_class="llama3" \
+    base.model_family="llama3" \
     model.use_sdpa_with_kv_cache=True \
     model.use_kv_cache=True \
     debug.verbose=True \

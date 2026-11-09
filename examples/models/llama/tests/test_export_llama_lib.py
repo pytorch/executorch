@@ -8,12 +8,15 @@
 import os
 import tempfile
 import unittest
+import warnings
+from argparse import Namespace
 from unittest.mock import patch
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.etrecord import parse_etrecord
 from executorch.devtools.etrecord._etrecord import ETRecord
+from omegaconf import OmegaConf
 
 try:
     from executorch.backends.arm.quantizer.arm_quantizer import (
@@ -33,14 +36,23 @@ from executorch.examples.models.llama import export_llama_lib
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
+    EXECUTORCH_DEFINED_MODELS,
     get_quantizer_and_quant_params,
+    TORCHTUNE_DEFINED_MODELS,
 )
 from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import (
+    BaseConfig,
     LlmConfig,
     MethodConfig,
+    ModelType,
     Pt2eQuantize,
     VgfQuantizeScope,
+)
+from executorch.extension.llm.export.config.model_identity import (
+    LEGACY_MODEL_CLASS_TO_FAMILY,
+    MODEL_SPECS,
+    ModelFamily,
 )
 
 UNWANTED_OPS = [
@@ -68,7 +80,356 @@ def _tiny_llm_builder():
     )
 
 
+def _llm_config(**base_options):
+    return LlmConfig(base=BaseConfig(**base_options))
+
+
+def _export_result(filename="qwen.pte"):
+    return Namespace(get_saved_pte_filename=lambda: filename)
+
+
 class ExportLlamaLibTest(unittest.TestCase):
+    def test_new_model_identity_cli_args(self):
+        args = build_args_parser().parse_args(["--model-id", "qwen2_5_0_5b"])
+
+        llm_config = LlmConfig.from_args(args)
+
+        self.assertIsNone(llm_config.base.model_family)
+        self.assertEqual(llm_config.base.model_id, "qwen2_5_0_5b")
+        self.assertIs(llm_config.model_identity.family, ModelFamily.qwen2_5)
+
+    def test_model_family_cli_arg_cannot_be_combined_with_model_id(self):
+        args = build_args_parser().parse_args(
+            ["--model-family", "qwen2_5", "--model-id", "qwen2_5_0_5b"]
+        )
+
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            LlmConfig.from_args(args)
+
+    def test_empty_model_id_from_args_is_rejected(self):
+        args = Namespace(model=None, model_family=None, model_id="")
+
+        with self.assertRaisesRegex(ValueError, "Unknown model_id ''"):
+            LlmConfig.from_args(args)
+
+    def test_legacy_model_choices_are_derived_from_legacy_mappings(self):
+        expected_executorch_models = [
+            model_class
+            for model_class, model_family in LEGACY_MODEL_CLASS_TO_FAMILY.items()
+            if model_family in export_llama_lib.EXECUTORCH_DEFINED_MODEL_FAMILIES
+        ]
+        expected_torchtune_models = [
+            model_class
+            for model_class, model_family in LEGACY_MODEL_CLASS_TO_FAMILY.items()
+            if model_family in export_llama_lib.TORCHTUNE_DEFINED_MODEL_FAMILIES
+        ]
+
+        self.assertEqual(EXECUTORCH_DEFINED_MODELS, expected_executorch_models)
+        self.assertEqual(TORCHTUNE_DEFINED_MODELS, expected_torchtune_models)
+
+    def test_registered_model_families_have_eager_routes(self):
+        registered_families = {spec.family for spec in MODEL_SPECS.values()}
+        eager_families = set(
+            export_llama_lib.EXECUTORCH_DEFINED_MODEL_FAMILIES
+            + export_llama_lib.TORCHTUNE_DEFINED_MODEL_FAMILIES
+        )
+
+        self.assertTrue(registered_families <= eager_families)
+        hf_model_families = {
+            spec.family for spec in MODEL_SPECS.values() if spec.hf_repo_id is not None
+        }
+        for model_family in hf_model_families:
+            with self.subTest(model_family=model_family):
+                self.assertTrue(
+                    callable(export_llama_lib._get_hf_weight_converter(model_family))
+                )
+
+    def test_legacy_model_cli_arg_warns(self):
+        args = build_args_parser().parse_args(["--model", "qwen3_0_6b"])
+
+        with self.assertWarnsRegex(
+            FutureWarning,
+            r"base\.model_class is deprecated and will be removed "
+            r"in a future release\. Use base\.model_id, or "
+            r"base\.model_family with base\.checkpoint for local models\.",
+        ):
+            llm_config = LlmConfig.from_args(args)
+
+        self.assertEqual(llm_config.base.model_class, ModelType.qwen3_0_6b)
+
+    def test_legacy_model_cli_arg_cannot_be_combined_with_new_model_fields(self):
+        args = build_args_parser().parse_args(
+            ["--model", "qwen3_0_6b", "--model-family", "qwen3"]
+        )
+
+        with self.assertRaisesRegex(ValueError, "base.model_class cannot be used"):
+            LlmConfig.from_args(args)
+
+    def test_model_family_selects_code_path_and_model_id_names_output(self):
+        model = Namespace(
+            max_seq_len=128,
+            max_context_len=128,
+            n_layers=2,
+            vocab_size=128,
+            num_kv_shared_layers=0,
+        )
+        cases = (
+            ({"model_id": "qwen2_5_0_5b"}, "qwen2_5_0_5b"),
+            ({"model_class": ModelType.static_llama}, "llama3_2"),
+        )
+        for selectors, expected_name in cases:
+            with self.subTest(selectors=selectors), warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
+                llm_config = _llm_config(**selectors)
+                with patch.object(
+                    export_llama_lib.EagerModelFactory,
+                    "create_model",
+                    return_value=(model, (), {}, None),
+                ) as create_model:
+                    manager = export_llama_lib._load_llama_model(llm_config)
+
+                create_model.assert_called_once_with(
+                    "llama", "Llama2Model", llm_config=llm_config
+                )
+                self.assertEqual(manager.modelname, expected_name)
+
+    def test_mutated_identity_is_checked_before_download_or_export(self):
+        llm_config = _llm_config(model_id="qwen2_5_0_5b", params="/tmp/params.json")
+        llm_config.base.model_id = "unknown_model"
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(export_llama_lib, "_export_llama") as export_model,
+            self.assertRaisesRegex(ValueError, "Unknown model_id"),
+        ):
+            export_llama_lib.export_llama(llm_config)
+        download_checkpoint.assert_not_called()
+        export_model.assert_not_called()
+
+    def test_model_id_drives_download(self):
+        llm_config = _llm_config(
+            model_id="qwen2_5_0_5b",
+            params="/tmp/params.json",
+        )
+
+        with (
+            patch.object(
+                export_llama_lib,
+                "_get_hf_weight_converter",
+                return_value="convert_weights",
+            ) as get_converter,
+            patch.object(
+                export_llama_lib,
+                "download_and_convert_hf_checkpoint",
+                return_value="/tmp/qwen.pth",
+            ) as download_checkpoint,
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+        self.assertEqual(llm_config.base.checkpoint, "/tmp/qwen.pth")
+        get_converter.assert_called_once_with(ModelFamily.qwen2_5)
+        self.assertEqual(download_checkpoint.call_args.args[0], "Qwen/Qwen2.5-0.5B")
+        self.assertEqual(download_checkpoint.call_args.args[1], "convert_weights")
+
+    def test_hf_model_id_requires_params_before_download(self):
+        llm_config = _llm_config(model_id="qwen2_5_0_5b")
+
+        with patch.object(
+            export_llama_lib, "download_and_convert_hf_checkpoint"
+        ) as download_checkpoint:
+            with self.assertRaisesRegex(
+                ValueError,
+                r"base\.model_id 'qwen2_5_0_5b' requires base\.params",
+            ):
+                export_llama_lib.export_llama(llm_config)
+
+        download_checkpoint.assert_not_called()
+
+    def test_hf_model_id_with_local_checkpoint_requires_params(self):
+        llm_config = _llm_config(model_id="qwen2_5_0_5b", checkpoint="/tmp/local.pth")
+
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(export_llama_lib, "_export_llama") as export_model,
+            self.assertRaisesRegex(
+                ValueError,
+                r"base\.model_id 'qwen2_5_0_5b' requires base\.params",
+            ),
+        ):
+            export_llama_lib.export_llama(llm_config)
+
+        download_checkpoint.assert_not_called()
+        export_model.assert_not_called()
+
+    def test_local_only_model_id_requires_checkpoint(self):
+        for model_id in (
+            "stories110m",
+            "llama3_2_1b_instruct",
+            "llama3_2_3b_instruct",
+        ):
+            with self.subTest(model_id=model_id):
+                llm_config = _llm_config(model_id=model_id)
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"base\.model_id {model_id!r} has no linked Hugging Face repository",
+                ):
+                    export_llama_lib.export_llama(llm_config)
+
+    def test_local_only_model_id_uses_checkpoint(self):
+        llm_config = _llm_config(
+            model_id="llama3_2_1b_instruct",
+            checkpoint="/tmp/local.pth",
+            params="/tmp/params.json",
+        )
+
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+        download_checkpoint.assert_not_called()
+
+    def test_local_only_model_id_requires_params(self):
+        for model_id in (
+            "stories110m",
+            "llama3_2_1b_instruct",
+            "llama3_2_3b_instruct",
+        ):
+            with self.subTest(model_id=model_id):
+                llm_config = _llm_config(
+                    model_id=model_id,
+                    checkpoint="/tmp/local.pth",
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"base\.model_id {model_id!r} requires base\.params",
+                ):
+                    export_llama_lib.export_llama(llm_config)
+
+    def test_legacy_hf_model_class_requires_params_before_download(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            llm_config = _llm_config(model_class=ModelType.qwen3_0_6b)
+
+        with patch.object(
+            export_llama_lib, "download_and_convert_hf_checkpoint"
+        ) as download_checkpoint:
+            with self.assertRaisesRegex(
+                ValueError,
+                r"base\.model_id 'qwen3_0_6b' requires base\.params",
+            ):
+                export_llama_lib.export_llama(llm_config)
+
+        download_checkpoint.assert_not_called()
+
+    def test_legacy_stories_model_class_requires_local_inputs(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            llm_config = _llm_config(model_class=ModelType.stories110m)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"base\.model_id 'stories110m'.*Provide base\.checkpoint",
+        ):
+            export_llama_lib.export_llama(llm_config)
+
+        llm_config.base.checkpoint = "/tmp/local.pth"
+        with self.assertRaisesRegex(
+            ValueError,
+            r"base\.model_id 'stories110m' requires base\.params",
+        ):
+            export_llama_lib.export_llama(llm_config)
+
+    def test_checkpoint_overrides_model_id_download(self):
+        llm_config = _llm_config(
+            model_id="qwen2_5_0_5b",
+            checkpoint="/tmp/local.pth",
+            params="/tmp/params.json",
+        )
+
+        with (
+            patch.object(
+                export_llama_lib, "download_and_convert_hf_checkpoint"
+            ) as download_checkpoint,
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+        download_checkpoint.assert_not_called()
+
+    def test_custom_local_checkpoint_uses_model_family_without_model_id(self):
+        llm_config = _llm_config(
+            model_family=ModelFamily.qwen3,
+            checkpoint="/tmp/custom.pth",
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with (
+                patch.object(
+                    export_llama_lib, "download_and_convert_hf_checkpoint"
+                ) as download_checkpoint,
+                patch.object(
+                    export_llama_lib,
+                    "_export_llama",
+                    return_value=_export_result(),
+                ),
+            ):
+                self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+        download_checkpoint.assert_not_called()
+
+    def test_model_family_without_weights_warns(self):
+        llm_config = _llm_config(model_family=ModelFamily.qwen2_5)
+
+        with (
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+            self.assertWarnsRegex(UserWarning, "randomly initialized weights"),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+    def test_empty_model_identity_without_weights_warns(self):
+        llm_config = _llm_config()
+
+        with (
+            patch.object(
+                export_llama_lib, "_export_llama", return_value=_export_result()
+            ),
+            self.assertWarnsRegex(UserWarning, "randomly initialized weights"),
+        ):
+            self.assertEqual(export_llama_lib.export_llama(llm_config), "qwen.pte")
+
+    def test_legacy_dict_config_is_supported(self):
+        llm_config = OmegaConf.create({"base": {"model_class": "llama3"}})
+
+        with patch.object(
+            export_llama_lib, "_export_llama", return_value=_export_result("llama.pte")
+        ):
+            with self.assertWarnsRegex(
+                FutureWarning,
+                r"base\.model_class is deprecated and will be removed "
+                r"in a future release\. Use base\.model_id, or "
+                r"base\.model_family with base\.checkpoint for local models\.",
+            ):
+                self.assertEqual(export_llama_lib.export_llama(llm_config), "llama.pte")
+
     def _assert_routes_to(self, lowering, coreml=False, vulkan=False, qnn=False):
         """Assert which lowering an export routes to, without running one."""
         llm_config = LlmConfig()
