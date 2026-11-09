@@ -735,9 +735,9 @@ def _cuda_train() -> str:
 
     Raises when a release row names a train the installed toolkit does not provide. The
     declared packages and the loader paths both come from this value, so disagreeing with
-    the toolkit that compiled the libraries produces a wheel that installs cleanly and then
-    cannot load: a cu126 row built against a 13.0 toolkit declares the CUDA 12 runtime for
-    binaries that need libcudart.so.13.
+    the toolkit that compiled the libraries produces a wheel that installs cleanly but
+    declares a train it was not compiled for, such as a cu134 row built against a 13.2
+    toolkit.
     """
     # An explicit OFF first, ahead of the release field. A CPU row on a builder that has a
     # toolkit installed sets both, so reading the row field first would declare a runtime
