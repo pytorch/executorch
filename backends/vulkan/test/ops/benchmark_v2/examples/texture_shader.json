@@ -1,6 +1,6 @@
 {
   "name": "texture addition",
-  "shader": "binary_add_texture3d_float",
+  "shader": "binary_op_texture3d_float",
   "gwg_size": [2, 1, 1],
   "lwg_size": [2, 1, 1],
   "target_ms": 10,
