@@ -405,7 +405,9 @@ class _ImageRuntime:
     def __init__(self):
         self.prompt = None
 
-    async def generate_stream(self, session_id, prompt, options, stats):
+    async def generate_stream(
+        self, session_id, prompt, options, stats, *, observer=None
+    ):
         self.prompt = prompt
         stats.prompt_tokens = 2
         stats.completion_tokens = 1
@@ -540,7 +542,9 @@ class _FakeRuntime:
     def stop(self):
         pass
 
-    async def generate_stream(self, session_id, prompt, options, stats=None):
+    async def generate_stream(
+        self, session_id, prompt, options, stats=None, *, observer=None
+    ):
         self.prompts.append(prompt)
         out = self._outputs.pop(0)
         if stats is not None:
@@ -602,7 +606,9 @@ def test_ignore_eos_consumes_budget_and_preserves_visible_turn(serving_cls, stre
         supports_ignore_eos = True
         default_stop_strings = ["<|eot|>", "<|end_of_text|>"]
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             assert options.ignore_eos is True
             assert options.stop == ["USER_STOP"]
             assert options.max_new_tokens == 3
@@ -653,7 +659,9 @@ def test_bare_generator_stop_is_scoped_and_finalizes(serving_cls, stream):
         def stop(self):
             self.stops += 1
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             try:
                 async for token in super().generate_stream(
                     session_id, prompt, options, stats
@@ -698,7 +706,9 @@ def test_bare_generator_cancellation_keeps_transaction_until_cleanup(
             self.closed = asyncio.Event()
             self.reset_called = asyncio.Event()
 
-        async def generate_stream(self, session_id, prompt, options, stats=None):
+        async def generate_stream(
+            self, session_id, prompt, options, stats=None, *, observer=None
+        ):
             try:
                 yield "first"
                 self.started.set()
@@ -1197,7 +1207,9 @@ def test_image_overflow_uses_worker_counts(stream, dialect, text_tokens, complet
             return "text " * text_tokens + serve._IMAGE_PLACEHOLDER
 
     class Runtime(_ImageRuntime):
-        async def generate_stream(self, session_id, prompt, options, stats):
+        async def generate_stream(
+            self, session_id, prompt, options, stats, *, observer=None
+        ):
             self.prompt = prompt
             raise WorkerError(
                 "image-expanded prompt exceeds context",
