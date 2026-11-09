@@ -164,7 +164,6 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
       std::to_string(counter.fetch_add(1, std::memory_order_relaxed)) + "_";
   const char* bytes = static_cast<const char*>(data);
   size_t remaining = size;
-  bool failed = false;
 #ifdef _WIN32
   std::random_device random;
   char suffix[24];
@@ -192,22 +191,24 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
   }
   // WriteFile takes a 32-bit length, so write in chunks.
   constexpr DWORD kMaxChunk = 1u << 30;
-  while (remaining > 0 && !failed) {
+  DWORD err = ERROR_SUCCESS;
+  while (remaining > 0 && err == ERROR_SUCCESS) {
     const DWORD chunk =
         remaining > kMaxChunk ? kMaxChunk : static_cast<DWORD>(remaining);
     DWORD written = 0;
-    if (WriteFile(file, bytes, chunk, &written, nullptr) && written > 0) {
+    if (!WriteFile(file, bytes, chunk, &written, nullptr)) {
+      err = GetLastError();
+    } else if (written == 0) {
+      err = ERROR_WRITE_FAULT;
+    } else {
       bytes += written;
       remaining -= written;
-    } else {
-      failed = true;
     }
   }
-  if (!CloseHandle(file)) {
-    failed = true;
+  if (!CloseHandle(file) && err == ERROR_SUCCESS) {
+    err = GetLastError();
   }
-  if (failed) {
-    const DWORD err = GetLastError();
+  if (err != ERROR_SUCCESS) {
     ET_LOG(
         Error,
         "Failed to write %s with error %lu: %s",
@@ -228,20 +229,23 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     ET_LOG(Error, "Failed to create %s: %s", path.c_str(), strerror(errno));
     return executorch::runtime::Error::AccessFailed;
   }
-  while (remaining > 0 && !failed) {
+  int err = 0;
+  while (remaining > 0 && err == 0) {
     const ssize_t written = write(fd, bytes, remaining);
     if (written > 0) {
       bytes += written;
       remaining -= static_cast<size_t>(written);
-    } else if (written == 0 || errno != EINTR) {
-      failed = true;
+    } else if (written == 0) {
+      err = EIO;
+    } else if (errno != EINTR) {
+      err = errno;
     }
   }
-  if (close(fd) != 0) {
-    failed = true;
+  if (close(fd) != 0 && err == 0) {
+    err = errno;
   }
-  if (failed) {
-    ET_LOG(Error, "Failed to write %s: %s", path.c_str(), strerror(errno));
+  if (err != 0) {
+    ET_LOG(Error, "Failed to write %s: %s", path.c_str(), strerror(err));
     unlink(path.c_str());
     return executorch::runtime::Error::AccessFailed;
   }
