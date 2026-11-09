@@ -6,9 +6,11 @@
 
 """The CUDA backend loads its compiled code from a file in the temp directory.
 
-Loading a method writes that library to a new file in the system temporary
-directory and opens it from there. The file has to be a new one, readable only
-by its owner, and it has to be removed once the program is freed.
+Loading a method writes that library to a file in the system temporary
+directory and opens it from there. These tests check that the file is readable
+only by its owner, that it is removed once the program is freed, and that a
+failure to create or write it is a load error. A failed write also leaves no
+file behind.
 """
 
 import os
@@ -52,7 +54,7 @@ class TestTempLibraryFile(unittest.TestCase):
             lowered.to_executorch().write_to_file(f)
         return path
 
-    def test_library_file_is_new_and_owner_only(self) -> None:
+    def test_library_file_is_owner_only_and_removed(self) -> None:
         from executorch.runtime import Runtime
 
         with tempfile.TemporaryDirectory() as outdir, tempfile.TemporaryDirectory() as tmpdir:
