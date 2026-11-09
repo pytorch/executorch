@@ -73,7 +73,7 @@ This can also occur if the ExecuTorch portable library does not yet have an impl
 
 ### Error 0x20 (Not Found)
 
-This error can occur for a few reasons, but the most common is a missing backend target. Ensure the appropriate backend target is linked. For XNNPACK, this is `xnnpack_backend`. If the backend is linked but is still not available, try linking with --whole-archive: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive`.
+This error can occur for a few reasons, but the most common is a missing backend target. Ensure the appropriate backend target is linked. For XNNPACK, this is `xnnpack_backend`. If the backend is linked but is still not available, try linking with --whole-archive: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive libxnnpack_profiler.a`.
 
 ### Duplicate Kernel Registration Abort
 

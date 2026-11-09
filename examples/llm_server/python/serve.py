@@ -9,12 +9,14 @@
 import argparse
 import asyncio
 import logging
+import math
 import os
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .chat_template import ChatTemplate
+from .hud.worker_logs import capture_worker_logs
 from .multiplexed_worker_client import spawn_multiplexed_worker
 from .server import build_app
 from .serving_chat import ServingChat
@@ -22,6 +24,20 @@ from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
 
 _MAX_INT32 = (1 << 31) - 1
+
+
+def _parse_preflight_timeout(value):
+    if value == "none":
+        return None
+    try:
+        timeout = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "expected a nonnegative number or none"
+        ) from error
+    if not math.isfinite(timeout) or timeout < 0:
+        raise argparse.ArgumentTypeError("expected a finite nonnegative number or none")
+    return timeout
 
 
 def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
@@ -101,6 +117,15 @@ def _parse_args(argv=None):
         default=0,
         help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
     )
+    parser.add_argument(
+        "--api-dialect", choices=("openai", "openrouter"), default="openai"
+    )
+    parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=_parse_preflight_timeout,
+        default=None,
+        help="Seconds to wait for first output (including prefill) before SSE headers; none waits indefinitely.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -149,54 +174,71 @@ def main(argv=None) -> None:
 
     @asynccontextmanager
     async def serving_factory():
-        worker = await spawn_multiplexed_worker(
-            [
-                args.worker_bin,
-                "--pte",
-                args.model_path,
-                "--tokenizer",
-                args.tokenizer_path,
-                "--max_sessions",
-                str(args.max_sessions),
-                "--max_session_tokens",
-                str(args.max_context),
-                "--max_decode_sequences",
-                str(args.max_decode_sequences),
-                "--max_inflight_requests",
-                str(args.max_inflight_requests),
-                "--prefix_cache_entries",
-                str(args.prefix_cache_entries),
-            ]
-            + (
-                ["--prefix_capture_slots", str(args.prefix_capture_slots)]
-                if args.prefix_cache_entries
-                else []
-            )
-            + (
-                ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
-                if args.prefix_checkpoint_interval
-                else []
-            )
-        )
-        runtime = None
-        try:
-            runtime = SessionRuntime(worker)
-            yield ServingChat(
-                runtime,
-                template,
-                args.model_id,
-                max_context=args.max_context,
-                tool_detector_cls=HermesDetector,
-            )
-        finally:
-            if runtime is None:
-                await SessionRuntime._finish_cleanup(
-                    asyncio.create_task(worker.close())
+        async with capture_worker_logs() as stderr:
+            worker = await spawn_multiplexed_worker(
+                [
+                    args.worker_bin,
+                    "--pte",
+                    args.model_path,
+                    "--tokenizer",
+                    args.tokenizer_path,
+                    "--max_sessions",
+                    str(args.max_sessions),
+                    "--max_session_tokens",
+                    str(args.max_context),
+                    "--max_decode_sequences",
+                    str(args.max_decode_sequences),
+                    "--max_inflight_requests",
+                    str(args.max_inflight_requests),
+                    "--prefix_cache_entries",
+                    str(args.prefix_cache_entries),
+                ]
+                + (
+                    ["--prefix_capture_slots", str(args.prefix_capture_slots)]
+                    if args.prefix_cache_entries
+                    else []
                 )
-            else:
-                await runtime.aclose_worker()
+                + (
+                    [
+                        "--prefix_checkpoint_interval",
+                        str(args.prefix_checkpoint_interval),
+                    ]
+                    if args.prefix_checkpoint_interval
+                    else []
+                ),
+                stderr=stderr,
+            )
+            runtime = None
+            try:
+                runtime = SessionRuntime(worker)
+                yield ServingChat(
+                    runtime,
+                    template,
+                    args.model_id,
+                    max_context=args.max_context,
+                    tool_detector_cls=HermesDetector,
+                    api_dialect=args.api_dialect,
+                    streaming_preflight_timeout=args.streaming_preflight_timeout,
+                )
+            finally:
+                if runtime is None:
+                    await SessionRuntime._finish_cleanup(
+                        asyncio.create_task(worker.close())
+                    )
+                else:
+                    await runtime.aclose_worker()
 
-    app = build_app(None, args.model_id, serving_factory=serving_factory)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    app = build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+        hud=True,
+        listen_address=f"http://{host}:{args.port}",
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 

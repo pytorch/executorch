@@ -1,6 +1,6 @@
 {
   "name": "texture addition LWG range",
-  "shader": "binary_add_texture3d_float",
+  "shader": "binary_op_texture3d_float",
   "gwg_size": "default_pick_gwg",
   "lwg_size_sweep": {
     "x": [4, 12, 4],

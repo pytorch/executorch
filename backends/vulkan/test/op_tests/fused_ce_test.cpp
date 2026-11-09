@@ -143,3 +143,13 @@ TEST(VulkanFusedCeTest, large_vocab_strided_reduce) {
   test_vulkan_fused_ce(
       /*n_rows=*/3, /*vocab=*/200, /*labels=*/{17, -1, 199}, /*n_valid=*/2.0);
 }
+
+TEST(VulkanFusedCeTest, odd_vocab_with_masked_row) {
+  test_vulkan_fused_ce(
+      /*n_rows=*/3, /*vocab=*/5, /*labels=*/{4, -1, 2}, /*n_valid=*/2.0);
+}
+
+TEST(VulkanFusedCeTest, odd_vocab_strided_reduce) {
+  test_vulkan_fused_ce(
+      /*n_rows=*/3, /*vocab=*/201, /*labels=*/{17, -1, 200}, /*n_valid=*/2.0);
+}

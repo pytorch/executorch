@@ -72,13 +72,13 @@ def _apply_rescale(values, node, *, clamp=True):
 def _weighted_image(branch, warp, shape, nodes):
     multiply_rescale = _rescale(branch, torch.int32, nodes)
     multiply = _rescale(multiply_rescale, torch.int8, nodes)
-    if (
-        not _is_op(multiply, TOSA.MUL.default, 2)
-        or multiply.kwargs.get("shift", 0) != 0
-    ):
+    if not _is_op(multiply, TOSA.MUL.default, 3):
+        raise ValueError("Expected an image-mask product with a tensor shift.")
+    shift = multiply.args[2]
+    if not _is_op(shift, TOSA.CONST.default, 3) or shift.args != ([0], [1], torch.int8):
         raise ValueError("Expected an unshifted image-mask product.")
     nodes.add(multiply)
-    image_rescale, mask_rescale = multiply.args
+    image_rescale, mask_rescale = multiply.args[:2]
     crop = _rescale(image_rescale, torch.int32, nodes)
     mask = _rescale(mask_rescale, torch.int32, nodes)
     if any(n.args[2] != [1.0] for n in (image_rescale, mask_rescale)):
