@@ -481,6 +481,20 @@ class TestVulkanBackend(unittest.TestCase):
             floor_div_module, sample_inputs, atol=1.0 + 1e-03
         )
 
+    def test_vulkan_backend_trunc_div_is_not_delegated(self):
+        class TruncDivModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.div(x, y, rounding_mode="trunc")
+
+        sample_inputs = (
+            torch.rand(size=(2, 3), dtype=torch.float32) * 10.0 - 5.0,
+            torch.rand(size=(2, 3), dtype=torch.float32) + 1.0,
+        )
+        # div.Tensor_mode is implemented for rounding_mode="floor" only.
+        self.lower_module_and_test_output(
+            TruncDivModule(), sample_inputs, expect_no_delegates=True
+        )
+
     def test_vulkan_backend_pow(self):
         class PowModule(torch.nn.Module):
             def __init__(self):
@@ -2511,6 +2525,138 @@ class TestVulkanBackend(unittest.TestCase):
         sample_inputs = (torch.randn(size=(1, 3, 256, 256), dtype=torch.float32),)
 
         self.lower_module_and_test_output(module, sample_inputs)
+
+    def test_vulkan_backend_warp(self):
+        class WarpModule(torch.nn.Module):
+            def forward(self, x, flow):
+                return torch.ops.et_vk.warp(x, flow)
+
+        # A 1-pixel-wide input has no extent to scale the flow by.
+        for hw in ((16, 24), (8, 1)):
+            with self.subTest(hw=hw):
+                self.lower_module_and_test_output(
+                    WarpModule(),
+                    (
+                        torch.randn(size=[1, 8, *hw]),
+                        torch.randn(size=[1, 2, *hw]),
+                    ),
+                )
+
+    def test_vulkan_backend_warp_dynamic_shapes(self):
+        class WarpModule(torch.nn.Module):
+            def forward(self, x, flow):
+                return torch.ops.et_vk.warp(x, flow)
+
+        h = Dim("h", min=4, max=32)
+        w = Dim("w", min=4, max=32)
+        self.lower_module_and_test_output(
+            WarpModule(),
+            (torch.randn(1, 8, 16, 24), torch.randn(1, 2, 16, 24)),
+            dynamic_shapes={"x": {2: h, 3: w}, "flow": {2: h, 3: w}},
+            test_inputs=[
+                (torch.randn(1, 8, 32, 30), torch.randn(1, 2, 32, 30)),
+                (torch.randn(1, 8, 6, 10), torch.randn(1, 2, 6, 10)),
+            ],
+        )
+
+    def _assert_rejected_and_fails_at_load(self, model, sample_inputs):
+        # The et_vk ops have no CPU kernel, so a node the partitioner rejects
+        # makes the program fail to load instead of falling back to CPU.
+        et_program = lower_module(model, sample_inputs).to_executorch()
+        self.check_no_delegation(et_program)
+        with self.assertRaises(RuntimeError):
+            _load_for_executorch_from_buffer(et_program.buffer).run_method(
+                "forward", sample_inputs
+            )
+
+    def test_vulkan_backend_warp_broadcast_flow_not_delegated(self):
+        class WarpModule(torch.nn.Module):
+            def forward(self, x, flow):
+                return torch.ops.et_vk.warp(x, flow)
+
+        self._assert_rejected_and_fails_at_load(
+            WarpModule(),
+            (torch.randn(size=[1, 8, 16, 24]), torch.randn(size=[1, 2, 1, 1])),
+        )
+
+    class WarpBlendModule(torch.nn.Module):
+        def forward(self, img0, img1, flow, mask):
+            return torch.ops.et_vk.warp_blend(img0, img1, flow, mask)
+
+    @staticmethod
+    def _warp_blend_inputs(img_shape, flow_hw, mask_shape=None):
+        # img0/img1 in [0, 1]: warp_blend clamps its output to that range, so
+        # out-of-range inputs would make the comparison test the clamp instead
+        # of the warp + blend math.
+        n = img_shape[0]
+        return (
+            torch.rand(size=img_shape),
+            torch.rand(size=img_shape),
+            torch.randn(size=[n, 4, *flow_hw]),
+            torch.randn(size=mask_shape or [n, 1, *flow_hw]),
+        )
+
+    def test_vulkan_backend_warp_blend(self):
+        # Same-size flow/mask make the in-shader upsample the identity; half-size
+        # ones exercise the upsample and the per-axis displacement rescale.
+        for flow_hw in ((16, 24), (8, 12)):
+            with self.subTest(flow_hw=flow_hw):
+                self.lower_module_and_test_output(
+                    self.WarpBlendModule(),
+                    self._warp_blend_inputs([1, 3, 16, 24], flow_hw),
+                )
+
+    def test_vulkan_backend_warp_blend_dynamic_shapes(self):
+        h = Dim("h", min=2, max=16)
+        w = Dim("w", min=2, max=16)
+        img_dims = {2: 2 * h, 3: 2 * w}
+        flow_dims = {2: h, 3: w}
+        self.lower_module_and_test_output(
+            self.WarpBlendModule(),
+            self._warp_blend_inputs([1, 3, 16, 24], (8, 12)),
+            dynamic_shapes={
+                "img0": img_dims,
+                "img1": img_dims,
+                "flow": flow_dims,
+                "mask": flow_dims,
+            },
+            test_inputs=[
+                self._warp_blend_inputs([1, 3, 32, 30], (16, 15)),
+                self._warp_blend_inputs([1, 3, 6, 10], (3, 5)),
+            ],
+        )
+
+    def test_vulkan_backend_warp_blend_broadcast_mask_not_delegated(self):
+        # The reference broadcasts the mask over channels and batch; the shader
+        # reads channel 0 of batch n.
+        for img_shape, mask_shape in (
+            ([1, 3, 16, 24], [1, 3, 8, 12]),
+            ([2, 3, 16, 24], [1, 1, 8, 12]),
+        ):
+            with self.subTest(img_shape=img_shape, mask_shape=mask_shape):
+                self._assert_rejected_and_fails_at_load(
+                    self.WarpBlendModule(),
+                    self._warp_blend_inputs(img_shape, (8, 12), mask_shape),
+                )
+
+    def test_vulkan_backend_force_fp16_folds_boundary_casts(self):
+        # fp16 at the method boundary around an fp32 graph: under force_fp16 the
+        # casts copy identical data and are removed; the output must still be
+        # fp16 and match.
+        class HalfIOModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, 1, 1)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.conv(x.float())).half()
+
+        self.lower_module_and_test_output(
+            HalfIOModule(),
+            (torch.randn(size=[1, 8, 16, 24]).half(),),
+            atol=2e-2,
+            compile_options={"force_fp16": True},
+        )
 
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
