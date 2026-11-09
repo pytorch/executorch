@@ -115,7 +115,7 @@ TEST_F(BenchmarkValidation, IncompleteShaderGridReportsOutputMismatches) {
 TEST_F(BenchmarkValidation, StagedTextureAdditionUsesOneTargetDescriptorSet) {
   const Json spec =
       parse_configs(
-          {{"shader", "binary_add_texture3d_float"},
+          {{"shader", "binary_op_texture3d_float"},
            {"gwg_size", "default_pick_gwg"},
            {"lwg_size", {10, 10, 1}},
            {"bindings",
