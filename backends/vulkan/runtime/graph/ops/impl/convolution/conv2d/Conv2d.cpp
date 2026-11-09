@@ -189,6 +189,8 @@ bool should_use_conv2d_im2col(
 
 namespace {
 
+// The conv2d shader epilogue implements only these residual ops and
+// activations.
 BinaryOpType residual_op_from_string(const std::string& name) {
   if (name == "add") {
     return BinaryOpType::kAdd;
