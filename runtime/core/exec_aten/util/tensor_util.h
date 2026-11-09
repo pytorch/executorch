@@ -1254,7 +1254,6 @@ ET_DEPRECATED inline void resize(
  * @param out_dim_order Pointing to an array of DimOrderType where we write
  * dim order into it.
  * @param out_dim_order_size Size of the DimOrderType array.
- * @returns InvalidArgument if the tensor does not provide a dim order.
  */
 ET_NODISCARD Error get_dim_order(
     const executorch::aten::Tensor& tensor,

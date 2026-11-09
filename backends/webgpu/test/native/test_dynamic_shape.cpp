@@ -1972,13 +1972,17 @@ TEST(DynamicShape, SwiGluFusionProfile) {
         canonical, m_rows, "dyn_swiglu", kSwiGluWidth, m_rows == 512);
   }
 
-  Module negative(g_dir + "/dyn_swiglu_extra_gate_consumer.pte");
-  ASSERT_EQ(negative.load_forward(), Error::Ok);
+  // gate stays materialized for its extra consumer, so the pattern still fuses.
+  Module extra_gate_consumer(g_dir + "/dyn_swiglu_extra_gate_consumer.pte");
+  ASSERT_EQ(extra_gate_consumer.load_forward(), Error::Ok);
   run_swiglu(
-      negative, 128, "dyn_swiglu_extra_gate_consumer", kSwiGluSmallWidth);
+      extra_gate_consumer,
+      128,
+      "dyn_swiglu_extra_gate_consumer",
+      kSwiGluSmallWidth);
   const auto names = current_profile_names();
-  EXPECT_FALSE(contains_name(names, "silu_mul_fused"));
-  EXPECT_EQ(std::count(names.begin(), names.end(), "mul"), 2);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "silu_mul_fused"), 1);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "mul"), 0);
 
   Module graph_outputs(g_dir + "/dyn_swiglu_graph_outputs.pte");
   ASSERT_EQ(graph_outputs.load_forward(), Error::Ok);
@@ -2002,10 +2006,19 @@ TEST(DynamicShape, SwiGluFusionProfile) {
         << prefix;
   }
 
+  Module gate_graph_output(g_dir + "/dyn_swiglu_gate_graph_output.pte");
+  ASSERT_EQ(gate_graph_output.load_forward(), Error::Ok);
+  run_swiglu_outputs(gate_graph_output, 128, "dyn_swiglu_gate_graph_output", 2);
+  const auto gate_output_names = current_profile_names();
+  EXPECT_EQ(
+      std::count(
+          gate_output_names.begin(), gate_output_names.end(), "silu_mul_fused"),
+      1);
+  EXPECT_EQ(
+      std::count(gate_output_names.begin(), gate_output_names.end(), "mul"), 0);
+
   for (const char* prefix :
-       {"dyn_swiglu_gate_graph_output",
-        "dyn_swiglu_sigmoid_graph_output",
-        "dyn_swiglu_silu_graph_output"}) {
+       {"dyn_swiglu_sigmoid_graph_output", "dyn_swiglu_silu_graph_output"}) {
     Module module(g_dir + "/" + prefix + ".pte");
     ASSERT_EQ(module.load_forward(), Error::Ok) << prefix;
     run_swiglu_outputs(module, 128, prefix, 2);
@@ -2024,11 +2037,16 @@ TEST(DynamicShape, SwiGluFusionProfile) {
       kSwiGluSmallWidth,
       true);
   const auto different_input_names = current_profile_names();
-  EXPECT_FALSE(contains_name(different_input_names, "silu_mul_fused"));
+  EXPECT_EQ(
+      std::count(
+          different_input_names.begin(),
+          different_input_names.end(),
+          "silu_mul_fused"),
+      1);
   EXPECT_EQ(
       std::count(
           different_input_names.begin(), different_input_names.end(), "mul"),
-      2);
+      0);
 
   Module interleaved(g_dir + "/dyn_swiglu_interleaved_q4.pte");
   ASSERT_EQ(interleaved.load_forward(), Error::Ok);
@@ -2062,7 +2080,7 @@ TEST(DynamicShape, SwiGluQkvOverlapProfile) {
   ASSERT_EQ(overlap.load_forward(), Error::Ok);
   run_swiglu_qkv_overlap(overlap, 128);
   const auto names = current_profile_names();
-  EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_bk64_qkv"), 0);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_bk64_qkv"), 1);
   EXPECT_EQ(std::count(names.begin(), names.end(), "silu_mul_fused"), 1);
   EXPECT_EQ(std::count(names.begin(), names.end(), "mul"), 0);
 }

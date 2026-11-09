@@ -36,6 +36,9 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
 )
 
 GROUP_SIZE = 16
+# The W6A8 DP4A decode buckets; 8..64 are the W6A16 tile buckets
+# (test_int6_large_quantized_gemm).
+W6A8_BUCKETS = (1, 2, 3, 4)
 
 
 def _packed(n: int, k: int, seed: int = 0):
@@ -165,7 +168,7 @@ class Int6QuantizedGemmLegalityTest(unittest.TestCase):
         self._expect_unsupported(1, args, "group_size must be 16")
 
         args = self._args(m=2)
-        self._expect_unsupported(1, args, "static M must equal")
+        self._expect_unsupported(1, args, "static M must be within")
 
     def test_k_must_be_positive_static_multiple_of_256(self) -> None:
         n, k = 32, 384
@@ -259,7 +262,7 @@ class Int6QuantizedGemmLegalityTest(unittest.TestCase):
 
     def test_op_validates_before_launching(self) -> None:
         args = self._args(m=2)
-        with self.assertRaisesRegex(RuntimeError, "static M must equal"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT6_QUANTIZED_GEMM.op(1)(*args)
 
 
@@ -270,7 +273,7 @@ class Int6QuantizedGemmTest(unittest.TestCase):
             raise unittest.SkipTest("CUDA required")
 
     def test_ops_are_registered_per_bucket(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
+        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4, 8, 16, 32, 64))
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(hasattr(torch.ops.triton, f"int6_quantized_gemm_m{bucket}"))
 
@@ -278,7 +281,7 @@ class Int6QuantizedGemmTest(unittest.TestCase):
         shapes = ((37, 256), (53, 512), (37, 5376))
         for n, k in shapes:
             weights = _packed(n, k, seed=n + k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in W6A8_BUCKETS:
                 x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
                 ref = _unit_dq_mm_int6(x, *weights, GROUP_SIZE)
                 for config in int6_autotune_configs():
@@ -413,7 +416,7 @@ class Int6QuantizedGemmTest(unittest.TestCase):
 
     def test_every_split_matches_reference(self) -> None:
         weights = _packed(37, 768, seed=101)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in W6A8_BUCKETS:
             x = torch.randn(bucket, 768, dtype=torch.bfloat16, device="cuda")
             ref = _unit_dq_mm_int6(x, *weights, GROUP_SIZE)
             for split in SPLIT_K_CANDIDATES:

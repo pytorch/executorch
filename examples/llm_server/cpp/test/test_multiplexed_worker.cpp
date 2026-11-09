@@ -122,7 +122,8 @@ class ProtocolTest : public ::testing::Test {
       MultiplexedWorkerConfig config = {},
       std::size_t max_sessions = 4,
       std::size_t max_requests = 8,
-      std::size_t max_pending_operations = 64) {
+      std::size_t max_pending_operations = 64,
+      std::vector<batching::Token> default_stop_tokens = {}) {
     signal(SIGPIPE, SIG_IGN);
     ASSERT_EQ(pipe(input_), 0);
     ASSERT_EQ(pipe(output_), 0);
@@ -133,6 +134,10 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
+    const Json decoded_stops = default_stop_tokens.empty() ? Json::array()
+        : tokenizer_.piece.empty()                         ? Json(nullptr)
+                                   : Json::array({tokenizer_.piece});
+    runtime_config.default_stop_tokens = std::move(default_stop_tokens);
     runtime_ = std::make_unique<serving::ServingRuntime>(
         executor_,
         batching::DecodeFirstScheduler::create(16, 8, 8),
@@ -145,9 +150,11 @@ class ProtocolTest : public ::testing::Test {
     auto ready = receive();
     ASSERT_TRUE(ready.value("ready", false));
     ASSERT_TRUE(ready.value("multiplexed", false));
+    ASSERT_TRUE(ready.value("supports_ignore_eos", false));
     ASSERT_FALSE(ready.contains("request_id"));
     ASSERT_EQ(ready.at("max_named_sessions"), max_sessions);
     ASSERT_EQ(ready.at("max_inflight_requests"), config.max_inflight_requests);
+    EXPECT_EQ(ready.at("default_stop_strings"), decoded_stops);
   }
 
   std::shared_ptr<CheckpointGate> gate() {
@@ -240,6 +247,151 @@ class ProtocolTest : public ::testing::Test {
   std::future<int> result_;
   int input_[2]{-1, -1}, output_[2]{-1, -1};
 };
+
+TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
+  auto preparing = gate();
+  auto calls = std::make_shared<std::atomic<int>>(0);
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [preparing, calls](
+                               const Json& prompt,
+                               const serving::PromptPreparationContext& context)
+      -> serving::PromptPreparationResult {
+    ++*calls;
+    EXPECT_EQ(prompt.size(), 1u);
+    EXPECT_EQ(prompt.at("prompt_segments").at(0).at("text"), "before");
+    EXPECT_EQ(
+        prompt.at("prompt_segments").at(1).at("image").at("data"),
+        "inline data");
+    EXPECT_EQ(prompt.at("prompt_segments").at(2).at("text"), "after");
+    EXPECT_EQ(context.max_prompt_positions, 8192u);
+    preparing->pause();
+    EXPECT_TRUE(context.cancelled());
+    return serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2})}};
+  };
+  start(config, 4, 1);
+  auto image = generate(1);
+  image.erase("prompt");
+  image["prompt_segments"] = Json::array({
+      {{"text", "before"}},
+      {{"image",
+        {{"encoding", "base64"},
+         {"mime_type", "image/png"},
+         {"data", "inline data"}}}},
+      {{"text", "after"}},
+  });
+  send(image);
+  ASSERT_TRUE(preparing->wait());
+  send(generate(2));
+  auto rejected = receive();
+  EXPECT_EQ(rejected.at("request_id"), 2);
+  EXPECT_EQ(rejected.at("code"), "capacity_exhausted");
+  send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
+  const auto ack = receive();
+  EXPECT_EQ(ack.at("request_id"), 3);
+  EXPECT_TRUE(ack.value("cancelled", false));
+  EXPECT_EQ(calls->load(), 1);
+  preparing->release();
+  auto done = receive();
+  EXPECT_EQ(done.at("request_id"), 1);
+  EXPECT_TRUE(done.value("done", false));
+  EXPECT_TRUE(done.value("cancelled", false));
+  EXPECT_TRUE(executor_.opened().empty());
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(
+    ProtocolTest,
+    DeferredAdapterReturnsPromptAndMapsErrorsWithoutPoisoningWorker) {
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [](const Json& prompt,
+                              const serving::PromptPreparationContext&)
+      -> serving::PromptPreparationResult {
+    if (prompt.contains("prompt")) {
+      throw std::runtime_error("adapter failure");
+    }
+    return serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2, 3})}};
+  };
+  start(config);
+  send(generate(1));
+  auto error = receive();
+  EXPECT_EQ(error.at("request_id"), 1);
+  EXPECT_EQ(error.at("code"), "internal");
+  auto image = generate(2, 1);
+  image.erase("prompt");
+  image["prompt_segments"] = Json::array({{{"image", "inline data"}}});
+  send(image);
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  auto done = receive();
+  EXPECT_EQ(done.at("request_id"), 2);
+  EXPECT_TRUE(done.value("done", false));
+  EXPECT_EQ(done.at("prompt_tokens"), 3);
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, EofCancelsDeferredPreparationAndWaitsForItsReturn) {
+  auto preparing = gate();
+  auto observed = gate();
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [preparing, observed](
+                               const Json&,
+                               const serving::PromptPreparationContext& context)
+      -> serving::PromptPreparationResult {
+    preparing->signal();
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (!context.cancelled() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::yield();
+    EXPECT_TRUE(context.cancelled());
+    observed->pause();
+    return serving::PromptInput{};
+  };
+  start(config);
+  send(generate(1));
+  ASSERT_TRUE(preparing->wait());
+  send({{"op", "close"}, {"request_id", 2}, {"session_id", "absent"}});
+  close(input_[1]);
+  input_[1] = -1;
+  ASSERT_TRUE(observed->wait());
+  EXPECT_EQ(result_.wait_for(0s), std::future_status::timeout);
+  observed->release();
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 0);
+  std::map<uint64_t, Json> replies;
+  for (int i = 0; i < 2; ++i) {
+    auto reply = receive();
+    replies.emplace(reply.at("request_id").get<uint64_t>(), reply);
+  }
+  EXPECT_TRUE(replies.at(1).value("cancelled", false));
+  EXPECT_TRUE(replies.at(2).contains("error"));
+  EXPECT_TRUE(executor_.opened().empty());
+}
+
+TEST_F(
+    ProtocolTest,
+    IndependentInputLimitIncludesNewlineAndPreservesOutputLimit) {
+  MultiplexedWorkerConfig config;
+  config.max_frame_bytes = 1024;
+  config.max_input_frame_bytes = 4096;
+  start(config);
+  auto request = generate(1, 300);
+  request["prompt"] = "";
+  const auto overhead = request.dump().size() + 1;
+  request["prompt"] = std::string(config.max_input_frame_bytes - overhead, 'x');
+  send(request);
+  Json terminal;
+  do {
+    terminal = receive();
+    EXPECT_LE(terminal.dump().size() + 1, config.max_frame_bytes);
+  } while (terminal.contains("token"));
+  EXPECT_EQ(terminal.at("request_id"), 1);
+  EXPECT_EQ(terminal.at("code"), "frame_too_large");
+  request["request_id"] = 2;
+  request["prompt"] = request.at("prompt").get<std::string>() + "x";
+  send(request);
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 1);
+}
 
 TEST_F(ProtocolTest, InterleavedIdsAndOutOfOrderCompletion) {
   start();
@@ -393,7 +545,7 @@ TEST_F(ProtocolTest, AdmissionFailureDoesNotPoisonOtherRequests) {
   send(generate(2));
   auto error = receive();
   EXPECT_EQ(error.at("request_id"), 2);
-  EXPECT_EQ(error.at("code"), "capacity_exhausted");
+  EXPECT_EQ(error.at("code"), "session_capacity_exhausted");
   send({{"op", "reset"}, {"request_id", 3}, {"session_id", "owned"}});
   EXPECT_TRUE(receive().value("reset", false));
   auto request = generate(4);
@@ -428,6 +580,12 @@ TEST_F(ProtocolTest, StrictFieldsAndUnsupportedModalitiesAreIsolated) {
         Json(std::numeric_limits<uint64_t>::max())}) {
     auto request = generate(id++);
     request["max_new_tokens"] = value;
+    invalid.push_back(request);
+  }
+  for (const auto& value :
+       {Json(), Json(0), Json(1), Json("true"), Json::array()}) {
+    auto request = generate(id++);
+    request["ignore_eos"] = value;
     invalid.push_back(request);
   }
   auto image = generate(id++);
@@ -535,6 +693,7 @@ TEST_F(ProtocolTest, MaxUint64IdAndAutoBudgetAreAccepted) {
   send(request);
   auto done = receive();
   EXPECT_EQ(done.at("request_id"), std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(done.at("matched_stop"), "x");
   EXPECT_TRUE(done.value("done", false));
   EXPECT_EQ(done.at("finish_reason"), "stop");
   EXPECT_EQ(finish(), 0);
@@ -1156,6 +1315,40 @@ TEST_F(ProtocolTest, TerminalNewlineRetriesKeepAdmissionReserved) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, IdempotentCloseReportsWhetherSessionExisted) {
+  start();
+  send({{"op", "open"}, {"request_id", 1}, {"session_id", "s"}});
+  ASSERT_TRUE(receive().at("opened"));
+  for (uint64_t id = 2; id <= 3; ++id) {
+    send({{"op", "close"}, {"request_id", id}, {"session_id", "s"}});
+    auto response = receive();
+    EXPECT_TRUE(response.at("closed"));
+    EXPECT_EQ(response.at("existed"), id == 2);
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, RuntimeAdmissionRejectionReportsNotAdmitted) {
+  // Keep transport capacity available while filling the runtime request limit.
+  start({}, 4, 1);
+  executor_.hold();
+  send(generate(1, 1));
+  ASSERT_TRUE(wait_execute());
+  send(generate(2, 1));
+  auto refused = receive();
+  EXPECT_EQ(refused.at("request_id"), 2);
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
+  EXPECT_NE(refused.at("error"), "worker operation capacity exhausted");
+  executor_.release();
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  send(generate(3, 1));
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
@@ -1164,7 +1357,9 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   send(generate(1, 100));
   ASSERT_TRUE(wait_execute());
   send(generate(2));
-  EXPECT_EQ(receive().at("code"), "capacity_exhausted");
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
   send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
   EXPECT_TRUE(receive().value("cancelled", false));
   executor_.release();
@@ -1175,6 +1370,32 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   EXPECT_TRUE(done.value("cancelled", false));
   EXPECT_EQ(finish(), 0);
 }
+TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
+  executor_.stop_token = 999;
+  executor_.emit_before_stop = 1;
+  start({}, 4, 8, 64, {999});
+  for (uint64_t id = 1; id <= 2; ++id) {
+    auto request = generate(id, 4);
+    request["ignore_eos"] = id == 2;
+    send(request);
+    Json done;
+    do {
+      done = receive();
+      ASSERT_FALSE(done.contains("error")) << done;
+    } while (done.contains("token"));
+    EXPECT_TRUE(done.value("done", false));
+    EXPECT_EQ(done.at("completion_tokens"), id == 1 ? 1 : 4);
+    EXPECT_EQ(done.at("finish_reason"), id == 1 ? "stop" : "length");
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, UndecodableDefaultStopsAdvertiseNull) {
+  tokenizer_.piece.clear();
+  start({}, 4, 8, 64, {999});
+  EXPECT_EQ(finish(), 0);
+}
+
 // Subprocess mode for Python validation regressions. The inherited socket is
 // separate from JSONL: 'A' witnesses active execution, and 'R' releases it.
 int run_validation_worker(int gate_fd) {

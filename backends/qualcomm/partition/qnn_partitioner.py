@@ -4,9 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import functools
 import logging
+import operator
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
@@ -14,6 +16,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -41,9 +44,13 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.tracer import _default_decomposition_table
 from torch.export.exported_program import ExportedProgram
+from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.utils import _pytree as pytree
 
 from .common_defs import (
     allow_list_operator,
@@ -55,11 +62,22 @@ from .utils import (
     filter_fn,
     generate_qnn_executorch_option,
     get_skip_decomp_table,
+    has_data_dependent_shape,
+    has_unsupported_dtype,
+    is_quantized,
+    must_stay_on_cpu,
     warn_if_dilated_conv_may_not_fit_vtcm,
 )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+# dequantize ops with a CPU out variant; others cannot fall back
+CPU_DQ_OPS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+}
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -78,6 +96,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
             is_qnn_partitioner=is_qnn_partitioner,
+            backend_type=python_options.backend_options.backend_type,
         )
 
         self.skip_node_op_set = skip_node_op_set
@@ -100,28 +119,54 @@ class QnnOperatorSupport(OperatorSupportBase):
             and htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
         )
         self.nodes_to_wrappers = defaultdict(dict)
-        self.qnn_manager = get_current_qnn_manager(
-            python_options.backend_options.backend_type, compiler_specs
+        target_socs = (
+            [
+                target.soc_info.soc_model
+                for target in python_options.target_options.targets
+            ]
+            if python_options.target_options is not None
+            else [python_options.soc_info.soc_model]
         )
+        self.qnn_managers = [
+            get_current_qnn_manager(compiler_specs, soc_model)
+            for soc_model in target_socs
+        ]
 
-    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
-        if node.op != "call_function" or node.target in not_supported_operator:
-            return False
+    def _passes_backend_capability_checks(self, node: torch.fx.Node) -> bool:
+        # Scoped to HTP: other backends reusing this checker have no htp_arch.
+        if (
+            self.backend_type != QnnExecuTorchBackendType.kHtpBackend
+            or self.soc_info.htp_info.htp_arch >= HtpArch.V69
+        ):
+            return True
 
         # Per-channel-group lowers to blockwise expansion (the encoding LPBQ
         # uses), which requires HTP >= V69. Pre-quantized weights bypass the
         # quantizer's validate_lpbq_support check, so gate the delegation here.
-        # Scoped to HTP: other backends reusing this checker have no htp_arch.
-        if (
-            node.target in PER_CHANNEL_GROUP_ENCODING
-            and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
-            and self.soc_info.htp_info.htp_arch < HtpArch.V69
-        ):
+        if node.target in PER_CHANNEL_GROUP_ENCODING:
             logger.warning(
                 f"[{self.phase}] {node.target.__name__} | Skipped: blockwise "
                 f"(per-channel-group) encoding requires HTP arch >= V69, got "
                 f"{self.soc_info.htp_info.htp_arch!r}"
             )
+            return False
+
+        # TransposeConv2d generated for convolution_backward is unsupported by
+        # the V68 compiler despite passing the QNN op-support query.
+        if node.target == exir_ops.edge.aten.convolution_backward.default:
+            logger.warning(
+                f"[{self.phase}] {node.target.__name__} | Skipped: requires HTP "
+                f"arch >= V69, got {self.soc_info.htp_info.htp_arch!r}"
+            )
+            return False
+
+        return True
+
+    def is_node_supported(self, _, node: torch.fx.Node) -> bool:  # noqa: C901
+        if node.op != "call_function" or node.target in not_supported_operator:
+            return False
+
+        if not self._passes_backend_capability_checks(node):
             return False
 
         if node.target in to_be_implemented_operator:
@@ -151,6 +196,18 @@ class QnnOperatorSupport(OperatorSupportBase):
             logger.info(f"[{self.phase}] {node.target.__name__} | Skipped")
             return False
 
+        if has_unsupported_dtype(node):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, unsupported dtype"
+            )
+            return False
+
+        if has_data_dependent_shape(node):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, data-dependent shape"
+            )
+            return False
+
         # TODO: workaround for https://github.com/pytorch/executorch/issues/23096.
         # Remove this once the fp16 path performs the TCM-fit check the quantized
         # path does.
@@ -178,8 +235,10 @@ class QnnOperatorSupport(OperatorSupportBase):
             op_wrapper_list.append(op_wrapper)
 
         if op_wrapper is not None:
-            supported = self.qnn_manager.IsNodeSupportedByBackend(
-                [op_wrapper.GetOpWrapper() for op_wrapper in op_wrapper_list]
+            wrappers = [op.GetOpWrapper() for op in op_wrapper_list]
+            supported = all(
+                manager.IsNodeSupportedByBackend(wrappers)
+                for manager in self.qnn_managers
             )
 
         self.nodes_to_wrappers.clear()
@@ -229,10 +288,185 @@ class QnnPartitioner(Partitioner):
             self.skip_node_id_set,
             self.skip_node_op_set,
         )
-        return generate_partitions_from_list_of_nodes(
+        partitions = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
+        partitions = self._drop_orphaned_parameter_dequants(partitions, edge_program)
+        # LPAI places its CPU fallback boundaries before partitioning, and GPU
+        # accepts graphs without inputs, so only HTP partitions are dropped.
+        if self.backend == QnnExecuTorchBackendType.kHtpBackend:
+            partitions = self._drop_partitions_without_runtime_inputs(
+                partitions, edge_program
+            )
+        return partitions
+
+    @staticmethod
+    def _drop_orphaned_parameter_dequants(
+        partitions: List[Partition], edge_program: torch.export.ExportedProgram
+    ) -> List[Partition]:
+        """
+        A parameter dequantize whose consumer is not delegated stays on CPU. A QNN
+        Dequantize alone rejects per-channel encodings.
+        """
+        for partition in partitions:
+            stack = [
+                node
+                for node in partition.nodes
+                if node.target in CPU_DQ_OPS
+                and node.meta.get(QCOM_BYPASS_NODE, False)
+                and is_parameter(node.args[0], edge_program)
+            ]
+            while stack:
+                node = stack.pop()
+                if node not in partition.nodes or any(
+                    user in partition.nodes for user in node.users
+                ):
+                    continue
+                partition.remove_node(node)
+                stack.extend(
+                    arg
+                    for arg in node.args
+                    if isinstance(arg, torch.fx.Node)
+                    and arg.meta.get(QCOM_BYPASS_NODE, False)
+                )
+        return [partition for partition in partitions if partition.nodes]
+
+    @staticmethod
+    def _constant_inputs(edge_program: torch.export.ExportedProgram) -> Set[str]:
+        """
+        Names of the inputs that hold the same value on every run: parameters,
+        buffers that are never mutated, and lifted constants.
+        """
+        signature = edge_program.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        return {
+            spec.arg.name
+            for spec in signature.input_specs
+            if spec.kind
+            in (InputKind.PARAMETER, InputKind.BUFFER, InputKind.CONSTANT_TENSOR)
+            and spec.target not in mutated
+        }
+
+    @staticmethod
+    def _is_runtime_input(node: torch.fx.Node, constant_inputs: Set[str]) -> bool:
+        return node.op != "get_attr" and node.name not in constant_inputs
+
+    @staticmethod
+    def _drop_partitions_without_runtime_inputs(
+        partitions: List[Partition], edge_program: torch.export.ExportedProgram
+    ) -> List[Partition]:
+        """
+        HTP refuses a graph that reads nothing at runtime, e.g. a subgraph fed
+        only by constants once a CPU op splits it from the rest. Such a
+        partition stays on CPU.
+        """
+        constant_inputs = QnnPartitioner._constant_inputs(edge_program)
+        return [
+            partition
+            for partition in partitions
+            if any(
+                QnnPartitioner._is_runtime_input(arg, constant_inputs)
+                for node in partition.nodes
+                for arg in node.all_input_nodes
+                if arg not in partition.nodes
+            )
+        ]
+
+    @staticmethod
+    def _may_run_on_qnn(node: torch.fx.Node) -> bool:
+        """
+        Whether QNN's op check may accept the node, as far as can be told
+        before the kept-whole ops are decomposed. Ops whose dtypes or shapes
+        rule QNN out, ops without a tensor output, such as the runtime
+        asserts export adds, and higher-order ops, which have no node visitor,
+        stay on CPU. Every getitem is accepted, as in QNN's op check.
+        """
+        if node.op != "call_function":
+            return False
+        if node.target in allow_list_operator:
+            return True
+        if not isinstance(node.target, torch._ops.OpOverload):
+            return False
+        # Retracing can drop the "val" of an assert, but not its schema.
+        if not node.target._schema.returns:
+            return False
+        if "val" in node.meta and not any(
+            isinstance(val, torch.Tensor)
+            for val in pytree.tree_leaves(node.meta["val"])
+        ):
+            return False
+        return not must_stay_on_cpu(node)
+
+    @staticmethod
+    def _left_on_cpu(ep: ExportedProgram) -> Set[torch.fx.Node]:
+        """
+        Estimates, on the ATen program, which ops HTP leaves on CPU, so that
+        the kept-whole ones among them can be decomposed.
+        """
+
+        # Partitioning here would take time quadratic in the graph size, so
+        # only the ops that _may_run_on_qnn rules out count as CPU ops. A QNN
+        # op that reads no runtime value is left on CPU when:
+        # - it reaches a QNN op through a CPU op before any QNN op that reads
+        #   a runtime value, since the partitioner may split it off to avoid a
+        #   cycle;
+        # - the only QNN ops that read a runtime value are getitems of CPU
+        #   ops, since the partitioner moves those getitems out of their
+        #   partitions;
+        # - such a getitem follows a QNN op, and no chain of QNN ops links the
+        #   op to a QNN op that reads a runtime value.
+        # Skips are left out, since a skip that changed what is decomposed
+        # would rename later nodes, so a skip_node_id_set entry could name a
+        # different node.
+        # Ops that QNN rejects or removes later are not known here either. So
+        # an op cut off only by them still fails as before.
+        # An op can also be decomposed although a partition that reads a
+        # runtime value takes it.
+        nodes = list(ep.graph.nodes)
+        qnn = set(filter(QnnPartitioner._may_run_on_qnn, nodes))
+        constant_inputs = QnnPartitioner._constant_inputs(ep)
+        runtime, after_qnn = set(), set()
+        for node in nodes:
+            if node in qnn or not after_qnn.isdisjoint(node.all_input_nodes):
+                after_qnn.add(node)
+            if node in qnn and any(
+                (
+                    arg in runtime
+                    if arg in qnn
+                    else QnnPartitioner._is_runtime_input(arg, constant_inputs)
+                )
+                for arg in node.all_input_nodes
+            ):
+                runtime.add(node)
+        to_qnn, before_cpu = set(), set()
+        for node in reversed(nodes):
+            if node in qnn or not to_qnn.isdisjoint(node.users):
+                to_qnn.add(node)
+            if any(
+                (user in before_cpu and user not in runtime)
+                or (user in to_qnn and user not in qnn)
+                for user in node.users
+            ):
+                before_cpu.add(node)
+        left_on_cpu = (qnn - runtime) & before_cpu
+        cpu_getitems = {
+            node
+            for node in runtime
+            if node.target is operator.getitem and node.args[0] not in qnn
+        }
+        if runtime <= cpu_getitems:
+            return qnn - runtime
+        if not any(node.args[0] in after_qnn for node in cpu_getitems):
+            return left_on_cpu
+        linked, stack = set(runtime), list(runtime)
+        while stack:
+            node = stack.pop()
+            for neighbor in (*node.all_input_nodes, *node.users):
+                if neighbor in qnn and neighbor not in linked:
+                    linked.add(neighbor)
+                    stack.append(neighbor)
+        return left_on_cpu | (qnn - runtime - linked)
 
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
@@ -245,6 +479,10 @@ class QnnPartitioner(Partitioner):
                 delegation_tag = f"qnn_{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 self.partition_tags[delegation_tag] = self.delegation_spec
+
+        # Dropping partitions can leave none, and there is no tag to reuse.
+        if not partitions:
+            return
 
         # need to take care of consumed constants
         consumed_constants = (
@@ -291,6 +529,47 @@ class QnnPartitioner(Partitioner):
         Determines which op should not be decomposed during partitioning.
         The list of operators is obtained from `get_skip_decomp_table()`.
         The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
+        On HTP, kept-whole ops that `_drop_partitions_without_runtime_inputs`
+        would leave on CPU, as far as can be told before they are decomposed,
+        are decomposed too. Quantized ops stay whole, and exir cannot
+        decompose some ops, such as elu and the scatter variants, so such an op
+        still fails as before.
         """
         do_not_decompose = get_skip_decomp_table()
-        return (do_not_decompose, filter_fn)
+        # On the lowered program exir reports every kept-whole op left there
+        # that the filter accepts, so it stays plain filter_fn.
+        if self.backend != QnnExecuTorchBackendType.kHtpBackend or ep.dialect == "EDGE":
+            return (do_not_decompose, filter_fn)
+
+        # exir calls this method several times on the ATen program but uses
+        # only one of the filters, so the estimate runs on first use. That is
+        # before exir renames the targets of the ops it keeps whole, which
+        # would hide the dequantize ops.
+        # Quantized ops stay whole, in case the estimate is wrong: their pieces
+        # would have no quantization encodings, so QNN would reject them where
+        # a partition would take them.
+        @functools.cache
+        def decomposed():
+            nodes = {node for node in self._left_on_cpu(ep) if not is_quantized(node)}
+            decompositions = _default_decomposition_table()
+            names = sorted(
+                node.name
+                for node in nodes
+                if node.target in do_not_decompose
+                and node.target in decompositions
+                and filter_fn(node)
+            )
+            message = f"[QnnPartitioner] Decomposing kept-whole ops HTP would leave on CPU: {names}"
+            if names and self.skip_node_id_set:
+                logger.warning(
+                    f"{message}. Decomposing renames later nodes, so check that "
+                    "skip_node_id_set still names the intended nodes."
+                )
+            elif names:
+                logger.info(message)
+            return nodes
+
+        return (
+            do_not_decompose,
+            lambda node: filter_fn(node) and node not in decomposed(),
+        )

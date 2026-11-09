@@ -45,6 +45,10 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -h
   PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel -m SM8750 --backend htp
   ```
+  To quantize for an HTP Flexible Context Binary, pass every target SoC:
+  ```bash
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel -m SM8650 SM8750 --backend htp
+  ```
 * Artifacts for quantized .pt2 file
   - `cli_example/quantize_output/simple_model_quantized.pt2`
 
@@ -56,6 +60,10 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
   # `pip install pydot` if package is missing
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -h
   PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a cli_example/quantize_output/simple_model_quantized.pt2 -o cli_example/compile_output -m SM8750
+  ```
+  To generate one HTP FCB containing multiple target contexts:
+  ```bash
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a cli_example/quantize_output/simple_model_quantized.pt2 -o cli_example/compile_output -m SM8650 SM8750 --backend htp
   ```
 * (Optional) Compile pre-generated context binary to .pte program
   ```bash

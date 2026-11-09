@@ -18,3 +18,13 @@ et_cxx_test(
   extension_llm_batching_test SOURCES ${_test_srcs} EXTRA_LIBS
   extension_llm_batching
 )
+
+et_cxx_test(
+  extension_llm_batching_executor_utils_test SOURCES executor_utils_test.cpp
+  EXTRA_LIBS extension_llm_batching_executor_utils
+)
+
+et_cxx_test(
+  extension_llm_batching_util_test SOURCES session_table_test.cpp EXTRA_LIBS
+  extension_llm_batching_util extension_tensor
+)

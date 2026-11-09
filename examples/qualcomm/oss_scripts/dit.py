@@ -71,7 +71,8 @@ def main(args):
 
     module = (
         AutoModelForImageClassification.from_pretrained(
-            "microsoft/dit-base-finetuned-rvlcdip"
+            "microsoft/dit-base-finetuned-rvlcdip",
+            use_safetensors=False,
         )
         .eval()
         .to("cpu")

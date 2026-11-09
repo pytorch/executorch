@@ -8,7 +8,7 @@ def define_common_targets(is_fbcode = False):
     buck_filegroup(
         name = "gpuinfo_shaders",
         srcs = native.glob([
-            "glsl/*",
+            "glsl/**/*",
         ]),
         visibility = [
             "PUBLIC",

@@ -46,19 +46,17 @@ class GatherVisitor(NodeVisitor):
         values = inputs[0]
         indices = inputs[1]
 
-        validate_same_dtype(self.target, [values, output], ts)
+        validate_same_dtype(self.target, [values, output])
         # Indices must be int32 for TOSA GATHER
         validate_valid_dtype(
             self.target,
             [indices],
             [ts.DType.INT32],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [values, output],
             supported_data_layout_dtypes(self.tosa_spec, include_bool=False),
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

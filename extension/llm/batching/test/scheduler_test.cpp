@@ -370,8 +370,17 @@ TEST(PayloadTest, OpaqueChunksKeepSharedBackingAndSlices) {
       return &kKind;
     }
     std::size_t size() const override {
-      return 6;
+      return positions;
     }
+    PreparedInputPtr suffix(std::size_t start) const override {
+      if (start >= size()) {
+        return nullptr;
+      }
+      auto view = std::make_shared<OpaqueInput>();
+      view->positions = size() - start;
+      return view;
+    }
+    std::size_t positions = 6;
   };
   PreparedInputPtr backing = std::make_shared<OpaqueInput>();
   SchedulerPtr scheduler = make_scheduler(1, 4);

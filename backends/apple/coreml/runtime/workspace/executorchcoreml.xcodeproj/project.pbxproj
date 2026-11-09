@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		191820CBF09461CE46719A45 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0C6025C1089BE3E722FF1F4D /* CoreVideo.framework */; };
 		8307EB8A2C9262060011AE6D /* state_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 8307EB892C9262060011AE6D /* state_coreml_all.pte */; };
 		838CA6872CD1965700462190 /* add_mul_compiled_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */; };
 		83BB78A02C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm in Sources */ = {isa = PBXBuildFile; fileRef = 83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */; };
@@ -124,6 +125,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C6025C1089BE3E722FF1F4D /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
 		8307EB892C9262060011AE6D /* state_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = state_coreml_all.pte; path = ../test/models/state_coreml_all.pte; sourceTree = "<group>"; };
 		838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_mul_compiled_coreml_all.pte; path = ../test/models/add_mul_compiled_coreml_all.pte; sourceTree = "<group>"; };
 		83BB789E2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelDebugInfo.h; path = ../sdk/ETCoreMLModelDebugInfo.h; sourceTree = "<group>"; };
@@ -329,6 +331,7 @@
 				F24817E52BC655E100E80D98 /* libexecutorch_core.a in Frameworks */,
 				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
+				191820CBF09461CE46719A45 /* CoreVideo.framework in Frameworks */,
 				C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */,
 				C99883882B964413000953A3 /* libexecutorch.a in Frameworks */,
 			);
@@ -538,6 +541,7 @@
 				C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */,
 				C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */,
 				C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */,
+				0C6025C1089BE3E722FF1F4D /* CoreVideo.framework */,
 				C99883872B964413000953A3 /* libexecutorch.a */,
 			);
 			name = Frameworks;

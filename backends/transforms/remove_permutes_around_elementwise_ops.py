@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
@@ -119,6 +120,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             torch.fx.Node,
             tuple[int, int, torch.fx.Node, torch.fx.Node] | None,
         ] = {}
+        self._pending_visits = None
+        self._bypassed_permutes: set[torch.fx.Node] = set()
 
     _VIEW_OPS = (
         exir_ops.edge.aten.view_copy.default,
@@ -416,6 +419,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         self._sq_unsq_cache.clear()
         self._interleave_cache.clear()
+        self._bypassed_permutes.clear()
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
         for node in graph_module.graph.nodes:
@@ -451,7 +455,37 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return PassResult(graph_module, False)
 
-    def visit(  # noqa: C901
+    def visit(
+        self,
+        node: torch.fx.Node,
+        subgraph: Subgraph,
+        processed_nodes: set[torch.fx.Node],
+        current_end_permute: list[int] | None = None,
+        current_start_permute: list[int] | None = None,
+    ) -> bool:
+        visit = (
+            node,
+            subgraph,
+            processed_nodes,
+            current_end_permute,
+            current_start_permute,
+        )
+        if self._pending_visits is not None:
+            self._pending_visits.append(visit)
+            return True
+
+        pending = [visit]
+        try:
+            while pending:
+                self._pending_visits = []
+                if not self._visit(*pending.pop()):
+                    return False
+                pending.extend(reversed(self._pending_visits))
+        finally:
+            self._pending_visits = None
+        return True
+
+    def _visit(  # noqa: C901
         self,
         node: torch.fx.Node,
         subgraph: Subgraph,
@@ -758,6 +792,39 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     if len(perm) != len(inp.meta["val"].shape):
                         return False
 
+        # Validate: no node in the region may broadcast operands of different
+        # rank. Broadcasting right-aligns shapes, so once the boundary permutes
+        # are removed a lower-rank operand lines up against different axes of
+        # the others and the region silently computes a differently shaped
+        # result -- a [216, 1] that met a [1, 1, 216, 1] now meets a
+        # [1, 216, 1, 1] and yields 216 * 216 elements. The mismatch only
+        # surfaces later, as a downstream view whose recorded shape no longer
+        # fits its input. Same-rank broadcasting is safe: every operand carries
+        # the region's permutation, and broadcasting commutes with applying one
+        # permutation to all operands. numel-1 operands broadcast identically
+        # under any permutation, and cat never broadcasts. Constant operands
+        # are exempt: they are reshaped or permuted into the region's layout
+        # below.
+        for node in subgraph.nodes:
+            if (
+                node in interleave_nodes
+                or node.target in self._VIEW_OPS
+                or node.target == exir_ops.edge.aten.cat.default
+            ):
+                continue
+            operand_ranks = {
+                len(shape)
+                for shape in (
+                    self._concrete_shape(inp)
+                    for inp in node.all_input_nodes
+                    if isinstance(inp.meta.get("val"), torch.Tensor)
+                    and (inp, node) not in subgraph.constant_edges_in
+                )
+                if shape is not None and math.prod(shape) > 1
+            }
+            if len(operand_ranks) > 1:
+                return False
+
         # Handle dimension related node arguments FIRST, before
         # bypassing permutes (which changes node inputs/metadata).
         for node in subgraph.nodes:
@@ -798,6 +865,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
             assert inp.target in PERMUTE_COPY_TARGETS
+            self._bypassed_permutes.add(inp)
             if len(inp.args) >= 1:
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
             else:
@@ -827,13 +895,21 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 ):
                     original_shape = list(const_node.meta["val"].shape)
                     padded = [1] * (permute_rank - const_rank) + original_shape
-                    target_shape = [padded[d] for d in node_end_perm]
-                    target_shape = target_shape[permute_rank - const_rank :]
-                    new_node = graph.create_node(
-                        "call_function",
-                        exir_ops.edge.aten.view_copy.default,
-                        args=(const_node, target_shape),
-                    )
+                    moved = [d for d in node_end_perm if padded[d] != 1]
+                    view = exir_ops.edge.aten.view_copy.default
+                    if moved == sorted(moved):
+                        # Only unit dims move, so a reshape is exact.
+                        permuted = [padded[d] for d in node_end_perm]
+                        while len(permuted) > const_rank and permuted[0] == 1:
+                            permuted.pop(0)
+                        new_node = graph.call_function(view, (const_node, permuted))
+                    else:
+                        new_node = graph.call_function(view, (const_node, padded))
+                        with graph.inserting_after(new_node):
+                            new_node = graph.call_function(
+                                exir_ops.edge.aten.permute_copy.default,
+                                (new_node, node_end_perm),
+                            )
                 else:
                     continue
             user_node.replace_input_with(const_node, new_node)
@@ -866,7 +942,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             (inp, out) for inp, out, _ in subgraph.edges_out_to_update
         ]
         for inp, out in outgoing:
-            if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
+            # A bypassed permute stays wired to its producer, but an earlier
+            # region now reads that producer directly and relies on its layout.
+            if (
+                out.target not in PERMUTE_COPY_TARGETS
+                or out not in inp.users
+                or out in self._bypassed_permutes
+            ):
                 return False
 
         for const_node, user_node in subgraph.constant_edges_in:

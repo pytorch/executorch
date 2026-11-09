@@ -13,7 +13,7 @@ Triton kernels themselves are covered by test_int4_quantized_gemm.py.
 
 The API contract: after importing int4_dispatch, F.linear and nn.Linear
 with Int4Tensor weights produce numerically correct results. Tests verify
-this across decode (M<=4), prefill (M>4), batched (3D), bias, group sizes,
+this across the Triton path (M<=64), fallback (M>64), batched (3D), bias, group sizes,
 and symmetric/asymmetric quantization. Correctness is measured as mean
 relative error against the unquantized bf16 reference (not per-element
 atol/rtol, which is too strict for INT4 quantization noise).
@@ -372,7 +372,7 @@ class TestDispatchRouting(unittest.TestCase):
 
 
 class TestDecodeDispatch(unittest.TestCase):
-    """M <= 4 traces the Triton decode kernels; nothing else does."""
+    """M <= 64 traces the smallest covering Triton bucket."""
 
     def setUp(self):
         _require_cuda(self)
@@ -393,15 +393,27 @@ class TestDecodeDispatch(unittest.TestCase):
     def _bucket_ops(targets):
         return {t for t in targets if "int4_quantized_gemm" in t}
 
-    def test_decode_sized_m_uses_its_bucket_op(self):
-        """Static M <= 4 takes the bucket for exactly that M, never the shim."""
+    def test_static_m_uses_the_smallest_covering_bucket_op(self):
         module, w_ref = _make_int4_linear(256, 512, group_size=32)
-        for m in (1, 2, 3, 4):
+        cases = {
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            6: 8,
+            8: 8,
+            16: 16,
+            24: 32,
+            32: 32,
+            48: 64,
+            64: 64,
+        }
+        for m, bucket in cases.items():
             x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
             targets = self._targets(module, x)
             ops = self._bucket_ops(targets)
             self.assertEqual(len(ops), 1, (m, targets))
-            self.assertIn(f"int4_quantized_gemm_m{m}", next(iter(ops)))
+            self.assertIn(f"int4_quantized_gemm_m{bucket}", next(iter(ops)))
             self.assertFalse(any("constant_pad" in t for t in targets), m)
             with torch.no_grad():
                 out = module(x)
@@ -433,12 +445,23 @@ class TestDecodeDispatch(unittest.TestCase):
         targets = self._targets(module, x[:2], dynamic_m=(2, 3))
         self.assertIn("int4_quantized_gemm_m3", next(iter(self._bucket_ops(targets))))
 
-    def test_prefill_and_unbounded_dynamic_m_use_dequant(self):
+    def test_bounded_dynamic_m_through_64_uses_a_bucket(self):
         module, _ = _make_int4_linear(256, 512, group_size=32)
-        x8 = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
-        self.assertFalse(self._bucket_ops(self._targets(module, x8)))
-        self.assertFalse(self._bucket_ops(self._targets(module, x8, dynamic_m=(5, 64))))
-        self.assertFalse(self._bucket_ops(self._targets(module, x8, dynamic_m=(1, 64))))
+        x64 = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
+        for bounds in ((5, 64), (1, 64)):
+            targets = self._targets(module, x64, dynamic_m=bounds)
+            self.assertIn(
+                "int4_quantized_gemm_m64",
+                next(iter(self._bucket_ops(targets))),
+            )
+
+    def test_more_than_64_rows_uses_dequant(self):
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
+        self.assertFalse(
+            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
+        )
 
     def test_other_group_sizes_use_dequant(self):
         # With group size 32 the packed tensor already requires K % 256 == 0,
@@ -491,10 +514,10 @@ class TestFallbacks(unittest.TestCase):
             module, w_ref, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
         )
 
-    def test_more_than_four_rows(self):
+    def test_more_than_64_rows(self):
         module, w_ref = _make_int4_linear(256, 512, group_size=32)
         self._check(
-            module, w_ref, torch.randn(5, 512, dtype=torch.bfloat16, device="cuda")
+            module, w_ref, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
         )
 
 

@@ -18,6 +18,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models:checkpoint",
         "fbcode//pytorch/torchtune:lib",
         "fbsource//third-party/pypi/safetensors:safetensors",
     ],

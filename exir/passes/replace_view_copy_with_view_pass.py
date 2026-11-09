@@ -28,6 +28,7 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch.utils import _pytree as pytree
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -273,6 +274,7 @@ class _ViewSpec(TensorSpec):
             "mem_offset",
             "storage_base",
             "storage_base_offset",
+            "min_allocated_memory",
             "dtype",  # property
             "extra_tensor_info",  # property
             "device",
@@ -433,6 +435,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
 
         This should be run after the NormalizeViewCopyBasePass.
 
+        Only contiguous inputs can share storage with the contiguous view spec.
         During memory planning, view nodes share the same storage as their base.
         """
 
@@ -448,6 +451,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
                 if (
                     _is_view_copy(node)
                     and all(u.op != "output" for u in node.users)
+                    and node.args[0].meta["val"].is_contiguous()
                     and is_copy_to_view_safe(node)
                 ):
                     base, _ = node.args
@@ -460,7 +464,22 @@ class ReplaceViewCopyWithViewPass(PassBase):
                     # the shape is not the same as node.args[1] because node.args[1]
                     # can have an inferred sizes (-1).
                     shape = node.meta["val"].shape
-                    node.meta["spec"] = _ViewSpec(base.meta["spec"], shape)
+                    old_spec = node.meta.get("spec")
+                    view_spec = _ViewSpec(base.meta["spec"], shape)
+                    node.meta["spec"] = view_spec
+
+                    if old_spec is not None:
+                        # SpecPropPass may have propagated this spec to results of
+                        # in-place consumers, getitems, and outputs. Preserve those
+                        # aliases when replacing the view node's spec object.
+                        for other_node in module.graph.nodes:
+                            if "spec" in other_node.meta:
+                                other_node.meta["spec"] = pytree.tree_map(
+                                    lambda spec, old=old_spec, new=view_spec: (
+                                        new if spec is old else spec
+                                    ),
+                                    other_node.meta["spec"],
+                                )
 
                     n_replaced += 1
 
@@ -479,6 +498,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
                 assert not (
                     _is_view_copy(node)
                     and all(u.op != "output" for u in node.users)
+                    and node.args[0].meta["val"].is_contiguous()
                     and is_copy_to_view_safe(node)
                 )
                 if node.op == "call_function" and node.target == _VIEW_OP:

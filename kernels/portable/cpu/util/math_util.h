@@ -47,15 +47,22 @@ template <
         type = true>
 FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
   if (b == 0) {
-    return std::signbit(a) ? static_cast<FLOAT_T>(-INFINITY)
-                           : static_cast<FLOAT_T>(INFINITY);
+    return a / b;
   }
   const auto mod = std::fmod(a, b);
   auto div = (a - mod) / b;
   if ((mod != 0) && std::signbit(b) != std::signbit(mod)) {
-    return div - 1;
+    div -= 1;
   }
-  return div;
+  if (div == 0) {
+    return std::copysign(static_cast<FLOAT_T>(0), a / b);
+  }
+  // (a - mod) / b can be off from a whole number by a rounding error.
+  auto floordiv = std::floor(div);
+  if (div - floordiv > static_cast<FLOAT_T>(0.5)) {
+    floordiv += 1;
+  }
+  return floordiv;
 }
 
 /**
@@ -203,7 +210,7 @@ template <
     typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
         0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
-  float rem = std::fmod(a, b);
+  CTYPE rem = std::fmod(a, b);
   if (((a < 0) ^ (b < 0)) && rem != 0) {
     rem += b;
   }
@@ -214,7 +221,45 @@ template <
     typename CTYPE,
     typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
-  return a % b;
+  if constexpr (std::is_signed<CTYPE>::value) {
+    // a % -1 overflows for the most negative value; the result is always 0.
+    if (b == -1) {
+      return 0;
+    }
+  }
+  CTYPE rem = a % b;
+  if constexpr (std::is_signed<CTYPE>::value) {
+    if (((a < 0) ^ (b < 0)) && rem != 0) {
+      rem += b;
+    }
+  }
+  return rem;
+}
+
+/**
+ * std::fmod, with integers computed as integers so that int64 values above
+ * 2^53 are not rounded through double. Like std::fmod, % keeps the sign of a.
+ * a % -1 overflows for the most negative signed value, and the result is 0
+ * for every a.
+ */
+template <
+    typename CTYPE,
+    typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
+        0>
+CTYPE fmod_override(CTYPE a, CTYPE b) {
+  return std::fmod(a, b);
+}
+
+template <
+    typename CTYPE,
+    typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
+CTYPE fmod_override(CTYPE a, CTYPE b) {
+  if constexpr (std::is_signed<CTYPE>::value) {
+    if (b == -1) {
+      return 0;
+    }
+  }
+  return static_cast<CTYPE>(a % b);
 }
 
 } // namespace utils

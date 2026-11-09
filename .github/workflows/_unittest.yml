@@ -23,7 +23,7 @@ on:
       python-version:
         required: false
         type: string
-        default: '3.10'
+        default: '3.11'
       linux-timeout:
         required: false
         type: number
@@ -70,7 +70,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
+      timeout: 180
       script: |
         git config --global http.sslBackend openssl
         git submodule update --init --recursive 

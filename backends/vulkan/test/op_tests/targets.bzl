@@ -1,4 +1,5 @@
 load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/caffe2:pt_defs.bzl", "get_pt_ops_deps")
 load("@fbsource//xplat/caffe2:pt_ops.bzl", "pt_operator_library")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
@@ -7,6 +8,14 @@ load(
     "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
     "get_platforms",
 )
+
+def define_generator_test_targets(is_fbcode = False):
+    if is_fbcode:
+        python_unittest(
+            name = "test_generator",
+            srcs = ["test_generator.py"],
+            deps = ["fbsource//xplat/executorch/backends/vulkan/test/op_tests:generate_op_correctness_tests_lib"],
+        )
 
 def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode = False):
     deps_list = [
@@ -48,9 +57,6 @@ def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode =
 
 
 def define_common_targets(is_fbcode = False):
-    if is_fbcode:
-        return
-
     runtime.python_library(
         name = "generate_op_correctness_tests_lib",
         srcs = native.glob(["utils/*.py"]) + [
@@ -63,6 +69,9 @@ def define_common_targets(is_fbcode = False):
         ],
         external_deps = ["torchgen"],
     )
+
+    if is_fbcode:
+        return
 
     runtime.python_library(
         name = "generate_op_benchmarks_lib",
@@ -167,6 +176,13 @@ def define_common_targets(is_fbcode = False):
         src_file=":generated_op_correctness_tests_cpp[op_tests.cpp]"
     )
 
+    define_test_targets(
+        "sdpa_av_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
     define_test_targets(
         "sdpa_test",
         extra_deps = [

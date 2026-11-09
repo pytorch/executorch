@@ -59,38 +59,25 @@ class Conv2dVisitor(NodeVisitor):
             valid_input_dtypes.append(ts.DType.INT16)
             # Check constraints for int16 activations
             if inputs[0].dtype == ts.DType.INT16:
-                validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.INT8], self.tosa_spec
-                )
-                validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
-                )
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.INT8])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.INT48])
         if self.tosa_spec.support_extension("bf16"):
             valid_input_dtypes.append(ts.DType.BF16)
         if self.tosa_spec.support_extension("fp8e4m3"):
             valid_input_dtypes.append(ts.DType.FP8E4M3)
             if inputs[0].dtype == ts.DType.FP8E4M3:
-                validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.FP8E4M3], self.tosa_spec
-                )
-                validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
-                )
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.FP8E4M3])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.FP16])
         if self.tosa_spec.support_extension("fp8e5m2"):
             valid_input_dtypes.append(ts.DType.FP8E5M2)
             if inputs[0].dtype == ts.DType.FP8E5M2:
-                validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.FP8E5M2], self.tosa_spec
-                )
-                validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
-                )
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.FP8E5M2])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.FP16])
 
         validate_valid_dtype(
             self.target,
             [inputs[0]],
             valid_input_dtypes,
-            self.tosa_spec,
         )
 
         # Get the attributes of convolution.

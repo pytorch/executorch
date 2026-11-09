@@ -25,6 +25,9 @@ python examples/arm/image_classification_example_vgf/model_export/train_deit.py 
 
 ## Export and quantize for VGF
 
+The exporter requires a safetensors checkpoint. The training script saves
+this format by default. Legacy PyTorch `.bin` checkpoints are not accepted.
+
 ```bash
 python examples/arm/image_classification_example_vgf/model_export/export_deit.py \
   --model-path ./deit-tiny-oxford-pet/final_model \

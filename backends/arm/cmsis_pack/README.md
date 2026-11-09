@@ -64,7 +64,7 @@ cmake \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
   -DEXECUTORCH_BUILD_FLATC=ON \
   -Bcmake-out-arm .
-cmake --build cmake-out-arm --config Release -j$(nproc)
+cmake --build cmake-out-arm --config Release
 
 # 2. Build the pack. --output-dir is where the .pack archive lands
 #    (created if absent); each invocation rewrites this directory.
@@ -74,6 +74,8 @@ backends/arm/cmsis_pack/scripts/build_pack.sh \
   --version "$(cat version.txt | sed 's/a0$//')" \
   --output-dir pack-output
 ```
+
+Adding `-j<N>` to `cmake --build` runs `<N>` jobs in parallel and tends to speed up the build significantly.
 
 The resulting `.pack` file is a zip archive installable via `cpackget add <file>.pack`.
 

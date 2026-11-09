@@ -224,9 +224,7 @@ Once you've successfully finished local development, it's time to send out your 
 
     Click it to create your draft PR.
 
-4. This will take you to your Draft PR page. It might look something like this:
-
-    ![](_static/img/new-contributor-guide/how_to_draft_pr3.png)
+4. This will take you to your Draft PR page.
 
     As you scroll down, you might see a number of comments and automated checks, some of which may come with alarming red warning signs and the word "Failure"! There's no need to panic, though — they are here to help. Let's go through some common checks one-by-one.
 
@@ -234,13 +232,9 @@ Once you've successfully finished local development, it's time to send out your 
 
       ![](_static/img/new-contributor-guide/ci1.png)
 
-    * If this is your very first contribution to a Meta Open Source project, and you've not signed Meta's contributor license agreement (CLA), you may have a comment like this from `facebook-github-bot`:
+    * The `EasyCLA` check verifies that contributors are covered by the project's contributor license agreement (CLA), managed through the Linux Foundation's EasyCLA. If action is needed, follow the link in the check's details or the comment from `linux-foundation-easycla[bot]` to sign an individual CLA or get authorization under your employer's corporate CLA.
 
-        ![](_static/img/new-contributor-guide/cla1.png)
-
-        You will need to sign the linked CLA to contribute your code. Once your signature has been processed, the bot will let you know in another comment:
-
-        ![](_static/img/new-contributor-guide/cla2.png)
+        If you previously signed Meta's CLA, check your EasyCLA status and complete any steps it requests. Once EasyCLA confirms that you are authorized to contribute, the check will pass. See the [Contributor License Agreement section](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#contributor-license-agreement-cla) for details.
 
     * You may see a comment from `github-actions` requesting a "release notes" label:
 
@@ -256,15 +250,9 @@ Once you've successfully finished local development, it's time to send out your 
 
         and the `github-actions` comment requesting a label will disappear.
 
-    * At the end of your Draft PR, you'll see something like this:
+    * At the end of your Draft PR, you'll see a summary of the checks and requirements which need to be satisfied before your PR can be merged, including `EasyCLA`. Ensure that all checks are passing. If not, click on a failing check to see what went wrong and make the required changes.
 
-        ![](_static/img/new-contributor-guide/end_of_draft_pr1.png)
-
-        This is a summary of all the CI checks and requirements which need to be satisfied before your PR can be merged. Ensure that all tests are passing. If not, click on a failing test to see what went wrong and make the required changes.
-
-        Once you're happy with your draft, you can click the `Ready for review` button to create your PR:
-
-        ![](_static/img/new-contributor-guide/end_of_draft_pr2.png)
+        Once you're happy with your draft, click the `Ready for review` button to mark your PR ready for review.
 
 5. Now you've created your PR, it's time for your changes to be reviewed by the ExecuTorch community and maintainers.
 
@@ -280,9 +268,7 @@ Once you've successfully finished local development, it's time to send out your 
 
     ![](_static/img/new-contributor-guide/pr_approval2.png)
 
-6. Once you've received the required approval from a core contributor, you're very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start:
-
-    ![](_static/img/new-contributor-guide/how_to_merge1.png)
+6. Once you've received the required approval from a core contributor, you're very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start.
 
     Once all checks these have all been approved, ran, and passed, you can go ahead and merge your PR. If there's a grey `Update branch` button instead of a green `Merge pull request` button, click that first:
 

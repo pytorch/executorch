@@ -36,7 +36,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.14
+* `python` version 3.11-3.15
 * `cmake` version 3.26 or higher
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
@@ -57,7 +57,7 @@ portability details.
    ```bash
    git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10
+   conda create -yn executorch python=3.11
    conda activate executorch
    ```
 
@@ -305,6 +305,20 @@ cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n 
 ```
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+
+#### Limiting Build Parallelism
+
+The `-j` value above applies only when invoking `cmake --build` directly. The workflow presets (`cmake --workflow --preset llm-release`) and the `Makefile` runner targets that wrap them (`make llama-cpu`, `make whisper-cpu`, and so on) build with unbounded parallelism, so the number of concurrent compiler processes is limited by the build graph rather than by core count.
+
+Set `CMAKE_BUILD_PARALLEL_LEVEL` to cap the job count. It takes precedence over the parallelism configured by a preset, so it works for every build entry point:
+
+```bash
+# Start low on a memory-constrained machine, and raise it if the build
+# stays comfortably within available RAM.
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+
+make llama-cpu
+```
 
 <hr/>
 

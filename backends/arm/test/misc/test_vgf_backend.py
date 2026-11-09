@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import EnsureUniqueOutputNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     clear_registered_pass_insertions,
@@ -19,6 +19,7 @@ from executorch.backends.arm._passes.arm_pass_manager import (
 )
 
 from executorch.backends.arm.vgf import backend, backend as vgf_backend, VgfCompileSpec
+from executorch.backends.arm.vgf._passes import GroupIndependentCustomShadersPass
 from executorch.backends.arm.vgf.backend import (
     _copy_failure_artifacts,
     _format_repro_command,
@@ -79,10 +80,18 @@ def test_vgf_preprocess_restores_pass_registry(monkeypatch) -> None:
         )
         original_registry = _registry_state()
         _set_up_fake_vgf_preprocess(monkeypatch)
+
+        def fake_preprocess(edge_program, compile_specs):
+            assert (
+                GroupIndependentCustomShadersPass
+                in _registry_state()[EnsureUniqueOutputNodesPass][0]
+            )
+            return PreprocessResult(processed_bytes=b"")
+
         monkeypatch.setattr(
             vgf_backend.TOSABackend,
             "_preprocess",
-            lambda edge_program, compile_specs: PreprocessResult(processed_bytes=b""),
+            fake_preprocess,
         )
 
         result = vgf_backend.VgfBackend.preprocess(
