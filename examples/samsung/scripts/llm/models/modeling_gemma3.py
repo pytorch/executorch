@@ -88,7 +88,7 @@ class Gemma3DecoderLayer_ENN(Gemma3DecoderLayer):
     def __init__(self, config: Gemma3TextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         self.self_attn = Gemma3Attention_ENN(config=config, layer_idx=layer_idx)
-        if self.attention_type == "full_attention":
+        if config.layer_types[layer_idx] == "full_attention":
             self.attention_type_num = 0
         else:
             self.attention_type_num = 1  # "sliding_attention"
