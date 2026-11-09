@@ -11,6 +11,8 @@
  *
  *   out = activation(residual_op(conv, residual * scale, alpha))
  *
+ * residual_op is add, sub or mul, and activation is clamp, relu or leaky_relu.
+ *
  * The including shader binds t_residual, a texture3d with the output's sizes,
  * and declares the specialization constants has_residual, has_scale,
  * residual_op, has_activation and activation_op, and the uniforms
@@ -40,6 +42,32 @@
 #undef BINARY_OP_IS_FLOAT
 #undef UNARY_OP_IS_FLOAT
 
+// apply_binary_op() and apply_unary_op() are not reused for binary size: the
+// op is a specialization constant, so every case of their switches stays in the
+// SPIR-V, and the epilogue is inlined at each output store of every conv2d
+// shader.
+vec4 apply_residual_op(const vec4 v, const vec4 residual) {
+  switch (residual_op) {
+    case BINARY_OP_SUB:
+      return v - residual_alpha * residual;
+    case BINARY_OP_MUL:
+      return v * residual;
+    default: // BINARY_OP_ADD
+      return v + residual_alpha * residual;
+  }
+}
+
+vec4 apply_activation(const vec4 v) {
+  switch (activation_op) {
+    case UNARY_OP_RELU:
+      return max(v, vec4(0));
+    case UNARY_OP_LEAKY_RELU:
+      return leaky_relu(v, activation_a);
+    default: // UNARY_OP_CLAMP
+      return clamp(v, activation_a, activation_b);
+  }
+}
+
 // `scale` is the residual scale of the output channels in `pos.z`.
 vec4 apply_epilogue(vec4 v, const ivec3 pos, const vec4 scale) {
   if (has_residual) {
@@ -47,10 +75,10 @@ vec4 apply_epilogue(vec4 v, const ivec3 pos, const vec4 scale) {
     if (has_scale) {
       residual *= scale;
     }
-    v = apply_binary_op(residual_op, v, residual, residual_alpha);
+    v = apply_residual_op(v, residual);
   }
   if (has_activation) {
-    v = apply_unary_op(activation_op, v, activation_a, activation_b);
+    v = apply_activation(v);
   }
   return v;
 }
