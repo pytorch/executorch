@@ -59,10 +59,11 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
-  // Requires cache capacity; zero captures only the initial prompt.
+  // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
   // Best-effort capture at each request's prompt end, including continuations
-  // and replacements. Shares checkpoint admission; requires cache capacity.
+  // and replacements. Alone, uses per-request capture admission. With periodic
+  // checkpoints, shares their serialized admission. Requires cache capacity.
   bool prefix_capture_prompt_end = false;
   // Override the interval and prompt-end flag with increasing checkpoints in
   // (start, prompt.size()]. Invalid or throwing policies skip capture. Requires
@@ -78,9 +79,14 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Transient rows shared by prompt capture and named-session replacement.
   // Zero matches request concurrency, bounded by max_sessions; replacements
   // compete with prompt captures for these rows.
-  // Automatic checkpoint mode needs at most two rows because collection is
-  // serialized; one replacement may overlap. Positive values override sizing.
+  // Periodic/custom checkpoints need at most two automatic rows because
+  // collection is serialized; one replacement may overlap. Prompt-end-only
+  // capture keeps the concurrent budget. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
+
+  bool uses_checkpoint_observer() const {
+    return prefix_checkpoint_interval || prefix_checkpoint_policy;
+  }
 
   std::size_t resolved_prefix_captures() const {
     if (prefix_cache_capacity == 0) {
@@ -90,10 +96,8 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
       return max_prefix_captures;
     }
     const auto concurrency = std::min(max_sessions, max_requests);
-    return prefix_checkpoint_interval || prefix_capture_prompt_end ||
-            prefix_checkpoint_policy
-        ? std::min(concurrency, std::size_t{2})
-        : concurrency;
+    return uses_checkpoint_observer() ? std::min(concurrency, std::size_t{2})
+                                      : concurrency;
   }
 };
 

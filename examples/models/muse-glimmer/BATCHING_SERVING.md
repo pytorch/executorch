@@ -224,19 +224,25 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 ## Session Behavior
 
-Prefix caching retains the initial prompt by default. Add
-`--prefix-capture-prompt-end` with `--prefix-cache-entries` to also retain the
-prompt boundary of subsequent requests, including tool-result continuations
-and replacements. Repeated or branched requests can then reuse those snapshots.
-New tool-result text still needs prefill. This is best-effort capture within the
-same bounded cache and transient-row limits, with global LRU retention; it can
-evict earlier prompts. Benchmark capture cost and memory for your workload
-before enabling it. It also works with `--prefix-checkpoint-interval` and adds
-the exact prompt end when it falls between periodic checkpoints. A pending
-checkpoint or another request can occupy the capture lane and skip a boundary;
-use prompt-end capture without periodic checkpoints when turn reuse is the
-priority. Automatic transient-row sizing is capped at two in either mode. The C++
-`prefix_checkpoint_policy`, when supplied, overrides both options.
+Prefix caching is disabled unless `--prefix-cache-entries` is nonzero. When
+configured without other capture options, it retains initial prompts. Add
+`--prefix-capture-prompt-end` to request snapshots of subsequent boundaries,
+including tool-result continuations and replacements. Repeated or branched requests
+can reuse those snapshots; new tool-result text still needs prefill. Exact prompt
+ends already in the cache are not cloned again.
+
+Prompt-end-only capture preserves per-request capture concurrency and the default
+transient-row budget. All snapshots share the bounded cache and global LRU, so new
+boundaries can evict earlier prompts. Capture is best effort: concurrent captures
+or session replacements can occupy the available rows. Measure capture overhead
+and reuse for your workload before enabling it.
+
+With `--prefix-checkpoint-interval`, periodic points and the exact prompt end use
+one serialized checkpoint lane. A pending checkpoint can cause a later boundary,
+including the prompt end, to be skipped. Automatic transient-row sizing is capped
+at two in periodic mode; prompt-end-only mode retains the ordinary concurrency
+budget. Use prompt-end capture without periodic checkpoints when turn reuse is the
+priority.
 
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
   close the least recently used idle session when logical session slots are exhausted, clearing
@@ -334,7 +340,8 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 `model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
 pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
 capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
-matches request concurrency, capped at two when checkpoints are enabled; a
+matches request concurrency, including prompt-end-only mode; periodic checkpoints
+cap the automatic count at two; a
 positive value sets an explicit limit. Their total reservation must leave one
 cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic

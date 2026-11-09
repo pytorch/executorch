@@ -440,6 +440,13 @@ TEST(PrefillCheckpointPolicyTest, AbsoluteIntervalsAndRangeBoundaries) {
       (std::vector<Position>{17}));
   EXPECT_TRUE(periodic_prefill_breakpoints(16, 17, 8).empty());
   EXPECT_TRUE(periodic_prefill_breakpoints(0, 8, 0).empty());
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(3, 6, 0, true), (std::vector<Position>{6}));
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(3, 6, 4, true),
+      (std::vector<Position>{4, 6}));
+  EXPECT_TRUE(periodic_prefill_breakpoints(6, 6, 0, true).empty());
+  EXPECT_TRUE(periodic_prefill_breakpoints(0, 8, -1, true).empty());
   const auto end = std::numeric_limits<Position>::max();
   EXPECT_EQ(
       periodic_prefill_breakpoints(end - 1, end, end, true),
@@ -929,6 +936,22 @@ TEST_F(PrefixCacheTest, FindRefreshesLruOnlyAfterTouch) {
     EXPECT_EQ(cache.lookup({3, 4, 9}).has_value(), !adopt);
     expect_cold_match(*match, {1, 2, 9});
   }
+}
+
+TEST_F(PrefixCacheTest, ContainsRequiresExactIdentityWithoutRefreshingLru) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  const auto identity = [](Tokens tokens) {
+    return token_identity(std::make_shared<const Tokens>(std::move(tokens)));
+  };
+  EXPECT_TRUE(cache.contains_identity(identity({1, 2})));
+  EXPECT_FALSE(cache.contains_identity(identity({1})));
+  EXPECT_FALSE(cache.contains_identity(identity({1, 2, 3})));
+  EXPECT_FALSE(cache.contains_identity(identity({1, 3})));
+  ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+  EXPECT_FALSE(cache.contains_identity(identity({1, 2})));
+  EXPECT_TRUE(cache.contains_identity(identity({3, 4})));
 }
 
 TEST_F(PrefixCacheTest, TouchOfEvictedMatchDoesNotRefreshReinsertedEntry) {

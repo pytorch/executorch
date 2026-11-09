@@ -42,7 +42,7 @@ DEFINE_int32(
 DEFINE_bool(
     prefix_capture_prompt_end,
     false,
-    "Retain each request's prompt end in the bounded prefix cache");
+    "Best-effort retention of each request's prompt end in the bounded prefix cache");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     std::cerr
         << "--pte and --tokenizer are required; capacity limits must be positive"
            "; prefix-cache limits must be nonnegative; "
-           "checkpoints require prefix_cache_entries > 0\n";
+           "--prefix_checkpoint_interval and --prefix_capture_prompt_end require --prefix_cache_entries > 0\n";
     return 1;
   }
   executorch::extension::llm::serving::ServingRuntimeConfig config;

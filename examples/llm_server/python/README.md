@@ -66,9 +66,16 @@ limit; choose a value supported by the export. Capacity defaults are
 `--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
 (the default) automatically allows one pending prompt capture per admitted request,
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
-this allowance. With checkpoints enabled, automatic sizing uses at most two rows:
+this allowance. Add `--prefix-capture-prompt-end` to retain later request boundaries
+as well as initial prompts; it requires `--prefix-cache-entries > 0`. This mode
+keeps the same concurrent capture allowance and skips already-retained prompt ends.
+Capture is best effort: occupied transient rows can prevent a snapshot.
+With periodic checkpoints enabled, automatic sizing uses at most two rows:
 checkpoint collection is serialized, but one replacement can overlap. Explicit
 values above two add unused row capacity in that mode.
+Combining `--prefix-checkpoint-interval` and `--prefix-capture-prompt-end` requests
+both periodic and exact-end snapshots through the shared checkpoint lane. A pending
+checkpoint can prevent capture at a later boundary, including the prompt end.
 Logical sessions, packed decode width, and in-flight request capacity are independent
 limits. Python concurrency follows advertised request capacity, not the single
 native delivery thread. Python reads native async streams directly through bounded

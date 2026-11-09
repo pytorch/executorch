@@ -167,30 +167,7 @@ def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch):
     )
 
 
-@pytest.mark.parametrize(
-    "sessions,override,expected", [(8, 0, 2), (1, 0, 1), (8, 3, 3)]
-)
-def test_prompt_end_capture_bounds_automatic_rows(argv, sessions, override, expected):
-    args = serve._parse_args(
-        argv
-        + [
-            "--prefix-cache-entries",
-            "3",
-            "--prefix-capture-prompt-end",
-            "--max-sessions",
-            str(sessions),
-            "--prefix-capture-slots",
-            str(override),
-        ]
-    )
-    assert (
-        serve._validate_limits(
-            Mock(), args, prefix_capture_slots=override, prefix_capture_prompt_end=True
-        )
-        == expected
-    )
-
-
+@pytest.mark.parametrize("prompt_end", [False, True])
 @pytest.mark.parametrize(
     "sessions,requests,interval,override,expected",
     [
@@ -203,7 +180,7 @@ def test_prompt_end_capture_bounds_automatic_rows(argv, sessions, override, expe
     ],
 )
 def test_capture_capacity_validation_and_worker_override(
-    argv, launch, sessions, requests, interval, override, expected
+    argv, launch, sessions, requests, interval, override, expected, prompt_end
 ):
     serve.main(
         argv
@@ -219,9 +196,11 @@ def test_capture_capacity_validation_and_worker_override(
             "--prefix-capture-slots",
             str(override),
         ]
+        + (["--prefix-capture-prompt-end"] if prompt_end else [])
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
+    assert ("--prefix_capture_prompt_end=true" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,
@@ -232,7 +211,13 @@ def test_capture_capacity_validation_and_worker_override(
         port=8000,
     )
     assert (
-        serve._validate_limits(Mock(), args, prefix_capture_slots=override) == expected
+        serve._validate_limits(
+            Mock(),
+            args,
+            prefix_capture_slots=override,
+            prefix_capture_prompt_end=prompt_end,
+        )
+        == expected
     )
 
 

@@ -48,14 +48,16 @@ inline std::vector<Position> periodic_prefill_breakpoints(
     Position interval,
     bool include_end = false) {
   std::vector<Position> positions;
-  if (start < 0 || end <= start || interval <= 0) {
+  if (start < 0 || end <= start || interval < 0) {
     return positions;
   }
-  for (std::int64_t next =
-           (static_cast<std::int64_t>(start) / interval + 1) * interval;
-       next <= end;
-       next += interval) {
-    positions.push_back(static_cast<Position>(next));
+  if (interval > 0) {
+    for (std::int64_t next =
+             (static_cast<std::int64_t>(start) / interval + 1) * interval;
+         next <= end;
+         next += interval) {
+      positions.push_back(static_cast<Position>(next));
+    }
   }
   if (include_end && (positions.empty() || positions.back() != end)) {
     positions.push_back(end);
@@ -350,6 +352,15 @@ class ET_EXPERIMENTAL PrefixCache {
   // final token for a forward. The returned session survives cache eviction.
   std::optional<PrefixMatch> lookup(const std::vector<Token>& request) {
     return lookup_identity(copy_tokens(request));
+  }
+
+  // Exact retained identity, without cloning or refreshing recency.
+  bool contains_identity(const PrefixIdentity& request) const {
+    return std::any_of(
+        entries_.begin(), entries_.end(), [&](const Entry& entry) {
+          return entry.tokens.size() == request.size() &&
+              common_prefix(entry.tokens, request) == request.size();
+        });
   }
 
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {

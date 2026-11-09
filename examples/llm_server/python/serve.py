@@ -55,14 +55,21 @@ def _validate_limits(
         parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
     if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
-    if (args.prefix_checkpoint_interval or prefix_capture_prompt_end) and not args.prefix_cache_entries:
-        parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
+    if (
+        args.prefix_checkpoint_interval or prefix_capture_prompt_end
+    ) and not args.prefix_cache_entries:
+        flag = (
+            "--prefix-capture-prompt-end"
+            if prefix_capture_prompt_end
+            else "--prefix-checkpoint-interval"
+        )
+        parser.error(f"{flag} requires --prefix-cache-entries > 0")
     if not 0 <= prefix_capture_slots <= _MAX_INT32:
         parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
     # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
-        if args.prefix_checkpoint_interval or prefix_capture_prompt_end:
+        if args.prefix_checkpoint_interval:
             prefix_capture_slots = min(prefix_capture_slots, 2)
     if not args.prefix_cache_entries:
         prefix_capture_slots = 0
@@ -108,8 +115,9 @@ def _parse_args(argv=None):
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
     parser.add_argument(
-        "--prefix-capture-prompt-end", action="store_true",
-        help="Retain each request's prompt end in the bounded prefix cache",
+        "--prefix-capture-prompt-end",
+        action="store_true",
+        help="Best-effort retention of each request's prompt end in the bounded prefix cache",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -121,7 +129,7 @@ def _parse_args(argv=None):
         "--prefix-checkpoint-interval",
         type=int,
         default=0,
-        help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+        help="Periodic checkpoint interval in tokens; 0 disables periodic capture.",
     )
     parser.add_argument(
         "--api-dialect", choices=("openai", "openrouter"), default="openai"
@@ -136,7 +144,12 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
+    _validate_limits(
+        parser,
+        args,
+        prefix_capture_slots=args.prefix_capture_slots,
+        prefix_capture_prompt_end=args.prefix_capture_prompt_end,
+    )
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
@@ -212,7 +225,11 @@ def main(argv=None) -> None:
                     if args.prefix_checkpoint_interval
                     else []
                 )
-                + (["--prefix_capture_prompt_end=true"] if args.prefix_capture_prompt_end else []),
+                + (
+                    ["--prefix_capture_prompt_end=true"]
+                    if args.prefix_capture_prompt_end
+                    else []
+                ),
                 stderr=stderr,
             )
             runtime = None

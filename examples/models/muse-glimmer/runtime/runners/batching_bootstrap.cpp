@@ -47,7 +47,7 @@ DEFINE_int32(
 DEFINE_bool(
     prefix_capture_prompt_end,
     false,
-    "Retain each request's prompt end in the bounded prefix cache");
+    "Best-effort retention of each request's prompt end in the bounded prefix cache");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,

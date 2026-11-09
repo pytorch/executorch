@@ -90,7 +90,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-capture-prompt-end",
         action="store_true",
-        help="Retain each request's prompt end in the bounded prefix cache",
+        help="Best-effort retention of each request's prompt end in the bounded prefix cache",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",

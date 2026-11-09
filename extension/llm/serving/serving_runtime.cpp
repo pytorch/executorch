@@ -264,9 +264,8 @@ struct ServingRuntime::Impl {
             config.prefix_checkpoint_interval <=
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
-            ((!config.prefix_checkpoint_interval &&
-              !config.prefix_capture_prompt_end &&
-              !config.prefix_checkpoint_policy) ||
+            ((!config.uses_checkpoint_observer() &&
+              !config.prefix_capture_prompt_end) ||
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
         model_preparer_(std::move(model_preparer)),
@@ -1306,9 +1305,7 @@ struct ServingRuntime::Impl {
           };
       std::function<void(batching::Position)> on_prefill;
       if (request->text && request->text->prompt &&
-          (config_.prefix_checkpoint_interval != 0 ||
-           config_.prefix_capture_prompt_end ||
-           config_.prefix_checkpoint_policy)) {
+          config_.uses_checkpoint_observer()) {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
@@ -1335,15 +1332,18 @@ struct ServingRuntime::Impl {
               previous = checkpoint.position;
             }
           } else {
+            const bool retained_end = config_.prefix_capture_prompt_end &&
+                prefix_cache_.contains_identity(*request->text->prompt);
             breakpoints = batching::periodic_prefill_breakpoints(
                 start,
                 end,
                 static_cast<batching::Position>(
                     config_.prefix_checkpoint_interval),
-                opening);
-            if (config_.prefix_capture_prompt_end && end > start &&
-                (breakpoints.empty() || breakpoints.back() != end)) {
-              breakpoints.push_back(end);
+                (opening || config_.prefix_capture_prompt_end) &&
+                    !retained_end);
+            if (retained_end && !breakpoints.empty() &&
+                breakpoints.back() == end) {
+              breakpoints.pop_back();
             }
           }
           on_prefill = request->text->prefix_capture->observer(
@@ -1374,8 +1374,11 @@ struct ServingRuntime::Impl {
         }
 #endif
       } else if (
-          opening && request->text && request->text->prompt &&
-          config_.prefix_cache_capacity != 0 && try_acquire_capture_lane()) {
+          (opening || config_.prefix_capture_prompt_end) && request->text &&
+          request->text->prompt && config_.prefix_cache_capacity != 0 &&
+          (!config_.prefix_capture_prompt_end ||
+           !prefix_cache_.contains_identity(*request->text->prompt)) &&
+          try_acquire_capture_lane()) {
         // Only a capture needs an extra row beyond the working-session slots.
         request->text->capture_lane = true;
 #if ET_HAS_EXCEPTIONS
