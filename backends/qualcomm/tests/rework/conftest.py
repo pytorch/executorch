@@ -410,8 +410,10 @@ def verify_output_remote(
         )
         device.push(inputs=[inputs], init_env=False)
         device.bridge.rmdir(device.output_folder)
-        device.execute(method_index=getattr(qnn_config, "method_index", 0),
-                       output_callback=output_callback)
+        device.execute(
+            method_index=getattr(qnn_config, "method_index", 0),
+            output_callback=output_callback,
+        )
         device.pull(host_output_path=tmp_dir, callback=post_process)
         metrics.assert_close(device_output=device_outputs, ref_output=ref_outputs)
 
