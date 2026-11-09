@@ -307,7 +307,7 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default`, `et_vk.conv_with_clamp.default` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
@@ -764,10 +764,12 @@ case that reproduces its dispatch.
 input `[1, 64, 128, 128]` and weight `[128, 64, 3, 3]`. Each dispatch covers a
 113-row output tile, so K = 3 x 3 x 64 = 576, M = 113 x 128 = 14464, and
 N = 128. The bindings follow the shader interface: the output, the `[M, K]`
-im2col tile, the `[K/4, N/4 x 16]` packed weight, the bias, and the output sizes
-UBO. The push constants are `(K/4, row offset, rows per tile, 0)` followed by
-unused clamp bounds. This shader has no registered CPU reference, so run the
-example with `--validation_mode=none`.
+im2col tile, the `[K/4, N/4 x 16]` packed weight, the bias, one-element residual
+and residual scale tensors, and the output sizes UBO. The specialization
+constants disable the epilogue, so the residual and scale are never read. The
+push constants are `(K/4, row offset, rows per tile, 0)` followed by the unused
+activation bounds and residual alpha. This shader has no registered CPU
+reference, so run the example with `--validation_mode=none`.
 
 The window boundaries are printed to stderr as they occur:
 
@@ -1060,6 +1062,15 @@ than executing cases to establish device support.
 Validation-only `check` cases return PASS, FAIL, or SKIP with diagnostic details;
 they have no latency measurements. Unselected checks report `SKIP`, including
 all checks under `--validation_mode=none` or `--error_mode=skip`.
+
+The built-in `operator_dynamic_resize` check tests operators under dynamic
+shapes. `parameters.operator_case` must expand to one case, which the check
+builds once at its declared sizes; they bound every later size. For each
+`validation_steps` entry it resizes the staged inputs listed in `tensor_sizes`,
+checks that the output named by `parameters.output_name` resized to
+`expected_output_sizes`, executes the graph, and validates the output unless the
+step sets `validate_output` to false. See the `dynamic_resize` cases in
+`convolution/conv2d/cases/correctness.json`.
 
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:
