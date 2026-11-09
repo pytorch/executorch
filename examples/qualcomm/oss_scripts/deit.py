@@ -34,7 +34,7 @@ from transformers import AutoConfig, AutoModelForImageClassification
 def get_instance():
     module = (
         AutoModelForImageClassification.from_pretrained(
-            "facebook/deit-base-distilled-patch16-224"
+            "facebook/deit-base-distilled-patch16-224", use_safetensors=True
         )
         .eval()
         .to("cpu")

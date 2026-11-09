@@ -74,7 +74,9 @@ def main(args):
         )
 
     module = (
-        AutoModelForImageClassification.from_pretrained("apple/mobilevit-xx-small")
+        AutoModelForImageClassification.from_pretrained(
+            "apple/mobilevit-xx-small", use_safetensors=True
+        )
         .eval()
         .to("cpu")
     )
