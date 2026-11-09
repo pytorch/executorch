@@ -7,13 +7,17 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/prompt_preparation.h>
 
-#include <CommonCrypto/CommonDigest.h>
 #include <executorch/extension/llm/serving/detail/prompt_preparer.h>
 #include <nlohmann/json.hpp>
 #include <pytorch/tokenizers/tokenizer.h>
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <utility>
+
+#if defined(EXECUTORCH_BUILD_MLX)
+#include <CommonCrypto/CommonDigest.h>
+#endif
 
 namespace executorch::extension::llm {
 namespace {
@@ -45,15 +49,143 @@ bool valid_image(
       bytes == static_cast<size_t>(pixels) * 3;
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#if defined(EXECUTORCH_BUILD_CUDA)
+// FIPS 180-4 SHA-256 for CUDA builds without a platform crypto library.
+class Sha256 {
+ public:
+  void update(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    length_ += size;
+    while (size > 0) {
+      const size_t take = std::min(size, block_.size() - buffered_);
+      std::copy(bytes, bytes + take, block_.begin() + buffered_);
+      buffered_ += take;
+      bytes += take;
+      size -= take;
+      if (buffered_ == block_.size()) {
+        compress();
+        buffered_ = 0;
+      }
+    }
+  }
+
+  batching::ContentKey finish() {
+    const uint64_t bits = length_ * 8;
+    const uint8_t pad = 0x80;
+    update(&pad, 1);
+    const uint8_t zero = 0;
+    while (buffered_ != 56) {
+      update(&zero, 1);
+    }
+    uint8_t encoded[8];
+    for (size_t i = 0; i < 8; ++i) {
+      encoded[7 - i] = static_cast<uint8_t>(bits >> (i * 8));
+    }
+    update(encoded, sizeof(encoded));
+    batching::ContentKey key;
+    for (size_t i = 0; i < state_.size(); ++i) {
+      for (size_t j = 0; j < 4; ++j) {
+        key[i * 4 + j] = static_cast<uint8_t>(state_[i] >> (24 - 8 * j));
+      }
+    }
+    return key;
+  }
+
+ private:
+  static uint32_t rotr(uint32_t x, int n) {
+    return (x >> n) | (x << (32 - n));
+  }
+
+  void compress() {
+    static constexpr std::array<uint32_t, 64> k = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+        0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+        0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+    std::array<uint32_t, 64> w;
+    for (size_t i = 0; i < 16; ++i) {
+      w[i] = (uint32_t(block_[4 * i]) << 24) |
+          (uint32_t(block_[4 * i + 1]) << 16) |
+          (uint32_t(block_[4 * i + 2]) << 8) | uint32_t(block_[4 * i + 3]);
+    }
+    for (size_t i = 16; i < 64; ++i) {
+      const uint32_t s0 =
+          rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+      const uint32_t s1 =
+          rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    auto v = state_;
+    for (size_t i = 0; i < 64; ++i) {
+      const uint32_t s1 = rotr(v[4], 6) ^ rotr(v[4], 11) ^ rotr(v[4], 25);
+      const uint32_t ch = (v[4] & v[5]) ^ (~v[4] & v[6]);
+      const uint32_t t1 = v[7] + s1 + ch + k[i] + w[i];
+      const uint32_t s0 = rotr(v[0], 2) ^ rotr(v[0], 13) ^ rotr(v[0], 22);
+      const uint32_t maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+      v = {t1 + s0 + maj, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]};
+    }
+    for (size_t i = 0; i < state_.size(); ++i) {
+      state_[i] += v[i];
+    }
+  }
+
+  std::array<uint32_t, 8> state_ = {
+      0x6a09e667,
+      0xbb67ae85,
+      0x3c6ef372,
+      0xa54ff53a,
+      0x510e527f,
+      0x9b05688c,
+      0x1f83d9ab,
+      0x5be0cd19};
+  std::array<uint8_t, 64> block_{};
+  size_t buffered_ = 0;
+  uint64_t length_ = 0;
+};
+#elif defined(EXECUTORCH_BUILD_MLX)
+class Sha256 {
+ public:
+  Sha256() {
+    CC_SHA256_Init(&context_);
+  }
+
+  void update(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    while (size > 0) {
+      const auto chunk = static_cast<CC_LONG>(std::min(
+          size, static_cast<size_t>(std::numeric_limits<CC_LONG>::max())));
+      CC_SHA256_Update(&context_, bytes, chunk);
+      bytes += chunk;
+      size -= chunk;
+    }
+  }
+
+  batching::ContentKey finish() {
+    batching::ContentKey key;
+    CC_SHA256_Final(key.data(), &context_);
+    return key;
+  }
+
+ private:
+  CC_SHA256_CTX context_;
+};
+#else
+#error "Muse Glimmer preparation requires a CUDA or MLX build"
+#endif
+
 batching::ContentKey image_key(
     const MuseGlimmerRGBImage& image,
     const MuseGlimmerImageGrid& grid) {
-  CC_SHA256_CTX hash;
-  CC_SHA256_Init(&hash);
+  Sha256 hash;
   constexpr char version[] = "muse-glimmer-image-v1";
-  CC_SHA256_Update(&hash, version, sizeof(version) - 1);
+  hash.update(version, sizeof(version) - 1);
   // Five unsigned 64-bit big-endian fields, followed by canonical HWC bytes.
   for (uint64_t value :
        {uint64_t(image.width),
@@ -64,20 +196,11 @@ batching::ContentKey image_key(
     uint8_t bytes[8];
     for (size_t i = 0; i < 8; ++i)
       bytes[7 - i] = static_cast<uint8_t>(value >> (i * 8));
-    CC_SHA256_Update(&hash, bytes, sizeof(bytes));
+    hash.update(bytes, sizeof(bytes));
   }
-  for (size_t offset = 0; offset < image.rgb.size();) {
-    const auto count = static_cast<CC_LONG>(std::min(
-        image.rgb.size() - offset,
-        static_cast<size_t>(std::numeric_limits<CC_LONG>::max())));
-    CC_SHA256_Update(&hash, image.rgb.data() + offset, count);
-    offset += count;
-  }
-  batching::ContentKey key;
-  CC_SHA256_Final(key.data(), &hash);
-  return key;
+  hash.update(image.rgb.data(), image.rgb.size());
+  return hash.finish();
 }
-#pragma clang diagnostic pop
 } // namespace
 
 MuseGlimmerPreparedInput::MuseGlimmerPreparedInput(
@@ -196,13 +319,9 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
   const auto cancelled = [&] {
     return context.cancelled && context.cancelled();
   };
-  const size_t limit = std::min(
-      context.max_prompt_positions,
-      static_cast<size_t>(spec->max_context_length - 1));
   if (cancelled())
     return invalid("prompt preparation cancelled");
   serving::PromptInput prompt;
-  size_t known_positions = 0;
   bool has_image = false;
   const char* failure = "invalid prompt segment";
   const auto append_text = [&](const std::string& text) {
@@ -210,8 +329,8 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
     return !cancelled();
   };
   const auto append_ids = [&](const nlohmann::json& ids) {
-    if (!ids.is_array() || ids.size() > limit - known_positions) {
-      failure = "prompt IDs must be a bounded array";
+    if (!ids.is_array()) {
+      failure = "prompt IDs must be an array";
       return false;
     }
     std::vector<batching::Token> tokens;
@@ -223,7 +342,6 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
       }
       tokens.push_back(id.get<uint64_t>());
     }
-    known_positions += tokens.size();
     prompt.segments.emplace_back(std::move(tokens));
     return !cancelled();
   };
@@ -264,9 +382,8 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
     }
     auto computed = muse_glimmer_image_grid(
         decoded->width, decoded->height, spec->max_soft_tokens);
-    if (!computed.ok() ||
-        static_cast<size_t>(computed->soft_tokens) > limit - known_positions) {
-      failure = "image grid exceeds vision patch or prompt limit";
+    if (!computed.ok()) {
+      failure = "image grid exceeds vision patch limit";
       return false;
     }
     // The shared Image contract is CHW; the decoder returns interleaved HWC.
@@ -277,7 +394,6 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
         chw[c * pixels + p] = decoded->rgb[p * 3 + c];
     prompt.segments.emplace_back(
         Image(std::move(chw), decoded->width, decoded->height, 3));
-    known_positions += static_cast<size_t>(computed->soft_tokens);
     has_image = true;
     return !cancelled();
   };
@@ -337,9 +453,12 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
   const auto cancelled = [&] {
     return context.cancelled && context.cancelled();
   };
-  const size_t limit = std::min(
+  const size_t context_length = std::min(
       context.max_prompt_positions,
-      static_cast<size_t>(spec->max_context_length - 1));
+      static_cast<size_t>(spec->max_context_length));
+  const size_t limit = context_length ? context_length - 1 : 0;
+  size_t positions = 0;
+  std::optional<batching::Token> first_token;
   std::vector<batching::Token> tokens;
   MuseGlimmerRGBImage image;
   MuseGlimmerImageGrid grid;
@@ -357,10 +476,14 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
       ids = &encoded;
     }
     if (ids) {
-      if (ids->size() > limit - tokens.size() || !valid_tokens(*ids, *spec) ||
+      if (!valid_tokens(*ids, *spec) ||
           std::find(ids->begin(), ids->end(), spec->patch_id) != ids->end())
-        return invalid("invalid, oversized, or unbound patch token segment");
-      tokens.insert(tokens.end(), ids->begin(), ids->end());
+        return invalid("invalid or unbound patch token segment");
+      if (!first_token && !ids->empty())
+        first_token = ids->front();
+      positions += ids->size();
+      if (positions <= limit)
+        tokens.insert(tokens.end(), ids->begin(), ids->end());
     } else if (const auto* source = segment.try_get_image()) {
       if (span.size || !spec->has_vision || !source->is_uint8() ||
           source->channels() != 3 ||
@@ -372,9 +495,8 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
         return invalid("only one bounded uint8 RGB image is supported");
       auto computed = muse_glimmer_image_grid(
           source->width(), source->height(), spec->max_soft_tokens);
-      if (!computed.ok() ||
-          static_cast<size_t>(computed->soft_tokens) > limit - tokens.size())
-        return invalid("image grid exceeds vision patch or prompt limit");
+      if (!computed.ok())
+        return invalid("image grid exceeds vision patch limit");
       image.width = source->width();
       image.height = source->height();
       const auto& chw = source->get_uint8_data();
@@ -384,20 +506,28 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
         for (size_t c = 0; c < 3; ++c)
           image.rgb[p * 3 + c] = chw[c * pixels + p];
       grid = *computed;
-      span = {tokens.size(), static_cast<size_t>(grid.soft_tokens)};
-      tokens.insert(tokens.end(), span.size, spec->patch_id);
+      span = {positions, static_cast<size_t>(grid.soft_tokens)};
+      if (!first_token)
+        first_token = spec->patch_id;
+      positions += span.size;
+      if (positions <= limit)
+        tokens.insert(tokens.end(), span.size, spec->patch_id);
     } else {
       return invalid("unsupported prompt modality");
     }
   }
-  if (tokens.empty() || tokens.front() != spec->bos_id) {
+  const bool add_bos = !first_token || *first_token != spec->bos_id;
+  positions += add_bos;
+  if (positions > limit) {
+    return serving::context_length_error(positions, context_length);
+  }
+  if (add_bos) {
     tokens.insert(tokens.begin(), spec->bos_id);
     if (span.size)
       ++span.offset;
   }
-  if (tokens.size() > limit || !valid_tokens(tokens, *spec) || cancelled()) {
-    return invalid(
-        "prompt exceeds context/vocabulary or preparation cancelled");
+  if (!valid_tokens(tokens, *spec) || cancelled()) {
+    return invalid("prompt exceeds vocabulary or preparation cancelled");
   }
   if (!span.size) {
     return batching::PreparedInputPtr(

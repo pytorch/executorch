@@ -46,14 +46,14 @@ void test_dtype() {
       /*data=*/{5, 4, 3, 2, 1, 1});
   Tensor weight_scales = tf.make(
       /*sizes=*/{3},
-      /*data=*/{0.2, 0.4, 0.5});
+      /*data=*/{0.25, 0.5, 0.125});
   const optional<Tensor> opt_weight_zp{};
 
   Tensor out = tf.zeros({1, 2});
 
   Tensor expected = tf.make(
       /*sizes=*/{1, 2},
-      /*data=*/{3.8, 3.0});
+      /*data=*/{3.75, 2.75});
 
   KernelRuntimeContext ctx{};
 
@@ -68,4 +68,29 @@ TEST_F(OpQuantizedMixedMMTest, FloatInput) {
 
 TEST_F(OpQuantizedMixedMMTest, HalfInput) {
   test_dtype<ScalarType::Half>();
+}
+
+TEST_F(OpQuantizedMixedMMTest, HalfComputesInFloat) {
+  TensorFactory<ScalarType::Half> tf;
+  TensorFactory<ScalarType::Char> tf_char;
+  KernelRuntimeContext ctx{};
+
+  // Each output sums 4096 products of 1. A Half running sum stops growing at
+  // 2048, so without float accumulation the result is 2048 instead of 4096.
+  constexpr int K = 4096;
+  Tensor out = tf.zeros({1, 2});
+  quantized_mixed_mm_out(
+      ctx, tf.ones({1, K}), tf_char.ones({K, 2}), tf.ones({K}), {}, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 2}, K));
+
+  // 600 * 127 overflows Half, while the scaled product, about 762, fits.
+  Tensor small_out = tf.zeros({1, 1});
+  quantized_mixed_mm_out(
+      ctx,
+      tf.full({1, 1}, 600),
+      tf_char.full({1, 1}, 127),
+      tf.full({1}, 0.01),
+      {},
+      small_out);
+  EXPECT_TENSOR_CLOSE(small_out, tf.full({1, 1}, 762));
 }

@@ -36,6 +36,7 @@ if [[ $# -eq 0 ]]; then
         run_mobilesam_e2e_ethos_u
         run_swin2sr_e2e_vgf
         run_silero_vad_e2e_ethos_u
+        run_person_detection_e2e_cortex_m
     )
 else
     TEST_SUITES=("$1")
@@ -48,6 +49,73 @@ import notebook  # noqa: F401
 import nbconvert  # noqa: F401
 PY
 }
+
+run_person_detection_e2e_cortex_m() (
+    local example_dir="${et_root_dir}/examples/arm/person_detection_example_cortex_m"
+    local work_root
+    mkdir -p "${et_root_dir}/arm_test"
+    work_root=$(mktemp -d "${et_root_dir}/arm_test/person_detection_ootb.XXXXXX")
+    local artifacts_dir="${example_dir}/artifacts"
+    local image_path="${example_dir}/example.jpg"
+    local pte_path="${artifacts_dir}/person_detection.pte"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    echo "${FUNCNAME}: Work directory: ${work_root}"
+
+    source "${et_root_dir}/examples/arm/arm-scratch/setup_path.sh"
+    source "${et_root_dir}/backends/arm/scripts/utils.sh"
+    pip install -r "${example_dir}/requirements.txt"
+
+    python3 "${example_dir}/training/pretrain.py" --smoke-test
+    python3 "${example_dir}/training/training.py" --smoke-test
+    test -s "${artifacts_dir}/trained_unpruned.pt"
+    test -s "${artifacts_dir}/trained_fully_pruned.pt"
+    python3 "${example_dir}/training/test_model.py" \
+        --pt "${artifacts_dir}/trained_fully_pruned.pt" --image "${image_path}" \
+        --no-display --output "${work_root}/prediction.jpg"
+    python3 "${example_dir}/training/pruning.py" \
+        --input "${artifacts_dir}/trained_fully_pruned.pt" \
+        --output "${artifacts_dir}/pruned.pt"
+    python3 "${example_dir}/export/export_model.py" \
+        --input "${artifacts_dir}/pruned.pt" --smoke-test --pte "${pte_path}" \
+        --eager "${artifacts_dir}/person_detection.eager" \
+        --etrecord "${artifacts_dir}/person_detection.etrecord"
+    python3 "${example_dir}/export/test_exported_model.py" \
+        --pte "${pte_path}" --eager "${artifacts_dir}/person_detection.eager"
+    python3 "${example_dir}/deploy/generate_qparams_header.py" \
+        --pte "${pte_path}" --output "${work_root}/model_qparams.h"
+
+    local profiling build_dir host_log
+    for profiling in OFF ON; do
+        build_dir="${work_root}/build-${profiling}"
+        host_log="${work_root}/host-${profiling}.log"
+        cmake -S "${example_dir}/deploy" -B "${build_dir}" \
+            -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+            -DCMAKE_BUILD_TYPE=Release -DET_PTE_FILE_PATH="${pte_path}" \
+            -DET_ENABLE_PROFILING="${profiling}"
+        cmake --build "${build_dir}" --target person_detection -j"$(get_parallel_jobs)"
+        (
+            setsid python3 "${example_dir}/deploy/run_fvp.py" \
+                --elf "${build_dir}/person_detection" --pte "${pte_path}" \
+                --input "${image_path}" --headless \
+                > "${work_root}/fvp-${profiling}.log" 2>&1 &
+            fvp_pid=$!
+            trap 'kill -- "-${fvp_pid}" 2>/dev/null || true; wait "${fvp_pid}" 2>/dev/null || true' EXIT
+            host_args=(--tcp 127.0.0.1:5000 --timeout 120 --once)
+            if [[ "${profiling}" == ON ]]; then
+                host_args+=(--expect-etdump --etrecord "${artifacts_dir}/person_detection.etrecord"
+                    --etdump-output "${work_root}/profile.etdp")
+            fi
+            timeout 180 python3 "${example_dir}/deploy/host.py" "${host_args[@]}" \
+                > "${host_log}"
+            grep -q 'Inference time:' "${host_log}"
+            if [[ "${profiling}" == ON ]]; then
+                grep -q 'ETDump:' "${host_log}"
+                test -s "${work_root}/profile.etdp"
+            fi
+        )
+    done
+    echo "${FUNCNAME}: PASS"
+)
 
 
 run_ootb_tests_ethos_u() {

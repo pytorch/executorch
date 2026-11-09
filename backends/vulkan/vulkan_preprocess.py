@@ -18,6 +18,7 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
 )
 from executorch.backends.vulkan._passes import (
     Conv1dAsConv2dPass,
+    FoldForceFp16CastsPass,
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
@@ -28,6 +29,9 @@ from executorch.backends.vulkan._passes import (
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -194,6 +198,7 @@ class VulkanBackend(BackendDetails):
                 Conv1dAsConv2dPass(),
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
+                ReplaceInstanceNormPass(),
                 FuseQuantizedOpsTransform(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
@@ -221,7 +226,8 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveAssertsTransform(),
                 insert_prepack_nodes,
-            ],
+            ]
+            + ([FoldForceFp16CastsPass()] if force_fp16 else []),
         )
 
         # Optionally apply the memory metadata tagging pass, which will insert storage

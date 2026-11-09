@@ -21,6 +21,8 @@
 
 namespace executorch::extension::llm {
 
+class MuseGlimmerModelEmbeddings;
+
 class MuseGlimmerMLXExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
@@ -43,13 +45,16 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
       override;
 
  private:
-  struct EngineEmbeddings;
+  struct DFlash;
+  using Probabilities = std::vector<std::vector<float>>;
   struct SessionState {
     int32_t seq_id;
     std::optional<batching::SamplingParams> sampling;
     uint64_t seed = 0;
+    int32_t draft_id = -1;
+    std::vector<uint8_t> hidden;
   };
-  using Rewinds = std::vector<std::pair<int32_t, int>>;
+  using Rewinds = std::vector<std::pair<batching::SessionId, int>>;
 
   MuseGlimmerMLXExecutor(
       std::unique_ptr<Module> module,
@@ -61,23 +66,40 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
       const batching::BatchInput& batch) const;
   std::optional<batching::SessionId> publish_session(
       int32_t seq_id,
-      batching::Position position);
+      batching::Position position,
+      const SessionState* source = nullptr);
+  bool rewind(SessionState& state, int position);
+  bool drain(batching::SessionId session);
+  bool draft(
+      const std::vector<batching::SessionId>& owners,
+      const std::vector<batching::Token>& anchors,
+      int context_limit,
+      batching::BatchInput* verification);
+  bool speculate(const batching::BatchInput& batch, batching::BatchOutput& out);
+  bool execute_impl(
+      const batching::BatchInput& batch,
+      batching::BatchOutput& out,
+      Probabilities* probabilities);
   std::optional<batching::Token> sample_row(
       aten::Tensor& logits,
       int row,
       batching::SessionId session,
-      batching::Position prediction_position);
+      batching::Position prediction_position,
+      std::vector<float>* probabilities = nullptr,
+      bool draft = false);
 
   // Reverse destruction: vision before its module/mutex, then the module before
   // the registry entry whose cache its delegate resolved.
   cache::InstallGuard install_guard_;
+  std::unique_ptr<DFlash> dflash_;
   std::unique_ptr<Module> module_;
   cache::BatchControl* const ctl_;
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
-  std::unique_ptr<EngineEmbeddings> embeddings_;
+  std::unique_ptr<MuseGlimmerModelEmbeddings> embeddings_;
   const int max_sessions_;
   bool initialization_attempted_ = false;
   bool initialized_ = false;
+  bool target_taps_ = false;
   batching::SessionId next_session_ = 1;
   std::unordered_map<batching::SessionId, SessionState> sessions_;
 };

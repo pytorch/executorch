@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from executorch.examples.llm_server.python import multiplexed_worker_client
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -339,7 +338,7 @@ async def test_http_missing_native_reset_clears_transcript_and_is_idempotent(
 
 
 @pytest.mark.anyio
-async def test_runtime_prefix_cache_is_creation_only(native_worker):
+async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker):
     worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
@@ -360,6 +359,10 @@ async def test_runtime_prefix_cache_is_creation_only(native_worker):
         assert cold.reused_prompt_tokens == 0
         assert warm.reused_prompt_tokens == 4
         assert warm.prefilled_prompt_tokens == 1
+        replacement = await asyncio.wait_for(generate("first"), 10)
+        assert replacement.session_reset_reason == "prefix_clone"
+        assert replacement.reused_prompt_tokens == 4
+        assert replacement.prefilled_prompt_tokens == 1
         await asyncio.wait_for(worker.reset_session("first"), 5)
         reset = await asyncio.wait_for(generate("first"), 10)
         assert reset.reused_prompt_tokens == 0
@@ -580,3 +583,63 @@ async def test_slow_consumer_does_not_stall_another_request(native_worker):
     text, stats = await collect(generate(client, "still healthy", key="c", count=2))
     assert len(text) == stats.num_generated_tokens == 2
     assert client.healthy
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_http_ignore_eos_reaches_native_worker_and_is_request_scoped(
+    native_worker, stream
+):
+    worker, trace = await native_worker(stop_immediately=True, gate=True)
+    runtime = SessionRuntime(worker)
+    serving = ServingChat(
+        runtime, ChatTemplate(hf_tokenizer_path=None, allow_fallback=True), "test-model"
+    )
+    transport = httpx.ASGITransport(app=build_app(serving, "test-model"))
+    try:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",  # @lint-ignore: in-process ASGI endpoint
+        ) as client:
+
+            async def request(ignore):
+                return await client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "test-model",
+                        "messages": [{"role": "user", "content": "hello"}],
+                        "max_tokens": 8,
+                        "ignore_eos": ignore,
+                        "stream": stream,
+                        "stream_options": {"include_usage": True},
+                    },
+                )
+
+            continued, stopped = await asyncio.wait_for(
+                asyncio.gather(request(True), request(False)), 10
+            )
+            for response, expected_tokens, reason in [
+                (continued, 8, "length"),
+                (stopped, 0, "stop"),
+            ]:
+                assert response.status_code == 200
+                if stream:
+                    chunks = [
+                        json.loads(line[6:])
+                        for line in response.text.splitlines()
+                        if line.startswith("data: ") and line != "data: [DONE]"
+                    ]
+                    usage = next(c["usage"] for c in chunks if "usage" in c)
+                    finish = next(
+                        c["choices"][0]["finish_reason"]
+                        for c in chunks
+                        if c["choices"] and c["choices"][0].get("finish_reason")
+                    )
+                else:
+                    usage = response.json()["usage"]
+                    finish = response.json()["choices"][0]["finish_reason"]
+                assert usage["completion_tokens"] == expected_tokens
+                assert finish == reason
+            assert 2 in [int(line) for line in trace.read_text().splitlines()]
+    finally:
+        await runtime.aclose_worker()

@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
@@ -80,6 +85,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend/test:backend_with_compiler_demo",
+            "//executorch/exir/backend/test:backend_with_named_data_map",
             "//executorch/exir/backend/test:op_partitioner_demo",
             "//executorch/exir/serde:serialize",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -204,6 +210,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:sym_shape_eval_pass",
             "//executorch/examples/models/llama:custom_kv_cache",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
         ],
     )
 
@@ -306,6 +313,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lowered_backend_module",
             "//executorch/exir:schema",
             "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
         ],
     )
 
@@ -410,6 +418,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:dim_order_utils",
             "//executorch/exir:lib",
             "//executorch/exir:pass_base",
+            "//executorch/exir/backend:partitioner",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
             "//executorch/extension/pybindings:portable_lib",  # @manual
@@ -466,11 +475,12 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//caffe2:torch",
-            "//executorch/exir:inplace_aliasing",
             "//executorch/exir:lib",
             "//executorch/exir:memory",
             "//executorch/exir/capture:config",
+            "//executorch/exir/dialects:lib",
             "//executorch/exir/passes:lib",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
         ],
     )
 

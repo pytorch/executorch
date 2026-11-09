@@ -8,6 +8,8 @@
 
 - op: _conj_physical.out
 
+- op: _embedding_bag.out
+
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
 - op: _fft_c2r.out
@@ -37,6 +39,8 @@
 - op: _to_copy.out
 
 - op: _unique2.out
+
+- op: _upsample_bicubic2d_aa.out
 
 - op: _upsample_bilinear2d_aa.out
 
@@ -84,6 +88,8 @@
 
 - op: atanh.out
 
+- op: avg_pool1d.out
+
 - op: avg_pool2d.out
 
 - op: baddbmm.out
@@ -130,6 +136,8 @@
 - op: cos.out
 
 - op: cosh.out
+
+- op: cummin.out
 
 - op: cumsum.out
 

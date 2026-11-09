@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import copy
 import re
 import textwrap
 from abc import ABC, abstractmethod
@@ -273,6 +274,10 @@ class QuantRecipe:
         self._pending_annotate_nodes: Dict[
             torch.fx.Node, Tuple[QuantizationConfig, QuantizationStrategy]
         ] = {}
+        # Per-block linears lowered as conv2d: conv node name -> (strategy, 4D block size).
+        self._converted_block_strategies: Dict[
+            str, Tuple[QuantizationStrategy, Tuple]
+        ] = {}
         self._default_quant_dtype = quant_dtype
         self._default_is_qat = is_qat
         self._default_granularity = granularity
@@ -285,12 +290,9 @@ class QuantRecipe:
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
 
-    def annotate(
-        self, graph_module: torch.fx.GraphModule, rules_map: List[OpQuantRule]
-    ):
-        # Sort node level strategies by (priority, insertion index).
+    def _sorted_strategies(self) -> List[QuantizationStrategy]:
         # Higher priority value comes first; if priorities are equal, original insertion order is preserved.
-        strategies: List[QuantizationStrategy] = [
+        strategies = [
             strategy
             for _, strategy in sorted(
                 enumerate(self._strategies),
@@ -300,11 +302,51 @@ class QuantRecipe:
         ]
         # Ensure the default strategy is appended last
         strategies.append(self._default_strategy)
+        return strategies
+
+    def get_per_block_strategy(
+        self, node: torch.fx.Node
+    ) -> Optional[QuantizationStrategy]:
+        """Return the strategy that resolves node, if it is per-block."""
+        for strategy in self._sorted_strategies():
+            if strategy._matches(node):
+                return (
+                    strategy
+                    if strategy.granularity == QuantGranularity.PER_BLOCK
+                    else None
+                )
+        return None
+
+    def set_converted_block_strategies(
+        self, converted: Dict[str, Tuple[QuantizationStrategy, Tuple]]
+    ) -> None:
+        self._converted_block_strategies = converted
+
+    def _get_converted_block_config(
+        self, node: torch.fx.Node
+    ) -> Optional[Tuple[QuantizationConfig, QuantizationStrategy]]:
+        if node.name not in self._converted_block_strategies:
+            return None
+        strategy, block_size = self._converted_block_strategies[node.name]
+        ch_axis = strategy.quant_config.op_axis_dict.get(node.target, 0)
+        config = copy.copy(strategy.quant_config.per_block_quant_config_list[ch_axis])
+        config.block_size = block_size
+        return config, strategy
+
+    def annotate(
+        self, graph_module: torch.fx.GraphModule, rules_map: List[OpQuantRule]
+    ):
+        strategies = self._sorted_strategies()
 
         for node in graph_module.graph.nodes:
+            if isinstance(node.target, str):
+                continue
+            if converted := self._get_converted_block_config(node):
+                self._pending_annotate_nodes[node] = converted
+                continue
             for strategy in strategies:
-                if isinstance(node.target, str) or node in self._pending_annotate_nodes:
-                    continue
+                if node in self._pending_annotate_nodes:
+                    break
 
                 if quant_config := strategy.get_quant_config(node):
                     self._pending_annotate_nodes[node] = (quant_config, strategy)

@@ -47,14 +47,15 @@ class FlipVisitor(NodeVisitor):
             supported_dtypes.append(ts.DType.FP8E4M3)
         if self.tosa_spec.support_extension("fp8e5m2"):
             supported_dtypes.append(ts.DType.FP8E5M2)
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         dims = inputs[1].special

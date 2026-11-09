@@ -62,9 +62,43 @@ Error resolve_external_block(
   return Error::Ok;
 }
 
+// Reinterpret a block payload as a VelaIOs descriptor, but only after checking
+// that the payload is large enough to hold the `count` field and the full
+// `io[count]` array. Without this a malformed stream could point `count` past
+// the buffer, and every subsequent `io[i]` access (including the scratch
+// offsets used for memcpy at execute time) would read out of bounds.
+Error bind_io_block(const VelaBlockPayload& payload, VelaIOs** out) {
+  if (payload.size < sizeof(VelaIOs)) {
+    ET_LOG(Error, "Vela IO block too small for count field");
+    return Error::InvalidProgram;
+  }
+  VelaIOs* ios = reinterpret_cast<VelaIOs*>(const_cast<char*>(payload.data));
+  if (ios->count < 0) {
+    ET_LOG(Error, "Negative Vela IO count %d", ios->count);
+    return Error::InvalidProgram;
+  }
+  const size_t io_bytes = payload.size - sizeof(VelaIOs);
+  if (static_cast<size_t>(ios->count) > io_bytes / sizeof(VelaIO)) {
+    ET_LOG(
+        Error,
+        "Vela IO count %d overruns %zu payload bytes",
+        ios->count,
+        payload.size);
+    return Error::InvalidProgram;
+  }
+  *out = ios;
+  return Error::Ok;
+}
+
 } // namespace
 
+// cppcheck-suppress unusedFunction
 bool vela_bin_validate(const char* data, int size) {
+  if (data == nullptr || size < static_cast<int>(2 * sizeof(VelaBinBlock))) {
+    ET_LOG(Error, "Vela binary is missing header or footer blocks");
+    return false;
+  }
+
   const char* foot = data + size - sizeof(VelaBinBlock);
 
   // Check 16 byte alignment
@@ -95,11 +129,40 @@ Error vela_bin_read(
     int size,
     const NamedDataMap* named_data_map,
     VelaHandles* handles) {
-  const char* ptr = data;
+  if (data == nullptr || handles == nullptr || size <= 0) {
+    return Error::InvalidProgram;
+  }
 
-  while (ptr - data < size) {
+  const char* ptr = data;
+  size_t remaining = static_cast<size_t>(size);
+
+  while (remaining > 0) {
+    if (remaining < sizeof(VelaBinBlock)) {
+      ET_LOG(Error, "Truncated vela block header");
+      return Error::InvalidProgram;
+    }
     VelaBinBlock* b = reinterpret_cast<VelaBinBlock*>(const_cast<char*>(ptr));
-    ptr += sizeof(VelaBinBlock) + next_mul_16(b->size);
+    const size_t available_payload_size = remaining - sizeof(VelaBinBlock);
+    if (b->size > available_payload_size) {
+      ET_LOG(
+          Error,
+          "Vela block size %u overruns %zu remaining payload bytes",
+          static_cast<unsigned>(b->size),
+          available_payload_size);
+      return Error::InvalidProgram;
+    }
+    const size_t payload_size = next_mul_16(b->size);
+    if (payload_size > available_payload_size) {
+      ET_LOG(
+          Error,
+          "Padded vela block size %zu overruns %zu remaining payload bytes",
+          payload_size,
+          available_payload_size);
+      return Error::InvalidProgram;
+    }
+    const size_t block_size = sizeof(VelaBinBlock) + payload_size;
+    ptr += block_size;
+    remaining -= block_size;
 
     VelaBlockPayload payload{b->data, b->size};
     if (b->external == kVelaExternalBlockReference) {
@@ -118,6 +181,9 @@ Error vela_bin_read(
         return Error::InvalidProgram;
     } else if (!strncmp(b->name, "cmd_data", strlen("cmd_data"))) {
       // This driver magic header confirms a valid command stream in binary
+      if (payload.size < strlen("COP1")) {
+        return Error::InvalidProgram;
+      }
       if (strncmp(payload.data, "COP1", strlen("COP1")) &&
           strncmp(payload.data, "COP2", strlen("COP2"))) {
         return Error::InvalidProgram;
@@ -128,19 +194,41 @@ Error vela_bin_read(
       handles->weight_data = payload.data;
       handles->weight_data_size = payload.size;
     } else if (!strncmp(b->name, "scratch_size", strlen("scratch_size"))) {
+      if (payload.size < sizeof(uint32_t)) {
+        ET_LOG(Error, "Malformed scratch_size block");
+        return Error::InvalidProgram;
+      }
       const uint32_t* scratch_size_ptr =
           reinterpret_cast<const uint32_t*>(payload.data);
       handles->scratch_data_size = *scratch_size_ptr;
+#ifdef ETHOSU_PERSISTENT_REGION
+    } else if (!strncmp(
+                   b->name, "persistent_size", strlen("persistent_size"))) {
+      if (payload.size < sizeof(uint32_t)) {
+        return Error::InvalidProgram;
+      }
+      const uint32_t* persistent_size_ptr =
+          reinterpret_cast<const uint32_t*>(payload.data);
+      handles->persistent_data_size = *persistent_size_ptr;
+    } else if (!strncmp(
+                   b->name, "persistent_init", strlen("persistent_init"))) {
+      handles->persistent_init_data = payload.data;
+      handles->persistent_init_size = payload.size;
+#endif
     } else if (!strncmp(b->name, "inputs", strlen("inputs"))) {
-      handles->inputs =
-          reinterpret_cast<VelaIOs*>(const_cast<char*>(payload.data));
+      const Error status = bind_io_block(payload, &handles->inputs);
+      if (status != Error::Ok) {
+        return status;
+      }
     } else if (!strncmp(b->name, "outputs", strlen("outputs"))) {
-      handles->outputs =
-          reinterpret_cast<VelaIOs*>(const_cast<char*>(payload.data));
+      const Error status = bind_io_block(payload, &handles->outputs);
+      if (status != Error::Ok) {
+        return status;
+      }
     } else if (!strncmp(
                    b->name, "vela_end_stream", strlen("vela_end_stream"))) {
       // expect vela_end_stream last
-      if (ptr - data != size) {
+      if (remaining != 0) {
         ET_LOG(Error, "Expected vela binary to end with vela_end_stream");
         return Error::InvalidProgram;
       }

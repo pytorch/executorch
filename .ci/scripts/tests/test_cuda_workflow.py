@@ -51,17 +51,16 @@ class CudaWorkflowTest(unittest.TestCase):
         for pin in ("test-infra-ref", "driver-version", "driver-download-url"):
             self.assertNotIn(pin, job["with"])
 
-    def test_cuda134_runtime_update_precedes_build_and_propagates_failure(self):
+    def test_cuda_runtime_update_precedes_build_and_propagates_failure(self):
         script = WORKFLOW["jobs"]["test-cuda-builds"]["with"]["script"]
         stubs = """
 conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
-source() { printf 'BUILD %s\n' "$*"; }
+source() { printf 'BUILD %s\n' "$*"; printf 'LIBRARY PATH %s\n' "$LD_LIBRARY_PATH"; }
 """
         for version, conda_status in (
-            ("12.6", 0),
-            ("13.0", 0),
-            ("13.4", 0),
-            ("13.4", 1),
+            (version, status)
+            for version in ("12.6", "13.0", "13.4")
+            for status in (0, 1)
         ):
             with self.subTest(version=version, conda_status=conda_status):
                 result = subprocess.run(
@@ -70,19 +69,26 @@ source() { printf 'BUILD %s\n' "$*"; }
                         "-c",
                         stubs + script.replace("${{ matrix.cuda-version }}", version),
                     ],
-                    env={**os.environ, "CONDA_STATUS": str(conda_status)},
+                    env={
+                        **os.environ,
+                        "CONDA_STATUS": str(conda_status),
+                        "LD_LIBRARY_PATH": "/cuda/lib64",
+                    },
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, conda_status, result.stderr)
-                expected = []
-                if version == "13.4":
-                    expected.append(
-                        "CONDA install -y -n base -c conda-forge "
-                        "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
-                    )
+                expected = [
+                    "CONDA install -y -n base -c conda-forge "
+                    "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
+                ]
                 if conda_status == 0:
-                    expected.append(f"BUILD .ci/scripts/test-cuda-build.sh {version}")
+                    expected.extend(
+                        (
+                            f"BUILD .ci/scripts/test-cuda-build.sh {version}",
+                            "LIBRARY PATH /opt/conda/lib:/cuda/lib64",
+                        )
+                    )
                 self.assertEqual(result.stdout.splitlines(), expected)
 
     def test_cuda_probe_checks_the_result_and_torch_train(self):

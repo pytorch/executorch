@@ -10,6 +10,7 @@
 """
 
 import statistics
+import struct
 import unittest
 from unittest import mock
 
@@ -21,6 +22,7 @@ from executorch.backends.cuda.cuda_backend import (
     CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC,
     CudaBackend,
 )
+from executorch.backends.cuda.tests import autotune_test_utils
 from executorch.backends.cuda.tests.autotune_test_utils import (
     record_autotune_picks,
     SaturatedCpu,
@@ -156,14 +158,16 @@ class CudaGraphTimingTest(unittest.TestCase):
 # End to end: export while the CPU is saturated, and check every pick.
 # ---------------------------------------------------------------------------
 
-_WIDTHS = (256, 768, 1536)
-_TOKENS = 64
+# Large enough that even the smallest kernels run for many event ticks (one
+# tick is ~0.5 us), so a pick's regret reflects the kernels, not the timer.
+_WIDTHS = (512, 1536, 3072)
+_TOKENS = 4096
 _HEADS = 4
 
 
 class _ManyKernels(nn.Module):
-    """Small, but compiles into many distinct reductions, pointwise kernels,
-    matmul templates and triton::sdpa calls, each of them autotuned."""
+    """Compiles into many distinct reductions, pointwise kernels, matmul
+    templates and triton::sdpa calls, each of them autotuned."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -207,6 +211,48 @@ def _export_and_lower(extra_specs) -> None:
         partitioner=[CudaPartitioner(specs)],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
+
+
+def _f32(ms: float) -> float:
+    # Event times reach the autotuner as float32.
+    return struct.unpack("f", struct.pack("f", ms))[0]
+
+
+class RegretTest(unittest.TestCase):
+    """Both backends' ticks are checked here: ROCm CI does not run this file."""
+
+    def _regret_in_ticks(self, tick: float, best: int, pick: int) -> float:
+        with mock.patch.object(autotune_test_utils, "_EVENT_TICK_MS", tick):
+            return autotune_test_utils._regret(_f32(pick * tick), _f32(best * tick))
+
+    def test_one_tick_apart_is_not_a_worse_pick(self) -> None:
+        for tick in (0.512e-3, 1e-3):
+            for best, pick in (
+                (0, 0),
+                (0, 1),
+                (5, 5),
+                (5, 6),
+                (10, 11),
+                (31250, 31251),
+            ):
+                with self.subTest(tick=tick, best=best, pick=pick):
+                    self.assertEqual(self._regret_in_ticks(tick, best, pick), 1.0)
+
+    def test_the_best_is_credited_one_tick(self) -> None:
+        for tick in (0.512e-3, 1e-3):
+            for best, pick in ((0, 2), (5, 7), (5, 8), (10, 12)):
+                with self.subTest(tick=tick, best=best, pick=pick):
+                    self.assertAlmostEqual(
+                        self._regret_in_ticks(tick, best, pick),
+                        pick / (best + 1),
+                        places=2,
+                    )
+
+    def test_two_ticks_apart_count_at_any_scale(self) -> None:
+        for tick in (0.512e-3, 1e-3):
+            for best in (31250, 1_000_000):
+                with self.subTest(tick=tick, best=best):
+                    self.assertGreater(self._regret_in_ticks(tick, best, best + 2), 1.0)
 
 
 class SaturatedCpuExportTest(unittest.TestCase):
