@@ -360,11 +360,11 @@ class ET_EXPERIMENTAL PrefixCache {
     return std::move(result.match);
   }
 
-  // Validate candidates before cloning, without refreshing recency. Call
+  // Validate cloned candidates without refreshing recency. Call
   // touch() after adopting the match. The selector must not mutate this cache.
   // Candidates arrive in descending length order, with repeated lengths
-  // allowed. Use immediately attempts a clone; a refused clone advances to the
-  // next candidate. A successful clone returns before another selection. Stop
+  // allowed. Refused clones bypass the selector. Use returns the cloned match;
+  // Skip releases it and advances to the next candidate. Stop
   // returns stopped=true, distinct from an exhausted search. Allocation failure
   // ends the search as a miss; other exceptions propagate.
   FindResult find_identity(
@@ -401,6 +401,13 @@ class ET_EXPERIMENTAL PrefixCache {
                                           : a.rank < b.rank;
           });
       for (const auto& candidate : candidates) {
+        auto session =
+            candidate.entry->snapshot
+                .clone_async(static_cast<Position>(candidate.matched))
+                .get();
+        if (!session) {
+          continue;
+        }
         if (select) {
           const auto decision = select(candidate.matched);
           if (decision == MatchDecision::Stop) {
@@ -410,14 +417,8 @@ class ET_EXPERIMENTAL PrefixCache {
             continue;
           }
         }
-        auto session =
-            candidate.entry->snapshot
-                .clone_async(static_cast<Position>(candidate.matched))
-                .get();
-        if (session) {
-          return {PrefixMatch{
-              std::move(*session), candidate.matched, candidate.entry->id}};
-        }
+        return {PrefixMatch{
+            std::move(*session), candidate.matched, candidate.entry->id}};
       }
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {

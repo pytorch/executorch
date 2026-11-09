@@ -956,7 +956,7 @@ TEST_F(PrefixCacheTest, TouchOfEvictedMatchDoesNotRefreshReinsertedEntry) {
   EXPECT_TRUE(cache.lookup({3, 4, 9}));
 }
 
-TEST_F(PrefixCacheTest, CandidateSelectionSkipsBeforeCloningAndHonorsBounds) {
+TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
   PrefixCache cache(3);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
   ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
@@ -979,7 +979,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsBeforeCloningAndHonorsBounds) {
                    .match;
   ASSERT_TRUE(match);
   EXPECT_EQ(checked, (std::vector<std::size_t>{4, 3}));
-  EXPECT_EQ(executor.clones().size(), before + 1);
+  EXPECT_EQ(executor.clones().size(), before + 2);
   EXPECT_EQ(executor.clones().back().source, shorter);
   checked.clear();
   EXPECT_FALSE(cache
@@ -993,7 +993,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsBeforeCloningAndHonorsBounds) {
                        })
                    .match);
   EXPECT_EQ(checked, (std::vector<std::size_t>{3}));
-  EXPECT_EQ(executor.clones().size(), before + 1);
+  EXPECT_EQ(executor.clones().size(), before + 3);
   checked.clear();
   auto stopped = cache.find_identity(request, 0, 4, [&](std::size_t size) {
     checked.push_back(size);
@@ -1005,7 +1005,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsBeforeCloningAndHonorsBounds) {
   EXPECT_FALSE(missed.match);
   EXPECT_FALSE(missed.stopped);
   EXPECT_EQ(checked, (std::vector<std::size_t>{4}));
-  EXPECT_EQ(executor.clones().size(), before + 1);
+  EXPECT_EQ(executor.clones().size(), before + 4);
 }
 
 TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {

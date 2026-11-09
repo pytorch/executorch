@@ -678,7 +678,6 @@ struct ServingRuntime::Impl {
   }
 
   enum class Selection { Selected, Unavailable, Cancelled };
-  enum class PrefixLookupMode { Ordinary, Preferred };
   using SelectionResult = std::variant<Selection, ServingError>;
   using PrefixLookupResult =
       std::variant<batching::PrefixMatch, Selection, ServingError>;
@@ -822,11 +821,7 @@ struct ServingRuntime::Impl {
     CheckedSuffix checked;
     if (upto) {
       auto found = lookup_prefix(
-          request,
-          PrefixLookupMode::Preferred,
-          upto,
-          std::numeric_limits<std::size_t>::max(),
-          &checked);
+          request, upto, std::numeric_limits<std::size_t>::max(), &checked);
       if (auto* error = std::get_if<ServingError>(&found)) {
         return std::move(*error);
       }
@@ -866,7 +861,6 @@ struct ServingRuntime::Impl {
       }
       auto found = lookup_prefix(
           request,
-          PrefixLookupMode::Ordinary,
           0,
           upto ? upto : std::numeric_limits<std::size_t>::max(),
           &checked);
@@ -1066,7 +1060,6 @@ struct ServingRuntime::Impl {
 
   PrefixLookupResult lookup_prefix(
       const Request& request,
-      PrefixLookupMode mode = PrefixLookupMode::Ordinary,
       std::size_t longer_than = 0,
       std::size_t at_most = std::numeric_limits<std::size_t>::max(),
       CheckedSuffix* previous = nullptr) {
@@ -1082,36 +1075,20 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      batching::PrefixCache::FindResult found;
-      if (mode == PrefixLookupMode::Ordinary) {
-        // Preserve clone-first lookup: an uncloneable entry cannot select a
-        // suffix.
-        found = prefix_cache_.find_identity(
-            *request->text->prompt, longer_than, at_most);
-        if (found.match) {
-          select_cached_input(request, found.match->matched_tokens, checked);
-          found.stopped = !std::holds_alternative<Selection>(checked.result) ||
-              std::get<Selection>(checked.result) != Selection::Selected;
-        }
-      } else {
-        found = prefix_cache_.find_identity(
-            *request->text->prompt,
-            longer_than,
-            at_most,
-            [&](std::size_t start) {
-              using Decision = batching::PrefixCache::MatchDecision;
-              auto selected = select_cached_input(request, start, checked);
-              if (const auto* outcome = std::get_if<Selection>(&selected)) {
-                if (*outcome == Selection::Selected) {
-                  return Decision::Use;
-                }
-                if (*outcome == Selection::Unavailable) {
-                  return Decision::Skip;
-                }
+      auto found = prefix_cache_.find_identity(
+          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
+            using Decision = batching::PrefixCache::MatchDecision;
+            auto selected = select_cached_input(request, start, checked);
+            if (const auto* outcome = std::get_if<Selection>(&selected)) {
+              if (*outcome == Selection::Selected) {
+                return Decision::Use;
               }
-              return Decision::Stop;
-            });
-      }
+              if (*outcome == Selection::Unavailable) {
+                return Decision::Skip;
+              }
+            }
+            return Decision::Stop;
+          });
       if (found.stopped) {
         if (auto* error = std::get_if<ServingError>(&checked.result)) {
           return std::move(*error);
