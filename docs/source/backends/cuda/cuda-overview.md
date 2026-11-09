@@ -17,7 +17,7 @@ Below are the requirements for running a CUDA-delegated ExecuTorch model:
 - **Hardware**: NVIDIA GPU with compute capability 8.0 (Ampere) or newer. This is the floor the
   prebuilt packages are built for.
 - **CUDA**: 13 for the prebuilt packages. On Linux they bring the CUDA runtime with them. On
-  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 12.6.
+  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 13.0.
 - **Operating System**: Linux, or Windows from C++ for programs exported on Linux (see
   [CUDA on Windows](../../using-executorch-cpp.md#cuda-on-windows))
 - **Drivers**: An NVIDIA driver that supports the CUDA version you use: CUDA 13 for the prebuilt
@@ -92,13 +92,22 @@ partitioner = CudaPartitioner([
 ```
 
 The name can have up to 200 ASCII letters, digits, `_`, `-` and `.`. It cannot start with `.` or `-`, cannot end with `.ptd`
-(the export adds it), and cannot be a Windows device name such as `NUL`. Load each program with its own data file:
+(the export adds it), and cannot be a Windows device name such as `NUL`. Windows and macOS usually treat names that differ
+only in case, such as `Encoder` and `encoder`, as the same file, so give programs that share a folder names that differ in
+more than case. Load each program with its own data file:
 
 ```python
 from executorch.runtime import Runtime
 
 program = Runtime.get().load_program("encoder.pte", data_path="encoder.ptd")
 ```
+
+If an export runs out of GPU memory while AOTInductor compiles its kernels, `CompileSpec("low_memory_mode", b"ON")` can help. It changes several compile steps to use less GPU memory, and not every model compiles with all of them, so turn it on only when you need it. One of those steps moves the weights to a file in the Inductor cache directory during the final autotuning pass, instead of keeping them on the GPU. Good to know:
+
+- The move needs PyTorch 2.15, or a nightly from 2026-09-24 or later. Older PyTorch keeps the weights on the GPU.
+- The cache directory needs free space for the weights. If it fills up, the process stops with a bus error. It defaults to a folder under the system temp directory, which on some systems is in RAM. Set `TORCHINDUCTOR_CACHE_DIR` to a disk with room.
+- The earlier template search for matrix multiplies and convolutions still keeps the weights on the GPU.
+- PyTorch skips the move when the last kernel it generates runs on the CPU.
 
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 
@@ -254,11 +263,14 @@ the delegate, so that the delegate reads the constant itself. `share_mutable_buf
 planned tensor in host memory, so it does not work with this flag. This flag works on its own: it
 needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 
-**`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
-the method changes an input, even when the delegate makes the change. This includes a mutable
-buffer, such as a KV cache, even though the caller does not pass it. For a buffer, put it and every
-operator that uses it in the delegate. The CUDA partitioner already moves the buffer in, with
-`tag_mutated_buffer`, once those operators are there.
+**`skip_h2d_for_method_inputs` refuses changed inputs that a delegate reads.** `to_executorch` fails
+if the method changes an input that a delegate reads, even when the delegate makes the change. This
+includes a mutable buffer, such as a KV cache, even though the caller does not pass it. For a
+buffer, put it and every operator that uses it in the delegate. The CUDA partitioner already moves
+the buffer in, with `tag_mutated_buffer`, once those operators are there. It keeps the buffer out
+when the method also returns the buffer's new value, or when the new value is a method input, as in
+`self.state.copy_(x)`. For a buffer that stays out, this flag refuses the method only if a delegate
+reads it.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not

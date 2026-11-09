@@ -822,6 +822,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
 if(EXECUTORCH_BUILD_VULKAN
    OR EXECUTORCH_BUILD_VGF
    OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_WEBGPU
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
 endif()
@@ -1392,6 +1393,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _dep_libs coremldelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_COREAI)
+    list(APPEND _dep_libs coreaidelegate)
   endif()
 
   if(EXECUTORCH_BUILD_VGF)

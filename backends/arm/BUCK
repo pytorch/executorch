@@ -84,6 +84,7 @@ fbcode_target(
         "ethosu/__init__.py",
         "ethosu/backend.py",
         "ethosu/compile_spec.py",
+        "ethosu/parse_delegate_metadata.py",
         "ethosu/partitioner.py",
     ],
     deps = [
@@ -135,6 +136,7 @@ fbcode_target(
         ":arm_compile_spec",
         "//caffe2:torch",
         "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",

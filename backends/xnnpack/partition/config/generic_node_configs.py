@@ -16,14 +16,11 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
-    is_quant,
-    tag_as_implicit_q_dq,
-)
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
@@ -165,18 +162,28 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
-            # Tag input nodes (dq nodes) as implicit q/dq nodes
-            for dq_input in node.all_input_nodes:
-                if is_dequant(dq_input):
-                    tag_as_implicit_q_dq(dq_input)
-
-            # Tag node_output (q node) as an implicit q/dq node
-            if is_quant(node_output):
-                tag_as_implicit_q_dq(node_output)
-
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
+
+
+class BroadcastBinaryConfig(GenericNodePartitionerConfig):
+    """
+    A binary op whose rank < 4 constant operands are delegated with it, so
+    they are serialized as constant data and laid out as NHWC ahead of time
+    instead of being reshaped and transposed at every inference. Any other
+    constant operand stays a delegate input, as for every other op.
+    """
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        deps = super().get_node_and_deps(node, ep)
+        return deps + [
+            input_node
+            for input_node in node.all_input_nodes
+            if is_foldable_broadcast_operand(ep, input_node)
+        ]
 
 
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
@@ -210,7 +217,7 @@ class HardtanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class AddConfig(GenericNodePartitionerConfig):
+class AddConfig(BroadcastBinaryConfig):
     target_name = "add.Tensor"
 
     def __init__(self, **kwargs):
@@ -247,6 +254,7 @@ class AbsConfig(GenericNodePartitionerConfig):
 
 class AvgPoolingConfig(GenericNodePartitionerConfig):
     target_name = "avg_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -299,17 +307,19 @@ class CatConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support concatenation of 2 - 5 tensors
+        Only support concatenation of 2 or more tensors. Concatenations of more
+        than 5 tensors are split by DecomposeConcatenate during preprocessing.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        num_tensors = len(node.all_input_nodes)
+        # all_input_nodes deduplicates, so cat([x, x]) has one input node.
+        num_tensors = len(node.args[0])
 
-        if not (num_tensors >= 2):
+        if num_tensors < 2:
             why(
                 node,
-                reason=f"only support concatenation of > 2 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of at least 2 tensors, got {num_tensors}",
             )
             return False
 
@@ -354,7 +364,7 @@ class ClampConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class DivConfig(GenericNodePartitionerConfig):
+class DivConfig(BroadcastBinaryConfig):
     target_name = "div.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -459,14 +469,14 @@ class SiluConfig(GenericNodePartitionerConfig):
         )
 
 
-class MulConfig(GenericNodePartitionerConfig):
+class MulConfig(BroadcastBinaryConfig):
     target_name = "mul.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MaximumConfig(GenericNodePartitionerConfig):
+class MaximumConfig(BroadcastBinaryConfig):
     target_name = "maximum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -475,6 +485,7 @@ class MaximumConfig(GenericNodePartitionerConfig):
 
 class MaxPool2dConfig(GenericNodePartitionerConfig):
     target_name = "max_pool2d.default"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -509,6 +520,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -656,7 +668,8 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support dim order conversion partitioning, not DType conversions
+        Partitions dim order conversions, and fp32 <-> fp16 and fp32 <-> bf16
+        dtype casts that keep the dim order.
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -667,19 +680,26 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         output_dtype = node.meta["val"].dtype
 
         if input_dtype != output_dtype:
-            # A dtype cast is lowered to an XNNPACK convert node, as long as
-            # the op does not change the dim order at the same time.
-            supported_cast = {input_dtype, output_dtype} <= {
-                torch.float32,
-                torch.float16,
-            }
-            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
-                node.meta["val"].dim_order()
+            # A dtype cast is lowered to an XNNPACK convert node. XNNPACK has
+            # no fp16 <-> bf16 convert, and bf16 also needs enable_bf16, which
+            # check_common_constraints enforces.
+            supported_cast = {input_dtype, output_dtype} in (
+                {torch.float32, torch.float16},
+                {torch.float32, torch.bfloat16},
             )
-            if not (supported_cast and same_dim_order):
+            if not supported_cast:
                 why(
                     node,
                     reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+                )
+                return False
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
+            )
+            if not same_dim_order:
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} cannot also change the dim order",
                 )
                 return False
 
@@ -691,6 +711,7 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
+    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -738,7 +759,7 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MinimumConfig(GenericNodePartitionerConfig):
+class MinimumConfig(BroadcastBinaryConfig):
     target_name = "minimum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -872,7 +893,7 @@ class ConstantPadConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
-class SubConfig(GenericNodePartitionerConfig):
+class SubConfig(BroadcastBinaryConfig):
     target_name = "sub.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:

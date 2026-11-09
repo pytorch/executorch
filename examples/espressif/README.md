@@ -8,6 +8,39 @@ ESP32-S3 microcontrollers. It is based on the
 [Arm Cortex-M executor runner](../arm/executor_runner/) and adapted for the
 ESP-IDF build system and ESP32 memory architecture.
 
+## ESP-IDF component (generated, source-vendored)
+
+For integrating ExecuTorch into an existing ESP-IDF project without the
+cross-compile-then-link flow below, generate a self-contained ESP-IDF
+component from sources in this repository:
+
+```bash
+./examples/espressif/build_idf_component.sh \
+    --out /path/to/your_project/components/executorch
+```
+
+The output is a registry-shaped component (`idf_component.yml`,
+`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime, the
+portable, quantized, Cadence generic and `esp_nn::` kernel libraries,
+the ESP-NN delegate, the shared
+ESP-IDF PAL from `platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing),
+and a C inference API (`et_model.h`, flash-XIP model bytes with
+internal/PSRAM arena placement). Only the kernels a project's models
+use are registered: the component's `tools/gen_kernels.py` makes a
+kernel bundle from the project's `.pte` files, and the project declares
+both with `executorch_add_model` and `executorch_add_kernels` (see the
+component's `README.md`). Application pipelines built on the runtime
+(for example wake word front ends and detectors) stay with the
+application.
+Consumers need ESP-IDF, plus the `executorch` Python package of the
+same release to make kernel bundles — no host CMake build, no flatc.
+`idf_component_smoke/` is a minimal consumer that CI generates, builds
+and runs on the ESP32-S3 emulator
+(`.ci/scripts/test_espressif_idf_component.sh`).
+
+The executor runner below remains the reference for the prebuilt-library
+flow and for benchmarking.
+
 ## Supported Targets
 
 | Chip     | CPU           | Internal SRAM | PSRAM (optional) |
