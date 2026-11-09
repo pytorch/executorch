@@ -222,6 +222,7 @@ class GraphBuilder {
   using Unary = ggml_tensor* (*)(ggml_context*, ggml_tensor*);
 
   void lower_unary(const Node& node, Unary fn);
+  void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,
@@ -239,6 +240,12 @@ class GraphBuilder {
   void lower_batch_norm(const Node& node);
   void lower_max_pool2d(const Node& node);
   void lower_mean(const Node& node);
+  void lower_sum(const Node& node);
+  // The `self` of a mean or sum over trailing dims as ggml rows of the reduced
+  // elements, and the result sizes.
+  std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
+      const Node& node,
+      const std::string& op);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);

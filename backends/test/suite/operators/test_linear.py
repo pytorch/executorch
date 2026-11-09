@@ -41,7 +41,7 @@ class Linear(OperatorTest):
     def test_linear_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model().to(dtype),
-            ((torch.rand(16, 64) * 10).to(dtype),),
+            ((torch.rand(16, 67) * 10).to(dtype),),
             flow,
         )
 
@@ -49,7 +49,7 @@ class Linear(OperatorTest):
     def test_linear_no_bias_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model(bias=False).to(dtype),
-            ((torch.rand(16, 64) * 10).to(dtype),),
+            ((torch.rand(16, 67) * 10).to(dtype),),
             flow,
         )
 
@@ -78,7 +78,7 @@ class Linear(OperatorTest):
     def test_linear_no_bias(self, flow: TestFlow) -> None:
         self._test_op(
             Model(bias=False),
-            (torch.randn(16, 64),),
+            (torch.randn(16, 67),),
             flow,
         )
         self._test_op(
@@ -90,17 +90,17 @@ class Linear(OperatorTest):
     def test_linear_batch_sizes(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
-            (torch.randn(8, 64),),
+            (torch.randn(8, 67),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(32, 64),),
+            (torch.randn(32, 67),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(100, 64),),
+            (torch.randn(100, 67),),
             flow,
         )
 
@@ -114,11 +114,11 @@ class Linear(OperatorTest):
     def test_linear_leading_batch(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
-            (torch.randn(4, 8, 64),),
+            (torch.randn(4, 8, 67),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(2, 4, 8, 64),),
+            (torch.randn(2, 4, 8, 67),),
             flow,
         )

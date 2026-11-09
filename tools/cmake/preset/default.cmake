@@ -359,6 +359,11 @@ define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
   "Enable weights cache to cache and manage all packed weights" BOOL OFF
 )
+# Reads XNNPACK's internal runtime, so it is only meant for profiling builds.
+define_overridable_option(
+  EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES
+  "Attach XNNPACK operator shapes to CPU backend ETDump events" BOOL OFF
+)
 define_overridable_option(
   EXECUTORCH_USE_CPP_CODE_COVERAGE "Build with code coverage enabled" BOOL OFF
 )
@@ -422,6 +427,11 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES REQUIRES
+  EXECUTORCH_ENABLE_EVENT_TRACER
 )
 
 check_required_options_on(

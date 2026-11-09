@@ -345,6 +345,37 @@ class TestProgramManagers(unittest.TestCase):
 
         to_edge(export(M(), (torch.randn(4),))).to_executorch()
 
+    def test_embedding_bag_frozen_weight(self):
+        model = torch.nn.EmbeddingBag(10, 3, mode="sum").requires_grad_(False)
+        inputs = (torch.tensor([1, 2, 4, 5, 4, 3]), torch.tensor([0, 2, 4]))
+        executorch_module = _load_for_executorch_from_buffer(
+            to_edge(export(model, inputs)).to_executorch().buffer
+        )
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.run_method("forward", inputs)[0], model(*inputs)
+            )
+        )
+
+    def test_embedding_bag_int32_offsets(self):
+        # Export allocates the auxiliary outputs with the offsets dtype.
+        inputs = (
+            torch.tensor([1, 2, 4, 5, 4, 3]),
+            torch.tensor([0, 2, 4], dtype=torch.int32),
+        )
+        for mode in ("sum", "mean", "max"):
+            with self.subTest(mode=mode):
+                model = torch.nn.EmbeddingBag(10, 3, mode=mode)
+                executorch_module = _load_for_executorch_from_buffer(
+                    to_edge(export(model, inputs)).to_executorch().buffer
+                )
+                self.assertTrue(
+                    torch.allclose(
+                        executorch_module.run_method("forward", inputs)[0],
+                        model(*inputs),
+                    )
+                )
+
     def test_antialiased_resize(self):
         class Resize(torch.nn.Module):
             def forward(self, x):
@@ -823,6 +854,98 @@ class TestProgramManagers(unittest.TestCase):
         self._test_model_with_non_decomp_partitioner(TestUpsample())
 
         self._test_model_with_non_decomp_partitioner(TestLSTM())
+
+    def test_to_edge_transform_and_lower_complex_rotary_embedding(self):
+        class Rope(torch.nn.Module):
+            def __init__(self, precision):
+                super().__init__()
+                self.precision = precision
+                angles = torch.outer(torch.arange(16.0), torch.rand(4)).to(precision)
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x, shift, gain):
+                # Export asserts the dtype of a tensor that .to() reads.
+                freqs = self.freqs.to(x.device)[: x.shape[1]]
+                pairs = torch.view_as_complex(
+                    x.to(self.precision).unflatten(-1, (-1, 2))
+                )
+                # Factors with no dims keep the precision of their product.
+                # Each product casts its inputs, so only a last product shows
+                # a wrong dtype: the outputs end with a complex factor, and a
+                # real one on either side.
+                turn = torch.polar(gain, gain)
+                spin = turn * shift
+                rotated = (
+                    pairs * 0.5 * freqs * shift.to(freqs.dtype) * gain * spin * turn
+                )
+                # Views of the pair keep the dims of the complex tensor.
+                rotated = rotated.transpose(0, 1).reshape(x.shape[1], -1)
+                return (
+                    torch.view_as_real(rotated).flatten(-2),
+                    torch.view_as_real(spin * gain),
+                    torch.view_as_real(gain * spin),
+                )
+
+        shift, gain = torch.randn(4), torch.tensor(0.5).double()
+        length = Dim("length", min=2, max=16)
+        for precision in (torch.float32, torch.float64):
+            with self.subTest(precision=precision):
+                model = Rope(precision)
+                exported = export(
+                    model,
+                    (torch.randn(2, 8, 8), shift, gain),
+                    dynamic_shapes=({1: length}, None, None),
+                )
+                edge = to_edge_transform_and_lower(exported)
+                program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                for x in (torch.randn(2, 8, 8), torch.randn(2, 5, 8)):
+                    torch.testing.assert_close(
+                        tuple(program.forward((x, shift, gain))),
+                        model(x, shift, gain),
+                    )
+
+    def test_to_edge_transform_and_lower_keeps_complex_tensors_of_its_input(self):
+        class Rope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                angles = torch.outer(torch.arange(8.0), torch.rand(4))
+                freqs = torch.polar(torch.ones_like(angles), angles)
+                # The pass writes both to the constants and to the state of
+                # the program it lowers.
+                self.register_buffer("freqs", freqs, persistent=False)
+                self.phase = torch.polar(torch.ones(4), torch.rand(4))
+                self.register_buffer("turn", torch.polar(torch.ones(4), torch.rand(4)))
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                rotated = pairs * self.freqs * self.phase * self.turn
+                return torch.view_as_real(rotated).flatten(-2)
+
+        model = Rope()
+        x = torch.randn(2, 8, 8)
+        exported = export(model, (x,))
+
+        def tensors():
+            return [*exported.constants.values(), *exported.state_dict.values()]
+
+        self.assertEqual(len(tensors()), 3)
+        to_edge_transform_and_lower(exported)
+        self.assertTrue(all(t.is_complex() for t in tensors()))
+        torch.testing.assert_close(exported.module()(x), model(x))
+
+    def test_to_edge_transform_and_lower_keeps_complex_kernels(self):
+        class Spectrum(torch.nn.Module):
+            def forward(self, x):
+                return torch.view_as_real(torch.fft.rfft(x))
+
+        # A program with complex ops that the pass cannot rewrite but the
+        # portable kernels support still lowers.
+        x = torch.randn(2, 16)
+        edge = to_edge_transform_and_lower(export(Spectrum(), (x,)))
+        program = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        torch.testing.assert_close(program.forward((x,))[0], Spectrum()(x))
 
     def test_to_edge_transform_and_lower_with_exception(self):
         class TestLinear(torch.nn.Module):
