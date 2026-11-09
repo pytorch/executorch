@@ -72,6 +72,10 @@ class ET_EXPERIMENTAL PrefixCache {
   using Entries = PrefixCacheEntries;
   using RetentionPolicy = PrefixCacheRetentionPolicy;
   enum class MatchDecision { Use, Skip, Stop };
+  struct FindResult {
+    std::optional<PrefixMatch> match;
+    bool stopped = false;
+  };
 
   // Best-effort capture; callbacks retain state independently of this handle.
   class PromptCapture {
@@ -349,27 +353,27 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
-    auto match = find_identity(request);
-    if (match) {
-      touch(*match);
+    auto result = find_identity(request);
+    if (result.match) {
+      touch(*result.match);
     }
-    return match;
+    return std::move(result.match);
   }
 
   // Validate candidates before cloning, without refreshing recency. Call
   // touch() after adopting the match. The selector must not mutate this cache.
   // Candidates arrive in descending length order, with repeated lengths
-  // allowed. Use immediately attempts a clone; failure advances to the next
-  // candidate. A successful clone returns before another selection. Stop and a
-  // miss both return nullopt; callers must retain any separate reason for
-  // stopping.
-  std::optional<PrefixMatch> find_identity(
+  // allowed. Use immediately attempts a clone; a refused clone advances to the
+  // next candidate. A successful clone returns before another selection. Stop
+  // returns stopped=true, distinct from an exhausted search. Allocation failure
+  // ends the search as a miss; other exceptions propagate.
+  FindResult find_identity(
       const PrefixIdentity& request,
       std::size_t longer_than = 0,
       std::size_t at_most = std::numeric_limits<std::size_t>::max(),
       const std::function<MatchDecision(std::size_t)>& select = {}) {
     if (request.size() < 2 || entries_.empty()) {
-      return std::nullopt;
+      return {};
     }
 #if ET_HAS_EXCEPTIONS
     try {
@@ -400,7 +404,7 @@ class ET_EXPERIMENTAL PrefixCache {
         if (select) {
           const auto decision = select(candidate.matched);
           if (decision == MatchDecision::Stop) {
-            return std::nullopt;
+            return {std::nullopt, true};
           }
           if (decision == MatchDecision::Skip) {
             continue;
@@ -411,16 +415,16 @@ class ET_EXPERIMENTAL PrefixCache {
                 .clone_async(static_cast<Position>(candidate.matched))
                 .get();
         if (session) {
-          return PrefixMatch{
-              std::move(*session), candidate.matched, candidate.entry->id};
+          return {PrefixMatch{
+              std::move(*session), candidate.matched, candidate.entry->id}};
         }
       }
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
-      return std::nullopt;
+      return {};
     }
 #endif
-    return std::nullopt;
+    return {};
   }
 
   // Refresh only a match from this cache; eviction invalidates its entry ID.

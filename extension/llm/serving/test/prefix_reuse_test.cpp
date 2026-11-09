@@ -857,20 +857,14 @@ TEST_P(
   handle.wait();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(prepare_calls, 1u);
-  EXPECT_EQ(executor.full_accepts, mode >= 2 ? 1u : 2u);
-  EXPECT_EQ(runtime->info().active_sessions, named && mode != 2 ? 1u : 0u);
+  EXPECT_EQ(executor.full_accepts, mode == 3 ? 1u : 2u);
+  EXPECT_EQ(runtime->info().active_sessions, named ? 1u : 0u);
   const auto clones = executor.clones();
-  ASSERT_EQ(clones.size(), mode == 3 ? 2u : 1u);
+  ASSERT_EQ(clones.size(), 2u);
   if (mode == 3) {
     EXPECT_EQ(clones.back().prefix, (std::vector<Token>{1, 7, 7}));
   }
   EXPECT_LE(executor.peak_rows.load(), 2);
-  if (mode == 2) {
-    ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
-    EXPECT_EQ(executor.feeds().size(), 1u);
-    return;
-  }
   ASSERT_FALSE(handle.error());
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
   EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, mode == 3 ? 3u : 0u);
@@ -1235,6 +1229,32 @@ TEST_F(PrefixReuseTest, RejectedLongestSuffixStillTriesOtherLongerSnapshot) {
   EXPECT_EQ(executor.clones().back().source, shorter);
 }
 
+TEST_F(PrefixReuseTest, RefusedPreferredCloneReselectsTheShorterSuffix) {
+  use_mixed_preparer();
+  config.prefix_cache_capacity = 3;
+  start();
+  submit(output(), {1, 7, 7, 7, 9}, "s").wait();
+  submit(output(), {1, 7, 7, 7, 2, 9}, "shorter").wait();
+  const auto shorter = executor.clones().back().destination;
+  submit(output(), {1, 7, 7, 7, 2, 3, 9}, "longer").wait();
+  const auto longer = executor.clones().back().destination;
+  executor.rejected_clone_source = longer;
+  const auto shorter_attempts = executor.clone_attempts(shorter);
+  const auto checked5 = executor.acceptance_calls[5];
+  const auto checked6 = executor.acceptance_calls[6];
+  auto event = output();
+  submit(event, {1, 7, 7, 7, 2, 3, 8}).wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 5u);
+  EXPECT_EQ(executor.clone_attempts(longer), 1);
+  EXPECT_EQ(executor.clone_attempts(shorter), shorter_attempts + 1);
+  EXPECT_EQ(executor.acceptance_calls[6], checked6 + 1);
+  EXPECT_EQ(executor.acceptance_calls[5], checked5 + 2);
+  EXPECT_EQ(executor.feeds().back().position, 5);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{3, 8}));
+}
+
 #if ET_HAS_EXCEPTIONS
 TEST_F(PrefixReuseTest, PreferredSnapshotAcceptanceErrorFallsBackToLivePrefix) {
   use_mixed_preparer();
@@ -1257,7 +1277,7 @@ class SnapshotAcceptanceFailureTest
     : public PrefixReuseTest,
       public ::testing::WithParamInterface<bool> {};
 
-TEST_P(SnapshotAcceptanceFailureTest, RequiredLookupPropagatesAcceptanceError) {
+TEST_P(SnapshotAcceptanceFailureTest, CachedAcceptanceErrorFallsBackCold) {
   use_mixed_preparer();
   start();
   submit(output(), {1, 7, 7, 7, 2, 3}, "cached").wait();
@@ -1269,10 +1289,10 @@ TEST_P(SnapshotAcceptanceFailureTest, RequiredLookupPropagatesAcceptanceError) {
   const auto feeds = executor.feeds().size();
   auto handle = submit(output(), {1, 7, 7, 7, 2, 9}, GetParam() ? "s" : "new");
   handle.wait();
-  ASSERT_TRUE(handle.error());
-  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(executor.feeds().back().position, 0);
   EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
-  EXPECT_EQ(executor.feeds().size(), feeds);
+  EXPECT_EQ(executor.feeds().size(), feeds + 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1349,9 +1369,7 @@ TEST_P(
   EXPECT_EQ(shorter_suffixes, 0);
 }
 
-TEST_P(
-    SnapshotAcceptanceFailureTest,
-    ThrowingSuffixIsOptionalOnlyForPreferredLookup) {
+TEST_P(SnapshotAcceptanceFailureTest, ThrowingCachedSuffixKeepsAcceptedInput) {
   executor.accept_prepared = true;
   bool fail = false;
   int failures = 0;
@@ -1378,18 +1396,17 @@ TEST_P(
   handle.wait();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(failures, 1);
-  if (GetParam()) {
-    ASSERT_FALSE(handle.error());
-    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
-  } else {
-    ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
-  }
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, GetParam() ? 4u : 0u);
 }
 #endif
 
-TEST_F(
-    PrefixReuseTest,
+class SuffixSelectionShutdownTest : public PrefixReuseTest,
+                                    public ::testing::WithParamInterface<bool> {
+};
+
+TEST_P(
+    SuffixSelectionShutdownTest,
     ShutdownDuringSuffixSelectionDoesNotTryAnotherCandidate) {
   executor.accept_prepared = true;
   std::map<std::size_t, int> suffix_calls;
@@ -1400,7 +1417,11 @@ TEST_F(
     prepared->on_suffix = [&](std::size_t start) { ++suffix_calls[start]; };
     return batching::PreparedInputPtr{prepared};
   };
+  config.prefix_cache_capacity = 3;
   start();
+  if (GetParam()) {
+    submit(output(), {1, 9}, "s").wait();
+  }
   submit(output(), {1, 2, 3}, "shorter").wait();
   submit(output(), {1, 2, 3, 4}, "cached").wait();
   const auto clones = executor.clone_calls.load();
@@ -1409,7 +1430,7 @@ TEST_F(
   const auto checked_shorter = suffix_calls[3];
   replacement_preparation.hold();
   auto event = output();
-  auto handle = submit(event, {1, 2, 3, 4, 5}, "new");
+  auto handle = submit(event, {1, 2, 3, 4, 5}, GetParam() ? "s" : "new");
   ASSERT_TRUE(replacement_preparation.wait());
   auto shutdown = std::async(std::launch::async, [&] { runtime->shutdown(); });
   EXPECT_TRUE(wait_until([&] { return !runtime->info().ready; }));
@@ -1418,11 +1439,17 @@ TEST_F(
   shutdown.get();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
-  EXPECT_EQ(executor.clone_calls.load(), clones);
+  EXPECT_FALSE(event->terminal->error);
+  EXPECT_EQ(executor.clone_calls.load(), clones + (GetParam() ? 0 : 1));
   EXPECT_EQ(executor.feeds().size(), feeds);
   EXPECT_EQ(suffix_calls[4], checked_longer + 1);
   EXPECT_EQ(suffix_calls[3], checked_shorter);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    OrdinaryAndPreferred,
+    SuffixSelectionShutdownTest,
+    ::testing::Bool());
 
 TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
   config.prefix_cache_capacity = 3;
@@ -1430,14 +1457,14 @@ TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
   start();
   submit(output(), {1, 7, 7, 7, 2, 3}, "a").wait();
   submit(output(), {1, 7, 7, 7, 2, 4}, "b").wait();
-  submit(output(), {9, 7, 7, 7, 8}).wait();
+  submit(output(), {1, 7, 7, 7, 8}).wait();
   executor.rejected_view_start = 5;
   const auto checked = executor.acceptance_calls[5];
   auto event = output();
   submit(event, {1, 7, 7, 7, 2, 9}).wait();
   ASSERT_TRUE(event->terminal);
   ASSERT_FALSE(event->terminal->error);
-  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
   EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
 }
 
@@ -1695,7 +1722,8 @@ TEST_P(ReplacementPreparedFallbackTest, ColdInputIsValidatedOnceAndRestored) {
   ASSERT_EQ(executor.feeds().size(), 1u);
   EXPECT_EQ(executor.feeds().front().position, 0);
   EXPECT_EQ(executor.feeds().front().tokens, prompt);
-  const int attempts = GetParam() == 0 ? 2 : GetParam() == 1 ? 1 : 0;
+  // Ordinary lookup clones the snapshot before checking its suffix.
+  const int attempts = GetParam() == 2 ? 1 : 2;
   EXPECT_EQ(executor.clone_calls.load(), before + attempts);
   EXPECT_EQ(executor.open_count(), 2); // Working session and original snapshot.
 }
@@ -2916,5 +2944,94 @@ INSTANTIATE_TEST_SUITE_P(
     Capacity,
     ReplacementCaptureBudgetTest,
     ::testing::Bool());
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixReuseTest, RejectedLiveBoundaryFallsBackColdBeforeShorterError) {
+  use_mixed_preparer();
+  start();
+  auto seed = submit(output(), {1, 7, 7, 7, 2});
+  seed.wait();
+  ASSERT_FALSE(seed.error());
+  auto shorter = submit(output(), {1, 7, 7, 7, 9}, "other");
+  shorter.wait();
+  ASSERT_FALSE(shorter.error());
+  executor.rejected_view_start = 5;
+  executor.throwing_view_start = 4;
+  const auto checked4 = executor.acceptance_calls[4];
+  const auto checked5 = executor.acceptance_calls[5];
+  auto event = output();
+  auto handle = submit(event, {1, 7, 7, 7, 2, 9});
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error()) << handle.error()->message;
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(executor.feeds().back().position, 0);
+  EXPECT_EQ(
+      executor.feeds().back().tokens, (std::vector<Token>{1, 7, 7, 7, 2, 9}));
+}
+
+class SnapshotCloneRefusalTest : public PrefixReuseTest,
+                                 public ::testing::WithParamInterface<bool> {};
+
+TEST_P(SnapshotCloneRefusalTest, UncloneableSnapshotDoesNotHideShorterMatch) {
+  use_mixed_preparer();
+  start();
+  auto first = submit(output(), {1, 7, 7, 7, 2, 3}, "longer");
+  first.wait();
+  ASSERT_FALSE(first.error());
+  ASSERT_FALSE(executor.clones().empty());
+  const auto longer = executor.clones().back().destination;
+  auto second = submit(output(), {1, 7, 7, 7, 9}, "shorter");
+  second.wait();
+  ASSERT_FALSE(second.error());
+  const auto shorter = executor.clones().back().destination;
+  executor.rejected_clone_source = longer;
+  if (GetParam()) {
+    executor.throwing_view_start = 5;
+  } else {
+    executor.rejected_view_start = 5;
+  }
+  const auto checked4 = executor.acceptance_calls[4];
+  const auto checked5 = executor.acceptance_calls[5];
+  const auto attempted = executor.clone_attempts(longer);
+  auto event = output();
+  auto handle = submit(event, {1, 7, 7, 7, 2, 9}, "new");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error()) << handle.error()->message;
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(executor.feeds().back().position, 4);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{2, 9}));
+  // The new session may capture its own prompt after adopting the shorter one.
+  EXPECT_GE(executor.clone_attempts(shorter), 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CloneRefusal,
+    SnapshotCloneRefusalTest,
+    ::testing::Bool());
+
+TEST_P(
+    SnapshotCloneRefusalTest,
+    AcceptedLiveBoundaryIsNotRecheckedAfterCloneRefusal) {
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 2}).wait();
+  if (GetParam()) {
+    executor.rejected_clone_source = executor.feeds().back().session;
+  }
+  const auto checked = executor.acceptance_calls[5];
+  auto event = output();
+  auto handle = submit(event, {1, 7, 7, 7, 2, 9});
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error()) << handle.error()->message;
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 5u);
+  // Includes the runner's final generation acceptance, in addition to
+  // selection.
+  EXPECT_EQ(executor.acceptance_calls[5] - checked, 2);
+}
+
+#endif
 
 } // namespace

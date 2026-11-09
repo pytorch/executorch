@@ -680,8 +680,18 @@ struct ServingRuntime::Impl {
   enum class Selection { Selected, Unavailable, Cancelled };
   enum class PrefixLookupMode { Ordinary, Preferred };
   using SelectionResult = std::variant<Selection, ServingError>;
+  using PrefixLookupResult =
+      std::variant<batching::PrefixMatch, Selection, ServingError>;
+  struct CheckedSuffix {
+    std::optional<std::size_t> start;
+    SelectionResult result = Selection::Unavailable;
+    batching::GenerationInput delta;
+  };
 
-  SelectionResult select_input(const Request& request, std::size_t start) {
+  SelectionResult select_input(
+      const Request& request,
+      std::size_t start,
+      batching::GenerationInput& delta) {
     if (request->cancelled.load()) {
       return Selection::Cancelled;
     }
@@ -704,8 +714,7 @@ struct ServingRuntime::Impl {
           ErrorCode::InvalidArgument, "invalid prepared suffix"};
     }
     if (view->kind() == detail::TokenPreparedInput::type()) {
-      request->request.delta =
-          static_cast<const detail::TokenPreparedInput&>(*view).tokens();
+      delta = static_cast<const detail::TokenPreparedInput&>(*view).tokens();
       return Selection::Selected;
     }
     const auto acceptance = runner_->accepts_async(view).get();
@@ -731,8 +740,34 @@ struct ServingRuntime::Impl {
           ErrorCode::InvalidArgument,
           "executor does not accept prepared input"};
     }
-    request->request.delta = std::move(view);
+    delta = std::move(view);
     return Selection::Selected;
+  }
+
+  SelectionResult select_cached_input(
+      const Request& request,
+      std::size_t start,
+      CheckedSuffix& checked) {
+    if (request->cancelled.load()) {
+      checked.result = Selection::Cancelled;
+    } else if (checked.start != start) {
+      checked.start = start;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        checked.result = select_input(request, start, checked.delta);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        checked.result = Selection::Unavailable;
+      }
+#endif
+      // The full input was accepted before attempting optional prefix reuse.
+      if (const auto* error = std::get_if<ServingError>(&checked.result);
+          error && error->code != ErrorCode::NotReady) {
+        checked.result = Selection::Unavailable;
+      }
+    }
+    return checked.result;
   }
 
   bool try_acquire_capture_lane() {
@@ -784,20 +819,26 @@ struct ServingRuntime::Impl {
     }
     std::optional<batching::Session> cloned;
     std::optional<batching::PrefixMatch> match;
-    auto fallback_limit = upto ? upto : std::numeric_limits<std::size_t>::max();
+    CheckedSuffix checked;
     if (upto) {
-      auto selection =
-          lookup_prefix(request, match, PrefixLookupMode::Preferred, upto);
-      const auto* outcome = std::get_if<Selection>(&selection);
-      if (!outcome || *outcome == Selection::Cancelled) {
-        return selection;
+      auto found = lookup_prefix(
+          request,
+          PrefixLookupMode::Preferred,
+          upto,
+          std::numeric_limits<std::size_t>::max(),
+          &checked);
+      if (auto* error = std::get_if<ServingError>(&found)) {
+        return std::move(*error);
       }
-      if (match) {
+      if (auto* candidate = std::get_if<batching::PrefixMatch>(&found)) {
+        match = std::move(*candidate);
         cloned = std::move(match->session);
+      } else if (std::get<Selection>(found) == Selection::Cancelled) {
+        return Selection::Cancelled;
       }
     }
     if (!cloned && upto) {
-      auto selection = select_input(request, upto);
+      auto selection = select_cached_input(request, upto, checked);
       const auto* outcome = std::get_if<Selection>(&selection);
       if (!outcome || *outcome == Selection::Cancelled) {
         return selection;
@@ -809,25 +850,33 @@ struct ServingRuntime::Impl {
           // Only control owns Session objects; clone waits outside locks.
           cloned =
               source->clone_async(static_cast<batching::Position>(upto)).get();
+          if (cloned) {
+            request->request.delta = std::move(checked.delta);
+          }
 #if ET_HAS_EXCEPTIONS
         } catch (...) {
           // Try a retained snapshot if the live source cannot be cloned.
         }
 #endif
-      } else {
-        fallback_limit = upto - 1;
       }
     }
     if (!cloned) {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto selection = lookup_prefix(
-          request, match, PrefixLookupMode::Ordinary, 0, fallback_limit);
-      if (auto* outcome = std::get_if<Selection>(&selection);
-          !outcome || *outcome != Selection::Selected) {
-        return selection;
+      auto found = lookup_prefix(
+          request,
+          PrefixLookupMode::Ordinary,
+          0,
+          upto ? upto : std::numeric_limits<std::size_t>::max(),
+          &checked);
+      if (auto* error = std::get_if<ServingError>(&found)) {
+        return std::move(*error);
       }
+      if (auto* outcome = std::get_if<Selection>(&found)) {
+        return *outcome;
+      }
+      match = std::get<batching::PrefixMatch>(std::move(found));
       cloned = std::move(match->session);
     }
     std::optional<batching::Session> retired;
@@ -971,10 +1020,11 @@ struct ServingRuntime::Impl {
         }
       }
     }
-    auto selection = select_input(request, plan.suffix_start);
+    auto selection =
+        select_input(request, plan.suffix_start, request->request.delta);
     if (auto* outcome = std::get_if<Selection>(&selection);
         outcome && *outcome == Selection::Unavailable) {
-      selection = select_input(request, 0);
+      selection = select_input(request, 0, request->request.delta);
       plan = {PrefillPlan::kFull, 0, "suffix_unavailable"};
       reset = true;
     }
@@ -1014,71 +1064,70 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  SelectionResult lookup_prefix(
+  PrefixLookupResult lookup_prefix(
       const Request& request,
-      std::optional<batching::PrefixMatch>& match,
       PrefixLookupMode mode = PrefixLookupMode::Ordinary,
       std::size_t longer_than = 0,
-      std::size_t at_most = std::numeric_limits<std::size_t>::max()) {
+      std::size_t at_most = std::numeric_limits<std::size_t>::max(),
+      CheckedSuffix* previous = nullptr) {
+    if (request->cancelled.load()) {
+      return Selection::Cancelled;
+    }
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
       return Selection::Unavailable;
     }
-    auto original_delta = std::move(request->request.delta);
-    SelectionResult result = Selection::Unavailable;
-    std::optional<std::size_t> previous_start;
-    SelectionResult selection = Selection::Unavailable;
-    // A lookup clone uses the new request's reserved working-session slot.
+    CheckedSuffix local;
+    auto& checked = previous ? *previous : local;
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      match = prefix_cache_.find_identity(
-          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
-            using Decision = batching::PrefixCache::MatchDecision;
-            if (request->cancelled.load()) {
-              result = Selection::Cancelled;
+      batching::PrefixCache::FindResult found;
+      if (mode == PrefixLookupMode::Ordinary) {
+        // Preserve clone-first lookup: an uncloneable entry cannot select a
+        // suffix.
+        found = prefix_cache_.find_identity(
+            *request->text->prompt, longer_than, at_most);
+        if (found.match) {
+          select_cached_input(request, found.match->matched_tokens, checked);
+          found.stopped = !std::holds_alternative<Selection>(checked.result) ||
+              std::get<Selection>(checked.result) != Selection::Selected;
+        }
+      } else {
+        found = prefix_cache_.find_identity(
+            *request->text->prompt,
+            longer_than,
+            at_most,
+            [&](std::size_t start) {
+              using Decision = batching::PrefixCache::MatchDecision;
+              auto selected = select_cached_input(request, start, checked);
+              if (const auto* outcome = std::get_if<Selection>(&selected)) {
+                if (*outcome == Selection::Selected) {
+                  return Decision::Use;
+                }
+                if (*outcome == Selection::Unavailable) {
+                  return Decision::Skip;
+                }
+              }
               return Decision::Stop;
-            }
-            if (previous_start != start) {
-#if ET_HAS_EXCEPTIONS
-              try {
-#endif
-                selection = select_input(request, start);
-#if ET_HAS_EXCEPTIONS
-              } catch (...) {
-                selection = ServingError{
-                    ErrorCode::Internal, "prepared suffix selection failed"};
-              }
-#endif
-              previous_start = start;
-            }
-            if (const auto* outcome = std::get_if<Selection>(&selection)) {
-              if (*outcome == Selection::Selected) {
-                return Decision::Use;
-              }
-              if (*outcome == Selection::Unavailable) {
-                // Ordinary lookup preserves the existing cold-prefill fallback.
-                return mode == PrefixLookupMode::Preferred ? Decision::Skip
-                                                           : Decision::Stop;
-              }
-            } else if (
-                mode == PrefixLookupMode::Preferred &&
-                std::get<ServingError>(selection).code != ErrorCode::NotReady) {
-              return Decision::Skip;
-            }
-            result = selection;
-            return Decision::Stop;
-          });
+            });
+      }
+      if (found.stopped) {
+        if (auto* error = std::get_if<ServingError>(&checked.result)) {
+          return std::move(*error);
+        }
+        return std::get<Selection>(checked.result);
+      }
+      if (found.match) {
+        request->request.delta = std::move(checked.delta);
+        return std::move(*found.match);
+      }
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       // Cache lookup is optional; keep the previously accepted input.
     }
 #endif
-    if (match) {
-      return Selection::Selected;
-    }
-    request->request.delta = std::move(original_delta);
-    return result;
+    return Selection::Unavailable;
   }
 
   void collect_capture(const Request& request) {
@@ -1156,23 +1205,24 @@ struct ServingRuntime::Impl {
     }
     it->second.active_request = request->id;
     request->completion.incarnation = it->second.incarnation;
+    std::optional<batching::PrefixMatch> match;
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
-      std::optional<batching::PrefixMatch> match;
       LifecycleResult preparation_error;
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto selection = lookup_prefix(request, match);
+        auto found = lookup_prefix(request);
         Selection outcome = Selection::Unavailable;
-        if (auto* error = std::get_if<ServingError>(&selection)) {
+        if (auto* error = std::get_if<ServingError>(&found)) {
           preparation_error = std::move(*error);
+        } else if (
+            auto* candidate = std::get_if<batching::PrefixMatch>(&found)) {
+          match = std::move(*candidate);
+          opened = std::move(match->session);
         } else {
-          outcome = std::get<Selection>(selection);
-          if (match) {
-            opened = std::move(match->session);
-          }
+          outcome = std::get<Selection>(found);
         }
         if (!opened && !preparation_error && outcome != Selection::Cancelled &&
             !request->cancelled.load()) {
@@ -1204,9 +1254,6 @@ struct ServingRuntime::Impl {
       }
       it->second.session = std::move(opened);
       it->second.phase = SessionPhase::Open;
-      if (match) {
-        prefix_cache_.touch(*match);
-      }
     }
     auto& session = *it->second.session;
     if (!request->text) {
@@ -1218,6 +1265,9 @@ struct ServingRuntime::Impl {
     if (cancelled) {
       request->reject();
       return;
+    }
+    if (match) {
+      prefix_cache_.touch(*match);
     }
     if (request->text) {
       request->text->start_position =
