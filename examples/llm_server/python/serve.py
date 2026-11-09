@@ -41,7 +41,7 @@ def _parse_preflight_timeout(value):
 
 
 def _validate_limits(
-    parser, args, *, prefix_capture_slots=0, prefix_capture_prompt_end=False
+    parser, args, *, prefix_capture_slots=0, prefix_checkpoint_prompt_end=False
 ) -> int:
     for flag, value in (
         ("--max-context", args.max_context),
@@ -55,12 +55,17 @@ def _validate_limits(
         parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
     if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
         parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
+    if prefix_checkpoint_prompt_end and args.prefix_checkpoint_interval:
+        parser.error(
+            "--prefix-checkpoint-prompt-end cannot be combined with "
+            "--prefix-checkpoint-interval"
+        )
     if (
-        args.prefix_checkpoint_interval or prefix_capture_prompt_end
+        args.prefix_checkpoint_interval or prefix_checkpoint_prompt_end
     ) and not args.prefix_cache_entries:
         flag = (
-            "--prefix-capture-prompt-end"
-            if prefix_capture_prompt_end
+            "--prefix-checkpoint-prompt-end"
+            if prefix_checkpoint_prompt_end
             else "--prefix-checkpoint-interval"
         )
         parser.error(f"{flag} requires --prefix-cache-entries > 0")
@@ -115,7 +120,7 @@ def _parse_args(argv=None):
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
     parser.add_argument(
-        "--prefix-capture-prompt-end",
+        "--prefix-checkpoint-prompt-end",
         action="store_true",
         help="Best-effort retention of each request's prompt end in the bounded prefix cache",
     )
@@ -148,7 +153,7 @@ def _parse_args(argv=None):
         parser,
         args,
         prefix_capture_slots=args.prefix_capture_slots,
-        prefix_capture_prompt_end=args.prefix_capture_prompt_end,
+        prefix_checkpoint_prompt_end=args.prefix_checkpoint_prompt_end,
     )
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
@@ -226,8 +231,8 @@ def main(argv=None) -> None:
                     else []
                 )
                 + (
-                    ["--prefix_capture_prompt_end=true"]
-                    if args.prefix_capture_prompt_end
+                    ["--prefix_checkpoint_prompt_end=true"]
+                    if args.prefix_checkpoint_prompt_end
                     else []
                 ),
                 stderr=stderr,

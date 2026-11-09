@@ -158,25 +158,43 @@ def test_checkpoint_options_reach_worker(argv, launch):
 
 
 def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch):
-    assert not serve._parse_args(argv).prefix_capture_prompt_end
+    assert not serve._parse_args(argv).prefix_checkpoint_prompt_end
     with pytest.raises(SystemExit):
-        serve._parse_args(argv + ["--prefix-capture-prompt-end"])
-    serve.main(argv + ["--prefix-cache-entries", "3", "--prefix-capture-prompt-end"])
+        serve._parse_args(argv + ["--prefix-checkpoint-prompt-end"])
+    serve.main(argv + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end"])
     assert (
-        "--prefix_capture_prompt_end=true" in launch.stages["spawn"].call_args.args[0]
+        "--prefix_checkpoint_prompt_end=true"
+        in launch.stages["spawn"].call_args.args[0]
     )
 
 
-@pytest.mark.parametrize("prompt_end", [False, True])
+def test_prompt_end_rejects_periodic_capture(argv, capsys):
+    with pytest.raises(SystemExit):
+        serve._parse_args(
+            argv
+            + [
+                "--prefix-cache-entries",
+                "3",
+                "--prefix-checkpoint-prompt-end",
+                "--prefix-checkpoint-interval",
+                "64",
+            ]
+        )
+    assert "cannot be combined" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
-    "sessions,requests,interval,override,expected",
+    "sessions,requests,interval,override,expected,prompt_end",
     [
-        (16, 8, 0, 0, 8),
-        (4, 8, 0, 0, 4),
-        (16, 8, 64, 0, 2),
-        (1, 8, 64, 0, 1),
-        (16, 8, 0, 1, 1),
-        (16, 8, 64, 3, 3),
+        (16, 8, 0, 0, 8, False),
+        (16, 8, 0, 0, 8, True),
+        (4, 8, 0, 0, 4, False),
+        (4, 8, 0, 0, 4, True),
+        (16, 8, 64, 0, 2, False),
+        (1, 8, 64, 0, 1, False),
+        (16, 8, 0, 1, 1, False),
+        (16, 8, 0, 1, 1, True),
+        (16, 8, 64, 3, 3, False),
     ],
 )
 def test_capture_capacity_validation_and_worker_override(
@@ -196,11 +214,11 @@ def test_capture_capacity_validation_and_worker_override(
             "--prefix-capture-slots",
             str(override),
         ]
-        + (["--prefix-capture-prompt-end"] if prompt_end else [])
+        + (["--prefix-checkpoint-prompt-end"] if prompt_end else [])
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
-    assert ("--prefix_capture_prompt_end=true" in command) == prompt_end
+    assert ("--prefix_checkpoint_prompt_end=true" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,
@@ -215,7 +233,7 @@ def test_capture_capacity_validation_and_worker_override(
             Mock(),
             args,
             prefix_capture_slots=override,
-            prefix_capture_prompt_end=prompt_end,
+            prefix_checkpoint_prompt_end=prompt_end,
         )
         == expected
     )

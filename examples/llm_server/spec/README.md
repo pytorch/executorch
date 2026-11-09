@@ -251,7 +251,7 @@ identities; tokenization, decoding, stop handling, and session history belong to
 the runtime. Chat templates and OpenAI response presentation remain in Python.
 The legacy cancellation and cross-session cache limitations above do not describe
 this opt-in path. See the [batching-backed serving guide](batching.md) for launch
-selection, creation-only caching, and native-backed Python integration checks.
+selection, prompt-boundary caching, and native-backed Python integration checks.
 
 Before accepting requests the worker emits one readiness record, with no request
 ID:
@@ -395,16 +395,19 @@ sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
 unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
 `min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
-their initial prompt. `--prefix_capture_prompt_end=true` additionally requests
+their initial prompt. `--prefix_checkpoint_prompt_end=true` additionally requests
 continuation and replacement snapshots with the same concurrent allowance.
 It requires nonzero cache capacity and skips exact prompt ends already retained.
+Snapshots are published and their transient slots released after clone collection,
+without waiting for the request to finish decoding.
 With periodic checkpoints enabled, automatic sizing uses at most two
 rows because checkpoint collection remains serialized and one replacement can
 overlap. A positive value overrides automatic sizing; values above two add unused
 row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
-Capture is best effort. Periodic checkpoints and prompt ends requested together
-share a serialized checkpoint lane; a pending clone can cause another boundary to
-be skipped. A C++ `prefix_checkpoint_policy` overrides both capture flags.
+Capture is best effort. Prompt-end capture cannot be combined with a nonzero
+checkpoint interval or a custom checkpoint policy; invalid combinations are
+rejected. A C++ `prefix_checkpoint_policy` overrides the interval. Periodic/custom
+checkpoints share a serialized lane; a pending clone can skip another boundary.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,

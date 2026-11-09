@@ -441,8 +441,6 @@ TEST(PrefillCheckpointPolicyTest, AbsoluteIntervalsAndRangeBoundaries) {
   EXPECT_TRUE(periodic_prefill_breakpoints(16, 17, 8).empty());
   EXPECT_TRUE(periodic_prefill_breakpoints(0, 8, 0).empty());
   EXPECT_EQ(
-      periodic_prefill_breakpoints(3, 6, 0, true), (std::vector<Position>{6}));
-  EXPECT_EQ(
       periodic_prefill_breakpoints(3, 6, 4, true),
       (std::vector<Position>{4, 6}));
   EXPECT_TRUE(periodic_prefill_breakpoints(6, 6, 0, true).empty());

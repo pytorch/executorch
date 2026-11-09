@@ -226,10 +226,12 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 Prefix caching is disabled unless `--prefix-cache-entries` is nonzero. When
 configured without other capture options, it retains initial prompts. Add
-`--prefix-capture-prompt-end` to request snapshots of subsequent boundaries,
+`--prefix-checkpoint-prompt-end` to request snapshots of subsequent boundaries,
 including tool-result continuations and replacements. Repeated or branched requests
 can reuse those snapshots; new tool-result text still needs prefill. Exact prompt
 ends already in the cache are not cloned again.
+Snapshots become reusable and their capture slots are released after clone
+collection, without waiting for decoding to finish.
 
 Prompt-end-only capture preserves per-request capture concurrency and the default
 transient-row budget. All snapshots share the bounded cache and global LRU, so new
@@ -237,12 +239,11 @@ boundaries can evict earlier prompts. Capture is best effort: concurrent capture
 or session replacements can occupy the available rows. Measure capture overhead
 and reuse for your workload before enabling it.
 
-With `--prefix-checkpoint-interval`, periodic points and the exact prompt end use
-one serialized checkpoint lane. A pending checkpoint can cause a later boundary,
-including the prompt end, to be skipped. Automatic transient-row sizing is capped
-at two in periodic mode; prompt-end-only mode retains the ordinary concurrency
-budget. Use prompt-end capture without periodic checkpoints when turn reuse is the
-priority.
+`--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
+`--prefix-checkpoint-interval`; both the launcher and native worker reject it.
+Periodic checkpoints use one serialized lane and may skip a boundary while an
+earlier clone is pending. Automatic transient-row sizing is capped at two in
+periodic mode; prompt-end capture retains the ordinary concurrency budget.
 
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
   close the least recently used idle session when logical session slots are exhausted, clearing

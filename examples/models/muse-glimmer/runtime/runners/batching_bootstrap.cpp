@@ -45,7 +45,7 @@ DEFINE_int32(
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
 DEFINE_bool(
-    prefix_capture_prompt_end,
+    prefix_checkpoint_prompt_end,
     false,
     "Best-effort retention of each request's prompt end in the bounded prefix cache");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
@@ -67,12 +67,17 @@ DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 namespace executorch::extension::llm {
 std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
+  if (FLAGS_prefix_checkpoint_prompt_end && FLAGS_prefix_checkpoint_interval) {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end cannot be combined with "
+        "--prefix_checkpoint_interval");
+  }
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
       FLAGS_prefix_checkpoint_interval < 0 || FLAGS_prefix_capture_slots < 0 ||
       ((FLAGS_prefix_checkpoint_interval > 0 ||
-        FLAGS_prefix_capture_prompt_end) &&
+        FLAGS_prefix_checkpoint_prompt_end) &&
        FLAGS_prefix_cache_entries == 0) ||
       FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
       FLAGS_max_input_frame_bytes == 0 ||
@@ -89,7 +94,7 @@ create_muse_glimmer_batching_runtime() {
   serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   serving.max_prefix_captures = FLAGS_prefix_capture_slots;
   serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
-  serving.prefix_capture_prompt_end = FLAGS_prefix_capture_prompt_end;
+  serving.prefix_checkpoint_prompt_end = FLAGS_prefix_checkpoint_prompt_end;
   const int64_t physical = static_cast<int64_t>(FLAGS_max_sessions) +
       FLAGS_prefix_cache_entries +
       static_cast<int64_t>(serving.resolved_prefix_captures());

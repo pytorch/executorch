@@ -41,18 +41,20 @@ speculative drafting/verification remain inside the runner and executor.
 of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
 Zero (the default) disables periodic capture. With prefix caching enabled and no
 other capture options, only initial prompts are retained.
-`--prefix-capture-prompt-end` also requests snapshots of continuation and replacement
-prompt ends. Alone, it preserves per-request capture concurrency; combined with an
-interval, it shares the serialized checkpoint lane. Capture is best effort: an
-occupied row or checkpoint lane can skip a boundary. Already-retained prompt ends
-are not cloned again. Retention uses global LRU; early checkpoints are not protected.
+`--prefix-checkpoint-prompt-end` also requests snapshots of continuation and replacement
+prompt ends. It preserves per-request capture concurrency and cannot be combined
+with a nonzero interval or custom checkpoint policy. Snapshots become reusable and
+capture slots are released when their clones are collected, before decode completes.
+Capture is best effort: occupied transient rows can skip a boundary. Already-retained
+prompt ends are not cloned again. Retention uses global LRU; early checkpoints are
+not protected.
 
 C++ applications can customize two independent policies in
 [`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
 
 - `prefix_checkpoint_policy` chooses capture positions and optional application metadata,
-  overriding both `prefix_checkpoint_interval` and `prefix_capture_prompt_end`.
-  This C++ callback is not a launcher option.
+  overriding `prefix_checkpoint_interval`. It cannot be combined with
+  `prefix_checkpoint_prompt_end`. This C++ callback is not a launcher option.
 - `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
 
 The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)

@@ -48,16 +48,14 @@ inline std::vector<Position> periodic_prefill_breakpoints(
     Position interval,
     bool include_end = false) {
   std::vector<Position> positions;
-  if (start < 0 || end <= start || interval < 0) {
+  if (start < 0 || end <= start || interval <= 0) {
     return positions;
   }
-  if (interval > 0) {
-    for (std::int64_t next =
-             (static_cast<std::int64_t>(start) / interval + 1) * interval;
-         next <= end;
-         next += interval) {
-      positions.push_back(static_cast<Position>(next));
-    }
+  for (std::int64_t next =
+           (static_cast<std::int64_t>(start) / interval + 1) * interval;
+       next <= end;
+       next += interval) {
+    positions.push_back(static_cast<Position>(next));
   }
   if (include_end && (positions.empty() || positions.back() != end)) {
     positions.push_back(end);
@@ -89,29 +87,39 @@ class ET_EXPERIMENTAL PrefixCache {
     PromptCapture& operator=(const PromptCapture&) = delete;
 
     // Wrap once per generation; queue a clone before the first output.
+    // on_capture notifies after the attempt, allowing collection on another
+    // thread before generation ends. It must not block or throw.
     // User callback exceptions fail generation.
-    GenerationCallback wrap(GenerationCallback on_update = {}) {
+    GenerationCallback wrap(
+        GenerationCallback on_update = {},
+        std::function<void()> on_capture = {}) {
       if (!state_) {
         return on_update;
       }
-      return [state = state_, on_update = std::move(on_update)](
-                 const GenerationUpdate& update) {
-        if (!state->attempted && !update.tokens.empty()) {
-          state->attempted = true;
+      return
+          [state = state_,
+           on_update = std::move(on_update),
+           on_capture = std::move(on_capture)](const GenerationUpdate& update) {
+            if (!state->attempted && !update.tokens.empty()) {
+              state->attempted = true;
 #if ET_HAS_EXCEPTIONS
-          try {
+              try {
 #endif
-            state->snapshot = state->request_clone(
-                static_cast<Position>(state->tokens.size()));
+                state->snapshot = state->request_clone(
+                    static_cast<Position>(state->tokens.size()));
 #if ET_HAS_EXCEPTIONS
-          } catch (const std::bad_alloc&) {
-          }
+              } catch (...) {
+                // Optional capture failure leaves generation usable.
+              }
 #endif
-        }
-        if (on_update) {
-          on_update(update);
-        }
-      };
+              if (on_capture) {
+                on_capture();
+              }
+            }
+            if (on_update) {
+              on_update(update);
+            }
+          };
     }
 
     // Queue without waiting; may run in a Runner callback. Serialize with
@@ -163,7 +171,8 @@ class ET_EXPERIMENTAL PrefixCache {
       };
     }
 
-    // May block; serialize with capture_at or wait for wrap's generation.
+    // May block; serialize with capture_at. With wrap, collect on another
+    // thread after on_capture notification, or wait for generation to finish.
     // The PrefixCache must outlive collection.
     bool collect() {
       auto state = state_;

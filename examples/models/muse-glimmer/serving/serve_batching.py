@@ -88,7 +88,7 @@ def _parse_args(argv=None):
     )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
-        "--prefix-capture-prompt-end",
+        "--prefix-checkpoint-prompt-end",
         action="store_true",
         help="Best-effort retention of each request's prompt end in the bounded prefix cache",
     )
@@ -130,7 +130,7 @@ def _parse_args(argv=None):
         parser,
         args,
         prefix_capture_slots=args.prefix_capture_slots,
-        prefix_capture_prompt_end=args.prefix_capture_prompt_end,
+        prefix_checkpoint_prompt_end=args.prefix_checkpoint_prompt_end,
     )
     if not 0 <= args.dflash_n_draft < _INT32_MAX:
         parser.error("--dflash-n-draft must be nonnegative and below INT32_MAX")
@@ -206,8 +206,8 @@ def _worker_command(args):
         ),
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
         (
-            "prefix_capture_prompt_end",
-            "true" if args.prefix_capture_prompt_end else None,
+            "prefix_checkpoint_prompt_end",
+            "true" if args.prefix_checkpoint_prompt_end else None,
         ),
         ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),

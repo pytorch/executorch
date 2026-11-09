@@ -62,10 +62,11 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
   // Best-effort capture at each request's prompt end, including continuations
-  // and replacements. Alone, uses per-request capture admission. With periodic
-  // checkpoints, shares their serialized admission. Requires cache capacity.
-  bool prefix_capture_prompt_end = false;
-  // Override the interval and prompt-end flag with increasing checkpoints in
+  // and replacements. Uses per-request capture admission, released after the
+  // clone is collected, without waiting for decode to finish. Requires cache
+  // capacity; cannot combine with an interval or custom checkpoint policy.
+  bool prefix_checkpoint_prompt_end = false;
+  // Override the interval with increasing checkpoints in
   // (start, prompt.size()]. Invalid or throwing policies skip capture. Requires
   // cache capacity. Runs on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
