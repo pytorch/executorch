@@ -33,6 +33,17 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_addmm_mm_to_linear",
+        srcs = ["test/test_addmm_mm_to_linear.py"],
+        deps = [
+            ":addmm_mm_to_linear",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_library(
         name = "decompose_sdpa",
         srcs = ["decompose_sdpa.py"],
@@ -697,6 +708,7 @@ def define_common_targets():
         srcs = ["permute_pass_utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "//executorch/frontends/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [

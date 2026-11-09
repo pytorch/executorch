@@ -30,11 +30,14 @@ So a bad index never reads or writes memory outside the tensor, but it is still 
 - `gather` returns values from the wrong place.
 - `index_put` overwrites real data at the first or last position, or adds to it with `accumulate=True`. For example, if an 8-slot cache is written as `cache[:, pos] = v` with `pos = torch.tensor([8])`, the write goes to slot 7.
 - `index_add_` lowers to `index_put` with `accumulate=True`, so it treats a bad index the same way, but adds instead of overwriting.
+- `index_copy` and `index_copy_` also lower to `index_put` and overwrite the first or last position. The exception is a method where every `index_copy` or `index_copy_` is the last write to a mutable buffer or input. There they raise an error on an index outside `[-size, size - 1]`.
 
 Other ops that take indices behave differently, for example:
 
-- `index_copy_` into a mutable buffer, and reading `x[i]` with a Python int, raise an error on an index outside `[-size, size - 1]`.
+- Reading `x[i]` with a Python int raises an error on an index outside `[-size, size - 1]`.
 - `embedding`, `index_select`, `scatter_add`, and reading `x[idx]` with an index tensor do not check or clamp. An index outside `[-size, size - 1]` there can read or write memory outside the tensor.
+
+When the tensor that `index_put` or `scatter_add` writes has an 8-byte dtype, such as `int64` or `float64`, the MLX backend does not run it. It runs on the CPU instead. There `index_put` on a non-empty tensor raises an error on an index outside `[-size, size - 1]`, and `scatter_add` on an index outside `[0, size - 1]`. This also applies to `index_add_`, and to `index_copy` and `index_copy_` where they lower to `index_put`, so a negative index there still counts from the end.
 
 To find bad indices, run the model in eager PyTorch on the CPU first, where they raise. Keep run-time indices in range too, for example by stopping generation before a cache position reaches the cache size.
 

@@ -21,6 +21,7 @@
 
 import argparse
 import json
+import math
 
 from executorch.devtools import Inspector
 from executorch.devtools.inspector import TimeScale
@@ -36,13 +37,26 @@ def main() -> None:
         default="ns",
         choices=[ts.value for ts in TimeScale],
     )
+    parser.add_argument(
+        "--clock_frequency_hz",
+        type=float,
+        help="Clock frequency used for timestamps when --source_time_scale=cycles.",
+    )
     args = parser.parse_args()
+
+    cycle_timestamps = args.source_time_scale == "cycles"
+    if cycle_timestamps and (
+        args.clock_frequency_hz is None
+        or not math.isfinite(args.clock_frequency_hz)
+        or args.clock_frequency_hz <= 0
+    ):
+        parser.error("Cycle timestamps require a positive finite --clock_frequency_hz")
 
     inspector = Inspector(
         etdump_path=args.etdump_path,
         etrecord=args.etrecord_path,
         source_time_scale=TimeScale(args.source_time_scale),
-        target_time_scale=TimeScale.US,
+        target_time_scale=TimeScale.CYCLES if cycle_timestamps else TimeScale.US,
     )
 
     trace_events = []
@@ -53,8 +67,10 @@ def main() -> None:
         "us": 1.0,
         "ms": 1000.0,
         "s": 1000_000.0,
-        "cycles": 1.0,
+        "cycles": 1_000_000.0 / args.clock_frequency_hz if cycle_timestamps else 1.0,
     }[args.source_time_scale]
+
+    duration_to_us = source_to_us if cycle_timestamps else 1.0
 
     for block_idx, event_block in enumerate(inspector.event_blocks):
         tid_name = event_block.name
@@ -73,11 +89,11 @@ def main() -> None:
             if event.perf_data is None or event.start_time is None:
                 continue
 
-            durations_us = event.perf_data.raw
+            durations = event.perf_data.raw
             start_times = event.start_time
 
-            for iter_idx, (start_time, duration_us) in enumerate(
-                zip(start_times, durations_us)
+            for iter_idx, (start_time, duration) in enumerate(
+                zip(start_times, durations)
             ):
                 trace_events.append(
                     {
@@ -85,7 +101,7 @@ def main() -> None:
                         "cat": event_block.name,
                         "ph": "X",
                         "ts": float(start_time) * source_to_us,
-                        "dur": float(duration_us),
+                        "dur": float(duration) * duration_to_us,
                         "pid": 1,
                         "tid": block_idx,
                         "args": {

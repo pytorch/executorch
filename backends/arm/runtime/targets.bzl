@@ -111,6 +111,7 @@ def define_common_targets():
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFBoundaryIO.h",
             "VGFExecutionStats.h",
             "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",
