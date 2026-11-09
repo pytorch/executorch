@@ -12,6 +12,7 @@ import torch
 from executorch.backends.transforms import get_shape
 from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
+    is_transpose,
 )
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -165,7 +166,10 @@ class ConvertToLinearPass(ExportPass):
                 for src_partitions in src_partition_dict.values()
                 for src_partition in src_partitions
                 for node in src_partition.nodes
+                # linear takes the weight from before its transpose, which
+                # constant propagation can fold away.
                 if node.target in self.targets
+                and is_transpose(self.get_arg(node, "weight"))
             }
 
             # No more [add]mm target in source partitions

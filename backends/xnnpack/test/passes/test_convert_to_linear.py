@@ -9,6 +9,7 @@ import unittest
 import torch
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 
 
 class TestConvertToLinear(unittest.TestCase):
@@ -39,6 +40,24 @@ class TestConvertToLinear(unittest.TestCase):
                 .check_count(
                     {"executorch_exir_dialects_edge__ops_aten_linear_default": 1}
                 )
+                .run_method_and_compare_outputs()
+            )
+
+    def test_fp32_folded_weight_transpose_is_not_converted_to_linear(self):
+        for in_size, out_size, bias in [(4, 8, True), (6, 6, True), (6, 6, False)]:
+            torch._dynamo.reset()
+            linear = torch.nn.Linear(in_size, out_size, bias=bias)
+            tester = Tester(linear, (torch.randn(4, in_size),)).export().to_edge()
+            # Folds the weight transpose, so the [add]mm reads a weight that
+            # linear would need transposed back.
+            constant_prop_pass(tester.get_artifact().exported_program())
+            mm = "addmm" if bias else "mm"
+            (
+                tester.run_passes(self.PassStage)
+                .check_count(
+                    {f"executorch_exir_dialects_edge__ops_aten_{mm}_default": 1}
+                )
+                .check_not(["executorch_exir_dialects_edge__ops_aten_linear_default"])
                 .run_method_and_compare_outputs()
             )
 
