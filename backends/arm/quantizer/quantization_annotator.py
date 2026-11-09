@@ -557,6 +557,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.silu.default,
+    torch.ops.aten.mish.default,
     torch.ops.aten.softplus.default,
     torch.ops.aten.silu_.default,
     torch.ops.aten.sinh.default,
