@@ -269,9 +269,19 @@ std::unique_ptr<GgmlEngineContext> make_context(
   return host.create_ggml_context(std::move(program), std::move(package));
 }
 
-// A tensor (by name), an int, a float, an int list, or None.
-using TestArg = std::
-    variant<std::string, int64_t, double, std::vector<int64_t>, std::monostate>;
+// A bool argument, wrapped so that string literals never convert to it.
+struct BoolValue {
+  bool value = false;
+};
+
+// A tensor (by name), an int, a float, an int list, None, or a bool.
+using TestArg = std::variant<
+    std::string,
+    int64_t,
+    double,
+    std::vector<int64_t>,
+    std::monostate,
+    BoolValue>;
 
 // A one-method program assembled value by value; every node's output value
 // carries the node's name.
@@ -431,6 +441,12 @@ class TestProgram {
     }
     if (std::holds_alternative<std::monostate>(arg)) {
       return create_none_arg(builder_);
+    }
+    if (const auto* flag = std::get_if<BoolValue>(&arg)) {
+      return fbs::CreateArgument(
+          builder_,
+          fbs::ArgumentValue::BoolArg,
+          fbs::CreateBoolArgDirect(builder_, flag->value).Union());
     }
     if (const auto* list = std::get_if<std::vector<int64_t>>(&arg)) {
       return fbs::CreateArgument(
@@ -635,6 +651,77 @@ TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
                    kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
           })))));
   expect_compile_error(*context, "allow_activation_quant_for_weight_only");
+}
+
+TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const size_t cached : {size_t{0}, size_t{1}}) {
+    for (const bool transposed : {false, true}) {
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, {2, 4});
+      std::string input = "x";
+      if (transposed) {
+        program.call(
+            "xt",
+            "torch.ops.aten.permute_copy.default",
+            {{"self", input}, {"dims", std::vector<int64_t>{1, 0}}},
+            fbs::ScalarType::FLOAT,
+            {4, 2});
+        input = "xt";
+      }
+      program.call(
+          "y",
+          "torch.ops.aten.sqrt.default",
+          {{"self", input}},
+          fbs::ScalarType::FLOAT,
+          transposed ? std::vector<int64_t>{4, 2} : std::vector<int64_t>{2, 4});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, 4.0f}) {
+        const std::vector<float> x{
+            0.0f,
+            -0.0f,
+            scale * 4.0f,
+            scale * 2.0f,
+            inf,
+            -scale,
+            nan,
+            scale * 9.0f};
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(x.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          const size_t source = transposed ? (i % 2) * 4 + i / 2 : i;
+          const float expected =
+              static_cast<float>(std::sqrt(static_cast<double>(x[source])));
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i]));
+          } else {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
+  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
+    TestProgram program;
+    program.input("x", dtype, {2, 4});
+    program.call(
+        "y",
+        "torch.ops.aten.sqrt.default",
+        {{"self", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {2, 4});
+    expect_compile_error(program.finish("y"), "F32");
+  }
 }
 
 // tanh of x [4, 3], or of its transpose.
@@ -1878,6 +1965,71 @@ TEST(GgmlEngineTest, CastsInt64ToHalfAndBFloat16) {
     executable->get_output(0, y.data(), y.size(), ScalarType::Float);
     EXPECT_EQ(y, (std::vector<float>{0, 1, 2, 3, 4, 5}));
   }
+}
+
+TEST(GgmlEngineTest, SumOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  for (const Case& c :
+       {Case{{3}, true, 5, {2, 3, 4, 1}},
+        Case{{-1}, false, 5, {2, 3, 4}},
+        Case{{2, 3}, true, 20, {2, 3, 1, 1}},
+        Case{{3, -2}, false, 20, {2, 3}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.sum.dim_IntList",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t row = 0; row < y.size(); ++row) {
+          double expected = 0.0;
+          for (size_t i = 0; i < c.width; ++i) {
+            expected += x[row * c.width + i];
+          }
+          EXPECT_NEAR(y[row], expected, 1e-5) << row;
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.sum.dim_IntList",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "sum supports trailing dimensions only");
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {

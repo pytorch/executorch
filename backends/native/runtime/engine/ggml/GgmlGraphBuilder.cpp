@@ -695,6 +695,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
     lower_hardtanh(node);
+  } else if (key == "aten.sqrt.default") {
+    lower_sqrt(node);
   } else if (key == "aten.convolution.default") {
     lower_convolution(node);
   } else if (key == "aten._native_batch_norm_legit_no_training.default") {
@@ -705,6 +707,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_max_pool2d(node);
   } else if (key == "aten.mean.dim") {
     lower_mean(node);
+  } else if (key == "aten.sum.dim_IntList") {
+    lower_sum(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

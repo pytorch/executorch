@@ -443,7 +443,7 @@ class GgmlOpsTest(unittest.TestCase):
             self.assertEqual(shape, tuple(reference.shape))
             actual = torch.frombuffer(bytearray(raw), dtype=reference.dtype)
             torch.testing.assert_close(
-                actual.reshape(shape), reference, atol=atol, rtol=rtol
+                actual.reshape(shape), reference, atol=atol, rtol=rtol, equal_nan=True
             )
 
     def _run_exported(self, model, example, inputs):
@@ -668,6 +668,17 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
 
+    def test_sqrt(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        self._check(Lambda(torch.sqrt), (x,))
+        self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
+
+    def test_sqrt_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32"):
+            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
+
     def test_conv2d(self):
         self._check(
             torch.nn.Conv2d(3, 16, 3, stride=2, padding=1),
@@ -861,6 +872,12 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_mean_trailing_dims(self):
         self._check(Lambda(lambda x: x.mean(dim=(-1, -2))), (torch.randn(2, 3, 4, 5),))
+
+    def test_sum_trailing_dims(self):
+        self._check(
+            Lambda(lambda x: x.sum(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
+        )
+        self._check(Lambda(lambda x: x.sum(dim=[2, 3])), (torch.randn(2, 3, 4, 5),))
 
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)

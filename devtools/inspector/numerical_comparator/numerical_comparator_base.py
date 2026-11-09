@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 import pandas as pd
+import torch
 
 from executorch.devtools.inspector._inspector_utils import DebugHandle
 
@@ -18,6 +19,14 @@ if TYPE_CHECKING:
 # Type alias for the mapping used in preprocessing
 # Maps (aot_debug_handle, aot_output) -> (runtime_debug_handle, runtime_output)
 IntermediateOutputMapping = Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]
+
+
+def _complex_as_pairs(value: Any) -> Any:
+    # Lowering can store a complex tensor as its real and imaginary parts in a
+    # last dim of size 2, while the reference graph keeps it complex.
+    if isinstance(value, torch.Tensor) and value.is_complex():
+        return torch.view_as_real(value.resolve_conj())
+    return value
 
 
 class NumericalComparatorBase(ABC):
@@ -102,6 +111,9 @@ class NumericalComparatorBase(ABC):
         Args:
             a: The first intermediate output to compare (typically AOT output).
             b: The second intermediate output to compare (typically runtime output).
+                A complex tensor arrives as its real and imaginary parts in a
+                last dim of size 2, as torch.view_as_real gives. preprocessing()
+                and the returned DataFrame see the raw values.
 
         Returns:
             A numerical result indicating the comparison outcome (e.g., distance,
@@ -184,9 +196,12 @@ class NumericalComparatorBase(ABC):
                     f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length "
                     f"for comparison. len(a): {len(a)} len(b): {len(b)}."
                 )
-            return [self.element_compare(x, y) for x, y in zip(a, b)]
+            return [
+                self.element_compare(_complex_as_pairs(x), _complex_as_pairs(y))
+                for x, y in zip(a, b)
+            ]
         elif not is_a_sequence and not is_b_sequence:
-            return [self.element_compare(a, b)]
+            return [self.element_compare(_complex_as_pairs(a), _complex_as_pairs(b))]
         else:
             raise ValueError(
                 f"Both inputs 'a' ({a}) and 'b' ({b}) must be sequences "
