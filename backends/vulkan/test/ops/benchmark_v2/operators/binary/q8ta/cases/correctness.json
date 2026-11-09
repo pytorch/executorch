@@ -6,132 +6,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -142,132 +42,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -278,133 +78,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"],
-      "v_OTHER_SIZES": [[1, 16, 32], [1, 16, 1], [32]]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"], "v_OTHER_SIZES": [[1, 16, 32], [1, 16, 1], [32]]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": "v_OTHER_SIZES",
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": "v_OTHER_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": "v_OTHER_SIZES",
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": "v_OTHER_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -415,132 +114,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -551,132 +150,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 144],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 144], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -687,132 +186,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 90],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 90], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -823,132 +222,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 4],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 4], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -959,132 +258,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [3, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [3, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1095,132 +294,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1231,132 +330,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 32, 32],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1367,132 +366,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 24, 24],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 24, 24], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1503,132 +402,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 32, 12, 12],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 32, 12, 12], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1639,132 +438,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 1, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 1, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1775,132 +474,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -1911,132 +510,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 4, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 4, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2047,132 +546,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 20, 20],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 20, 20], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2183,132 +582,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 16, 14, 14],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 16, 14, 14], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2319,132 +618,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 28, 28],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 28, 28], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2455,132 +654,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 3, 15, 15],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 3, 15, 15], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2591,132 +690,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 13, 31, 31],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 13, 31, 31], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2727,132 +726,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 17, 23, 23],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 17, 23, 23], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2863,132 +762,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 64, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -2999,132 +798,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 32, 64, 64],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3135,132 +834,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 128, 56, 56],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 128, 56, 56], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3271,132 +870,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 128, 128, 128],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 128, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3407,132 +906,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3543,132 +942,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 1, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 1, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 1, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 60, 512],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 1, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 60, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3679,136 +978,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"],
-      "v_OTHER_SIZES": [
-        [1, 8, 1, 1],
-        [1, 1, 16, 16]
-      ]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"], "v_OTHER_SIZES": [[1, 8, 1, 1], [1, 1, 16, 16]]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": "v_OTHER_SIZES",
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": "v_OTHER_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 8, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": "v_OTHER_SIZES",
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 8, 16, 16],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 8, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": "v_OTHER_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 8, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3819,132 +1014,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [2, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [2, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [2, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [2, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [2, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [2, 8, 6, 6],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [2, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [2, 8, 6, 6], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   },
@@ -3955,132 +1050,32 @@
     "benchmark_runs": 1,
     "warmup_runs": 1,
     "max_dispatches": 200,
-    "validation_method": {
-      "function": "is_close",
-      "atol": 1.0063751008299493,
-      "rtol": 0
-    },
-    "sweep_variables": {
-      "v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]
-    },
+    "validation_method": {"function": "is_close", "atol": 1.0063751008299493, "rtol": 0},
+    "sweep_variables": {"v_LAYOUT": ["4w", "4c", "4w4c", "4h4w", "4c1w"]},
     "args_sweep": [
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 13, 7, 9],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 7, 1],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 13, 7, 9],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 13, 7, 9], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 7, 1], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 13, 7, 9], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ],
       [
-        {
-          "tensor": {
-            "name": "input",
-            "sizes": [1, 13, 7, 9],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "tensor": {
-            "name": "other",
-            "sizes": [1, 1, 7, 1],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "rand_uniform_int": [-128, 127]
-            }
-          }
-        },
-        {
-          "float": 0.007842999882996082
-        },
-        {
-          "int": 3
-        },
-        {
-          "float": 0.009411999955773354
-        },
-        {
-          "int": -2
-        },
-        {
-          "float": 0.015685999765992165
-        },
-        {
-          "int": 1
-        },
-        {
-          "float": 1.0
-        },
-        {
-          "tensor": {
-            "name": "output",
-            "sizes": [1, 13, 7, 9],
-            "dtype": "int8x4",
-            "storage": "buffer",
-            "layout": "v_LAYOUT",
-            "data": {
-              "fill": 0
-            }
-          }
-        }
+        {"tensor": {"name": "input", "sizes": [1, 13, 7, 9], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "other", "sizes": [1, 1, 7, 1], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.007842999882996082},
+        {"int": 3},
+        {"float": 0.009411999955773354},
+        {"int": -2},
+        {"float": 0.015685999765992165},
+        {"int": 1},
+        {"float": 1.0},
+        {"tensor": {"name": "output", "sizes": [1, 13, 7, 9], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
   }
