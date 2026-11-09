@@ -538,6 +538,7 @@ test_runtime_vgf() {
         vgf_zero_copy_test \
         vgf_execution_stats_enabled_test \
         vgf_execution_stats_disabled_test \
+        vgf_shared_device_test \
     --parallel
 
     # --no-tests=error is intentional: discovering zero VGF tests must fail CI.
