@@ -45,7 +45,7 @@ PackedDimInfo calculate_packed_dim_info(
       packed_dim_info = PackedDimInfo(
           /*dim=*/0,
           /*dim_block_size=*/is_buffer ? 1 : 4,
-          /*dim_align=*/is_buffer ? 1 : 4,
+          /*dim_align=*/4,
           /*outer_dim=*/1,
           /*outer_dim_block_size=*/1,
           /*outer_dim_align=*/1,
@@ -55,7 +55,7 @@ PackedDimInfo calculate_packed_dim_info(
       packed_dim_info = PackedDimInfo(
           /*dim=*/1,
           /*dim_block_size=*/is_buffer ? 1 : 4,
-          /*dim_align=*/is_buffer ? 1 : 4,
+          /*dim_align=*/4,
           /*outer_dim=*/0,
           /*outer_dim_block_size=*/1,
           /*outer_dim_align=*/1,
@@ -65,7 +65,7 @@ PackedDimInfo calculate_packed_dim_info(
       packed_dim_info = PackedDimInfo(
           /*dim=*/2,
           /*dim_block_size=*/is_buffer ? 1 : 4,
-          /*dim_align=*/is_buffer ? 1 : 4,
+          /*dim_align=*/4,
           /*outer_dim=*/0,
           /*outer_dim_block_size=*/1,
           /*outer_dim_align=*/1,
@@ -231,6 +231,36 @@ std::vector<int64_t> calculate_dim_order(
 }
 
 /*
+ * A packed dim beyond the tensor's rank is implicit. Buffers place it
+ * innermost, as textures do, so each element is followed by the packed dim's
+ * padding. Returns the implicit packed dim's padded size in blocks, which
+ * scales the strides of the logical dims, or 1 if there is no such padding.
+ */
+int64_t calculate_implicit_packed_dim_size(
+    const size_t ndim,
+    const PackedDimInfo& packed_dim_info) {
+  if (ndim == 0 || packed_dim_info.packed_dim < static_cast<int32_t>(ndim)) {
+    return 1;
+  }
+  return packed_dim_info.packed_dim_align /
+      packed_dim_info.packed_dim_block_size;
+}
+
+/*
+ * Moves an implicit packed dim to the front of a flipped (innermost first) dim
+ * order. The dim's unsqueezed entry is at its own index.
+ */
+template <typename T>
+void place_implicit_packed_dim_first(
+    std::vector<T>& flipped_dim_order,
+    const int32_t packed_dim) {
+  std::rotate(
+      flipped_dim_order.begin(),
+      flipped_dim_order.begin() + packed_dim,
+      flipped_dim_order.begin() + packed_dim + 1);
+}
+
+/*
  * Given the sizes of a tensor and the dim order of the tensor (both in NCHW
  * dimension order), calculate the strides of the tensor.
  */
@@ -267,7 +297,8 @@ std::vector<int64_t> calculate_strides(
   // We need to offset when indexing into block_sizes
   const int64_t offset = block_sizes.size() - ndim;
 
-  strides[dim_order[ndim - 1]] = 1;
+  strides[dim_order[ndim - 1]] =
+      calculate_implicit_packed_dim_size(ndim, packed_dim_info);
   for (int32_t i = ndim - 2; i >= 0; --i) {
     if (block_sizes[dim_order[i + 1] + offset] == 0) {
       strides[dim_order[i]] = strides[dim_order[i + 1]];
@@ -548,14 +579,19 @@ int32_t pack_into_int32(
 }
 
 int32_t create_hashed_layout(
+    const size_t ndim,
     const std::vector<int64_t>& dim_order,
     const std::vector<int64_t>& axis_map,
     const PackedDimInfo& packed_dim_info,
     const utils::StorageType storage_type) {
   if (storage_type == utils::kBuffer) {
-    return pack_into_int32(
-        flip_and_unsqueeze<int64_t>(dim_order, kTensorDimOrder, 0),
-        packed_dim_info);
+    std::vector<int64_t> flipped_dim_order =
+        flip_and_unsqueeze<int64_t>(dim_order, kTensorDimOrder, 0);
+    if (calculate_implicit_packed_dim_size(ndim, packed_dim_info) > 1) {
+      place_implicit_packed_dim_first(
+          flipped_dim_order, packed_dim_info.packed_dim);
+    }
+    return pack_into_int32(flipped_dim_order, packed_dim_info);
   }
   return pack_into_int32(axis_map, packed_dim_info);
 }
@@ -905,6 +941,7 @@ vTensor::vTensor(
       padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
+          sizes_.size(),
           dim_order_,
           axis_map_,
           packed_dim_info_,
@@ -979,6 +1016,7 @@ vTensor::vTensor(
       padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
+          sizes_.size(),
           dim_order_,
           axis_map_,
           packed_dim_info_,
@@ -1043,6 +1081,7 @@ vTensor::vTensor(
       padded_numel_(utils::multiply_integers(padded_sizes_)),
       physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
+          sizes_.size(),
           dim_order_,
           axis_map_,
           packed_dim_info_,
@@ -1053,11 +1092,18 @@ vTensor::vTensor(
       buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
-  uniform_data_ = std::make_shared<UniformData>(UniformData{
-      numel_, sizes_, dim_order_, strides_, other.logical_limits()});
+  if (sizes_.size() <= 4) {
+    uniform_data_ = std::make_shared<UniformData>(UniformData{
+        numel_,
+        sizes_,
+        dim_order_,
+        strides_,
+        calculate_logical_limits(storage_->image_extents_, axis_map_)});
+  }
 
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "new dim order provided is invalid");
+  check_sizes(sizes_);
 }
 
 vTensor::UniformData::UniformData(
@@ -1103,15 +1149,17 @@ vTensor::BufferMetadata::BufferMetadata(
     std::vector<int64_t>& src_sizes,
     std::vector<int64_t>& src_dim_order,
     std::vector<int64_t>& src_strides,
-    size_t src_numel) {
-  update(src_sizes, src_dim_order, src_strides, src_numel);
+    size_t src_numel,
+    const PackedDimInfo& packed_dim_info) {
+  update(src_sizes, src_dim_order, src_strides, src_numel, packed_dim_info);
 }
 
 void vTensor::BufferMetadata::update(
     std::vector<int64_t>& src_sizes,
     std::vector<int64_t>& src_dim_order,
     std::vector<int64_t>& src_strides,
-    size_t src_numel) {
+    size_t src_numel,
+    const PackedDimInfo& packed_dim_info) {
   int32_t fixed_ndim = utils::safe_downcast<int32_t>(kTensorDimLimit);
 
   std::vector<uint32_t> fu_sizes = flip_and_unsqueeze<uint32_t>(
@@ -1120,6 +1168,11 @@ void vTensor::BufferMetadata::update(
       src_dim_order, kTensorDimOrder, src_numel, fixed_ndim);
   std::vector<uint32_t> fu_strides = flip_and_unsqueeze<uint32_t>(
       src_strides, kTensorStrides, src_numel, fixed_ndim);
+  if (calculate_implicit_packed_dim_size(src_sizes.size(), packed_dim_info) >
+      1) {
+    place_implicit_packed_dim_first(fu_dim_order, packed_dim_info.packed_dim);
+    fu_strides.at(packed_dim_info.packed_dim) = 1;
+  }
 
   for (int i = 0; i < fixed_ndim; ++i) {
     sizes[i] = fu_sizes.at(i);
@@ -1247,7 +1300,8 @@ utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
 }
 
 bool vTensor::is_contiguous() const {
-  if (storage_type() != utils::kBuffer) {
+  if (storage_type() != utils::kBuffer ||
+      calculate_implicit_packed_dim_size(sizes_.size(), packed_dim_info_) > 1) {
     return false;
   }
   for (size_t i = 0; i < dim_order_.size(); ++i) {
@@ -1300,7 +1354,8 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
 const vkapi::BufferBindInfo vTensor::buffer_meta_ubo() {
   size_t ubo_nbytes = sizeof(BufferMetadata);
   if (!buffer_meta_.buffer()) {
-    BufferMetadata data(sizes_, dim_order_, strides_, padded_numel_);
+    BufferMetadata data(
+        sizes_, dim_order_, strides_, padded_numel_, packed_dim_info_);
     buffer_meta_ = ParamsBuffer(storage_->context_, data);
   }
   return vkapi::BufferBindInfo(buffer_meta_.buffer(), 0, ubo_nbytes);
@@ -1399,7 +1454,8 @@ void vTensor::update_metadata() {
   }
 
   if (buffer_meta_.buffer()) {
-    BufferMetadata data(sizes_, dim_order_, strides_, padded_numel_);
+    BufferMetadata data(
+        sizes_, dim_order_, strides_, padded_numel_, packed_dim_info_);
     buffer_meta_.update(data);
   }
 
@@ -1411,11 +1467,12 @@ void vTensor::update_metadata() {
 }
 
 void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
+  const auto padded_sizes = calculate_padded_sizes(sizes, packed_dim_info_);
   if (storage_type() != utils::kBuffer) {
     // For texture storage check that the current texture is large enough for
     // the new sizes of the tensor.
     utils::uvec3 virtual_extents = calculate_image_extents(
-        dtype_, packed_dim_info_, padded_sizes_, axis_map_);
+        dtype_, packed_dim_info_, padded_sizes, axis_map_);
 
     bool valid_resize = virtual_extents[0] <= storage_->image_extents_[0];
     valid_resize =
@@ -1429,8 +1486,7 @@ void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
   } else {
     // For buffer storage check that the current buffer is large enough for
     // the new sizes of the tensor.
-    int64_t gpu_buffer_numel =
-        calculate_gpu_buffer_numel(dtype_, padded_sizes_);
+    int64_t gpu_buffer_numel = calculate_gpu_buffer_numel(dtype_, padded_sizes);
     bool valid_resize =
         gpu_buffer_numel + storage_->buffer_offset_ <= storage_->buffer_length_;
     VK_CHECK_COND(
@@ -1455,7 +1511,7 @@ void vTensor::virtual_reconfigure(
 
   // Update the hashed layout because dim order is updated
   hashed_layout_ = create_hashed_layout(
-      dim_order_, axis_map_, packed_dim_info_, storage_type());
+      sizes_.size(), dim_order_, axis_map_, packed_dim_info_, storage_type());
 
   update_metadata();
 }
@@ -1550,7 +1606,7 @@ void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
 
   // Update the hashed layout because dim order / axis map is updated
   hashed_layout_ = create_hashed_layout(
-      dim_order_, axis_map_, packed_dim_info_, storage_type());
+      sizes_.size(), dim_order_, axis_map_, packed_dim_info_, storage_type());
 
   // Recalculate padded_sizes_ based on the new sizes and updated
   // packed_dim_info

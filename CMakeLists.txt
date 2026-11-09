@@ -822,6 +822,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
 if(EXECUTORCH_BUILD_VULKAN
    OR EXECUTORCH_BUILD_VGF
    OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_WEBGPU
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
 endif()

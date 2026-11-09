@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
-load("@fbsource//xplat/executorch/build:build_variables.bzl", "XNNPACK_BACKEND_BUCK_SRCS")
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "XNNPACK_BACKEND_BUCK_SRCS", "XNNPACK_PROFILER_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _get_preprocessor_flags():
@@ -36,20 +36,35 @@ def define_common_targets():
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
+            name = "xnnpack_profiler" + aten_suffix,
+            srcs = XNNPACK_PROFILER_BUCK_SRCS,
+            exported_headers = ["runtime/profiling/XNNProfiler.h"],
+            visibility = ["PUBLIC"],
+            # Exported because XNNProfiler's layout depends on it.
+            exported_preprocessor_flags = [
+                # Uncomment to enable per operator timings
+                # "-DENABLE_XNNPACK_PROFILING",
+            ],
+            exported_deps = [
+                third_party_dep("XNNPACK"),
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "xnnpack_backend" + aten_suffix,
             srcs = XNNPACK_BACKEND_BUCK_SRCS,
             headers = native.glob([
                 "runtime/*.h",
-                "runtime/profiling/*.h",
             ]),
             visibility = ["PUBLIC"],
             preprocessor_flags = [
-                # Uncomment to enable per operator timings
-                # "-DENABLE_XNNPACK_PROFILING",
                 # Uncomment to enable using KleidiAI Kernels
                 # "-DENABLE_XNNPACK_KLEIDI"
             ] + _get_preprocessor_flags(),
             exported_deps = [
+                ":xnnpack_profiler" + aten_suffix,
                 "//executorch/runtime/backend:interface" + aten_suffix,
             ],
             exported_headers = [

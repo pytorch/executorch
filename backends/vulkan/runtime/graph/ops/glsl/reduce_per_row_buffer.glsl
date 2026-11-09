@@ -59,17 +59,15 @@ $if OUTPUT_IS_INDICES:
   #define OUTPUT_IS_INDICES
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.y;
-
-  if (out_of_bounds(out_bufi, outp)) {
-    return;
-  }
+  const uint out_idx = gl_GlobalInvocationID.y;
+  const TensorIndex out_tidx = contiguous_idx_to_tensor_idx(outp, out_idx);
+  const uint out_bufi = tensor_idx_to_linear_idx(outp, out_tidx);
 
   // Local indices
   const uint worker_id = gl_LocalInvocationID.x;
   const uint output_id = gl_LocalInvocationID.y;
 
-  const uint in_bufi_base = out_bufi * width(inp);
+  const uint in_bufi_base = out_idx * stride_at(inp, 1);
 
   Accum local_accum;
   // Initialize accumulator with the first element being processed

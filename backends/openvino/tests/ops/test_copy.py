@@ -56,9 +56,6 @@ class TestCopyOperator(BaseOpenvinoOpTest):
         self.execute_layer_test(ChannelsLastMean(), (torch.randn(2, 3, 4, 5),))
 
     def test_copy_of_constant_as_output(self):
-        if not self.device.startswith("CPU"):
-            self.skipTest("float copies stay only in float32, the CPU default")
-
         class CopyOfConstant(torch.nn.Module):
             def __init__(self, kind, memory_format=None, dtype=torch.float32):
                 super().__init__()
@@ -112,8 +109,14 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             torch.bfloat16,
         ):
             cases[f"{dtype} buffer"] = (CopyOfConstant("buffer", dtype=dtype), None)
+        on_cpu = self.device.startswith("CPU")
         for name, (module, config, *compile_specs) in cases.items():
             with self.subTest(case=name):
+                if module.constant.is_floating_point() and not on_cpu:
+                    # Off the CPU, a float copy stays only when f32 is set.
+                    if self.device.startswith("NPU"):
+                        self.skipTest("the NPU does not accept f32")
+                    compile_specs.append(CompileSpec("inference_precision", b"f32"))
                 inputs = (torch.randn(2, 3, 4, 5),)
                 program = self.execute_layer_test(
                     module,
