@@ -440,9 +440,9 @@ class ComputeGraph final {
   bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
 
   /*
-   * Checks that the value at `idx` is either a 2D tensor, or if the tensor has
-   * more than 2 dims, the outermost dims have size of 1, i.e. can be squeezed
-   * to be a 2D tensor.
+   * Checks that the value at `idx` is a 1D tensor (a single row), a 2D tensor,
+   * or a tensor whose outermost dims have size of 1, i.e. can be squeezed to
+   * be a 2D tensor.
    */
   bool is_2d_matrix(const ValueRef idx) const;
 
@@ -1047,8 +1047,11 @@ class ComputeGraph final {
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * Buffer tensors use linear dispatch intent. Oversized X dimensions are
-   * wrapped across X and Y according to device workgroup-count limits.
+   * Ordinary buffers use one invocation per physical scalar. Packed int8
+   * tensors retain logical-element dispatch because their kernels map groups
+   * of four logical bytes to each int32 storage element. Buffer dispatch uses
+   * linear intent; oversized X dimensions wrap across X and Y according to
+   * device workgroup-count limits.
    */
   GlobalWorkGrid create_gwg(const ValueRef idx);
 

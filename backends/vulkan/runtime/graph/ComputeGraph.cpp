@@ -426,10 +426,10 @@ bool ComputeGraph::is_standard_channels_packed_texture_tensor(
 bool ComputeGraph::is_2d_matrix(const ValueRef idx) const {
   std::vector<int64_t> sizes = sizes_of(idx);
   const size_t ndim = sizes.size();
-  if (sizes.size() < 2) {
+  if (ndim == 0) {
     return false;
   }
-  if (sizes.size() == 2) {
+  if (ndim <= 2) {
     return true;
   }
 
@@ -921,7 +921,10 @@ void ComputeGraph::register_pipeline_to_create(
 
 GlobalWorkGrid ComputeGraph::create_gwg(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return create_linear_gwg(utils::safe_downcast<uint64_t>(numel_of(idx)));
+    const uint64_t numel = dtype_of(idx) == vkapi::kInt8x4
+        ? utils::safe_downcast<uint64_t>(numel_of(idx))
+        : utils::safe_downcast<uint64_t>(physical_numel_of(idx));
+    return create_linear_gwg(numel);
   }
 
   return GlobalWorkGrid(
