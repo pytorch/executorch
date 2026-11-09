@@ -3016,6 +3016,7 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch_backend_mlx",
         "libexecutorch_backend_openvino",
         "libexecutorch_backend_qnn",
+        "libexecutorch_vulkan_shared_runtime",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
     )
