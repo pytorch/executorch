@@ -1732,14 +1732,21 @@ Error Method::execute_instruction() {
         // checked at init time.
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
         ET_UNUSED auto op = serialization_plan_->operators()->Get(op_index);
+        const char* const op_name =
+            (op != nullptr && op->name() != nullptr) ? op->name()->c_str() : "unknown";
+        const bool has_overload =
+            op != nullptr && op->overload() != nullptr && op->overload()->size() > 0;
+        const char* const op_overload =
+            has_overload ? op->overload()->c_str() : "";
         ET_LOG(
             Error,
             "KernelCall failed at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
-            " in operator %s.%s: 0x%x",
+            " in operator %s%s%s: 0x%x",
             step_state_.chain_idx,
             step_state_.instr_idx,
-            op->name()->c_str(),
-            op->overload()->c_str(),
+            op_name,
+            has_overload ? "." : "",
+            op_overload,
             (unsigned int)err);
         for (size_t i = 0; i < args.size(); ++i) {
           ET_LOG(

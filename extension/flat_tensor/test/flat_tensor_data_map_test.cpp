@@ -134,6 +134,9 @@ TEST_F(FlatTensorDataMapTest, GetKeys) {
   // Check get_key fails when out of bounds.
   Result<const char*> key2_res = data_map->get_key(2);
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
+  EXPECT_EQ(
+      data_map->get_key(std::numeric_limits<uint32_t>::max()).error(),
+      Error::InvalidArgument);
 }
 
 TEST_F(FlatTensorDataMapTest, LoadInto) {

@@ -63,12 +63,16 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
     return Error::InvalidExternalData;
   }
   for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
-    if (key.size() == named_data->Get(i)->key()->size() &&
+    const auto* entry = named_data->Get(i);
+    if (entry == nullptr || entry->key() == nullptr) {
+      continue;
+    }
+    if (key.size() == entry->key()->size() &&
         std::strncmp(
-            named_data->Get(i)->key()->c_str(),
+            entry->key()->c_str(),
             key.data(),
-            named_data->Get(i)->key()->size()) == 0) {
-      const auto* found = named_data->Get(i);
+            entry->key()->size()) == 0) {
+      const auto* found = entry;
       // Validate the named_data.
       const flatbuffers::uoffset_t segment_index = found->segment_index();
       ET_CHECK_OR_RETURN_ERROR(
@@ -249,19 +253,37 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
 }
 
 ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
+  if (flat_tensor_ == nullptr || flat_tensor_->named_data() == nullptr) {
+    return 0;
+  }
   return flat_tensor_->named_data()->size();
 }
 
 ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
     uint32_t index) const {
-  uint32_t num_keys = get_num_keys().get();
+  Result<uint32_t> num_keys_res = get_num_keys();
+  if (!num_keys_res.ok()) {
+    return num_keys_res.error();
+  }
+  uint32_t num_keys = num_keys_res.get();
   ET_CHECK_OR_RETURN_ERROR(
       index < num_keys,
       InvalidArgument,
       "Index %" PRIu32 " out of range of size %" PRIu32,
       index,
       num_keys);
-  return flat_tensor_->named_data()->Get(index)->key()->c_str();
+  const auto* named_data = flat_tensor_->named_data();
+  ET_CHECK_OR_RETURN_ERROR(
+      named_data != nullptr,
+      InvalidExternalData,
+      "Named data is null");
+  const auto* entry = named_data->Get(index);
+  ET_CHECK_OR_RETURN_ERROR(
+      entry != nullptr && entry->key() != nullptr,
+      InvalidExternalData,
+      "Named data entry or key at index %u is null",
+      index);
+  return entry->key()->c_str();
 }
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
