@@ -33,6 +33,7 @@ on:
       - backends/vulkan_shared/runtime/**
       - backends/xnnpack/CMakeLists.txt
       - backends/xnnpack/cmake/**
+      - backends/xnnpack/runtime/profiling/**
       - backends/xnnpack/third-party/FXdiv
       - backends/xnnpack/third-party/XNNPACK
       - backends/xnnpack/third-party/cpuinfo
@@ -40,6 +41,7 @@ on:
       - examples/models/llama/tokenizer/**
       - extension/llm/tokenizers
       - extension/llm/export/**
+      - devtools/etdump/**
       - exir/**
       - configurations/**
       - extension/memory_allocator/**
