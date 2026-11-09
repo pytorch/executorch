@@ -12,16 +12,14 @@ scalar_tensor:
     PACKING: C_packed
     STORAGE: texture3d
   generate_variant_forall:
-    DTYPE:
-      - VALUE: half
-      - VALUE: float
-      - VALUE: int32
-    STORAGE:
-      - VALUE: texture3d
-      - VALUE: buffer
-    SCALAR_VALUE_TYPE:
-      - VALUE: float
-      - VALUE: int32
-      - VALUE: bool
+    combination:
+      parameter_names: [DTYPE, STORAGE, SCALAR_VALUE_TYPE]
+      combos:
+        - parameter_values: [half, texture3d, float]
+        - parameter_values: [half, buffer, float]
+        - parameter_values: [float, texture3d, float]
+        - parameter_values: [float, buffer, float]
+        - parameter_values: [int32, texture3d, int32]
+        - parameter_values: [int32, buffer, int32]
   shader_variants:
     - NAME: scalar_tensor

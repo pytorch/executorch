@@ -28,7 +28,7 @@ class ToCopyVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         memory_format_target = node.kwargs.get("memory_format", torch.contiguous_format)
         to_contiguous = bool(memory_format_target == torch.contiguous_format)
         assert to_contiguous, "Don't support other param in _to_copy"
@@ -42,3 +42,5 @@ class ToCopyVisitor(NodeVisitor):
         params["out_dtype"] = get_map_dtype(out_tensor.dtype)
 
         enn_graph.define_op(node.name, "CAST", [input_id], [output_id], params)
+
+        return True

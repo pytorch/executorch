@@ -45,6 +45,8 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":runner_utils",
         "//executorch/backends/arm/tosa:tosa",
+        "//executorch/backends/arm:vgf",
+        "fbsource//third-party/pypi/packaging:packaging",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
@@ -70,6 +72,10 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/arm:vgf",
         "//executorch/backends/arm:_factory",
         "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/devtools/pte_tool:diff_pte_lib",
+        "//executorch/exir:scalar_type",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
     ]
@@ -98,3 +104,12 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = define_arm_tests,)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "model_converter_resource",
+    base_module = "executorch.backends.arm.vgf",
+    resources = {
+        "fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.11.0:model-converter-bin": "_model_converter_binary",
+    },
+)

@@ -6,15 +6,17 @@ on:
     branches:
       - main
       - release/*
-    tags:
-      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' && github.run_id }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   # Emits the list of changed files for the current PR or push commit.
   # On PR: PR diff. On push: diff against `github.event.before`.
   # On events without a diff base (workflow_dispatch, tag creation,
@@ -35,18 +37,28 @@ jobs:
     uses: ./.github/workflows/_ci-run-decision.yml
 
   test-qnn-wheel-packages-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-wheel-packages-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.10", "3.11", "3.12", "3.13" ]
+        python-version: [ "3.11", "3.12", "3.13" ]
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -71,7 +83,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
       contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
-      contains(needs.changed-files.outputs.changed-files, 'schema/')
+      contains(needs.changed-files.outputs.changed-files, 'schema/') ||
+      contains(needs.changed-files.outputs.changed-files, 'version.txt')
     name: test-arduino-library
     uses: ./.github/workflows/_test_arduino_library.yml
     permissions:
@@ -79,7 +92,7 @@ jobs:
       contents: read
 
   test-minimal-wheel-linux:
-    needs: changed-files
+    needs: [docker-image, changed-files]
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_minimal_wheel.sh') ||
@@ -92,13 +105,13 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-minimal-wheel-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -109,16 +122,17 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_minimal_wheel.sh
 
   test-setup-linux-gcc:
+    needs: docker-image
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -133,9 +147,96 @@ jobs:
         # Build and test ExecuTorch with the add model on portable backend.
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
+  test-pybindings-no-aten:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings/') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
+    name: test-pybindings-no-aten
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        ./install_executorch.sh
+
+        cmake -S . -B cmake-out-no-aten \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_PYBIND=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+          -DPYTHON_EXECUTABLE="$(which python)"
+        cmake --build cmake-out-no-aten --target portable_lib -j "$(nproc)"
+
+        python -m examples.portable.scripts.export \
+          --model_name=add \
+          --output_dir=cmake-out-no-aten
+        python - <<'PY'
+        from pathlib import Path
+
+        from executorch.extension.pybindings.test.make_test import (
+            create_program,
+            ModuleAddBFloat16,
+            ModuleAddBFloat16ToChannelsLast,
+        )
+
+        program, _ = create_program(ModuleAddBFloat16())
+        Path("cmake-out-no-aten/add_bfloat16.pte").write_bytes(bytes(program.buffer))
+        program, _ = create_program(ModuleAddBFloat16ToChannelsLast())
+        Path("cmake-out-no-aten/add_bfloat16_channels_last.pte").write_bytes(
+            bytes(program.buffer)
+        )
+        PY
+        EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py \
+            PybindingsNoAtenTest.test_z_torch_tensor_uses_python_api
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
+          EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py \
+            PybindingsNoAtenTest.test_executorch_output_is_sticky_after_torch_import
+        python -m pip uninstall -y torch torchvision torchaudio
+        EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE=cmake-out-no-aten/add_bfloat16.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py \
+            PybindingsNoAtenTest.test_output_policy_without_torch
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
+          EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE=cmake-out-no-aten/add_bfloat16.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py
+        NO_ATEN_LINKS="$(ldd cmake-out-no-aten/_C*.so)"
+        printf '%s\n' "$NO_ATEN_LINKS"
+        if grep -q 'not found' <<<"$NO_ATEN_LINKS"; then
+          echo "torch-free pybindings have a missing runtime dependency"
+          exit 1
+        fi
+        if grep -Eiq '^[[:space:]]*(lib(torch|aten|c10)[^[:space:]/]*\.so|[^[:space:]]*/lib(torch|aten|c10)[^[:space:]/]*\.so)' <<<"$NO_ATEN_LINKS"; then
+          echo "torch-free pybindings unexpectedly link against ATen"
+          exit 1
+        fi
+
   test-models-linux-basic:
+    needs: docker-image
     name: test-models-linux-basic
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -144,23 +245,23 @@ jobs:
         model: [mv3, vit]
         backend: [portable, xnnpack-quantization-delegation]
         build-tool: [cmake, buck2]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        #   - Excluding the ARM64 gcc image on the x86 runner
+        #   - Excluding the x86 clang image on the ARM64 runner
         exclude:
-          - runner: linux.2xlarge
+          - runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
+          - runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-clang12
           # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: linux.arm64.2xlarge
+          - runner: mt-l-arm64g4-16-62
             build-tool: buck2
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -178,8 +279,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-models-linux:
+    needs: docker-image
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -187,33 +289,33 @@ jobs:
       matrix:
         model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
         backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.2xlarge]
+        runner: [mt-l-x86iavx512-8-64]
         include:
           - model: ic4
             backend: portable
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: ic4
             backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: emformer_join
             backend: portable
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: emformer_join
             backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: phi_4_mini
             backend: portable
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: llama3_2_vision_encoder
             backend: portable
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
           - model: w2l
             backend: portable
-            runner: linux.4xlarge.memory
+            runner: mt-l-x86iavx512-16-128
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -231,16 +333,17 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-parakeet-xnnpack-linux:
+    needs: docker-image
     name: test-parakeet-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-16-128
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -264,16 +367,17 @@ jobs:
         echo "::endgroup::"
 
   test-voxtral-realtime-xnnpack-linux:
+    needs: docker-image
     name: test-voxtral-realtime-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-16-128
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -300,9 +404,10 @@ jobs:
         echo "::endgroup::"
 
   test-llama-runner-linux:
+    needs: docker-image
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -310,25 +415,25 @@ jobs:
       matrix:
         dtype: [fp32]
         mode: [xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         include:
           - dtype: bf16
             mode: custom
-            runner: linux.2xlarge
+            runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-clang12
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        #   - Excluding the ARM64 gcc image on the x86 runner
+        #   - Excluding the x86 clang image on the ARM64 runner
         exclude:
-          - runner: linux.2xlarge
+          - runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
+          - runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -351,16 +456,17 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-linux-android:
+    needs: docker-image
     name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -376,16 +482,17 @@ jobs:
         bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
 
   test-custom-ops-linux:
+    needs: docker-image
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -400,16 +507,17 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
   test-selective-build-linux:
+    needs: docker-image
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -424,9 +532,10 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-multimodal-linux:
+    needs: docker-image
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-multimodal-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -437,8 +546,8 @@ jobs:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.24xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-94-768
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -463,16 +572,17 @@ jobs:
         echo "::endgroup::"
 
   test-moshi-linux:
+    needs: docker-image
     name: test-moshi-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -495,16 +605,17 @@ jobs:
         python -m unittest examples.models.moshi.mimi.test_mimi
 
   test-quantized-aot-lib-linux:
+    needs: docker-image
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -518,16 +629,17 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
 
   test-binary-size-linux-gcc:
+    needs: docker-image
     name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9-nopytorch
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc9-nopytorch-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -561,16 +673,17 @@ jobs:
         fi
 
   test-binary-size-linux:
+    needs: docker-image
     name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -605,8 +718,9 @@ jobs:
         fi
 
   test-arm-cortex-m-size-test:
+    needs: docker-image
     name: test-arm-cortex-m-size-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -615,8 +729,8 @@ jobs:
         os: [bare_metal, zephyr-preset]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -629,13 +743,14 @@ jobs:
         cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          setup_script_args="--fvp corstone300"
           toolchain_prefix=arm-none-eabi-
-          threshold="118000" # GCC 15.2 baseline: 115868 bytes, 2026-05-13
+          threshold="35000" # GCC 15.2, minimal PAL + nano baseline: 32180 bytes, 2026-10-28
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
-          setup_script_args="--target-toolchain zephyr"
+          setup_script_args="--target-toolchain zephyr --disable-fvps"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="136020" # 136 KiB
+          threshold="50000" # Zephyr SDK 1.0.1, minimal PAL baseline: 46112 bytes, 2026-10-28
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Unsupported OS selection: ${{ matrix.os }}"
@@ -653,11 +768,17 @@ jobs:
         # Setup cmake target to desired toolchain
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
-        # Build and run size test
+        # Measure the embedded runtime with minimal PAL.
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
-          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+          # Use nano libc and libstdc++ without exception support.
+          bash test/build_size_test.sh \
+            "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}" \
+            -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+            -DEXECUTORCH_PAL_DEFAULT=minimal \
+            -DCMAKE_C_FLAGS_INIT=--specs=nano.specs \
+            -DCMAKE_CXX_FLAGS_INIT=--specs=nano.specs
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
-          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_PAL_DEFAULT=minimal -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
           CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_SIZE_TEST_NO_OS_LINK=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
@@ -697,15 +818,28 @@ jobs:
           exit 1
         fi
 
+        # Run a minimal image on the FVP to check the build actually executes
+        if [[ ${{ matrix.os }} == "bare_metal" ]]; then
+          backends/arm/test/test_arm_backend.sh test_minimal_classic_ml_cortex_m55
+        fi
+
   test-mcu-cortex-m-backend:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-mcu-cortex-m-backend
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -718,17 +852,41 @@ jobs:
         install_executorch "--use-pt-pinned-commit"
 
         # Install arm dependencies
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --fvp corstone300
         source examples/arm/arm-scratch/setup_path.sh
 
         # To build cortex-m test runner
         backends/cortex_m/test/build_test_runner.sh
 
         # To run cortex_m tests
-        pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
+        pytest -c backends/arm/test/pytest.ini backends/cortex_m/test
 
   android:
     uses: ./.github/workflows/_android.yml
+    permissions:
+      id-token: write
+      contents: read
+
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      github.event_name == 'pull_request' && (
+        contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_ci-run-decision.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
+    uses: ./.github/workflows/_llm_server.yml
     permissions:
       id-token: write
       contents: read
@@ -743,7 +901,27 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  # The editable install exercises the same unit tests as `unittest`; what it
+  # adds is coverage of the editable install path. Run it on PRs that touch
+  # Python packaging or the unittest/setup scripts, and on every push to main.
   unittest-editable:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_unittest.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'requirements-') ||
+      contains(needs.changed-files.outputs.changed-files, 'src/executorch') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/unittest-') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-linux.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh')
     uses: ./.github/workflows/_unittest.yml
     permissions:
       id-token: write
@@ -765,16 +943,26 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-qnn-buck-build-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-buck-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -798,9 +986,76 @@ jobs:
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
 
+  test-arm-backend-docgen:
+    needs: [docker-image, changed-files]
+    if: |
+      needs.changed-files.outputs.changed-files == '*' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm/') ||
+      contains(needs.changed-files.outputs.changed-files, 'docs/source/backends/arm-ethos-u/') ||
+      contains(needs.changed-files.outputs.changed-files, 'docs/source/backends/arm-vgf/') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/backend/partitioner.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
+    name: test-arm-backend-docgen
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -e
+
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
+
+        docgen_outputs=(
+          docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md
+          docs/source/backends/arm-ethos-u/arm-ethos-u-partitioner.md
+          docs/source/backends/arm-ethos-u/arm-ethos-u-quantization.md
+          docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md
+          docs/source/backends/arm-vgf/arm-vgf-overview.md
+          docs/source/backends/arm-vgf/arm-vgf-partitioner.md
+          docs/source/backends/arm-vgf/arm-vgf-quantization.md
+          docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md
+        )
+
+        python backends/arm/scripts/docgen/docgen.py
+        if [[ -n "$(git status --porcelain -- "${docgen_outputs[@]}")" ]]; then
+          git diff HEAD -- "${docgen_outputs[@]}"
+          git status --short -- "${docgen_outputs[@]}"
+          echo "::error::Arm documentation is outdated. Run docgen.py and commit the generated changes."
+          exit 1
+        fi
+
   test-arm-backend-no-driver:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-no-driver
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -813,8 +1068,8 @@ jobs:
           - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -828,20 +1083,89 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
+        if [[ "${{ matrix.test_arm_backend }}" == "test_pytest_ops_no_target" ]]; then
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all --check || exit 1
+
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all || exit 1
+
+          git diff --exit-code -- \
+            docs/source/backends/arm-vgf/VGF_op_support.md \
+            docs/source/backends/arm-ethos-u/U55_op_support.md \
+            docs/source/backends/arm-ethos-u/U85_op_support.md || {
+              echo "::error::Operator support documentation is outdated. Regenerate it and commit the changes."
+              exit 1
+            }
+        fi
+
         ARM_TEST=${{ matrix.test_arm_backend }}
 
         # Test test_arm_backend.sh with test
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
+  test-arm-backend-vkml:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
+    name: test-arm-backend-vkml
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_runtime_vgf
+      fail-fast: false
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh \
+          --disable-ethos-u-deps \
+          --enable-mlsdk-deps \
+          --install-mlsdk-deps-with-pip
+
+        ARM_TEST=${{ matrix.test_arm_backend }}
+
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
+
   test-arm-backend-public-api-backward-compatibility:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-public-api-backward-compatibility
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -853,7 +1177,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-fvps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
         source examples/arm/arm-scratch/setup_path.sh
 
         backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh
@@ -861,8 +1185,20 @@ jobs:
         python backends/arm/test/public_api_bc/run_public_api_bc_scenarios.py
 
   test-llama-runner-qnn-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -873,8 +1209,8 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -900,8 +1236,20 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
   test-static-llama-qnn-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-static-llama-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -910,8 +1258,8 @@ jobs:
         task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -934,8 +1282,20 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-sqnr-static-llm-qnn-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-sqnr-static-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -944,8 +1304,8 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -968,8 +1328,18 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }} sqnr
 
   test-qnn-models-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -978,8 +1348,8 @@ jobs:
         model: [mv2, mv3, dl3]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -993,14 +1363,24 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-qnn-direct-build-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-direct-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 30
@@ -1012,6 +1392,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-direct-sdk.sh
 
   test-qnn-testsuite-linux:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/harness') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh')
     name: test-qnn-testsuite-linux
     permissions:
       id-token: write
@@ -1023,19 +1412,32 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.2xlarge
+      # No runner-linux, so this takes _test_backend.yml's default. The suite
+      # runs one export worker per core, so what matters is memory per core:
+      # the instance this used to run on gave each worker about 4 GiB and the
+      # job was killed. The default label is a little under 8 GiB per core.
 
   test-qnn-passes-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-passes-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 30
@@ -1056,6 +1458,10 @@ jobs:
         # test_mha_to_sha imports oss_scripts/llama which transitively needs torchtune
         pip install -r requirements-examples.txt
 
+        # The QNN manager loads the SDK libraries by name. Without this, every test
+        # that needs the real backend fails.
+        export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
 
@@ -1064,16 +1470,30 @@ jobs:
         pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-delegate-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      # Intel, unlike the avx512 labels: those are r7a, i.e. AMD EPYC, and the
+      # QNN backend disables MKLDNN on an AMD host through a non-bracketed
+      # torch.backends mutation that raises once the tests have frozen the
+      # flags. Same 8 vCPU / 64Gi, on r7i.
+      runner: mt-l-x86iamx-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1097,21 +1517,29 @@ jobs:
         export QNN_DELEGATE_TEST=1
         export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$(realpath build-x86/lib/):${LD_LIBRARY_PATH:-}"
 
-        # Run operator test classes only.
+        # Run operator and FCB test classes only.
         pytest -vs backends/qualcomm/tests/test_qnn_delegate.py \
-            -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator"
+            -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator or TestQNNFcb"
 
   test-phi-3-mini-runner-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/phi-3-mini') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_phi_3_mini.sh')
     name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-32-256
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1132,19 +1560,29 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
 
   test-qnn-python-imports-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-python-imports-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 15
+      timeout: 30
       script: |
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -1180,16 +1618,24 @@ jobs:
           --module-prefix executorch.examples.qualcomm
 
   test-eval_llama-wikitext-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_eval_llama_wikitext.sh')
     name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-32-256
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1209,14 +1655,14 @@ jobs:
   # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
   # test-eval_llama-mmlu-linux:
   #   name: test-eval_llama-mmlu-linux
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
   #   permissions:
   #     id-token: write
   #     contents: read
   #   strategy:
   #     fail-fast: false
   #   with:
-  #     runner: linux.24xlarge
+  #     runner: mt-l-x86iavx512-94-192
   #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
   #     submodules: 'recursive'
   #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1235,16 +1681,24 @@ jobs:
   #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
 
   test-llama_runner_eager-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama_runner_eager.sh')
     name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-32-256
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1262,16 +1716,29 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
   test-lora-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/named_data_map') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/module') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora_multimethod.sh')
     name: test-lora-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-32-256
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1289,16 +1756,29 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora.sh
 
   test-lora-multimethod-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/named_data_map') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/module') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora_multimethod.sh')
     name: test-lora-multimethod-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-32-256
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1316,16 +1796,19 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora_multimethod.sh
 
   test-mediatek-models-linux:
+    # NeuroPilot's converter requires Python 3.10; re-enable with a Python 3.11+ SDK.
+    if: ${{ false }}
+    needs: docker-image
     name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-mediatek-sdk
+      runner: mt-l-x86iavx512-94-192
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-mediatek-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1343,16 +1826,24 @@ jobs:
         # placeholder for mediatek to add more tests
 
   test-openvino-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/openvino') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/openvino') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-openvino.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_openvino.sh')
     name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1365,16 +1856,25 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
 
   test-build-wasm-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'scripts/build_wasm_tests.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-emscripten.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-build-wasm-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1392,9 +1892,22 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
 
+        # Build the WebGPU configuration of the Wasm bindings. Build only:
+        # running a delegated model needs a browser with WebGPU.
+        PYTHON_EXECUTABLE=python bash scripts/build_wasm_tests.sh --webgpu
+
   unittest-wasm-bindings:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'scripts/build_wasm_tests.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-emscripten.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: unittest-wasm-bindings
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -1403,8 +1916,8 @@ jobs:
         enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1439,13 +1952,20 @@ jobs:
         pnpm test
 
   unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 150
@@ -1473,7 +1993,6 @@ jobs:
 
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
@@ -1482,93 +2001,21 @@ jobs:
         PYTHON_EXECUTABLE=python NXP_RUNNER_PATH="./examples/nxp/executor_runner/build/nxp_executor_runner" \
         bash backends/nxp/run_unittests.sh
 
-  test-samsung-quantmodels-linux:
-    name: test-samsung-quantmodels-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    secrets: inherit
-    with:
-      secrets-env: SAMSUNG_AI_LITECORE_KEY
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 180
-      script: |
-        set -ex
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Setup python
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # Setup Samsung SDK (AI Lite Core) and install enn backend
-        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
-
-        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
-        source .ci/scripts/setup-samsung-linux-deps.sh --skip-device-connect
-
-        # Test quant models
-        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
-        for m_script in $model_scripts; do
-          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
-        done
-
-  test-samsung-models-linux:
-    name: test-samsung-models-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    secrets: inherit
-    with:
-      secrets-env: SAMSUNG_AI_LITECORE_KEY
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 360
-      script: |
-        set -ex
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Setup python
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # Setup Samsung SDK (AI Lite Core) and install enn backend
-        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
-        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
-        source .ci/scripts/setup-samsung-linux-deps.sh
-
-        # Check if device was reserved
-        if [[ "${DEVICE_ACQUIRED:-0}" != "1" ]]; then
-          echo "::warning::Skipping tests - no Samsung device available"
-          exit 0
-        fi
-
-        # Test models
-        python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
-
   test-vulkan-models-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh')
     name: test-vulkan-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1602,14 +2049,20 @@ jobs:
         done
 
   test-vulkan-operators-linux:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh')
     name: test-vulkan-operators-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1629,14 +2082,13 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh test_add
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
-        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
+        for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+            --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
+        done
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
@@ -1649,6 +2101,8 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
   test-coreml-bc-macos:
     needs: [changed-files, run-decision]
@@ -1694,14 +2148,21 @@ jobs:
         echo "::endgroup::"
 
   nxp-build-test:
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
     name: nxp-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1711,7 +2172,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # Build
-        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_EXTERNAL_MEM=ON -Bcmake-out .
         cmake --build cmake-out --target executorch_delegate_neutron --config Release
 
         # Build check for the neutron backend library
@@ -1722,3 +2183,17 @@ jobs:
             echo "Neutron backend library not found!"
             exit 1
         fi
+
+  nxp-mcuxpresso-test:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
+    name: nxp-mcuxpresso-test
+    uses: ./.github/workflows/_test_nxp_mcuxpresso.yml
+    permissions:
+      id-token: write
+      contents: read

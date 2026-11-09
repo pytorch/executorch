@@ -87,8 +87,13 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
 // UTF-8 multi-byte sequence. A byte-level tokenizer can emit a token that is
 // only part of a character (e.g. one byte of a 3-byte CJK codepoint or emoji),
 // so a caller streaming text must hold the incomplete tail until it completes
-// rather than decode the partial bytes. An invalid lead byte counts as length 1
-// (emitted, so the caller can replace it) rather than stalling output.
+// rather than decode the partial bytes.
+//
+// Malformed input is emitted rather than held, so a bad byte never stalls the
+// stream: an invalid lead byte counts as length 1, and so does a valid lead
+// whose continuation bytes are not 0x80-0xBF. Both reach the caller as single
+// bytes it can replace, instead of being run together into a sequence that
+// merely looks multi-byte. Only a *well-formed* truncated tail is held back.
 ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
   size_t i = 0;
   const size_t n = s.size();
@@ -105,6 +110,19 @@ ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
       len = 4;
     } else {
       len = 1; // invalid lead byte; emit it and let the caller replace it
+    }
+    // A lead byte only promises a length; the bytes after it have to agree.
+    // Checking the ones already present means a malformed sequence degrades to
+    // the invalid-lead path above rather than being emitted whole, and a
+    // truncated *valid* sequence is still held for the bytes that finish it.
+    if (len > 1) {
+      const size_t seen = (n - i) < len ? (n - i) : len;
+      for (size_t k = 1; k < seen; ++k) {
+        if ((static_cast<unsigned char>(s[i + k]) & 0xC0) != 0x80) {
+          len = 1;
+          break;
+        }
+      }
     }
     if (i + len > n) {
       break; // incomplete trailing sequence: hold it for more bytes
@@ -164,14 +182,19 @@ ET_EXPERIMENTAL size_t inline utf8_safe_prefix_len(
 ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     const std::string& text,
     const std::vector<std::string>& stops,
-    bool& stop_hit) {
+    bool& stop_hit,
+    size_t* matched_stop_index = nullptr) {
   stop_hit = false;
+  if (matched_stop_index) {
+    *matched_stop_index = std::string::npos;
+  }
   if (stops.empty()) {
     return text.size();
   }
   size_t earliest = std::string::npos;
   size_t max_len = 0;
-  for (const auto& s : stops) {
+  for (size_t index = 0; index < stops.size(); ++index) {
+    const auto& s = stops[index];
     if (s.empty()) {
       continue;
     }
@@ -180,6 +203,9 @@ ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     if (p != std::string::npos &&
         (earliest == std::string::npos || p < earliest)) {
       earliest = p;
+      if (matched_stop_index) {
+        *matched_stop_index = index;
+      }
     }
   }
   if (earliest != std::string::npos) {

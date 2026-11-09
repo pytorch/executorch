@@ -1,0 +1,90 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef BINARY_OP_DEFS_GLSLH
+#define BINARY_OP_DEFS_GLSLH
+
+// Operands are evaluated in the promoted compute type COMPUTE_T (and its vector
+// form COMPUTE_VEC4_T), which the including shader sets from
+// get_higher_precision_dtype(DTYPE, SCALAR_VALUE_TYPE) so mixed tensor/scalar
+// dtype combinations compute without loss before narrowing back to the output
+// dtype.
+
+// Scalar overload
+COMPUTE_T power_of(COMPUTE_T x, COMPUTE_T y) {
+  const float base = float(x);
+  float exponent = float(y);
+  const float infinity = uintBitsToFloat(0x7f800000u);
+  const float nan = uintBitsToFloat(0x7fc00000u);
+
+  if (input_is_half) {
+    exponent = round_to_half_rte(exponent);
+  }
+
+  if (exponent == 0.0 || base == 1.0) {
+    return COMPUTE_T(1.0);
+  }
+  if (isnan(base) || isnan(exponent)) {
+    return COMPUTE_T(nan);
+  }
+
+  if (!input_is_half) {
+    // ATen uses sqrt/rsqrt for FP32 scalar exponents, but generic pow for half.
+    if (abs(exponent) == 0.5) {
+      if (base < 0.0) {
+        return COMPUTE_T(nan);
+      }
+      if (base == 0.0) {
+        const bool negative_zero = (floatBitsToUint(base) & 0x80000000u) != 0u;
+        return exponent > 0.0 ? x : COMPUTE_T(negative_zero ? -infinity : infinity);
+      }
+      return COMPUTE_T(exponent > 0.0 ? sqrt(base) : 1.0 / sqrt(base));
+    }
+  }
+
+  const float magnitude = abs(base);
+  if (isinf(exponent)) {
+    if (magnitude == 1.0) {
+      return COMPUTE_T(1.0);
+    }
+    return COMPUTE_T((magnitude > 1.0) == (exponent > 0.0) ? infinity : 0.0);
+  }
+
+  const bool integral_exponent = trunc(exponent) == exponent;
+  const bool odd_exponent = integral_exponent && mod(abs(exponent), 2.0) == 1.0;
+  const bool negative = (floatBitsToUint(base) & 0x80000000u) != 0u && odd_exponent;
+
+  float result;
+  if (base == 0.0) {
+    result = exponent > 0.0 ? 0.0 : infinity;
+  } else if (isinf(base)) {
+    result = exponent > 0.0 ? infinity : 0.0;
+  } else if (base < 0.0 && !integral_exponent) {
+    result = nan;
+  } else {
+    // GLSL pow requires a positive base.
+    result = pow(magnitude, exponent);
+  }
+
+  return COMPUTE_T(negative ? -result : result);
+}
+
+#ifdef COMPUTE_VEC4_T
+
+// Vector overload
+COMPUTE_VEC4_T power_of(COMPUTE_VEC4_T x, COMPUTE_VEC4_T y) {
+  COMPUTE_VEC4_T result;
+  for (int i = 0; i < 4; i++) {
+    result[i] = power_of(x[i], y[i]);
+  }
+  return result;
+}
+
+#endif // COMPUTE_VEC4_T
+
+#endif // BINARY_OP_DEFS_GLSLH

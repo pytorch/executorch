@@ -16,8 +16,6 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
-#include <executorch/runtime/backend/interface.h>
-#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
@@ -108,31 +106,8 @@ Error Seq2SeqRunner::load() {
       static_cast<int>(method_names.count(kEncoderMethodName)),
       static_cast<int>(method_names.count(kDecoderMethodName)));
 
-#ifdef CUDA_AVAILABLE
-  // IMPORTANT: Set backend options BEFORE loading methods.
-  // The backend's init() is called during load_method(), which creates CUDA
-  // streams. We must configure shared stream mode before any init() calls.
-  //
-  // Keep encoder/decoder outputs on device and pass decoder logits directly
-  // into the sampler. With device memory planning, delegate inputs/outputs are
-  // GPU-resident and graph-level et_copy ops handle host<->device transfers;
-  // the export-time skip_d2h_for_method_outputs / skip_h2d_for_method_inputs
-  // flags elide the unnecessary copies. A shared CUDA stream is still required
-  // to guarantee correct ordering across methods when outputs stay on GPU.
-  executorch::runtime::BackendOptions<1> backend_options;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      backend_options.set_option("use_shared_cuda_stream", true));
-
-  const auto opt_err =
-      executorch::runtime::set_option("CudaBackend", backend_options.view());
-  if (opt_err != ::executorch::runtime::Error::Ok) {
-    ET_LOG(
-        Error,
-        "Failed to set CUDA backend options: %d",
-        static_cast<int>(opt_err));
-  }
-#endif
-
+  // This runner drives its methods from one thread, so they are ordered by
+  // running on that thread's CUDA stream and nothing has to be configured here.
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kEncoderMethodName));
   encoder_method_loaded_ = true;
 

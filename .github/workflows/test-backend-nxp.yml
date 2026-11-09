@@ -39,12 +39,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-nxp.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: nxp
       flows: '["nxp_neutron_imxrt700_int8_ptq"]'
-      # The models suite (torchvision/torchaudio) is excluded until a curated
-      # list of models known to pass on the Neutron backend is established.
-      exclude: '[{"flow": "nxp_neutron_imxrt700_int8_ptq", "suite": "models"}]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 150
       run-linux: true

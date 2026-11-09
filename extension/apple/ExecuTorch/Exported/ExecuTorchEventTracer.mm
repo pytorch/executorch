@@ -8,7 +8,7 @@
 
 #import "ExecuTorchEventTracer.h"
 
-#import <executorch/extension/apple/ExecuTorch/Internal/ExecuTorchEventTracer+Internal.h>
+#import <executorch/runtime/core/event_tracer.h>
 
 using executorch::runtime::EventTracer;
 
@@ -16,16 +16,18 @@ using executorch::runtime::EventTracer;
   std::unique_ptr<EventTracer> _tracer;
 }
 
-- (instancetype)initWithCppTracer:(std::unique_ptr<EventTracer>)tracer {
-  self = [super init];
-  if (self) {
-    _tracer = std::move(tracer);
+- (instancetype)initWithNativeInstance:(void *)nativeInstance {
+  ET_CHECK(nativeInstance);
+  if (self = [super init]) {
+    _tracer = std::move(
+        *reinterpret_cast<std::unique_ptr<EventTracer> *>(nativeInstance));
+    ET_CHECK(_tracer);
   }
   return self;
 }
 
-- (std::unique_ptr<EventTracer>)takeCppTracer {
-  return std::move(_tracer);
+- (void *)nativeInstance {
+  return &_tracer;
 }
 
 @end

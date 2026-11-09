@@ -10,6 +10,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 from executorch.examples.models.mobilenet_v2 import MV2Model
 
 
@@ -18,7 +19,7 @@ class TestMilestoneMobilenetV2(unittest.TestCase):
         model = MV2Model().get_eager_model()
         example_input = MV2Model().get_example_inputs()
         tester = SamsungTester(
-            model, example_input, [gen_samsung_backend_compile_spec("E9955")]
+            model, example_input, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
         (
             tester.export()

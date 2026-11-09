@@ -16,24 +16,35 @@ The MLX delegate is experimental and under active development.
 
 ## Target Requirements
 
-- Apple Silicon Mac (M1 or later)
-- [macOS](https://developer.apple.com/macos) >= 14.0
+One of:
+
+- [macOS](https://developer.apple.com/macos) >= 14.0 on an Apple Silicon Mac (M1 or later)
+- [iOS](https://developer.apple.com/ios) or [iPadOS](https://developer.apple.com/ipados) >= 17.0
+  on a real device (experimental). The backend is built and shipped for iOS, but
+  running a model on a physical device is not yet covered by CI. The iOS simulator
+  has no Metal device MLX can use, so the backend reports itself unavailable there
+  and a model delegated to it will not load.
 
 ## Development Requirements
 
 - [macOS](https://developer.apple.com/macos) on Apple Silicon (M1 or later)
-- [Xcode](https://developer.apple.com/xcode/) (full installation, not just Command Line Tools — the Metal compiler is required)
+- [Xcode](https://developer.apple.com/xcode/) (full installation, not just Command Line Tools)
+- The Metal Toolchain component, installed separately with
+  `xcodebuild -downloadComponent MetalToolchain`
 
 Verify the Metal compiler is available:
 
 ```bash
-xcrun -sdk macosx --find metal
+xcrun -sdk macosx metal --version
 ```
 
-If this prints a path (e.g., `/Applications/Xcode.app/.../metal`), you're set. If it errors, install Xcode from [developer.apple.com](https://developer.apple.com/xcode/), then switch the active developer directory:
+If this prints version information, you're set. If it errors, install Xcode from
+[developer.apple.com](https://developer.apple.com/xcode/), select it as the active
+developer directory, and download the Metal Toolchain:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
 ```
 
 ----
@@ -48,7 +59,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.mlx import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
-from executorch.exir import to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
@@ -57,6 +68,10 @@ et_program = to_edge_transform_and_lower(
     torch.export.export(mobilenet_v2, sample_inputs),
     transform_passes=get_default_passes(),
     partitioner=[MLXPartitioner()],
+    compile_config=EdgeCompileConfig(
+        _check_ir_validity=False,
+        _skip_dim_order=True,
+    ),
 ).to_executorch()
 
 with open("mv2_mlx.pte", "wb") as file:
@@ -64,6 +79,9 @@ with open("mv2_mlx.pte", "wb") as file:
 ```
 
 `get_default_passes()` includes RMSNorm fusion, consecutive view/permute/dtype-cast collapsing, no-op removal, and common subexpression elimination. These are recommended for all models and required for optimal LLM performance.
+The accompanying `EdgeCompileConfig` uses the settings in the MLX export examples.
+The `_check_ir_validity` and `_skip_dim_order` fields are internal and may change
+between ExecuTorch versions.
 
 ::::{note}
 The MLX backend is primarily designed for LLM and generative AI workloads on Apple Silicon. The MobileNet V2 example above is shown for simplicity, but in practice you would use this backend for models like Llama, Whisper, and other transformer-based architectures. See [LLM example](https://github.com/pytorch/executorch/tree/main/backends/mlx/examples/llm) for a more representative use case.
@@ -122,6 +140,61 @@ There is also an `mlx-debug` preset useful during development:
 ```bash
 cmake --workflow --preset mlx-debug
 ```
+
+## Runtime Options
+
+The MLX backend reads optional per-model runtime specs, set through a
+`LoadBackendOptionsMap` keyed by the backend id `MLXBackend`. All are optional
+and off by default.
+
+### `eval_threshold_bytes` (int)
+
+MLX is lazy: dispatching an instruction only builds a graph node, and nothing is
+materialized until the method's outputs are evaluated. For a long instruction
+chain that means every intermediate in the method is live at the same instant,
+so peak memory tracks the size of the whole graph rather than the working set.
+Whisper-small's 495-instruction `encode` peaks at 1105 MB of MLX allocation
+against 95 MB of steady-state active memory.
+
+Set this key to N to evaluate the live per-execution tensors once the
+intermediates produced since the last evaluation exceed N bytes. Each evaluation
+costs a GPU sync, so the cost tracks the *number* of evaluations, and budgeting
+bytes rather than instructions puts them only in the methods that actually
+allocate.
+
+`0` (the default) disables the mechanism entirely, preserving the previous
+behaviour with no accounting overhead of any kind.
+
+```cpp
+#include <executorch/backends/mlx/runtime/backend_options.h>
+#include <executorch/runtime/backend/options.h>
+
+executorch::runtime::BackendOptions<1> opts;
+opts.set_option(executorch::backends::mlx::kEvalThresholdBytesKey,
+                512 * 1024 * 1024);
+```
+
+Measured on an iPhone 16, whisper-small int8, full pipeline, medians of
+interleaved rounds:
+
+| setting | peak MB | peak while loaded | pipeline ms |
+| --- | --- | --- | --- |
+| `0` (disabled) | 1194.4 | 763.7 | 885.2 |
+| `512 MB` | 692.8 | 261.0 | 831.3 |
+
+This is a **threshold, not a hard memory limit**. It is best-effort evaluation
+scheduling and peak footprint can exceed the value:
+
+- A long `SCAN` or `IF` branch accumulates across its whole body and is only
+  checked once control returns to the enclosing chain, so it can overshoot by
+  the size of that body.
+- The per-instruction estimate is the largest tensor the instruction touches,
+  which can overcount (an op that only reads a large tensor is charged for it)
+  and so can evaluate earlier than the true pending bytes warrant.
+- Ops that evaluate internally reduce the real pending work without reducing
+  the running estimate.
+
+Tune it against measurements rather than expecting the value to bound RSS.
 
 ## Reference
 

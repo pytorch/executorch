@@ -52,11 +52,14 @@ add_executable(
   test_op_dequantize_per_tensor_out.cpp
   test_op_div.cpp
   test_op_im2row_out.cpp
+  test_op_log2.cpp
   test_op_permute_copy.cpp
   test_op_quantize_per_tensor.cpp
   test_op_quantized_conv2d_out.cpp
+  test_op_quantized_layer_norm.cpp
   test_op_quantized_matmul_out.cpp
   test_op_quantized_relu_out.cpp
+  test_op_relu.cpp
   test_op_transpose_copy.cpp
   ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
 )

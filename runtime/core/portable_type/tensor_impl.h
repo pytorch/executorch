@@ -146,6 +146,11 @@ class TensorImpl {
     return dim_;
   }
 
+  /// Returns true if non-scalar layout metadata has backing storage.
+  bool has_layout_metadata() const {
+    return dim_ == 0 || (dim_order_ != nullptr && strides_ != nullptr);
+  }
+
   /// Returns the number of elements in the tensor.
   ssize_t numel() const {
     return numel_;
@@ -170,11 +175,17 @@ class TensorImpl {
 
   /// Returns the order the dimensions are laid out in memory.
   const ArrayRef<DimOrderType> dim_order() const {
+    if (dim_order_ == nullptr) {
+      return {};
+    }
     return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
   }
 
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
+    if (strides_ == nullptr) {
+      return {};
+    }
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
   }
 

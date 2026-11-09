@@ -4,7 +4,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""Validate one Arm public API manifest against the current API."""
+"""Validate Arm public API manifests against the current API."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import ast
 import importlib.util
 import inspect
 from pathlib import Path
+from typing import Sequence
 
 try:
     import tomllib
@@ -86,6 +87,15 @@ def get_manifest_python_symbols(manifest: dict) -> dict[str, dict[str, str]]:
     if not isinstance(python_manifest, dict):
         raise ValueError("Manifest is missing [python] section")
     return _collect_python_symbols(python_manifest)
+
+
+def get_manifest_cmake_symbols(manifest: dict) -> dict[str, dict[str, str]]:
+    cmake_manifest = manifest.get("cmake")
+    if cmake_manifest is None:
+        return {}
+    if not isinstance(cmake_manifest, dict):
+        raise ValueError("Manifest [cmake] section must be a table")
+    return _collect_python_symbols(cmake_manifest)
 
 
 def get_current_python_symbols(
@@ -323,31 +333,73 @@ def format_validation_report(manifest_path: Path, issues: list[Issue]) -> str:
 
 
 def validate_manifest(manifest_path: Path) -> list[Issue]:
-    return validate_symbols(
-        get_manifest_python_symbols(read_manifest(manifest_path)),
-        get_current_python_symbols(
-            include_deprecated=manifest_path.name != MANIFEST_PATH.name,
-        ),
-        ignore_new_api_symbols=manifest_path.name != MANIFEST_PATH.name,
-        allow_backward_compatible_signature_changes=(
-            manifest_path.name != MANIFEST_PATH.name
-        ),
+    is_static = manifest_path.name != MANIFEST_PATH.name
+    manifest = read_manifest(manifest_path)
+    current = tomllib.loads(
+        gpam.generate_manifest_from_init(
+            repo_path=REPO_PATH,
+            include_deprecated=is_static,
+        )
     )
+    issues = validate_symbols(
+        get_manifest_python_symbols(manifest),
+        get_manifest_python_symbols(current),
+        ignore_new_api_symbols=is_static,
+        allow_backward_compatible_signature_changes=is_static,
+    )
+    issues.extend(
+        validate_symbols(
+            get_manifest_cmake_symbols(manifest),
+            get_manifest_cmake_symbols(current),
+            ignore_new_api_symbols=is_static,
+            allow_backward_compatible_signature_changes=is_static,
+        )
+    )
+    return issues
+
+
+def validate_manifests(manifest_paths: Sequence[Path]) -> int:
+    failures = 0
+    for manifest_path in manifest_paths:
+        print()
+        print(f"=== {manifest_path.name} ===")
+        issues = validate_manifest(manifest_path)
+        print(format_validation_report(manifest_path, issues))
+        if issues:
+            failures += 1
+    return failures
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    manifest_group = parser.add_mutually_exclusive_group()
+    manifest_group.add_argument(
         "--manifest",
         type=Path,
         default=MANIFEST_PATH,
         help="Path to the public API manifest TOML file.",
+    )
+    manifest_group.add_argument(
+        "--all-manifests",
+        action="store_true",
+        help="Validate every public API manifest in one process.",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.all_manifests:
+        print("Validating Arm public API manifests")
+        manifest_paths = sorted(MANIFEST_PATH.parent.glob("api_manifest_*.toml"))
+        failures = validate_manifests(manifest_paths)
+        print()
+        if failures:
+            print(f"{failures} manifest(s) failed validation")
+            raise SystemExit(1)
+        print("Arm public API manifests OK")
+        return
+
     issues = validate_manifest(args.manifest)
     print(format_validation_report(args.manifest, issues))
     if issues:

@@ -13,6 +13,8 @@ The quantization schemes supported by the VGF Backend are:
 
 Weight-only quantization is not currently supported on the VGF backend.
 
+For an end-to-end example of configuring and exporting dynamic W8A8 Linear layers, see the {doc}`Dynamic W8A8 Quantization Tutorial </backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization>`. 
+
 ### Partial Quantization
 
 The VGF backend supports partial quantization, where only parts of the model

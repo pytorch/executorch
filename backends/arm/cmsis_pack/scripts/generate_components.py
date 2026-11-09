@@ -418,11 +418,10 @@ def main():
     kernel_utils_files = generate_kernel_utils_files(source_dir)
 
     # Generate backend files.
-    # Cortex-M host only. EthosUBackend_Cortex_A.cpp is filtered out
-    # because the Cortex-A/Linux host variant is intentionally not
-    # exposed in this pack.
-    ethos_u_cortex_m_files = generate_backend_files(
-        source_dir, "ethos_u", extra_exclude=["Cortex_A"]
+    # Core driver only. EthosUBackend_LinuxDriver.cpp is filtered out because
+    # the Linux driver variant is intentionally not exposed in this pack.
+    ethos_u_core_driver_files = generate_backend_files(
+        source_dir, "ethos_u", extra_exclude=["LinuxDriver"]
     )
 
     # Generate extension files (opt-in components that only need the Runtime).
@@ -474,7 +473,7 @@ def main():
             "%{CORTEX_M_OPERATOR_COMPONENTS}%", result["cortex_m_components"]
         )
         pdsc = pdsc.replace(
-            "%{ETHOS_U_BACKEND_CORTEX_M_FILES}%", ethos_u_cortex_m_files
+            "%{ETHOS_U_BACKEND_CORE_DRIVER_FILES}%", ethos_u_core_driver_files
         )
         pdsc = pdsc.replace("%{TENSOR_EXTENSION_FILES}%", tensor_extension_files)
 

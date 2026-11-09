@@ -62,7 +62,7 @@ def test_conformer(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
         encoder_padding_mask,
     )
 
-    test_runner.lower_and_run_model(model, inputs)
+    test_runner.lower_and_run_model(model, inputs, generate_random_test_inputs=False)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)

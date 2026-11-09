@@ -1,0 +1,9 @@
+{
+  global:
+    _ZN3ptn*;
+    _ZNK3ptn*;
+    _ZTIN3ptn*;
+    _ZTSN3ptn*;
+    _ZTVN3ptn*;
+  local: *;
+};

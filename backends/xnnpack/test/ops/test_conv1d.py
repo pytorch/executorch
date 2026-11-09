@@ -22,6 +22,57 @@ class TestConv1d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
 
+    def test_dynamic_conv1d(self):
+        for dynamic_dims in ((0,), (2,), (0, 2)):
+            with self.subTest(dynamic_dims=dynamic_dims):
+                shapes = {
+                    0: torch.export.Dim("batch", min=1, max=4),
+                    2: torch.export.Dim("length", min=5, max=16),
+                }
+                tester = (
+                    Tester(
+                        torch.nn.Conv1d(2, 2, 3).eval(),
+                        (torch.randn(2, 2, 11),),
+                        dynamic_shapes=({dim: shapes[dim] for dim in dynamic_dims},),
+                    )
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count(
+                        {
+                            "torch.ops.higher_order.executorch_call_delegate": int(
+                                len(dynamic_dims) == 1
+                            )
+                        }
+                    )
+                    .to_executorch()
+                    .serialize()
+                )
+                for batch, length in ((1, 5), (4, 16), (2, 7)):
+                    inputs = torch.randn(
+                        batch if 0 in dynamic_dims else 2,
+                        2,
+                        length if 2 in dynamic_dims else 11,
+                    )
+                    tester.run_method_and_compare_outputs(inputs=(inputs,))
+
+    def test_bf16_conv1d_fallback(self):
+        (
+            Tester(
+                torch.nn.Conv1d(2, 2, 3).eval().to(torch.bfloat16),
+                (torch.randn(2, 2, 11, dtype=torch.bfloat16),),
+            )
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=0.01, rtol=0.01)
+        )
+
     class Conv1d(torch.nn.Module):
         def __init__(self, dtype: torch.dtype = torch.float):
             groups = 1

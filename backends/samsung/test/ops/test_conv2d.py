@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class Conv2d(torch.nn.Module):
@@ -67,7 +68,7 @@ class TestConv2d(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -76,6 +77,22 @@ class TestConv2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs)
+        )
+
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
         )
 
     def test_fp32_conv2d_without_bias(self):
@@ -93,3 +110,23 @@ class TestConv2d(unittest.TestCase):
     def test_fp32_transpose_conv2d(self):
         inputs = (torch.randn(1, 32, 24, 24),)
         self._test(TransposeConv2d(), inputs)
+
+    def test_fp32_conv2d_with_dilation(self):
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test(Conv2d(dilation=(2, 2)), inputs)
+
+    def test_a8w8_conv2d_without_bias(self):
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test_a8w8(Conv2d(bias=False), inputs)
+
+    def test_a8w8_conv2d_with_bias(self):
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test_a8w8(Conv2d(bias=True), inputs)
+
+    def test_a8w8_depthwise_conv2d(self):
+        inputs = (torch.randn(1, 8, 24, 24),)
+        self._test_a8w8(Conv2d(in_channels=8, out_channels=8, groups=8), inputs)
+
+    def test_a8w8_conv2d_with_dilation(self):
+        inputs = (torch.randn(1, 3, 24, 24),)
+        self._test_a8w8(Conv2d(dilation=(2, 2)), inputs)

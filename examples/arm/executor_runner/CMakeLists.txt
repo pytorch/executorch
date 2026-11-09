@@ -51,9 +51,51 @@ set(ET_NUM_INFERENCES
     "1"
     CACHE STRING "Number of inferences to run"
 )
+if(NOT ET_NUM_INFERENCES MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR "ET_NUM_INFERENCES must be a positive integer")
+endif()
 
 option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
+option(EXECUTORCH_ARM_ETHOSU_PMU_STATS
+       "Link Ethos-U PMU statistics into the Arm executor runner"
+       ${EXECUTORCH_BUILD_ARM_BAREMETAL}
+)
+option(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+       "Report Ethos-U PMU statistics per delegate" OFF
+)
+option(ET_ARM_ETHOSU_PROFILE_IO_COPIES
+       "Count Ethos-U backend I/O memcpy calls and bytes" OFF
+)
+set(ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES
+    "16"
+    CACHE STRING "Maximum delegates tracked by per-delegate profiling"
+)
+set(ET_ARM_ETHOSU55_65_PMU_EVENTS
+    ""
+    CACHE
+      STRING
+      "Comma-separated ETHOSU_PMU_* events for U55/U65 (up to 4); empty uses backend defaults; requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON"
+)
+set(ET_ARM_ETHOSU85_PMU_EVENTS
+    ""
+    CACHE
+      STRING
+      "Comma-separated ETHOSU_PMU_* events for U85 (up to 8); empty uses backend defaults; requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON"
+)
+
+foreach(_pmu_events_option IN ITEMS ET_ARM_ETHOSU55_65_PMU_EVENTS
+                                    ET_ARM_ETHOSU85_PMU_EVENTS
+)
+  if(NOT "${${_pmu_events_option}}" STREQUAL ""
+     AND NOT EXECUTORCH_ARM_ETHOSU_PMU_STATS
+  )
+    message(
+      FATAL_ERROR
+        "${_pmu_events_option} requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON."
+    )
+  endif()
+endforeach()
 
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 set(BUNDLED_PROGRAM_LIBRARY_DIR
@@ -97,6 +139,16 @@ set(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE
 )
 
 include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmRunnerUtils.cmake)
+
+if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+  arm_runner_check_lock_free_atomics(_ethosu_pmu_stats_atomics)
+  if(NOT _ethosu_pmu_stats_atomics)
+    message(
+      FATAL_ERROR
+        "Ethos-U PMU stats require lock-free byte and pointer atomics, which this target/toolchain does not provide. Disable them with -DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF."
+    )
+  endif()
+endif()
 
 arm_runner_define_cache_options()
 arm_runner_validate_model_source(ALLOW_SEMIHOSTING)
@@ -193,11 +245,6 @@ set(_arm_runner_normal_archive_libs
     portable_kernels kernels_util_all_deps arm_prim_ops_lib_impl
     quantized_kernels cortex_m_kernels cmsis-nn
 )
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_selected_ops_libs}
-  ${_arm_runner_normal_archive_libs}
-)
-
 arm_runner_link_registration_libraries(
   TARGET
   arm_executor_runner
@@ -340,6 +387,65 @@ arm_runner_configure_model(
 if(ET_NUM_INFERENCES)
   target_compile_definitions(
     arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
+  )
+endif()
+
+if(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if(NOT EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+    message(
+      FATAL_ERROR
+        "ET_ARM_ETHOSU_PER_DELEGATE_PROFILING requires EXECUTORCH_ARM_ETHOSU_PMU_STATS"
+    )
+  endif()
+  if(NOT ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES MATCHES "^[1-9][0-9]*$")
+    message(
+      FATAL_ERROR
+        "ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES must be a positive integer"
+    )
+  endif()
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE
+      ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+      ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES=${ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES}
+  )
+  target_compile_definitions(
+    executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+  )
+endif()
+
+if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+  if(NOT TARGET ethosu_execution_stats)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_ARM_ETHOSU_PMU_STATS is currently only supported by the bare-metal Ethos-U backend"
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE ethosu_execution_stats)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE ET_ARM_ETHOSU_PMU_STATS
+  )
+endif()
+
+if(NOT ET_ARM_ETHOSU55_65_PMU_EVENTS STREQUAL "")
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE "ET_ARM_ETHOSU55_65_PMU_EVENTS=${ET_ARM_ETHOSU55_65_PMU_EVENTS}"
+  )
+endif()
+if(NOT ET_ARM_ETHOSU85_PMU_EVENTS STREQUAL "")
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE "ET_ARM_ETHOSU85_PMU_EVENTS=${ET_ARM_ETHOSU85_PMU_EVENTS}"
+  )
+endif()
+
+if(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
+  )
+  target_compile_definitions(
+    executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
   )
 endif()
 

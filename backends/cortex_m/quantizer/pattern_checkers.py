@@ -7,15 +7,15 @@ import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.utils import (
     coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
     is_foldable_alpha,
-)
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
 )
 from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
@@ -131,6 +131,18 @@ class CortexMConv2DCheck(PatternCheck):
         return is_int8 and is_ch_axis_0
 
 
+class CortexMExplicitConv2DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 4 for node in pattern)
+
+
+class CortexMExplicitConv1DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 3 for node in pattern)
+
+
 class CortexMLinearCheck(PatternCheck):
     @classmethod
     def check_quantization_config(
@@ -219,6 +231,8 @@ class CortexMSoftmaxCheck(PatternCheck):
 
 class CortexMConvTranspose2DCheck(PatternCheck):
 
+    require_channels_last = True
+
     @classmethod
     def _check_node(cls, node: Node) -> bool:
         if node is None:
@@ -228,8 +242,7 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         if tensor is None:
             return False  # Reject if no tensor found
 
-        # REJECT if using NCHW format (we need channels_last/NHWC)
-        if not is_channels_last(tensor):
+        if cls.require_channels_last and not is_channels_last(tensor):
             return False  # Reject NCHW
 
         # For aten.conv_transpose2d.input:
@@ -286,6 +299,10 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None
 
         return is_int8 and is_ch_axis_1
+
+
+class CortexMExplicitConvTranspose2DCheck(CortexMConvTranspose2DCheck):
+    require_channels_last = False
 
 
 class CortexMAvgPool2DCheck(PatternCheck):

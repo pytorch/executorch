@@ -306,6 +306,38 @@ def test_skip_unfolded_qdq_weight():
     assert not result.modified
 
 
+@pytest.mark.parametrize("allow_slice_weight", [False, True])
+def test_graph_local_weight_target_opt_in(allow_slice_weight: bool):
+    model = Conv1d().eval()
+    x = torch.randn(1, 2, 8)
+    edge = _edge(model, (x,))
+    [conv] = [
+        node
+        for node in edge.graph.nodes
+        if node.target == exir_ops.edge.aten.convolution.default
+    ]
+    weight = conv.args[1]
+    with edge.graph.inserting_before(conv):
+        sliced_weight = edge.graph.call_function(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(weight, 0, 0, weight.meta["val"].shape[0]),
+        )
+    sliced_weight.meta["val"] = weight.meta["val"]
+    conv.replace_input_with(weight, sliced_weight)
+
+    allowed_targets = (
+        {exir_ops.edge.aten.slice_copy.Tensor} if allow_slice_weight else set()
+    )
+    result = ConvertConv1dToConv2dPass(
+        edge, graph_local_weight_targets=allowed_targets
+    ).call(edge.graph_module)
+
+    assert result.modified is allow_slice_weight
+    if allow_slice_weight:
+        assert conv.args[1].target == exir_ops.edge.aten.unsqueeze_copy.default
+        torch.testing.assert_close(edge.module()(x), model(x))
+
+
 def test_preserve_convolution_metadata():
     edge = _edge(Conv1d(), (torch.randn(1, 2, 8),))
     [conv] = [

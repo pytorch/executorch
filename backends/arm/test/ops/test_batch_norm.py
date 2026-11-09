@@ -22,6 +22,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 Input = Tuple[torch.Tensor]
 ATEN_BATCH_NORM = "torch.ops.aten.batch_norm.default"
 ATEN_CONV2D = "torch.ops.aten.conv2d.default"
+ATEN_CONV_TRANSPOSE2D = "torch.ops.aten.conv_transpose2d.input"
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,30 @@ class BatchNorm2dConv(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.batch_norm(self.conv2d(x))
+
+
+class BatchNorm2dConvTranspose(torch.nn.Module):
+    aten_ops = [ATEN_CONV_TRANSPOSE2D, ATEN_BATCH_NORM]
+
+    def __init__(self, groups: int) -> None:
+        super().__init__()
+        self.conv_transpose2d = torch.nn.ConvTranspose2d(
+            in_channels=4,
+            out_channels=6,
+            kernel_size=3,
+            padding=1,
+            groups=groups,
+        )
+        self.batch_norm = _make_batch_norm(
+            6,
+            affine=True,
+            weight=torch.rand(6),
+            bias=torch.rand(6),
+            track_running_stats=True,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.batch_norm(self.conv_transpose2d(x))
 
 
 class BatchNorm2dNoStats(torch.nn.Module):
@@ -205,6 +230,27 @@ def test_native_batch_norm_legit_no_training_tosa_FP_conv_fuses_before_decompose
     pipeline.run()
 
 
+@common.parametrize("groups", {"groups=1": 1, "groups=2": 2})
+def test_conv_transpose_batch_norm_fuses_before_decompose_tosa_FP(
+    groups: int,
+) -> None:
+    model = BatchNorm2dConvTranspose(groups)
+    pipeline = TosaPipelineFP[Input](
+        model,
+        (torch.rand(1, 4, 5, 6),),
+        aten_op=model.aten_ops,
+    )
+    pipeline.count_tosa_ops(
+        {
+            "TRANSPOSE_CONV2D": groups,
+            "CONCAT": int(groups > 1),
+            "RSQRT": 0,
+            "SUB": 0,
+        }
+    )
+    pipeline.run()
+
+
 @common.parametrize("case", batch_norm_cases)
 def test_native_batch_norm_legit_no_training_tosa_INT_conv(case: BatchNormCase) -> None:
     test_data, model_params = case.make_input_and_parameters()
@@ -250,6 +296,17 @@ def test_native_batch_norm_legit_no_training_vgf_no_quant_conv(
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_op=BatchNorm2dConv.aten_ops,
+        quantize=False,
+    ).run()
+
+
+@common.SkipIfNoModelConverter
+def test_grouped_conv_transpose_batch_norm_vgf_no_quant() -> None:
+    model = BatchNorm2dConvTranspose(groups=2)
+    VgfPipeline[Input](
+        model,
+        (torch.rand(1, 4, 5, 6),),
+        aten_op=model.aten_ops,
         quantize=False,
     ).run()
 

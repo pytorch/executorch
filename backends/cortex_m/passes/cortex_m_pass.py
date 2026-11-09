@@ -13,7 +13,7 @@ class CortexMPass(ExportPass):
     """Base class for passes that need the Cortex-M target config.
 
     Passes that subclass this declare `exported_program` and `target_config`
-    in their `__init__`; `CortexMPassManager.transform()` injects both
+    in their `__init__`; `CortexMPassManager` injects both
     automatically when running the pass list.
     """
 

@@ -11,6 +11,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <algorithm>
+
 #include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -121,16 +123,16 @@ TmpTensor::~TmpTensor() {
 }
 
 int64_t TmpTensor::get_sobj_idx() {
-  int64_t sobj_idx;
+  int64_t idx;
   // If no available temporary shared objects, request a new one to be created
   if (graph_p->tmp_shared_object_idxs_.empty()) {
-    sobj_idx = graph_p->shared_objects_.size();
+    idx = graph_p->shared_objects_.size();
   } else {
     // Get the first available shared object idx
-    sobj_idx = graph_p->tmp_shared_object_idxs_.top();
+    idx = graph_p->tmp_shared_object_idxs_.top();
     graph_p->tmp_shared_object_idxs_.pop();
   }
-  return sobj_idx;
+  return idx;
 }
 
 //
@@ -240,27 +242,34 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
   return utils::kTexture3D;
 }
 
-bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
-  if (!is_valid_value_idx(idx)) {
-    return false;
-  }
-
-  // Check if this ValueRef itself was updated
-  if (updated_values_.find(idx) != updated_values_.end()) {
-    return true;
-  }
-
-  // If this is a ValueList, check each ValueRef in the list
-  if (val_is_value_list(idx)) {
-    const auto& value_list = values_.at(idx).toConstValueList();
-    for (const auto& nested_idx : value_list) {
-      if (was_value_updated(nested_idx)) {
-        return true;
-      }
+bool ComputeGraph::was_value_list_updated(const ValueRef idx) const noexcept {
+  const auto& value_list = values_[static_cast<size_t>(idx)].toConstValueList();
+  for (const auto nested_idx : value_list) {
+    if (was_value_updated(nested_idx)) {
+      return true;
     }
   }
-
   return false;
+}
+
+void ComputeGraph::mark_value_updated(const ValueRef idx) {
+  if (!is_valid_value_idx(idx)) {
+    return;
+  }
+  if (value_update_generations_.size() < values_.size()) {
+    value_update_generations_.resize(values_.size());
+  }
+  value_update_generations_[static_cast<size_t>(idx)] =
+      current_update_generation_;
+}
+
+void ComputeGraph::advance_update_generation() noexcept {
+  current_update_generation_++;
+  if (current_update_generation_ == 0) {
+    std::fill(
+        value_update_generations_.begin(), value_update_generations_.end(), 0);
+    current_update_generation_ = 1;
+  }
 }
 
 utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
@@ -417,10 +426,10 @@ bool ComputeGraph::is_standard_channels_packed_texture_tensor(
 bool ComputeGraph::is_2d_matrix(const ValueRef idx) const {
   std::vector<int64_t> sizes = sizes_of(idx);
   const size_t ndim = sizes.size();
-  if (sizes.size() < 2) {
+  if (ndim == 0) {
     return false;
   }
-  if (sizes.size() == 2) {
+  if (ndim <= 2) {
     return true;
   }
 
@@ -458,6 +467,22 @@ bool ComputeGraph::is_vectorizable_width_packed_tensor(
   }
 
   return is_standard_channels_packed_texture_tensor(idx);
+}
+
+bool ComputeGraph::samples_zero_outside_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx) || is_buffer_storage(idx)) {
+    return false;
+  }
+  const api::vTensor& tensor = values_.at(idx).toConstTensor();
+  const VkExtent3D extents = tensor.image().extents();
+  const utils::uvec3 limits = utils::make_uvec3(tensor.logical_limits());
+  const vkapi::VulkanImage::SamplerProperties& sampler =
+      tensor.image().sampler_properties();
+  return extents.width == limits[0] && extents.height == limits[1] &&
+      extents.depth == limits[2] && sampler.filter == VK_FILTER_NEAREST &&
+      sampler.mipmap_mode == VK_SAMPLER_MIPMAP_MODE_NEAREST &&
+      sampler.address_mode == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER &&
+      sampler.border_color == VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -692,6 +717,10 @@ ValueRef ComputeGraph::set_input_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::HOST_TO_DEVICE);
   add_staging_to_tensor_node(*this, staging_idx, idx);
@@ -717,6 +746,10 @@ ValueRef ComputeGraph::set_output_tensor(
   // For texture storage, the buffer size needs to account for the zero
   // padding applied by unused texel elements.
   size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  if (dtype_of(idx) == vkapi::kInt8x4 &&
+      vkapi::element_size(staging_dtype) == 1) {
+    buf_numel *= 4;
+  }
   ValueRef staging_idx = add_staging(
       staging_dtype, buf_numel, vkapi::CopyDirection::DEVICE_TO_HOST);
   // We only run this when the tensor is non-empty.  When the underlying
@@ -775,8 +808,7 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   int32_t cur_val = read_symint(idx);
   if (cur_val != val) {
     get_symint(idx)->set(val);
-    // Track that this ValueRef was updated
-    updated_values_.insert(idx);
+    mark_value_updated(idx);
   }
 }
 
@@ -848,6 +880,7 @@ void ComputeGraph::register_pipeline_to_create(
     const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
+  context()->check_device_capabilities(shader_info);
   VkDescriptorSetLayout shader_layout =
       context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
 
@@ -888,7 +921,10 @@ void ComputeGraph::register_pipeline_to_create(
 
 GlobalWorkGrid ComputeGraph::create_gwg(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return create_linear_gwg(utils::safe_downcast<uint64_t>(numel_of(idx)));
+    const uint64_t numel = dtype_of(idx) == vkapi::kInt8x4
+        ? utils::safe_downcast<uint64_t>(numel_of(idx))
+        : utils::safe_downcast<uint64_t>(physical_numel_of(idx));
+    return create_linear_gwg(numel);
   }
 
   return GlobalWorkGrid(
@@ -1047,6 +1083,8 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
 }
 
 void ComputeGraph::prepare() {
+  value_update_generations_.resize(values_.size());
+
 #define MERGE_FIELD(field)                    \
   static_cast<uint32_t>(std::ceil(            \
       std::max(                               \
@@ -1202,9 +1240,9 @@ void ComputeGraph::prepack() {
     shared_object.bind_users(this);
   }
   // Make sure all remaining tensors have allocations
-  for (int i = 0; i < values_.size(); i++) {
-    if (values_.at(i).isTensor()) {
-      create_dedicated_allocation_for(i);
+  for (int value_idx = 0; value_idx < values_.size(); value_idx++) {
+    if (values_.at(value_idx).isTensor()) {
+      create_dedicated_allocation_for(value_idx);
     }
   }
 }
@@ -1258,8 +1296,7 @@ void ComputeGraph::execute() {
 
   execute_count_++;
 
-  // Clear the set of updated values at the end of inference
-  updated_values_.clear();
+  advance_update_generation();
 
   // Reset the re-encoding flag at the end of inference
   requires_reencode_ = false;
@@ -1281,7 +1318,7 @@ void ComputeGraph::resize_input(
     const std::vector<int64_t>& new_sizes) {
   IOValueRef io_val = inputs_.at(idx);
   virtual_resize(io_val.value, new_sizes);
-  updated_values_.insert(io_val.staging);
+  mark_value_updated(io_val.staging);
 }
 
 void ComputeGraph::virtual_resize(
@@ -1290,8 +1327,7 @@ void ComputeGraph::virtual_resize(
   std::vector<int64_t> cur_sizes = sizes_of(idx);
   if (cur_sizes != new_sizes) {
     get_tensor(idx)->virtual_resize(new_sizes);
-    // Track that this ValueRef was updated
-    updated_values_.insert(idx);
+    mark_value_updated(idx);
   }
 }
 

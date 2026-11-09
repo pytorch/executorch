@@ -373,13 +373,18 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
 @common.parametrize("case", test_cases)
 def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
-    pipeline = OpNotSupportedPipeline[tuple](module, example_inputs, {aten_op: 1})
+    pipeline = OpNotSupportedPipeline[tuple](
+        module,
+        example_inputs,
+        {aten_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 @common.parametrize("case", test_cases)
-@common.XfailIfNoCorstone320.with_args(raises=None)
 def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = EthosU85PipelineINT[tuple](module, example_inputs, aten_op, exir_op)

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace executorch::backends::webgpu::passes {
 
@@ -282,37 +283,6 @@ void detect_qkv_bk64_fusions(
       member_ops[op] = fusion_index;
     }
   }
-}
-
-void retain_unclaimed_qkv_fusions(
-    std::vector<QkvBk64Fusion>& fusions,
-    std::unordered_map<unsigned, size_t>& first_ops,
-    std::unordered_map<unsigned, size_t>& last_ops,
-    std::unordered_map<unsigned, size_t>& member_ops,
-    std::unordered_set<unsigned>& claimed_ops) {
-  std::vector<QkvBk64Fusion> retained_fusions;
-  first_ops.clear();
-  last_ops.clear();
-  member_ops.clear();
-  for (QkvBk64Fusion& fusion : fusions) {
-    bool overlaps = false;
-    for (unsigned op : fusion.op_indices) {
-      overlaps = overlaps || claimed_ops.count(op) != 0;
-    }
-    if (overlaps) {
-      continue;
-    }
-    const size_t fusion_index = retained_fusions.size();
-    retained_fusions.push_back(std::move(fusion));
-    const QkvBk64Fusion& retained = retained_fusions.back();
-    first_ops[retained.op_indices[0]] = fusion_index;
-    last_ops[retained.op_indices[2]] = fusion_index;
-    for (unsigned op : retained.op_indices) {
-      member_ops[op] = fusion_index;
-      claimed_ops.insert(op);
-    }
-  }
-  fusions = std::move(retained_fusions);
 }
 
 void add_qkv_bk64_dispatch(WebGPUGraph& graph, QkvBk64Fusion& fusion) {

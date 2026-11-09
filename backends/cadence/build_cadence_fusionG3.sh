@@ -55,7 +55,7 @@ if $STEPWISE_BUILD; then
         -DFLATCC_ALLOW_WERROR=OFF \
         -Bcmake-out/backends/cadence \
         backends/cadence
-    cmake --build cmake-out/backends/cadence  -j8
+    cmake --build cmake-out/backends/cadence  -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 else
     echo "Building Cadence toolchain with ExecuTorch packages"
     cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
@@ -80,7 +80,7 @@ else
         -DHAVE_FNMATCH_H=OFF \
         -DFLATCC_ALLOW_WERROR=OFF \
         -Bcmake-out
-    cmake --build cmake-out --target install --config Release -j8
+    cmake --build cmake-out --target install --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 fi
 
 echo "Run simple model to verify cmake build"

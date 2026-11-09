@@ -16,28 +16,21 @@ namespace extension {
 namespace llm {
 namespace cache {
 
-CellCache::CellCache(const CacheConfig& cfg)
+CellCache::CellCache(const CacheGeometry& geometry, const CacheConfig& cfg)
     : capacity_(cfg.capacity),
+      dflash_block_size_(geometry.dflash_block_size),
       pos_(cfg.capacity, -1),
-      owners_(cfg.capacity, 0),
-      served_(cfg.n_layers, false) {
-  assert(valid(cfg));
-  // One window per layer, from the same per-layer config the sequence cache
-  // reads. Layers agreeing on a window share a step.
-  windows_.reserve(cfg.n_layers);
-  for (int l = 0; l < cfg.n_layers; ++l) {
-    const LayerConfig& lc =
-        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+      owners_(cfg.capacity, 0) {
+  assert(valid(geometry, cfg));
+  // One window per layer. Layers agreeing on a window share a step.
+  windows_.reserve(geometry.layers.size());
+  for (const LayerGeometry& layer : geometry.layers) {
     windows_.push_back(
-        lc.policy.kind == LayerPolicy::Kind::Ring ? lc.policy.window : 0);
+        layer.policy.kind == LayerPolicy::Kind::Ring ? layer.policy.window : 0);
   }
 }
 
 // -- CacheControl ------------------------------------------------------------
-
-bool CellCache::can_extend(int n) const {
-  return capacity_ - used_count_ >= n;
-}
 
 int CellCache::capacity() const {
   return capacity_;
@@ -53,14 +46,13 @@ void CellCache::clear() {
   declared_ = false;
   step_seq_ids_.clear();
   step_pos_.clear();
-  std::fill(served_.begin(), served_.end(), false);
   invalidate_steps();
 }
 
 // -- BatchControl ------------------------------------------------------------
 
 bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
-  if (seq_ids.empty() || !can_extend(static_cast<int>(seq_ids.size()))) {
+  if (seq_ids.empty() || !has_room(static_cast<int>(seq_ids.size()))) {
     return false;
   }
   for (int32_t seq_id : seq_ids) {
@@ -68,15 +60,34 @@ bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
       return false;
     }
   }
+  if (dflash_block_size_) {
+    uint64_t seen = 0;
+    for (size_t begin = 0; begin < seq_ids.size();) {
+      const int32_t owner = seq_ids[begin];
+      size_t end = begin + 1;
+      while (end < seq_ids.size() && seq_ids[end] == owner) {
+        ++end;
+      }
+      if ((seen & bit(owner)) ||
+          end - begin < static_cast<size_t>(*dflash_block_size_)) {
+        return false;
+      }
+      seen |= bit(owner);
+      begin = end;
+    }
+  }
   step_seq_ids_ = seq_ids;
   declared_ = true;
   invalidate_steps();
-  std::fill(served_.begin(), served_.end(), false);
   return true;
 }
 
 bool CellCache::live(int32_t seq_id) const {
   return (reserved_ & bit(seq_id)) != 0;
+}
+
+std::optional<int> CellCache::max_seqs() const {
+  return kMaxSeqs;
 }
 
 std::optional<int32_t> CellCache::seq_new() {
@@ -110,13 +121,30 @@ std::optional<int32_t> CellCache::seq_clone(
   return dst;
 }
 
-bool CellCache::seq_rm(int32_t seq_id, int p0, std::optional<int> p1) {
-  if (!valid_seq(seq_id)) {
+bool CellCache::seq_rm(int32_t seq_id) {
+  if (!valid_seq(seq_id) || !live(seq_id)) {
     return false;
   }
+  drop_from(seq_id, 0);
+  reserved_ &= ~bit(seq_id); // the last slot went, so the id is free again
+  invalidate_steps();
+  return true;
+}
+
+bool CellCache::rewind(int32_t seq_id, int position) {
+  if (!valid_seq(seq_id) || !live(seq_id) || position < 0 ||
+      position > pos(seq_id)) {
+    return false;
+  }
+  drop_from(seq_id, position);
+  invalidate_steps();
+  return true;
+}
+
+void CellCache::drop_from(int32_t seq_id, int from) {
   const uint64_t b = bit(seq_id);
   for (int i = 0; i < used_end_; ++i) {
-    if ((owners_[i] & b) && pos_[i] >= p0 && (!p1 || pos_[i] < *p1)) {
+    if ((owners_[i] & b) && pos_[i] >= from) {
       owners_[i] &= ~b;
       if (owners_[i] == 0) {
         pos_[i] = -1;
@@ -128,23 +156,18 @@ bool CellCache::seq_rm(int32_t seq_id, int p0, std::optional<int> p1) {
     --used_end_;
   }
   rescan(seq_id);
-  if (info_[seq_id].count == 0) {
-    reserved_ &= ~bit(seq_id); // the last slot went, so the id is free again
-  }
-  invalidate_steps();
-  return true;
 }
 
-int CellCache::seq_len(int32_t seq_id) const {
-  return valid_seq(seq_id) ? info_[seq_id].count : 0;
-}
-
-int CellCache::next_pos(int32_t seq_id) const {
+int CellCache::pos(int32_t seq_id) const {
   return valid_seq(seq_id) ? info_[seq_id].max_pos + 1 : 0;
 }
 
 int CellCache::free_cells() const {
   return capacity_ - used_count_;
+}
+
+bool CellCache::has_room(int n) const {
+  return capacity_ - used_count_ >= n;
 }
 
 int CellCache::used_end() const {
@@ -155,25 +178,33 @@ int CellCache::used_end() const {
 
 const CellStep*
 CellCache::place_step(int layer, const int32_t* positions, int length) {
-  if (layer < 0 || layer >= static_cast<int>(windows_.size()) ||
-      served_[layer]) {
-    return nullptr; // out of range, or a forward that skipped declare_step
+  if (positions == nullptr || length <= 0 || layer < 0 ||
+      layer >= static_cast<int>(windows_.size())) {
+    return nullptr; // layer out of range
   }
-  if (!placed_) {
-    if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
-      return nullptr; // no declaration, or a token count disagreeing with it
-    }
-    if (!extends(positions, length)) {
-      return nullptr; // nothing mutated yet, so the step can be re-placed
-    }
-    step_pos_.assign(positions, positions + length);
-    if (!place()) {
+  if (placed_) {
+    // Re-serve within the placed forward. Every layer of a forward places the
+    // same tokens, and a KV-shared layer re-serves its donor's id, so a repeat
+    // with the same positions returns the same step and claims no new cells.
+    // Different positions mean a new step that never declared, still refused.
+    if (length != static_cast<int>(step_pos_.size()) ||
+        !std::equal(positions, positions + length, step_pos_.begin())) {
       return nullptr;
     }
-    declared_ = false; // one declaration, one placement
-    placed_ = true;
+    return &step_for(windows_[layer]);
   }
-  served_[layer] = true;
+  if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
+    return nullptr; // no declaration, or a token count disagreeing with it
+  }
+  if (!continues(positions, length)) {
+    return nullptr; // a position a sequence already holds
+  }
+  step_pos_.assign(positions, positions + length);
+  if (!place()) {
+    return nullptr; // out of cells
+  }
+  declared_ = false; // one declaration, one placement
+  placed_ = true;
   return &step_for(windows_[layer]);
 }
 
@@ -187,17 +218,17 @@ bool CellCache::valid_seq(int32_t seq_id) {
   return seq_id >= 0 && seq_id < kMaxSeqs;
 }
 
-bool CellCache::extends(const int32_t* positions, int length) const {
-  std::array<int32_t, kMaxSeqs> newest{};
+bool CellCache::continues(const int32_t* positions, int length) const {
+  std::array<int32_t, kMaxSeqs> next{};
   for (int s = 0; s < kMaxSeqs; ++s) {
-    newest[s] = info_[s].max_pos;
+    next[s] = info_[s].max_pos + 1;
   }
   for (int i = 0; i < length; ++i) {
     const int32_t seq_id = step_seq_ids_[i];
-    if (positions[i] <= newest[seq_id]) {
+    if (positions[i] != next[seq_id]) {
       return false;
     }
-    newest[seq_id] = positions[i];
+    ++next[seq_id];
   }
   return true;
 }
@@ -268,6 +299,19 @@ const CellStep& CellCache::step_for(int window) {
   step.read_len = used_end_;
   step.cells = cells_;
   step.mask_bits = build_mask(window);
+  if (dflash_block_size_) {
+    const int queries = std::max(1, *dflash_block_size_);
+    for (int begin = 0; begin < step.length;) {
+      int end = begin + 1;
+      while (end < step.length && step_seq_ids_[end] == step_seq_ids_[begin]) {
+        ++end;
+      }
+      for (int row = end - queries; row < end; ++row) {
+        step.query_rows.push_back(row);
+      }
+      begin = end;
+    }
+  }
   return steps_.emplace(window, std::move(step)).first->second;
 }
 
@@ -278,14 +322,18 @@ std::vector<uint8_t> CellCache::build_mask(int window) const {
   for (int i = 0; i < length; ++i) {
     const uint64_t tok_bit = bit(step_seq_ids_[i]);
     const int32_t tok_pos = step_pos_[i];
-    // A flat layer reaches back to the start; a windowed one to its window.
-    const int32_t oldest = window > 0 ? tok_pos - window + 1 : 0;
+    // Draft history is anchored at context end, shared by all block queries.
+    const int32_t context_end =
+        info_[step_seq_ids_[i]].max_pos + 1 - dflash_block_size_.value_or(0);
+    const int32_t oldest = window > 0
+        ? (dflash_block_size_ ? context_end - window : tok_pos - window + 1)
+        : 0;
     uint8_t* row = bits.data() + static_cast<size_t>(i) * used_end_;
     for (int j = 0; j < used_end_; ++j) {
       row[j] = static_cast<uint8_t>(
           pos_[j] >= 0 && // occupied: a freed cell holds nothing
           (owners_[j] & tok_bit) && // one of this query's sequences
-          pos_[j] <= tok_pos && // not the future; <= so a query sees itself
+          (dflash_block_size_ || pos_[j] <= tok_pos) && // full draft block
           pos_[j] >= oldest); // within the window
     }
   }

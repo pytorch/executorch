@@ -20,6 +20,10 @@ All requirements can be downloaded using `examples/arm/setup.sh --enable-mlsdk-d
 `source examples/arm/arm-scratch/setup_path.sh`
 ```
 
+```{note}
+Python 3.12 is the reference and recommended minimum for the ML SDK VGF flow. ExecuTorch itself supports a broader Python range, so VGF users on older interpreters receive a preflight warning rather than a package-level installation failure.
+```
+
 For the AOT flow, compilation of a model to `.pte` format using the VGF backend, the requirements are:
 - [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [ML SDK Model Converter](https://github.com/arm/ai-ml-sdk-model-converter) for converting TOSA flatbuffers to VGF files.
@@ -36,16 +40,26 @@ The main configuration point for the lowering is the `VgfCompileSpec` consumed b
 To extract the VGF file for integration into applications without the ExecuTorch runtime, use `VgfCompileSpec.dump_intermediate_artifacts_to()`.  
 The full user-facing API is documented below.
 
+For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
+Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
+are contained in one delegated partition, and whose new value is not returned or
+read outside that partition. The backend aliases each buffer's
+input and mutation output to persistent VGF storage across invocations.
+
 ```python
-class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None)
+class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False, alias_buffer_mutations: bool = False)
 ```
 Normalise inputs and populate the underlying Arm compile spec.
 
 Args:
 - **tosa_spec (TosaSpecification | str | None)**: TOSA specification to
         target. Strings are parsed via ``TosaSpecification.create_from_string``.
-        Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
+        Defaults to ``"TOSA-1.0+FP+INT+int4+int16+bf16"``.
 - **compiler_flags (list[str] | None)**: Optional converter-backend flags.
+- **emit_debug_info (bool)**: Preserve Model Converter debug information in
+        the generated VGF. Defaults to ``False``.
+- **alias_buffer_mutations (bool)**: Whether eligible mutable buffers should
+        be delegated as persistent VGF state. Defaults to ``False``.
 
 ```python
 def VgfCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -138,6 +152,7 @@ described in the rest of this guide but with a concrete end-to-end sample.
 
 **→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
+**→{doc}`/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization` — Dynamic W8A8 quantization tutorial.**
 
 ```{toctree}
 :maxdepth: 2
@@ -149,4 +164,5 @@ arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/vgf-getting-started
 VGF_op_support
+tutorials/vgf-dynamic-w8a8-quantization
 ```

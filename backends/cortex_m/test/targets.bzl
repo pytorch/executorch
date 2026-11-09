@@ -1,10 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 
@@ -36,6 +39,22 @@ def define_common_targets(is_fbcode = False):
         define_operator_test_target(op)
 
     if is_fbcode:
+        python_library(
+            name = "tester",
+            srcs = ["tester.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/arm/test:arm_tester",
+                "//executorch/backends/arm/test:common",
+                "//executorch/backends/cortex_m:edge_compile_config",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/backends/test/harness:tester",
+                "//executorch/exir:lib",
+            ],
+        )
+
         python_unittest(
             name = "test_activation_lut",
             srcs = [
@@ -44,9 +63,31 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:cortex_passes",
-                "//executorch/backends/cortex_m/passes:passes_utils",
+                "//executorch/backends/cortex_m:utils",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/exir/dialects:lib",
+            ],
+        )
+
+        python_pytest(
+            name = "test_explicit_layout_pipeline",
+            srcs = ["test_explicit_layout_pipeline.py"],
+            compile = "with-source",
+            typing = False,
+            # Implementation tests require the Cortex-M FVP runner, which Buck does not provide.
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/ops:ops",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/backends/test/harness:tester",
+                "//executorch/backends/transforms:remove_unused_constants_pass",
+                "//executorch/exir:lib",
+                "//executorch/exir/dialects:lib",
+                ":tester",
+                "fbsource//third-party/pypi/pytest:pytest",
             ],
         )
 
@@ -64,4 +105,55 @@ def define_common_targets(is_fbcode = False):
             ],
         )
 
-    
+        python_pytest(
+            name = "test_attention",
+            srcs = ["ops/test_attention.py"],
+            resources = ["conftest.py"],
+            compile = "with-source",
+            typing = False,
+            # Implementation tests require the Cortex-M FVP runner, which Buck does not provide.
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/arm/test:common",
+                "//executorch/backends/cortex_m:target_config",
+                ":tester",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )
+
+        python_pytest(
+            name = "test_pass_manager",
+            srcs = ["test_pass_manager.py"],
+            compile = "with-source",
+            typing = False,
+            deps = [
+                "//caffe2:torch",
+                "//pytorch/ao:torchao",  # @manual
+                "//executorch/backends/cortex_m:edge_compile_config",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/exir:lib",
+                "//executorch/exir:memory",
+                "//executorch/exir:pass_base",
+                "//executorch/exir/_serialize:lib",
+                "//executorch/exir/dialects:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )
+
+        python_pytest(
+            name = "test_fuse_conv_padding",
+            srcs = ["test_fuse_conv_padding.py"],
+            compile = "with-source",
+            typing = False,
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/test/harness:tester",
+                "//executorch/exir/dialects:lib",
+                ":tester",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )

@@ -9,6 +9,7 @@ if(APPLE)
   find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
   find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
   find_library(COREML_FRAMEWORK CoreML REQUIRED)
+  find_library(COREVIDEO_FRAMEWORK CoreVideo REQUIRED)
   find_library(SQLITE_LIBRARY sqlite3 REQUIRED)
 endif()
 
@@ -180,11 +181,10 @@ install(
 # executorchcoreml
 
 if(EXECUTORCH_BUILD_PYBIND)
-  pybind11_add_module(
-    executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp
+  executorch_add_pybind_module(
+    executorchcoreml runtime/inmemoryfs/inmemory_filesystem_py.cpp
     runtime/inmemoryfs/inmemory_filesystem_utils.cpp
   )
-  strip_python_lib(executorchcoreml)
   target_link_libraries(
     executorchcoreml PRIVATE coreml_util coreml_inmemoryfs
                              nlohmann_json::nlohmann_json
@@ -199,7 +199,9 @@ if(APPLE)
   # link it, and so the Python extension links it dynamically instead of
   # absorbing its code. Keyed on EXECUTORCH_BUILD_SHARED rather than
   # BUILD_SHARED_LIBS, the same way the other shipped delegates decide this, so
-  # the wheel controls it independently of the generic CMake switch.
+  # the wheel controls it independently of the generic CMake switch. The wheel
+  # ships this one delegate library and _C links that copy rather than embedding
+  # another.
   if(EXECUTORCH_BUILD_SHARED)
     set(_coreml_backend_library_type SHARED)
   else()
@@ -256,8 +258,9 @@ if(APPLE)
   endif()
 
   target_link_libraries(
-    coremldelegate PRIVATE ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-                           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+    coremldelegate
+    PRIVATE ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK} ${COREVIDEO_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
   if(EXECUTORCH_BUILD_SHARED)
     set_target_properties(

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,6 +20,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Sequence,
     Set,
     Tuple,
     Union,
@@ -619,6 +621,25 @@ def flatten_output(gm: torch.fx.GraphModule) -> None:
     raise RuntimeError(f"Could not find an output node in {gm.graph}")
 
 
+def _empty_like(self: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    # With preserve_format the buffer must get the layout its input has in the
+    # Edge program, not its eager strides: a view becomes a contiguous copy. So
+    # keep the op until ReplaceEmptyLikePass, which runs once views are copies.
+    if kwargs.get("memory_format") in (None, torch.preserve_format):
+        return NotImplemented  # pyre-ignore[7]: keeps the op undecomposed.
+    return torch._refs.empty_like(self, **kwargs)
+
+
+def _empty_permuted(
+    size: List[int], physical_layout: List[int], **kwargs: Any
+) -> torch.Tensor:
+    # Only the identity layout is safe here, for the reason in _empty_like.
+    # Other layouts stay and fail the core ATen check.
+    if list(physical_layout) != list(range(len(physical_layout))):
+        return NotImplemented  # pyre-ignore[7]: keeps the op undecomposed.
+    return torch.ops.aten.empty.memory_format(size, **kwargs)
+
+
 def _default_decomposition_table(
     _use_old_decomp_table=False,
 ) -> Dict[torch._ops.OpOverload, Callable[..., Value]]:
@@ -633,6 +654,7 @@ def _default_decomposition_table(
         return get_decompositions(decomp_opset)  # pyre-fixme[7]
 
     decomps = default_decompositions()
+    decomps[torch.ops.aten.normal.float_float] = _decompose_normal_float_float
     # Add edge specific decompositions
     additional_decomp_ops = [
         # TODO: Eventually this op should be added to the core decompo table, and will not
@@ -641,6 +663,17 @@ def _default_decomposition_table(
     ]
     additional_decomps = get_decompositions(additional_decomp_ops)
     decomps.update(additional_decomps)
+    decomps[torch.ops.aten.empty_like.default] = _empty_like
+    # A program already decomposed with PyTorch's table has aten.empty_permuted
+    # where it had aten.empty_like.
+    decomps[torch.ops.aten.empty_permuted.default] = _empty_permuted
+    # torch._check_tensor_all exports to this op, which has no decomposition in core.
+    decomps[torch.ops.aten._is_all_true.default] = torch.ops.aten.all.default
+    # embedding_bag with frozen weights exports to this op; it only skips
+    # saving tensors for the backward pass.
+    decomps[torch.ops.aten._embedding_bag_forward_only.default] = (
+        torch.ops.aten._embedding_bag.default
+    )
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
 
     never_decompose = []
@@ -648,6 +681,42 @@ def _default_decomposition_table(
     for op in never_decompose:
         decomps.pop(op, None)
     return decomps  # pyre-fixme[7]
+
+
+def _decompose_normal_float_float(
+    mean: float,
+    std: float,
+    size: Sequence[int],
+    *,
+    generator: Optional[torch.Generator] = None,
+    dtype: Optional[torch.dtype] = None,
+    layout: Optional[torch.layout] = None,
+    device: Optional[torch.device] = None,
+    pin_memory: Optional[bool] = None,
+) -> Any:
+    if generator is not None:
+        return NotImplemented
+    if std < 0:
+        raise RuntimeError(f"normal expects std >= 0.0, but found std {std}")
+
+    output_dtype = dtype or torch.get_default_dtype()
+    match output_dtype:
+        case torch.float16 | torch.bfloat16:
+            compute_dtype = torch.float32
+        case torch.complex32:
+            compute_dtype = torch.complex64
+        case _:
+            compute_dtype = output_dtype
+
+    result = torch.randn(
+        size,
+        dtype=compute_dtype,
+        layout=layout,
+        device=device,
+        pin_memory=pin_memory,
+    )
+    result = result * std + (complex(mean, mean) if output_dtype.is_complex else mean)
+    return result.to(output_dtype) if compute_dtype != output_dtype else result
 
 
 def dynamo_trace(

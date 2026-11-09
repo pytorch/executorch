@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import itertools
 import unittest
 
@@ -16,6 +17,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     PermuteCopyConverter,
 )
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
+from executorch.backends.nxp.backend.ops_aliases import (
+    Clone,
+    CloneDimOrder,
+    PermuteCopy,
+)
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
 )
@@ -45,7 +51,6 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.exir import EdgeCompileConfig
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.export_util.utils import export_to_edge
 from parameterized import parameterized
 from torch import nn
@@ -144,8 +149,8 @@ class TestCloneConverter(unittest.TestCase):
     @staticmethod
     def _node_is_clone(node) -> bool:
         clone_ops = [
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.dim_order_ops._clone_dim_order.default,
+            Clone,
+            CloneDimOrder,
         ]
 
         def target_can_be_clone(node):
@@ -215,13 +220,14 @@ class TestCloneConverter(unittest.TestCase):
         has_clone = graph_contains_any_of_ops(
             graph=edge_program.graph,
             ops=[
-                exir_ops.edge.aten.clone.default,
-                exir_ops.edge.dim_order_ops._clone_dim_order.default,
+                Clone,
+                CloneDimOrder,
             ],
         )
 
-        # Clone with inplace=True should not produce clone edge op and vice versa
-        assert inplace_dropout ^ has_clone
+        # Neither spelling leaves a clone behind on this PyTorch: the out-of-place
+        # one used to and no longer does.
+        assert not has_clone
 
     @parameterized.expand([("QAT", True), ("PTQ", False)])
     def test_clone_pool_view_copy_quant(
@@ -286,7 +292,7 @@ class TestCloneConverter(unittest.TestCase):
         )
         # Make sure the `aten.clone` was inserted as expected.
         nodes = list(edge_program_manager.exported_program().graph.nodes)
-        assert nodes[9].target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        assert nodes[9].target == CloneDimOrder
         assert nodes[9].kwargs["dim_order"] == [0, 1, 2, 3]
 
         # Move the `clone` out of the cluster with the `view_copy`.
@@ -339,9 +345,7 @@ class TestCloneConverter(unittest.TestCase):
             ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         nodes = list(ep.graph.nodes)
-        assert not graph_contains_any_of_ops(
-            ep.graph, [exir_ops.edge.aten.clone.default]
-        )
+        assert not graph_contains_any_of_ops(ep.graph, [Clone])
         assert nodes[3].name == "executorch_call_delegate"
-        assert nodes[5].target == exir_ops.edge.aten.permute_copy.default
+        assert nodes[5].target == PermuteCopy
         assert nodes[7].name == "executorch_call_delegate_1"

@@ -150,6 +150,11 @@ Tensor& opt_bmm_out(
   ET_KERNEL_CHECK(
       ctx, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, mat2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
   static constexpr auto name = "bmm.out";
 
   auto self_type = self.scalar_type();

@@ -25,3 +25,4 @@ class FuseIdenticalInputTransformsPass(
 
     # Both bases declare this; restate it once so the two agree.
     target_ops: set[Any] = _FuseIdenticalInputTransformsPass.target_ops
+    _recompile_before_retrace = False

@@ -17,7 +17,8 @@ namespace vkcompute {
 
 bool is_bitw8(vkapi::ScalarType dtype) {
   return dtype == vkapi::kByte || dtype == vkapi::kChar ||
-      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
+      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8 ||
+      dtype == vkapi::kBool;
 }
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(

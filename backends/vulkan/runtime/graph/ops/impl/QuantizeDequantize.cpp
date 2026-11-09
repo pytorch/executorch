@@ -32,11 +32,10 @@ bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input) {
 std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
     ComputeGraph& graph,
     const ValueRef input) {
-  std::vector<int64_t> input_sizes = graph.sizes_of(input);
-  const int64_t ndim = graph.dim_of(input);
+  const std::vector<int64_t> input_sizes = graph.sizes_of(input);
 
-  const int64_t M = input_sizes.at(ndim - 2);
-  const int64_t K = input_sizes.at(ndim - 1);
+  const int64_t M = utils::val_at(-2, input_sizes);
+  const int64_t K = utils::val_at(-1, input_sizes);
 
   const int64_t num_blocks_M = utils::div_up(M, int64_t(4));
   const int64_t num_blocks_K = utils::div_up(K, int64_t(4));
@@ -59,33 +58,6 @@ GlobalWorkGrid quantize_and_pack_4h4w_gwg(
        utils::safe_downcast<uint32_t>(num_blocks_M),
        1u},
       kTiledWorkGrid);
-}
-
-vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef packed_int_input = args.at(0).refs.at(0);
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_input_zps = args.at(1).refs.at(2);
-  const ValueRef group_size = resize_args.at(0);
-
-  const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
-
-  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
-  if (group_size_val >= 128) {
-    shader_name += "_o2w32";
-  } else {
-    shader_name += "_o4w16";
-  }
-
-  add_storage_type_suffix(
-      shader_name, graph->storage_type_of(packed_int_input));
-  add_storage_type_suffix(shader_name, graph->storage_type_of(fp_input));
-  add_dtype_suffix(shader_name, graph->dtype_of(fp_input));
-  add_zp_dtype_mode_suffix(shader_name, graph->dtype_of(packed_input_zps));
-
-  return VK_KERNEL_FROM_STR(shader_name);
 }
 
 GlobalWorkGrid pick_quantize_and_pack_4h4w_with_group_sums_gwg(
@@ -199,9 +171,20 @@ void add_quantize_and_pack_4h4w_with_group_sums_node(
   const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
   const int32_t blocks_per_group = utils::div_up(group_size_val, int32_t(4));
 
+  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
+  if (group_size_val >= 128) {
+    shader_name += "_o2w32";
+  } else {
+    shader_name += "_o4w16";
+  }
+  add_storage_type_suffix(shader_name, graph.storage_type_of(packed_int_input));
+  add_storage_type_suffix(shader_name, graph.storage_type_of(fp_input));
+  add_dtype_suffix(shader_name, graph.dtype_of(fp_input));
+  add_zp_dtype_mode_suffix(shader_name, graph.dtype_of(packed_input_zps));
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_quantize_and_pack_4h4w_with_group_sums_shader,
+      VK_KERNEL_FROM_STR(shader_name),
       pick_quantize_and_pack_4h4w_with_group_sums_gwg,
       pick_required_lwg,
       // Inputs and Outputs
@@ -278,6 +261,9 @@ void add_quantize_and_pack_4w4c_node(
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_input)};
+  if (graph.is_buffer_storage(fp_input)) {
+    param_buffers.append(graph.buffer_meta_ubo(fp_input));
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
@@ -322,6 +308,9 @@ void add_unpack_4w4c_and_dequantize_node(
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_output)};
+  if (graph.is_buffer_storage(fp_output)) {
+    param_buffers.append(graph.buffer_meta_ubo(fp_output));
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&scale, sizeof(scale)),

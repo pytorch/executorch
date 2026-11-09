@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -35,12 +35,15 @@ def define_common_targets():
         runtime.cxx_library(
             name = "stats" + aten_suffix,
             exported_headers = [
+                "model_metadata.h",
                 "stats.h",
+                "text_stream.h",
                 "util.h",
             ],
             visibility = ["PUBLIC"],
             exported_deps = [
                 ":constants",
+                "//pytorch/tokenizers:headers",
                  "//executorch/extension/module:module" + aten_suffix,
                  "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
@@ -100,12 +103,23 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "multimodal_runner_lib" + aten_suffix,
+            name = "multimodal_input" + aten_suffix,
             exported_headers = [
                 "audio.h",
                 "image.h",
-                "wav_loader.h",
                 "multimodal_input.h",
+            ],
+            visibility = ["PUBLIC"],
+            exported_deps = [
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/runtime/platform:platform",
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "multimodal_runner_lib" + aten_suffix,
+            exported_headers = [
+                "wav_loader.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",
                 "multimodal_decoder_runner.h",
@@ -117,6 +131,7 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":image_prefiller" + aten_suffix,
+                ":multimodal_input" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
             ],
         )
@@ -133,6 +148,7 @@ def define_common_targets():
                 "llm_runner_helper.cpp",
                 "multimodal_runner.cpp",
             ],
+            headers = ["multimodal_runner.h"] if not runtime.is_oss and not is_xplat() else [],
             visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import enum
 import inspect
+import shutil
+import subprocess  # nosec B404
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -30,6 +32,7 @@ MANIFEST_PATH = (
     / "public_api_manifests"
     / "api_manifest_running.toml"
 )
+CMAKE_API_PREFIX = "ARM_RUNNER_UTILS_API|"
 
 
 def _copyright_year_range() -> str:
@@ -123,18 +126,63 @@ def _collect_public_api(
     return entries
 
 
-def _render_manifest(entries: dict[str, dict[str, str]]) -> str:
-    lines = [HEADER.format(years=_copyright_year_range()).rstrip(), "", "[python]", ""]
-    for path in sorted(entries):
-        entry = entries[path]
+def _collect_cmake_public_api(repo_path: Path) -> dict[str, dict[str, str]]:
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        raise RuntimeError("cmake is required to generate the CMake API manifest")
+    facade = repo_path / "backends" / "arm" / "cmake" / "ArmRunnerUtils.cmake"
+    if not facade.is_file():
+        raise RuntimeError(f"Arm runner CMake API facade does not exist: {facade}")
+    result = subprocess.run(  # nosec B603
+        [
+            cmake,
+            "-DARM_RUNNER_UTILS_API_METADATA_ONLY=ON",
+            "-DARM_RUNNER_UTILS_API_EMIT_MANIFEST=ON",
+            "-P",
+            str(facade),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to read the CMake API from {facade}:\n{result.stderr}"
+        )
+    entries: dict[str, dict[str, str]] = {}
+    for line in (result.stdout + result.stderr).splitlines():
+        if not line.startswith(CMAKE_API_PREFIX):
+            continue
+        name, kind, signature = line.removeprefix(CMAKE_API_PREFIX).split("|", 2)
+        entries[name] = {"kind": kind, "signature": signature}
+    if not entries:
+        raise RuntimeError("CMake API emitter returned no entries")
+    return entries
+
+
+def _render_section(
+    section: str,
+    entries: dict[str, dict[str, str]],
+) -> list[str]:
+    lines = [f"[{section}]", ""]
+    for path, entry in sorted(entries.items()):
         lines.extend(
             [
-                f"[python.{path}]",
+                f"[{section}.{path}]",
                 f'kind = "{entry["kind"]}"',
                 f'signature = "{entry["signature"]}"',
                 "",
             ]
         )
+    return lines
+
+
+def _render_manifest(
+    python_entries: dict[str, dict[str, str]],
+    cmake_entries: dict[str, dict[str, str]],
+) -> str:
+    lines = [HEADER.format(years=_copyright_year_range()).rstrip(), ""]
+    lines.extend(_render_section("python", python_entries))
+    lines.extend(_render_section("cmake", cmake_entries))
     return "\n".join(lines)
 
 
@@ -143,8 +191,14 @@ def generate_manifest_from_init(
     repo_path: Path | None = None,
     include_deprecated: bool = False,
 ) -> str:
-    del repo_path
-    return _render_manifest(_collect_public_api(include_deprecated=include_deprecated))
+    if repo_path is None:
+        repo_path = Path(__file__).resolve().parents[4]
+    else:
+        repo_path = repo_path.resolve()
+    return _render_manifest(
+        _collect_public_api(include_deprecated=include_deprecated),
+        _collect_cmake_public_api(repo_path),
+    )
 
 
 def main() -> None:

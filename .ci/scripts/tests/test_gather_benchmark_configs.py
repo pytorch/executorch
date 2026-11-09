@@ -24,6 +24,11 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         cls.gather_benchmark_configs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.gather_benchmark_configs)
 
+        # The script writes its matrix to $GITHUB_OUTPUT when that is set and
+        # only prints it when it is not, so the CLI tests below assert against a
+        # stdout that a real CI environment would leave empty.
+        cls.cli_env = {k: v for k, v in os.environ.items() if k != "GITHUB_OUTPUT"}
+
     def test_extract_all_configs_android(self):
         android_configs = self.gather_benchmark_configs.extract_all_configs(
             self.gather_benchmark_configs.BENCHMARK_CONFIGS, "android"
@@ -222,7 +227,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
                 cmd.append(f"--{key}")
                 cmd.append(value)
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=self.cli_env)
         self.assertEqual(result.returncode, 0, f"Error: {result.stderr}")
         self.assertIn('"model": "mv2"', result.stdout)
         self.assertIn('"model": "dl3"', result.stdout)
@@ -243,7 +248,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
                 cmd.append(f"--{key}")
                 cmd.append(value)
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=self.cli_env)
         self.assertEqual(result.returncode, 0, f"Error: {result.stderr}")
         self.assertIn('{"include": []}', result.stdout)
 
@@ -261,7 +266,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
                 cmd.append(f"--{key}")
                 cmd.append(value)
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=self.cli_env)
         self.assertEqual(result.returncode, 0, f"Error: {result.stderr}")
         self.assertIn('"model": "mv2"', result.stdout)
         self.assertIn('"model": "dl3"', result.stdout)
@@ -282,7 +287,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
                 cmd.append(f"--{key}")
                 cmd.append(value)
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=self.cli_env)
         self.assertEqual(result.returncode, 1, f"Error: {result.stderr}")
         self.assertIn("Unsupported config 'qnn_q8'", result.stderr)
 

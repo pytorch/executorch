@@ -70,6 +70,11 @@ build_android_native_library() {
   mkdir -p ${SO_STAGE_DIR}
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
 
+  # Vulkan links to this registry DSO even when no sharing options are set.
+  if [[ "${EXECUTORCH_BUILD_VULKAN}" == "ON" ]]; then
+    cp "${CMAKE_OUT}/lib/libexecutorch_vulkan_shared_runtime.so" "${SO_STAGE_DIR}/"
+  fi
+
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
     cp "${CMAKE_OUT}"/lib/executorch/backends/qualcomm/libqnn_executorch_backend.so ${SO_STAGE_DIR}

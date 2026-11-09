@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from collections.abc import Collection
+
 import torch
 
 from executorch.backends.transforms.utils import (
@@ -25,13 +27,30 @@ class ConvertConv1dToConv2dPass(ExportPass):
     are left unchanged.
     Weights passed across control-flow boundaries are unsqueezed inside the
     nested graph so its input signature remains unchanged.
+    Root graph-local weights are skipped by default. Backends may provide an
+    allow-list of safe producer targets when constructing the pass.
     The pass emits squeeze and unsqueeze boundaries for each converted
     convolution; downstream view cleanup can fold adjacent boundaries.
     """
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        graph_local_weight_targets: Collection[torch.fx.node.Target] = (),
+    ) -> None:
+        """Initialize the transform.
+
+        Args:
+            exported_program (ExportedProgram): Program containing the graph
+                and its lifted weights.
+            graph_local_weight_targets (Collection[torch.fx.node.Target]):
+                Producer targets whose three-dimensional outputs may be used
+                as Conv1d weights. All graph-local weights are skipped when
+                this is empty.
+        """
         super().__init__()
         self.exported_program = exported_program
+        self._graph_local_weight_targets = frozenset(graph_local_weight_targets)
 
     def _unsqueeze_weight(self, weight_node: torch.fx.Node) -> bool:
         weight = get_param_tensor(self.exported_program, weight_node)
@@ -182,6 +201,59 @@ class ConvertConv1dToConv2dPass(ExportPass):
             graph_module.recompile()
         return modified
 
+    def _convert_graph_local_weights(self, graph: torch.fx.Graph) -> bool:
+        """Convert supported root Conv1d nodes with graph-local weights.
+
+        A graph-local weight is produced by another graph operation rather
+        than stored as a model parameter. Callers choose which producers are
+        safe to convert. The original weight remains unchanged; an
+        unsqueeze is inserted between the producer and the convolution.
+
+        Args:
+            graph (torch.fx.Graph): Root graph whose Conv1d nodes are examined.
+
+        Returns:
+            bool: True if at least one Conv1d node was converted.
+        """
+        modified = False
+        for node in list(graph.nodes):
+            if not self._is_conv1d(node):
+                continue
+
+            input_node, weight_node = node.args[:2]
+            if not isinstance(input_node, torch.fx.Node) or not isinstance(
+                weight_node, torch.fx.Node
+            ):
+                continue
+
+            weight_meta = weight_node.meta.get("val")
+            weight_source_is_allowed = (
+                weight_node.target in self._graph_local_weight_targets
+            )
+            has_conv1d_weight_shape = (
+                isinstance(weight_meta, torch.Tensor) and weight_meta.dim() == 3
+            )
+            if not weight_source_is_allowed or not has_conv1d_weight_shape:
+                continue
+
+            # The weight producer must keep its original output shape. Insert
+            # the missing unit-height dimension only on the path to this conv:
+            #
+            #   graph-local weight [O, I, K]
+            #                 |
+            #             unsqueeze(2)
+            #                 v
+            #        Conv2d weight [O, I, 1, K]
+            self._convert_node(
+                graph,
+                node,
+                input_node,
+                weight_node,
+                unsqueeze_weight=True,
+            )
+            modified = True
+        return modified
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         is_root = graph_module is self.exported_program.graph_module
@@ -228,6 +300,12 @@ class ConvertConv1dToConv2dPass(ExportPass):
                 unsqueeze_weight=False,
             )
             modified = True
+
+        # Some backends create graph-local weights known to be safe before this
+        # pass. A caller may opt those weights into the same local unsqueeze
+        # used by nested graphs without enabling arbitrary dynamic weights.
+        if is_root:
+            modified = self._convert_graph_local_weights(graph) or modified
 
         # The normal entry point invokes this call method for the root graph.
         # Explicitly apply the rewrite to its child control-flow GraphModules.

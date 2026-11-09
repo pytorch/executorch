@@ -140,3 +140,61 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
+
+TEST_F(SharedPtrDataLoaderTest, InBoundsLoadIntoSucceeds) {
+  // Create some heterogeneous data.
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  for (int i = 0; i < SIZE; ++i) {
+    data[i] = i;
+  }
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  uint8_t dst[3] = {};
+  Error err = sbdl.load_into(
+      /*offset=*/2,
+      /*size=*/sizeof(dst),
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      dst);
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(0, std::memcmp(dst, "\x02\x03\x04", sizeof(dst)));
+
+  // Data is unaltered.
+  EXPECT_EQ(data[2], 2);
+}
+
+TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
+  // Wrap some data in a loader.
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  // Loading into a null destination should fail.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_NE(err, Error::Ok);
+  }
+
+  // Loading zero bytes still fails if dst is null.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_NE(err, Error::Ok);
+  }
+}

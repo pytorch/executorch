@@ -4,19 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# The SDK has to be usable before a model is compiled, and every builder in this package
-# imports this module, so this is where it is arranged. Not in the package's __init__, because
-# that made simply importing the package fetch an SDK over the network and change a global
-# PyTorch setting.
-#
-# The adaptor imported below does not itself need the SDK to load: it links no QNN library and
-# resolves those symbols with dlopen when a backend is started. Placing the call here is about
-# covering the compile paths, not about ordering against that import.
-from executorch.backends.qualcomm import disable_mkldnn_on_amd, setup_qnn_sdk
-
-setup_qnn_sdk()
-disable_mkldnn_on_amd()
-
 from typing import Any, Dict, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -96,8 +83,16 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
 }
 
+# Group-wise (a.k.a. per-channel-group / blockwise) weight quantization, as used
+# by int4 LLM weights. QNN represents it with a per-block encoding.
+PER_CHANNEL_GROUP_ENCODING = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+}
+
 q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.torchao.quantize_affine.default,
@@ -107,6 +102,7 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.torchao.dequantize_affine.default,
 }
 
@@ -114,9 +110,11 @@ q_dq_map = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
 }
 
 
@@ -139,6 +137,7 @@ class NodeVisitor:
         edge_program: torch.export.ExportedProgram,
         enable_tensor_dump,
         is_qnn_partitioner=True,
+        backend_type=None,
     ) -> None:
         # is_qnn_partitioner: True for the real qnn_partitioner / qnn_preprocess
         # flows, where external_ids is built from the program being processed so
@@ -151,6 +150,7 @@ class NodeVisitor:
         self.edge_program = edge_program
         self.enable_tensor_dump = enable_tensor_dump
         self.is_qnn_partitioner = is_qnn_partitioner
+        self.backend_type = backend_type
 
     def get_node(self, node):
         """
@@ -188,6 +188,19 @@ class NodeVisitor:
 
     def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
         import math
+
+        # blockwise expansion hardcodes a per-channel offset of 0, so an
+        # asymmetric weight would silently lower to a symmetric encoding
+        if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_GROUP_ENCODING:
+            zero_points = quant_attrs.get(QCOM_ZERO_POINTS)
+            if zero_points is None:
+                zero_points = quant_attrs.get(QCOM_ZERO_POINT)
+            if zero_points is not None and torch.any(torch.as_tensor(zero_points) != 0):
+                raise ValueError(
+                    "per-channel-group quantization with non-zero zero_points is "
+                    "not supported; QNN blockwise expansion requires symmetric "
+                    "quantization"
+                )
 
         quant_config = {
             QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
@@ -352,6 +365,7 @@ class NodeVisitor:
         per_block_encoding = {
             exir_ops.edge.torchao.quantize_affine.default,
             exir_ops.edge.torchao.dequantize_affine.default,
+            *PER_CHANNEL_GROUP_ENCODING,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)

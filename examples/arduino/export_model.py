@@ -161,11 +161,9 @@ def export_model(
         compile_config=cortex_m_edge_compile_config(),
     )
     pm = CortexMPassManager(
-        edge.exported_program(),
-        CortexMPassManager.pass_list,
         target_config=CortexMTargetConfig(cpu=cpu),
     )
-    edge._edge_programs["forward"] = pm.transform()
+    edge = edge.transform(pm)
     et = edge.to_executorch()
     return et.buffer
 

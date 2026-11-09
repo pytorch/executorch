@@ -32,7 +32,7 @@ import logging
 import os
 import subprocess
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
 logger = logging.getLogger(__name__)
@@ -53,9 +53,11 @@ class WorkerStats:
     # stop) or "length" (ran to max_new, possibly clamped to the context window).
     # None if the worker didn't report it (older worker / fake).
     finish_reason: Optional[str] = None
+    # None: old worker omitted metadata; empty string: explicit no string stop.
+    matched_stop: Optional[str] = None
     # Warm-resume accounting: how many prompt tokens were served from the
     # session's resident KV state vs actually prefilled this request, and why
-    # ("new"|"exact_prefix"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
+    # ("new"|"exact_prefix"|"prefix_clone"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
     # usage; logged for measuring warm-resume hit rate. None on older workers.
     reused_prompt_tokens: int = 0
     prefilled_prompt_tokens: int = 0
@@ -69,11 +71,38 @@ class WorkerStats:
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
-    # a lossy chat-template re-render. Empty on older workers and cancelled turns.
-    generated_token_ids: list = field(default_factory=list)
+    # a lossy chat-template re-render. None means unknown/unsafe (including older
+    # workers); an explicit empty list is a known-empty, resumable token sequence.
+    generated_token_ids: Optional[list[int]] = None
     # True when an out-of-band cancellation ended this request. Older workers
     # omit the field and therefore report False.
     cancelled: bool = False
+
+    @classmethod
+    def from_message(cls, msg: dict) -> "WorkerStats":
+        if msg.get("matched_stop") is not None and (
+            not isinstance(msg["matched_stop"], str)
+            or not msg["matched_stop"]
+            or msg.get("finish_reason") != "stop"
+        ):
+            raise WorkerError("invalid worker matched_stop")
+        return cls(
+            num_prompt_tokens=msg.get("prompt_tokens", 0),
+            num_generated_tokens=msg.get("completion_tokens", 0),
+            finish_reason=msg.get("finish_reason"),
+            matched_stop=(msg["matched_stop"] or "") if "matched_stop" in msg else None,
+            reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
+            prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
+            session_reset_reason=msg.get("session_reset_reason"),
+            prefill_ms=msg.get("prefill_ms", 0.0),
+            decode_ms=msg.get("decode_ms", 0.0),
+            total_ms=msg.get("total_ms", 0.0),
+            prefill_tok_s=msg.get("prefill_tok_s", 0.0),
+            decode_tok_s=msg.get("decode_tok_s", 0.0),
+            vision_encoder_ms=msg.get("vision_encoder_ms"),
+            cancelled=bool(msg.get("cancelled", False)),
+            generated_token_ids=msg.get("generated_token_ids"),
+        )
 
 
 class WorkerError(RuntimeError):
@@ -84,9 +113,18 @@ class WorkerError(RuntimeError):
     to the right status; None for unstructured failures.
     """
 
-    def __init__(self, message: str, code: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        code: Optional[str] = None,
+        *,
+        admitted: Optional[bool] = None,
+        context_overflow=None,
+    ):
         super().__init__(message)
         self.code = code
+        self.admitted = admitted
+        self.context_overflow = context_overflow
 
 
 def _decode_worker_json(line: str) -> dict:
@@ -164,6 +202,9 @@ class WorkerClient:
     reservation, cancellation, health, and shutdown use a separate state lock,
     so ``stop()`` never waits behind a blocking stdout read.
     """
+
+    supports_multiplexing = False
+    supports_ignore_eos = False
 
     def __init__(
         self,
@@ -356,9 +397,10 @@ class WorkerClient:
         ("capacity_exhausted" / "unsupported_session") if the worker refuses."""
         self._op({"op": "open", "session_id": session_id}, ack_key="opened")
 
-    def close_session(self, session_id: str) -> None:
-        """Destroy a named session, freeing its state (idempotent)."""
-        self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+    def close_session(self, session_id: str) -> Optional[bool]:
+        """Close idempotently; return whether it existed, or None for older workers."""
+        result = self._op({"op": "close", "session_id": session_id}, ack_key="closed")
+        return result.get("existed")
 
     def reset_session(self, session_id: str) -> None:
         """Clear a named session's context (KV/recurrent + resident tokens) but
@@ -395,15 +437,23 @@ class WorkerClient:
         except WorkerError as error:
             raise self._record_failure(error)
 
-    def _op(self, request: dict, ack_key: str) -> None:
+    def _op(self, request: dict, ack_key: str) -> dict:
         with self._lock:
             self._ensure_usable()
             self._write_request(request)
             msg = self._read_message()
             if msg.get(ack_key):
-                return
+                if "existed" in msg and type(msg["existed"]) is not bool:
+                    raise self._record_failure(
+                        WorkerError("invalid worker existed flag")
+                    )
+                return msg
             if "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             raise self._record_failure(
                 WorkerError(f"unexpected worker response: {msg}")
             )
@@ -419,24 +469,7 @@ class WorkerClient:
                 msg.get("prefilled_prompt_tokens", 0),
             )
         if stats_callback is not None:
-            stats_callback(
-                WorkerStats(
-                    num_prompt_tokens=msg.get("prompt_tokens", 0),
-                    num_generated_tokens=msg.get("completion_tokens", 0),
-                    finish_reason=msg.get("finish_reason"),
-                    reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
-                    prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
-                    session_reset_reason=reason,
-                    prefill_ms=msg.get("prefill_ms", 0.0),
-                    decode_ms=msg.get("decode_ms", 0.0),
-                    total_ms=msg.get("total_ms", 0.0),
-                    prefill_tok_s=msg.get("prefill_tok_s", 0.0),
-                    decode_tok_s=msg.get("decode_tok_s", 0.0),
-                    vision_encoder_ms=msg.get("vision_encoder_ms"),
-                    cancelled=bool(msg.get("cancelled", False)),
-                    generated_token_ids=msg.get("generated_token_ids", []),
-                )
-            )
+            stats_callback(WorkerStats.from_message(msg))
 
     def _generate_locked(self, request: dict, token_callback, stats_callback) -> None:
         self._ensure_usable()
@@ -456,7 +489,11 @@ class WorkerClient:
                 self._on_done(msg, stats_callback)
                 return
             elif "error" in msg:
-                raise WorkerError(str(msg["error"]), code=msg.get("code"))
+                raise WorkerError(
+                    str(msg["error"]),
+                    code=msg.get("code"),
+                    admitted=msg.get("admitted"),
+                )
             else:
                 raise self._record_failure(
                     WorkerError(f"unexpected worker response: {msg}")
@@ -470,6 +507,11 @@ class WorkerClient:
         stats_callback=None,
         request_id: Optional[int] = None,
     ):
+        if getattr(config, "ignore_eos", False):
+            raise WorkerError(
+                "ignore_eos requires a multiplexed batching worker",
+                code="unsupported_parameter",
+            )
         request = {
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),
@@ -581,12 +623,13 @@ def spawn_worker(
     cwd: Optional[str] = None,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> WorkerClient:
-    """Start a worker and wait for its additive readiness negotiation.
+    """Start a sequential worker and wait for its readiness negotiation.
 
     POSIX workers inherit the read end of a cancellation pipe through
     ``EXECUTORCH_LLM_WORKER_CONTROL_FD``. The parent retains a nonblocking writer
     only when readiness includes ``{"supports_cancel": true}``; old workers keep
-    their original JSONL request shape and behavior.
+    their original JSONL request shape and behavior. Multiplexed workers require
+    the async ``spawn_multiplexed_worker`` factory instead.
     """
     logger.info("Starting model worker: %s", cmd[0])
     control_read_fd: Optional[int] = None
@@ -627,6 +670,10 @@ def spawn_worker(
         msg = _decode_worker_json(line)
         if not msg.get("ready"):
             raise WorkerError(f"worker did not report ready: {msg}")
+        if msg.get("multiplexed") is True:
+            raise WorkerError(
+                "multiplexed workers require await spawn_multiplexed_worker(...)"
+            )
         max_named = int(msg.get("max_named_sessions", 0))
         supports_cancel = msg.get("supports_cancel") is True
         if not supports_cancel:

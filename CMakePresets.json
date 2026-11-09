@@ -64,7 +64,7 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -82,13 +82,35 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
       }
+    },
+    {
+      "name": "apple-framework-resources",
+      "hidden": true,
+      "cacheVariables": {
+        "EXECUTORCH_MLX_SWIFTPM_RESOURCES": "ON"
+      }
+    },
+    {
+      "name": "apple-framework-macos",
+      "displayName": "Build ExecuTorch frameworks for macOS",
+      "inherits": ["macos", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios",
+      "displayName": "Build ExecuTorch frameworks for iOS",
+      "inherits": ["ios", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios-simulator",
+      "displayName": "Build ExecuTorch frameworks for iOS Simulator",
+      "inherits": ["ios-simulator", "apple-framework-resources"]
     },
     {
       "name": "linux",
@@ -143,6 +165,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+      }
+    },
+    {
+      "name": "llm-release-vulkan",
+      "displayName": "LLM release build with Vulkan",
+      "inherits": ["llm-release"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
       }
     },
     {
@@ -337,7 +367,8 @@
       "displayName": "Build ExecuTorch for ESP baremetal",
       "inherits": ["common"],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake",
+        "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY"
       }
     },
     {
@@ -404,6 +435,14 @@
       "targets": [
         "install"
       ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-vulkan-install",
+      "displayName": "Build and install LLM extension release artifacts (Vulkan)",
+      "configurePreset": "llm-release-vulkan",
+      "configuration": "Release",
+      "targets": ["install"],
       "jobs": 0
     },
     {
@@ -513,6 +552,14 @@
           "type": "build",
           "name": "llm-release-install"
         }
+      ]
+    },
+    {
+      "name": "llm-release-vulkan",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with Vulkan enabled",
+      "steps": [
+        {"type": "configure", "name": "llm-release-vulkan"},
+        {"type": "build", "name": "llm-release-vulkan-install"}
       ]
     },
     {

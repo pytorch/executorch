@@ -35,7 +35,7 @@ The driver does three steps:
 
 ## CI
 
-`.github/workflows/_test_riscv_qemu.yml` is a reusable `workflow_call`
-job (mirroring `_test_cortex_m_e2e.yml`) invoked from `pull.yml` to run on
-every PR. It runs on the standard `linux.2xlarge` x86_64 runner using the
-`executorch-ubuntu-22.04-gcc11` docker image.
+`.github/workflows/_test_riscv.yml` is a reusable `workflow_call`
+job (mirroring `_test_cortex_m_e2e.yml`) invoked from `riscv64.yml`. It runs on
+the `mt-l-x86iavx512-8-64` x86_64 runner using the
+`executorch-ubuntu-24.04-gcc14` docker image.

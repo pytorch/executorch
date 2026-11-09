@@ -776,6 +776,7 @@ def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
     quantize_with_hqq: bool = True,
+    range_learning: bool = False,
 ):
     if embedding_quantize.startswith("torchao:"):
         from torchao.prototype.quantization.embedding.api import (
@@ -819,6 +820,7 @@ def get_quant_embedding_transform(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
+                        range_learning=range_learning,
                     ).quantize(model)
             return model
 

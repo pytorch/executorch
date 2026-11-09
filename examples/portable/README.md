@@ -49,7 +49,7 @@ Use `-h` (or `--help`) to see all the supported models.
 (mkdir cmake-out \
     && cd cmake-out \
     && cmake -DEXECUTORCH_PAL_DEFAULT=posix ..) \
-  && cmake --build cmake-out -j32 --target executor_runner
+  && cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner
 
 # Run the tool on the generated model.
 ./cmake-out/executor_runner --model_path mv2.pte
@@ -74,6 +74,41 @@ Output 0: tensor(sizes=[1, 1000], [
   0.187843, -0.154387, -0.22716, 0.150879, 0.265103, 0.087489, -0.188225, 0.0213046, -0.0293779, -0.27963,
   0.421221, 0.10045, -0.506771, -0.115818, -0.693015, -0.183256, 0.154783, -0.410679, 0.0119293, 0.449714,
 ])
+```
+
+## Streaming wakeword
+
+Export the MLPerf Tiny streaming wakeword model using the existing portable exporter:
+
+```bash
+python3 -m examples.portable.scripts.export --model_name=streaming_wakeword
+```
+
+The Python runtime allocates zero-filled buffers, providing the model's initial
+history. Keep one loaded program across frames and load a fresh instance for
+another recording or replay:
+
+```python
+import torch
+from executorch.runtime import Runtime
+
+frames = torch.randn(40, 1, 40, 1, 1)
+for _ in range(2):
+    program = Runtime.get().load_program("streaming_wakeword.pte")
+    forward = program.load_method("forward")
+    for frame in frames:
+        probabilities = forward.execute((frame,))[0]
+```
+
+Each input is one log filterbank energy (LFBE) frame of shape `(1, 40, 1, 1)`.
+The first 29 outputs are warmup outputs after each load. The random frames above
+illustrate the calling convention; the example model also uses randomly
+initialized weights.
+
+Run the portable export and streaming tests with:
+
+```bash
+python3 -m pytest examples/models/test/test_streaming_wakeword_export.py
 ```
 
 ## Custom Operator Registration

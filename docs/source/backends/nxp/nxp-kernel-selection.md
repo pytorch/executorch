@@ -1,12 +1,12 @@
 # NXP eIQ Neutron Kernel Selective Kernel Registration
 
 The NXP ExecuTorch backend supports selective Neutron kernel registration for `Neutron-C` targets, which reduces the
-size of the Neutron Firmware. During the backend's conversion to the Neutron representation by the Neutron Converter,
+size of the Neutron Firmware. During the backend's conversion to the Neutron representation by the Neutron Compiler,
 microcode for the Neutron accelerator is generated.
 The microcode consists of kernel calls executed by the Neutron Driver. The code for kernel call functions is
 distributed in the Neutron Firmware. 
 
-The `eiq_neutron_sdk.neutron_converter` optionally generates a `*_kernel_selection.c` file, registering 
+The `eiq_neutron_sdk.neutron_compiler` optionally generates a `*_kernel_selection.c` file, registering 
 only kernels that are required for a particular model or, in the case of ExecuTorch, a delegated subgraph. This 
 `*_kernel_selection.c`, when used during application linking, takes precedence over the default list of registered 
 kernels in the Neutron Firmware, and allows the linker to include only the necessary Neutron kernels.
@@ -21,7 +21,7 @@ final application with unused code. In memory-constrained environments, you can 
 deployed models. This way you can reduce the size of the final application by linking only selected kernels, used in one
 or more models.
 
-The feature works as follows: The Neutron Converter with the appropriate flag exports a kernel selection file for each 
+The feature works as follows: The Neutron Compiler with the appropriate flag exports a kernel selection file for each 
 converted subgraph, the kernel selection files are then merged and ready to be included in the MCUXpresso SDK to use for
 a selection-only build.
 
@@ -52,7 +52,7 @@ python -m eiq_neutron_sdk.neutron_library_utils.merge_kernel_selection_code \
     -output-file merged_kernel_selection.c
 ```
 
-Each particular model must be converted by the same Neutron converter version, so the `*_kernel_selection.c` files
+Each particular model must be compiled by the same Neutron Compiler version, so the `*_kernel_selection.c` files
 share the same version.
 
 ## MCUXpresso SDK build with kernel selection

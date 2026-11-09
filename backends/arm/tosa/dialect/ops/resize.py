@@ -96,6 +96,8 @@ def RESIZE(
     validation_error = get_tosa_resize_output_hw_validation_error(output_hw)
     if validation_error is not None:
         raise TosaValueError(validation_error, op="RESIZE")
+    OH: int | torch.SymInt
+    OW: int | torch.SymInt
     if output_hw is None:
         scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale
         offset_y, offset_x = offset

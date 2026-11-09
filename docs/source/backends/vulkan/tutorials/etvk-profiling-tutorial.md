@@ -71,13 +71,14 @@ cmake . \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -Bcmake-out-android-so && \
-cmake --build cmake-out-android-so -j16 --target install --config Release
+cmake --build cmake-out-android-so -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Once the build completes, we can push the runner binary to device.
 
 ```shell
 adb push cmake-out-android-so/executor_runner /data/local/tmp/etvk/executor_runner
+adb push cmake-out-android-so/lib/libexecutorch_vulkan_shared_runtime.so /data/local/tmp/etvk/
 ```
 
 ## Execute the `.pte` file
@@ -86,7 +87,7 @@ Finally, we can execute the lowered `.pte` file on your device. To test run the
 model file without profiling:
 
 ```shell
-adb shell /data/local/tmp/etvk/executor_runner \
+adb shell LD_LIBRARY_PATH=/data/local/tmp/etvk /data/local/tmp/etvk/executor_runner \
   --model_path /data/local/tmp/etvk/models/ic3_vulkan.pte
 ```
 
@@ -97,7 +98,7 @@ MODEL_NAME=ic3 && \
 BACKEND=vulkan && \
 NUM_ITERS=3 && \
 adb shell mkdir -p /data/local/tmp/etvk/etdumps/ && \
-adb shell /data/local/tmp/etvk/executor_runner \
+adb shell LD_LIBRARY_PATH=/data/local/tmp/etvk /data/local/tmp/etvk/executor_runner \
   --model_path /data/local/tmp/etvk/models/${MODEL_NAME}_${BACKEND}.pte \
   --num_executions=${NUM_ITERS} \
   --etdump_path /data/local/tmp/etvk/etdumps/${MODEL_NAME}_${BACKEND}.etdp && \

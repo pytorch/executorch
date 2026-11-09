@@ -66,7 +66,6 @@ def test_multihead_attention_tosa_INT(test_data):
     "test_data",
     test_suite,
 )
-@common.XfailIfNoCorstone300
 def test_multihead_attention_u55_INT(test_data: input_t1):
     test_data, module = test_data()
     pipeline = EthosU55PipelineINT(
@@ -83,7 +82,6 @@ def test_multihead_attention_u55_INT(test_data: input_t1):
     "test_data",
     test_suite,
 )
-@common.XfailIfNoCorstone320
 def test_multihead_attention_u85_INT(test_data: input_t1):
     test_data, module = test_data()
     pipeline = EthosU85PipelineINT(

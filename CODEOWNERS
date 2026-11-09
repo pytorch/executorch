@@ -3,17 +3,16 @@
 # related to a specific file path. Approvals from people in this
 # file are not required for merges.
 
-/backends/apple @shoumikhin
-/backends/arm @digantdesai
-/backends/cadence
+/backends/apple @shoumikhin @metascroy
+/backends/arm @digantdesai @rascani
+/backends/cadence @mcremon-meta @rascani
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
-/backends/mediatek @neuropilot-captain
-/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
+/backends/mediatek @neuropilot-captain @psiddh
+/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
 /backends/test
-/backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
-/backends/xnnpack @digantdesai @mcr229
+/backends/xnnpack @digantdesai
 /backends/nxp @robert-kalmar
 
 /devtools @Gasoonjia
@@ -22,21 +21,20 @@
 
 /examples/apple @shoumikhin
 /examples/apple/coreml @metascroy @cymbalrush @YifanShenSZ
-/examples/arm @digantdesai
-/examples/cadence
-/examples/demo-apps @shoumikhin @kirklandsign
+/examples/arm @digantdesai @rascani
+/examples/cadence @mcremon-meta @rascani
+/examples/demo-apps @shoumikhin @kirklandsign @psiddh
 /examples/devtools @Gasoonjia
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
 /examples/mediatek
-/examples/models @lucylq @jackzhxng
-/examples/portable @larryliu0820 @manuelcandales
-/examples/qualcomm @abhinaykukkadapu @psiddh
-/examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
-/examples/xnnpack @digantdesai @mcr229
+/examples/portable @larryliu0820
+/examples/qualcomm @psiddh
+/examples/selective_build @larryliu0820 @JacobSzwejbka
+/examples/xnnpack @digantdesai
 /examples/nxp @robert-kalmar
 
-/exir/backend @kimishpatel @JacobSzwejbka
+/exir/backend @JacobSzwejbka
 /exir @JacobSzwejbka @larryliu0820
 
 /extension/android @kirklandsign @psiddh
@@ -44,38 +42,27 @@
 /extension/apple @shoumikhin
 /extension/aten_util @JacobSzwejbka
 /extension/benchmark @Gasoonjia
-/extension/data_loader @JacobSzwejbka @lucylq
-/extension/evalue_util @GregoryComer
-/extension/export_util @kimishpatel
-/extension/flat_tensor @lucylq
-/extension/gguf_util @larryliu0820
-/extension/kernel_util @kimishpatel @manuelcandales
-/extension/llm @jackzhxng @larryliu0820 @mergennachin
+/extension/data_loader @JacobSzwejbka
+/extension/gguf_util @larryliu0820 @metascroy
+/extension/llm @larryliu0820 @mergennachin
 /extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
-/extension/parallel @kimishpatel
 /extension/pybindings @JacobSzwejbka @larryliu0820
 /extension/pytree @JacobSzwejbka
 /extension/runner_util
 /extension/tensor @shoumikhin
 /extension/testing_util
-/extension/threadpool @kimishpatel
+/extension/threadpool @digantdesai @JakeStevens
 /extension/training @JacobSzwejbka
-
-/kernels @manuelcandales
 
 /profiler @Gasoonjia
 
-/runtime @JacobSzwejbka @lucylq
+/runtime @JacobSzwejbka
 /runtime/backend
 
-/schema @JacobSzwejbka @lucylq
+/schema @JacobSzwejbka
 
-/scripts @GregoryComer
-
-/shim @larryliu0820 @GregoryComer
-
-/third-party @GregoryComer
+/shim @larryliu0820
 
 /test @larryliu0820 @kirklandsign
 
@@ -86,9 +73,8 @@
 CMakeLists.txt @larryliu0820 @kirklandsign
 CMakePresets.json @larryliu0820 @kirklandsign
 
-/codegen @larryliu0820 @lucylq
+/codegen @larryliu0820 @JacobSzwejbka
 /tools/cmake @larryliu0820 @kirklandsign
 
 # Tribal knowledge base ---------------------------------------------------------
-/.wiki/ @abhinaykukkadapu
-/.claude/skills/ @abhinaykukkadapu @psiddh
+/.claude/skills/ @psiddh @rascani @JakeStevens

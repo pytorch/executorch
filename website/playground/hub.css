@@ -1,0 +1,40 @@
+/* Playground hub: one card per playground. Tokens and the site bar come from
+   webgpu/styles/app.css. */
+.hub { max-width: 1120px; margin: 0 auto; padding: 56px 32px 80px; }
+.hub__head { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
+.hub__title { font-size: clamp(26px, 2.6vw, 34px); line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+.hub__lede { font-size: 16px; color: var(--text-2); max-width: 68ch; }
+
+.track {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-sm); transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.track:hover { text-decoration: none; transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--accent); }
+.track__art { display: grid; place-items: center; min-height: 300px; background: #e6f4ea; overflow: hidden; }
+:root[data-theme="dark"] .track__art { background: #1e3329; }
+.track__art .art { width: 100%; height: auto; }
+.track__body { display: flex; flex-direction: column; gap: 12px; padding: 32px 36px; justify-content: center; }
+.track__tags { display: flex; gap: 8px; }
+.track__tag { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+.track__tag--exp { background: var(--ph-soft); color: var(--ph-ink); border: 1px solid color-mix(in srgb, var(--ph-line) 45%, transparent); }
+.track__title { font-size: 24px; font-weight: 700; line-height: 1.25; }
+.track__text { font-size: 15.5px; color: var(--text-2); }
+.track__demos { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.track__demo { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; color: var(--text); }
+.track__demo svg { flex-shrink: 0; }
+.track__privacy { font-size: 13px; color: var(--text-3); }
+.track__cta { align-self: flex-start; margin-top: 4px; }
+
+.soon { margin-top: 28px; padding: 26px 30px; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: transparent; }
+.soon__title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.soon__text { font-size: 15px; color: var(--text-2); }
+.soon__text a { font-weight: 600; }
+
+@media (max-width: 900px) {
+  .hub { padding: 32px 18px 56px; }
+  .track { grid-template-columns: minmax(0, 1fr); }
+  .track__art { min-height: 0; aspect-ratio: 16 / 9; }
+  .track__body { padding: 22px; }
+  .track__title { font-size: 21px; }
+}

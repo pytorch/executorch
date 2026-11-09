@@ -41,8 +41,8 @@ Usage:
 from typing import Callable, Optional, Tuple, Union
 
 import executorch.backends.mlx.custom_ops as _mlx_custom_ops  # noqa: F401
-
 import torch
+from executorch.backends.mlx.llm.exportable import _LogitsToKeepMixin, LogitsToKeepMode
 
 
 def mlx_sdpa_with_start_pos_forward(
@@ -219,8 +219,8 @@ def register_mlx_attention(name: str = "mlx") -> None:
         )
 
 
-class OffGraphExportWrapper(torch.nn.Module):
-    """forward(input_ids, cache_position) -> logits, with no in-graph cache.
+class OffGraphExportWrapper(_LogitsToKeepMixin, torch.nn.Module):
+    """Export logits with no in-graph cache.
 
     The analog of TorchExportableModuleWithStaticCache for the off-graph op:
     runs the model with use_cache=False so each attention layer sees only this
@@ -228,12 +228,16 @@ class OffGraphExportWrapper(torch.nn.Module):
     signature the runner drives.
     """
 
-    def __init__(self, model: torch.nn.Module):
+    def __init__(self, model: torch.nn.Module, logits_to_keep_mode="full"):
         super().__init__()
         self.model = model
+        self.logits_to_keep_mode = LogitsToKeepMode.from_value(logits_to_keep_mode)
 
     def forward(
-        self, input_ids: torch.Tensor, cache_position: torch.Tensor
+        self,
+        input_ids: torch.Tensor,
+        cache_position: torch.Tensor,
+        logits_to_keep: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
         # Single sequence: the op takes [q_len, n_dims] positions and the
         # attention function reads position_ids[0], so a batch would be placed
@@ -249,6 +253,7 @@ class OffGraphExportWrapper(torch.nn.Module):
             position_ids=cache_position.unsqueeze(0),
             use_cache=False,
             past_key_values=None,
+            **self._logits_to_keep_kwargs(logits_to_keep),
         ).logits
 
 

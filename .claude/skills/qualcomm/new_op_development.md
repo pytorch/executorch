@@ -4,6 +4,7 @@
 
 1. **QNN has a native op?** → Native builder approach (Steps 1–8)
 2. **No native op, needs multiple QNN ops?** → Decompose pass approach
+3. **No native op, needs your own kernel?** → QNN op package, see `custom_op_enablement.md`
 
 ---
 
@@ -159,11 +160,12 @@ self.lower_module_and_test_output(qdq_module, sample_input)
 **Run on-device:**
 ```bash
 python backends/qualcomm/tests/test_qnn_delegate.py \
-  -k TestQNNFloatingPointOperator.test_qnn_backend_my_op \
-  --model SM8750 --host <HOST> --device <DEVICE_ID> --build_folder build-android
+  TestQNNFloatingPointOperator.test_qnn_backend_my_op \
+  --soc_model SM8750 --host <HOST> --device <DEVICE_ID> --build_folder build-android
 ```
 
-Always ask user for `--model`, `--host`, `--device`, `--build_folder` values.
+Always ask user for `--soc_model`, `--host`, `--device`, `--build_folder` values.
+See `SKILL.md` → Testing for the full flag list (long-form only).
 
 ## Step 8b: Add Rework Framework Tests (Emulator-Based)
 

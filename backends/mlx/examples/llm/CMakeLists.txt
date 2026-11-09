@@ -35,18 +35,10 @@ executorch_target_link_options_shared_lib(executorch)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-set(link_libraries
-    executorch
-    extension_module
-    extension_tensor
-    extension_llm_cache
-    extension_llm_runner
-    extension_llm_sampler
-    gflags
-)
+set(link_libraries executorch extension_llm_runner gflags)
 
 if(NOT TARGET mlxdelegate)
-  message(FATAL_ERROR "mlx_run_llm_hf requires the MLX backend (mlxdelegate)")
+  message(FATAL_ERROR "MLX LLM runners require the MLX backend (mlxdelegate)")
 endif()
 list(APPEND link_libraries mlxdelegate mlx)
 executorch_target_link_options_shared_lib(mlxdelegate)
@@ -67,7 +59,44 @@ target_include_directories(
 )
 target_link_libraries(mlx_run_llm_hf PUBLIC ${link_libraries})
 
+add_executable(mlx_run_llm_batched run_llm_batched.cpp)
+target_include_directories(
+  mlx_run_llm_batched PUBLIC ${_common_include_directories} ${_json_include}
+                             ${_flatbuffers_include}
+)
+target_link_libraries(
+  mlx_run_llm_batched
+  PUBLIC executorch
+         extension_llm_batching_module
+         extension_llm_runner
+         gflags
+         mlxdelegate
+         mlx
+         tokenizers::tokenizers
+)
+if(TARGET optimized_native_cpu_ops_lib)
+  target_link_libraries(mlx_run_llm_batched PUBLIC optimized_native_cpu_ops_lib)
+endif()
+
 # The copy helper is gated on EXECUTORCH_BUILD_MLX, which the installed config
 # does not set; reaching here means mlxdelegate exists.
 set(EXECUTORCH_BUILD_MLX ON)
 executorch_target_copy_mlx_metallib(mlx_run_llm_hf)
+executorch_target_copy_mlx_metallib(mlx_run_llm_batched)
+
+# Shared JSONL adapter over the packed ModuleExecutor, not the legacy worker.
+find_package(Threads REQUIRED)
+set(_worker_dir ${EXECUTORCH_ROOT}/examples/llm_server/cpp)
+add_executable(
+  llm_worker ${_worker_dir}/module_worker_main.cpp
+             ${_worker_dir}/multiplexed_worker.cpp
+)
+target_include_directories(
+  llm_worker PRIVATE ${_common_include_directories} ${_json_include}
+                     ${_flatbuffers_include}
+)
+target_link_libraries(
+  llm_worker PRIVATE ${link_libraries} extension_llm_batching_module
+                     extension_llm_serving Threads::Threads
+)
+executorch_target_copy_mlx_metallib(llm_worker)

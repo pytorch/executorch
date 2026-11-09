@@ -411,6 +411,20 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         return True
 
 
+# Ops whose second operand contributes only its shape, never its values, so it
+# must not be tied into the shared qparams of the first.
+_SHAPE_AS_OPS = {
+    torch.ops.aten.expand_as.default,
+    torch.ops.aten.view_as.default,
+}
+
+
+# Whether ``node`` shares qparams with its input ``input_node``: always for an
+# ordinary shared op, but for a shape-as op only through its data operand.
+def _shares_qparams_with(node: Node, input_node: Node) -> bool:
+    return node.target not in _SHAPE_AS_OPS or input_node is node.args[0]
+
+
 class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     """Assures that specific ops share quantization parameters on all
     inputs/outputs.
@@ -442,6 +456,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.repeat_interleave.self_int,
         torch.ops.aten.expand_copy.default,
         torch.ops.aten.expand.default,
+        torch.ops.aten.expand_as.default,
         torch.ops.aten.select.int,
         torch.ops.aten.select_copy.int,
         torch.ops.aten.slice.Tensor,
@@ -451,6 +466,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.split_copy.Tensor,
         torch.ops.aten.tile.default,
         torch.ops.aten.flip.default,
+        torch.ops.aten.roll.default,
         torch.ops.aten.index_select.default,
         torch.ops.aten.index_put.default,
         torch.ops.aten.index_put_.default,
@@ -510,13 +526,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.while_loop,
         torch.ops.higher_order.cond,
     ]
-    _UINT8_IO_BRIDGE_OPS: set[Callable[..., object]] = {
-        torch.ops.aten.cat.default,
-        torch.ops.aten.concatenate.default,
-        torch.ops.aten.stack.default,
-        torch.ops.aten.pixel_shuffle.default,
-        torch.ops.aten.slice.Tensor,
-    }
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
@@ -549,7 +558,11 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         return Q_ANNOTATION_KEY in node.meta
 
     def _get_input_nodes_with_float_output(self, node: Node) -> list[Node]:
-        return [n for n in node.all_input_nodes if has_float_output(n)]
+        return [
+            n
+            for n in node.all_input_nodes
+            if has_float_output(n) and _shares_qparams_with(node, n)
+        ]
 
     def _get_user_nodes_with_float_input(self, node: Node) -> list[Node]:
         return [n for n in node.users.keys() if has_float_output(node)]
@@ -646,6 +659,8 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             shared_nodes.add(node)
 
             for input_node in node.all_input_nodes:
+                if not _shares_qparams_with(node, input_node):
+                    continue
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(input_node)
@@ -654,6 +669,8 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 )
 
             for output_node in node.users.keys():
+                if not _shares_qparams_with(output_node, node):
+                    continue
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(output_node)
@@ -746,15 +763,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
-        if touches_uint8_quantized_io and any(
-            node.target in self._UINT8_IO_BRIDGE_OPS for node in shared_nodes
-        ):
-            self.report_reject(
-                ordered_nodes,
-                "Shared-qspec bridge cluster touches uint8 model IO.",
-            )
-            return
-
         if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return
 
@@ -793,10 +801,29 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         )
         return
 
+    def _annotate_graph_outputs(self, model: torch.fx.GraphModule) -> None:
+        for output_node in model.graph.nodes:
+            if output_node.op != "output" or self._is_annotated(output_node):
+                continue
+
+            input_qspec_map = {
+                input_node: input_node.meta[Q_ANNOTATION_KEY].output_qspec
+                for input_node in output_node.all_input_nodes
+                if is_output_annotated(input_node)
+            }
+            if input_qspec_map:
+                _mark_node_as_quantized(
+                    output_node,
+                    input_qspec_map,
+                    None,
+                    is_quantized=True,
+                )
+
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
+        self._annotate_graph_outputs(model)
 
     def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True

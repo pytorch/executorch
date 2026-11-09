@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "jni_helper.h"
+#include <executorch/extension/android/jni/jni_helper.h>
 
 namespace executorch::jni_helper {
 

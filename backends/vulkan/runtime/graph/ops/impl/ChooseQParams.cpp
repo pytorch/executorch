@@ -34,23 +34,6 @@ void resize_choose_qparams_per_row(
   graph->virtual_resize(input_zeros, new_sizes);
 }
 
-vkapi::ShaderInfo pick_choose_qparams_per_row_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-
-  const ValueRef input = args.at(1).refs.at(0);
-  const ValueRef input_zps = args.at(0).refs.at(1);
-
-  std::string kernel_name = "choose_qparams_per_row";
-  add_storage_type_suffix(kernel_name, graph->storage_type_of(input));
-  add_dtype_suffix(kernel_name, graph->dtype_of(input));
-  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zps));
-
-  return VK_KERNEL_FROM_STR(kernel_name);
-}
-
 GlobalWorkGrid pick_choose_qparams_per_row_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -99,9 +82,13 @@ void add_choose_qparams_per_row_node(
       PushConstantDataInfo(&quant_max_val, sizeof(int32_t)),
   };
 
+  std::string kernel_name = "choose_qparams_per_row";
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(input));
+  add_zp_dtype_mode_suffix(kernel_name, graph.dtype_of(input_zps));
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_choose_qparams_per_row_shader,
+      VK_KERNEL_FROM_STR(kernel_name),
       pick_choose_qparams_per_row_gwg,
       pick_required_lwg,
       // Inputs and Outputs

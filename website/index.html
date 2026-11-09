@@ -40,6 +40,7 @@
                     <li><a href="#performance">Backends</a></li>
                     <li><a href="#partners">Partners</a></li>
                     <li><a href="https://github.com/pytorch/executorch" target="_blank">GitHub</a></li>
+                    <li><a href="playground/" class="nav-playground">Playground</a></li>
                 </ul>
                 <form class="nav-search" action="https://docs.pytorch.org/executorch/1.0/search.html" method="get">
                     <input type="text" placeholder="Search docs…" name="q" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
@@ -83,6 +84,46 @@
                 <a href="https://docs.pytorch.org/executorch/main/getting-started.html" class="btn btn-primary">Get Started</a>
                 <a href="https://github.com/pytorch/executorch" class="btn btn-secondary">View on GitHub</a>
             </div>
+        </div>
+    </section>
+
+    <!-- Playground call-to-action -->
+    <section class="playground-cta" aria-labelledby="playground-cta-title">
+        <div class="container playground-cta__inner">
+            <div class="playground-cta__copy">
+                <p class="playground-cta__eyebrow">Experimental · ExecuTorch Playground</p>
+                <h2 id="playground-cta-title" class="playground-cta__title">Run PyTorch models locally in your browser</h2>
+                <p class="playground-cta__text">Chat with a language model, transcribe your voice, segment objects, and see depth through your camera. Powered by ExecuTorch on WebGPU: models run on your GPU, with nothing to install and nothing sent to a server.</p>
+                <ul class="playground-cta__chips">
+                    <li>On-device chat</li><li>Speech to text</li><li>Live camera vision</li><li>Segment anything</li>
+                </ul>
+                <a href="playground/" class="btn btn-primary playground-cta__btn">Open the Playground &rarr;</a>
+            </div>
+            <svg class="playground-cta__art" viewBox="0 0 320 220" role="img" aria-label="" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="pgcta-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f1360"/><stop offset=".55" stop-color="#7a2bb8"/><stop offset="1" stop-color="#df3411"/></linearGradient>
+                    <radialGradient id="pgcta-glow" cx=".8" cy=".2" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+                </defs>
+                <rect width="320" height="220" rx="22" fill="url(#pgcta-bg)"/>
+                <rect width="320" height="220" rx="22" fill="url(#pgcta-glow)"/>
+                <rect x="28" y="30" width="180" height="120" rx="12" fill="#fff" fill-opacity=".95"/>
+                <rect x="28" y="30" width="180" height="22" rx="12" fill="#ececf3"/>
+                <circle cx="44" cy="41" r="4" fill="#ff6159"/><circle cx="58" cy="41" r="4" fill="#ffbd2e"/><circle cx="72" cy="41" r="4" fill="#28c941"/>
+                <rect x="44" y="66" width="104" height="14" rx="7" fill="#7a2bb8" fill-opacity=".25"/>
+                <rect x="96" y="90" width="98" height="14" rx="7" fill="#df3411"/>
+                <rect x="44" y="114" width="80" height="14" rx="7" fill="#7a2bb8" fill-opacity=".25"/>
+                <rect x="128" y="114" width="6" height="14" rx="2" fill="#7a2bb8"><animate attributeName="opacity" values="1;0;1" dur="1.1s" repeatCount="indefinite"/></rect>
+                <g transform="translate(222 92)">
+                    <rect width="72" height="72" rx="14" fill="#fff" fill-opacity=".14" stroke="#fff" stroke-opacity=".6"/>
+                    <rect x="18" y="18" width="36" height="36" rx="6" fill="#fff" fill-opacity=".9"/>
+                    <path d="M26 -8v10M36 -8v10M46 -8v10M26 70v10M36 70v10M46 70v10M-8 26h10M-8 36h10M-8 46h10M70 26h10M70 36h10M70 46h10" stroke="#fff" stroke-opacity=".7" stroke-width="3" stroke-linecap="round"/>
+                    <text x="36" y="41" text-anchor="middle" font-family="Open Sans, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7a2bb8">GPU</text>
+                </g>
+                <path d="M214 120 C 222 120, 224 128, 222 128" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-dasharray="3 4" fill="none"/>
+                <path d="M270 40l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="#fff" fill-opacity=".9"/>
+                <path d="M292 70l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#fff" fill-opacity=".7"/>
+                <text x="28" y="190" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#fff" fill-opacity=".8">navigator.gpu  ·  ExecuTorch</text>
+            </svg>
         </div>
     </section>
 

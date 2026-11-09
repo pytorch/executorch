@@ -10,7 +10,10 @@ script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executor_runner=${et_root_dir}/backends/arm/scripts/build_executor_runner.sh
 build_root_test_dir=${et_root_dir}/arm_test/arm_semihosting_executor_runner
-extraflags="-DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=83886080"
+extraflags="-DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=83886080 -DET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE=134217728"
+# Corstone-320 has 256 MiB of DDR. Its 64 MiB temporary pool leaves 48 MiB
+# for the method pool while keeping 16 MiB free for other DDR sections.
+u85_extraflags="-DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=50331648 -DET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE=134217728"
 portable_extraflags="${extraflags} -DHEAP_SIZE=0x00007000"
 
 join_by_comma() {
@@ -31,7 +34,7 @@ ops_list_quantized_decomposed=(
 
 ${build_executor_runner} --pte=semihosting --target=ethos-u55-128 --system_config=Ethos_U55_High_End_Embedded --memory_mode=Shared_Sram --select_ops_list="$(join_by_comma "${ops_list_quantized_decomposed[@]}")" --output="${build_root_test_dir}_corstone-300" --extra_build_flags="${extraflags}"
 ${build_executor_runner} --pte=semihosting --target=ethos-u65-256 --system_config=Ethos_U65_High_End --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_quantized_decomposed[@]}")" --output="${build_root_test_dir}_corstone-300-u65" --extra_build_flags="${extraflags}"
-${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_config=Ethos_U85_SYS_DRAM_Mid --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_quantized_decomposed[@]}")" --output="${build_root_test_dir}_corstone-320" --extra_build_flags="${extraflags}"
+${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_config=Ethos_U85_SYS_DRAM_Mid --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_quantized_decomposed[@]}")" --output="${build_root_test_dir}_corstone-320" --extra_build_flags="${u85_extraflags}"
 
 # List of portable ops used by testing, this is mainly used to test models in the flow
 # test setup to make sure models that are not fully delegated can still be tested and run OK
@@ -41,6 +44,7 @@ ${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_confi
 # Ethos-U55/U65
 # aten::avg_pool2d.out                         - test_adaptive_avgpool2d_batch_sizes[arm_ethos_u55]
 # aten::gt.Tensor_out                          - test_divide_f32_trunc[arm_ethos_u55]
+# quantized_decomposed::dequantize_per_channel.out - test_conv3d_padding_reflect[arm_ethos_u55]
 #
 # Ethos-U85:
 # aten::_native_batch_norm_legit_no_training.out - test_swin_v2_t[arm_ethos_u85-static_shapes-float32]
@@ -68,8 +72,11 @@ ops_list_u55=(
     aten::arange.start_out
     aten::eq.Tensor_out
     aten::logical_not.out
+    aten::split_with_sizes_copy.out
+    aten::bmm.out
     dim_order_ops::_clone_dim_order.out
     dim_order_ops::_to_dim_order_copy.out
+    quantized_decomposed::dequantize_per_channel.out
     "${ops_list_quantized_decomposed[@]}"
 )
 ops_list_u65=("${ops_list_u55[@]}")
@@ -92,7 +99,7 @@ ops_list_u85=(
 
 ${build_executor_runner} --pte=semihosting --target=ethos-u55-128 --system_config=Ethos_U55_High_End_Embedded --memory_mode=Shared_Sram --select_ops_list="$(join_by_comma "${ops_list_u55[@]}")" --output="${build_root_test_dir}_portable-ops_corstone-300" --extra_build_flags="${portable_extraflags}"
 ${build_executor_runner} --pte=semihosting --target=ethos-u65-256 --system_config=Ethos_U65_High_End --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_u65[@]}")" --output="${build_root_test_dir}_portable-ops_corstone-300-u65" --extra_build_flags="${portable_extraflags}"
-${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_config=Ethos_U85_SYS_DRAM_Mid --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_u85[@]}")" --output="${build_root_test_dir}_portable-ops_corstone-320" --extra_build_flags="${extraflags}"
+${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_config=Ethos_U85_SYS_DRAM_Mid --memory_mode=Dedicated_Sram_384KB --select_ops_list="$(join_by_comma "${ops_list_u85[@]}")" --output="${build_root_test_dir}_portable-ops_corstone-320" --extra_build_flags="${u85_extraflags}"
 
 ethos_u_runtime_ctest_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
 cmake \

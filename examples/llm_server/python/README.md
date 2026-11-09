@@ -35,7 +35,60 @@ Tokenizer: pass the model's tokenizer — `tokenizer.json` (HF, e.g. Qwen3) or
 warning it falls back to PCRE2 and still works (build with
 `-DSUPPORT_REGEX_LOOKAHEAD=ON` for the native regex path).
 
-## Run
+## Run the batching server
+
+The dedicated launcher requires the new multiplexed worker; it never falls back
+silently to a serialized legacy worker. For a compatible text-only MLX off-graph
+export and a built `llm_worker`:
+
+```bash
+python -m executorch.examples.llm_server.python.serve \
+    --worker-bin /path/to/llm_worker \
+    --model-path /path/to/model.pte \
+    --tokenizer-path /path/to/model-assets \
+    --model-id llama1b \
+    --max-context 1024 \
+    --max-sessions 32 \
+    --max-decode-sequences 16 \
+    --assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'
+```
+
+Use the model's HF tokenizer **directory**, including its tokenizer configuration,
+so native EOS detection matches the chat template. A supplied tokenizer JSON file
+with sibling configuration is normalized to that directory. Other native tokenizer
+files require an explicit `--hf-tokenizer` source. The HF template defaults to the
+native tokenizer directory; `--hf-tokenizer` overrides it. Approximate ChatML
+fallback is not enabled by this launcher.
+
+`--max-context` is required and sets both the HTTP limit and native session-token
+limit; choose a value supported by the export. Capacity defaults are
+`--max-sessions 16`, `--max-decode-sequences 8`, `--max-inflight-requests 64`, and
+`--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
+(the default) automatically allows one pending prompt capture per admitted request,
+bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
+this allowance. With checkpoints enabled, automatic sizing uses at most two rows:
+checkpoint collection is serialized, but one replacement can overlap. Explicit
+values above two add unused row capacity in that mode.
+Logical sessions, packed decode width, and in-flight request capacity are independent
+limits. Python concurrency follows advertised request capacity, not the single
+native delivery thread. Python reads native async streams directly through bounded
+per-request mailboxes, without a thread
+pool or a second token queue. A paused consumer does not stall peers, but consumers
+must not block the event loop; native callbacks must also do short, bounded,
+nonblocking work. Prefix snapshots require extra native capacity, which the worker
+provisions; ordinary continuation needs no prefix cache.
+The HTTP defaults are `--host 127.0.0.1 --port 8000`.
+
+Native worker startup runs inside the ASGI lifespan and awaits readiness before
+accepting requests. Startup, generation, and awaited shutdown share the server's
+event loop. Post-spawn startup failures also await worker cleanup. CLI validation
+and chat-template preflight still happen before any worker is started.
+
+The batching guide covers the native build, supported export contract, and
+integration checks. The existing generic launcher below and Muse-specific
+launcher are unchanged.
+
+## Run a legacy worker
 
 ```bash
 python -m executorch.examples.llm_server.python.server \
@@ -60,11 +113,19 @@ Key flags:
 | Flag | Effect |
 |------|--------|
 | `--hf-tokenizer` | model's HF chat template (required unless fallback) |
+| `--assistant-header` | exact assistant generation header, including trailing whitespace (default: ChatML) |
 | `--allow-chatml-fallback` | opt into approximate ChatML when no HF tokenizer |
 | `--no-think` | default `enable_thinking=False` (e.g. Qwen3) |
 | `--max-context N` | reject over-long prompts with 400 instead of failing mid-gen |
 | `--num-runners N` | Worker processes — **1 only** (one worker hosts many isolated sessions on one weight load; more would duplicate weights) |
 | `--worker-bin PATH` | path to a model worker binary that speaks the llm_server JSONL protocol |
+
+Set `--assistant-header` to the model template's exact generation boundary when
+it differs from ChatML. For Llama 3 templates, add
+`--assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'` in Bash;
+the `$'...'` quoting supplies literal newlines. The launcher warns once at startup
+if the configured header is absent from a rendered probe. Unverified boundaries
+use the rendered text, which can reduce KV reuse.
 
 ## Smoke test
 
@@ -75,6 +136,60 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
 ```
+
+## Terminal HUD
+
+The batching launchers show a live ASCII dashboard in interactive terminals. Redirected output and
+`TERM=dumb` keep plain logs. State colors distinguish active, completed, failed,
+and cancelled requests; `NO_COLOR=1` keeps the HUD monochrome.
+
+Requests are grouped by session ID, with active requests and the latest three
+completed requests per session. Active sessions appear first; requests without a
+session ID appear under "Ungrouped requests". The display fits the terminal and
+updates in place. Native multiplexed-worker diagnostics appear in the recent
+log lines instead of scrolling the terminal; redirect stderr for full logs.
+All captured native stderr, including crash messages without a severity prefix,
+is replayed after the HUD exits, along with Python warnings, errors, and tracebacks.
+A process-exit fallback restores the terminal if the serving lifespan is skipped.
+A rendering or diagnostics-storage failure restores the terminal and falls back
+to plain logs. HUD initialization failures also fall back without stopping serving.
+Prompt and response text are never displayed.
+
+Session totals include all observed turns, including ones no longer displayed:
+request/error/cancellation counts, generated tokens, average TTFT, prefill/decode
+throughput, and cache reuse. Throughput uses total tokens divided by total phase
+time; cache reuse uses total reused tokens divided by total prompt tokens.
+Context is the latest reported prompt plus output length, not a cumulative sum.
+Reset sets context to zero while retaining history and totals. Close removes
+completed history; unfinished requests remain visible until they settle, and
+queued requests are tracked under the reopened session. Failed close/reset
+operations keep the group with unknown context (`--`) until another request
+reports its state. Invalid session IDs do not create groups. Up to 32 inactive
+groups are retained, plus all active groups.
+Tracked session counts describe these observations, not native cache allocations.
+
+The server header shows the listen address and aggregate prefill/decode tokens
+per second since the model became ready, excluding model load and including idle
+time. These use reported tokens divided by wall-clock uptime. Prefill
+counts only newly processed prompt tokens. Worker counts arrive at turn end, so
+these are averages since readiness, not live rates; incomplete requests contribute
+once their terminal stats arrive. Per-request rates/counts stay `--` until reported.
+TTFT timestamps the first nonempty worker text on receipt in Python, measured
+from entry into the validated HTTP handler. It includes session waiting and
+prompt preparation, but excludes HTTP transmission and response formatting. Text fragments are not used as token counts.
+
+Embedders default to plain logs. The batching launchers enable `build_app(...,
+hud=True, model_path=..., max_context=..., max_concurrent_requests=...)` and use
+`capture_worker_logs()` to pass an explicit `stderr` to the worker. Legacy
+launchers keep plain logs. The implementation lives in `hud/`. Noninteractive
+output installs no collector or refresh task and leaves logging unchanged.
+
+Runtime observers implement `GenerationObserver`: `output(arrived)` receives the
+first nonempty text's monotonic arrival time, and `record_stats(stats)` receives
+terminal worker statistics once. Both callbacks run on the runtime's event loop,
+including when consumption is suspended or cancellation cleanup is pending. No
+statistics callback occurs without a worker report; errors remain on the generation
+iterator. The HTTP adapter separately accepts a HUD `Turn` for request accounting.
 
 ## Sessions
 
@@ -106,7 +221,8 @@ persistent per-conversation session:
   ```
   `compat.sendSessionAffinityHeaders` makes pi route each conversation to its own
   session (per-conversation isolation + warm resume); without it every request
-  uses the anonymous scratch session.
+  uses an independent temporary session on the batching worker, or the anonymous
+  scratch session on a legacy worker.
 
 ## Validate
 
@@ -114,7 +230,7 @@ Two layers, both contract-focused (assert on the wire, not internals):
 
 ```bash
 # 1. Model-free tests — unit coverage plus loopback disconnect integration.
-pip install pytest httpx
+pip install pytest httpx tokenizers
 pytest tests/
 
 # 2. Conformance — black-box, against a LIVE server (real model, or llama.cpp/mlx-lm).
@@ -126,18 +242,23 @@ real server/protocol/streaming code is tested over HTTP without a `.pte`. The
 worker JSONL protocol is covered separately by `tests/test_worker_client.py`,
 and `tests/test_stream_disconnect.py` uses real loopback Uvicorn/TCP plus a
 model-free subprocess to verify disconnect cancellation end to end.
+The BPE splice tests use an in-memory tokenizer with no model downloads. Optional
+integration tests use local tokenizer directories set with `QWEN_HF_DIR`,
+`GEMMA_HF_DIR`, or `MUSE_GLIMMER_HF_DIR` and require `transformers`.
 
 ## Architecture
 
 Control plane (this dir, Python): an OpenAI adapter (`serving_chat`) over a
-stateful `SessionRuntime` over one `WorkerClient` — server, protocol, chat
-templating, streaming bridge, tool parsing — no CUDA, no model, no pybind. Data
-plane (C++): a worker process that owns all model state
+stateful `SessionRuntime`, using an async `MultiplexedWorkerClient` for native
+batching or a synchronous `WorkerClient` for legacy workers. Native streams are
+consumed directly; only the legacy path uses a thread pool and streaming bridge.
+The control plane handles HTTP, chat templating, and tool parsing, with no CUDA,
+model, or runtime pybind. Data plane (C++): a worker process that owns all model state
 (many isolated sessions on one weight load, warm-resume prefix logic) and does
 all token stepping and KV mutation; it speaks one JSON object per line on
 stdin/stdout.
 
-The JSONL protocol — `generate` / `open` / `close` / `reset` ops, the `prompt` /
+The legacy JSONL protocol — `generate` / `open` / `close` / `reset` ops, the `prompt` /
 `prompt_segments` prompt forms, warm-resume stats, and `generated_token_ids` — is
 defined in `cpp/worker_loop.h` (the worker side, the canonical reference) and
 driven by `worker_client.py` (the Python transport); stdout carries protocol JSON
@@ -148,16 +269,18 @@ writes that ID as one fixed 8-byte little-endian frame.
 
 Process isolation is the reliable shape for CUDA/AOTI models: executing the model
 inside a live asyncio server process can segfault (validated with Qwen3.5-MoE);
-the worker is a plain process with no asyncio loop, and the control plane only
-does blocking pipe I/O on its executor thread.
+the worker is a separate process with no asyncio loop. The native control plane
+uses async subprocess pipes; the legacy path does blocking I/O on executor threads.
 
 | File | Role |
 |------|------|
-| `server.py` | FastAPI app, routes, CLI entrypoint, worker spawn |
+| `server.py` | FastAPI app, routes, serving lifespan, legacy CLI |
+| `serve.py` | Native batching CLI with async lifespan-owned startup/shutdown |
 | `protocol.py` | OpenAI request/response schemas |
 | `chat_template.py` | messages (+tools) → prompt string |
-| `worker_client.py` | spawn a worker process + drive it over JSONL (raw transport) |
-| `session_runtime.py` | stateful runtime over one worker: open/generate/reset/close + streaming bridge |
+| `worker_client.py` | Synchronous legacy worker transport |
+| `multiplexed_worker_client.py` | Async request-ID transport with bounded streams and independent completion |
+| `session_runtime.py` | Admission and session ordering; direct native streams or legacy streaming bridge |
 | `openai_transcript.py` | OpenAI token-ID warm-resume state (fingerprints + sentinel splicing) |
 | `serving_chat.py` | `/v1/chat/completions` OpenAI adapter (streaming + non-streaming, stop, tools) |
 | `tool_parsers/` | Hermes/Qwen `<tool_call>` parser only |
@@ -173,6 +296,12 @@ the generic control plane never imports an example. Backend specifics
 (CUDA/AOTI, Metal) stay inside the worker.
 
 ## Scope & caveats
+
+The dedicated batching launcher supports concurrent text requests on one shared
+runner, ordered persistent-session continuation, targeted in-band cancellation,
+and optional prefix reuse for new sessions and clean prompt replacements. It
+does not yet migrate Muse image or DFlash execution. The serialized-worker
+limitations below describe the legacy path, not the new batching worker.
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;
 unsupported sampling params are rejected, not ignored. **One worker process,
@@ -213,7 +342,7 @@ backend whose terminator is only a string stop would mark every turn dirty and n
 warm-resume; distinguishing resumable terminators from trim-stops in the protocol is
 future work.
 
-There is **no global (cross-session) prefix cache**; per-session append-only warm
+The legacy path has **no global (cross-session) prefix cache**; per-session append-only warm
 resume is worker-side (for engines that support it), and all KV/resident state
 lives inside the worker/session, never the Python control plane. Multiple workers,
 weight sharing across sessions on a backend that supports it, adaptive thinking,

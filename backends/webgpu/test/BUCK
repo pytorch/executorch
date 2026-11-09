@@ -34,11 +34,33 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = python_unittest,
+    name = "test_webgpu_partitioner",
+    srcs = [
+        "test_webgpu_partitioner.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/webgpu/partitioner:webgpu_partitioner",
+        "//executorch/backends/webgpu/test:tester",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_library,
     name = "tester",
     srcs = ["tester.py"],
     deps = [
-        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
-        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//caffe2:torch",
+        "//executorch/backends/test/harness:tester",
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+        "//executorch/backends/webgpu/partitioner:webgpu_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )

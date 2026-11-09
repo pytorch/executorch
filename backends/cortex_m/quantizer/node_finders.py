@@ -35,6 +35,18 @@ class GlobalNodeFinder(NodeFinder):
         return f"{self.__class__.__name__} targeting all nodes"
 
 
+class GlobalNoOutputNodeFinder(NodeFinder):
+    """Finds all graph nodes except the output node. Output nodes
+    typically wants to inherit the previous qspec rather than applying a new
+    qspec."""
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        return (n for n in model.graph.nodes if n.op != "output")
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting all non-output nodes"
+
+
 class InputNodeFinder(NodeFinder):
     """
     Finds all placeholder nodes.
@@ -90,6 +102,41 @@ class NodeTargetNodeFinder(NodeFinder):
     def __repr__(self) -> str:
         target_names = [t._name for t in self.targets]
         return f"{self.__class__.__name__} targeting node targets: {format_items(target_names)}"
+
+
+class NodeTargetActivationNodeFinder(NodeFinder):
+    """
+    Finds all nodes matching the given target, and the nodes matching the given
+    activation(s) that are the sole user of one of them.
+    """
+
+    def __init__(
+        self, target: OpOverload, activations: OpOverload | List[OpOverload]
+    ) -> None:
+        super().__init__()
+        self.target = target
+        self.activations = make_list(activations)
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        return (
+            n
+            for n in model.graph.nodes
+            if n.target == self.target
+            or (
+                n.target in self.activations
+                and any(
+                    i.target == self.target and len(i.users) == 1
+                    for i in n.all_input_nodes
+                )
+            )
+        )
+
+    def __repr__(self) -> str:
+        activation_names = [a._name for a in self.activations]
+        return (
+            f"{self.__class__.__name__} targeting node target: {self.target._name} "
+            f"with activations: {format_items(activation_names)}"
+        )
 
 
 class ModuleNameNodeFinder(NodeFinder):

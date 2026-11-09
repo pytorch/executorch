@@ -16,6 +16,9 @@ import torch
 
 import torch.fx as fx
 
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -103,6 +106,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
         if output_val.dtype not in supported_dtypes[input_dtype]:
+            if is_safe_int32_to_int64_gather_boundary(node):
+                return True
             if tosa_spec.support_integer() and self._is_quantized_identity_cast(node):
                 return True
             self.reporter.report_reject(

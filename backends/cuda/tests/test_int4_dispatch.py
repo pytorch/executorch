@@ -8,14 +8,12 @@
 """Tests for Int4Tensor F.linear dispatch via quantize_op_dispatch.int4_dispatch.
 
 These tests validate the eager / trace-time dispatch path — the same code
-that torch.export traces through when building the AOTI graph. They do NOT
-test the .pte runtime C shim (dp4a kernel); that is covered by
-test_aoti_torch_cuda_int4_plain_mm.cpp (C++ unit tests) and
-test_cuda_pipeline.py::TestCudaExport (end-to-end export + lower).
+that torch.export traces through when building the AOTI graph. The decode
+Triton kernels themselves are covered by test_int4_quantized_gemm.py.
 
 The API contract: after importing int4_dispatch, F.linear and nn.Linear
 with Int4Tensor weights produce numerically correct results. Tests verify
-this across decode (M<=4), prefill (M>4), batched (3D), bias, group sizes,
+this across the Triton path (M<=64), fallback (M>64), batched (3D), bias, group sizes,
 and symmetric/asymmetric quantization. Correctness is measured as mean
 relative error against the unquantized bf16 reference (not per-element
 atol/rtol, which is too strict for INT4 quantization noise).
@@ -172,7 +170,9 @@ class TestCompile(unittest.TestCase):
         x = torch.randn(4, 512, dtype=torch.bfloat16, device="cuda")
         out_eager = module(x)
         out_compiled = compiled(x)
-        self.assertTrue(torch.allclose(out_eager, out_compiled, atol=0.5))
+        # The same kernel either way; outputs reach ~85, where a bf16 ulp is
+        # 0.5, so compare relative to the output, not absolutely.
+        self._check(out_compiled, out_eager, tol=0.01)
 
 
 class TestDeviceMovement(unittest.TestCase):
@@ -242,32 +242,38 @@ def _make_exportable_int4_tensor(N, K, group_size=128, symmetric=False):
 
 
 @contextlib.contextmanager
-def _record_int4_plain_mm():
-    """Record calls to the decode custom op without needing a GPU.
+def _record_int4_kernel_ops():
+    """Record which INT4 Triton op the dispatch would launch, without a GPU.
 
-    Replaces ``torch.ops.executorch_cuda.int4_plain_mm`` (whose real impl is the
-    CUDA C shim) with a recorder that computes the result via the eager CPU
-    dequant, so the dispatch handler still returns a valid tensor.
+    Replaces ``INT4_QUANTIZED_GEMM.op`` with a recorder whose ops compute the
+    result via the eager dequant, so the dispatch handler still returns a valid
+    tensor.
     """
+    from executorch.backends.cuda.triton.kernels.int4_quantized_gemm import (
+        INT4_QUANTIZED_GEMM,
+    )
+
     calls = []
 
-    def _fake(self, qdata, scale, scale_step, zero, zero_point_step, group_size):
-        calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul(
-            self, qdata, scale, scale_step, zero, zero_point_step, group_size
-        )
+    def _op(bucket):
+        def run(x, *weight_args):
+            calls.append((bucket, tuple(x.shape)))
+            return _dequant_matmul(x, *weight_args)
 
-    with mock.patch.object(torch.ops.executorch_cuda, "int4_plain_mm", _fake):
+        return run
+
+    with mock.patch.object(INT4_QUANTIZED_GEMM, "op", side_effect=_op):
         yield calls
 
 
 class TestDispatchRouting(unittest.TestCase):
-    """Type-based routing: only CudaCoalescedInt4Tensor reaches int4_plain_mm.
+    """Type-based routing on CPU: CudaCoalescedInt4Tensor takes inline dequant.
 
-    These tests run without a GPU by recording calls to the decode custom op
-    and computing the result with the eager CPU dequant. They guard the
-    comment-8 refactor: the CUDA decode path must be selected by weight *type*,
-    not by globally overriding torchao ``Int4Tensor``'s F.linear.
+    These tests run without a GPU. Decode on CUDA traces the Triton kernels
+    (TestDecodeDispatch); on CPU every M takes the inline dequant, and nothing
+    reaches the INT4 Triton ops.
+    The CUDA path must be selected by weight *type*, not by globally overriding
+    torchao ``Int4Tensor``'s F.linear.
     """
 
     def setUp(self):
@@ -278,33 +284,37 @@ class TestDispatchRouting(unittest.TestCase):
             (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
         ).item()
 
-    def test_stock_int4tensor_does_not_route_to_int4_plain_mm(self):
+    def test_stock_int4tensor_does_not_route_to_the_int4_ops(self):
         """A plain torchao Int4Tensor must fall back to torchao's default path."""
         t, _ = _make_int4_tensor(16, 64, group_size=32)
         x = torch.randn(1, 64, dtype=torch.bfloat16)  # M=1 (decode regime)
-        with _record_int4_plain_mm() as calls:
+        with _record_int4_kernel_ops() as calls:
             # torchao's default path uses mslk/CUDA and is not exercised on CPU;
             # we only assert that our decode op is NOT reached.
             with contextlib.suppress(Exception):
                 F.linear(x, t)
         self.assertEqual(calls, [])
 
-    def test_coalesced_tensor_routes_to_int4_plain_mm(self):
-        """CudaCoalescedInt4Tensor with M<=4 routes to the decode custom op."""
+    def test_coalesced_tensor_decode_on_cpu_uses_dequant(self):
+        """M<=4 on CPU takes inline dequant, never a Triton op."""
         t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
         x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
-        with _record_int4_plain_mm() as calls:
+        with _record_int4_kernel_ops() as calls:
             out = F.linear(x, c)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         self.assertEqual(out.shape, (1, 16))
+        # The coalesced scale/zero are re-encoded as uint8 codes, and one row
+        # averages little of that error away.
+        ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
+        self.assertLess(self._rel_err(out, ref), 0.03)
 
     def test_coalesced_tensor_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""
         t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
         x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
-        with _record_int4_plain_mm() as calls:
+        with _record_int4_kernel_ops() as calls:
             out = F.linear(x, c)
         self.assertEqual(calls, [])
         ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
@@ -320,7 +330,7 @@ class TestDispatchRouting(unittest.TestCase):
         t, _ = _make_int4_tensor(4, 128, group_size=32)
         self.assertEqual(tuple(t.scale.shape), (4, 4))  # (n_groups, N), square
         x = torch.randn(1, 128, dtype=torch.bfloat16)
-        with _record_int4_plain_mm() as calls:
+        with _record_int4_kernel_ops() as calls:
             with contextlib.suppress(Exception):
                 F.linear(x, t)
         self.assertEqual(calls, [])
@@ -354,11 +364,161 @@ class TestDispatchRouting(unittest.TestCase):
         )
         # End-to-end decode result matches a reference dequant of the original.
         x = torch.randn(2, 256, dtype=torch.bfloat16)
-        with _record_int4_plain_mm() as calls:
+        with _record_int4_kernel_ops() as calls:
             out = F.linear(x, c)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
         self.assertLess(self._rel_err(out, ref), 0.02)
+
+
+class TestDecodeDispatch(unittest.TestCase):
+    """M <= 64 traces the smallest covering Triton bucket."""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(42)
+
+    @staticmethod
+    def _targets(module, x, dynamic_m=None):
+        from torch.export import Dim
+
+        dynamic = None
+        if dynamic_m is not None:
+            dynamic = ({0: Dim("m", min=dynamic_m[0], max=dynamic_m[1])},)
+        with torch.no_grad():
+            program = torch.export.export(module, (x,), dynamic_shapes=dynamic)
+        return {str(node.target) for node in program.graph.nodes}
+
+    @staticmethod
+    def _bucket_ops(targets):
+        return {t for t in targets if "int4_quantized_gemm" in t}
+
+    def test_static_m_uses_the_smallest_covering_bucket_op(self):
+        module, w_ref = _make_int4_linear(256, 512, group_size=32)
+        cases = {
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            6: 8,
+            8: 8,
+            16: 16,
+            24: 32,
+            32: 32,
+            48: 64,
+            64: 64,
+        }
+        for m, bucket in cases.items():
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            targets = self._targets(module, x)
+            ops = self._bucket_ops(targets)
+            self.assertEqual(len(ops), 1, (m, targets))
+            self.assertIn(f"int4_quantized_gemm_m{bucket}", next(iter(ops)))
+            self.assertFalse(any("constant_pad" in t for t in targets), m)
+            with torch.no_grad():
+                out = module(x)
+            ref = F.linear(x, w_ref)
+            self.assertEqual(out.shape, ref.shape)
+            rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+            self.assertLess(rel.item(), 0.15, m)
+
+    def test_export_from_cpu_inputs_uses_a_bucket_op(self):
+        """Export traces with fake tensors, so CPU example inputs and weights
+        still capture the Triton kernel."""
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        module = module.cpu()
+        x = torch.randn(1, 512, dtype=torch.bfloat16)
+        targets = self._targets(module, x)
+        ops = self._bucket_ops(targets)
+        self.assertEqual(len(ops), 1, targets)
+        self.assertIn("int4_quantized_gemm_m1", next(iter(ops)))
+
+    def test_dynamic_m_bounded_by_a_bucket_uses_that_bucket(self):
+        """A dynamic M in [2, 4] (e.g. a speculative block) takes the 4-row
+        bucket, as it took the shim before, not inline dequant."""
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x = torch.randn(4, 512, dtype=torch.bfloat16, device="cuda")
+        targets = self._targets(module, x, dynamic_m=(2, 4))
+        ops = self._bucket_ops(targets)
+        self.assertEqual(len(ops), 1, targets)
+        self.assertIn("int4_quantized_gemm_m4", next(iter(ops)))
+        targets = self._targets(module, x[:2], dynamic_m=(2, 3))
+        self.assertIn("int4_quantized_gemm_m3", next(iter(self._bucket_ops(targets))))
+
+    def test_bounded_dynamic_m_through_64_uses_a_bucket(self):
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x64 = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
+        for bounds in ((5, 64), (1, 64)):
+            targets = self._targets(module, x64, dynamic_m=bounds)
+            self.assertIn(
+                "int4_quantized_gemm_m64",
+                next(iter(self._bucket_ops(targets))),
+            )
+
+    def test_more_than_64_rows_uses_dequant(self):
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
+        self.assertFalse(
+            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
+        )
+
+    def test_other_group_sizes_use_dequant(self):
+        # With group size 32 the packed tensor already requires K % 256 == 0,
+        # so group size is the only weight property that opts out.
+        module, _ = _make_int4_linear(256, 512, group_size=128)
+        x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
+        targets = self._targets(module, x)
+        self.assertFalse(self._bucket_ops(targets))
+
+
+class TestFallbacks(unittest.TestCase):
+    """Inputs the INT4 kernels do not serve take inline dequant: no error, no
+    Triton op in the graph, correct output. (K not a multiple of 256 cannot
+    reach dispatch: CudaCoalescedInt4Tensor packing rejects it; the kernel-side
+    rule is covered by test_int4_quantized_gemm.)"""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(7)
+
+    def _check(self, module, w_ref, x):
+        with _record_int4_kernel_ops() as calls:
+            with torch.no_grad():
+                out = module(x)
+        self.assertEqual(calls, [])
+        ref = F.linear(x.to(w_ref.dtype), w_ref).to(out.dtype)
+        rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+        # Against the unquantized weight, so this is the INT4 quantization error.
+        self.assertLess(rel.item(), 0.15)
+        with torch.no_grad():
+            program = torch.export.export(module, (x,))
+        targets = {str(node.target) for node in program.graph.nodes}
+        self.assertFalse(any("int4_quantized_gemm" in t for t in targets), targets)
+
+    def test_fp16_activation(self):
+        module, w_ref = _make_int4_linear(256, 512, group_size=32)
+        self._check(
+            module, w_ref, torch.randn(1, 512, dtype=torch.float16, device="cuda")
+        )
+
+    def test_non_contiguous_activation(self):
+        module, w_ref = _make_int4_linear(256, 512, group_size=32)
+        x = torch.randn(512, 2, dtype=torch.bfloat16, device="cuda").t()
+        self.assertFalse(x.is_contiguous())
+        self._check(module, w_ref, x)
+
+    def test_group_size_other_than_32(self):
+        module, w_ref = _make_int4_linear(256, 512, group_size=64)
+        self._check(
+            module, w_ref, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
+        )
+
+    def test_more_than_64_rows(self):
+        module, w_ref = _make_int4_linear(256, 512, group_size=32)
+        self._check(
+            module, w_ref, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        )
 
 
 if __name__ == "__main__":

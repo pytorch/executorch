@@ -7,11 +7,14 @@ Available hardware acceleration backends for desktop platforms.
 
 - {doc}`desktop-xnnpack` — XNNPACK (CPU acceleration)
 - {doc}`desktop-openvino` — OpenVINO (Intel hardware optimization)
+- {doc}`backends/webgpu/webgpu-overview` — WebGPU acceleration (experimental)
 
 ## macOS Backends
 
 - {doc}`backends/coreml/coreml-overview` — CoreML (recommended for Apple Silicon)
 - {doc}`backends/mlx/mlx-overview` — MLX (Apple Silicon GPU)
+- {doc}`backends/coreai/coreai-overview` — Core AI (macOS 27, experimental)
+- {doc}`backends/webgpu/webgpu-overview` — WebGPU acceleration (experimental)
 - {doc}`desktop-xnnpack` — XNNPACK (CPU acceleration)
 
 ## Windows Backends
@@ -24,3 +27,7 @@ Available hardware acceleration backends for desktop platforms.
 desktop-xnnpack
 desktop-openvino
 backends/coreml/coreml-overview
+backends/mlx/mlx-overview
+backends/coreai/coreai-overview
+backends/webgpu/webgpu-overview
+```

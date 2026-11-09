@@ -160,6 +160,24 @@ def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     return node_name == "dequantize_per_channel.default"
 
 
+def conv1d_transposed_is_rewritable(node: torch.fx.Node) -> bool:
+    """True if Conv1dAsConv2dPass can lower this transposed 1-D convolution onto
+    the conv2d transposed path: batch fixed at 1, a constant weight used by this
+    convolution alone (it is reshaped in place), one group and unit dilation.
+    """
+    in_node, weight_node = node.args[0], node.args[1]
+    if not isinstance(in_node, torch.fx.Node) or not isinstance(
+        weight_node, torch.fx.Node
+    ):
+        return False
+    in_shape = in_node.meta["val"].shape
+    if len(in_shape) != 3 or not isinstance(in_shape[0], int) or in_shape[0] != 1:
+        return False
+    if weight_node.op != "placeholder" or len(weight_node.users) != 1:
+        return False
+    return node.args[8] == 1 and list(node.args[5]) == [1]
+
+
 def is_view_copy_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
@@ -192,6 +210,18 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         or is_buffer(program, node)
         or is_lifted_tensor_constant(program, node)
     )
+
+
+def get_constant_nodes(program: ExportedProgram) -> Set[torch.fx.Node]:
+    """
+    Return the nodes of the exported program that hold constant data:
+    parameters, lifted tensor constants and buffers that are never mutated.
+    """
+    return {
+        node
+        for node in program.graph.nodes
+        if is_param_node(program, node) and not is_mutable_buffer_node(node, program)
+    }
 
 
 def is_mutable_buffer_node(
@@ -1181,6 +1211,33 @@ def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
         raise RuntimeError(f"Unsupported storage type {tensor_repr.storage_type}")
 
 
+def upper_bound_size(dim: Union[int, torch.SymInt]) -> Optional[int]:
+    """Largest value a (possibly symbolic) tensor dimension can take.
+
+    Returns None if no finite bound is known.
+
+    A symbolic dim compares against a limit using its *hint* -- the size of the
+    example input the model happened to be traced with -- not the maximum the
+    exported range allows. Sizing decisions must use the bound instead, or a
+    model traced with a small example will make a choice that is invalid once it
+    runs at a larger size.
+    """
+    if not isinstance(dim, torch.SymInt):
+        return int(dim)
+    if not dim.node.expr.free_symbols:
+        return int(dim.node.expr)
+    shape_env = dim.node.shape_env
+    if shape_env is None:
+        return None
+    try:
+        upper = shape_env.bound_sympy(dim.node.expr).upper
+    except Exception:
+        return None
+    if upper is None or not upper.is_finite:
+        return None
+    return int(upper)
+
+
 def filter_invalid_reprs(
     tensor_val: FakeTensor,
     tensor_repset: TensorRepSet,
@@ -1198,11 +1255,17 @@ def filter_invalid_reprs(
     can be used to produce a valid image texture for the given tensor (i.e. fits within
     texture limits).
     """
+    # Size the texture by what the dimension CAN be, not by the example the
+    # model was traced with. An unbounded dim cannot be shown to fit, so it
+    # falls back to buffer storage.
+    bounds = [upper_bound_size(d) for d in tensor_val.shape]
     valid_texture_layouts = set()
-    for memory_layout in tensor_repset.valid_texture_layouts:
-        extents = required_image_extents(tensor_val.shape, memory_layout)
-        if extents_are_valid(extents, texture_limits):
-            valid_texture_layouts.add(memory_layout)
+    if all(b is not None for b in bounds):
+        max_shape = torch.Size(bounds)
+        for memory_layout in tensor_repset.valid_texture_layouts:
+            extents = required_image_extents(max_shape, memory_layout)
+            if extents_are_valid(extents, texture_limits):
+                valid_texture_layouts.add(memory_layout)
 
     # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
@@ -1442,8 +1505,15 @@ class OpRepSets:
         outs_repset_list = TensorRepSetList([])
         common_out_repset = ANY_STORAGE_INCL_PACKED_INT8
         if num_tensors_in_node(op_node) == 1:
+            out_val = op_node.meta["val"]
+            # num_tensors_in_node counts tensors, not nesting: an op declared
+            # to return Tensor[] still lands here when it happens to produce
+            # exactly one, and meta["val"] is then a one-element list rather
+            # than a bare FakeTensor.
+            if isinstance(out_val, (list, tuple)):
+                out_val = out_val[0]
             common_out_repset = filter_invalid_reprs(
-                op_node.meta["val"], outputs_repsets[0], texture_limits
+                out_val, outputs_repsets[0], texture_limits
             )
             outs_repset_list.append(common_out_repset)
         # Multiple output tensors

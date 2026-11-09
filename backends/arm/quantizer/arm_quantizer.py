@@ -14,7 +14,7 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import torch
 from executorch.backends.arm._passes import ArmPassManager
@@ -31,6 +31,7 @@ from executorch.backends.arm.quantizer.quantization_config import (
     VGFQuantizationConfig,
 )
 from executorch.backends.arm.quantizer.quantizer_support import (
+    PowTensorTensorPositiveBaseCheck,
     TOSA_QUANTIZER_SUPPORT_DICT,
 )
 from executorch.backends.arm.tosa import TosaSpecification
@@ -195,8 +196,9 @@ def get_symmetric_quantization_config(
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
 
-    Activations use an affine qscheme; "symmetric" refers to the weight
-    quantization qscheme.
+    Activations normally use an affine qscheme. Dynamic INT8 activations
+    using the symmetric [-127, 127] range use per-tensor symmetric
+    qparams so TorchAO emits choose_qparams_symmetric.tensor.
 
     Args:
         is_per_channel (bool): Whether to use per-channel quantization for
@@ -235,7 +237,11 @@ def get_symmetric_quantization_config(
         dtype=torch.int8,
         quant_min=act_qmin,
         quant_max=act_qmax,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric
+            if is_dynamic and act_qmin == -127 and act_qmax == 127
+            else torch.per_tensor_affine
+        ),
         is_dynamic=is_dynamic,
         observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
             **extra_args,
@@ -478,6 +484,8 @@ def get_symmetric_a16w8_quantization_config(
         is_per_channel=is_per_channel,
         is_qat=is_qat,
         is_dynamic=is_dynamic,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
     )
 
     if is_dynamic:
@@ -924,32 +932,19 @@ class TOSAQuantizer(Quantizer):
             if node.op != "call_function":
                 continue
 
-            devices = set()
+            devices: set[str] = set()
             for arg_node in node.all_input_nodes:
                 meta_val = arg_node.meta.get("val", None)
                 if meta_val is None:
                     continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+                values = (
+                    meta_val if isinstance(meta_val, (tuple, list)) else (meta_val,)
+                )
+                devices.update(
+                    str(value.device)
+                    for value in values
+                    if isinstance(value, torch.Tensor)
+                )
 
                 if len(devices) > 1:
                     raise ValueError(
@@ -959,7 +954,7 @@ class TOSAQuantizer(Quantizer):
     def _quantize_with_submodules(
         self,
         model: GraphModule,
-        calibration_samples: list[tuple],
+        calibration_samples: Iterable[tuple],
         is_qat: bool = False,
         fold_quantize: bool = True,
     ):
@@ -971,7 +966,7 @@ class TOSAQuantizer(Quantizer):
 
         Args:
             model (GraphModule): The model to quantize.
-            calibration_samples (list[tuple]): A list of inputs to used to
+            calibration_samples (Iterable[tuple]): Inputs used to
                 calibrate the model during quantization. To properly calibrate a
                 model with submodules, at least one sample per code path is
                 needed.
@@ -1248,8 +1243,27 @@ class _TOSAQuantizerV2(ComposableQuantizer):
                 f"got {type(compile_spec_or_tosa_spec)}"
             )
 
-        self.pattern_matcher = PatternMatcher(TOSA_QUANTIZER_SUPPORT_DICT)
-        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        # pow.Tensor_Tensor has no native INT TOSA POW representation.
+        # For pure INT targets it may enter transform-for-annotation only when
+        # the graph proves that the base is strictly positive. The guarded
+        # DecomposePowTensorTensorPass can then safely rewrite it into
+        # quantizable LOG -> MUL -> EXP operations.
+        support_dict = TOSA_QUANTIZER_SUPPORT_DICT
+        if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+            support_dict = dict(TOSA_QUANTIZER_SUPPORT_DICT)
+            support_dict[(torch.ops.aten.pow.Tensor_Tensor,)] = (
+                PowTensorTensorPositiveBaseCheck
+            )
+
+        self.pattern_matcher = PatternMatcher(support_dict)
+        excluded_targets = TOSAQuantizationConfig.SHARED_INPUT_ACT_QSPEC_PATTERNS
+        self.shared_qspec_quantizer = SharedQspecQuantizer(
+            targets=[
+                target
+                for target in SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT
+                if target not in excluded_targets
+            ]
+        )
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None
         self._quantizers: List[Quantizer] = []

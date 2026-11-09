@@ -31,6 +31,7 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.arm.tosa.mapping import (
     TOSA_CONTROL_FLOW_REGION_NAME_META,
     TOSA_CONTROL_FLOW_SOURCE_NODE_META,
@@ -152,7 +153,7 @@ class TOSABackend(BackendDetails):
             artifact_path = ""
 
         version = tosa_spec.version
-        tosa_graph = ts.TosaSerializer(
+        tosa_graph = TosaSerializerWithConstantPool(
             artifact_path,
             targetMajor=version.major,
             targetMinor=version.minor,
@@ -251,7 +252,7 @@ class TOSABackend(BackendDetails):
         graph_module: GraphModule,
         edge_program: ExportedProgram,
         compile_spec: TosaCompileSpec,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: TosaSerializerWithConstantPool,
         debug_hook: DebugHook | None,
         submodule_name: str | None = None,
         containing_graph_module: GraphModule | None = None,
@@ -262,9 +263,12 @@ class TOSABackend(BackendDetails):
             graph_module (GraphModule): Module to lower recursively.
             edge_program (ExportedProgram): Original exported program.
             compile_spec (TosaCompileSpec): Backend options with TOSA settings.
-            tosa_graph (ts.TosaSerializer): Serializer receiving operators.
+            tosa_graph (TosaSerializerWithConstantPool): Serializer receiving
+                operators.
             debug_hook (DebugHook | None): Optional debug instrumentation.
             submodule_name (str | None): Name used when visiting nested blocks.
+            containing_graph_module (GraphModule | None): Parent graph module for
+                nested control flow.
 
         Raises:
             RuntimeError: If an FX node with an unsupported op kind is found.
@@ -337,9 +341,15 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
-                    if len(node.users) == 0 and submodule_name is None:
-                        # In top level module, we don't need to handle unused placeholders.
-                        # In submodules, we do need to handle them to preserve call signature.
+                    if (
+                        len(node.users) == 0
+                        and submodule_name is None
+                        and node.name not in edge_program.graph_signature.user_inputs
+                    ):
+                        # Unused parameters, buffers and constants are skipped.
+                        # Unused user inputs stay because the runtime binds
+                        # delegate arguments by position. In submodules, all
+                        # placeholders are kept to preserve the call signature.
                         continue
                     process_placeholder(
                         node,
@@ -349,7 +359,7 @@ class TOSABackend(BackendDetails):
                         tosa_spec,
                     )
                 elif node.op == "output":
-                    process_output(node, tosa_graph, tosa_spec)
+                    process_output(node, tosa_graph, tosa_spec, edge_program)
                 elif node.op == "get_attr":
                     attr = getattr(graph_module, str(node.target), None)
                     if attr is None:

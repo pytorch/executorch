@@ -21,12 +21,39 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
+MLIR_EXPORT_SPEC_KEY = "mlir-export-spec"
+NEURON_ADAPTER_MAJOR_KEY = "neuron-adapter-major"
+SKIP_COMPILE_SPEC_KEYS = {
+    "ImportForever",
+    MLIR_EXPORT_SPEC_KEY,
+    NEURON_ADAPTER_MAJOR_KEY,
+}
 EXTRACT_SHARED_BLOB_KEY = "ExtractSharedBlobKey"
 HEADER_SIZE = 13
 HEADER_VERSION = 1
 REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
 SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991", "mt6993"}
+
+
+def _validate_neuron_adapter_major(module_compile_spec: List[CompileSpec]) -> None:
+    adapter_major_values = [
+        spec.value
+        for spec in module_compile_spec
+        if spec.key == NEURON_ADAPTER_MAJOR_KEY
+    ]
+    if not adapter_major_values:
+        return
+
+    value = adapter_major_values[0]
+    if (
+        not 1 <= len(value) <= 3
+        or not all(ord("0") <= byte <= ord("9") for byte in value)
+        or not 1 <= int(value) <= 255
+    ):
+        raise ValueError(
+            "neuron-adapter-major CompileSpec must be an ASCII decimal integer "
+            "between 1 and 255."
+        )
 
 
 def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
@@ -75,6 +102,7 @@ class NeuropilotBackend(BackendDetails):
             raise RuntimeError(
                 "Unsupported duplicated keys in the CompileSpec settings."
             )
+        _validate_neuron_adapter_major(module_compile_spec)
         if not REQUIRED_COMPILE_SPEC_KEYS.issubset(set(compile_spec_keys)):
             raise RuntimeError(
                 "Following keys are required in the CompileSpec settings: {}."
@@ -132,8 +160,19 @@ class NeuropilotBackend(BackendDetails):
         converter.prepend_input_quantize_ops_indices = fp_input_indices
         converter.append_output_dequantize_ops = True
         converter.append_output_dequantize_ops_indices = fp_output_indices
+        mlir_export_spec = next(
+            (
+                spec.value.decode("utf-8")
+                for spec in module_compile_spec
+                if spec.key == MLIR_EXPORT_SPEC_KEY
+            ),
+            None,
+        )
         with contextlib.redirect_stdout(None):
-            mlir_str = converter.convert_to_mlir()
+            if mlir_export_spec is None:
+                mlir_str = converter.convert_to_mlir()
+            else:
+                mlir_str = converter.convert_to_mlir(mlir_export_spec=mlir_export_spec)
             model_bytes = mtk_neuron.compile(mlir_str, " ".join(compile_options))
 
         num_inputs = len(input_names)

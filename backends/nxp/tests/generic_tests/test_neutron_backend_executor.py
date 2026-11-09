@@ -21,7 +21,10 @@ from executorch.backends.nxp.tests.executors import (
     TFLiteExecutor,
     ToNHWCPreprocess,
 )
-from executorch.backends.nxp.tests.models import Conv2dModule, ConvFCSoftmaxModule
+from executorch.backends.nxp.tests.simple_models import (
+    Conv2dModule,
+    ConvFCSoftmaxModule,
+)
 from torch.export import ExportedProgram
 
 

@@ -7,7 +7,24 @@
 
 from typing import Any, Union
 
-from executorch.devtools import Inspector
+from executorch.backends.nxp.tests.profiling_utils import (
+    get_neutron_compiler_version,
+    get_neutron_driver_version,
+    get_neutron_kernel_kinds,
+)
+
+from executorch.devtools.inspector import Inspector, TimeScale
+
+# Global mapping of Neutron kernel IDs to names used by the delegate metadata parser.
+kernel_kinds = {}
+
+# NPU frequency. Default value for the i.MXRT700 SoC is 324 MHz.
+NPU_FREQUENCY_HZ = 324000000  # 324 MHz
+
+
+def neutron_cycle_converter(event_name, time_in_cycles):
+    # Convert NPU cycles to milliseconds
+    return (time_in_cycles / NPU_FREQUENCY_HZ) * 1000  # ms
 
 
 def parse_delegate_metadata(
@@ -26,7 +43,13 @@ def parse_delegate_metadata(
             if function_code == 0:
                 metadata_list.append("Profiling dump")
             else:
-                metadata_list.append("Neutron kernel " + str(function_code))
+                metadata_list.append(
+                    kernel_kinds.get(
+                        function_code, "Neutron kernel " + str(function_code)
+                    )
+                )
+        elif len(metadata_bytes) == 2:
+            metadata_list.append("Profiling dump")
         else:
             metadata_list.append("Invalid metadata size")
     return metadata_list
@@ -37,10 +60,19 @@ if __name__ == "__main__":
     try:
         etrecord_path = "etrecord/etrecord.bin"
         etdump_path = "etdump/trace.etdump"
+
+        driver_version = get_neutron_driver_version(etdump_path)
+        compiler_version = get_neutron_compiler_version()
+        if driver_version and driver_version == compiler_version:
+            kernel_kinds = get_neutron_kernel_kinds()
+
         inspector = Inspector(
             etdump_path=etdump_path,
             etrecord=etrecord_path,
+            source_time_scale=TimeScale.NS,
+            target_time_scale=TimeScale.MS,
             delegate_metadata_parser=parse_delegate_metadata,
+            delegate_time_scale_converter=neutron_cycle_converter,
         )
 
         # Access raw event data and filter quantized_decomposed nodes

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.26)
 project(whisper_runner)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -114,8 +114,10 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(
     TARGET whisper_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:whisper_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to whisper_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:whisper_runner> $<TARGET_FILE_DIR:whisper_runner>
+    COMMENT "Copying runtime DLLs to whisper_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()

@@ -64,9 +64,14 @@ class DecomposeSoftmaxPass(ArmOpTargetedPass):
         %op2 = sub(x, %op1)
         %op3 = exp(%op2)
         %op4 = sum(%op3, dim)
+
+    For softmax:
         %op5 = reciprocal(%op4)
         %op6 = mul(%op3, %op5)
-        (in logsoftmax case: %op7 = log(%op6))
+
+    For log_softmax:
+        %op5 = log(%op4)
+        %op6 = sub(%op2, %op5)
 
     When skip_safe_softmax=True, _safe_softmax is left undecomposed so
     the partitioner delegates it to CPU instead of the NPU.
@@ -112,8 +117,10 @@ class DecomposeSoftmaxPass(ArmOpTargetedPass):
         op2 = super().call_operator(sub_op, (_input, op1), {}, meta, updated=True)
         op3 = super().call_operator(exp_op, (op2,), {}, meta, updated=True)
         op4 = super().call_operator(sum_op, (op3, dim, True), {}, meta, updated=True)
+        if op in log_softmax:
+            op5 = super().call_operator(log_op, (op4,), {}, meta, updated=True)
+            return super().call_operator(sub_op, (op2, op5), {}, meta, updated=True)
+
         op5 = super().call_operator(reciprocal_op, (op4,), {}, meta, updated=True)
         op6 = super().call_operator(mul_op, (op3, op5), {}, meta, updated=True)
-        if op in log_softmax:
-            op6 = super().call_operator(log_op, (op6,), {}, meta, updated=True)
         return op6

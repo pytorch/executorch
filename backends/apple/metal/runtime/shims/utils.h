@@ -41,6 +41,14 @@ AOTITorchError validate_dtype(int32_t dtype);
 
 } // extern "C"
 
+// Whether `tensor` holds its elements densely in row-major order, the layout
+// the hand-written ops read. A dimension of size one does not change where the
+// elements are, so its stride is not looked at, as in PyTorch's
+// is_contiguous(). The shims keep such a stride as AOTInductor gave it (see
+// make_strided_tensor in memory.cpp), and it can differ from the row-major one:
+// a {2, 1, 4} tensor with strides {4, 1, 1} is dense and row-major.
+bool is_row_major_dense(const Tensor& tensor);
+
 } // namespace metal
 } // namespace backends
 } // namespace executorch

@@ -9,12 +9,19 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
     get_activation_replacement,
 )
+from executorch.backends.arm._passes.aten_to_tosa_comparison import (
+    rewrite_comparison_operator,
+)
 from executorch.backends.arm._passes.aten_to_tosa_data_layout import (
     rewrite_data_layout_operator,
 )
+from executorch.backends.arm._passes.aten_to_tosa_reduction import (
+    rewrite_reduction_operator,
+)
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
-    rewrite_argmax,
     rewrite_binary_operator,
+    rewrite_mul,
+    rewrite_negate,
     rewrite_rfft2,
     rewrite_unary_operator,
 )
@@ -52,21 +59,22 @@ def register_dialect_substitutions(
 
 
 @register_dialect_substitutions(
-    exir_ops.edge.aten.argmax.default,
-)
-def _get_tensor_operators_replacement(
-    node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec | None:
-    return rewrite_argmax(node, pass_)
-
-
-@register_dialect_substitutions(
     exir_ops.edge.aten.fft_rfft2.default,
 )
 def _get_fft_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return rewrite_rfft2(node, pass_)
+
+
+@register_dialect_substitutions(exir_ops.edge.aten.mul.Tensor)
+def _get_mul_replacement(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    return rewrite_mul(node, pass_)
+
+
+@register_dialect_substitutions(exir_ops.edge.aten.neg.default)
+def _get_negate_replacement(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    return rewrite_negate(node, pass_)
 
 
 @register_dialect_substitutions(
@@ -76,15 +84,11 @@ def _get_fft_replacement(
     exir_ops.edge.aten.bitwise_or.Tensor,
     exir_ops.edge.aten.bitwise_right_shift.Tensor,
     exir_ops.edge.aten.bitwise_xor.Tensor,
-    exir_ops.edge.aten.eq.Tensor,
-    exir_ops.edge.aten.ge.Tensor,
-    exir_ops.edge.aten.gt.Tensor,
     exir_ops.edge.aten.logical_and.default,
     exir_ops.edge.aten.logical_or.default,
     exir_ops.edge.aten.logical_xor.default,
     exir_ops.edge.aten.maximum.default,
     exir_ops.edge.aten.minimum.default,
-    exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.pow.Tensor_Tensor,
     exir_ops.edge.aten.sub.Tensor,
 )
@@ -92,6 +96,17 @@ def _get_binary_operator_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return rewrite_binary_operator(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.eq.Tensor,
+    exir_ops.edge.aten.ge.Tensor,
+    exir_ops.edge.aten.gt.Tensor,
+)
+def _get_comparison_operator_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_comparison_operator(node, pass_)
 
 
 @register_dialect_substitutions(
@@ -103,7 +118,6 @@ def _get_binary_operator_replacement(
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.logical_not.default,
-    exir_ops.edge.aten.neg.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.sin.default,
@@ -133,6 +147,20 @@ def _get_ternary_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return rewrite_ternary_operator(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.any.dim,
+    exir_ops.edge.aten.any.dims,
+    exir_ops.edge.aten.prod.dim_int,
+    exir_ops.edge.aten.sum.dim_IntList,
+)
+def _get_reduction_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_reduction_operator(node, pass_)
 
 
 @register_dialect_substitutions(

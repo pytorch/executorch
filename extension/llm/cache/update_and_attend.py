@@ -95,8 +95,16 @@ def update_and_attend(
     Returns:
         ``[B, H_q, q_len, v_head_dim]`` attention output, in ``out_dtype``.
     """
-    k_hist, v_hist, spec = REGISTRY.current().update_and_fetch(layer_id, k, v, position)
-    return attend(q, k_hist, v_hist, spec, scale, out_dtype)
+    specs = REGISTRY.current().update_and_fetch(layer_id, k, v, position)
+    outputs = []
+    start = 0
+    for spec in specs:
+        end = start + spec.q_len
+        outputs.append(attend(q[:, :, start:end, :], spec, scale, out_dtype))
+        start = end
+    if start != q.shape[-2]:
+        raise ValueError(f"the cache answered {start} of {q.shape[-2]} query tokens")
+    return outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=2)
 
 
 @update_and_attend.register_fake
