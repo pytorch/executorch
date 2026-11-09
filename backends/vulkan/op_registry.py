@@ -1016,6 +1016,33 @@ def register_convolution_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.conv2d.with_epilogue)
+def register_conv2d_with_epilogue():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.CHANNELS_PACKED_TEXTURE,  # residual
+            utils.NO_STORAGE,  # residual_scale (prepacked)
+            utils.NO_STORAGE,  # residual_op (non tensor)
+            utils.NO_STORAGE,  # alpha (non tensor)
+            utils.NO_STORAGE,  # activation (non tensor)
+            utils.NO_STORAGE,  # activation_a (non tensor)
+            utils.NO_STORAGE,  # activation_b (non tensor)
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
 # =============================================================================
 # convolution/conv2d/q8ta/**/Q8taConv2d*.cpp
 # =============================================================================
