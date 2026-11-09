@@ -16,8 +16,11 @@ Glimmer GEMM time per forward pass.
 For each activation dtype, shape, M (token batch size), and kernel
 (``--kernels``), every tile config is checked against a reference and timed.
 The sweep matches what the op lowers to:
-    * M <= ``--matvec-max-m`` (2): only the matvec kernel, which streams packed
-      weights like MLX's qmv. Its rows per threadgroup (MR) is M.
+    * M <= ``--matvec-max-m`` (4): only the matvec kernel, which streams packed
+      weights like MLX's qmv. Rows per threadgroup MR in {1, 2, 4} up to M are
+      tried; MR < M launches ceil(M / MR) threadgroup rows (MR = 3 compiles
+      badly and is skipped). fp_int4 also sweeps the qmv_wide-style kernel:
+      ``--wide-kl`` lanes per channel, M or ceil(M / 2) rows per threadgroup.
     * larger M: only MPP tiles (BM x BN, BM capped at max(8, M) since larger
       tiles only add padding rows, and BM >= 32 for M >= 128). Full-K
       (``--splits`` 1) runs MPP over all
@@ -91,7 +94,9 @@ KERNEL_BITS = {"int8_int4": 4, "int8_int2": 2, "fp_int4": 4}
 MATVEC = 0
 
 # (BM, BN, splits): an MPP tile, split over K when splits > 1. BN == MATVEC
-# selects the matvec kernel with BM activation rows per threadgroup.
+# selects the matvec kernel with BM activation rows per threadgroup; BN < 0
+# (fp_int4 only) the qmv_wide-style kernel with BM rows per threadgroup and -BN
+# lanes per output channel.
 Tile = Tuple[int, int, int]
 # (tile, seconds or None on failure, check error or None)
 Entry = Tuple[Tile, Optional[float], Optional[float]]
@@ -168,12 +173,21 @@ _fp4_matvec_kernel = mx.fast.metal_kernel(
     source=fp4._MATVEC_SOURCE,
     header=fp4._HEADER,
 )
+_fp4_wide_kernel = mx.fast.metal_kernel(
+    name="fp_int4_gemm_wide",
+    input_names=["x", "w_packed", "w_scale"],
+    output_names=["out"],
+    source=fp4._WIDE_SOURCE,
+    header=fp4._HEADER,
+)
 
 
 def config_name(tile: Tile) -> str:
     bm, bn, splits = tile
     if bn == MATVEC:
         return f"matvec mr{bm}"
+    if bn < 0:
+        return f"wide nv{bm} kl{-bn}"
     if splits > 1:
         return f"split_k{splits} {bm}x{bn}"
     return f"full_k {bm}x{bn}"
@@ -268,6 +282,21 @@ def fp_int4_gemm(
             template=[("T", x.dtype), ("N", N), ("K", K), ("MR", bm)],
             grid=(
                 math.ceil(N / rows_per_tg) * fp4._MATVEC_SIMDGROUPS * 32,
+                math.ceil(M / bm),
+                1,
+            ),
+            threadgroup=(fp4._MATVEC_SIMDGROUPS * 32, 1, 1),
+            output_shapes=[(M, N)],
+            output_dtypes=[x.dtype],
+        )[0]
+    if bn < 0:
+        kl = -bn
+        channels_per_tg = fp4._MATVEC_SIMDGROUPS * (32 // kl)
+        return _fp4_wide_kernel(
+            inputs=[x, w_packed, w_scale],
+            template=[("T", x.dtype), ("N", N), ("K", K), ("NV", bm), ("KL", kl)],
+            grid=(
+                math.ceil(N / channels_per_tg) * fp4._MATVEC_SIMDGROUPS * 32,
                 math.ceil(M / bm),
                 1,
             ),
@@ -376,12 +405,26 @@ def time_per_call(
     return max(chain(fn, iters) - chain(None, iters), 0.0) / iters
 
 
-def tile_configs(K: int, M: int, args: argparse.Namespace) -> List[Tile]:
-    """Matvec only for M <= --matvec-max-m (needs K % 512 == 0); otherwise MPP
-    tiles only. MPP needs BM % 8 == 0, BM > max(8, M) only adds padding rows,
-    BM < 32 never won at M >= 128, and split-K needs K % (64 * splits) == 0."""
+def tile_configs(
+    K: int, M: int, args: argparse.Namespace, kernel: str = ""
+) -> List[Tile]:
+    """Matvec only for M <= --matvec-max-m (needs K % 512 == 0), plus the
+    qmv_wide-style kernel for fp_int4; otherwise MPP tiles only. MPP needs
+    BM % 8 == 0, BM > max(8, M) only adds padding rows, BM < 32 never won at
+    M >= 128, and split-K needs K % (64 * splits) == 0."""
     if M <= args.matvec_max_m and K % op._MATVEC_BLOCK == 0:
-        return [(M, MATVEC, 1)]
+        # MR < M launches ceil(M / MR) threadgroup rows that share weights
+        # through cache, like MLX's qmv (one row per threadgroup). MR = 3 was
+        # 2-5x slower than MR = 2 or 4 on every Muse Glimmer shape.
+        tiles = [(mr, MATVEC, 1) for mr in (1, 2, 4) if mr <= M]
+        if kernel == "fp_int4":
+            tiles += [
+                (nv, -kl, 1)
+                for nv in sorted({M, (M + 1) // 2})
+                for kl in args.wide_kl
+                if K % (16 * kl) == 0
+            ]
+        return tiles
     min_bm = 32 if M >= 128 else 8
     return [
         (bm, bn, splits)
@@ -477,7 +520,7 @@ def bench_shape(  # noqa: C901
     def select(kernel: str, x: mx.array, M: int) -> Optional[Tuple[Tile, float]]:
         """Sweep + refine; returns (tile, sweep or refine seconds) or None. A
         single config (matvec) is only checked; the official re-run times it."""
-        tiles = tile_configs(K, M, args)
+        tiles = tile_configs(K, M, args, kernel)
         if len(tiles) == 1:
             err = check(kernel, x, tiles[0])
             if err >= 1e-2:
@@ -759,9 +802,17 @@ def main() -> None:
     parser.add_argument(
         "--matvec-max-m",
         type=int,
-        default=2,
-        help="M up to this value sweeps only the matvec kernel (the op's M <= 2 "
-        "path); larger M sweeps only MPP tiles. 0 disables matvec.",
+        default=4,
+        help="M up to this value sweeps only the matvec kernel (MR in {1, 2, 4} "
+        "up to M); larger M sweeps only MPP tiles. 0 disables matvec.",
+    )
+    parser.add_argument(
+        "--wide-kl",
+        type=int,
+        nargs="+",
+        default=[8, 16, 32],
+        help="fp_int4 qmv_wide-style kernel (M <= --matvec-max-m): lanes per "
+        "output channel to sweep. Rows per threadgroup sweeps M and ceil(M / 2).",
     )
     parser.add_argument(
         "--quant-threads",
@@ -787,7 +838,7 @@ def main() -> None:
         f"final iters: {args.final_iters}  final repeats: {args.final_repeats}  "
         f"quant threads: {args.quant_threads}  "
         f"bm: {args.bm}  bn: {args.bn}  splits: {args.splits}  "
-        f"matvec max M: {args.matvec_max_m}",
+        f"matvec max M: {args.matvec_max_m}  wide kl: {args.wide_kl}",
         flush=True,
     )
 

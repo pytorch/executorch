@@ -117,11 +117,62 @@ _MATVEC_ROWS_PER_SIMDGROUP = 4
 _MATVEC_BLOCK = 512
 _MAX_M = 2**31 - 1
 
+# Muse Glimmer (N, K) -> plans as (max_m, bm, bn, splits), from the M4 Max fp16
+# sweeps (test/bench_muse_glimmer_gemm.py --kernels fp_int4). bn == 0 is the
+# matvec with bm rows per threadgroup; bn < 0 the qmv_wide-style kernel with bm
+# rows per threadgroup and -bn lanes per output channel; M <= 4 runs
+# ceil(M / bm) threadgroup rows. M = 1 / 2 / 4 use the fastest matvec or wide
+# config across sweeps; the M <= 8 / <= 16 / larger tiles are the M = 8 / 16 /
+# 256 winners.
+_MG_PLANS: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {
+    (8704, 6656): [  # qkv
+        (1, 1, -16, 1),
+        (2, 1, 0, 1),
+        (4, 2, 0, 1),
+        (8, 8, 128, 8),
+        (16, 16, 64, 4),
+        (_MAX_M, 128, 32, 4),
+    ],
+    (6656, 4096): [  # o
+        (1, 1, -16, 1),
+        (2, 2, -32, 1),
+        (4, 2, -16, 1),
+        (8, 8, 64, 8),
+        (16, 16, 32, 4),
+        (_MAX_M, 64, 32, 1),
+    ],
+    (39936, 6656): [  # gate_up
+        (1, 1, -32, 1),
+        (2, 2, 0, 1),
+        (4, 2, -16, 1),
+        (8, 8, 128, 4),
+        (16, 16, 128, 8),
+        (_MAX_M, 64, 64, 1),
+    ],
+    (6656, 19968): [  # down
+        (1, 1, -32, 1),
+        (4, 2, 0, 1),
+        (8, 8, 64, 8),
+        (16, 16, 64, 8),
+        (_MAX_M, 64, 64, 4),
+    ],
+    (202048, 6656): [  # lm_head
+        (1, 1, -8, 1),
+        (2, 2, -16, 1),
+        (4, 4, -32, 1),
+        (8, 8, 128, 2),
+        (16, 16, 128, 1),
+        (_MAX_M, 64, 64, 1),
+    ],
+}
+
 
 class FpInt4Plan(NamedTuple):
     """Kernel choice for ``M <= max_m``. ``bn == 0`` selects the matvec kernel
-    with ``bm`` activation rows per threadgroup; otherwise a full-K MPP GEMM
-    with a ``bm x bn`` tile, split over K when ``splits > 1``."""
+    with ``bm`` activation rows per threadgroup; ``bn < 0`` the qmv_wide-style
+    kernel with ``bm`` rows per threadgroup and ``-bn`` lanes per output
+    channel; otherwise a full-K MPP GEMM with a ``bm x bn`` tile, split over K
+    when ``splits > 1``."""
 
     max_m: int
     bm: int
@@ -131,12 +182,14 @@ class FpInt4Plan(NamedTuple):
 
 def full_k_plans(N: int, K: int) -> list[FpInt4Plan]:
     """Kernel plans, smallest ``max_m`` first; the last covers every larger M.
-    Untuned: the int8_intx fallback pattern (more splits when N gives few
-    output tiles) until ``test/bench_muse_glimmer_gemm.py --kernels fp_int4`` picks
-    per-shape tiles."""
+    Muse Glimmer shapes use the swept ``_MG_PLANS``. Other shapes: matvec for
+    M <= 4 (2 rows per threadgroup past M = 1), then padded MPP tiles with more
+    splits when N gives few output tiles."""
+    if (N, K) in _MG_PLANS and K % _MATVEC_BLOCK == 0:
+        return [FpInt4Plan(*p) for p in _MG_PLANS[(N, K)]]
     plans = []
     if K % _MATVEC_BLOCK == 0:
-        plans += [FpInt4Plan(1, 1, 0), FpInt4Plan(2, 2, 0)]
+        plans += [FpInt4Plan(1, 1, 0), FpInt4Plan(4, 2, 0)]
     small_bn, small_splits = (64, 8) if N <= 16384 else (128, 2)
     tiles = [(8, small_bn, small_splits), (16, small_bn, small_splits), (32, 128, 1)]
     for max_m, (bm, bn, splits) in zip((8, 16, _MAX_M), tiles):
@@ -345,13 +398,90 @@ _MATVEC_SOURCE = """
     }
 """
 
+# Template args T, N, K, NV, KL (K % (16 * KL) == 0) for small M, laid out like
+# MLX's qmv_wide: KL lanes split K for one output channel (32 / KL channels per
+# SIMD group, 2 SIMD groups per threadgroup) and each threadgroup streams NV
+# activation rows, so each lane decodes one 16-value chunk of one channel per
+# step and reuses it for every row. Activations are read from device memory
+# per row instead of held in registers, which keeps register use low. The XOR /
+# mask decode is undone on the weight side (fma with 1, 1/16, 1/256, 1/4096
+# and -8, exact in fp32), so no sum(x) correction is needed.
+_WIDE_SOURCE = """
+    constexpr int SG = 2;
+    constexpr int CPS = 32 / KL;
+    constexpr int VPL = 16;
+    constexpr int STEP = KL * VPL;
+    constexpr int KP = K / 2;
+
+    int M = 1;
+    for (int d = 0; d < x_ndim - 1; ++d) {
+        M *= x_shape[d];
+    }
+    const int lane = int(thread_index_in_simdgroup);
+    const int kl = lane % KL;
+    const int n = (int(threadgroup_position_in_grid.x) * SG
+                   + int(simdgroup_index_in_threadgroup)) * CPS + lane / KL;
+    const int v0 = int(threadgroup_position_in_grid.y) * NV;
+
+    device const uchar* w = w_packed + size_t(min(n, N - 1)) * KP + kl * (VPL / 2);
+    device const T* xv[NV];
+    #pragma clang loop unroll(full)
+    for (int v = 0; v < NV; ++v) {
+        xv[v] = x + size_t(min(v0 + v, M - 1)) * K + kl * VPL;
+    }
+    const float4 pre = float4(1.0f, 1.0f / 16.0f, 1.0f / 256.0f, 1.0f / 4096.0f);
+
+    float acc[NV];
+    #pragma clang loop unroll(full)
+    for (int v = 0; v < NV; ++v) {
+        acc[v] = 0.0f;
+    }
+
+    for (int k = 0; k < K; k += STEP) {
+        const ushort4 q = as_type<ushort4>(
+            *(device const uint2*)(w + k / 2) ^ uint2(0x88888888u));
+        float4 wf[4];
+        #pragma clang loop unroll(full)
+        for (int i = 0; i < 4; ++i) {
+            wf[i] = fma(
+                float4(q[i] & 0x000f, q[i] & 0x00f0, q[i] & 0x0f00, q[i] & 0xf000),
+                pre,
+                float4(-8.0f));
+        }
+        #pragma clang loop unroll(full)
+        for (int v = 0; v < NV; ++v) {
+            device const vec<T, 4>* x4 = (device const vec<T, 4>*)(xv[v] + k);
+            acc[v] += (dot(wf[0], float4(x4[0])) + dot(wf[1], float4(x4[1])))
+                + (dot(wf[2], float4(x4[2])) + dot(wf[3], float4(x4[3])));
+        }
+    }
+
+    // Reduce within this channel's KL lanes; simd_sum would mix channels.
+    #pragma clang loop unroll(full)
+    for (int v = 0; v < NV; ++v) {
+        #pragma clang loop unroll(full)
+        for (int off = KL / 2; off > 0; off /= 2) {
+            acc[v] += simd_shuffle_down(acc[v], ushort(off));
+        }
+    }
+    if (kl == 0 && n < N) {
+        const float s = float(w_scale[n]);
+        #pragma clang loop unroll(full)
+        for (int v = 0; v < NV; ++v) {
+            if (v0 + v < M) {
+                out[size_t(v0 + v) * N + n] = T(acc[v] * s);
+            }
+        }
+    }
+"""
+
 
 def _lit(*values: int) -> list[IntOrVid]:
     return [IntOrVid.from_literal(v) for v in values]
 
 
 @REGISTRY.register(target=[torch.ops.mlx.fp_int4_gemm.default])
-def _fp_int4_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+def _fp_int4_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C901
     x_slot, w_packed_slot, w_scale_slot = P.args(n)
     x_node = n.args[0]
     x_meta = x_node.meta["val"]
@@ -492,9 +622,48 @@ def _fp_int4_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
 
+    def emit_wide(nv: int, kl: int) -> None:
+        if K % (16 * kl):
+            raise NotImplementedError(
+                f"mlx::fp_int4_gemm: wide kernel needs K % {16 * kl} == 0; got K={K}"
+            )
+        channels_per_tg = _MATVEC_SIMDGROUPS * (32 // kl)
+        P.emit(
+            MetalKernelNode(
+                name="fp_int4_gemm_wide",
+                source=_WIDE_SOURCE,
+                header=_HEADER,
+                inputs=[
+                    P.slot_to_tid(s) for s in (x_slot, w_packed_slot, w_scale_slot)
+                ],
+                outputs=[P.slot_to_tid(out)],
+                grid=[
+                    IntOrVid.from_literal(
+                        (N + channels_per_tg - 1)
+                        // channels_per_tg
+                        * _MATVEC_SIMDGROUPS
+                        * 32
+                    ),
+                    emit_ceil_div(P, m_iov, nv),
+                    IntOrVid.from_literal(1),
+                ],
+                threadgroup=_lit(_MATVEC_SIMDGROUPS * 32, 1, 1),
+                input_names=["x", "w_packed", "w_scale"],
+                output_names=["out"],
+                output_shapes_flat=out_shape_flat,
+                output_shape_lengths=[len(out_shape_flat)],
+                output_dtypes=[dtype_int],
+                template_arg_names=["T", "N", "K", "NV", "KL"],
+                template_arg_kinds=[2, 0, 0, 0, 0],
+                template_arg_values=[dtype_int, N, K, nv, kl],
+            )
+        )
+
     def emit_plan(plan: FpInt4Plan) -> None:
         if plan.bn == 0:
             emit_matvec(plan.bm)
+        elif plan.bn < 0:
+            emit_wide(plan.bm, -plan.bn)
         else:
             emit_mpp(plan.bm, plan.bn, plan.splits)
 
