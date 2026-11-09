@@ -75,7 +75,7 @@ void main() {
   // Convert row_idx to a tensor index using the mean/rstd metadata.
   // The mean/rstd tensor has shape [..., 1] (width dimension is 1).
   // This gives us the outer dimension indices for this row.
-  TensorIndex row_tidx = linear_idx_to_tensor_idx(mean_meta, row_idx, in_layout);
+  TensorIndex row_tidx = contiguous_idx_to_tensor_idx(mean_meta, row_idx);
 
   // The width stride in the input buffer tells us how to step through width
   // elements. For contiguous layout, stride_at(inp, 0) == 1; for other

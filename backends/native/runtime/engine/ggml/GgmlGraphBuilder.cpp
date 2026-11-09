@@ -707,6 +707,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_max_pool2d(node);
   } else if (key == "aten.mean.dim") {
     lower_mean(node);
+  } else if (key == "aten.sum.dim_IntList") {
+    lower_sum(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

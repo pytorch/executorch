@@ -4,14 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-binary_scalar_buffer:
+# The op is selected at dispatch through the op_type specialization constant.
+binary_scalar:
   parameter_names_with_default_values:
-    OPERATOR: power_of(X, Y)
     IS_COMPARISON_OP: false
     DTYPE: float
     SCALAR_VALUE_TYPE: float
-    STORAGE: buffer
+    STORAGE: texture3d
   generate_variant_forall:
+    STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
     combination:
       parameter_names: [DTYPE, SCALAR_VALUE_TYPE]
       combos:
@@ -20,24 +23,6 @@ binary_scalar_buffer:
        - parameter_values: [int32, int32]
        - parameter_values: [int32, float]
   shader_variants:
-    - NAME: pow_scalar_buffer
-    - NAME: mul_scalar_buffer
-      OPERATOR: X * Y
-    - NAME: eq_scalar_buffer
-      OPERATOR: X == Y
-      IS_COMPARISON_OP: true
-    - NAME: ne_scalar_buffer
-      OPERATOR: X != Y
-      IS_COMPARISON_OP: true
-    - NAME: lt_scalar_buffer
-      OPERATOR: X < Y
-      IS_COMPARISON_OP: true
-    - NAME: le_scalar_buffer
-      OPERATOR: X <= Y
-      IS_COMPARISON_OP: true
-    - NAME: gt_scalar_buffer
-      OPERATOR: X > Y
-      IS_COMPARISON_OP: true
-    - NAME: ge_scalar_buffer
-      OPERATOR: X >= Y
+    - NAME: binary_scalar_op
+    - NAME: binary_scalar_cmp
       IS_COMPARISON_OP: true

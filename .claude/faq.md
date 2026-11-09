@@ -7,7 +7,7 @@ Error codes defined in `runtime/core/error.h`.
 |------|------|--------------|
 | 0x10 | InvalidArgument | Input shape mismatch - inputs don't match export shapes. Use dynamic shapes if needed. |
 | 0x14 | OperatorMissing | Selective build missing operator. Regenerate `et_operator_library` from current model. |
-| 0x20 | NotFound | Missing backend. Link with `--whole-archive`: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive` |
+| 0x20 | NotFound | Missing backend. Link with `--whole-archive`: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive libxnnpack_profiler.a` |
 
 ## Export Issues
 

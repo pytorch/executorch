@@ -6,6 +6,7 @@
 
 
 import dataclasses
+from collections.abc import Sequence
 from typing import Callable, Generic, Optional, TypeVar, Union
 
 import torch
@@ -103,13 +104,50 @@ class QuantParamsStruct(Generic[_TensorType]):
         return [i for i, dim in enumerate(scale.shape) if dim != 1]
 
     def is_per_tensor(self) -> bool:
+        """One scale for the whole tensor.
+
+        The scale may be shaped ``()`` or all-ones; only its ``numel()`` matters.
+        A per-channel scale over a single channel is per-tensor by this test,
+        which is numerically the same thing.
+        """
         return _get_tensor_val(self.scale).numel() == 1
 
-    def is_per_channel(self) -> bool:
-        return len(self._non_unary_dims(_get_tensor_val(self.scale))) == 1
+    def _single_axis_block_size(self, tensor_shape: Sequence[int]) -> Optional[int]:
+        scale = _get_tensor_val(self.scale)
+        non_unary = self._non_unary_dims(scale)
+        if len(non_unary) != 1 or scale.ndim != len(tensor_shape):
+            return None
+        axis = non_unary[0]
+        block_size, remainder = divmod(tensor_shape[axis], scale.shape[axis])
+        if remainder:
+            raise ValueError(
+                f"scale size {scale.shape[axis]} does not divide tensor size "
+                f"{tensor_shape[axis]} along axis {axis}"
+            )
+        return block_size
 
-    def is_per_group(self) -> bool:
-        return len(self._non_unary_dims(_get_tensor_val(self.scale))) >= 2
+    def is_per_channel(self, tensor_shape: Optional[Sequence[int]] = None) -> bool:
+        """One scale per slice along a single axis.
+
+        From the scale shape alone, a scale with one non-unary dim is
+        per-channel. Pass the quantized tensor's shape to also require a block
+        size of 1 along that axis, which rules out a group scale such as
+        ``[1, K // g]`` over ``[1, K]``.
+        """
+        if len(self._non_unary_dims(_get_tensor_val(self.scale))) != 1:
+            return False
+        return tensor_shape is None or self._single_axis_block_size(tensor_shape) == 1
+
+    def is_per_group(self, tensor_shape: Optional[Sequence[int]] = None) -> bool:
+        """Blockwise: several tiled axes, or (given ``tensor_shape``) one axis
+        tiled in blocks larger than 1."""
+        non_unary = self._non_unary_dims(_get_tensor_val(self.scale))
+        if len(non_unary) >= 2:
+            return True
+        if tensor_shape is None or len(non_unary) != 1:
+            return False
+        block_size = self._single_axis_block_size(tensor_shape)
+        return block_size is not None and block_size > 1
 
     def channel_axis(self) -> Optional[int]:
         """The per-channel axis, derived from the scale shape:
@@ -222,6 +260,17 @@ def get_out_dtype(
     return out_qparams.dtype
 
 
+def dequantized_dtype(
+    tensor: torch.Tensor, qparams: Optional[AnyQuantParamsStruct]
+) -> torch.dtype:
+    """The float dtype ``tensor`` has once its input qparams are applied.
+
+    For an input qparams block, ``dtype`` is the dequantized float dtype; an
+    unquantized operand is already float.
+    """
+    return qparams.dtype if qparams is not None else tensor.dtype
+
+
 def _maybe_quantize(
     tensor: torch.Tensor, qparams: Optional[AnyQuantParamsStruct]
 ) -> torch.Tensor:
@@ -297,7 +346,13 @@ def _binary_op_meta(
 ) -> torch.Tensor:
     _validate_qparams(inp_qp, other_qp, out_qp)
     out_size = torch.broadcast_shapes(inp.shape, other.shape)
-    return inp.new_empty(out_size, dtype=get_out_dtype(out_qp, inp.dtype))
+    # ATen promotion depends on whether an operand is zero-dim, not just its dtype,
+    # so promote stand-ins with each operand's rank and dequantized dtype.
+    promoted = torch.result_type(
+        inp.new_empty((1,) * inp.dim(), dtype=dequantized_dtype(inp, inp_qp)),
+        other.new_empty((1,) * other.dim(), dtype=dequantized_dtype(other, other_qp)),
+    )
+    return inp.new_empty(out_size, dtype=get_out_dtype(out_qp, promoted))
 
 
 def _unary_op_impl(
@@ -318,7 +373,9 @@ def _unary_op_meta(
     out_qp: _QP,
 ) -> torch.Tensor:
     _validate_qparams(inp_qp, out_qp)
-    return inp.new_empty(inp.shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        inp.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 def _binary_scalar_op_impl(
@@ -344,7 +401,9 @@ def _binary_scalar_op_meta(
 ) -> torch.Tensor:
     # A scalar second operand does not broadcast, so the output keeps inp's shape.
     _validate_qparams(inp_qp, out_qp)
-    return inp.new_empty(inp.shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        inp.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 # =============================================================================
@@ -487,7 +546,15 @@ def _bmm_meta(
         )
 
     out_shape = (inp.shape[0], inp.shape[1], other.shape[2])
-    return inp.new_empty(out_shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        out_shape,
+        dtype=get_out_dtype(
+            out_qp,
+            torch.promote_types(
+                dequantized_dtype(inp, inp_qp), dequantized_dtype(other, other_qp)
+            ),
+        ),
+    )
 
 
 _bmm_impl.register_fake(_bmm_meta)
@@ -1085,13 +1152,13 @@ _sub_impl.register_fake(_sub_meta)
 # =============================================================================
 # Scalar binary ops
 #
-# Variants of add/mul whose second operand is a Python scalar rather than a
+# Variants of add/mul/sub whose second operand is a Python scalar rather than a
 # tensor (e.g. RMSNorm's `x + eps`). The scalar has no quant params, so the
 # schema carries qparams only for the tensor input and the output. The fusion
 # pass lays args out as (tensor_input, input_qparams..., output_qparams...,
-# extra_args...), so the scalar (and `alpha` for add) lands at the very end.
+# extra_args...), so the scalar (and `alpha` for add/sub) lands at the very end.
 #
-# These are registered as `.Scalar` overloads of the existing add/mul ops
+# These are registered as `.Scalar` overloads of the existing add/mul/sub ops
 # (mirroring aten's `add.Tensor`/`add.Scalar` split) rather than the
 # `@custom_op` decorator, which only ever defines a `.default` overload. The
 # functional op therefore goes through the lower-level Library API: an explicit
@@ -1213,7 +1280,6 @@ _lib.impl("mul.Scalar", _mul_scalar_impl, "CompositeExplicitAutograd")
 register_fake("fused_quant::mul.Scalar", _mul_scalar_meta, lib=_lib)
 
 
-@torch.library.custom_op("fused_quant::sub.Scalar", mutates_args=())
 def _sub_scalar_impl(
     inp: torch.Tensor,
     inp_scale: Optional[torch.Tensor],
@@ -1260,7 +1326,16 @@ def _sub_scalar_meta(
     )
 
 
-_sub_scalar_impl.register_fake(_sub_scalar_meta)
+_lib.define(
+    "sub.Scalar(Tensor inp, "
+    "Tensor? inp_scale, Tensor? inp_zero_point, ScalarType inp_dtype, "
+    "SymInt inp_quant_min, SymInt inp_quant_max, "
+    "Tensor? out_scale, Tensor? out_zero_point, ScalarType out_dtype, "
+    "SymInt out_quant_min, SymInt out_quant_max, "
+    "Scalar other, float alpha = 1.0) -> Tensor"
+)
+_lib.impl("sub.Scalar", _sub_scalar_impl, "CompositeExplicitAutograd")
+register_fake("fused_quant::sub.Scalar", _sub_scalar_meta, lib=_lib)
 
 
 @torch.library.custom_op("fused_quant::linear", mutates_args=())
@@ -1360,7 +1435,9 @@ def _linear_meta(
     )
     _validate_qparams(inp_qp, weight_qp, out_qp)
     output_shape = (*inp.shape[:-1], weight.shape[0])
-    return inp.new_empty(output_shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        output_shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 _linear_impl.register_fake(_linear_meta)
@@ -1505,7 +1582,9 @@ def _convolution_meta(
         output_padding,
         groups,
     )
-    return inp.new_empty(output_shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        output_shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 _convolution_impl.register_fake(_convolution_meta)
@@ -1766,7 +1845,9 @@ def _max_pool2d_with_indices_meta(
         ceil_mode,
     )
     return (
-        values.new_empty(values.shape, dtype=get_out_dtype(out_qp, inp.dtype)),
+        values.new_empty(
+            values.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+        ),
         indices.new_empty(indices.shape),
     )
 
@@ -1853,7 +1934,9 @@ def _max_pool2d_with_indices_channels_last_meta(
     values = values_nchw.permute(0, 2, 3, 1)
     indices = indices_nchw.permute(0, 2, 3, 1)
     return (
-        values.new_empty(values.shape, dtype=get_out_dtype(out_qp, inp.dtype)),
+        values.new_empty(
+            values.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+        ),
         indices.new_empty(indices.shape),
     )
 
@@ -1961,7 +2044,9 @@ def _avg_pool2d_meta(
         count_include_pad,
         divisor_override,
     )
-    return output.new_empty(output.shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return output.new_empty(
+        output.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 _avg_pool2d_impl.register_fake(_avg_pool2d_meta)
@@ -2045,7 +2130,9 @@ def _avg_pool2d_channels_last_meta(
         divisor_override,
     )
     output = output_nchw.permute(0, 2, 3, 1)
-    return output.new_empty(output.shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return output.new_empty(
+        output.shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 _avg_pool2d_channels_last_impl.register_fake(_avg_pool2d_channels_last_meta)
@@ -2200,7 +2287,9 @@ def _convolution_channels_last_meta(
         output_padding,
         groups,
     )
-    return inp.new_empty(output_shape, dtype=get_out_dtype(out_qp, inp.dtype))
+    return inp.new_empty(
+        output_shape, dtype=get_out_dtype(out_qp, dequantized_dtype(inp, inp_qp))
+    )
 
 
 _convolution_channels_last_impl.register_fake(_convolution_channels_last_meta)
@@ -2285,10 +2374,10 @@ def _native_layer_norm_meta(
     # aten.native_layer_norm. ``compute_dtype`` is the dequantized input's float
     # dtype -- ``inp_qp.dtype`` (the upstream dequant's output dtype, not always
     # fp32), or the input dtype when the input isn't quantized. mean/rstd are not
-    # unconditionally fp32: aten produces them in its accumulation dtype and, on
-    # CPU/MTIA, casts them back to the (compute) input dtype -- so defer to aten
-    # rather than assuming fp32.
-    compute_dtype = inp_qp.dtype if inp_qp is not None else inp.dtype
+    # unconditionally fp32: aten produces them in its accumulation dtype and may
+    # cast them back to the (compute) input dtype -- so defer to aten rather than
+    # assuming fp32.
+    compute_dtype = dequantized_dtype(inp, inp_qp)
     dq_inp = inp.new_empty(inp.shape, dtype=compute_dtype)
     out, mean, rstd = torch.ops.aten.native_layer_norm.default(
         dq_inp, normalized_shape, weight, bias, eps
@@ -2363,7 +2452,7 @@ def _rms_norm_meta(
     # ``inp_qp.dtype`` (the upstream dequant's output dtype), which is not always
     # fp32. A pipeline-interior op with stripped quantization has neither input nor
     # output quantized; then the input is already float, so use its own dtype.
-    compute_dtype = inp_qp.dtype if inp_qp is not None else inp.dtype
+    compute_dtype = dequantized_dtype(inp, inp_qp)
     return inp.new_empty(inp.shape, dtype=get_out_dtype(out_qp, compute_dtype))
 
 
@@ -2434,7 +2523,7 @@ def _masked_softmax_meta(
     # (inp_qp.dtype, not always fp32), or -- for a pipeline-interior op stripped by
     # interior quantization stripping, where neither input nor output is quantized
     # -- the already-float input's own dtype.
-    compute_dtype = inp_qp.dtype if inp_qp is not None else inp.dtype
+    compute_dtype = dequantized_dtype(inp, inp_qp)
     return inp.new_empty(inp.shape, dtype=get_out_dtype(out_qp, compute_dtype))
 
 
@@ -2562,9 +2651,9 @@ def _embedding_meta(
     # mirrors the impl: the quantized dtype when the output is quantized, else the
     # table's dequantize output dtype (weight_qp.dtype), or the table dtype when
     # the table is not dequantized -- never assumed to be float32.
-    dequantized_dtype = weight_qp.dtype if weight_qp is not None else weight.dtype
+    table_dtype = dequantized_dtype(weight, weight_qp)
     out_shape = (*indices.shape, weight.shape[1])
-    return weight.new_empty(out_shape, dtype=get_out_dtype(out_qp, dequantized_dtype))
+    return weight.new_empty(out_shape, dtype=get_out_dtype(out_qp, table_dtype))
 
 
 _embedding_impl.register_fake(_embedding_meta)
