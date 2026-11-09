@@ -19,6 +19,8 @@ ${define_required_extensions(STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
+#include "common.glslh"
+
 ${layout_declare_tensor(B, "w", "t_dw", DTYPE, STORAGE, is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_dout", DTYPE, STORAGE, is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_x", DTYPE, STORAGE, is_scalar_array=True)}
@@ -35,6 +37,8 @@ void main() {
   const int N = dout_sizes.x;
   const int M = dout_sizes.y * dout_sizes.z * dout_sizes.w;
   const int K = x_sizes.x;
+  const int N_stride = align_up_4(N);
+  const int K_stride = align_up_4(K);
 
   const int nnt = (N + TILE_N - 1) / TILE_N;
   const int nkt = (K + TILE_K - 1) / TILE_K;
@@ -57,11 +61,11 @@ void main() {
     float dout_reg[TILE_N];
     for (int nl = 0; nl < TILE_N; ++nl) {
       const int n_eff = min(n0 + nl, N - 1);
-      dout_reg[nl] = float(t_dout[m * N + n_eff]);
+      dout_reg[nl] = float(t_dout[m * N_stride + n_eff]);
     }
     for (int kl = 0; kl < TILE_K; ++kl) {
       const int k_eff = min(k0 + kl, K - 1);
-      const float xv = float(t_x[m * K + k_eff]);
+      const float xv = float(t_x[m * K_stride + k_eff]);
       for (int nl = 0; nl < TILE_N; ++nl) {
         acc[nl * TILE_K + kl] += dout_reg[nl] * xv;
       }
@@ -72,8 +76,8 @@ void main() {
     const int n = n0 + nl;
     for (int kl = 0; kl < TILE_K; ++kl) {
       const int k = k0 + kl;
-      if (n < N && k < K) {
-        t_dw[n * K + k] = T(acc[nl * TILE_K + kl]);
+      if (n < N) {
+        t_dw[n * K_stride + k] = k < K ? T(acc[nl * TILE_K + kl]) : T(0);
       }
     }
   }

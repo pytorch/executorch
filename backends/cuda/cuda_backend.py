@@ -44,9 +44,6 @@ from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
-from executorch.backends.cuda.passes.replace_complex_with_real import (
-    ReplaceComplexWithRealPass,
-)
 from executorch.backends.cuda.passes.replace_fused_sdpa import (
     ReplaceFusedSdpaWithSdpaPass,
 )
@@ -65,6 +62,9 @@ from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
