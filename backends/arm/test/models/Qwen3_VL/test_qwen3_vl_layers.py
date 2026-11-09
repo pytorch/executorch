@@ -156,8 +156,8 @@ class VisionRotaryEmbeddingModel(Qwen3VLTestModule):
         head_dim = config.vision_config.hidden_size // config.vision_config.num_heads
         self.rotary = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
 
-    def forward(self, max_hw: int) -> torch.Tensor:
-        return self.rotary(max_hw)
+    def forward(self, position_ids: torch.Tensor) -> torch.Tensor:
+        return self.rotary(position_ids)
 
     @classmethod
     def prepare_model_and_inputs(cls):
@@ -165,7 +165,7 @@ class VisionRotaryEmbeddingModel(Qwen3VLTestModule):
         grid_thw = _make_image_grid_thw(torch.device("cpu"))
         max_hw = int(grid_thw[:, 1:].max().item())
         model = cls(config).eval()
-        return model, (max_hw,)
+        return model, (torch.arange(max_hw),)
 
 
 class VisionRotaryApplyModel(Qwen3VLTestModule):

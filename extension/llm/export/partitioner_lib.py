@@ -255,12 +255,18 @@ def get_ethosu_partitioner(
 
 
 def get_vgf_partitioner(
-    compile_spec: Optional[str], compiler_flags: Optional[List[str]]
+    compile_spec: Optional[str],
+    compiler_flags: Optional[List[str]],
+    alias_buffer_mutations: bool = False,
 ):
     from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
     from executorch.backends.arm.vgf.partitioner import VgfPartitioner
 
-    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+    compile_spec_obj = VgfCompileSpec(
+        compile_spec,
+        compiler_flags,
+        alias_buffer_mutations=alias_buffer_mutations,
+    )
 
     return VgfPartitioner(compile_spec_obj)
 
