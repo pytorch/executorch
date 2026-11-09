@@ -246,9 +246,9 @@ This flow is equivalent to `openvino_build.sh` and does not require Bash shell s
 #### Windows Prerequisites
 
 1. Windows 10 or 11 (x64)
-2. Visual Studio 2022 with C++ build tools (Desktop development with C++)
-3. CMake (3.20+) and Ninja in `PATH`
-4. Python 3.10+ in `PATH`
+2. Visual Studio 2022 with Desktop development with C++ and the optional C++ Clang tools for Windows
+3. CMake (3.27+) and Ninja in `PATH`
+4. Python 3.11–3.14 in `PATH`
 5. Git in `PATH`
 
 Enable symlink support for Git:
