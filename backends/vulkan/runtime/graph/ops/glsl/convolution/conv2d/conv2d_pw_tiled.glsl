@@ -6,6 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// Only the wide tile texture weight Half variant can take the folded
+// accumulation route.
+$FOLDABLE = DTYPE == "half" and WEIGHT_STORAGE != "buffer" and TILE_N4 == 2
+
 #version 450 core
 
 #define PRECISION ${PRECISION}
@@ -34,13 +38,16 @@ layout(std430) buffer;
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_weight_packed", DTYPE, WEIGHT_STORAGE, is_scalar_array=False)}
+// Foldable variants read Half data at mediump, which is exact. The folded
+// accumulation is slower on Adreno with highp reads; buffer weight variants
+// were slower on Adreno 840 with mediump reads.
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, precision="mediump" if FOLDABLE else "PRECISION")}
+${layout_declare_tensor(B, "r", "t_weight_packed", DTYPE, WEIGHT_STORAGE, is_scalar_array=False, precision="mediump" if FOLDABLE else "PRECISION")}
 $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
 $if PIXEL_TILES_ON_X:
   #define PIXEL_TILES_ON_X
-${layout_declare_tensor(B, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_tensor(B, "r", "t_bias", DTYPE, "texture2d", precision="mediump" if FOLDABLE else "PRECISION")}
 ${layout_declare_tensor(B, "r", "t_residual", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_scale", DTYPE, "texture2d")}
 
@@ -65,6 +72,12 @@ ${layout_declare_spec_const(C, "int", "activation_op", "0")}
 ${layout_declare_spec_const(C, "bool", "has_residual", "false")}
 ${layout_declare_spec_const(C, "bool", "has_scale", "false")}
 ${layout_declare_spec_const(C, "int", "residual_op", "0")}
+// Other variants fix it at false: branches on a specialization constant change
+// their instruction scheduling on Adreno even when it is false.
+$if FOLDABLE:
+  ${layout_declare_spec_const(C, "bool", "folded_accumulation", "false")}
+$else:
+  const bool folded_accumulation = false;
 
 #include "conv2d_epilogue.glslh"
 
@@ -171,6 +184,29 @@ void store_output_tile_with_checks(
   }
 }
 
+// Sums each output texel's four products in a temporary before adding it to
+// the accumulator. The Adreno compiler places temporaries in consecutive
+// registers, so their multiply-adds fold into (rpt3) instructions;
+// loop-carried accumulators get descending registers per lane and do not fold.
+// The accumulator lanes are kept reversed (wzyx) so that the accumulating adds
+// fold too.
+void accumulate_folded(
+    inout FPOutTile accum,
+    const FPInputTile in_tile,
+    const FPWeightTile w_tile) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+        VEC4_T t = VEC4_T(in_tile.data[m][k4][0]) * w_tile.data[mul_4(k4)][n4];
+        [[unroll]] for (int k = 1; k < 4; ++k) {
+          t += VEC4_T(in_tile.data[m][k4][k]) * w_tile.data[mul_4(k4) + k][n4];
+        }
+        accum.data[m][n4] += t.wzyx;
+      }
+    }
+  }
+}
+
 void main() {
 #ifdef PIXEL_TILES_ON_X
   const int tile_idx_m = int(gl_GlobalInvocationID.x);
@@ -196,7 +232,20 @@ void main() {
   }
 
   FPOutTile out_tile;
-  initialize(out_tile);
+  if (folded_accumulation) {
+    // Accumulators start from the bias, so no bias pass follows the K loop.
+    // Texture biases are padded to an even number of texels, which covers the
+    // tile's channels.
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      const VEC4_T bias =
+          VEC4_T(texelFetch(t_bias, ivec2(n4_start + n4, 0), 0));
+      [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+        out_tile.data[m][n4] = bias.wzyx;
+      }
+    }
+  } else {
+    initialize(out_tile);
+  }
 
   FPInputTile in_tile;
   FPWeightTile w_tile;
@@ -208,15 +257,27 @@ void main() {
   for (int k4 = 0; k4 < K4; k4++) {
     load_input_tile_with_checks(in_tile, in_coords, k4, K4);
     load_packed_weight_tile_clamped(w_tile, n4_start, k4, 0, N4, K4);
-    fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
+    if (folded_accumulation) {
+      accumulate_folded(out_tile, in_tile, w_tile);
+    } else {
+      fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
+    }
   }
 
-  // Apply bias
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      if (n4_start + n4 < N4) {
-        out_tile.data[m][n4] +=
-            VEC4_T(texelFetch(t_bias, ivec2(n4_start + n4, 0), 0));
+  if (folded_accumulation) {
+    [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+        out_tile.data[m][n4] = out_tile.data[m][n4].wzyx;
+      }
+    }
+  } else {
+    // Apply bias
+    [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+        if (n4_start + n4 < N4) {
+          out_tile.data[m][n4] +=
+              VEC4_T(texelFetch(t_bias, ivec2(n4_start + n4, 0), 0));
+        }
       }
     }
   }
