@@ -196,6 +196,7 @@ class ET_EXPERIMENTAL ServingRuntime {
 
   // Idempotent, including absent keys. Cancels prior same-key requests and
   // releases the logical slot before acknowledging callback quiescence.
+  // Discards session-owned checkpoints; shared snapshots remain available.
   // Session closure is through RAII, not synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
@@ -205,7 +206,8 @@ class ET_EXPERIMENTAL ServingRuntime {
       std::string key,
       CloseCallback on_complete);
 
-  // Discards live state and history, retaining the key and logical slot.
+  // Discards live state, history, and session-owned checkpoints, retaining the
+  // key and logical slot.
   // Success means reopening and old-response callback cleanup completed.
   // Failure destroys the old state and leaves the key unavailable, still
   // reserving its slot until reset succeeds or close releases it. A missing key
@@ -223,7 +225,7 @@ class ET_EXPERIMENTAL ServingRuntime {
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
   // capture cleanup. Exact strict prefixes continue. With prefix caching
-  // enabled, replacements and retries may reuse matching shared snapshots;
+  // enabled, replacements and retries may reuse matching retained snapshots;
   // clean replacements may also clone a common committed live prefix.
   // Unusable live state is discarded; absent a usable snapshot, prefill starts
   // from the full supplied prompt. Sinks share one delivery thread and must do
