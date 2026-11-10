@@ -68,6 +68,7 @@ ops_list=(
     cortex_m::minimum.out
     cortex_m::maximum.out
     cortex_m::quantized_linear.out
+    cortex_m::quantized_linear_per_channel.out
     cortex_m::softmax.out
     cortex_m::transpose.out
     cortex_m::pad.out

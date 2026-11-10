@@ -105,10 +105,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         "runtime/executor/tensor_parser.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
-        # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
-        # publish either. The component it belongs to is a link dependency the runtime carries, not
-        # something a consumer includes.
-        "extension/threadpool/threadpool.h",
         # Declares CPUCachingAllocator, whose implementation is in a component no shipped library links,
         # so including it compiles and then fails at link time with an undefined reference.
         "extension/memory_allocator/cpu_caching_malloc_allocator.h",
