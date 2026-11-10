@@ -986,6 +986,9 @@ jobs:
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
 
+        # Run the host allocator regressions without a device or RPC library.
+        buck2 test //backends/qualcomm/runtime/tests:shared_buffer_test
+
   test-arm-backend-docgen:
     needs: [docker-image, changed-files]
     if: |

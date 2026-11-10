@@ -7,57 +7,138 @@
  */
 
 /*
- * Runs the add/multiply model from export_smoke_model.py through et_model
- * and checks both outputs exactly.
+ * Runs each embedded model (see main/CMakeLists.txt) through et_model on the
+ * forward test cases that split_bundled_program.py extracted, and compares the
+ * outputs with the expected ones.
  */
 
+#include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <et_model.h>
 
-extern const uint8_t smoke_pte_start[];
-extern const uint8_t smoke_pte_end[];
+typedef struct {
+  const char* name;
+  const uint8_t* pte;
+  const uint8_t* pte_end;
+  const uint8_t* io;
+} smoke_model_t;
 
-static const float kX[8] = {-4.0f, -1.5f, 0.0f, 0.25f, 1.0f, 2.5f, 7.0f, 16.0f};
-static const float kY[8] = {1.0f, 3.0f, -2.0f, 0.25f, -0.5f, 4.0f, -9.0f, 0.125f};
+extern const smoke_model_t smoke_models[];
+extern const uint32_t smoke_model_count;
 
-static bool run_once(et_model_t* m) {
-  if (!et_model_set_input(m, 0, kX, sizeof(kX)) ||
-      !et_model_set_input(m, 1, kY, sizeof(kY)) || !et_model_execute(m)) {
+enum { kIoAlignment = 16, kScalarTypeFloat = 6 };
+
+static uint32_t read_u32(const uint8_t** cursor) {
+  uint32_t value;
+  memcpy(&value, *cursor, sizeof(value));
+  *cursor += sizeof(value);
+  return value;
+}
+
+/* Returns the next tensor's data and byte size, and moves past it. */
+static const uint8_t* next_tensor(
+    const uint8_t* io, const uint8_t** cursor, uint32_t* nbytes) {
+  *nbytes = read_u32(cursor);
+  *cursor += (kIoAlignment - (size_t)(*cursor - io) % kIoAlignment) %
+      kIoAlignment;
+  const uint8_t* data = *cursor;
+  *cursor += *nbytes;
+  return data;
+}
+
+static bool check_outputs(
+    const smoke_model_t* model,
+    et_model_t* m,
+    uint32_t index,
+    const uint8_t** cursor) {
+  float atol;
+  float rtol;
+  memcpy(&atol, model->io, sizeof(atol));
+  memcpy(&rtol, model->io + sizeof(atol), sizeof(rtol));
+  uint32_t count = read_u32(cursor);
+  if (count != et_model_num_outputs(m)) {
+    printf("%s: case %u has %u expected outputs, model has %u\n", model->name,
+           (unsigned)index, (unsigned)count,
+           (unsigned)et_model_num_outputs(m));
     return false;
   }
-  size_t sum_bytes = 0;
-  size_t prod_bytes = 0;
-  const float* sum = et_model_output_data(m, 0, &sum_bytes);
-  const float* prod = et_model_output_data(m, 1, &prod_bytes);
-  if (sum == NULL || prod == NULL || sum_bytes != sizeof(kX) ||
-      prod_bytes != sizeof(kX)) {
-    return false;
-  }
-  for (int i = 0; i < 8; i++) {
-    if (sum[i] != kX[i] + kY[i] || prod[i] != kX[i] * kY[i]) {
+  for (uint32_t i = 0; i < count; i++) {
+    uint32_t nbytes;
+    const uint8_t* expected = next_tensor(model->io, cursor, &nbytes);
+    size_t actual_nbytes = 0;
+    const uint8_t* actual = et_model_output_data(m, i, &actual_nbytes);
+    et_tensor_info_t info;
+    if (actual == NULL || actual_nbytes != nbytes ||
+        !et_model_output_info(m, i, &info)) {
+      printf("%s: case %u output %u is missing or has the wrong size\n",
+             model->name, (unsigned)index, (unsigned)i);
       return false;
+    }
+    if (info.scalar_type != kScalarTypeFloat) {
+      if (memcmp(actual, expected, nbytes) != 0) {
+        printf("%s: case %u output %u differs\n", model->name,
+               (unsigned)index, (unsigned)i);
+        return false;
+      }
+      continue;
+    }
+    for (uint32_t j = 0; j < nbytes / sizeof(float); j++) {
+      float a;
+      float b;
+      memcpy(&a, actual + j * sizeof(float), sizeof(float));
+      memcpy(&b, expected + j * sizeof(float), sizeof(float));
+      if (!(fabsf(a - b) <= atol + rtol * fabsf(b))) {
+        printf("%s: case %u output %u[%u] is %g, expected %g\n", model->name,
+               (unsigned)index, (unsigned)i, (unsigned)j, (double)a,
+               (double)b);
+        return false;
+      }
     }
   }
   return true;
 }
 
-void app_main(void) {
+/* Runs the cases in order on one loaded method, so a stateful model's cases
+ * continue from the previous ones. */
+static bool run_model(const smoke_model_t* model) {
   et_model_config_t cfg = ET_MODEL_CONFIG_DEFAULT(
-      smoke_pte_start, (size_t)(smoke_pte_end - smoke_pte_start));
+      model->pte, (size_t)(model->pte_end - model->pte));
   et_model_t* m = et_model_create(&cfg);
-  bool ok = m != NULL && et_model_load_method(m, NULL);
-  for (int i = 0; ok && i < 3; i++) {
-    ok = run_once(m);
+  bool api_ok = m != NULL && et_model_load_method(m, "forward");
+  const uint8_t* cursor = model->io + 2 * sizeof(float);
+  uint32_t cases = read_u32(&cursor);
+  uint32_t passed = 0;
+  for (; api_ok && passed < cases; passed++) {
+    uint32_t count = read_u32(&cursor);
+    for (uint32_t i = 0; api_ok && i < count; i++) {
+      uint32_t nbytes;
+      const uint8_t* data = next_tensor(model->io, &cursor, &nbytes);
+      api_ok = et_model_set_input(m, i, data, nbytes);
+    }
+    api_ok = api_ok && et_model_execute(m);
+    if (!api_ok || !check_outputs(model, m, passed, &cursor)) {
+      break;
+    }
   }
-  if (ok) {
-    printf("ET_COMPONENT_SMOKE: PASS\n");
-  } else {
-    printf(
-        "ET_COMPONENT_SMOKE: FAIL (%s)\n",
-        m != NULL ? et_model_last_error(m) : "et_model_create failed");
+  if (!api_ok && m != NULL) {
+    printf("%s: %s\n", model->name, et_model_last_error(m));
   }
+  bool ok = api_ok && passed == cases;
+  printf("%s: %s, %u/%u cases\n", model->name, ok ? "PASS" : "FAIL",
+         (unsigned)passed, (unsigned)cases);
   et_model_destroy(m);
+  return ok;
+}
+
+void app_main(void) {
+  bool ok = true;
+  for (uint32_t i = 0; i < smoke_model_count; i++) {
+    ok = run_model(&smoke_models[i]) && ok;
+  }
+  printf("ET_COMPONENT_SMOKE: %s\n", ok ? "PASS" : "FAIL");
   printf("Program complete.\n");
 }
