@@ -737,3 +737,110 @@ TEST_F(AOTITorchReinterpretTensorSlimTest, AsStridedKeepsStorageOffset_CUDA) {
   EXPECT_EQ(aoti_torch_delete_tensor_object(offset_view), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(view_tensor), Error::Ok);
 }
+
+// PyTorch's _reinterpret_tensor adds the offset to self's storage offset.
+TEST_F(AOTITorchReinterpretTensorSlimTest, OffsetIsRelativeToSelf_CPU) {
+  Tensor* storage = createTestTensor({32});
+  ASSERT_NE(storage, nullptr);
+  float* data = static_cast<float*>(storage->data_ptr());
+  for (int i = 0; i < 32; ++i) {
+    data[i] = static_cast<float>(i);
+  }
+
+  const int64_t source_sizes[] = {3, 4};
+  const int64_t source_strides[] = {4, 1};
+  Tensor* source = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          storage, 2, source_sizes, source_strides, 4, &source),
+      Error::Ok);
+  ASSERT_EQ(source->storage_offset(), 4);
+
+  const int64_t sizes[] = {3};
+  const int64_t strides[] = {1};
+  Tensor* shifted = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(source, 1, sizes, strides, 2, &shifted),
+      Error::Ok);
+  Tensor* unshifted = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(source, 1, sizes, strides, 0, &unshifted),
+      Error::Ok);
+
+  auto values = [](Tensor* t) {
+    const float* p = static_cast<const float*>(t->data_ptr());
+    return std::vector<float>(p, p + t->numel());
+  };
+  EXPECT_EQ(shifted->storage_offset(), 6);
+  EXPECT_EQ(values(shifted), (std::vector<float>{6, 7, 8}));
+  EXPECT_EQ(unshifted->storage_offset(), 4);
+  EXPECT_EQ(values(unshifted), (std::vector<float>{4, 5, 6}));
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(unshifted), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(shifted), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(source), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(storage), Error::Ok);
+}
+
+TEST_F(AOTITorchReinterpretTensorSlimTest, AsStridedKeepsStorageOffset_CPU) {
+  Tensor* storage = createTestTensor({16});
+  ASSERT_NE(storage, nullptr);
+
+  const int64_t source_sizes[] = {3, 4};
+  const int64_t strides[] = {4, 1};
+  Tensor* source = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          storage, 2, source_sizes, strides, 4, &source),
+      Error::Ok);
+
+  const int64_t new_sizes[] = {2, 3};
+  Tensor* view = nullptr;
+  ASSERT_EQ(
+      aoti_torch_as_strided(source, new_sizes, strides, &view), Error::Ok);
+
+  EXPECT_EQ(view->storage_offset(), 4);
+  EXPECT_EQ(view->data_ptr(), source->data_ptr());
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(source), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(storage), Error::Ok);
+}
+
+TEST_F(AOTITorchReinterpretTensorSlimTest, OffsetIsRelativeToSelf_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+
+  Tensor* storage = createTestTensor(
+      {32},
+      {},
+      static_cast<int32_t>(slim_c10::ScalarType::Float),
+      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
+      0);
+  ASSERT_NE(storage, nullptr);
+
+  const int64_t source_sizes[] = {3, 4};
+  const int64_t source_strides[] = {4, 1};
+  Tensor* source = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          storage, 2, source_sizes, source_strides, 4, &source),
+      Error::Ok);
+
+  const int64_t sizes[] = {3};
+  const int64_t strides[] = {1};
+  Tensor* view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(source, 1, sizes, strides, 2, &view),
+      Error::Ok);
+
+  EXPECT_EQ(view->storage_offset(), 6);
+  EXPECT_EQ(
+      static_cast<char*>(view->data_ptr()),
+      static_cast<char*>(storage->data_ptr()) + 6 * sizeof(float));
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(source), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(storage), Error::Ok);
+}

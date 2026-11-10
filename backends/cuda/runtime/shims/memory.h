@@ -172,7 +172,8 @@ aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor);
  * @param ndim Number of dimensions for the new view
  * @param sizes_ptr Pointer to array of dimension sizes
  * @param strides_ptr Pointer to array of strides for each dimension
- * @param storage_offset Storage offset in number of elements
+ * @param offset_increment Elements added to self's storage offset, as in
+ *   PyTorch's _reinterpret_tensor
  * @param ret_new_tensor Output parameter for the reinterpreted tensor view
  * @return AOTITorchError error code (Error::Ok on success)
  */
@@ -181,7 +182,7 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
-    int64_t storage_offset,
+    int64_t offset_increment,
     SlimTensor** ret_new_tensor);
 
 /**
