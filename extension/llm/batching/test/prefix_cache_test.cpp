@@ -948,7 +948,7 @@ TEST_F(PrefixCacheTest, TouchOfEvictedMatchDoesNotRefreshReinsertedEntry) {
   EXPECT_TRUE(cache.lookup({3, 4, 9}));
 }
 
-TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
+TEST_F(PrefixCacheTest, CandidateSelectionRejectsBeforeCloningAndHonorsBounds) {
   PrefixCache cache(3);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
   ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
@@ -971,7 +971,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
                    .match;
   ASSERT_TRUE(match);
   EXPECT_EQ(checked, (std::vector<std::size_t>{4, 3}));
-  EXPECT_EQ(executor.clones().size(), before + 2);
+  EXPECT_EQ(executor.clones().size(), before + 1);
   EXPECT_EQ(executor.clones().back().source, shorter);
   checked.clear();
   EXPECT_FALSE(cache
@@ -985,7 +985,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
                        })
                    .match);
   EXPECT_EQ(checked, (std::vector<std::size_t>{3}));
-  EXPECT_EQ(executor.clones().size(), before + 3);
+  EXPECT_EQ(executor.clones().size(), before + 1);
   checked.clear();
   auto stopped = cache.find_identity(request, 0, 4, [&](std::size_t size) {
     checked.push_back(size);
@@ -997,7 +997,7 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
   EXPECT_FALSE(missed.match);
   EXPECT_FALSE(missed.stopped);
   EXPECT_EQ(checked, (std::vector<std::size_t>{4}));
-  EXPECT_EQ(executor.clones().size(), before + 4);
+  EXPECT_EQ(executor.clones().size(), before + 1);
 }
 
 TEST_F(PrefixCacheTest, RejectedLengthSkipsTiedCandidatesWithoutCloning) {
@@ -1016,8 +1016,8 @@ TEST_F(PrefixCacheTest, RejectedLengthSkipsTiedCandidatesWithoutCloning) {
   });
   ASSERT_TRUE(result.match);
   EXPECT_EQ(result.match->matched_tokens, 3u);
-  EXPECT_EQ(checked, (std::vector<std::size_t>{4, 3}));
-  EXPECT_EQ(executor.clones().size(), before + 2);
+  EXPECT_EQ(checked, (std::vector<std::size_t>{4, 4, 3}));
+  EXPECT_EQ(executor.clones().size(), before + 1);
   expect_cold_match(*result.match, {1, 2, 3, 4, 9});
 }
 
@@ -1030,20 +1030,15 @@ TEST_F(PrefixCacheTest, KnownRejectedLengthPreservesOtherCandidates) {
       token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4, 5, 6}));
   const auto before = executor.clones().size();
   std::vector<std::size_t> checked;
-  auto result = cache.find_identity(
-      request,
-      0,
-      5,
-      [&](std::size_t size) {
-        checked.push_back(size);
-        return size == 5 ? PrefixCache::MatchDecision::Skip
-                         : PrefixCache::MatchDecision::Use;
-      },
-      4);
+  auto result = cache.find_identity(request, 0, 5, [&](std::size_t size) {
+    checked.push_back(size);
+    return size >= 4 ? PrefixCache::MatchDecision::Skip
+                     : PrefixCache::MatchDecision::Use;
+  });
   ASSERT_TRUE(result.match);
   EXPECT_EQ(result.match->matched_tokens, 3u);
-  EXPECT_EQ(checked, (std::vector<std::size_t>{5, 3}));
-  EXPECT_EQ(executor.clones().size(), before + 2);
+  EXPECT_EQ(checked, (std::vector<std::size_t>{5, 4, 3}));
+  EXPECT_EQ(executor.clones().size(), before + 1);
   expect_cold_match(*result.match, {1, 2, 3, 4, 5, 6});
 }
 

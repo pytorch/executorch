@@ -820,20 +820,21 @@ struct ServingRuntime::Impl {
       }
     } release{capture_lanes_used_};
     batching::Session* source;
-    std::size_t upto;
+    std::size_t upto = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto& slot = sessions_.at(key);
       const auto& prompt = request->text->prompt;
-      if (slot.dirty || !slot.logical_history || !prompt ||
-          prompt->size() < 2) {
+      if (!prompt || prompt->size() < 2) {
         return Selection::Unavailable;
       }
       source = &*slot.session;
-      upto = std::min(
-          {batching::common_prefix(*slot.logical_history, *prompt),
-           static_cast<std::size_t>(source->position()),
-           prompt->size() - 1});
+      if (!slot.dirty && slot.logical_history) {
+        upto = std::min(
+            {batching::common_prefix(*slot.logical_history, *prompt),
+             static_cast<std::size_t>(source->position()),
+             prompt->size() - 1});
+      }
     }
     std::optional<batching::Session> cloned;
     std::optional<batching::PrefixMatch> match;
@@ -1023,11 +1024,13 @@ struct ServingRuntime::Impl {
 
     const batching::PrefixIdentity empty_identity;
     PrefillPlan plan{PrefillPlan::kFull, 0, "new"};
+    bool existing = false;
     bool reset = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
+        existing = true;
         plan = plan_prefill_identity(
             it->second.logical_history ? *it->second.logical_history
                                        : empty_identity,
@@ -1056,9 +1059,8 @@ struct ServingRuntime::Impl {
       reset = true;
     }
     if (auto* outcome = std::get_if<Selection>(&selection); outcome &&
-        *outcome == Selection::Selected && reset &&
-        (plan.reason == "mismatch" || plan.reason == "equal" ||
-         plan.reason == "suffix_unavailable") &&
+        *outcome == Selection::Selected && existing &&
+        plan.action == PrefillPlan::kFull &&
         config_.prefix_cache_capacity != 0) {
       // Capture and replacement share the transient row budget.
       selection = clone_prefix(request, key, checked);
@@ -1111,11 +1113,11 @@ struct ServingRuntime::Impl {
     try {
 #endif
       auto found = prefix_cache_.find_identity(
-          *request->text->prompt,
-          longer_than,
-          at_most,
-          [&](std::size_t start) {
+          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
             using Decision = batching::PrefixCache::MatchDecision;
+            if (rejected_length == start) {
+              return Decision::Skip;
+            }
             auto selected = select_reuse_input(request, start, checked);
             if (const auto* outcome = std::get_if<Selection>(&selected)) {
               if (*outcome == Selection::Selected) {
@@ -1126,8 +1128,7 @@ struct ServingRuntime::Impl {
               }
             }
             return Decision::Stop;
-          },
-          rejected_length);
+          });
       if (found.stopped) {
         if (auto* error = std::get_if<ServingError>(&checked.result)) {
           return std::move(*error);

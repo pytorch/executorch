@@ -360,20 +360,18 @@ class ET_EXPERIMENTAL PrefixCache {
     return std::move(result.match);
   }
 
-  // Validate cloned candidates without refreshing recency. Call
+  // Select candidates before cloning, without refreshing recency. Call
   // touch() after adopting the match. The selector must not mutate this cache.
   // Candidates arrive in descending length order, with repeated lengths
-  // allowed. Refused clones bypass the selector. Use returns the cloned match;
-  // Skip releases it and rejects all candidates of that length. Stop
-  // returns stopped=true, distinct from an exhausted search. A known rejected
-  // length also bypasses cloning. Allocation failure
+  // allowed. Use attempts a clone and continues if refused; Skip tries the next
+  // candidate without cloning. Stop returns stopped=true, distinct from an
+  // exhausted search. Allocation failure
   // ends the search as a miss; other exceptions propagate.
   FindResult find_identity(
       const PrefixIdentity& request,
       std::size_t longer_than = 0,
       std::size_t at_most = std::numeric_limits<std::size_t>::max(),
-      const std::function<MatchDecision(std::size_t)>& select = {},
-      std::optional<std::size_t> rejected_length = std::nullopt) {
+      const std::function<MatchDecision(std::size_t)>& select = {}) {
     if (request.size() < 2 || entries_.empty()) {
       return {};
     }
@@ -402,11 +400,15 @@ class ET_EXPERIMENTAL PrefixCache {
             return a.matched != b.matched ? a.matched > b.matched
                                           : a.rank < b.rank;
           });
-      std::optional<std::size_t> skipped_length;
       for (const auto& candidate : candidates) {
-        if (skipped_length == candidate.matched ||
-            rejected_length == candidate.matched) {
-          continue;
+        if (select) {
+          const auto decision = select(candidate.matched);
+          if (decision == MatchDecision::Stop) {
+            return {std::nullopt, true};
+          }
+          if (decision == MatchDecision::Skip) {
+            continue;
+          }
         }
         auto session =
             candidate.entry->snapshot
@@ -414,16 +416,6 @@ class ET_EXPERIMENTAL PrefixCache {
                 .get();
         if (!session) {
           continue;
-        }
-        if (select) {
-          const auto decision = select(candidate.matched);
-          if (decision == MatchDecision::Stop) {
-            return {std::nullopt, true};
-          }
-          if (decision == MatchDecision::Skip) {
-            skipped_length = candidate.matched;
-            continue;
-          }
         }
         return {PrefixMatch{
             std::move(*session), candidate.matched, candidate.entry->id}};
