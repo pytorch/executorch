@@ -80,6 +80,7 @@ void resize_conv2d_pw_tiled_node(
   new_out_sizes.at(self_sizes.size() - 1) = out_w;
 
   graph->virtual_resize(out, new_out_sizes);
+  check_conv2d_residual_on_resize(graph, out, extra_args);
 }
 
 vkapi::ShaderInfo pick_conv2d_pw_tiled_shader(
@@ -254,9 +255,8 @@ void add_conv2d_pw_tiled_node(
     const ValueRef padding,
     const ValueRef out,
     const ValueRef weight_data,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val) {
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args) {
   int32_t stride_h, stride_w, padding_h, padding_w;
   {
     const auto stride_list = graph.get_int_list(stride);
@@ -272,13 +272,11 @@ void add_conv2d_pw_tiled_node(
 
   utils::ivec4 stride_padding{stride_h, stride_w, padding_h, padding_w};
 
-  struct ClampParams final {
-    float out_min;
-    float out_max;
-  };
-  ClampParams clamp_params{out_min_val, out_max_val};
+  const Conv2dEpilogueParams epilogue_params =
+      create_conv2d_epilogue_params(epilogue);
 
-  ValueRef clamp_out_ref = graph.add_scalar(clamp_out);
+  vkapi::SpecVarList spec_vars = {s1p0 ? 1 : 0};
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -286,17 +284,22 @@ void add_conv2d_pw_tiled_node(
       pick_conv2d_pw_tiled_gwg,
       pick_conv2d_pw_tiled_lwg,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{in, packed_weight, packed_bias}, vkapi::kRead}},
+      {{out, vkapi::kWrite},
+       {{in,
+         packed_weight,
+         packed_bias,
+         epilogue_args.residual,
+         epilogue_args.scale},
+        vkapi::kRead}},
       // Shader params buffers
       {graph.sizes_ubo(in), graph.sizes_ubo(out)},
       // Push Constants
       {PushConstantDataInfo(&stride_padding, sizeof(stride_padding)),
-       PushConstantDataInfo(&clamp_params, sizeof(clamp_params))},
+       PushConstantDataInfo(&epilogue_params, sizeof(epilogue_params))},
       // Specialization Constants
-      // activation_type: 0=none, 1=relu, 2=clamp
-      {s1p0 ? 1 : 0, clamp_out ? 2 : 0},
+      spec_vars,
       // Resize Args
-      {weight_data, stride, padding, clamp_out_ref},
+      {weight_data, stride, padding, epilogue.residual},
       // Resizing Logic
       resize_conv2d_pw_tiled_node));
 }
@@ -314,9 +317,7 @@ void conv2d_pw_impl(
     const ValueRef padding,
     const ValueRef out,
     const bool transposed_val,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val) {
+    const Conv2dEpilogue& epilogue) {
   ValueRef packed_weight = prepack_conv2d_pw_weight(graph, weight_data);
 
   ValueRef packed_bias = prepack_biases(
@@ -326,6 +327,8 @@ void conv2d_pw_impl(
       transposed_val,
       utils::kTexture2D,
       utils::kWidthPacked);
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, transposed_val);
 
   check_conv_args(graph, in, out);
 
@@ -343,9 +346,8 @@ void conv2d_pw_impl(
       padding,
       out,
       weight_data,
-      clamp_out,
-      out_min_val,
-      out_max_val);
+      epilogue,
+      Conv2dEpilogueArgs(epilogue, in, packed_bias, packed_scale));
 }
 
 } // namespace vkcompute

@@ -12,6 +12,7 @@ fbcode_target(
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
 

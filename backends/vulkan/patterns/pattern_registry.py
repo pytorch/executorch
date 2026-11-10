@@ -68,8 +68,9 @@ def create_pattern_match_from_internal_match(
     )
 
 
+# Returns False if the replacement left the graph unchanged.
 CreateReplacementFn = Callable[
-    [ExportedProgram, torch.fx.GraphModule, PatternMatch], None
+    [ExportedProgram, torch.fx.GraphModule, PatternMatch], Optional[bool]
 ]
 
 
