@@ -98,10 +98,50 @@ Tensor& opt_add_out(
       return out;
     }
   } else if (a.numel() == 1) {
-    // alpha scales b, so a and b can only be swapped when alpha is 1.
-    double alpha_val = 0;
-    if (utils::extract_scalar(alpha, &alpha_val) && alpha_val == 1) {
+    // alpha scales b, so the operands can only be swapped to reuse the branch
+    // above when alpha is 1.
+    if (utils::scalar_to<double>(alpha) == 1) {
       return opt_add_out(ctx, b, a, alpha, out);
+    }
+    if (executorch::runtime::isComplexType(a_type) ||
+        executorch::runtime::isComplexType(b_type) ||
+        executorch::runtime::isComplexType(out_type)) {
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+        CTYPE alpha_val = utils::scalar_to<CTYPE>(alpha);
+        CTYPE a_val = *a.const_data_ptr<CTYPE>();
+
+        using Vec = at::vec::Vectorized<CTYPE>;
+        at::vec::map<CTYPE>(
+            [alpha_val, a_val](Vec x) {
+              return Vec(a_val) + Vec(alpha_val) * x;
+            },
+            out.mutable_data_ptr<CTYPE>(),
+            b.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+      return out;
+    } else if (
+        a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
+        a_type != ScalarType::BFloat16) {
+      ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
+        CTYPE alpha_val;
+        ET_KERNEL_CHECK(
+            ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+        CTYPE a_val = *a.const_data_ptr<CTYPE>();
+
+        using Vec = at::vec::Vectorized<CTYPE>;
+        at::vec::map<CTYPE>(
+            [alpha_val, a_val](Vec x) {
+              return Vec(a_val) + Vec(alpha_val) * x;
+            },
+            out.mutable_data_ptr<CTYPE>(),
+            b.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+      return out;
     }
   }
 
