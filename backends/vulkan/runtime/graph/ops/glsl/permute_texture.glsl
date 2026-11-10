@@ -84,6 +84,9 @@ void main() {
   } else {
     // Slow path: packed dimension is not preserved, so each element of the
     // output texel may come from a different texel in the input tensor.
+    // Padding lanes re-read the last valid element to keep every fetch in
+    // bounds, and are zeroed before the store.
+    const int last_packed_idx = safe_idx(outp.sizes, out_packed_dim) - 1;
     VEC4_T out_texel = VEC4_T(0);
 
     for (int comp = 0; comp < 4; comp++) {
@@ -97,9 +100,13 @@ void main() {
       VEC4_T in_texel = texelFetch(t_in, in_elem.pos, 0);
       out_texel[comp] = in_texel[in_elem.comp];
 
-      out_tidx.data[out_packed_dim]++;
+      out_tidx.data[out_packed_dim] =
+          min(out_tidx.data[out_packed_dim] + 1, last_packed_idx);
     }
 
-    imageStore(t_out, out_pos, out_texel);
+    imageStore(
+        t_out,
+        out_pos,
+        mask_padding_lanes(out_texel, out_pos, outp, out_packed_dim));
   }
 }

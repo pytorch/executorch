@@ -201,6 +201,16 @@ void GraphBuilder::lower_unary(const Node& node, Unary fn) {
       node, TensorRef{fn(instance_.context.get(), input.tensor), input.sizes});
 }
 
+void GraphBuilder::lower_sqrt(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  require_f32(node, input.tensor);
+  set_single_output(
+      node,
+      TensorRef{
+          ggml_sqrt(instance_.context.get(), contiguous(input.tensor)),
+          input.sizes});
+}
+
 void GraphBuilder::lower_hardtanh(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
   require_float(node, input.tensor);

@@ -105,10 +105,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         "runtime/executor/tensor_parser.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
-        # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
-        # publish either. The component it belongs to is a link dependency the runtime carries, not
-        # something a consumer includes.
-        "extension/threadpool/threadpool.h",
         # Declares CPUCachingAllocator, whose implementation is in a component no shipped library links,
         # so including it compiles and then fails at link time with an undefined reference.
         "extension/memory_allocator/cpu_caching_malloc_allocator.h",
@@ -735,9 +731,9 @@ def _cuda_train() -> str:
 
     Raises when a release row names a train the installed toolkit does not provide. The
     declared packages and the loader paths both come from this value, so disagreeing with
-    the toolkit that compiled the libraries produces a wheel that installs cleanly and then
-    cannot load: a cu126 row built against a 13.0 toolkit declares the CUDA 12 runtime for
-    binaries that need libcudart.so.13.
+    the toolkit that compiled the libraries produces a wheel that installs cleanly but
+    declares a train it was not compiled for, such as a cu134 row built against a 13.2
+    toolkit.
     """
     # An explicit OFF first, ahead of the release field. A CPU row on a builder that has a
     # toolkit installed sets both, so reading the row field first would declare a runtime
@@ -2912,6 +2908,9 @@ class CustomBuild(build):
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
+                # VGF can configure the registry target without linking it.
+                # Only Vulkan requires this DSO in the Python wheel today.
+                cmake_build_args += ["--target", "executorch_vulkan_shared_runtime"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
                 cmake_build_args += ["--target", "cmsis_nn"]
@@ -3250,6 +3249,15 @@ setup(
                         # is not built. This flag is set only when it actually is.
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
+                ),
+                # The Vulkan delegate requires one shared registry DSO even
+                # when its own library is static. VGF currently configures this
+                # target but does not use it, so do not ship it for VGF-only wheels.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/vulkan_shared/%BUILD_TYPE%/",
+                    src_name=get_dynamic_lib_name("executorch_vulkan_shared_runtime"),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_VULKAN"],
                 ),
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreai/",

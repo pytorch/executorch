@@ -103,7 +103,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         )
 
     def test_other_cuda_trains_keep_existing_pins(self):
-        for cuda in ((12, 6), (13, 0), (13, 2)):
+        for cuda in ((13, 0), (13, 2)):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     core, local, domains, examples = self.install_commands(
@@ -159,7 +159,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     )
 
     def test_cpu_release_option_keeps_cuda_pins(self):
-        for cuda in ((12, 6), (13, 0), (13, 2), (13, 4)):
+        for cuda in ((13, 0), (13, 2), (13, 4)):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     self.assertEqual(

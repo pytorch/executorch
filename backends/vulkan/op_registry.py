@@ -267,7 +267,6 @@ def register_clamp():
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.div.Tensor,
-        exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
     ]
 )
@@ -277,6 +276,25 @@ def register_binaryop_cpp_ops():
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
         supports_highdim=True,
+    )
+
+
+def _check_div_rounding_mode_is_floor(node: torch.fx.Node) -> bool:
+    """div.Tensor_mode is implemented for rounding_mode="floor" only."""
+    rounding_mode = node.kwargs.get(
+        "rounding_mode", node.args[2] if len(node.args) > 2 else None
+    )
+    return rounding_mode == "floor"
+
+
+@update_features(exir_ops.edge.aten.div.Tensor_mode)
+def register_div_tensor_mode():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=_check_div_rounding_mode_is_floor,
     )
 
 
@@ -998,6 +1016,33 @@ def register_convolution_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.conv2d.with_epilogue)
+def register_conv2d_with_epilogue():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.CHANNELS_PACKED_TEXTURE,  # residual
+            utils.NO_STORAGE,  # residual_scale (prepacked)
+            utils.NO_STORAGE,  # residual_op (non tensor)
+            utils.NO_STORAGE,  # alpha (non tensor)
+            utils.NO_STORAGE,  # activation (non tensor)
+            utils.NO_STORAGE,  # activation_a (non tensor)
+            utils.NO_STORAGE,  # activation_b (non tensor)
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
 # =============================================================================
 # convolution/conv2d/q8ta/**/Q8taConv2d*.cpp
 # =============================================================================
@@ -1223,9 +1268,10 @@ def register_apply_rotary_emb_hf():
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb_interleaved.default)
 def register_apply_rotary_emb_interleaved():
     return OpFeatures(
-        # freqs_cis is pinned to buffer storage so the shader can compute a
-        # flat [N, C] linear address regardless of the tensor's declared rank
-        # (callers commonly pass 4D [1, N, C/2, 2] without a preceding view).
+        # freqs_cis is pinned to buffer storage so the shader can index its
+        # N * C logical elements through buffer metadata regardless of the
+        # tensor's declared rank (callers commonly pass 4D [1, N, C/2, 2]
+        # without a preceding view).
         inputs_storage=[
             utils.CONTIGUOUS_ANY,  # x
             utils.CONTIGUOUS_BUFFER,  # freqs_cis
@@ -1838,6 +1884,84 @@ def register_grid_sampler_2d():
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_grid_sampler_2d_node,
+    )
+
+
+# =============================================================================
+# Warp.cpp
+# =============================================================================
+
+
+def _node_vals(node: torch.fx.Node, n_args: int) -> Optional[List[torch.Tensor]]:
+    if len(node.args) < n_args:
+        return None
+    vals = []
+    for arg in list(node.args[:n_args]) + [node]:
+        if not isinstance(arg, torch.fx.Node) or arg.meta.get("val") is None:
+            return None
+        vals.append(arg.meta["val"])
+    return vals
+
+
+def _check_warp_shapes(node: torch.fx.Node) -> bool:
+    """Reject shapes the Vulkan warp shader can't handle, such as a flow that
+    broadcasts over batch or space. These ops have no CPU kernel, so a rejected
+    node fails at load time."""
+    vals = _node_vals(node, 2)
+    if vals is None:
+        return False
+    inp, flow, out = vals
+    return (
+        inp.dtype == flow.dtype == out.dtype
+        and inp.shape == out.shape
+        and flow.dim() == 4
+        and flow.shape[:2] == (out.shape[0], 2)
+        and flow.shape[-2:] == out.shape[-2:]
+    )
+
+
+def _check_warp_blend_shapes(node: torch.fx.Node) -> bool:
+    """Reject shapes the Vulkan warp_blend shader can't handle, such as a mask
+    with more than one channel or a flow or mask that broadcasts over batch.
+    These ops have no CPU kernel, so a rejected node fails at load time."""
+    vals = _node_vals(node, 4)
+    if vals is None:
+        return False
+    img0, img1, flow, mask, out = vals
+    return (
+        img0.dtype == img1.dtype == flow.dtype == mask.dtype == out.dtype
+        and img0.shape == out.shape
+        and img1.shape == out.shape
+        and flow.dim() == 4
+        and mask.dim() == 4
+        and flow.shape[:2] == (out.shape[0], 4)
+        and mask.shape[:2] == (out.shape[0], 1)
+        and flow.shape[-2:] == mask.shape[-2:]
+    )
+
+
+@update_features(exir_ops.edge.et_vk.warp.default)
+def register_warp():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_shapes,
+    )
+
+
+# =============================================================================
+# WarpBlend.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.warp_blend.default)
+def register_warp_blend():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_warp_blend_shapes,
     )
 
 

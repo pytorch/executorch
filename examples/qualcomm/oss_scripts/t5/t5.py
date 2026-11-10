@@ -12,10 +12,10 @@ from multiprocessing.connection import Client
 
 import torch
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -323,18 +323,18 @@ def main(args):
                 runner_args,
             ]
         )
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
         )
-        adb.push(
+        device.push(
             inputs=inputs,
             files=[runtime_tokenizer_path],
         )
-        adb.execute(custom_runner_cmd=runner_cmd)
-        adb.pull(host_output_path=args.artifact, callback=post_process)
+        device.execute(custom_runner_cmd=runner_cmd)
+        device.pull(host_output_path=args.artifact, callback=post_process)
 
     result = Seq2SeqLMExportableModulePipeline.evaluate_with_ground_truth(
         tokenizer, outputs, targets, evaluate_squad

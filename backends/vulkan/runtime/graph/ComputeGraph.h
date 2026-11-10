@@ -1047,8 +1047,11 @@ class ComputeGraph final {
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * Buffer tensors use linear dispatch intent. Oversized X dimensions are
-   * wrapped across X and Y according to device workgroup-count limits.
+   * Ordinary buffers use one invocation per physical scalar. Packed int8
+   * tensors retain logical-element dispatch because their kernels map groups
+   * of four logical bytes to each int32 storage element. Buffer dispatch uses
+   * linear intent; oversized X dimensions wrap across X and Y according to
+   * device workgroup-count limits.
    */
   GlobalWorkGrid create_gwg(const ValueRef idx);
 
