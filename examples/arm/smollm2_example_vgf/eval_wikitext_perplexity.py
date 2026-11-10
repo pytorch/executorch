@@ -278,7 +278,7 @@ def eval_model_ppl(
     use_kv_cache: bool,
     workers: int = 1,
     tokenizer_path: Optional[Path] = None,
-    input_dtype: DTypeLike = None,
+    input_dtype: DTypeLike | None = None,
 ) -> float:
     """Evaluate corpus perplexity for one exported model.
 
