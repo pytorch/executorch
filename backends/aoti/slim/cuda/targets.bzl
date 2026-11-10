@@ -8,7 +8,7 @@ def define_common_targets():
         srcs = [
             "guard.cpp",
         ],
-        headers = [
+        exported_headers = [
             "guard.h",
         ],
         visibility = ["PUBLIC"],

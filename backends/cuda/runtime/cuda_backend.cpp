@@ -51,7 +51,9 @@
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/extension/cuda/cuda_allocator.h>
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 #include <executorch/extension/llm/cache/cache_registry.h>
+#endif
 
 namespace executorch::backends::cuda {
 
@@ -109,6 +111,7 @@ Error commit_offgraph_kv_step(CudaDelegateHandle* handle, int64_t width) {
   return handle->kv_cache->commit_step(width);
 }
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 // A per-method actual key overrides the artifact's logical role. Without that
 // override, the logical role names a load-time option containing the actual
 // key; it is never itself used as a process-global registry ID.
@@ -163,6 +166,7 @@ Result<std::string> resolve_cuda_cache_key(
       logical->c_str());
   return std::string(mapped.get());
 }
+#endif
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -410,9 +414,11 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     const auto resolved_cache_key =
         resolve_cuda_cache_key(context, compile_specs);
     ET_CHECK_OK_OR_RETURN_ERROR(resolved_cache_key.error());
+#endif
 
     std::string so_blob_key;
     std::string weights_blob_key;
@@ -574,30 +580,22 @@ class ET_EXPERIMENTAL CudaBackend final
     // lowered off-graph carries no bytes for it, so running one without a cache
     // would hand its kernels unbound memory. That requirement is read from the
     // program's own constants and checked whether or not a key was passed.
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     const char* cache_key =
         resolved_cache_key->empty() ? nullptr : resolved_cache_key->c_str();
-    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
-    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
     if (cache_key != nullptr) {
-#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
       ET_CHECK_OK_OR_RETURN_ERROR(
           attach_offgraph_kv_cache(*handle, cache_key, kv_step_width));
-#else
-      ET_LOG(
-          Error,
-          "init: an off-graph KV cache was supplied, but this CUDA backend was "
-          "built without EXECUTORCH_BUILD_EXTENSION_LLM");
-      return Error::NotSupported;
-#endif
     }
+#endif
+    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
+    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
     ET_CHECK_OR_RETURN_ERROR(
         !needs_offgraph_kv.get() || handle->kv_cache != nullptr,
         InvalidArgument,
-        "init: method '%s' keeps its KV cache off-graph but no cache was "
-        "installed under the '%s' backend option (a CUDA backend built without "
-        "EXECUTORCH_BUILD_EXTENSION_LLM cannot run it)",
-        method_name.c_str(),
-        ::executorch::extension::llm::cache::kCacheKeyOption);
+        "init: method '%s' requires an installed off-graph KV cache and a "
+        "CUDA backend built with EXECUTORCH_BUILD_EXTENSION_LLM",
+        method_name.c_str());
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds

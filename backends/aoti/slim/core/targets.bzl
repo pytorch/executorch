@@ -1,3 +1,4 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -6,7 +7,7 @@ def define_common_targets():
     # Header-only library for Storage
     runtime.cxx_library(
         name = "storage",
-        headers = [
+        exported_headers = [
             "storage.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -17,16 +18,27 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:shared_ptr",
             "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
-            "//executorch/backends/aoti/slim/c10/cuda:exception",
-            "//executorch/backends/aoti/slim/cuda:guard",
-            "//executorch/extension/cuda:caller_stream",
-            "//executorch/extension/cuda:cuda_allocator",
-        ],
+        ] + (
+            [
+                "//executorch/backends/aoti/slim/c10/cuda:exception",
+                "//executorch/backends/aoti/slim/cuda:guard",
+                "//executorch/extension/cuda:caller_stream",
+                "//executorch/extension/cuda:cuda_allocator",
+            ] if is_fbcode() or runtime.is_oss else select({
+                "DEFAULT": [],
+                "ovr_config//cuda:has_cuda": [
+                    "//executorch/backends/aoti/slim/c10/cuda:exception",
+                    "//executorch/backends/aoti/slim/cuda:guard",
+                    "//executorch/extension/cuda:caller_stream",
+                    "//executorch/extension/cuda:cuda_allocator",
+                ],
+            })
+        ),
     )
 
     runtime.cxx_library(
         name = "slimtensor",
-        headers = [
+        exported_headers = [
             "slim_tensor.h",
             "slim_tensor_view_incl.h",
         ],
@@ -41,6 +53,5 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:array_ref_util",
             "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
-            "//executorch/backends/aoti/slim/c10/cuda:exception",
         ],
     )

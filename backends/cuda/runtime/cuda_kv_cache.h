@@ -16,7 +16,9 @@
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 #include <executorch/extension/llm/cache/cache.h>
+#endif
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/result.h>
@@ -24,7 +26,9 @@
 
 namespace executorch::backends::cuda {
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 namespace cache = ::executorch::extension::llm::cache;
+#endif
 
 struct OffGraphKVMetrics {
   int64_t logical_length{0};
@@ -194,6 +198,7 @@ runtime::Error attach_offgraph_kv_cache(
     const char* cache_key,
     const std::optional<OffGraphKVStepWidth>& step_width);
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 // Builder for cache::kind::kSingle. Returns null when the geometry or config is
 // invalid, so CacheFactory reports the failure instead of the cache asserting
 // during construction.
@@ -216,5 +221,6 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
 std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);
+#endif
 
 } // namespace executorch::backends::cuda

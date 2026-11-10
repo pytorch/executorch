@@ -418,8 +418,9 @@ target_link_libraries(
 )
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
+  # PUBLIC: cuda_kv_cache.h declares the LLM cache API only under this define.
   target_compile_definitions(
-    aoti_cuda_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
+    aoti_cuda_backend PUBLIC EXECUTORCH_BUILD_EXTENSION_LLM
   )
 endif()
 
