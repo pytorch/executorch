@@ -548,7 +548,7 @@ test_runtime_vgf() {
         --no-tests=error \
         -R '^vgf_'
 
-    # Phase 4 regression: compile the shared-device branch in addition
+    # Compile the shared-device branch in addition
     # to the legacy VGF-only configuration above. Never silently skip it.
     local shared_build_dir="${et_root_dir}/arm_test/vgf_vulkan_shared_tests"
     rm -rf "${shared_build_dir}"
