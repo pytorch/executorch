@@ -165,7 +165,7 @@ void store_output_tile_with_checks(
         imageStore(
             t_out,
             pos,
-            apply_epilogue(vec4(out_tile.data[m][n4]), pos, scale[n4]));
+            apply_epilogue(out_tile.data[m][n4], pos, scale[n4]));
       }
     }
   }

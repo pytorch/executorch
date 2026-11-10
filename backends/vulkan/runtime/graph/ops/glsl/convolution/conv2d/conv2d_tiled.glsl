@@ -230,11 +230,11 @@ void store_tile(ivec3 pos) {
     const ivec2 offset = ivec2(i % TILE_X, i / TILE_X);
     if (pos.x + offset.x < out_limits.x && pos.y + offset.y < out_limits.y) {
       const ivec3 p0 = pos + ivec3(offset, 0);
-      imageStore(t_out, p0, apply_epilogue(vec4(sums[i][0]), p0, scale[0]));
+      imageStore(t_out, p0, apply_epilogue(sums[i][0], p0, scale[0]));
 #if OUT_N4 == 2
       if (second_slice) {
         const ivec3 p1 = pos + ivec3(offset, 1);
-        imageStore(t_out, p1, apply_epilogue(vec4(sums[i][1]), p1, scale[1]));
+        imageStore(t_out, p1, apply_epilogue(sums[i][1], p1, scale[1]));
       }
 #endif
     }

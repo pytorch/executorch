@@ -192,14 +192,11 @@ void store_output_tile_with_checks(
       const int ow = m_local % W_out;
       const int oh = OH_OFFSET + m_local / W_out;
       if (m_local < M_TILE && oh < H_out && n4_start + n4 < N4) {
-        // t_out is a texture3d, whose imageStore takes vec4 regardless of
-        // DTYPE, so the accumulator (f16vec4 for the buffer/half path) is cast
-        // to vec4 for the epilogue and store.
         const ivec3 pos = ivec3(ow, oh, n4_start + n4);
         imageStore(
             t_out,
             pos,
-            apply_epilogue(vec4(out_tile.data[m][n4]), pos, scale[n4]));
+            apply_epilogue(out_tile.data[m][n4], pos, scale[n4]));
       }
     }
   }
