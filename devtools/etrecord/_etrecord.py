@@ -560,7 +560,7 @@ class ETRecord:
             self._reference_outputs = reference_outputs
 
 
-def get_delegate_partition_provenance(
+def get_delegate_partition_provenance(  # noqa: C901
     etrecord: ETRecord,
 ) -> Dict[str, Tuple[DelegatePartitionProvenance, ...]]:
     """Return delegate partitions using existing ETRecord metadata.
