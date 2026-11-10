@@ -380,9 +380,28 @@ class GgmlOpsTest(unittest.TestCase):
         raw[:, 209] = 0x3C
         return ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
 
+    @staticmethod
+    def _q5_k_weights(rows):
+        # Valid Q5_K blocks: an FP16 super-block scale of 1.0 (0x3c00) and min
+        # of 0, 12 bytes packing eight 6-bit sub-block scales of 1 and mins of
+        # 0, then 32 high-bit and 128 low-bit bytes.
+        raw = torch.zeros(rows, 176, dtype=torch.uint8)
+        raw[:, 1] = 0x3C
+        raw[:, 4:8] = 1
+        raw[:, 12:16] = 1
+        raw[:, 16:48] = torch.arange(32, dtype=torch.uint8)
+        raw[:, 48:] = torch.arange(128, dtype=torch.uint8)
+        return ExportableGGUFTensor.from_raw(raw, "q5_k", torch.float32)
+
+    def test_gguf_q5_k_linear(self):
+        self._check_gguf_linear(self._q5_k_weights(8))
+
     def test_gguf_q6_k_linear(self):
+        self._check_gguf_linear(self._q6_k_weights(8))
+
+    def _check_gguf_linear(self, weight):
         model = torch.nn.Linear(256, 8, bias=False)
-        model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
+        model.weight = torch.nn.Parameter(weight, requires_grad=False)
         representable = torch.full((2, 256), 0.125)
         representable[1, ::2] = -0.125
         # GGML requantizes F32 activations before the dot product: to Q8_K on
