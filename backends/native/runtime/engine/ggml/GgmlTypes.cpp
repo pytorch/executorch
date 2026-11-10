@@ -17,12 +17,23 @@
 namespace ptn::ggml_detail {
 namespace {
 
-constexpr std::string_view kQ4KCodec = "gguf:q4_k";
-constexpr std::string_view kQ6KCodec = "gguf:q6_k";
 constexpr int64_t kKQuantBlockElements = 256;
-constexpr size_t kQ4KBlockBytes = 144;
-constexpr size_t kQ6KBlockBytes = 210;
 constexpr size_t kQ40BlockElements = 32;
+
+ggml_type kquant_type(std::string_view codec) {
+  if (codec == "gguf:q4_k") {
+    return GGML_TYPE_Q4_K;
+  }
+  if (codec == "gguf:q5_k") {
+    return GGML_TYPE_Q5_K;
+  }
+  if (codec == "gguf:q6_k") {
+    return GGML_TYPE_Q6_K;
+  }
+  throw std::runtime_error(
+      "ggml: only PackedQuant codecs 'gguf:q4_k', 'gguf:q5_k' and 'gguf:q6_k' "
+      "are supported");
+}
 
 struct BlockQ40 {
   ggml_fp16_t d;
@@ -62,24 +73,18 @@ const PackedQuant* packed_quant(const TensorMeta& meta) {
 
 size_t packed_nbytes(const TensorMeta& meta) {
   const PackedQuant* packed = packed_quant(meta);
-  if (packed == nullptr ||
-      (packed->codec != kQ4KCodec && packed->codec != kQ6KCodec)) {
-    throw std::runtime_error(
-        "ggml: only PackedQuant codecs 'gguf:q4_k' and 'gguf:q6_k' "
-        "are supported");
+  if (packed == nullptr) {
+    throw std::runtime_error("ggml: tensor has no PackedQuant scheme");
   }
+  const ggml_type type = kquant_type(packed->codec);
   if (meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
       meta.sizes[1] % kKQuantBlockElements != 0) {
     throw std::runtime_error(
         "ggml: K-quant weight must have logical shape [O, I] with I divisible "
         "by 256");
   }
-  const ggml_type type =
-      packed->codec == kQ4KCodec ? GGML_TYPE_Q4_K : GGML_TYPE_Q6_K;
-  const size_t block_bytes =
-      packed->codec == kQ4KCodec ? kQ4KBlockBytes : kQ6KBlockBytes;
-  if (ggml_type_size(type) != block_bytes ||
-      ggml_blck_size(type) != kKQuantBlockElements) {
+  const size_t block_bytes = ggml_type_size(type);
+  if (ggml_blck_size(type) != kKQuantBlockElements) {
     throw std::runtime_error("ggml: unexpected GGUF K-quant block layout");
   }
   const size_t rows = static_cast<size_t>(meta.sizes[0]);
@@ -187,15 +192,7 @@ static ggml_type to_ggml_type(const TensorMeta& meta) {
   }
   if (packed_quant(meta) != nullptr) {
     packed_nbytes(meta);
-    if (packed_quant(meta)->codec == kQ4KCodec) {
-      return GGML_TYPE_Q4_K;
-    }
-    if (packed_quant(meta)->codec == kQ6KCodec) {
-      return GGML_TYPE_Q6_K;
-    }
-    throw std::runtime_error(
-        "ggml: unsupported PackedQuant codec '" + packed_quant(meta)->codec +
-        "'");
+    return kquant_type(packed_quant(meta)->codec);
   }
   switch (meta.dtype) {
     case ScalarType::Float:
