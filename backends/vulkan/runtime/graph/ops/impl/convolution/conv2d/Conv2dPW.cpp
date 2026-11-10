@@ -46,6 +46,19 @@ bool use_wide_pw_tile(ComputeGraph* graph, const ValueRef out) {
       kMinWideTileInvocations;
 }
 
+/*
+ * Half wide tile convolutions took 0.829, 0.949 and 0.949 of the time on Adreno
+ * 840, 750 and 740 (0.731 to 1.032 per shape) with the weights in a texture and
+ * accumulators that start from the bias and sum each output texel's products
+ * in a temporary, over 1x1 convolutions of 32 to 512 channels with 189x252 to
+ * 1008x756 outputs. Mali-G715 and Xclipse 940 took 1.80 and 1.28 times as long
+ * with them.
+ */
+bool use_folded_accumulation(ComputeGraph* graph, const ValueRef out) {
+  return graph->dtype_of(out) == vkapi::kHalf && graph->device_is_adreno() &&
+      use_wide_pw_tile(graph, out);
+}
+
 } // namespace
 
 void resize_conv2d_pw_tiled_node(
@@ -187,7 +200,8 @@ struct PackParams {
 
 ValueRef prepack_conv2d_pw_weight(
     ComputeGraph& graph,
-    const ValueRef weight_data) {
+    const ValueRef weight_data,
+    const ValueRef out) {
   const std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
   const int64_t N = weight_sizes.at(0); // C_out
   const int64_t K = weight_sizes.at(1); // C_in
@@ -197,12 +211,14 @@ ValueRef prepack_conv2d_pw_weight(
   const int64_t output_height = K4;
   const int64_t output_width = N4 * 4 * 4;
 
-  // Buffer weights are faster than texture weights on every GPU measured.
-  // Half buffers need 16-bit storage support.
+  // Buffer weights are faster than texture weights on every GPU measured. The
+  // folded accumulation reads texture weights, the only storage it was measured
+  // with. Half buffers need 16-bit storage support.
   utils::StorageType weight_storage = utils::kTexture2D;
   uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  const bool buffer_weights = graph.dtype_of(weight_data) != vkapi::kHalf ||
-      graph.float16_buffers_enabled();
+  const bool buffer_weights = !use_folded_accumulation(&graph, out) &&
+      (graph.dtype_of(weight_data) != vkapi::kHalf ||
+       graph.float16_buffers_enabled());
   if (buffer_weights || output_width / 4 > max_extent ||
       static_cast<uint32_t>(output_height) > max_extent) {
     weight_storage = utils::kBuffer;
@@ -277,6 +293,10 @@ void add_conv2d_pw_tiled_node(
 
   vkapi::SpecVarList spec_vars = {s1p0 ? 1 : 0};
   append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
+  // The weight storage and folded_accumulation are fixed here, but the tile is
+  // picked again on resize. Only the wide tile texture weight Half variant
+  // declares folded_accumulation; the other variants ignore it.
+  spec_vars.append(vkapi::SpecVar(use_folded_accumulation(&graph, out)));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -318,7 +338,7 @@ void conv2d_pw_impl(
     const ValueRef out,
     const bool transposed_val,
     const Conv2dEpilogue& epilogue) {
-  ValueRef packed_weight = prepack_conv2d_pw_weight(graph, weight_data);
+  ValueRef packed_weight = prepack_conv2d_pw_weight(graph, weight_data, out);
 
   ValueRef packed_bias = prepack_biases(
       graph,
