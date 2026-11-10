@@ -214,7 +214,10 @@ class TensorSpec:
 
     @property
     def allocated_memory(self) -> int:
-        nbytes = num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+        nbytes = max(
+            num_bytes_from_shape_and_dtype(self.shape, self.dtype),
+            self.min_allocated_memory,
+        )
         return calculate_aligned_num_bytes(nbytes, self.alignment)
 
     def realign(self, new_alignment: int) -> int:
@@ -258,6 +261,8 @@ class TensorSpec:
         self.storage_base: Optional["TensorSpec"] = None
         # Byte offset into storage_base when this spec is storage-backed.
         self.storage_base_offset: int = 0
+        # Bytes to plan at least, so that a memory.view of this tensor fits too.
+        self.min_allocated_memory: int = 0
 
     @property
     def inplace_base(self) -> Optional["TensorSpec"]:

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TextIO, TYPE_CHECKING
 
+import torchgen
 import yaml
 
 try:
@@ -69,13 +70,7 @@ from torchgen.model import (
     OperatorName,
     Variant,
 )
-from torchgen.utils import (
-    context,
-    FileManager,
-    make_file_manager,
-    mapMaybe,
-    NamespaceHelper,
-)
+from torchgen.utils import context, FileManager, mapMaybe, NamespaceHelper
 
 
 if TYPE_CHECKING:
@@ -871,11 +866,110 @@ def parse_yaml_files(
     return combined_yaml, custom_ops_parsed_yaml
 
 
+def generate(
+    *,
+    source_path: str,
+    install_dir: str,
+    tags_path: str | None = None,
+    aten_yaml_path: str | None = None,
+    functions_yaml_path: str | None = None,
+    custom_ops_yaml_path: str | None = None,
+    op_selection_yaml_path: str | None = None,
+    op_registration_whitelist: list[str] | None = None,
+    use_aten_lib: bool = False,
+    manual_registration: bool = False,
+    outputs: Sequence[str] = ("headers", "sources"),
+    add_exception_boundary: bool = False,
+    rocm: bool = False,
+    dry_run: bool = False,
+    output_dependencies: str | None = None,
+) -> None:
+    """Generates the operator headers and registration sources into install_dir.
+
+    The arguments match main()'s command-line flags; source_path is the
+    directory holding the templates/ subdirectory, and outputs is --generate.
+    tags_path and aten_yaml_path default to the copies of tags.yaml and
+    native_functions.yaml packaged with torchgen. torchgen caches each parsed
+    yaml by path for the life of the process, so don't rewrite aten_yaml_path
+    or custom_ops_yaml_path in place between calls.
+    """
+    packaged = os.path.join(os.path.dirname(torchgen.__file__), "packaged/ATen/native")
+    tags_path = tags_path or os.path.join(packaged, "tags.yaml")
+    aten_yaml_path = aten_yaml_path or os.path.join(packaged, "native_functions.yaml")
+
+    selector = get_custom_build_selector(
+        op_registration_whitelist,
+        op_selection_yaml_path,
+    )
+
+    parsed_yaml, custom_ops_parsed_yaml = parse_yaml_files(
+        aten_yaml_path=aten_yaml_path,
+        tags_yaml_path=tags_path,
+        native_yaml_path=functions_yaml_path,
+        custom_ops_yaml_path=custom_ops_yaml_path,
+        selector=selector,
+        use_aten_lib=use_aten_lib,
+    )
+    native_functions, kernel_index = (
+        parsed_yaml.native_functions,
+        parsed_yaml.kernel_index,
+    )
+    custom_ops_native_functions = (
+        custom_ops_parsed_yaml.native_functions if custom_ops_parsed_yaml else []
+    )
+
+    cpu_fm = FileManager(
+        install_dir=install_dir,
+        template_dir=os.path.join(source_path, "templates"),
+        dry_run=dry_run,
+    )
+
+    if "headers" in outputs:
+        # generate CustomOpsNativeFunctions.h when custom_ops.yaml is present, to match the build system.
+        gen_headers(
+            native_functions=native_functions,
+            gen_custom_ops_header=bool(custom_ops_yaml_path),
+            custom_ops_native_functions=custom_ops_native_functions,
+            selector=selector,
+            kernel_index=kernel_index,
+            cpu_fm=cpu_fm,
+            use_aten_lib=use_aten_lib,
+        )
+
+    if "sources" in outputs:
+        gen_unboxing(
+            native_functions=native_functions,
+            cpu_fm=cpu_fm,
+            selector=selector,
+            use_aten_lib=use_aten_lib,
+            kernel_index=kernel_index,
+            manual_registration=manual_registration,
+            add_exception_boundary=add_exception_boundary,
+        )
+        if custom_ops_native_functions:
+            gen_custom_ops(
+                native_functions=custom_ops_native_functions,
+                selector=selector,
+                kernel_index=kernel_index,
+                cpu_fm=cpu_fm,
+                rocm=rocm,
+            )
+
+    if output_dependencies:
+        depfile_path = Path(output_dependencies).resolve()
+        depfile_name = depfile_path.name
+        depfile_stem = depfile_path.stem
+
+        for fm, prefix in [
+            (cpu_fm, ""),
+        ]:
+            varname = prefix + depfile_stem
+            path = depfile_path.parent / (prefix + depfile_name)
+            fm.write_outputs(varname, str(path))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate operator source files")
-    # Although we don't refer to --source-path directly, make_file_manager()
-    # expects it to point to a directory that contains a templates/ subdirectory
-    # containing the file templates.
     parser.add_argument(
         "-s",
         "--source-path",
@@ -898,9 +992,8 @@ def main() -> None:
     parser.add_argument(
         "--aten-yaml-path",
         "--aten_yaml_path",
-        help="path to native_functions.yaml file.",
+        help="path to native_functions.yaml file (default: torchgen's packaged copy).",
     )
-    # Note that make_file_manager() also looks at --install-dir.
     parser.add_argument(
         "-d",
         "--install-dir",
@@ -913,8 +1006,6 @@ def main() -> None:
         "--output-dependencies",
         help="output a list of dependencies into the given file and exit",
     )
-    # Although we don't refer to --dry-run directly, make_file_manager() looks
-    # for it.
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -945,7 +1036,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tags-path",
-        help="Path to tags.yaml. Required by yaml parsing in codegen system.",
+        help="Path to tags.yaml (default: torchgen's packaged copy).",
     )
     parser.add_argument(
         "--rocm",
@@ -982,73 +1073,23 @@ def main() -> None:
         "convert exceptions to clean failures.",
     )
     options = parser.parse_args()
-    assert options.tags_path, "tags.yaml is required by codegen yaml parsing."
-
-    selector = get_custom_build_selector(
-        options.op_registration_whitelist,
-        options.op_selection_yaml_path,
-    )
-
-    parsed_yaml, custom_ops_parsed_yaml = parse_yaml_files(
+    generate(
+        source_path=options.source_path,
+        install_dir=options.install_dir,
+        tags_path=options.tags_path,
         aten_yaml_path=options.aten_yaml_path,
-        tags_yaml_path=options.tags_path,
-        native_yaml_path=options.functions_yaml_path,
+        functions_yaml_path=options.functions_yaml_path,
         custom_ops_yaml_path=options.custom_ops_yaml_path,
-        selector=selector,
+        op_selection_yaml_path=options.op_selection_yaml_path,
+        op_registration_whitelist=options.op_registration_whitelist,
         use_aten_lib=options.use_aten_lib,
+        manual_registration=options.manual_registration,
+        outputs=options.generate,
+        add_exception_boundary=options.add_exception_boundary,
+        rocm=options.rocm,
+        dry_run=options.dry_run,
+        output_dependencies=options.output_dependencies,
     )
-    native_functions, kernel_index = (
-        parsed_yaml.native_functions,
-        parsed_yaml.kernel_index,
-    )
-    custom_ops_native_functions = (
-        custom_ops_parsed_yaml.native_functions if custom_ops_parsed_yaml else []
-    )
-
-    cpu_fm = make_file_manager(options=options)
-
-    if "headers" in options.generate:
-        # generate CustomOpsNativeFunctions.h when custom_ops.yaml is present, to match the build system.
-        gen_headers(
-            native_functions=native_functions,
-            gen_custom_ops_header=options.custom_ops_yaml_path,
-            custom_ops_native_functions=custom_ops_native_functions,
-            selector=selector,
-            kernel_index=kernel_index,
-            cpu_fm=cpu_fm,
-            use_aten_lib=options.use_aten_lib,
-        )
-
-    if "sources" in options.generate:
-        gen_unboxing(
-            native_functions=native_functions,
-            cpu_fm=cpu_fm,
-            selector=selector,
-            use_aten_lib=options.use_aten_lib,
-            kernel_index=kernel_index,
-            manual_registration=options.manual_registration,
-            add_exception_boundary=options.add_exception_boundary,
-        )
-        if custom_ops_native_functions:
-            gen_custom_ops(
-                native_functions=custom_ops_native_functions,
-                selector=selector,
-                kernel_index=kernel_index,
-                cpu_fm=cpu_fm,
-                rocm=options.rocm,
-            )
-
-    if options.output_dependencies:
-        depfile_path = Path(options.output_dependencies).resolve()
-        depfile_name = depfile_path.name
-        depfile_stem = depfile_path.stem
-
-        for fm, prefix in [
-            (cpu_fm, ""),
-        ]:
-            varname = prefix + depfile_stem
-            path = depfile_path.parent / (prefix + depfile_name)
-            fm.write_outputs(varname, str(path))
 
 
 if __name__ == "__main__":

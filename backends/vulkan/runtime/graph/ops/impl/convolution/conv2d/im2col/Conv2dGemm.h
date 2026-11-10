@@ -10,6 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
+
 #include <optional>
 
 namespace vkcompute {
@@ -73,9 +75,7 @@ void conv2d_gemm_impl(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef out,
-    const bool clamp_out = false,
-    const float out_min_val = 0.0f,
-    const float out_max_val = 0.0f,
+    const Conv2dEpilogue& epilogue = {},
     const std::optional<utils::StorageType> im2col_storage_override =
         std::nullopt);
 
