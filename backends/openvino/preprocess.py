@@ -75,8 +75,9 @@ def _copy_returned_inputs(model, device: str) -> None:
     is the input itself. The CPU plugin does not write it, and can overwrite
     the input with the output buffer's old contents. OpenVINO keeps an
     Identity between an input and an output, and the CPU plugin runs it as a
-    copy, while it can remove a Convert to the same type. On an ARM CPU at
-    f16, it rounds this copy of a float input, like its other float outputs.
+    copy, while it can remove a Convert to the same type. On an ARM CPU with
+    float16 support, at f16 or bf16, it rounds this copy of a float32 input,
+    like its other float32 outputs.
     Other devices are left as they are, since neither the problem nor Identity
     was checked there.
     """

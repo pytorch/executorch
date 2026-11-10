@@ -859,7 +859,7 @@ jobs:
         backends/cortex_m/test/build_test_runner.sh
 
         # To run cortex_m tests
-        pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
+        pytest -c backends/arm/test/pytest.ini backends/cortex_m/test
 
   android:
     uses: ./.github/workflows/_android.yml
@@ -985,6 +985,9 @@ jobs:
 
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
+
+        # Run the host allocator regressions without a device or RPC library.
+        buck2 test //backends/qualcomm/runtime/tests:shared_buffer_test
 
   test-arm-backend-docgen:
     needs: [docker-image, changed-files]
@@ -2084,7 +2087,8 @@ jobs:
         # Custom operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
         for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
-                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta; do
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done

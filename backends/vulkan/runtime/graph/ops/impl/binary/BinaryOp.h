@@ -12,8 +12,8 @@
 
 namespace vkcompute {
 
-// Values of the op_type specialization constant of the binary op shaders. Must
-// match binary_op.glslh.
+// Values of the op_type specialization constant of the binary op and
+// tensor-scalar shaders. Must match binary_op.glslh and binary_scalar.glsl.
 enum class BinaryOpType : int32_t {
   kAdd = 0,
   kSub = 1,
@@ -30,6 +30,8 @@ enum class BinaryOpType : int32_t {
   kGe = 12,
   kBitwiseAnd = 13,
   kBitwiseOr = 14,
+  // Implemented by the tensor-scalar shader only.
+  kNe = 15,
 };
 
 } // namespace vkcompute

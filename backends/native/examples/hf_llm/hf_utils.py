@@ -19,6 +19,31 @@ from executorch.exir.lowered_backend_module import (
     get_lowered_submodules,
 )
 from torch.export import ExportedProgram
+from transformers.cache_utils import StaticLayer
+
+
+class PositionedStaticLayer(StaticLayer):
+    """A static cache layer that writes K/V, cast to its own dtype, at ``positions``.
+
+    transformers 5 writes at ``arange(n) + cumulative_length``. The native runtime
+    only accepts row indices that are a graph input or an arange, so the positions
+    are the ``cache_position`` input of the graph instead.
+    """
+
+    positions: torch.Tensor
+
+    @classmethod
+    def replacing(cls, old: StaticLayer, dtype: torch.dtype) -> "PositionedStaticLayer":
+        layer = cls(old.max_cache_len)
+        layer.lazy_initialization(
+            old.keys[:, :, :1].to(dtype), old.values[:, :, :1].to(dtype)
+        )
+        return layer
+
+    def update(self, key_states, value_states, *args, **kwargs):
+        self.keys.index_copy_(2, self.positions, key_states.to(self.dtype))
+        self.values.index_copy_(2, self.positions, value_states.to(self.dtype))
+        return self.keys, self.values
 
 
 def histogram(gm: torch.fx.GraphModule) -> collections.Counter:
