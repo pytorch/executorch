@@ -24,6 +24,7 @@ from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
 
 _MAX_INT32 = (1 << 31) - 1
+_DEFAULT_SESSION_CHECKPOINTS = 2
 
 
 def _parse_preflight_timeout(value):
@@ -47,18 +48,17 @@ def _validate_limits(
     prefix_capture_slots=0,
     prefix_checkpoint_prompt_end=False,
 ) -> int:
-    for flag, value in (
-        ("--max-context", args.max_context),
-        ("--max-sessions", args.max_sessions),
-        ("--max-decode-sequences", args.max_decode_sequences),
-        ("--max-inflight-requests", args.max_inflight_requests),
+    for flag, value, minimum in (
+        ("--max-context", args.max_context, 1),
+        ("--max-sessions", args.max_sessions, 1),
+        ("--max-decode-sequences", args.max_decode_sequences, 1),
+        ("--max-inflight-requests", args.max_inflight_requests, 1),
+        ("--prefix-cache-entries", args.prefix_cache_entries, 0),
+        ("--prefix-checkpoint-interval", args.prefix_checkpoint_interval, 0),
+        ("--prefix-capture-slots", prefix_capture_slots, 0),
     ):
-        if not 1 <= value <= _MAX_INT32:
-            parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
-    if not 0 <= args.prefix_cache_entries <= _MAX_INT32:
-        parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
-    if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
-        parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
+        if not minimum <= value <= _MAX_INT32:
+            parser.error(f"{flag} must be between {minimum} and {_MAX_INT32}")
     if prefix_checkpoint_prompt_end and args.prefix_checkpoint_interval:
         parser.error(
             "--prefix-checkpoint-prompt-end cannot be combined with "
@@ -70,8 +70,6 @@ def _validate_limits(
         )
     if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
         parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
-    if not 0 <= prefix_capture_slots <= _MAX_INT32:
-        parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
     # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
@@ -125,7 +123,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-cache-entries",
         type=int,
-        help="Retained snapshots: shared by default (0), per named session with prompt-end checkpoints (8)",
+        help=f"Retained snapshots: shared by default (0), per named session with prompt-end checkpoints ({_DEFAULT_SESSION_CHECKPOINTS})",
     )
     parser.add_argument(
         "--prefix-checkpoint-prompt-end",
@@ -157,7 +155,9 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
     if args.prefix_cache_entries is None:
-        args.prefix_cache_entries = 8 if args.prefix_checkpoint_prompt_end else 0
+        args.prefix_cache_entries = (
+            _DEFAULT_SESSION_CHECKPOINTS if args.prefix_checkpoint_prompt_end else 0
+        )
 
     _validate_limits(
         parser,

@@ -219,15 +219,14 @@ submitted history; server-side image references are not supported.
 
 The base64/framing check does not guarantee that an arbitrarily long text history
 fits. Whole-frame, decoded-pixel, vision-patch, and model context limits still
-apply. Text/image prompt-end checkpoints are enabled by default, with
-`--prefix-cache-entries` defaulting to eight snapshots per named session.
+apply.
 
 ## Session Behavior
 
 The Muse-Glimmer batching launcher and native workers enable
 `--prefix-checkpoint-prompt-end` by default. General LLM serving keeps it opt-in.
 This mode retains prompt boundaries separately for each named session, including tool-result
-continuations and replacements. `--prefix-cache-entries` defaults to eight
+continuations and replacements. `--prefix-cache-entries` defaults to two
 checkpoints per session. Repeated or branched requests using the same session ID can
 reuse its snapshots; other sessions and anonymous requests cannot. New tool-result
 text still needs prefill. Exact prompt ends already retained in that session are
@@ -249,11 +248,10 @@ and reuse to choose the entry limit for your workload.
 `--prefix-checkpoint-interval`; both the launcher and native worker reject that combination.
 To use periodic capture, disable prompt-end capture and set a positive
 `--prefix-cache-entries` limit.
-With prompt-end mode, `--prefix-cache-entries` is the per-session budget (default eight);
-without it, the same option is the shared-cache budget (default zero). This mode reserves
-`max_sessions * prefix_cache_entries` snapshot rows plus working sessions
-and capture slots: eight sessions, eight checkpoints each, and eight automatic
-capture slots require 80 physical rows.
+Prompt-end mode reserves `max_sessions * prefix_cache_entries` snapshot rows plus
+working sessions and capture slots: four sessions use 16 physical rows with the
+default settings. Eight sessions with two checkpoints each and eight automatic
+capture slots require 32 physical rows.
 Periodic checkpoints use one serialized lane and may skip a boundary while an
 earlier clone is pending. Automatic transient-row sizing is capped at two in
 periodic mode; prompt-end capture retains the ordinary concurrency budget.
@@ -276,7 +274,7 @@ periodic mode; prompt-end capture retains the ordinary concurrency budget.
 - Resubmit the complete history, including the image, on every turn. A clean
   named session whose history is an exact prefix reuses its KV and executes only
   the remaining prepared suffix. Pending generated tokens are handled by Runner.
-- Opt-in snapshots can also reuse mixed prefixes across requests. Existing
+- Snapshots can also reuse mixed prefixes across requests. Existing
   policies remain: equal, shorter, mismatched, or dirty named histories replay;
   snapshots leave at least one fresh prompt position to execute.
 - Omitting an earlier image changes the supplied context; serving does not
@@ -327,6 +325,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --backend cuda \
   --gguf /path/to/models/mg/model.gguf \
   --use-offgraph-kv-cache \
+  --max-cells 131073 \
   --output-dir /path/to/models/mg-batching-cuda
 ```
 
@@ -362,6 +361,12 @@ cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
 reduce the context or slot counts if they do not fit.
+The example exports 131073 cells: 16 rows at 8192 tokens each, plus one padded
+write cell. An existing 65536-cell export supports at most 4095 tokens per row
+with these defaults; use a smaller `--max-context`, re-export with more cells,
+or disable prompt-end checkpoints. For eight sessions and eight capture slots,
+8192 tokens require at least 262145 cells. The native worker's automatic context
+mode uses `(max_cells - 1) / rows`, so adding checkpoints reduces that limit.
 The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
 session's cells by reference, sharing the prompt's KV rather than copying it.
 

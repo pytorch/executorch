@@ -30,7 +30,7 @@ DEFINE_int32(max_sessions, 4, "Maximum logical serving sessions");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Retained snapshots: shared by default (0), per session with prompt-end checkpoints (8)");
+    "Retained snapshots: shared by default (0), per session with prompt-end checkpoints (2)");
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
@@ -54,7 +54,8 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_prefix_checkpoint_prompt_end &&
       gflags::GetCommandLineFlagInfoOrDie("prefix_cache_entries").is_default) {
-    FLAGS_prefix_cache_entries = 8;
+    FLAGS_prefix_cache_entries = executorch::extension::llm::serving::
+        ServingRuntimeConfig::kDefaultSessionCheckpoints;
   }
   if (FLAGS_prefix_checkpoint_prompt_end && FLAGS_prefix_checkpoint_interval) {
     std::cerr << "--prefix_checkpoint_prompt_end cannot be combined with "

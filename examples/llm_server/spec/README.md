@@ -397,7 +397,7 @@ unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
 `min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
 their initial prompt. Alternatively, `--prefix_checkpoint_prompt_end=true` retains
 initial, continuation, and replacement snapshots separately for each named session.
-`--prefix_cache_entries=8` is the default per-session limit. This mode adds
+`--prefix_cache_entries=2` is the default per-session limit. This mode adds
 `max_sessions * prefix_cache_entries + C` physical rows. The existing
 `--prefix_cache_entries` flag now sets the per-session limit when prompt-end mode
 is enabled; otherwise it keeps the shared-cache meaning and default of zero.

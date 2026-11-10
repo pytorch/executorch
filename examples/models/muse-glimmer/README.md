@@ -286,7 +286,7 @@ not a regular runner target.
 Replace the absolute example paths below with your checkout, export, and
 tokenizer locations. Select the backend matching the export and worker build.
 This MLX example uses four concurrent sessions, a 128K (131072-token) context
-limit, and up to 32 prefix snapshots:
+limit, and the default two prompt-end checkpoints per named session:
 
 ```bash
 python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
@@ -300,7 +300,6 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
   --max-sessions 4 \
   --max-decode-sequences 4 \
   --max-inflight-requests 4 \
-  --prefix-cache-entries 32 \
   --tool-parser atem \
   --host 127.0.0.1 \
   --port 8000
@@ -320,7 +319,8 @@ drafter configuration. Changing N does not change D: a D = 16 export still
 evaluates 16 drafter rows per session when N = 3, and its default is N = 15.
 
 Choose concurrency and prefix-cache limits to fit available memory. Prefix
-snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.
+snapshots are enabled by default; `--prefix-cache-entries N` changes the per-session
+limit. Use `--prefix-checkpoint-prompt-end=false` to disable them.
 If the export stores weights separately, also pass `--data-path` with its data
 file.
 

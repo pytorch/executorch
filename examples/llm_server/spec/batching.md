@@ -44,11 +44,11 @@ other capture options, only initial prompts are retained.
 `--prefix-checkpoint-prompt-end` instead retains prompt ends within each named
 session, including continuations and replacements. This mode is opt-in.
 `--prefix-cache-entries`
-defaults to eight per session. Checkpoints cannot be reused or evicted by another
+defaults to two per session. Checkpoints cannot be reused or evicted by another
 session, and close/reset clears them. Anonymous requests do not use this cache.
 This mode cannot be combined with a nonzero interval or custom checkpoint policy.
-In this mode `--prefix-cache-entries` sets the per-session limit (default eight);
-otherwise it sets the shared-cache limit (default zero). It reserves `max_sessions * prefix_cache_entries`
+Otherwise `--prefix-cache-entries` sets the shared-cache limit (default zero).
+Prompt-end mode reserves `max_sessions * prefix_cache_entries`
 snapshot rows in addition to working sessions and transient captures.
 Capture slots are released after clone collection, before decode completes.
 Capture is best effort: occupied transient rows can skip a boundary. Already-retained

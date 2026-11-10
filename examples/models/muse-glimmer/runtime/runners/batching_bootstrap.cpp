@@ -35,7 +35,7 @@ DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Retained snapshots per session (default: 8); shared with prompt-end checkpoints disabled (default: 0)");
+    "Retained snapshots per session (default: 2); shared with prompt-end checkpoints disabled (default: 0)");
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
@@ -69,7 +69,8 @@ std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
   if (FLAGS_prefix_checkpoint_prompt_end &&
       gflags::GetCommandLineFlagInfoOrDie("prefix_cache_entries").is_default) {
-    FLAGS_prefix_cache_entries = 8;
+    FLAGS_prefix_cache_entries =
+        serving::ServingRuntimeConfig::kDefaultSessionCheckpoints;
   }
   if (FLAGS_prefix_checkpoint_prompt_end && FLAGS_prefix_checkpoint_interval) {
     throw std::invalid_argument(

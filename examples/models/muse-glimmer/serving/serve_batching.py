@@ -25,6 +25,7 @@ from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
 from executorch.examples.llm_server.python.serve import (
+    _DEFAULT_SESSION_CHECKPOINTS,
     _parse_preflight_timeout,
     _validate_limits,
 )
@@ -76,7 +77,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-cache-entries",
         type=int,
-        help="Retained snapshots per named session (default: 8); shared with prompt-end checkpoints disabled (default: 0)",
+        help=f"Retained snapshots per named session (default: {_DEFAULT_SESSION_CHECKPOINTS}); shared with prompt-end checkpoints disabled (default: 0)",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -129,7 +130,9 @@ def _parse_args(argv=None):
     args = parser.parse_args(argv)
     args.prefix_checkpoint_prompt_end = args.prefix_checkpoint_prompt_end == "true"
     if args.prefix_cache_entries is None:
-        args.prefix_cache_entries = 8 if args.prefix_checkpoint_prompt_end else 0
+        args.prefix_cache_entries = (
+            _DEFAULT_SESSION_CHECKPOINTS if args.prefix_checkpoint_prompt_end else 0
+        )
     _validate_limits(
         parser,
         args,

@@ -1457,9 +1457,13 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PrefixReuseTest, SessionCheckpointRowCountIncludesEverySessionsBudget) {
   config.prefix_checkpoint_prompt_end = true;
-  config.prefix_cache_capacity = 8;
-  config.max_sessions = 8;
+  config.prefix_cache_capacity =
+      ServingRuntimeConfig::kDefaultSessionCheckpoints;
   config.max_prefix_captures = 0;
+  EXPECT_EQ(config.required_executor_rows(), 16u);
+  config.max_sessions = 8;
+  EXPECT_EQ(config.required_executor_rows(), 32u);
+  config.prefix_cache_capacity = 8;
   EXPECT_EQ(config.required_executor_rows(), 80u);
   config.prefix_cache_capacity = std::numeric_limits<std::size_t>::max();
   EXPECT_FALSE(config.required_executor_rows());

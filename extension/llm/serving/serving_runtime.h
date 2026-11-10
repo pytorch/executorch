@@ -37,6 +37,7 @@ namespace llm {
 namespace serving {
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
+  static constexpr std::size_t kDefaultSessionCheckpoints = 2;
   std::size_t max_sessions = 1;
   // Decoder-position context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
@@ -56,9 +57,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::int32_t default_max_new_tokens = 256;
   // Retained snapshots: a shared limit normally, or a limit per named session
   // with prefix_checkpoint_prompt_end. Zero disables caching and is invalid
-  // with prompt-end capture. Launchers default to eight in per-session mode.
-  // Explicit close/reset clears per-session snapshots. Provision
-  // required_executor_rows() rows when caching is enabled.
+  // with prompt-end capture. Launchers use kDefaultSessionCheckpoints in
+  // per-session mode. Explicit close/reset clears per-session snapshots.
+  // Provision required_executor_rows() rows when caching is enabled.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero disables periodic capture.

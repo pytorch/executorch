@@ -157,7 +157,7 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
-@pytest.mark.parametrize("capacity", [8, 2])
+@pytest.mark.parametrize("capacity", [None, 8, 2])
 def test_prompt_end_capture_reaches_worker_with_session_capacity(
     argv, launch, capacity
 ):
@@ -166,22 +166,20 @@ def test_prompt_end_capture_reaches_worker_with_session_capacity(
         serve._parse_args(
             argv + ["--prefix-checkpoint-prompt-end"]
         ).prefix_cache_entries
-        == 8
+        == 2
     )
-    serve.main(
-        argv
-        + [
-            "--prefix-checkpoint-prompt-end",
-            "--prefix-cache-entries",
-            str(capacity),
-        ]
-    )
+    options = ["--prefix-checkpoint-prompt-end"]
+    if capacity is not None:
+        options += ["--prefix-cache-entries", str(capacity)]
+    serve.main(argv + options)
     assert (
         "--prefix_checkpoint_prompt_end=true"
         in launch.stages["spawn"].call_args.args[0]
     )
     command = launch.stages["spawn"].call_args.args[0]
-    assert command[command.index("--prefix_cache_entries") + 1] == str(capacity)
+    assert command[command.index("--prefix_cache_entries") + 1] == str(
+        2 if capacity is None else capacity
+    )
 
 
 def test_prompt_end_rejects_periodic_capture(argv, capsys):
@@ -202,7 +200,7 @@ def test_prompt_end_rejects_periodic_capture(argv, capsys):
     [
         ["--prefix-cache-entries", "0"],
         ["--prefix-cache-entries", "-1"],
-        ["--max-sessions", str(1 << 28)],
+        ["--max-sessions", str(1 << 30)],
         ["--prefix-cache-entries", str((1 << 31) - 1)],
     ],
 )

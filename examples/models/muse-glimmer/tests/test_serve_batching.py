@@ -60,11 +60,11 @@ def test_prefix_capture_override_reaches_worker(arguments, captures):
 def test_prompt_end_capture_defaults_on_and_reaches_worker(arguments, options):
     enabled = serve_batching._parse_args(arguments + options)
     assert enabled.prefix_checkpoint_prompt_end
-    assert enabled.prefix_cache_entries == 8
+    assert enabled.prefix_cache_entries == 2
     assert "--prefix_checkpoint_prompt_end=true" in serve_batching._worker_command(
         enabled
     )
-    assert "--prefix_cache_entries=8" in serve_batching._worker_command(enabled)
+    assert "--prefix_cache_entries=2" in serve_batching._worker_command(enabled)
 
 
 @pytest.mark.parametrize("capacity", [None, 0, 3])
@@ -91,8 +91,8 @@ def test_prompt_end_capture_rejects_invalid_combinations(arguments, capsys):
 
 
 def test_session_checkpoint_capacity_override_and_row_overflow(arguments):
-    args = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "2"])
-    assert "--prefix_cache_entries=2" in serve_batching._worker_command(args)
+    args = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "8"])
+    assert "--prefix_cache_entries=8" in serve_batching._worker_command(args)
     for capacity in (0, -1, (1 << 31) - 1):
         with pytest.raises(SystemExit):
             serve_batching._parse_args(
