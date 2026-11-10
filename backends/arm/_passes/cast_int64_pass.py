@@ -5,7 +5,7 @@
 
 
 import logging
-from typing import Set, Type
+from typing import Any, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
@@ -159,7 +159,7 @@ class CastInt64BuffersToInt32Pass(ArmPass):
     def _compares_in_int64(cls, user: torch.fx.Node) -> bool:
         if user.target not in cls._comparison_ops:
             return False
-        operands = [
+        operands: list[Any] = [
             arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
             for arg in user.args[:2]
         ]

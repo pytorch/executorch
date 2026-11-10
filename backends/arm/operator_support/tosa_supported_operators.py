@@ -12,7 +12,7 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 import math
 import operator
 import typing
-from typing import final, Optional, Sequence, Type
+from typing import Any, final, Optional, Sequence, Type
 
 # Register Arm-specific torch.library ops and MXFP transforms at package
 # import time.
@@ -1255,7 +1255,7 @@ def _int64_operands_agree(node: fx.Node) -> bool:
         return True
     output_dtype = node.meta["val"].dtype
     if output_dtype == torch.bool:
-        operands = [
+        operands: list[Any] = [
             arg.meta["val"] if isinstance(arg, fx.Node) else arg
             for arg in node.args[:2]
         ]
