@@ -1236,6 +1236,43 @@ Error scatter(
   }
 }
 
+// The shape a and b broadcast to, as in ATen.
+Error broadcast_sizes(
+    const Tensor& a,
+    const Tensor& b,
+    std::vector<int64_t>* sizes) {
+  const size_t ndim = std::max(a.dim(), b.dim());
+  sizes->assign(ndim, 1);
+  for (size_t i = 0; i < ndim; ++i) {
+    const int64_t size_a =
+        i < ndim - a.dim() ? 1 : a.size(i - (ndim - a.dim()));
+    const int64_t size_b =
+        i < ndim - b.dim() ? 1 : b.size(i - (ndim - b.dim()));
+    ET_CHECK_OR_RETURN_ERROR(
+        size_a == size_b || size_a == 1 || size_b == 1,
+        InvalidArgument,
+        "masked_select: self and mask cannot be broadcast together");
+    (*sizes)[i] = size_a == 1 ? size_b : size_a;
+  }
+  return Error::Ok;
+}
+
+// A view of tensor broadcast to sizes, with stride 0 along the dims it
+// expands.
+Tensor expanded(const Tensor& tensor, const std::vector<int64_t>& sizes) {
+  const size_t lead = sizes.size() - tensor.dim();
+  std::vector<int64_t> strides(sizes.size(), 0);
+  for (size_t d = 0; d < tensor.dim(); ++d) {
+    if (tensor.size(d) != 1) {
+      strides[lead + d] = tensor.stride(d);
+    }
+  }
+  return tensor.as_strided(
+      executorch::backends::aoti::slim::makeArrayRef(sizes),
+      executorch::backends::aoti::slim::makeArrayRef(strides),
+      tensor.storage_offset());
+}
+
 } // namespace
 
 #ifdef __cplusplus
@@ -1510,6 +1547,30 @@ AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
       src,
       reduction,
       include_self != 0);
+}
+
+AOTITorchError
+aoti_torch_cuda_masked_select(Tensor* self, Tensor* mask, Tensor** ret0) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr && mask != nullptr && ret0 != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_masked_select: null argument");
+  ET_CHECK_OR_RETURN_ERROR(
+      mask->dtype() == ScalarType::Bool || mask->dtype() == ScalarType::Byte,
+      InvalidArgument,
+      "aoti_torch_cuda_masked_select: mask must be bool or uint8");
+  std::vector<int64_t> sizes;
+  ET_CHECK_OK_OR_RETURN_ERROR(broadcast_sizes(*self, *mask, &sizes));
+  // A 0-dim mask would cover no dims of the indexed tensor, so index a 1-D
+  // view of everything instead.
+  if (sizes.empty()) {
+    sizes = {1};
+  }
+  Tensor self_view = expanded(*self, sizes);
+  Tensor mask_view = expanded(*mask, sizes);
+  Tensor* mask_index = &mask_view;
+  Tensor* const* indices[] = {&mask_index};
+  return aoti_torch_cuda_index_Tensor(&self_view, indices, 1, ret0);
 }
 
 #ifdef __cplusplus

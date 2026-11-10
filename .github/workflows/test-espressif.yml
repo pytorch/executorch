@@ -54,7 +54,7 @@ jobs:
         ESPRESSIF_NN_KERNELS="${{ matrix.kernels }}" bash .ci/scripts/test_espressif.sh
 
   test-idf-component:
-    name: ESP-IDF component (ESP32-S3)
+    name: ESP-IDF component
     needs: docker-image
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:

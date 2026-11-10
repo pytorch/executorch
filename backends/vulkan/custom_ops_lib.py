@@ -110,6 +110,64 @@ lib.define(
 )
 lib.impl(name, conv_with_clamp_out_impl, "CompositeExplicitAutograd")
 
+##########################
+## conv2d.with_epilogue ##
+##########################
+
+
+def conv2d_with_epilogue_impl(
+    input,
+    weight,
+    bias,
+    stride,
+    padding,
+    dilation,
+    transposed,
+    output_padding,
+    groups,
+    residual=None,
+    residual_scale=None,
+    residual_op="add",
+    alpha=1,
+    activation="none",
+    activation_a=0.0,
+    activation_b=0.0,
+):
+    out = torch.convolution(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+    )
+    if residual is not None:
+        if residual_scale is not None:
+            residual = residual * residual_scale
+        if residual_op == "add":
+            out = torch.add(out, residual, alpha=alpha)
+        elif residual_op == "sub":
+            out = torch.sub(out, residual, alpha=alpha)
+        else:
+            out = out * residual
+    if activation == "relu":
+        out = torch.relu(out)
+    elif activation == "clamp":
+        out = torch.clamp(out, activation_a, activation_b)
+    elif activation == "leaky_relu":
+        out = torch.nn.functional.leaky_relu(out, activation_a)
+    return out
+
+
+name = "conv2d.with_epilogue"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor? residual, Tensor? residual_scale, str residual_op, Scalar alpha, str activation, float activation_a, float activation_b) -> Tensor"
+)
+lib.impl(name, conv2d_with_epilogue_impl, "CompositeExplicitAutograd")
+
 #################
 ## grid_priors ##
 #################
