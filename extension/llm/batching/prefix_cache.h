@@ -362,6 +362,8 @@ class ET_EXPERIMENTAL PrefixCache {
 
   // Select candidates before cloning, without refreshing recency. Call
   // touch() after adopting the match. The selector must not mutate this cache.
+  // Matched lengths are capped at request.size() - 1 and must lie in
+  // (longer_than, at_most]: the lower bound is exclusive, the upper inclusive.
   // Candidates arrive in descending length order, with repeated lengths
   // allowed. Use attempts a clone and continues if refused; Skip tries the next
   // candidate without cloning. Stop returns stopped=true, distinct from an

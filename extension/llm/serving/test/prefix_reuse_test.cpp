@@ -1569,6 +1569,51 @@ TEST_F(PrefixReuseTest, ContinuationDoesNotCloneAlreadyRejectedBoundary) {
   EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{100, 4}));
 }
 
+TEST_F(
+    PrefixReuseTest,
+    RejectedContinuationBoundarySurvivesLongerCandidateCheck) {
+  config.prefix_cache_capacity = 3;
+  executor.accept_prepared = true;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation)};
+  };
+  start();
+  auto seed = submit(output(), {1, 2, 3}, "s");
+  seed.wait();
+  ASSERT_FALSE(seed.error());
+  // Pending token 100 extends logical history to 4; live state ends at 3.
+  auto shorter_seed = submit(output(), {1, 2, 3, 100}, "shorter");
+  shorter_seed.wait();
+  ASSERT_FALSE(shorter_seed.error());
+  ASSERT_FALSE(executor.clones().empty());
+  const auto shorter = executor.clones().back().destination;
+  auto longer_seed = submit(output(), {1, 2, 3, 100, 4}, "longer");
+  longer_seed.wait();
+  ASSERT_FALSE(longer_seed.error());
+  const auto longer = executor.clones().back().destination;
+  ASSERT_NE(shorter, longer);
+  executor.rejected_view_start = 4;
+  executor.rejected_clone_source = longer;
+  const auto checked4 = executor.acceptance_calls[4];
+  const auto checked5 = executor.acceptance_calls[5];
+  const auto longer_attempted = executor.clone_attempts(longer);
+  const auto shorter_attempted = executor.clone_attempts(shorter);
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 100, 4, 9}, "s");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(executor.acceptance_calls[4], checked4 + 1);
+  EXPECT_EQ(executor.acceptance_calls[5], checked5 + 1);
+  EXPECT_EQ(executor.clone_attempts(longer), longer_attempted + 1);
+  EXPECT_EQ(executor.clone_attempts(shorter), shorter_attempted);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.feeds().back().position, 3);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{100, 4, 9}));
+}
+
 TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
   use_mixed_preparer();
   start();
@@ -2856,7 +2901,7 @@ TEST_P(
                         : runtime->close_session_async("s");
   auto reopened = runtime->open_session_async("s");
   auto replacement_events = output();
-  // This matches the old snapshot, but explicit open/reset must remain cold.
+  // The shared snapshot survives open/reset and matches this new full prompt.
   const auto replacement = submit(replacement_events, {1, 2, 3, 7, 8});
   auto control = runtime->open_session_async("other");
   ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
@@ -3136,7 +3181,6 @@ TEST_P(
   second.wait();
   ASSERT_FALSE(second.error());
   const auto shorter = executor.clones().back().destination;
-  executor.rejected_clone_source = longer;
   if (GetParam()) {
     executor.throwing_view_start = 5;
   } else {
@@ -3145,6 +3189,7 @@ TEST_P(
   const auto checked4 = executor.acceptance_calls[4];
   const auto checked5 = executor.acceptance_calls[5];
   const auto attempted = executor.clone_attempts(longer);
+  const auto shorter_attempted = executor.clone_attempts(shorter);
   auto event = output();
   auto handle = submit(event, {1, 7, 7, 7, 2, 9}, "new");
   handle.wait();
@@ -3156,12 +3201,11 @@ TEST_P(
   EXPECT_EQ(executor.acceptance_calls[4], checked4 + 2);
   EXPECT_EQ(executor.acceptance_calls[5], checked5 + 1);
   EXPECT_EQ(executor.clone_attempts(longer), attempted);
-  // The new session may capture its own prompt after adopting the shorter one.
-  EXPECT_GE(executor.clone_attempts(shorter), 1);
+  EXPECT_EQ(executor.clone_attempts(shorter), shorter_attempted + 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    CloneRefusal,
+    SuffixRejection,
     SnapshotSuffixFailureTest,
     ::testing::Values(
         false
