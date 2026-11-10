@@ -95,3 +95,35 @@ class TestConvertToLinear(unittest.TestCase):
             )
             .run_method_and_compare_outputs(inputs=(x,))
         )
+
+    def test_fp32_addmm_with_alpha_or_beta(self):
+        class TransposedWeightAddmm(torch.nn.Module):
+            def __init__(self, alpha, beta):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 8))
+                self.bias = torch.nn.Parameter(torch.randn(4))
+                self.alpha, self.beta = alpha, beta
+
+            def forward(self, x):
+                return torch.addmm(
+                    self.bias, x, self.weight.t(), alpha=self.alpha, beta=self.beta
+                )
+
+        # linear has no alpha or beta, so only the default addmm may become one.
+        for alpha, beta, op in [
+            (1, 1, "linear"),
+            (2, 1, "addmm"),
+            (1, 3, "addmm"),
+            (1, 0, "addmm"),
+        ]:
+            with self.subTest(alpha=alpha, beta=beta):
+                (
+                    Tester(TransposedWeightAddmm(alpha, beta), (torch.randn(2, 8),))
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    .check_count(
+                        {f"executorch_exir_dialects_edge__ops_aten_{op}_default": 1}
+                    )
+                    .run_method_and_compare_outputs()
+                )

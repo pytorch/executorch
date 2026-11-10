@@ -790,6 +790,30 @@ class TestLinear(unittest.TestCase):
             uses_bias=True,
         )
 
+    def test_fp32_addmm_with_alpha_or_beta(self):
+        class ScaledAddMMModule(AddMMModule):
+            def __init__(self, alpha, beta):
+                super().__init__(8, 4)
+                self.alpha, self.beta = alpha, beta
+
+            def forward(self, x):
+                return torch.addmm(
+                    self.bias, x, self.mat, alpha=self.alpha, beta=self.beta
+                )
+
+        # XNNPACK has no alpha or beta, so each of these addmm stays on portable.
+        for alpha, beta in [(2, 1), (1, 3), (1, 0)]:
+            with self.subTest(alpha=alpha, beta=beta):
+                (
+                    Tester(ScaledAddMMModule(alpha, beta).eval(), (torch.randn(2, 8),))
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check(["executorch_exir_dialects_edge__ops_aten_addmm_default"])
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs()
+                )
+
     def test_fp32_linear_view_weight(self):
         class ViewWeightLinear(torch.nn.Module):
             def __init__(self):
