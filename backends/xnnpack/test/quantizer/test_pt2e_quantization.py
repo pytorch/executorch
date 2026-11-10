@@ -47,6 +47,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 )
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 from torchao.quantization.pt2e.quantizer.embedding_quantizer import EmbeddingQuantizer
+from torchao.quantization.utils import compute_error
 from torchao.testing.pt2e.utils import (
     PT2ENumericDebuggerTestCase,
     PT2EQuantizationTestCase,
@@ -718,6 +719,30 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             loaded_quantized_model = loaded_ep.module()
             res = loaded_quantized_model(*example_inputs)
             self.assertEqual(ref_res, res)
+
+    def test_buffer_filled_in_place_through_view(self):
+        # torchvision's batch_images fills new_full with copy_. Observing the
+        # buffer before that write made the quantized model ignore its input.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                buf = x.new_zeros(1, 3, 8, 8)
+                buf.select(0, 0).copy_(x)
+                return self.conv(buf)
+
+        torch.manual_seed(0)
+        eager = M().eval()
+        x = torch.randn(3, 8, 8)
+        m = export(eager, (x,), strict=True).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+        m = prepare_pt2e(m, quantizer)
+        for _ in range(4):
+            m(torch.randn(3, 8, 8))
+        m = convert_pt2e(m)
+        self.assertGreater(compute_error(eager(x), m(x)).item(), 20)
 
 
 instantiate_parametrized_tests(TestQuantizePT2E)
