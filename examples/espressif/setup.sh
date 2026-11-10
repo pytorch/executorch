@@ -10,18 +10,21 @@ set -euo pipefail
 install_idf=true
 install_emulator=true
 minimal=false
+targets=esp32s3
 for arg in "$@"; do
     case "${arg}" in
         --minimal) minimal=true ;;
+        --targets=*) targets="${arg#--targets=}" ;;
         --skip-idf) install_idf=false ;;
         --skip-emulator) install_emulator=false ;;
         --help|-h)
             cat <<EOF
-Usage: $0 [--minimal] [--skip-idf] [--skip-emulator]
+Usage: $0 [--minimal] [--targets=<chip>[,<chip>...]] [--skip-idf] [--skip-emulator]
 
-Install ESP-IDF and esp-emulator for ESP32-S3 development.
-By default, install ESP-IDF's standard ESP32-S3 development tools.
---minimal installs only the Xtensa compiler, SDK Python packages, and emulator.
+Install ESP-IDF and esp-emulator for ESP32 development.
+By default, install ESP-IDF's standard development tools for --targets
+(default: esp32s3).
+--minimal installs only the targets' compilers, SDK Python packages, and emulator.
 ESP-IDF Python dependencies are installed in the active venv or conda environment.
 ESPRESSIF_TOOLS_DIR selects the install directory (default: ~/.cache/executorch-espressif).
 IDF_PATH and IDF_TOOLS_PATH can select an existing checkout of the pinned SDK and tool directory.
@@ -67,9 +70,17 @@ PY
     IDF_TOOLS_PATH=$(cd "${IDF_TOOLS_PATH}" && pwd)
     python "${IDF_PATH}/tools/python_version_checker.py"
     if "${minimal}"; then
-        python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3 xtensa-esp-elf
+        compilers=()
+        for target in ${targets//,/ }; do
+            case "${target}" in
+                esp32|esp32s2|esp32s3) compilers+=(xtensa-esp-elf) ;;
+                *) compilers+=(riscv32-esp-elf) ;;
+            esac
+        done
+        python "${IDF_PATH}/tools/idf_tools.py" install --targets "${targets}" \
+            $(printf '%s\n' "${compilers[@]}" | sort -u)
     else
-        python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3
+        python "${IDF_PATH}/tools/idf_tools.py" install --targets "${targets}"
     fi
     python "${IDF_PATH}/tools/idf_tools.py" install-python-env
 fi
@@ -111,10 +122,8 @@ if "${install_idf}" || [[ ! -f "${tools_dir}/setup_path.sh" ]]; then
             if "${minimal}"; then
                 printf 'IDF_SKIP_TOOLS_CHECK=1 '
             fi
-            cat <<'EOF'
-source "${IDF_PATH}/export.sh" || return
-export IDF_TARGET=esp32s3
-EOF
+            echo 'source "${IDF_PATH}/export.sh" || return'
+            printf 'export IDF_TARGET=%q\n' "${targets%%,*}"
         fi
         cat <<'EOF'
 export PATH="${ESPRESSIF_TOOLS_DIR}/bin:${PATH}"

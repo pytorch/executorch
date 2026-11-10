@@ -33,11 +33,13 @@ $if WEIGHT_BUFFER:
 $else:
   ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d", precision="mediump" if DTYPE == "half" else "PRECISION")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
-${layout_declare_ubo(4, "ivec3", "out_limits")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
-${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
-${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
+${layout_declare_tensor(4, "r", "t_residual", DTYPE, "texture3d")}
+${layout_declare_tensor(5, "r", "t_scale", DTYPE, "texture2d")}
+${layout_declare_ubo(6, "ivec3", "out_limits")}
+${layout_declare_ubo(7, "ivec4", "in_sizes")}
+${layout_declare_ubo(8, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+${layout_declare_ubo(9, "ivec2", "overlay_region", "int", "in_group_size")}
+${layout_declare_ubo(10, "float", "activation_a", "float", "activation_b", "float", "residual_alpha")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -60,13 +62,18 @@ $if WEIGHT_BUFFER:
   #define WEIGHT_BUFFER
 $if CONST_TEXTURE_OFFSETS:
   #define CONST_TEXTURE_OFFSETS
-${layout_declare_spec_const(8, "int", "in_group_channels", "1")}
-${layout_declare_spec_const(9, "int", "out_group_channels", "1")}
+${layout_declare_spec_const(7, "int", "in_group_channels", "1")}
+${layout_declare_spec_const(8, "int", "out_group_channels", "1")}
 $if GATHER_GROUPS:
   #define GATHER_GROUPS
-${layout_declare_spec_const(6, "bool", "clamp_out", "false")}
-${layout_declare_spec_const(7, "bool", "has_bias", "false")}
-#define OUTPUT_VALUE(v) (clamp_out ? clamp(vec4(v), out_min, out_max) : vec4(v))
+${layout_declare_spec_const(6, "bool", "has_bias", "false")}
+${layout_declare_spec_const(9, "bool", "has_activation", "false")}
+${layout_declare_spec_const(10, "int", "activation_op", "0")}
+${layout_declare_spec_const(11, "bool", "has_residual", "false")}
+${layout_declare_spec_const(12, "bool", "has_scale", "false")}
+${layout_declare_spec_const(13, "int", "residual_op", "0")}
+
+#include "conv2d_epilogue.glslh"
 
 #ifdef GATHER_GROUPS
 SCALAR_T group_input(ivec2 p, int ci, int co) {
@@ -208,16 +215,22 @@ void accumulate() {
 }
 
 void store_tile(ivec3 pos) {
+  vec4 scale[OUT_N4];
+  [[unroll]] for (int s = 0; s < OUT_N4; ++s) {
+    scale[s] = has_scale ? texelFetch(t_scale, ivec2(pos.z + s, 0), 0) : vec4(1);
+  }
 #if OUT_N4 == 2
   const bool second_slice = pos.z + 1 < out_limits.z;
 #endif
   [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
     const ivec2 offset = ivec2(i % TILE_X, i / TILE_X);
     if (pos.x + offset.x < out_limits.x && pos.y + offset.y < out_limits.y) {
-      imageStore(t_out, pos + ivec3(offset, 0), OUTPUT_VALUE(sums[i][0]));
+      const ivec3 p0 = pos + ivec3(offset, 0);
+      imageStore(t_out, p0, apply_epilogue(vec4(sums[i][0]), p0, scale[0]));
 #if OUT_N4 == 2
       if (second_slice) {
-        imageStore(t_out, pos + ivec3(offset, 1), OUTPUT_VALUE(sums[i][1]));
+        const ivec3 p1 = pos + ivec3(offset, 1);
+        imageStore(t_out, p1, apply_epilogue(vec4(sums[i][1]), p1, scale[1]));
       }
 #endif
     }
