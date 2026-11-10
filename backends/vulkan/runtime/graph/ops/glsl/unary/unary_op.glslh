@@ -7,9 +7,9 @@
  */
 
 /*
- * Element-wise unary ops, selected by the op_type specialization constant.
+ * Element-wise unary ops, selected by an op type argument.
  *
- * The including shader declares op_type and defines:
+ * The including shader defines:
  * - IN_T and OUT_T: operand and result types
  * - PARAM_T: type of the op parameters A and B (clamp bounds, hardshrink
  *   thresholds, leaky_relu slope)
@@ -21,7 +21,7 @@
 #ifndef UNARY_OP_GLSLH
 #define UNARY_OP_GLSLH
 
-// Values of op_type. Must match UnaryOpType in UnaryOp.cpp.
+// Values of op_type. Must match UnaryOpType in UnaryOp.h.
 #define UNARY_OP_CLAMP 0
 #define UNARY_OP_ABS 1
 #define UNARY_OP_COS 2
@@ -101,20 +101,38 @@ vec4 hardsigmoid(vec4 tex) {
       hardsigmoid(tex.w));
 }
 
-float leaky_relu(float x, float negative_slope) {
-  return x * (float(x > 0.0) + negative_slope * float(x <= 0.0));
-}
-
 vec4 leaky_relu(vec4 tex, float negative_slope) {
-  return vec4(
-      leaky_relu(tex.x, negative_slope),
-      leaky_relu(tex.y, negative_slope),
-      leaky_relu(tex.z, negative_slope),
-      leaky_relu(tex.w, negative_slope));
+  return mix(tex * negative_slope, tex, greaterThan(tex, vec4(0)));
 }
 #endif
 
-OUT_T apply_unary_op(const IN_T X, const PARAM_T A, const PARAM_T B) {
+// Whether the op maps zero to zero for any parameters, so that zero padding
+// lanes stay zero without masking.
+bool unary_op_preserves_zero(const int op_type) {
+  switch (op_type) {
+    case UNARY_OP_ABS:
+    case UNARY_OP_GELU:
+    case UNARY_OP_GELU_ERF:
+    case UNARY_OP_NEG:
+    case UNARY_OP_SIN:
+    case UNARY_OP_SQRT:
+    case UNARY_OP_TANH:
+    case UNARY_OP_HARDSHRINK:
+    case UNARY_OP_HARDSWISH:
+    case UNARY_OP_ROUND:
+    case UNARY_OP_TAN:
+    case UNARY_OP_RELU:
+      return true;
+    default:
+      return false;
+  }
+}
+
+OUT_T apply_unary_op(
+    const int op_type,
+    const IN_T X,
+    const PARAM_T A,
+    const PARAM_T B) {
   switch (op_type) {
 #if defined(UNARY_OP_IS_BITWISE)
     default: // UNARY_OP_BITWISE_NOT

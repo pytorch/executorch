@@ -137,7 +137,7 @@ void main() {
     vec4 in_texel_b = unpack_and_dequantize(
         in_block_b[row], input_b_scale, input_b_zp);
 
-    vec4 out_texel = apply_binary_op(in_texel_a, in_texel_b, alpha);
+    vec4 out_texel = apply_binary_op(op_type, in_texel_a, in_texel_b, alpha);
     out_block[row] = quantize_and_pack(out_texel, output_inv_scale, output_zp);
   }
 

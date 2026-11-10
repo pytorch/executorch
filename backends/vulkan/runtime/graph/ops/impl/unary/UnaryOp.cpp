@@ -33,6 +33,22 @@ void resize_unary_op_node(
   graph->virtual_resize(out, self_sizes);
 }
 
+void check_unary_op_inputs(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.storage_type_of(in) == graph.storage_type_of(out));
+  VK_CHECK_COND(graph.dtype_of(in) == graph.dtype_of(out));
+  // The shader reads and writes the same texel index.
+  if (graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.hashed_layout_of(in) == graph.hashed_layout_of(out));
+    return;
+  }
+  VK_CHECK_COND(graph.has_standard_axis_map(in));
+  VK_CHECK_COND(graph.has_standard_axis_map(out));
+  VK_CHECK_COND(graph.packed_dim_of(in) == graph.packed_dim_of(out));
+}
+
 void add_unary_op_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -40,29 +56,29 @@ void add_unary_op_node(
     const float max,
     const ValueRef out,
     const UnaryOpType op_type) {
+  check_unary_op_inputs(graph, in, out);
   std::string kernel_name("unary_op");
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
   const utils::vec2 min_max = {min, max};
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
+      default_pick_vec4_gwg,
       default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {},
+      param_ubos,
       // Push Constants
       {
-          graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
-                                       : graph.logical_limits_pc_of(out),
           PushConstantDataInfo(&min_max, sizeof(min_max)),
       },
       // Specialization Constants
-      {static_cast<int32_t>(op_type)},
+      {static_cast<int32_t>(op_type), graph.hashed_layout_of(out)},
       // Resize Args
       {},
       // Resizing Logic
@@ -75,6 +91,7 @@ void add_dynamic_clamp_node(
     const ValueRef min,
     const ValueRef max,
     const ValueRef out) {
+  check_unary_op_inputs(graph, in, out);
   std::string kernel_name("unary_op_dynamic");
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -95,17 +112,19 @@ void add_dynamic_clamp_node(
       : graph.create_params_buffer(graph.extract_scalar_or<float>(
             max, std::numeric_limits<float>::infinity()));
 
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
+  param_ubos.append(min_param);
+  param_ubos.append(max_param);
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
+      default_pick_vec4_gwg,
       default_pick_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-      {min_param, max_param},
-      {graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
-                                    : graph.logical_limits_pc_of(out),
-       PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
-      {static_cast<int32_t>(UnaryOpType::kClamp)},
+      param_ubos,
+      {PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
+      {static_cast<int32_t>(UnaryOpType::kClamp), graph.hashed_layout_of(out)},
       {},
       resize_unary_op_node));
 }

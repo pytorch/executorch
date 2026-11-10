@@ -59,11 +59,19 @@ class SharedBuffer final {
   // memory handle is registered during execution
   void AddCusomMemTensorAddr(void* tensor_addr, void* custom_mem);
 
-  size_t GetAllocatedSize(void* buf);
+  struct AllocationInfo {
+    size_t allocated_size{0};
+    int32_t fd{-1};
+  };
+  // Reads the size and file descriptor of an allocation under one lock, so a
+  // concurrent FreeMem cannot leave them describing different states. Returns
+  // {0, -1} if buf is not allocated.
+  AllocationInfo GetAllocationInfo(void* buf);
 
   void* GetCustomMemBase(void* buf);
 
  private:
+  friend class SharedBufferTest;
   SharedBuffer() = default;
 
   // dlopen RPCMem library and dlysm required functions
@@ -88,6 +96,7 @@ class SharedBuffer final {
   // remain linked to this custom memory.
   std::unordered_map<void*, std::unordered_set<void*>>
       custom_mem_to_tensor_addr_;
+  std::mutex memory_mutex_;
   std::atomic_bool initialize_{false};
   static std::mutex init_mutex_;
 };
