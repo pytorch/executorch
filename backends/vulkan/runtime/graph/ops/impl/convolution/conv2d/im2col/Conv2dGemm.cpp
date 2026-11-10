@@ -276,8 +276,10 @@ void add_conv2d_gemm_node(
   // from the refreshed out_sizes UBO (a baked plain-data push constant cannot
   // be updated on resize, but oh_offset / oh_tile never change with shape).
   const utils::ivec4 gemm_dims{K4_total, oh_offset, oh_tile, 0};
-  const Conv2dEpilogueParams epilogue_params =
-      create_conv2d_epilogue_params(epilogue);
+  const Conv2dEpilogueParams epilogue_params = create_conv2d_epilogue_params(
+      epilogue,
+      graph.dtype_of(out) == vkapi::kHalf &&
+          graph.is_buffer_storage(im2col_in));
   vkapi::SpecVarList spec_vars;
   append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 

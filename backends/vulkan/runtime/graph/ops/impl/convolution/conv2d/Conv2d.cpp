@@ -53,9 +53,19 @@ void check_conv2d_residual_on_resize(
 }
 
 Conv2dEpilogueParams create_conv2d_epilogue_params(
-    const Conv2dEpilogue& epilogue) {
+    const Conv2dEpilogue& epilogue,
+    const bool f16_epilogue) {
+  if (!f16_epilogue) {
+    return {
+        epilogue.activation_a, epilogue.activation_b, epilogue.residual_alpha};
+  }
+  const auto round_to_half = [](const float f) {
+    return api::half_to_float(api::float_to_half(f));
+  };
   return {
-      epilogue.activation_a, epilogue.activation_b, epilogue.residual_alpha};
+      round_to_half(epilogue.activation_a),
+      round_to_half(epilogue.activation_b),
+      round_to_half(epilogue.residual_alpha)};
 }
 
 void append_conv2d_epilogue_spec_vars(
