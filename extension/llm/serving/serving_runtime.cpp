@@ -838,7 +838,6 @@ struct ServingRuntime::Impl {
     std::optional<batching::Session> cloned;
     std::optional<batching::PrefixMatch> match;
     batching::GenerationInput delta;
-    auto fallback_limit = upto ? upto : std::numeric_limits<std::size_t>::max();
     if (upto) {
       auto found = lookup_prefix(
           request, upto, std::numeric_limits<std::size_t>::max(), &checked);
@@ -876,15 +875,17 @@ struct ServingRuntime::Impl {
           // Try a retained snapshot if the live source cannot be cloned.
         }
 #endif
-      } else {
-        fallback_limit = upto - 1;
       }
     }
     if (!cloned) {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto found = lookup_prefix(request, 0, fallback_limit, &checked);
+      auto found = lookup_prefix(
+          request,
+          0,
+          upto ? upto : std::numeric_limits<std::size_t>::max(),
+          &checked);
       if (auto* error = std::get_if<ServingError>(&found)) {
         return std::move(*error);
       }
@@ -1102,11 +1103,18 @@ struct ServingRuntime::Impl {
     }
     CheckedSuffix local;
     auto& checked = previous ? *previous : local;
+    const auto* prior = std::get_if<Selection>(&checked.result);
+    const auto rejected_length = prior && *prior == Selection::Unavailable
+        ? checked.start
+        : std::nullopt;
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
       auto found = prefix_cache_.find_identity(
-          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
+          *request->text->prompt,
+          longer_than,
+          at_most,
+          [&](std::size_t start) {
             using Decision = batching::PrefixCache::MatchDecision;
             auto selected = select_reuse_input(request, start, checked);
             if (const auto* outcome = std::get_if<Selection>(&selected)) {
@@ -1118,7 +1126,8 @@ struct ServingRuntime::Impl {
               }
             }
             return Decision::Stop;
-          });
+          },
+          rejected_length);
       if (found.stopped) {
         if (auto* error = std::get_if<ServingError>(&checked.result)) {
           return std::move(*error);

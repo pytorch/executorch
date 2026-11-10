@@ -365,13 +365,15 @@ class ET_EXPERIMENTAL PrefixCache {
   // Candidates arrive in descending length order, with repeated lengths
   // allowed. Refused clones bypass the selector. Use returns the cloned match;
   // Skip releases it and rejects all candidates of that length. Stop
-  // returns stopped=true, distinct from an exhausted search. Allocation failure
+  // returns stopped=true, distinct from an exhausted search. A known rejected
+  // length also bypasses cloning. Allocation failure
   // ends the search as a miss; other exceptions propagate.
   FindResult find_identity(
       const PrefixIdentity& request,
       std::size_t longer_than = 0,
       std::size_t at_most = std::numeric_limits<std::size_t>::max(),
-      const std::function<MatchDecision(std::size_t)>& select = {}) {
+      const std::function<MatchDecision(std::size_t)>& select = {},
+      std::optional<std::size_t> rejected_length = std::nullopt) {
     if (request.size() < 2 || entries_.empty()) {
       return {};
     }
@@ -402,7 +404,8 @@ class ET_EXPERIMENTAL PrefixCache {
           });
       std::optional<std::size_t> skipped_length;
       for (const auto& candidate : candidates) {
-        if (skipped_length == candidate.matched) {
+        if (skipped_length == candidate.matched ||
+            rejected_length == candidate.matched) {
           continue;
         }
         auto session =

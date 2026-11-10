@@ -1021,6 +1021,32 @@ TEST_F(PrefixCacheTest, RejectedLengthSkipsTiedCandidatesWithoutCloning) {
   expect_cold_match(*result.match, {1, 2, 3, 4, 9});
 }
 
+TEST_F(PrefixCacheTest, KnownRejectedLengthPreservesOtherCandidates) {
+  PrefixCache cache(3);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4}, snapshot({1, 2, 3, 4})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4, 5}, snapshot({1, 2, 3, 4, 5})));
+  const auto request =
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4, 5, 6}));
+  const auto before = executor.clones().size();
+  std::vector<std::size_t> checked;
+  auto result = cache.find_identity(
+      request,
+      0,
+      5,
+      [&](std::size_t size) {
+        checked.push_back(size);
+        return size == 5 ? PrefixCache::MatchDecision::Skip
+                         : PrefixCache::MatchDecision::Use;
+      },
+      4);
+  ASSERT_TRUE(result.match);
+  EXPECT_EQ(result.match->matched_tokens, 3u);
+  EXPECT_EQ(checked, (std::vector<std::size_t>{5, 3}));
+  EXPECT_EQ(executor.clones().size(), before + 2);
+  expect_cold_match(*result.match, {1, 2, 3, 4, 5, 6});
+}
+
 TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));

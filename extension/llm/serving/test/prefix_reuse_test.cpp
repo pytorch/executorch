@@ -1542,6 +1542,31 @@ TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
   EXPECT_EQ(executor.clone_calls.load(), clones + 2);
 }
 
+TEST_F(PrefixReuseTest, ContinuationDoesNotCloneAlreadyRejectedBoundary) {
+  executor.accept_prepared = true;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation)};
+  };
+  start();
+  submit(output(), {1, 2, 3}, "s").wait();
+  submit(output(), {1, 2, 3, 100}, "other").wait();
+  const auto snapshot = executor.clones().back().destination;
+  executor.rejected_view_start = 4;
+  const auto attempts = executor.clone_attempts(snapshot);
+  const auto checked = executor.acceptance_calls[4];
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 100, 4}, "s");
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_attempts(snapshot), attempts);
+  EXPECT_EQ(executor.acceptance_calls[4], checked + 1);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{100, 4}));
+}
+
 TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
   use_mixed_preparer();
   start();
