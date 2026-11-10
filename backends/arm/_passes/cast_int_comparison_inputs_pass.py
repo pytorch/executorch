@@ -63,6 +63,12 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
         arg_dtypes = [arg.dtype for arg in arg_data]
         result_dtype = torch.result_type(arg_data[0], arg_data[1])
         int_dtypes = {torch.bool, torch.uint8, torch.int8, torch.int16, torch.int32}
+        if (
+            tosa_spec.support_extension("int64")
+            and torch.int64 in arg_dtypes
+            and result_dtype in int_dtypes
+        ):
+            result_dtype = torch.int64
 
         if tosa_spec.support_integer() and result_dtype in int_dtypes:
             cast_dtype = torch.int32

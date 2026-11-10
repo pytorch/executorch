@@ -178,6 +178,17 @@ int64_extension_partition_suite = {
         (torch.arange(6, dtype=torch.int32).reshape(2, 3),),
         1,
     ),
+    "gt_scalar_buffer_narrowed_buffer": (
+        Int64Buffer(
+            lambda wide, small, x: x
+            + (wide > small).to(torch.int32)
+            + small.to(torch.int32),
+            torch.tensor(2**40),
+            torch.tensor([1]),
+        ),
+        (torch.tensor([0], dtype=torch.int32),),
+        1,
+    ),
     "where_buffer_gt_scalar": (
         Int64Buffer(lambda wide, x, y: torch.where(wide > 7, x, y)),
         (_WIDE, _WIDE_2),
