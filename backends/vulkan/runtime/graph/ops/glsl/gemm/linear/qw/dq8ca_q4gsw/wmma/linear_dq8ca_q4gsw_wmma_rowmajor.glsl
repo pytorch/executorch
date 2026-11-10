@@ -10,9 +10,9 @@
  * 8da4w int8 cooperative-matrix linear that reads row-major int8 activations
  * (utils::kPackedInt8_4W, written by quantize_and_pack_4w_with_group_sums),
  * used by the architecture-family path
- * (impl/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswLinearWmma.cpp). The 4h4w layout
- * is not row-major, so no coopMatLoad can address it; this kernel needs the
- * row-major packer. Template header only; the body is
+ * (impl/gemm/linear/qw/dq8ca_q4gsw/wmma/Dq8caQ4gswLinearWmma.cpp). The 4h4w
+ * layout is not row-major, so no coopMatLoad can address it; this kernel
+ * needs the row-major packer. Template header only; the body is
  * linear_dq8ca_q4gsw_wmma_rowmajor_body.glslh, which:
  *   - stages A as raw 16-byte vectors (uvec4 global load -> uvec4 shared
  *     store) instead of coopMatLoad(global) -> coopMatStore(shared); needs

@@ -12,7 +12,7 @@
 // (CoopmatFamily.h), shared by the q4gsw and dq8ca_q4gsw node builders.
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/CoopmatFamily.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/CoopmatFamily.h>
 
 namespace vkcompute {
 

@@ -10,10 +10,10 @@
  * 8da4w (dynamically quantized int8 activations, 4-bit group-symmetric
  * weights) int8 cooperative-matrix linear for subgroup-16 devices with an
  * 8x16x32 int8 MMA, used by the architecture-family path
- * (impl/gemm/linear/qw/dq8ca_q4gsw/Dq8caQ4gswLinearWmma.cpp). Reads the 4h4w
- * int8 activations of quantize_and_pack_4h4w_with_group_sums. Texel-wise B
- * staging, multi-block A staging and an optional workgroup order
- * (ORDER_NB_MAX). Template header only; the body is
+ * (impl/gemm/linear/qw/dq8ca_q4gsw/wmma/Dq8caQ4gswLinearWmma.cpp). Reads
+ * the 4h4w int8 activations of quantize_and_pack_4h4w_with_group_sums.
+ * Texel-wise B staging, multi-block A staging and an optional workgroup
+ * order (ORDER_NB_MAX). Template header only; the body is
  * linear_dq8ca_q4gsw_wmma_body.glslh.
  *
  * Preconditions (not checked in the shader), enforced by the selection in

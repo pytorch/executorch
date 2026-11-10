@@ -13,7 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/q4gsw/Q4gswLinearWmma.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/q4gsw/wmma/Q4gswLinearWmma.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
