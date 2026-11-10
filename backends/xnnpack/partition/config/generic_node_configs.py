@@ -307,17 +307,19 @@ class CatConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support concatenation of 2 - 5 tensors
+        Only support concatenation of 2 or more tensors. Concatenations of more
+        than 5 tensors are split by DecomposeConcatenate during preprocessing.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        num_tensors = len(node.all_input_nodes)
+        # all_input_nodes deduplicates, so cat([x, x]) has one input node.
+        num_tensors = len(node.args[0])
 
-        if not (num_tensors >= 2):
+        if num_tensors < 2:
             why(
                 node,
-                reason=f"only support concatenation of > 2 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of at least 2 tensors, got {num_tensors}",
             )
             return False
 
@@ -406,7 +408,6 @@ class EluConfig(GenericNodePartitionerConfig):
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -714,42 +715,23 @@ class MeanDimConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Mean Dim currently only supports averaging 4D tensors across the innermost
-        dimensions
+        Mean Dim lowers to Global Average Pooling when it averages a 4D tensor
+        across the innermost dimensions with keepdim=True, and to a static mean
+        reduction otherwise.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        input_rank = get_input_node(node, 0).meta["val"].dim()
-        if input_rank != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
-            )
-            return False
-
-        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
-        # cannot encode an explicit dtype override.
+        # Neither lowering can encode an explicit dtype override.
         if node.kwargs.get("dtype") is not None:
             why(node, reason="mean.dim does not support dtype")
             return False
 
-        keepdim = len(node.args) >= 3 and bool(node.args[2])
+        input_node = get_input_node(node, 0)
         try:
-            dims = normalize_mean_dims(node.args[1], input_rank)
+            normalize_mean_dims(node.args[1], input_node.meta["val"].dim())
         except ValueError as error:
             why(node, reason=f"mean.dim has invalid dims: {error}")
-            return False
-
-        if sorted(dims) != [2, 3]:
-            why(
-                node,
-                reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
-            )
-            return False
-
-        if not keepdim:
-            why(node, reason="mean.dim only supports keepdim=True")
             return False
 
         return True

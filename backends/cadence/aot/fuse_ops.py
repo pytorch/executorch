@@ -13,7 +13,7 @@ import logging
 import math
 import operator
 from numbers import Number
-from typing import Any, cast, Optional, override
+from typing import Any, cast, Optional
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
@@ -48,6 +48,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
+
+from typing_extensions import override
 
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:

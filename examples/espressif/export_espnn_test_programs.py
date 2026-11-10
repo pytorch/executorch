@@ -84,7 +84,12 @@ def export_case(name, model, shapes, seed):
 
     executorch_program = edge.to_executorch()
     plan = executorch_program.executorch_program.execution_plan[0]
-    operators = sorted({f"{op.name}.{op.overload}" for op in plan.operators})
+    operators = sorted(
+        {
+            f"{op.name}.{op.overload}" if op.overload else op.name
+            for op in plan.operators
+        }
+    )
     bundle = BundledProgram(
         executorch_program,
         [MethodTestSuite("forward", [MethodTestCase(inputs, expected)])],
