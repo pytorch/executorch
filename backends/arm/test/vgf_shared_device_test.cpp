@@ -6,6 +6,8 @@
 #include <executorch/runtime/backend/options.h>
 #include <gtest/gtest.h>
 
+#include <memory>
+
 // Cppcheck may not expand GoogleTest headers. In that analysis-only case,
 // supply plain C++ definitions so the test bodies remain parseable. A normal
 // compiler sees GoogleTest's TEST macro and does not use these definitions.
@@ -112,7 +114,56 @@ TEST(VgfSharedDevice, MissingEnabledMetadataIsNotSupportedFeatures) {
   EXPECT_FALSE(vgf_shared_features_compatible(without_sync));
 }
 
+TEST(VgfSharedDevice, MissingExtensionsAreRejectedByMetadataPolicy) {
+  SharedVulkanDeviceCreateInfo info;
+  info.enabled_device_extensions = {"VK_ARM_tensors", "VK_ARM_data_graph"};
+  SharedVulkanDevice partial(std::move(info));
+  EXPECT_TRUE(vgf_missing_required_device_extension(partial) != nullptr);
+  SharedVulkanDeviceCreateInfo complete_info;
+  complete_info.enabled_device_extensions = {
+      "VK_ARM_tensors",
+      "VK_ARM_data_graph",
+      "VK_KHR_maintenance5",
+      "VK_KHR_deferred_host_operations"};
+  SharedVulkanDevice complete(std::move(complete_info));
+  EXPECT_TRUE(vgf_missing_required_device_extension(complete) == nullptr);
+}
+
+TEST(VgfSharedDevice, SharedQueueRequiresComputeAndDataGraph) {
+  EXPECT_FALSE(vgf_shared_queue_compatible(VK_QUEUE_COMPUTE_BIT));
+  EXPECT_FALSE(vgf_shared_queue_compatible(VK_QUEUE_DATA_GRAPH_BIT_ARM));
+  EXPECT_TRUE(vgf_shared_queue_compatible(
+      VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM));
+}
+
+TEST(VgfSharedDevice, StateReleasesItsDeviceReferenceOnTeardown) {
+  SharedVulkanDeviceCreateInfo info;
+  auto owner = std::make_shared<int>(7);
+  std::weak_ptr<int> owner_weak = owner;
+  info.lifetime_anchor = owner;
+  auto device = std::make_shared<SharedVulkanDevice>(std::move(info));
+  owner.reset();
+  {
+    auto state = std::make_shared<VgfSharedDeviceState>();
+    state->device = device;
+    EXPECT_FALSE(owner_weak.expired());
+  }
+  EXPECT_FALSE(owner_weak.expired());
+  device.reset();
+  EXPECT_TRUE(owner_weak.expired());
+}
+
 #if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+TEST(VgfSharedDevice, ImplicitCreationIsRejectedAtDelegateInit) {
+  BackendOptions<1> options;
+  ASSERT_EQ(
+      options.set_option("vulkan_shared_device_name", "vgf-order-test"),
+      Error::Ok);
+  EXPECT_EQ(
+      resolve_vgf_shared_device_state(context(options)).error(),
+      Error::InvalidArgument);
+}
+
 TEST(VgfSharedDevice, LookupOnlyMissingDoesNotInitializeVulkan) {
   SharedVulkanRuntimeConfig config;
   config.device_name = "stage4-unit-test-no-such-device";

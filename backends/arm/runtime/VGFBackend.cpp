@@ -576,24 +576,17 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   ~VGFBackend() override = default;
 
   bool is_available() const override {
-#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
-    // No RuntimeSpec is available during a backend availability probe. In a
-    // combined build, defer device capability checks to init(), which resolves
-    // the actual key/device. Probing an unrelated default GPU here can reject
-    // a valid externally registered device or create a redundant VkDevice.
-    return true;
-#else
+    // Preserve the real VGF capability probe in combined builds too.
+    // The Vulkan runtime is created without a redundant default VkDevice
+    // when VGF probes it first.
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Debug, "Checking VGFBackend is available");
     self->ensure_initialized();
     const bool available =
         is_initialized_ && vkml_load_extensions(&vk_device) == VK_SUCCESS;
-    // An availability-only probe must not retain a device until exit.
-    // Existing delegates, if any, keep their shared device alive.
     self->release_basics_if_unused();
     return available;
-#endif
   }
 
   Result<DelegateHandle*> init(
@@ -1355,7 +1348,17 @@ VkResult vkml_allocate_basics(
     return VK_ERROR_INITIALIZATION_FAILED;
   }
   try {
-    auto owner = vkcompute::vkapi::runtime_owner();
+    // If VGF is the first runtime user, request Vulkan 1.3 without
+    // constructing the Vulkan delegate's default VkDevice.
+    auto owner = vkcompute::vkapi::runtime_owner(
+        /*init_default_device=*/false, VK_API_VERSION_1_3);
+    if (owner->instance_api_version() < VK_API_VERSION_1_3) {
+      ET_LOG(
+          Error,
+          "VGF requires Vulkan 1.3: initialize the VGF-capable "
+          "runtime before Vulkan creates its default runtime");
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
+    }
     *instance = owner->instance();
     *instance_lifetime = std::move(owner);
   } catch (const std::exception& error) {
@@ -1486,9 +1489,15 @@ VkResult vkml_allocate_basics(
       *physical_device, &qf_count, qps.data());
   uint32_t qf = UINT32_MAX;
   for (uint32_t i = 0; i < qf_count; ++i) {
-    constexpr VkQueueFlags required =
+    constexpr VkQueueFlags capabilities =
         VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
-    if (qps[i].queueCount > 0 && (qps[i].queueFlags & required) == required) {
+    const VkQueueFlags present = qps[i].queueFlags & capabilities;
+    // Both capabilities are required when a single VkQueue is shared
+    // with the Vulkan delegate. Restore legacy VGF queue selection
+    // for independent, non-shared execution.
+    const bool suitable =
+        shared_info != nullptr ? present == capabilities : present != 0;
+    if (qps[i].queueCount > 0 && suitable) {
       qf = i;
       break;
     }
@@ -1814,6 +1823,14 @@ VkResult vkml_allocate_basics(
               ext, VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME) == 0) {
         continue;
       }
+      // Legacy VGF tolerated these optional extensions; shared devices
+      // require them because the registered Vulkan contract does.
+      if (shared_info == nullptr &&
+          (std::strcmp(ext, "VK_KHR_maintenance5") == 0 ||
+           std::strcmp(ext, "VK_KHR_deferred_host_operations") == 0)) {
+        ET_LOG(Info, "Optional VGF extension unavailable: %s", ext);
+        continue;
+      }
       ET_LOG(Error, "Required VGF extension is missing: %s", ext);
       return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
@@ -1835,7 +1852,13 @@ VkResult vkml_allocate_basics(
     *device = VK_NULL_HANDLE;
     return result;
   }
-  // Keep instance-loaded loader dispatch; multiple VkDevices coexist.
+#if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
+  // Combined build: multiple VkDevices share Volk's instance dispatch.
+  // Do not overwrite it with a per-device function-pointer table.
+#else
+  // VGF-only builds preserve their historical device-level dispatch.
+  volkLoadDevice(*device);
+#endif
 
   if (host_memory_import_capabilities != nullptr) {
     // Only a successful vkCreateDevice makes extension enablement

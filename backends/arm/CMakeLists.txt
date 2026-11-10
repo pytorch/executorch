@@ -477,15 +477,7 @@ if(EXECUTORCH_BUILD_VGF)
     add_test(NAME vgf_shared_device_test COMMAND vgf_shared_device_test)
   endif()
 
-  option(EXECUTORCH_BUILD_VGF_SHARED_EXAMPLE
-         "Build the VGF/Vulkan Stage 4 example" OFF
-  )
-  if(EXECUTORCH_BUILD_VGF_SHARED_EXAMPLE)
-    add_subdirectory(
-      ${EXECUTORCH_ROOT}/examples/arm/vgf_vulkan_shared
-      ${CMAKE_CURRENT_BINARY_DIR}/vgf_vulkan_shared
-    )
-  endif()
+  # The mixed example is configured at the root after dependencies exist.
 
   # end config for VGF builds
 endif()

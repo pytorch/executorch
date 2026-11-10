@@ -13,6 +13,7 @@
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/core/result.h>
 
+#include <array>
 #include <memory>
 
 namespace executorch {
@@ -43,6 +44,28 @@ inline bool vgf_shared_features_compatible(
       f.pipeline_creation_cache_control && f.vulkan_memory_model;
   // Replicated composites are
   // optional for models that do not use them.
+}
+
+// Pure policy helpers, callable by tests without a Vulkan driver.
+inline const char* vgf_missing_required_device_extension(
+    const vulkan_shared::SharedVulkanDevice& device) {
+  static constexpr std::array<const char*, 4> required = {
+      "VK_ARM_tensors",
+      "VK_ARM_data_graph",
+      "VK_KHR_maintenance5",
+      "VK_KHR_deferred_host_operations"};
+  for (const char* extension : required) {
+    if (!device.has_device_extension(extension)) {
+      return extension;
+    }
+  }
+  return nullptr;
+}
+
+inline bool vgf_shared_queue_compatible(VkQueueFlags flags) {
+  constexpr VkQueueFlags required =
+      VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+  return (flags & required) == required;
 }
 
 runtime::Result<vulkan_shared::SharedVulkanRuntimeConfig>

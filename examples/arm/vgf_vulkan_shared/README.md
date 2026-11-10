@@ -22,6 +22,35 @@ The example demonstrates:
 
 The example does not implement zero-copy transfers between delegates or combine their execution into a single GPU submission. Ordinary ExecuTorch delegate boundaries remain.
 
+**Initialization contract:** Before loading a mixed method, the application must
+call `resolve_vgf_shared_device()` with `device_mode=create_only` and the
+intended name/group. Pass `device_mode=lookup_only` and the same name/group
+as runtime options to **both** delegate backends. No such options means
+standalone/legacy execution. `lookup_or_create` during VGF delegate
+initialization is rejected: if Vulkan created a device first, it
+would normally lack the VGF-specific extensions and enabled features.
+These options are supplied at `Module::load`, not stored in the `.pte`.
+
+**Runtime setup:** The shared VGF device needs a Vulkan 1.3 instance.
+Call the VGF pre-registration API before code that initializes the
+process-wide Vulkan runtime; a previously created Vulkan 1.1 instance
+cannot be upgraded. Vulkan-only initialization keeps requesting 1.1.
+
+**Synchronization:** The current VGF implementation holds the shared
+queue mutex throughout delegate initialization and execution, including
+submission and fence wait. This guarantees single-queue host access but
+serializes Vulkan work from other threads for longer than necessary.
+Fine-grained queue leases require an audited refactor of VGF command
+recording, per-delegate fences, and imported-memory cleanup. Do not
+interpret this demo as concurrent submissions or overlapped GPU work.
+
+**Memory:** This example does not share boundary allocations between
+delegates: each transition still uses normal ExecuTorch tensors and
+may copy data. `ET_VGF_ZERO_COPY=0` disables the optional VGF host-memory
+import path before device creation; it does not enable inter-delegate
+zero copy. Releasing a VGF delegate may wait for the shared queue to
+be idle.
+
 ## Example Model
 
 The model is intentionally small to make backend partitioning and shared-device behavior easy to verify.

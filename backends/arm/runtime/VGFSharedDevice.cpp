@@ -15,6 +15,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <new>
@@ -73,16 +74,9 @@ Error validate_device(const SharedVulkanDevicePtr& device) {
     ET_LOG(Error, "VGF shared device must use the ExecuTorch Vulkan instance");
     return Error::DelegateInvalidCompatibility;
   }
-  static constexpr const char* required_extensions[] = {
-      "VK_ARM_tensors",
-      "VK_ARM_data_graph",
-      "VK_KHR_maintenance5",
-      "VK_KHR_deferred_host_operations"};
-  for (const char* extension : required_extensions) {
-    if (!device->has_device_extension(extension)) {
-      ET_LOG(Error, "VGF shared device did not enable %s", extension);
-      return Error::DelegateInvalidCompatibility;
-    }
+  if (const char* extension = vgf_missing_required_device_extension(*device)) {
+    ET_LOG(Error, "VGF shared device did not enable %s", extension);
+    return Error::DelegateInvalidCompatibility;
   }
   // An external device must not claim a feature that was not enabled at
   // vkCreateDevice. The extension is optional, but its metadata must agree.
@@ -113,10 +107,8 @@ Error validate_device(const SharedVulkanDevicePtr& device) {
   vkGetPhysicalDeviceQueueFamilyProperties(
       device->physical_device(), &count, families.data());
   const uint32_t family = device->queue_family_index();
-  constexpr VkQueueFlags required =
-      VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
   if (family >= count || families[family].queueCount == 0 ||
-      (families[family].queueFlags & required) != required) {
+      !vgf_shared_queue_compatible(families[family].queueFlags)) {
     ET_LOG(Error, "VGF shared queue must support BOTH compute and data graph");
     return Error::DelegateInvalidCompatibility;
   }
@@ -176,7 +168,8 @@ Result<SharedVulkanDevicePtr> create_device(const SharedVulkanDeviceKey& key) {
       &info.queue_family_index,
       statistics.requested,
       &statistics_enabled,
-      vgf_zero_copy_io_build_enabled(),
+      vgf_zero_copy_io_build_enabled() &&
+          vgf_zero_copy_io_runtime_enabled(std::getenv("ET_VGF_ZERO_COPY")),
       &imports,
       &owner->instance_lifetime,
       &info);
@@ -279,6 +272,17 @@ Result<std::shared_ptr<VgfSharedDeviceState>> resolve_vgf_shared_device_state(
   auto config = parse_vgf_shared_device_config(context);
   if (!config.ok()) {
     return config.error();
+  }
+  // A mixed method cannot rely on delegate initialization order:
+  // Vulkan's automatic creator does not enable VGF features.
+  // Pre-register a VGF-capable device using create_only and load both
+  // delegates with lookup_only; keep no-options legacy VGF unchanged.
+  if (config->enabled() && !config->lookup_only()) {
+    ET_LOG(
+        Error,
+        "VGF shared mode requires pre-registration (create_only) and "
+        "delegate lookup_only; lookup_or_create is order-dependent");
+    return Error::InvalidArgument;
   }
   auto shared = resolve_vgf_shared_device(config.get());
   if (!shared.ok()) {

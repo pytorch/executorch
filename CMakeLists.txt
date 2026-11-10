@@ -1679,6 +1679,12 @@ if(EXECUTORCH_BUILD_VGF)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
+# The example links the Vulkan backend and extension/module targets; these
+# targets are all available here, unlike inside backends/arm.
+if(EXECUTORCH_BUILD_VGF_SHARED_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/arm/vgf_vulkan_shared)
+endif()
+
 # Added after the backends so EXECUTORCH_BUILD_WASM_WEBGPU can link
 # webgpu_backend, which has to already be defined at that point.
 if(EXECUTORCH_BUILD_WASM)

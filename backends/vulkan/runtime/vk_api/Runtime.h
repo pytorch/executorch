@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 
 namespace vkcompute {
 namespace vkapi {
@@ -42,6 +43,9 @@ struct RuntimeConfig final {
   AdapterSelector default_selector;
   uint32_t num_requested_queues;
   std::string cache_data_path;
+  // Default Vulkan behavior stays at 1.1. VGF requests 1.3 before
+  // initializing the process-wide runtime.
+  uint32_t instance_api_version = VK_API_VERSION_1_1;
 };
 
 class Runtime final {
@@ -69,6 +73,7 @@ class Runtime final {
   std::vector<DeviceMapping> device_mappings_;
   std::vector<AdapterPtr> adapters_;
   uint32_t default_adapter_i_;
+  std::mutex default_adapter_mutex_;
 
   VkDebugReportCallbackEXT debug_report_callback_;
 
@@ -77,12 +82,13 @@ class Runtime final {
     return instance_;
   }
 
-  inline Adapter* get_adapter_p() {
-    VK_CHECK_COND(
-        default_adapter_i_ >= 0 && default_adapter_i_ < adapters_.size(),
-        "Pytorch Vulkan Runtime: Default device adapter is not set correctly!");
-    return adapters_[default_adapter_i_].get();
+  inline uint32_t instance_api_version() const {
+    return config_.instance_api_version;
   }
+
+  // Created on first use when VGF initialized the instance without a
+  // default Vulkan VkDevice.
+  Adapter* get_adapter_p();
 
   inline Adapter* get_adapter_p(uint32_t i) {
     VK_CHECK_COND(
@@ -108,7 +114,11 @@ std::string& set_and_get_pipeline_cache_data_path(const std::string& file_path);
 // a static local variable.
 // Retain the instance owner while a backend-created shared device exists.
 // Destroy devices before releasing the last owner of their VkInstance.
-std::shared_ptr<Runtime> runtime_owner();
+// First caller selects the process-wide instance configuration. A VGF
+// caller must arrive first when Vulkan 1.3 is required.
+std::shared_ptr<Runtime> runtime_owner(
+    bool init_default_device = true,
+    uint32_t instance_api_version = VK_API_VERSION_1_1);
 
 Runtime* runtime();
 
