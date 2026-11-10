@@ -412,8 +412,6 @@ def python_is_compatible():
         )
         return False
 
-    ensure_pip()
-
     # Install the packaging module if necessary.
     try:
         import packaging
