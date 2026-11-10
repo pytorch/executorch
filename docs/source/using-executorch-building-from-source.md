@@ -74,10 +74,10 @@ Activate it on macOS or Linux:
 source .venv/bin/activate
 ```
 
-On Windows, use Command Prompt:
+On Windows, activate it from a [Visual Studio Developer PowerShell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022):
 
-```bat
-.venv\Scripts\activate.bat
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
 The installation scripts use pip to install ExecuTorch and its dependencies.
@@ -101,6 +101,12 @@ installation steps and later runs use pip.
    ```bash
    # Install ExecuTorch pip package and its dependencies.
    ./install_executorch.sh
+   ```
+
+   On Windows, run this command in the same Developer PowerShell:
+
+   ```powershell
+   .\install_executorch.bat
    ```
 
    The `install_executorch.sh` script supports the following flags:
