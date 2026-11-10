@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -989,13 +990,13 @@ class GgmlExecutable final : public EngineExecutable {
       }
       std::vector<float> factors = to_float_vector(
           bytes->span(), method_.graph.value(inv_freq).tensor_meta().dtype);
-      // ggml_rope_ext with freq_base 1 computes theta = pos / factor.
-      for (float& factor : factors) {
-        if (factor == 0.0f) {
-          throw std::runtime_error("ggml: rope inv_freq has a zero entry");
-        }
-        factor = 1.0f / factor;
-      }
+      // ggml_rope_ext with freq_base 1 computes theta = pos / factor. A zero
+      // frequency leaves its dims unrotated, as partial RoPE does: an
+      // infinite factor gives theta = 0.
+      std::ranges::transform(factors, factors.begin(), [](float factor) {
+        return factor == 0.0f ? std::numeric_limits<float>::infinity()
+                              : 1.0f / factor;
+      });
       std::vector<uint8_t> raw(factors.size() * sizeof(float));
       std::memcpy(raw.data(), factors.data(), raw.size());
       rope_freq_factors_.emplace(inv_freq, std::move(raw));
