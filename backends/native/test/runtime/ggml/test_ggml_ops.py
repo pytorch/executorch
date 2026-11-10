@@ -1787,6 +1787,19 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-4,
         )
 
+    def test_rope_zero_frequency_leaves_dims_unrotated(self):
+        # Partial RoPE written as zero inverse frequencies, e.g. Gemma 4's
+        # proportional RoPE: those dims keep their values.
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        model = Rope(config)
+        model.rotary.inv_freq[8:] = 0.0
+        self._check(
+            model,
+            (torch.randn(1, 4, 5, 64), torch.tensor([[3, 4, 5, 6, 7]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
 
 class GgmlLlamaTest(unittest.TestCase):
     MAX_SEQ = 16
