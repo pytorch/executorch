@@ -786,6 +786,68 @@
     ]
   },
   {
+    "name": "conv2d pw_correctness wide_tile float16",
+    "operator": "aten.convolution.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.1, "rtol": 0.01},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 128, 128], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 32, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 64, 65, 65], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 61, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 61, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "conv2d pw_correctness wide_tile clamp float16",
+    "operator": "et_vk.conv_with_clamp.default",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.1, "rtol": 0.01},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 32, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"float": -0.3},
+        {"float": 0.7},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
     "name": "conv2d dw_correctness [[1, 8, 16, 16], [3, 3], [1, 1], [1, 1], [1, 1], False] float32 auto",
     "operator": "aten.convolution.default",
     "target_ms": 100,
@@ -3072,6 +3134,56 @@
         {"float": -0.5},
         {"float": 1.5},
         {"tensor": {"name": "output", "sizes": [1, 18, 9, 13], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "conv2d with_epilogue_correctness pointwise_wide_tile float16",
+    "operator": "et_vk.conv2d.with_epilogue",
+    "route": "auto",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.1, "rtol": 0.01},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 32, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "residual", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "residual_scale", "sizes": [1, 64, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"string": "add"},
+        {"float": 1.0},
+        {"string": "relu"},
+        {"float": 0.0},
+        {"float": 0.0},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 32, 1, 1], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float16", "storage": "constant", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "residual", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_float": [-1, 1]}}},
+        null,
+        {"string": "sub"},
+        {"float": 0.3},
+        {"string": "clamp"},
+        {"float": -0.3},
+        {"float": 0.7},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "float16", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
       ]
     ]
   },
