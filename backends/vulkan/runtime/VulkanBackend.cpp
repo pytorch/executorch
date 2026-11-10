@@ -13,6 +13,9 @@
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
+// The Vulkan headers come after the schema: with Xlib as the platform, they
+// define a `Bool` macro that breaks the schema's `Bool` type.
+#include <executorch/backends/vulkan/runtime/ExternalIO.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
@@ -41,6 +44,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace executorch {
@@ -217,6 +221,12 @@ class GraphBuilder {
   std::unordered_map<uint32_t, vkgraph::VkMemoryLayout>
       memory_layout_overrides_;
 
+  // External I/O bindings by input and output index, null where unbound.
+  std::vector<const ExternalIOBinding*> input_bindings_;
+  std::vector<const ExternalIOBinding*> output_bindings_;
+  // Tensor-backed bindings by the value id of their tensor.
+  std::unordered_map<uint32_t, const ExternalIOBinding*> tensor_bindings_;
+
  public:
   explicit GraphBuilder(
       ComputeGraph* compute_graph,
@@ -269,18 +279,34 @@ class GraphBuilder {
     return get_memory_layout(tensor_fb->memory_layout());
   }
 
-  void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
-    const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
-    utils::StorageType storage_type =
-        tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
-        ? compute_graph_->suggested_storage_type()
-        : get_storage_type(tensor_fb->storage_type());
+  struct TensorProperties {
+    vkapi::ScalarType dtype;
+    utils::StorageType storage_type;
+    std::vector<int64_t> sizes;
+    utils::GPUMemoryLayout memory_layout;
+  };
 
+  TensorProperties get_tensor_properties(
+      const uint32_t fb_id,
+      VkTensorPtr tensor_fb) {
     UIntVector dims_fb = tensor_fb->dims();
-    const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
+    std::vector<int64_t> sizes(dims_fb->cbegin(), dims_fb->cend());
+    const utils::GPUMemoryLayout memory_layout =
+        get_resolved_memory_layout(fb_id, tensor_fb, sizes);
+    return {
+        get_scalar_type(tensor_fb->datatype()),
+        tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+            ? compute_graph_->suggested_storage_type()
+            : get_storage_type(tensor_fb->storage_type()),
+        std::move(sizes),
+        memory_layout,
+    };
+  }
 
-    utils::GPUMemoryLayout memory_layout =
-        get_resolved_memory_layout(fb_id, tensor_fb, dims_vector);
+  void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
+    const TensorProperties props = get_tensor_properties(fb_id, tensor_fb);
+    const vkapi::ScalarType dtype = props.dtype;
+    const std::vector<int64_t>& dims_vector = props.sizes;
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
@@ -335,8 +361,8 @@ class GraphBuilder {
       ref = compute_graph_->add_tensor(
           dims_vector,
           dtype,
-          storage_type,
-          memory_layout,
+          props.storage_type,
+          props.memory_layout,
           tensor_fb->mem_obj_id());
     }
 
@@ -451,12 +477,149 @@ class GraphBuilder {
     return get_scalar_type(tensor_fb->staging_datatype());
   }
 
-  void build_graph() {
+  // Maps each external I/O binding to its input or output.
+  Error map_external_io(const std::vector<ExternalIOBinding>& external_io) {
+    input_bindings_.assign(flatbuffer_->input_ids()->size(), nullptr);
+    output_bindings_.assign(flatbuffer_->output_ids()->size(), nullptr);
+    for (const ExternalIOBinding& binding : external_io) {
+      const char* const io = slot_name(binding.slot);
+      const bool is_input = binding.slot == SlotType::Input;
+      const auto* const io_ids =
+          is_input ? flatbuffer_->input_ids() : flatbuffer_->output_ids();
+      ET_CHECK_OR_RETURN_ERROR(
+          binding.index < io_ids->size(),
+          InvalidArgument,
+          "external I/O binds %s %zu, but the graph has %u",
+          io,
+          binding.index,
+          io_ids->size());
+      const uint32_t fb_id =
+          io_ids->Get(utils::safe_downcast<uint32_t>(binding.index));
+      VkTensorPtr tensor_fb =
+          flatbuffer_->values()->Get(fb_id)->value_as_VkTensor();
+      ET_CHECK_OR_RETURN_ERROR(
+          tensor_fb != nullptr && tensor_fb->constant_id() < 0,
+          InvalidArgument,
+          "%s %zu is not a tensor computed by the graph",
+          io,
+          binding.index);
+      ET_CHECK_OR_RETURN_ERROR(
+          binding.target != ExternalIOTarget::Tensor ||
+              tensor_bindings_.emplace(fb_id, &binding).second,
+          InvalidArgument,
+          "%s %zu is the same tensor as another tensor-backed input or output",
+          io,
+          binding.index);
+      (is_input ? input_bindings_ : output_bindings_)[binding.index] = &binding;
+    }
+    return Error::Ok;
+  }
+
+  // A buffer over a VkBuffer or AHardwareBuffer resource.
+  vkapi::VulkanBuffer external_buffer(const ExternalIOResource& resource) {
+    if (const auto* r = std::get_if<ExternalVkBuffer>(&resource)) {
+      return vkapi::VulkanBuffer::alias(r->buffer, r->nbytes);
+    }
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+    return compute_graph_->context()
+        ->adapter_ptr()
+        ->vma()
+        .import_android_hardware_buffer(
+            std::get<ExternalAHardwareBuffer>(resource).ahb,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+#else
+    VK_THROW("an AHardwareBuffer needs an Android build");
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+  }
+
+  // Adds the tensor of a tensor-backed binding over its resource.
+  Error add_external_tensor(
+      const uint32_t fb_id,
+      const ExternalIOBinding& binding) {
+    const char* const io = slot_name(binding.slot);
+    const TensorProperties props = get_tensor_properties(
+        fb_id, flatbuffer_->values()->Get(fb_id)->value_as_VkTensor());
+    const auto* const image = std::get_if<ExternalVkImage>(&binding.resource);
+    const utils::StorageType required =
+        image != nullptr ? utils::kTexture3D : utils::kBuffer;
+    ET_CHECK_OR_RETURN_ERROR(
+        props.storage_type == required,
+        InvalidArgument,
+        "%s %zu: a %s can only back a tensor with %s storage",
+        io,
+        binding.index,
+        image != nullptr ? "VkImage" : "buffer",
+        image != nullptr ? "texture3d" : "buffer");
+    try {
+      ref_mapping_[fb_id] = image != nullptr
+          ? compute_graph_->add_external_vkimage_backed_tensor(
+                props.sizes,
+                props.dtype,
+                props.memory_layout,
+                image->image,
+                image->view,
+                image->format,
+                image->extents)
+          : compute_graph_->add_external_vkbuffer_backed_tensor(
+                props.sizes,
+                props.dtype,
+                props.memory_layout,
+                external_buffer(binding.resource));
+    } catch (const vkapi::Error& error) {
+      ET_LOG(
+          Error,
+          "%s %zu cannot be backed by its external resource: %s",
+          io,
+          binding.index,
+          error.what());
+      return Error::InvalidArgument;
+    }
+    return Error::Ok;
+  }
+
+  // Stages input or output `ref` in the resource of its staging binding.
+  Error set_external_staging(
+      const ValueRef ref,
+      const uint32_t fb_id,
+      const ExternalIOBinding& binding) {
+    try {
+      vkapi::VulkanBuffer buffer = external_buffer(binding.resource);
+      const vkapi::ScalarType staging_dtype = get_staging_scalar_type_of(fb_id);
+      if (binding.slot == SlotType::Input) {
+        compute_graph_->set_input_tensor(ref, staging_dtype, std::move(buffer));
+      } else {
+        compute_graph_->set_output_tensor(
+            ref, staging_dtype, std::move(buffer));
+      }
+    } catch (const vkapi::Error& error) {
+      ET_LOG(
+          Error,
+          "%s %zu cannot be staged in its external resource: %s",
+          slot_name(binding.slot),
+          binding.index,
+          error.what());
+      return Error::InvalidArgument;
+    }
+    return Error::Ok;
+  }
+
+  Error build_graph(const std::vector<ExternalIOBinding>& external_io) {
     // Resize the mapping to the number of values in the flatbuffer
     resize(flatbuffer_->values()->size());
 
-    // First, add all values to the graph
+    ET_CHECK_OK_OR_RETURN_ERROR(map_external_io(external_io));
+
+    // First, add all values to the graph. A tensor-backed input or output
+    // wraps its resource instead of allocating memory.
     for (uint32_t fb_id = 0; fb_id < flatbuffer_->values()->size(); ++fb_id) {
+      const auto binding = tensor_bindings_.find(fb_id);
+      if (binding != tensor_bindings_.end()) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            add_external_tensor(fb_id, *binding->second));
+        continue;
+      }
       VkValuePtr value = flatbuffer_->values()->Get(fb_id);
       add_value_to_graph(fb_id, value);
     }
@@ -464,9 +627,15 @@ class GraphBuilder {
     // Parse the inputs, which will be tensors most of the time but can also be
     // symints and tensorrefs (which will be the case if the original graph had)
     // mutable buffers.
-    for (const uint32_t fb_id : *flatbuffer_->input_ids()) {
+    for (uint32_t i = 0; i < flatbuffer_->input_ids()->size(); ++i) {
+      const uint32_t fb_id = flatbuffer_->input_ids()->Get(i);
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      if (compute_graph_->val_is_tensor(ref)) {
+      const ExternalIOBinding* const binding = input_bindings_[i];
+      if (binding != nullptr && binding->target == ExternalIOTarget::Tensor) {
+        compute_graph_->set_input_tensor(ref, /*use_staging=*/false);
+      } else if (binding != nullptr) {
+        ET_CHECK_OK_OR_RETURN_ERROR(set_external_staging(ref, fb_id, *binding));
+      } else if (compute_graph_->val_is_tensor(ref)) {
         compute_graph_->set_input_tensor(
             ref, get_staging_scalar_type_of(fb_id));
       } else {
@@ -498,14 +667,23 @@ class GraphBuilder {
 
     // Parse the outputs, which will be mostly tensors but may contain tensorref
     // values as well if the source graph returns parameter nodes.
-    for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
+    for (uint32_t i = 0; i < flatbuffer_->output_ids()->size(); ++i) {
+      const uint32_t fb_id = flatbuffer_->output_ids()->Get(i);
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      if (compute_graph_->val_is_tensor(ref)) {
+      const ExternalIOBinding* const binding = output_bindings_[i];
+      if (binding != nullptr && binding->target == ExternalIOTarget::Tensor) {
+        compute_graph_->set_output_tensor(ref, /*use_staging=*/false);
+      } else if (compute_graph_->val_is_tensor(ref)) {
 #ifdef ET_EVENT_TRACER_ENABLED
         get_current_operator_count(true);
 #endif // ET_EVENT_TRACER_ENABLED
-        compute_graph_->set_output_tensor(
-            ref, get_staging_scalar_type_of(fb_id));
+        if (binding != nullptr) {
+          ET_CHECK_OK_OR_RETURN_ERROR(
+              set_external_staging(ref, fb_id, *binding));
+        } else {
+          compute_graph_->set_output_tensor(
+              ref, get_staging_scalar_type_of(fb_id));
+        }
       } else {
         compute_graph_->set_output_value(ref);
       }
@@ -519,6 +697,7 @@ class GraphBuilder {
         compute_graph_->execute_nodes()[i]->set_node_id(i);
       }
     }
+    return Error::Ok;
   }
 };
 
@@ -619,6 +798,9 @@ struct VulkanDelegateHandle final {
     if (compute_graph) {
       compute_graph->~ComputeGraph();
     }
+    // Only now that the graph no longer uses the resources of an external I/O
+    // set bound to this handle may the app unregister and destroy them.
+    release_external_io(this);
     // shared_adapter is released only after graph/context resources.
   }
 };
@@ -635,7 +817,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       const void* buffer_pointer,
       size_t buffer_size,
       ComputeGraph* compute_graph,
-      const NamedDataMap* named_data_map) const {
+      const NamedDataMap* named_data_map,
+      const std::vector<ExternalIOBinding>& external_io) const {
     Result<VulkanDelegateHeader> header =
         VulkanDelegateHeader::parse(buffer_pointer, buffer_size);
 
@@ -703,7 +886,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         named_data_map);
 
     builder.resolve_layouts();
-    builder.build_graph();
+    ET_CHECK_OK_OR_RETURN_ERROR(builder.build_graph(external_io));
 
     compute_graph->prepare();
     compute_graph->prepare_pipelines();
@@ -750,6 +933,23 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       std::unique_ptr<VulkanDelegateHandle, decltype(destroy_handle)> guard(
           handle, destroy_handle);
 
+      std::vector<ExternalIOBinding> external_io;
+      const Result<const char*> external_io_name =
+          context.get_runtime_spec<const char*>(kExternalIOOption);
+      if (external_io_name.ok()) {
+        auto claimed = claim_external_io(external_io_name.get(), handle);
+        if (!claimed.ok()) {
+          return claimed.error();
+        }
+        external_io = std::move(claimed.get());
+      } else if (external_io_name.error() != Error::NotFound) {
+        ET_LOG(
+            Error,
+            "VulkanBackend runtime spec '%s' must be a string",
+            kExternalIOOption);
+        return external_io_name.error();
+      }
+
       handle->shared_adapter = std::move(adapter.get());
 
       auto* graph_storage =
@@ -770,7 +970,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
           processed->data(),
           processed->size(),
           handle->compute_graph,
-          context.get_named_data_map());
+          context.get_named_data_map(),
+          external_io);
 
       if (error != Error::Ok) {
         return error;
@@ -822,6 +1023,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         args.size(),
         " arguments");
     bool should_propagate_resize = false;
+    const bool has_external_memory = compute_graph->has_external_memory();
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
     runtime::EventTracerEntry overall_event_tracer_entry =
@@ -844,8 +1046,15 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         bool was_resized =
             maybe_resize_input(compute_graph, i, args[i]->toTensor());
         should_propagate_resize = should_propagate_resize || was_resized;
+        // External I/O: the app writes the input on the GPU.
+        const ValueRef staging = compute_graph->inputs()[i].staging;
+        if (has_external_memory &&
+            (staging == kDummyValueRef ||
+             compute_graph->get_staging(staging)->is_external())) {
+          continue;
+        }
         compute_graph->maybe_cast_and_copy_into_staging(
-            compute_graph->inputs()[i].staging,
+            staging,
             args[i]->toTensor().const_data_ptr(),
             args[i]->toTensor().numel(),
             equivalent_scalar_type(args[i]->toTensor().scalar_type()));
@@ -947,8 +1156,15 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
+        // External I/O: the app reads the output on the GPU.
+        const ValueRef staging = compute_graph->outputs()[i].staging;
+        if (has_external_memory &&
+            (staging == kDummyValueRef ||
+             compute_graph->get_staging(staging)->is_external())) {
+          continue;
+        }
         compute_graph->maybe_cast_and_copy_from_staging(
-            compute_graph->outputs()[i].staging,
+            staging,
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel(),
             equivalent_scalar_type(args[o]->toTensor().scalar_type()));

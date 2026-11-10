@@ -314,12 +314,18 @@ def define_common_targets(is_fbcode = False):
                 "runtime/*.cpp",
             ]),
             compiler_flags = get_vulkan_compiler_flags(),
-            headers = native.glob([
-                "runtime/*.h",
-            ]),
+            headers = native.glob(
+                ["runtime/*.h"],
+                exclude = ["runtime/ExternalIO.h"],
+            ),
+            exported_headers = ["runtime/ExternalIO.h"],
             labels = get_labels(no_volk),
             platforms = get_platforms(),
             visibility = ["PUBLIC"],
+            exported_deps = [
+                ":vulkan_compute_api{}".format(suffix),
+                "//executorch/runtime/core:core",
+            ],
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
@@ -327,6 +333,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:event_tracer",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
                 "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/backend:backend_options",
             ],
             define_static_target = True,
             # VulkanBackend.cpp needs to compile with executor as whole
