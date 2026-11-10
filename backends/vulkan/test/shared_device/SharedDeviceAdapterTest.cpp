@@ -173,7 +173,7 @@ TEST_F(SharedDeviceAdapterTest, ReusesHandlesAndOnlyRegisteredQueueMetadata) {
   EXPECT_EQ(first.physical_handle(), shared->physical_device());
   auto queue = first.request_queue();
   EXPECT_EQ(queue.family_index, shared->queue_family_index());
-  EXPECT_EQ(queue.handle, VK_NULL_HANDLE); // No unlocked queue escapes.
+  EXPECT_EQ(queue.handle, nullptr); // No unlocked queue escapes.
   EXPECT_EQ(first.num_compute_queues(), 1u);
   first.return_queue(queue);
   EXPECT_NO_THROW(submit_empty(first));
@@ -535,7 +535,7 @@ TEST_F(SharedDeviceAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
   device_guard.handle = VK_NULL_HANDLE;
   VkQueue supplied = VK_NULL_HANDLE;
   vkGetDeviceQueue(device, family, index, &supplied);
-  ASSERT_NE(supplied, VK_NULL_HANDLE);
+  ASSERT_NE(supplied, nullptr);
   SharedVulkanDeviceCreateInfo info;
   info.key = {"application-nondefault", 1};
   info.instance = shared->instance();
@@ -549,7 +549,7 @@ TEST_F(SharedDeviceAdapterTest, BorrowsApplicationDeviceWithNonDefaultQueue) {
   vkapi::Adapter adapter(external, "");
   auto metadata = adapter.request_queue();
   EXPECT_EQ(metadata.family_index, family);
-  EXPECT_EQ(metadata.handle, VK_NULL_HANDLE);
+  EXPECT_EQ(metadata.handle, nullptr);
   adapter.return_queue(metadata);
   EXPECT_NO_THROW(submit_empty(adapter));
 }
