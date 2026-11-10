@@ -20,7 +20,6 @@ from install_requirements import (
     install_requirements,
     python_is_compatible,
 )
-from install_utils import get_package_install_command
 
 # Set up logging
 logging.basicConfig(
@@ -238,7 +237,12 @@ def main(args):
         extras = ",".join(dict.fromkeys(args.optional_dependency))
         package_spec = f".[{extras}]"
     cmd = (
-        [*get_package_install_command()]
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+        ]
         + (["--editable"] if args.editable else [])
         + [
             package_spec,

@@ -25,30 +25,22 @@ SUPPORTED_CUDA_VERSIONS = (
 )
 
 
-@functools.lru_cache(maxsize=1)
-def get_package_install_command() -> Tuple[str, ...]:
-    """Choose an installer once, even if requirements later install pip."""
+def ensure_pip() -> None:
+    """Bootstrap pip with uv when it is missing from the running Python."""
     if importlib.util.find_spec("pip") is not None:
-        return (sys.executable, "-m", "pip", "install")
+        return
 
     uv = shutil.which("uv")
-    if uv is not None:
-        return (
-            uv,
-            "pip",
-            "install",
-            "--python",
-            sys.executable,
-            # Match pip's selection across the PyTorch and PyPI indexes.
-            "--index-strategy",
-            "unsafe-best-match",
+    if uv is None:
+        raise RuntimeError(
+            "Neither pip nor uv is available. "
+            f'Install pip with "{sys.executable} -m ensurepip --upgrade", '
+            "or install uv and ensure it is on PATH: "
+            "https://docs.astral.sh/uv/getting-started/installation/"
         )
 
-    raise RuntimeError(
-        "Neither pip nor uv is available. "
-        f'Install pip with "{sys.executable} -m ensurepip --upgrade", '
-        "or install uv and ensure it is on PATH: "
-        "https://docs.astral.sh/uv/getting-started/installation/"
+    subprocess.run(
+        [uv, "pip", "install", "--python", sys.executable, "pip"], check=True
     )
 
 
@@ -420,11 +412,15 @@ def python_is_compatible():
         )
         return False
 
+    ensure_pip()
+
     # Install the packaging module if necessary.
     try:
         import packaging
     except ImportError:
-        subprocess.run([*get_package_install_command(), "packaging"], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "packaging"], check=True
+        )
     # Compare the current python version to the range in version_specifier. Exits
     # with status 1 if the version is not compatible, or with status 0 if the
     # version is compatible or the logic itself fails.

@@ -11,12 +11,7 @@ import platform
 import subprocess
 import sys
 
-from install_utils import (
-    determine_torch_url,
-    get_package_install_command,
-    is_intel_mac_os,
-    python_is_compatible,
-)
+from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
@@ -135,7 +130,10 @@ def install_requirements(use_pytorch_nightly):
     # versions on the provided URL if they aren't available on the default URL.
     subprocess.run(
         [
-            *get_package_install_command(),
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
             "-r",
             "requirements-dev.txt",
             *TORCH_PACKAGE,
@@ -160,7 +158,10 @@ def install_requirements(use_pytorch_nightly):
             )
             subprocess.run(
                 [
-                    *get_package_install_command(),
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
                     "--no-build-isolation",
                     "sentencepiece==0.2.2",
                 ],
@@ -185,7 +186,10 @@ def install_requirements(use_pytorch_nightly):
             new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
         subprocess.run(
             [
-                *get_package_install_command(),
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
                 # Without --no-build-isolation, setup.py can't find the torch module.
                 "--no-build-isolation",
                 *LOCAL_REQUIREMENTS,
@@ -226,7 +230,10 @@ def install_optional_example_requirements(use_pytorch_nightly):
     # Then install domain libraries
     subprocess.run(
         [
-            *get_package_install_command(),
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
             torch_url,
@@ -238,13 +245,18 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing packages in requirements-examples.txt")
     subprocess.run(
         [
-            *get_package_install_command(),
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
             "-r",
             "requirements-examples.txt",
             *cu134_packages,
             "--extra-index-url",
             torch_url,
             *torchao_index,
+            "--upgrade-strategy",
+            "only-if-needed",
         ],
         check=True,
     )
