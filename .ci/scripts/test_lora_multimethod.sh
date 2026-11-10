@@ -46,13 +46,18 @@ import re
 import sys
 
 text = pathlib.Path(sys.argv[1]).read_text()
+# Under 8da4w, the base model's first token is a near-tie between ":\n" and ":"
+# that tips with small numeric changes, such as RMSNorm and QK-norm moving into
+# XNNPACK. Accept both observed continuations.
 pattern = re.compile(
-    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
-    r"(?:<think>\n)+"
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:"
+    r"(?:\n(?:<think>\n)+| me\n)"
     r"Okay, so I need to calculate 15% of 80\.",
     re.MULTILINE,
 )
-sys.exit(0 if pattern.match(text) else 1)
+if not pattern.match(text):
+    print(f"Expected a match for: {pattern.pattern}")
+    sys.exit(1)
 PY
 }
 
@@ -107,10 +112,6 @@ EXPECTED_LORA_PREFIX="
 <|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
 To calculate 15% of 80"
 
-EXPECTED_BASE_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
-<think>
-Okay, so I need to calculate 15% of 80."
-
 ### TEST 1: Run lora_forward method ###
 NOW=$(date +"%H:%M:%S")
 echo "Test 1: Multimethod lora_forward. Starting at ${NOW}"
@@ -151,7 +152,6 @@ if matches_base_response_prefix result_base.txt; then
   echo "Test 2 (base_forward): Success"
 else
   echo "Test 2 (base_forward): Failure"
-  echo "Expected result prefix: ${EXPECTED_BASE_PREFIX}"
   echo "Actual result: ${RESULT}"
   cleanup_files
   exit 1
