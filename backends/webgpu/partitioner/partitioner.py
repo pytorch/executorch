@@ -36,6 +36,10 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
 }
 
 
+# Vulkan fusion patterns whose fused ops the WebGPU runtime does not implement.
+_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue"}
+
+
 @final
 class WebGPUPartitioner(Partitioner):
     """WebGPU frontend for the Vulkan partitioning and serialization path."""
@@ -48,6 +52,11 @@ class WebGPUPartitioner(Partitioner):
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
     ) -> None:
+        compile_options = dict(compile_options or {})
+        compile_options["skip_fusion_patterns"] = {
+            *compile_options.get("skip_fusion_patterns", ()),
+            *_WEBGPU_SKIP_FUSION_PATTERNS,
+        }
         self._vulkan_partitioner = VulkanPartitioner(
             compile_options=compile_options,
             operator_blocklist=operator_blocklist,

@@ -15,10 +15,10 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -96,7 +96,7 @@ def main(args):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = f"{args.artifact}/{pte_filename}.pte"
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
@@ -105,9 +105,9 @@ def main(args):
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs)
-    adb.execute()
-    adb.pull(host_output_path=args.artifact)
+    device.push(inputs=inputs)
+    device.execute()
+    device.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indices = [i for i, x in enumerate(targets[i]) if x != -100]
