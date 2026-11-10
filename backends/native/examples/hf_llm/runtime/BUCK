@@ -36,6 +36,7 @@ runtime.cxx_library(
         "//executorch/backends/native/runtime/deserialize:zip_reader",
         "//executorch/backends/native/runtime/graph:scalar_type",
         "//executorch/examples/models/llama/tokenizer:tiktoken",
+        "//pytorch/tokenizers:hf_tokenizer",
     ],
     exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
     external_deps = ["gflags"],
