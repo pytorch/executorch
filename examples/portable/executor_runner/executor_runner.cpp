@@ -808,6 +808,11 @@ int main(int argc, char** argv) {
       ET_LOG(Info, "SERVER MODE DONE");
     }
 
+    if (tracer.get_event_tracer()) {
+      const Error status = tracer.write_etdump_to_file();
+      ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
+    }
+
     return 0;
   }
 
