@@ -140,6 +140,16 @@ class Int64Buffer(torch.nn.Module):
         return self.op(*self.buffers(), *args)
 
 
+class Int64Constant(torch.nn.Module):
+    def __init__(self, op, value):
+        super().__init__()
+        self.op = op
+        self.value = value
+
+    def forward(self, *args):
+        return self.op(self.value, *args)
+
+
 # A listed operator delegates when every operand casts to int64; an unlisted
 # operator or an operand narrower than int32 falls back instead. to_edge widens
 # the operands of some operators, such as cat, before partitioning. The widening
@@ -187,6 +197,11 @@ int64_extension_partition_suite = {
             torch.tensor([1]),
         ),
         (torch.tensor([0], dtype=torch.int32),),
+        1,
+    ),
+    "gt_scalar_constant": (
+        Int64Constant(lambda limit, x: x > limit, torch.tensor(2**40)),
+        (torch.tensor([1], dtype=torch.int32),),
         1,
     ),
     "where_buffer_gt_scalar": (

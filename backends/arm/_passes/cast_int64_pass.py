@@ -156,45 +156,65 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         return True
 
     @classmethod
+    def _compares_in_int64(cls, user: torch.fx.Node) -> bool:
+        if user.target not in cls._comparison_ops:
+            return False
+        operands = [
+            arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
+            for arg in user.args[:2]
+        ]
+        return torch.result_type(*operands) == torch.int64 and all(
+            arg.meta["val"].dtype in (torch.int64, torch.int32, torch.bool)
+            for arg in user.all_input_nodes
+            if isinstance(arg.meta.get("val"), torch.Tensor)
+        )
+
+    @classmethod
     def _users_compute_in_int64(cls, node: torch.fx.Node) -> bool:
         def is_int64(value) -> bool:
             return isinstance(value, torch.Tensor) and value.dtype == torch.int64
 
-        def compares_in_int64(user: torch.fx.Node) -> bool:
-            if user.target not in cls._comparison_ops:
-                return False
-            operands = [
-                arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
-                for arg in user.args[:2]
-            ]
-            return torch.result_type(*operands) == torch.int64 and all(
-                arg.meta["val"].dtype in (torch.int64, torch.int32, torch.bool)
-                for arg in user.all_input_nodes
-                if isinstance(arg.meta.get("val"), torch.Tensor)
-            )
-
         return all(
             user.op == "output"
-            or compares_in_int64(user)
+            or cls._compares_in_int64(user)
             or is_int64(user.meta.get("val"))
             for user in node.users
         )
 
-    def _keeps_int64(self, node: torch.fx.Node) -> bool:
-        if not is_buffer(self.exported_program, node):
-            return False
+    @staticmethod
+    def _supports_int64() -> bool:
         tosa_spec = get_context_spec()
-        return (
-            tosa_spec.support_integer()
-            and tosa_spec.support_extension("int64")
-            and self._users_compute_in_int64(node)
-        )
+        return tosa_spec.support_integer() and tosa_spec.support_extension("int64")
+
+    @staticmethod
+    def _cast_input_to_int64(
+        graph: torch.fx.Graph, node: torch.fx.Node, user: torch.fx.Node
+    ):
+        with graph.inserting_before(user):
+            cast = graph.call_function(
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                (node,),
+                {"dtype": torch.int64},
+            )
+        cast.meta["val"] = node.meta["val"].to(torch.int64)
+        user.replace_input_with(node, cast)
 
     def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
         converted = 0
-        for node in graph_module.graph.nodes:
-            if self._is_cast_candidate(node) and not self._keeps_int64(node):
-                converted += self._cast_constant_to_int32(node)
+        for node in list(graph_module.graph.nodes):
+            if not self._is_cast_candidate(node):
+                continue
+            comparisons = []
+            if is_buffer(self.exported_program, node) and self._supports_int64():
+                if self._users_compute_in_int64(node):
+                    continue
+                comparisons = [
+                    user for user in node.users if self._compares_in_int64(user)
+                ]
+            if self._cast_constant_to_int32(node):
+                converted += 1
+                for user in comparisons:
+                    self._cast_input_to_int64(graph_module.graph, node, user)
         return converted
 
     def call(self, graph_module: torch.fx.GraphModule):
