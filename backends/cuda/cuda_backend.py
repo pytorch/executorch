@@ -1219,6 +1219,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_index_put_out": None,
             "aoti_torch_cuda_scatter_reduce_two_out": None,
             "aoti_torch_cuda_scatter_src_out": None,
+            "aoti_torch_cuda_masked_select": None,
+            "aoti_torch_cuda_nonzero": None,
         }
 
     @classmethod

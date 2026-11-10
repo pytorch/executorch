@@ -271,9 +271,12 @@ __global__ void put_sorted_kernel(
   }
 }
 
-// A mask's element at a row-major position is set.
-struct MaskIsSet {
-  const uint8_t* data;
+// The element at a row-major position has a bit set outside ignored_bits,
+// which holds the sign bit of a floating-point dtype so that -0.0 is zero.
+template <typename Bits>
+struct IsNonzero {
+  const Bits* data;
+  Bits ignored_bits;
   int ndim;
   int64_t sizes[kMaxDims];
   int64_t strides[kMaxDims];
@@ -284,7 +287,7 @@ struct MaskIsSet {
       offset += position % sizes[d] * strides[d];
       position /= sizes[d];
     }
-    return data[offset] != 0;
+    return (data[offset] & static_cast<Bits>(~ignored_bits)) != 0;
   }
 };
 
@@ -319,15 +322,18 @@ class Scratch {
   std::vector<void*> blocks_;
 };
 
-// Writes the row-major positions of a mask's true elements to scratch and
-// reads their count back, which waits for the stream.
-Error mask_positions(
-    const Tensor& mask,
+// Writes the row-major positions of a tensor's nonzero elements to scratch
+// and reads their count back, which waits for the stream.
+template <typename Bits>
+Error nonzero_positions(
+    const char* name,
+    const Tensor& tensor,
+    Bits ignored_bits,
     Scratch& scratch,
     cudaStream_t stream,
     const int64_t** positions,
     int64_t* count) {
-  const auto numel = static_cast<int64_t>(mask.numel());
+  const auto numel = static_cast<int64_t>(tensor.numel());
   *positions = nullptr;
   *count = 0;
   if (numel == 0) {
@@ -339,20 +345,28 @@ Error mask_positions(
   cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamIsCapturing(stream, &capture));
   if (capture != cudaStreamCaptureStatusNone) {
-    ET_LOG(Info, "index: a mask index cannot run inside a CUDA graph capture");
+    ET_LOG(Info, "%s: cannot run inside a CUDA graph capture", name);
     return Error::NotSupported;
   }
   // CUB counts items in an int on CUDA 12.
   ET_CHECK_OR_RETURN_ERROR(
       numel <= INT_MAX,
       NotSupported,
-      "index: masks with more than %d elements are not supported",
+      "%s: tensors with more than %d elements are not supported",
+      name,
       INT_MAX);
-  MaskIsSet is_set{static_cast<const uint8_t*>(mask.data_ptr())};
-  is_set.ndim = static_cast<int>(mask.dim());
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor.dim() <= kMaxDims,
+      NotSupported,
+      "%s: tensors with more than %d dims are not supported",
+      name,
+      kMaxDims);
+  IsNonzero<Bits> is_set{
+      static_cast<const Bits*>(tensor.data_ptr()), ignored_bits};
+  is_set.ndim = static_cast<int>(tensor.dim());
   for (int d = 0; d < is_set.ndim; ++d) {
-    is_set.sizes[d] = mask.size(d);
-    is_set.strides[d] = mask.stride(d);
+    is_set.sizes[d] = tensor.size(d);
+    is_set.strides[d] = tensor.stride(d);
   }
   auto* selected =
       static_cast<int64_t*>(scratch.allocate(numel * sizeof(int64_t)));
@@ -361,7 +375,8 @@ Error mask_positions(
   ET_CHECK_OR_RETURN_ERROR(
       selected != nullptr && selected_count != nullptr,
       MemoryAllocationFailed,
-      "index: allocating the mask positions failed");
+      "%s: allocating the nonzero positions failed",
+      name);
   thrust::counting_iterator<int64_t> first(0);
   size_t temp_bytes = 0;
   ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceSelect::If(
@@ -377,7 +392,8 @@ Error mask_positions(
   ET_CHECK_OR_RETURN_ERROR(
       temp != nullptr,
       MemoryAllocationFailed,
-      "index: allocating the mask scan scratch failed");
+      "%s: allocating the scan scratch failed",
+      name);
   ET_CUDA_CHECK_OR_RETURN_ERROR(cub::DeviceSelect::If(
       temp,
       temp_bytes,
@@ -392,6 +408,81 @@ Error mask_positions(
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
   *positions = selected;
   return Error::Ok;
+}
+
+Error mask_positions(
+    const Tensor& mask,
+    Scratch& scratch,
+    cudaStream_t stream,
+    const int64_t** positions,
+    int64_t* count) {
+  return nonzero_positions<uint8_t>(
+      "index", mask, 0, scratch, stream, positions, count);
+}
+
+struct Shape {
+  int ndim;
+  int64_t sizes[kMaxDims];
+};
+
+// Writes the coordinates of row-major positions as the columns of a
+// (count, ndim) tensor with strides (1, count), the layout aten::nonzero gives.
+__global__ void nonzero_coordinates_kernel(
+    const Shape shape,
+    int64_t count,
+    const int64_t* __restrict__ positions,
+    int64_t* __restrict__ out) {
+  for (int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       i < count;
+       i += static_cast<int64_t>(gridDim.x) * blockDim.x) {
+    int64_t position = positions[i];
+    for (int d = shape.ndim - 1; d >= 0; --d) {
+      out[d * count + i] = position % shape.sizes[d];
+      position /= shape.sizes[d];
+    }
+  }
+}
+
+Error nonzero_positions_of(
+    const Tensor& self,
+    Scratch& scratch,
+    cudaStream_t stream,
+    const int64_t** positions,
+    int64_t* count) {
+  constexpr const char* kName = "aoti_torch_cuda_nonzero";
+  switch (self.dtype()) {
+    case ScalarType::Bool:
+    case ScalarType::Byte:
+    case ScalarType::Char:
+      return nonzero_positions<uint8_t>(
+          kName, self, 0, scratch, stream, positions, count);
+    case ScalarType::Short:
+      return nonzero_positions<uint16_t>(
+          kName, self, 0, scratch, stream, positions, count);
+    case ScalarType::Half:
+    case ScalarType::BFloat16:
+      return nonzero_positions<uint16_t>(
+          kName, self, 0x8000u, scratch, stream, positions, count);
+    case ScalarType::Int:
+      return nonzero_positions<uint32_t>(
+          kName, self, 0, scratch, stream, positions, count);
+    case ScalarType::Float:
+      return nonzero_positions<uint32_t>(
+          kName, self, 0x80000000u, scratch, stream, positions, count);
+    case ScalarType::Long:
+      return nonzero_positions<uint64_t>(
+          kName, self, 0, scratch, stream, positions, count);
+    case ScalarType::Double:
+      return nonzero_positions<uint64_t>(
+          kName, self, 1ull << 63, scratch, stream, positions, count);
+    default:
+      ET_LOG(
+          Error,
+          "%s: unsupported dtype %d",
+          kName,
+          static_cast<int>(self.dtype()));
+      return Error::NotSupported;
+  }
 }
 
 struct Advanced {
@@ -1236,6 +1327,43 @@ Error scatter(
   }
 }
 
+// The shape a and b broadcast to, as in ATen.
+Error broadcast_sizes(
+    const Tensor& a,
+    const Tensor& b,
+    std::vector<int64_t>* sizes) {
+  const size_t ndim = std::max(a.dim(), b.dim());
+  sizes->assign(ndim, 1);
+  for (size_t i = 0; i < ndim; ++i) {
+    const int64_t size_a =
+        i < ndim - a.dim() ? 1 : a.size(i - (ndim - a.dim()));
+    const int64_t size_b =
+        i < ndim - b.dim() ? 1 : b.size(i - (ndim - b.dim()));
+    ET_CHECK_OR_RETURN_ERROR(
+        size_a == size_b || size_a == 1 || size_b == 1,
+        InvalidArgument,
+        "masked_select: self and mask cannot be broadcast together");
+    (*sizes)[i] = size_a == 1 ? size_b : size_a;
+  }
+  return Error::Ok;
+}
+
+// A view of tensor broadcast to sizes, with stride 0 along the dims it
+// expands.
+Tensor expanded(const Tensor& tensor, const std::vector<int64_t>& sizes) {
+  const size_t lead = sizes.size() - tensor.dim();
+  std::vector<int64_t> strides(sizes.size(), 0);
+  for (size_t d = 0; d < tensor.dim(); ++d) {
+    if (tensor.size(d) != 1) {
+      strides[lead + d] = tensor.stride(d);
+    }
+  }
+  return tensor.as_strided(
+      executorch::backends::aoti::slim::makeArrayRef(sizes),
+      executorch::backends::aoti::slim::makeArrayRef(strides),
+      tensor.storage_offset());
+}
+
 } // namespace
 
 #ifdef __cplusplus
@@ -1510,6 +1638,80 @@ AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
       src,
       reduction,
       include_self != 0);
+}
+
+AOTITorchError
+aoti_torch_cuda_masked_select(Tensor* self, Tensor* mask, Tensor** ret0) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr && mask != nullptr && ret0 != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_masked_select: null argument");
+  ET_CHECK_OR_RETURN_ERROR(
+      mask->dtype() == ScalarType::Bool || mask->dtype() == ScalarType::Byte,
+      InvalidArgument,
+      "aoti_torch_cuda_masked_select: mask must be bool or uint8");
+  std::vector<int64_t> sizes;
+  ET_CHECK_OK_OR_RETURN_ERROR(broadcast_sizes(*self, *mask, &sizes));
+  // A 0-dim mask would cover no dims of the indexed tensor, so index a 1-D
+  // view of everything instead.
+  if (sizes.empty()) {
+    sizes = {1};
+  }
+  Tensor self_view = expanded(*self, sizes);
+  Tensor mask_view = expanded(*mask, sizes);
+  Tensor* mask_index = &mask_view;
+  Tensor* const* indices[] = {&mask_index};
+  return aoti_torch_cuda_index_Tensor(&self_view, indices, 1, ret0);
+}
+
+AOTITorchError aoti_torch_cuda_nonzero(Tensor* self, Tensor** ret0) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr && ret0 != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_nonzero: null argument");
+  ET_CHECK_OR_RETURN_ERROR(
+      self->is_cuda(),
+      NotSupported,
+      "aoti_torch_cuda_nonzero: self is not on the CUDA device");
+  const auto device = static_cast<int32_t>(self->device_index());
+  auto stream_result = getCurrentCUDAStream(self->device_index());
+  ET_CHECK_OR_RETURN_ERROR(
+      stream_result.ok(),
+      Internal,
+      "aoti_torch_cuda_nonzero: failed to get CUDA stream");
+  cudaStream_t stream = stream_result.get();
+
+  Scratch scratch(device, stream);
+  const int64_t* positions = nullptr;
+  int64_t count = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      nonzero_positions_of(*self, scratch, stream, &positions, &count));
+
+  const auto ndim = static_cast<int64_t>(self->dim());
+  const std::vector<int64_t> sizes = {count, ndim};
+  const std::vector<int64_t> strides = {1, count};
+  Tensor* result = nullptr;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_empty_strided(
+      2,
+      sizes.data(),
+      strides.data(),
+      static_cast<int32_t>(ScalarType::Long),
+      static_cast<int32_t>(c10_slim::DeviceType::CUDA),
+      device,
+      &result));
+  std::unique_ptr<Tensor, void (*)(Tensor*)> owner(result, [](Tensor* tensor) {
+    (void)aoti_torch_delete_tensor_object(tensor);
+  });
+
+  if (count > 0 && ndim > 0) {
+    Shape shape{static_cast<int>(ndim)};
+    std::copy(self->sizes().begin(), self->sizes().end(), shape.sizes);
+    nonzero_coordinates_kernel<<<grid_size(count), kThreads, 0, stream>>>(
+        shape, count, positions, static_cast<int64_t*>(result->data_ptr()));
+    ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
+  }
+  *ret0 = owner.release();
+  return Error::Ok;
 }
 
 #ifdef __cplusplus

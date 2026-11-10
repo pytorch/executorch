@@ -36,7 +36,12 @@ class DecomposeRemainder(ExportPass):
         const_cache = {}
 
         for node in list(graph.nodes):
-            if node.op == "call_function" and node.target in self.remainder_targets:
+            if (
+                node.op == "call_function"
+                and node.target in self.remainder_targets
+                # integer remainder is exact as QNN Mod (op_remainder)
+                and node.meta["val"].is_floating_point()
+            ):
                 x_arg = node.args[0]
                 y_arg = node.args[1]
                 is_edge = isinstance(node.target, EdgeOpOverload)

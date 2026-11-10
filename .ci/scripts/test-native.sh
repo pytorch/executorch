@@ -36,12 +36,13 @@ case "${component}" in
   ggml)
     cmake_args+=(
       -DEXECUTORCH_BUILD_NATIVE_GGML=ON
+      -DEXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON
       -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON
       -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
       -DGGML_NATIVE=OFF
     )
     # TODO: run the other sample tests once they pass.
-    targets+=(run_hf_llm_ggml native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test)
+    targets+=(run_hf_llm_ggml run_whisper_ggml_cpu native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test)
     test_regex='^native_(ggml_engine|llm_runner_utils|output_check)_test$|^native_ggml_sample_test_act_quant$'
     ;;
   vulkan)
@@ -76,8 +77,11 @@ ctest --test-dir "${build_dir}" \
   -R "${test_regex}" --output-on-failure --no-tests=error --timeout 120
 
 if [[ "${component}" == "ggml" ]]; then
-  PYTHONPATH="${PWD}/src:${PYTHONPATH:-}" \
-    FLATC_EXECUTABLE="${FLATC_EXECUTABLE:-${PWD}/${build_dir}/third-party/flatc_ep/bin/flatc}" \
-    python .ci/scripts/test_native_llm_runner.py \
-      --runner "${build_dir}/backends/native/examples/hf_llm/runtime/run_hf_llm_ggml"
+  export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+  export FLATC_EXECUTABLE="${FLATC_EXECUTABLE:-${PWD}/${build_dir}/third-party/flatc_ep/bin/flatc}"
+  python .ci/scripts/test_native_llm_runner.py \
+    --runner "${build_dir}/backends/native/examples/hf_llm/runtime/run_hf_llm_ggml"
+  NATIVE_WHISPER_RUNNER="${PWD}/${build_dir}/backends/native/examples/audio/run_whisper_ggml_cpu" \
+    python -m pytest \
+    backends/native/test/test_hf_whisper.py::WhisperNativeExportTest::test_ggml_runner_matches_eager
 fi
