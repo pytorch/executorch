@@ -7,6 +7,7 @@
 """Report native lowering for exported Hugging Face models."""
 
 import collections
+import inspect
 import operator
 
 import torch
@@ -35,9 +36,13 @@ class PositionedStaticLayer(StaticLayer):
     @classmethod
     def replacing(cls, old: StaticLayer, dtype: torch.dtype) -> "PositionedStaticLayer":
         layer = cls(old.max_cache_len)
-        layer.lazy_initialization(
-            old.keys[:, :, :1].to(dtype), old.values[:, :, :1].to(dtype)
-        )
+        keys = old.keys[:, :, :1].to(dtype)
+        values = old.values[:, :, :1].to(dtype)
+        # transformers 4 sizes both buffers from the keys alone.
+        if len(inspect.signature(layer.lazy_initialization).parameters) == 1:
+            layer.lazy_initialization(keys)
+        else:
+            layer.lazy_initialization(keys, values)
         return layer
 
     def update(self, key_states, value_states, *args, **kwargs):

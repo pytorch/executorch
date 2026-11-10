@@ -145,3 +145,55 @@ Using an ``ETRecord``
 ---------------------
 
 Pass the ``ETRecord`` as an optional argument into the `Inspector API <model-inspector.html>`__ to access this data and  do post-run analysis.
+
+Delegate partition provenance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Tools that need to construct delegate/partition structure before an ETDump is
+available can use ``get_delegate_partition_provenance``. This exposes a
+backend-agnostic view of the existing ETRecord delegate and debug-handle
+metadata without requiring consumers to access private ETRecord fields.
+
+.. code-block:: python
+
+    from executorch.devtools.etrecord import (
+        get_delegate_partition_provenance,
+        parse_etrecord,
+    )
+
+    etrecord = parse_etrecord("model_debug.etrecord")
+    provenance = get_delegate_partition_provenance(etrecord)
+
+    for partition in provenance.get("forward", ()):
+        print(partition.instruction_id)
+        print(partition.backend_id)
+        print(partition.source_debug_handles)
+        print(partition.delegate_debug_map)  # backend debug ID -> source handles
+
+.. autofunction:: get_delegate_partition_provenance
+
+.. autoclass:: DelegatePartitionProvenance
+    :members:
+
+The delegate instruction ID is scoped to its method and identifies the emitted
+``executorch_call_delegate`` instruction. It is suitable as an artifact-local
+partition identity, but it is not guaranteed to remain stable after rebuilding
+or re-exporting the model. A source debug handle may also appear in more than
+one partition, so consumers should preserve the many-to-many provenance
+relationship rather than assuming a single partition per debug handle.
+
+``source_debug_handles`` are collected from the delegate's original lowered FX
+module, not necessarily from the original Python model. Repeated handles are
+removed in encounter order; nodes without handles are skipped, so this tuple
+may be empty. The read-only ``delegate_debug_map`` maps backend-specific IDs
+(canonical strings, including numeric IDs) to tuples of source debug handles.
+Some backends do not provide operation-level identifiers, so the map may be
+empty. An empty overall dictionary means no delegate-map metadata is present;
+a known method with no partitions is represented by an empty tuple.
+
+.. note::
+
+    Delegates inside higher-order control-flow subgraphs (such as ``cond``,
+    ``map`` and ``scan``) may be absent from these maps because the emitter
+    currently merges subgraph instructions without merging provenance maps.
+    This is an existing limitation of the ETRecord emission path.

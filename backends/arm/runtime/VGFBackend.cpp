@@ -1480,6 +1480,11 @@ VkResult vkml_allocate_basics(
     return VK_ERROR_INCOMPATIBLE_DRIVER;
   }
 
+  // VGF_FUSED_GRAPHICS_QUEUE_BEGIN: optional strict queue selection.
+  const char* graphics_env =
+      std::getenv("EXECUTORCH_VGF_FUSED_REQUIRE_GRAPHICS_QUEUE");
+  const bool require_graphics_queue = graphics_env != nullptr &&
+      graphics_env[0] == '1' && graphics_env[1] == '\0';
   // Find suitable queue family
   uint32_t qf_count;
   vkGetPhysicalDeviceQueueFamilyProperties(
@@ -1489,21 +1494,33 @@ VkResult vkml_allocate_basics(
       *physical_device, &qf_count, qps.data());
   uint32_t qf = UINT32_MAX;
   for (uint32_t i = 0; i < qf_count; ++i) {
-    constexpr VkQueueFlags capabilities =
+    constexpr VkQueueFlags compute_and_graph =
         VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
-    const VkQueueFlags present = qps[i].queueFlags & capabilities;
-    // Both capabilities are required when a single VkQueue is shared
-    // with the Vulkan delegate. Restore legacy VGF queue selection
-    // for independent, non-shared execution.
-    const bool suitable =
-        shared_info != nullptr ? present == capabilities : present != 0;
+    const VkQueueFlags flags = qps[i].queueFlags;
+    const VkQueueFlags fused_required =
+        VK_QUEUE_GRAPHICS_BIT | compute_and_graph;
+
+    // Fused work needs graphics + compute + data-graph on one queue.
+    // Shared VGF/Vulkan needs compute + data-graph.
+    // Standalone VGF retains its historical either-flag policy.
+    const bool suitable = require_graphics_queue
+        ? (flags & fused_required) == fused_required
+        : (shared_info != nullptr
+               ? (flags & compute_and_graph) == compute_and_graph
+               : (flags & compute_and_graph) != 0);
+
     if (qps[i].queueCount > 0 && suitable) {
       qf = i;
       break;
     }
   }
   if (qf == UINT32_MAX) {
-    ET_LOG(Error, "Failed to find suitable queue");
+    ET_LOG(
+        Error,
+        "%s",
+        require_graphics_queue
+            ? "No queue family supports graphics + compute + data graph"
+            : "Failed to find suitable queue");
     return VK_ERROR_UNKNOWN;
   }
   if (queue_family_index != nullptr) {
