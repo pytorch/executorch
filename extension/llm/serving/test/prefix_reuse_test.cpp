@@ -691,17 +691,10 @@ TEST_F(PrefixReuseTest, MixedNamedHistoryIncludesPendingHiddenStopToken) {
   ASSERT_TRUE(first->terminal);
   EXPECT_EQ(
       first->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
-  invalid_suffix = true;
-  auto failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
-  failed.wait();
-  ASSERT_TRUE(failed.error());
-  EXPECT_EQ(failed.error()->code, ErrorCode::InvalidArgument);
-  EXPECT_EQ(executor.opened().size(), 1u);
-  invalid_suffix = false;
   refuse_suffix = true;
   prepare_calls = 0;
   executor.accept_prepared = false;
-  failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
+  auto failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
   failed.wait();
   ASSERT_TRUE(failed.error());
   EXPECT_EQ(failed.error()->code, ErrorCode::InvalidArgument);
@@ -732,6 +725,62 @@ TEST_F(PrefixReuseTest, MixedNamedHistoryIncludesPendingHiddenStopToken) {
   EXPECT_EQ(changed->terminal->stats.session_reset_reason, "mismatch");
   EXPECT_EQ(changed->terminal->stats.reused_prompt_tokens, 0u);
 }
+
+class ContinuationSuffixFailureTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<int> {};
+
+TEST_P(
+    ContinuationSuffixFailureTest,
+    InvalidOrThrowingSuffixReplaysFullPrompt) {
+  config.prefix_cache_capacity = 0;
+  executor.accept_prepared = true;
+  bool fail = false;
+  model_preparer = [&](const auto&,
+                       PromptInput input) -> ModelPreparationResult {
+    auto prepared = std::make_shared<GatedSuffixInput>(
+        input.segments[0].get_tokens(), replacement_preparation);
+    prepared->invalid_suffix = fail && GetParam() == 0;
+#if ET_HAS_EXCEPTIONS
+    prepared->on_suffix = [&](std::size_t) {
+      if (fail && GetParam() == 2) {
+        throw std::runtime_error("continuation suffix failed");
+      }
+    };
+#endif
+    return batching::PreparedInputPtr{prepared};
+  };
+  start();
+  auto seed = submit(output(), {1, 2, 3});
+  seed.wait();
+  ASSERT_FALSE(seed.error());
+  fail = true;
+  if (GetParam() == 1) {
+    executor.throwing_view_start = 4;
+  }
+  auto event = output();
+  auto handle = submit(event, {1, 2, 3, 100, 4});
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  ASSERT_FALSE(handle.error());
+  EXPECT_EQ(event->terminal->stats.session_reset_reason, "suffix_unavailable");
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(executor.feeds().back().position, 0);
+  EXPECT_EQ(
+      executor.feeds().back().tokens, (std::vector<Token>{1, 2, 3, 100, 4}));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MalformedAndThrowingAcceptanceAndThrowingConstruction,
+    ContinuationSuffixFailureTest,
+    ::testing::Values(
+        0
+#if ET_HAS_EXCEPTIONS
+        ,
+        1,
+        2
+#endif
+        ));
 
 class MixedNamedFallbackTest : public PrefixReuseTest,
                                public ::testing::WithParamInterface<bool> {};
@@ -1482,6 +1531,7 @@ TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
   submit(output(), {1, 7, 7, 7, 2, 4}, "b").wait();
   submit(output(), {1, 7, 7, 7, 8}).wait();
   executor.rejected_view_start = 5;
+  const auto clones = executor.clone_calls.load();
   const auto checked = executor.acceptance_calls[5];
   auto event = output();
   submit(event, {1, 7, 7, 7, 2, 9}).wait();
@@ -1489,6 +1539,7 @@ TEST_F(PrefixReuseTest, EqualLengthCandidatesCheckRejectedSuffixOnce) {
   ASSERT_FALSE(event->terminal->error);
   EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
   EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+  EXPECT_EQ(executor.clone_calls.load(), clones + 2);
 }
 
 TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
@@ -1496,6 +1547,7 @@ TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
   start();
   submit(output(), {1, 7, 7, 7, 2}).wait();
   executor.rejected_view_start = 5;
+  const auto clones = executor.clone_calls.load();
   const auto checked = executor.acceptance_calls[5];
   auto event = output();
   submit(event, {1, 7, 7, 7, 2, 9}).wait();
@@ -1503,6 +1555,7 @@ TEST_F(PrefixReuseTest, FallbackDoesNotRecheckRejectedLiveBoundary) {
   ASSERT_FALSE(event->terminal->error);
   EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
   EXPECT_EQ(executor.acceptance_calls[5], checked + 1);
+  EXPECT_EQ(executor.clone_calls.load(), clones);
 }
 
 class AdoptedSnapshotLruTest
@@ -2991,12 +3044,16 @@ TEST_F(PrefixReuseTest, RejectedLiveBoundaryAndShorterErrorFallBackCold) {
   EXPECT_EQ(executor.feeds().back().position, 0);
   EXPECT_EQ(
       executor.feeds().back().tokens, (std::vector<Token>{1, 7, 7, 7, 2, 9}));
+  EXPECT_EQ(executor.acceptance_calls[4], checked4 + 1);
+  EXPECT_EQ(executor.acceptance_calls[5], checked5 + 1);
 }
 
-class SnapshotCloneRefusalTest : public PrefixReuseTest,
-                                 public ::testing::WithParamInterface<bool> {};
+#endif
 
-TEST_P(SnapshotCloneRefusalTest, UncloneableSnapshotDoesNotHideShorterMatch) {
+class SnapshotSuffixFailureTest : public PrefixReuseTest,
+                                  public ::testing::WithParamInterface<bool> {};
+
+TEST_P(SnapshotSuffixFailureTest, UncloneableSnapshotDoesNotHideShorterMatch) {
   use_mixed_preparer();
   start();
   auto first = submit(output(), {1, 7, 7, 7, 2, 3}, "longer");
@@ -3025,14 +3082,26 @@ TEST_P(SnapshotCloneRefusalTest, UncloneableSnapshotDoesNotHideShorterMatch) {
   EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 4u);
   EXPECT_EQ(executor.feeds().back().position, 4);
   EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{2, 9}));
+  EXPECT_EQ(executor.acceptance_calls[4], checked4 + 2);
+  EXPECT_EQ(executor.acceptance_calls[5], checked5);
+  EXPECT_EQ(executor.clone_attempts(longer), attempted + 1);
   // The new session may capture its own prompt after adopting the shorter one.
   EXPECT_GE(executor.clone_attempts(shorter), 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     CloneRefusal,
-    SnapshotCloneRefusalTest,
-    ::testing::Bool());
+    SnapshotSuffixFailureTest,
+    ::testing::Values(
+        false
+#if ET_HAS_EXCEPTIONS
+        ,
+        true
+#endif
+        ));
+
+class SnapshotCloneRefusalTest : public PrefixReuseTest,
+                                 public ::testing::WithParamInterface<bool> {};
 
 TEST_P(
     SnapshotCloneRefusalTest,
@@ -3055,6 +3124,9 @@ TEST_P(
   EXPECT_EQ(executor.acceptance_calls[5] - checked, 2);
 }
 
-#endif
+INSTANTIATE_TEST_SUITE_P(
+    LiveCloneAcceptedAndRefused,
+    SnapshotCloneRefusalTest,
+    ::testing::Bool());
 
 } // namespace

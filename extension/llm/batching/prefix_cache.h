@@ -364,7 +364,7 @@ class ET_EXPERIMENTAL PrefixCache {
   // touch() after adopting the match. The selector must not mutate this cache.
   // Candidates arrive in descending length order, with repeated lengths
   // allowed. Refused clones bypass the selector. Use returns the cloned match;
-  // Skip releases it and advances to the next candidate. Stop
+  // Skip releases it and rejects all candidates of that length. Stop
   // returns stopped=true, distinct from an exhausted search. Allocation failure
   // ends the search as a miss; other exceptions propagate.
   FindResult find_identity(
@@ -400,7 +400,11 @@ class ET_EXPERIMENTAL PrefixCache {
             return a.matched != b.matched ? a.matched > b.matched
                                           : a.rank < b.rank;
           });
+      std::optional<std::size_t> skipped_length;
       for (const auto& candidate : candidates) {
+        if (skipped_length == candidate.matched) {
+          continue;
+        }
         auto session =
             candidate.entry->snapshot
                 .clone_async(static_cast<Position>(candidate.matched))
@@ -414,6 +418,7 @@ class ET_EXPERIMENTAL PrefixCache {
             return {std::nullopt, true};
           }
           if (decision == MatchDecision::Skip) {
+            skipped_length = candidate.matched;
             continue;
           }
         }

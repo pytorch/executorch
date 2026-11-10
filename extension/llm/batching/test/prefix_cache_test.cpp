@@ -898,7 +898,7 @@ TEST_F(PrefixCacheTest, EqualLengthMatchesPreferTheMostRecentlyUsedSnapshot) {
   EXPECT_EQ(executor.clones().back().source, first_id);
 }
 
-TEST_F(PrefixCacheTest, FindThresholdSkipsClonesAndDoesNotRefreshLru) {
+TEST_F(PrefixCacheTest, FindThresholdSkipsClones) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
   ASSERT_TRUE(cache.insert({8, 9}, snapshot({8, 9})));
@@ -909,14 +909,6 @@ TEST_F(PrefixCacheTest, FindThresholdSkipsClonesAndDoesNotRefreshLru) {
   EXPECT_FALSE(
       cache.find_identity(request, std::numeric_limits<size_t>::max()).match);
   EXPECT_EQ(executor.clones().size(), before);
-  ASSERT_TRUE(cache.insert({6, 7}, snapshot({6, 7})));
-  EXPECT_FALSE(cache.lookup({1, 2, 3, 4}));
-  const auto other =
-      token_identity(std::make_shared<const Tokens>(Tokens{8, 9, 10}));
-  auto match = cache.find_identity(other, 1).match;
-  ASSERT_TRUE(match);
-  EXPECT_EQ(match->matched_tokens, 2u);
-  expect_cold_match(*match, {8, 9, 10});
 }
 
 TEST_F(PrefixCacheTest, FindRefreshesLruOnlyAfterTouch) {
@@ -1006,6 +998,27 @@ TEST_F(PrefixCacheTest, CandidateSelectionSkipsClonedMatchesAndHonorsBounds) {
   EXPECT_FALSE(missed.stopped);
   EXPECT_EQ(checked, (std::vector<std::size_t>{4}));
   EXPECT_EQ(executor.clones().size(), before + 4);
+}
+
+TEST_F(PrefixCacheTest, RejectedLengthSkipsTiedCandidatesWithoutCloning) {
+  PrefixCache cache(3);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4, 7}, snapshot({1, 2, 3, 4, 7})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4, 8}, snapshot({1, 2, 3, 4, 8})));
+  const auto request =
+      token_identity(std::make_shared<const Tokens>(Tokens{1, 2, 3, 4, 9}));
+  const auto before = executor.clones().size();
+  std::vector<std::size_t> checked;
+  auto result = cache.find_identity(request, 0, 4, [&](std::size_t size) {
+    checked.push_back(size);
+    return size == 4 ? PrefixCache::MatchDecision::Skip
+                     : PrefixCache::MatchDecision::Use;
+  });
+  ASSERT_TRUE(result.match);
+  EXPECT_EQ(result.match->matched_tokens, 3u);
+  EXPECT_EQ(checked, (std::vector<std::size_t>{4, 3}));
+  EXPECT_EQ(executor.clones().size(), before + 2);
+  expect_cold_match(*result.match, {1, 2, 3, 4, 9});
 }
 
 TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
