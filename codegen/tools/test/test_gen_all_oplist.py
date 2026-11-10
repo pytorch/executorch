@@ -118,5 +118,31 @@ operators:
         with self.assertRaisesRegex(Exception, "Operator .* is used in 2 models"):
             gen_all_oplist.main(args)
 
+    def test_gen_all_oplist_merges_files_and_directories(self) -> None:
+        model_dir = os.path.join(self.temp_dir.name, "model2")
+        os.mkdir(model_dir)
+        os.rename(self.test2_yaml, os.path.join(model_dir, "selected_operators.yaml"))
+        # A selection that selects nothing, such as one with only prim ops.
+        empty_yaml = os.path.join(self.temp_dir.name, "empty.yaml")
+        with open(empty_yaml, "w") as f:
+            f.write("build_features: []\n")
+        out_dir = os.path.join(self.temp_dir.name, "out")
+        os.mkdir(out_dir)
+        gen_all_oplist.gen_all_oplist(out_dir, [self.test1_yaml, model_dir, empty_yaml])
+        with open(os.path.join(out_dir, "selected_operators.yaml")) as f:
+            es = yaml.safe_load(f)
+        debug_info = es["operators"]["aten::_cdist_forward.out"]["debug_info"]
+        self.assertEqual(
+            sorted(debug_info),
+            sorted(
+                [
+                    os.path.realpath(self.test1_yaml),
+                    os.path.realpath(
+                        os.path.join(model_dir, "selected_operators.yaml")
+                    ),
+                ]
+            ),
+        )
+
     def tearDown(self):
         self.temp_dir.cleanup()

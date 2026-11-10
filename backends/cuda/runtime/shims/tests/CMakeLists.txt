@@ -50,7 +50,9 @@ set(CUDA_SHIM_TESTS
 )
 
 # CUDA-specific tests requiring GPU kernels
-set(CUDA_KERNEL_TESTS test_aoti_torch_cuda__weight_int4pack_mm)
+set(CUDA_KERNEL_TESTS test_aoti_torch_cuda__weight_int4pack_mm
+                      test_aoti_torch_cuda_masked_select
+)
 
 enable_testing()
 
