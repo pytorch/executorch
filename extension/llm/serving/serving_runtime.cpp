@@ -762,8 +762,7 @@ struct ServingRuntime::Impl {
         checked.result = select_input(request, start, checked.delta);
 #if ET_HAS_EXCEPTIONS
       } catch (...) {
-        ET_LOG(
-            Warning, "Prefix suffix preparation threw at position %zu", start);
+        ET_LOG(Error, "Prefix suffix preparation threw at position %zu", start);
         checked.result = Selection::Unavailable;
       }
 #endif
@@ -771,7 +770,7 @@ struct ServingRuntime::Impl {
       if (const auto* error = std::get_if<ServingError>(&checked.result);
           error && error->code != ErrorCode::NotReady) {
         ET_LOG(
-            Warning,
+            Error,
             "Prefix suffix at position %zu rejected: %s",
             start,
             error->message.c_str());
