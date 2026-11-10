@@ -15,15 +15,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 
-from executorch.examples.samsung.scripts.llm.util.masking_utils import (
-    create_causal_attn_mask,
-    create_sliding_window_attn_mask,
-)
+from transformers.cache_utils import Cache, DynamicCache
 from transformers.generation import GenerationMixin
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+)
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 from transformers.models.gemma3.modeling_gemma3 import (
     apply_rotary_pos_emb,
@@ -88,7 +90,7 @@ class Gemma3DecoderLayer_ENN(Gemma3DecoderLayer):
     def __init__(self, config: Gemma3TextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         self.self_attn = Gemma3Attention_ENN(config=config, layer_idx=layer_idx)
-        if self.attention_type == "full_attention":
+        if config.layer_types[layer_idx] == "full_attention":
             self.attention_type_num = 0
         else:
             self.attention_type_num = 1  # "sliding_attention"
@@ -217,12 +219,26 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
     config: Gemma3TextConfig
     base_model_prefix = "language_model"
 
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        # transformers dispatches the weights per `device_map` and never forwards
+        # it to __init__, so move the KV cache to a requested torch.device here.
+        device_map = kwargs.get("device_map")
+        model = super().from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
+        if isinstance(device_map, torch.device):
+            model.target_device = device_map
+            model.setup_kv_cache()
+        return model
+
     def __init__(
         self,
         config: Gemma3TextConfig,
         max_context_len: int = 1024,
         max_seq_len: int = 1024,
         ar_len: int = 1,
+        device: Optional[torch.device] = None,
     ):
         super().__init__(config)
         self.model = Gemma3TextModel_ENN(config)
@@ -246,16 +262,14 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
         self.max_seq_len = max_seq_len
         self.ar_len = ar_len
 
-        self.target_device = (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.target_device = device if device is not None else torch.device("cpu")
         self.setup_kv_cache()
 
     def setup_kv_cache(self):
         cache_shape = (
             self.batch_size,
             self.num_key_value_heads,  # n_heads,
-            self.max_context_len - self.ar_len,
+            self.max_context_len,
             self.head_dim,  # head_dim
         )
         k_cache_list = []
@@ -278,10 +292,62 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
         self.k_cache = tuple(k_cache_list)
         self.v_cache = tuple(v_cache_list)
 
+    def _build_attention_mask(
+        self, num_token: int, cache_position: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Build the full/sliding attention masks for one static ENN step.
+
+        Mirrors the reference ENN forward: the ``num_token`` current keys are
+        concatenated after ``max_context_len - num_token`` cached-history columns
+        to span ``max_context_len``. The mask is derived from the absolute
+        ``cache_position`` of the current tokens, so a decode step attends the
+        already-cached history (columns before ``cache_position[0]``) instead of
+        only its own token. Attended cells are encoded as 0 and masked cells as
+        -255 so they can be added to the attention logits directly.
+        """
+        max_token = self.max_context_len
+        history_len = max_token - num_token
+        device = self.target_device
+        dtype = self.dtype_setting
+
+        cache_position = cache_position.to(device)
+        # Global position of each key column: the leading history columns map to
+        # their own index, the trailing current columns map to cache_position.
+        col_position = torch.cat(
+            [torch.arange(history_len, device=device), cache_position]
+        ).view(
+            1, -1
+        )  # [1, max_token]
+        query_position = cache_position.view(-1, 1)  # [num_token, 1]
+        is_history = torch.arange(max_token, device=device) < history_len
+        start = cache_position[0]
+
+        def build(use_sliding: bool) -> torch.Tensor:
+            attend = (is_history & (col_position < start)) | (
+                ~is_history & (col_position <= query_position)
+            )
+            if use_sliding:
+                attend = attend & (
+                    col_position > (query_position - self.config.sliding_window)
+                )
+            mask = torch.where(
+                attend,
+                torch.zeros((), dtype=dtype, device=device),
+                torch.full((), -255.0, dtype=dtype, device=device),
+            )
+            mask = mask.unsqueeze(0).unsqueeze(0)  # [1, 1, num_token, max_token]
+            return mask.expand(self.batch_size, 1, num_token, max_token)
+
+        return build(use_sliding=False), build(use_sliding=True)
+
     def get_metadata(self):
+        # gemma-3-1b-it tokenizer emits both pad(1) and eos(106) as end tokens,
+        # but its config only exposes eos_token_id=1. Hard-code the full set and
+        # pin it to the supported "gemma3_1" model; adjust if other variants
+        # with a different tokenizer are added.
         return {
             "get_bos_id": self.config.bos_token_id,
-            "get_eos_ids": self.config.eos_token_id,
+            "get_eos_ids": [1, 106],
             "get_max_seq_len": self.max_seq_len,
             "get_max_context_len": self.max_context_len,
             "get_n_layers": self.config.num_hidden_layers,
@@ -304,19 +370,11 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
         input_ids = torch.randint(
             1, self.vocab_size, (self.batch_size, num_token), device=self.target_device
         )
-        attention_mask = (
-            create_causal_attn_mask(
-                self.batch_size,
-                num_token,
-                self.max_context_len,
-            ).to(device=self.target_device, dtype=self.dtype_setting),
-            create_sliding_window_attn_mask(
-                self.batch_size,
-                num_token,
-                self.max_context_len,
-                self.config.sliding_window,
-            ).to(device=self.target_device, dtype=self.dtype_setting),
-        )
+        cache_position = torch.arange(num_token, device=self.target_device)
+        full_mask, sliding_mask = self._build_attention_mask(num_token, cache_position)
+        # ``_build_attention_mask`` encodes attended cells as 0 and masked cells
+        # as -255, matching what ``forward`` feeds to the model.
+        attention_mask = (full_mask, sliding_mask)
         position_ids = torch.arange(num_token, device=self.target_device)
         position_ids = position_ids.unsqueeze(0)
         hidden_states_dummy = torch.zeros(input_ids.shape + (self.hidden_size,)).to(
@@ -329,13 +387,200 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
             hidden_states_dummy, position_ids, layer_type="sliding_attention"
         )
 
+        # Match the reference: keep the full static buffer but only feed the
+        # graph a prefix of length max_context_len - num_token, so the model
+        # concatenates it with the num_token new keys to span max_context_len.
+        k_cache = tuple(
+            k[:, :, 0 : self.max_context_len - num_token, :].to(self.target_device)
+            for k in self.k_cache
+        )
+        v_cache = tuple(
+            v[:, :, 0 : self.max_context_len - num_token, :].to(self.target_device)
+            for v in self.v_cache
+        )
+
         example_inputs = (
             input_ids,
             attention_mask,
             position_embeddings_global,
             position_embeddings_local,
-            self.k_cache,
-            self.v_cache,
+            k_cache,
+            v_cache,
         )
 
-        return example_inputs
+        token_dim = torch.export.Dim.AUTO(min=1, max=self.max_seq_len)
+        cache_dim = torch.export.Dim.AUTO(min=1, max=self.max_seq_len)
+        max_token_dim = torch.export.Dim.AUTO(min=1, max=self.max_seq_len)
+
+        kv_cache_dyn_list = []
+        for _ in range(self.config.num_hidden_layers):
+            kv_cache_dyn_list.append({2: cache_dim})
+        kv_cache_dyn = tuple(kv_cache_dyn_list)
+
+        dynamic_shapes = {
+            "input_ids": {1: token_dim},
+            "attention_mask": (
+                {2: token_dim, 3: max_token_dim},  # 'full_attention'
+                {2: token_dim, 3: max_token_dim},  # 'sliding_attention'
+            ),
+            # "cache_position": {0: token_dim},
+            "position_embeddings_global": (
+                {1: token_dim},
+                {1: token_dim},
+            ),
+            "position_embeddings_local": (
+                {1: token_dim},
+                {1: token_dim},
+            ),
+            "k_cache": kv_cache_dyn,
+            "v_cache": kv_cache_dyn,
+        }
+
+        return example_inputs, dynamic_shapes
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        logits_to_keep: Union[int, torch.Tensor] = 0,
+        **kwargs,
+    ) -> CausalLMOutputWithPast:
+        """Run a single prefill/decode step of the static ENN model.
+
+        Builds the position embeddings and attention masks for ``input_ids``
+        (typically a prefill of ``ar_len`` tokens or a single decode token, but
+        any length up to ``self.max_context_len`` is accepted) and runs them
+        through the static KV cache in ``self.model``. The attention mask width
+        is the static cache length (``max_context_len``), of which the leading
+        ``max_context_len - num_token`` entries are enabled/masked, and the newly
+        produced key/value states are written back
+        into those static buffers at ``cache_position`` so the history accumulates
+        across decode steps. ``cache_position``/``position_ids`` are tracked with
+        a ``DynamicCache`` so the model also works with HF ``generate``. The ENN
+        attention masks are always reconstructed here, so any HF-style
+        ``attention_mask`` argument is ignored. Extra HF ``generate`` kwargs are
+        also accepted and ignored.
+        """
+        num_token = input_ids.shape[1]
+
+        # Manage the KV cache sequence position for HF `generate`.
+        if past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+
+        if cache_position is None:
+            past_seen_tokens = (
+                past_key_values.get_seq_length() if past_key_values is not None else 0
+            )
+            cache_position = torch.arange(
+                past_seen_tokens,
+                past_seen_tokens + num_token,
+                device=self.target_device,
+            )
+
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        # Create position embeddings shared across the decoder layers.
+        hidden_states_dummy = torch.zeros(
+            input_ids.shape + (self.hidden_size,), device=self.target_device
+        )
+        position_embeddings_global = self.rotary_emb(
+            hidden_states_dummy, position_ids, layer_type="full_attention"
+        )
+        position_embeddings_local = self.rotary_emb(
+            hidden_states_dummy, position_ids, layer_type="sliding_attention"
+        )
+        position_embeddings_global = tuple(
+            data.to(self.dtype_setting) for data in position_embeddings_global
+        )
+        position_embeddings_local = tuple(
+            data.to(self.dtype_setting) for data in position_embeddings_local
+        )
+
+        # Update past_key_values with dummy states so HF `generate` tracks the
+        # sequence length, matching the reference forward.
+        kv_expand = (num_token,)
+        for layer_idx in range(self.config.num_hidden_layers):
+            key_states_dummy = torch.zeros(
+                (self.batch_size, self.config.num_key_value_heads)
+                + kv_expand
+                + (self.config.head_dim,)
+            ).to(self.target_device)
+            value_states_dummy = torch.zeros_like(key_states_dummy).to(
+                self.target_device
+            )
+            layer_type = self.config.layer_types[layer_idx]
+            cos, sin = self.rotary_emb(
+                hidden_states_dummy, position_ids, layer_type=layer_type
+            )
+            cache_kwargs = {
+                "sin": sin,
+                "cos": cos,
+                "cache_position": cache_position,
+            }
+            key_states_dummy, value_states_dummy = past_key_values.update(
+                key_states_dummy,
+                value_states_dummy,
+                layer_idx,
+                cache_kwargs,
+            )
+
+        # The model concatenates the static cache prefix
+        # (max_context_len - num_token) with the num_token new keys, spanning
+        # max_context_len, so the attention mask must span that total. The mask
+        # is derived from the absolute ``cache_position`` (like the reference
+        # ENN forward) so a decode step can attend the cached history rather
+        # than only its own token.
+        full_mask, sliding_mask = self._build_attention_mask(num_token, cache_position)
+        attention_mask = (full_mask, sliding_mask)
+
+        k_cache = tuple(
+            k[:, :, 0 : self.max_context_len - num_token, :] for k in self.k_cache
+        )
+        v_cache = tuple(
+            v[:, :, 0 : self.max_context_len - num_token, :] for v in self.v_cache
+        )
+
+        logits, cur_key_state_list, cur_value_state_list = self.model(
+            input_ids,
+            attention_mask,
+            position_embeddings_global,
+            position_embeddings_local,
+            k_cache,
+            v_cache,
+        )
+
+        # Keep the KV cache managed: write the produced states back into the
+        # static buffers so history accumulates across decode steps.
+        for i in range(len(cur_key_state_list)):
+            torch.ops.aten.index_put_(
+                self.k_cache[i], [None, None, cache_position], cur_key_state_list[i]
+            )
+            torch.ops.aten.index_put_(
+                self.v_cache[i], [None, None, cache_position], cur_value_state_list[i]
+            )
+
+        logits = logits[:, slice(-logits_to_keep, None), :]
+
+        if self.config.final_logit_softcapping is not None:
+            logits = logits / self.config.final_logit_softcapping
+            logits = torch.tanh(logits)
+            logits = logits * self.config.final_logit_softcapping
+
+        loss = None
+        if labels is not None:
+            loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=past_key_values,
+        )

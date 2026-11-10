@@ -7,9 +7,9 @@
 """Serve Muse Glimmer text/images with the batching multiplexed worker.
 
 Requires an off-graph batching export: export_solo.py --use-offgraph-kv-cache
-for MLX (text and images); add --backend cuda for CUDA (text only). DFlash is
-opt-in, MLX only, and requires a matching export; the legacy launcher and
-runners remain separate.
+for MLX; add --backend cuda for CUDA. Both serve text and images when exported
+with --mmproj. DFlash is opt-in and requires a matching export; the legacy
+launcher and runners remain separate.
 """
 
 import argparse
@@ -20,16 +20,23 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.hud.worker_logs import capture_worker_logs
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
-from executorch.examples.llm_server.python.serve import _validate_limits
+from executorch.examples.llm_server.python.serve import (
+    _parse_preflight_timeout,
+    _validate_limits,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.models.muse_glimmer.serving import serve as legacy
+from executorch.examples.models.muse_glimmer.serving.chat_template import (
+    MuseGlimmerChatTemplate as ChatTemplate,
+)
 from executorch.examples.models.muse_glimmer.serving.stream_parser import (
     MuseGlimmerStreamParser,
+    MuseGlimmerToolReasoningParser,
 )
 
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -58,6 +65,12 @@ def _parse_args(argv=None):
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-sessions", type=int, default=4)
+    parser.add_argument(
+        "--evict-idle-sessions",
+        action="store_true",
+        help="Evict least recently used idle sessions when logical session slots are exhausted; "
+        "clients must send complete history.",
+    )
     parser.add_argument("--max-decode-sequences", type=int, default=4)
     parser.add_argument("--max-inflight-requests", type=int, default=4)
     parser.add_argument(
@@ -90,6 +103,21 @@ def _parse_args(argv=None):
     parser.add_argument("--bos-id", type=int, default=200000)
     parser.add_argument("--eos-id", type=int, default=200001)
     parser.add_argument("--tool-parser", choices=("atem", "none"), default="none")
+    parser.add_argument(
+        "--streaming-preflight-timeout",
+        type=_parse_preflight_timeout,
+        default=None,
+        help="Seconds to wait for first output (including prefill); none waits indefinitely. "
+        "Later errors are SSE events.",
+    )
+    parser.add_argument(
+        "--api-dialect",
+        choices=("openai", "openrouter"),
+        default="openai",
+        help="OpenRouter clients require usage on the finish chunk; OpenAI uses "
+        "a separate usage-only chunk. OpenRouter also selects "
+        "context-overflow error metadata.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -122,8 +150,6 @@ def _validate_backend(parser, args):
         return
     if args.data_path is None:
         parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
-    if args.pos_embed_path is not None:
-        parser.error("--backend cuda serves text only; omit --pos-embed-path")
 
 
 def _validate_paths(parser, args):
@@ -194,36 +220,52 @@ def build_app_from_args(args):
 
     @asynccontextmanager
     async def serving_factory():
-        worker = await spawn_multiplexed_worker(
-            _worker_command(args),
-            max_request_bytes=args.max_request_bytes,
-            max_message_bytes=_MAX_MESSAGE_BYTES,
-        )
-        runtime = None
-        try:
-            runtime = SessionRuntime(worker)
-            yield legacy.MuseGlimmerServingChat(
-                runtime,
-                template,
-                args.model_id,
-                max_context=args.max_context,
-                max_image_bytes=args.max_image_bytes,
-                tool_detector_cls=legacy._tool_detector(args.tool_parser),
-                prompt_token_offset=1,
-                content_filter=legacy._strip_muse_glimmer_header,
-                content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
-                reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
-                streaming_parser_factory=MuseGlimmerStreamParser,
+        async with capture_worker_logs() as stderr:
+            worker = await spawn_multiplexed_worker(
+                _worker_command(args),
+                stderr=stderr,
+                max_request_bytes=args.max_request_bytes,
+                max_message_bytes=_MAX_MESSAGE_BYTES,
             )
-        finally:
-            if runtime is None:
-                await SessionRuntime._finish_cleanup(
-                    asyncio.create_task(worker.close())
+            runtime = None
+            try:
+                runtime = SessionRuntime(worker)
+                yield legacy.MuseGlimmerServingChat(
+                    runtime,
+                    template,
+                    args.model_id,
+                    max_context=args.max_context,
+                    evict_idle_sessions=args.evict_idle_sessions,
+                    streaming_preflight_timeout=args.streaming_preflight_timeout,
+                    api_dialect=args.api_dialect,
+                    max_image_bytes=args.max_image_bytes,
+                    tool_detector_cls=legacy._tool_detector(args.tool_parser),
+                    prompt_token_offset=1,
+                    content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
+                    reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
+                    streaming_parser_factory=MuseGlimmerStreamParser,
+                    tool_reasoning_parser_factory=MuseGlimmerToolReasoningParser,
+                    reasoning_token_counter=template.count_reasoning_tokens,
                 )
-            else:
-                await runtime.aclose_worker()
+            finally:
+                if runtime is None:
+                    await SessionRuntime._finish_cleanup(
+                        asyncio.create_task(worker.close())
+                    )
+                else:
+                    await runtime.aclose_worker()
 
-    return build_app(None, args.model_id, serving_factory=serving_factory)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    return build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+        hud=True,
+        listen_address=f"http://{host}:{args.port}",
+    )
 
 
 def main(argv=None):

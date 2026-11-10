@@ -392,6 +392,14 @@ class Cast(torch.nn.Module):
         return x.type(torch.IntTensor)
 
 
+class CastToLong(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.to(torch.long)
+
+
 class CastMultiUsers(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -400,6 +408,15 @@ class CastMultiUsers(torch.nn.Module):
         index = x.to(torch.long)
         res = torch.gather(y, dim=1, index=index)
         return res + index.to(torch.int32)
+
+
+class CastToFloat(torch.nn.Module):
+    def __init__(self, dtype=torch.float32):
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x):
+        return x.to(self.dtype) / 255
 
 
 class Cat2(torch.nn.Module):
@@ -1386,6 +1403,15 @@ class FloorDivConstantFloat(torch.nn.Module):
         return torch.floor(x / self.constant)
 
 
+class FloorDivConstantInt(torch.nn.Module):
+    def __init__(self, constant=80):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x // self.constant
+
+
 class Fold(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2347,6 +2373,14 @@ class RemainderScalar(torch.nn.Module):
 
     def forward(self, x):
         return torch.remainder(x, 3.0)
+
+
+class RemainderScalarTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.remainder(1000, x)
 
 
 class RemainderTensor(torch.nn.Module):

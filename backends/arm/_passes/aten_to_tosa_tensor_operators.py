@@ -3,6 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast
+
+import torch
+
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,
@@ -21,6 +30,29 @@ def rewrite_rfft2(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec | Non
     return DialectNodeSpec(
         exir_ops.backend.tosa.RFFT2D.default,
         (node.args[0],),
+        {},
+    )
+
+
+def rewrite_mul(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    with node.graph.inserting_before(node):
+        shift = create_const(node.graph, 0, torch.int8, node)
+    return DialectNodeSpec(exir_ops.backend.tosa.MUL.default, (*node.args, shift), {})
+
+
+def rewrite_negate(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
+    input_node = cast(Node, node.args[0])
+    dtype = input_node.meta["val"].dtype
+    input_zp, output_zp = 0, 0
+    if dtype == torch.int8:
+        input_zp = get_input_qparams(node)[0].get_zp_per_tensor()
+        output_zp = get_output_qparams(node)[0].get_zp_per_tensor()
+    with node.graph.inserting_before(node):
+        input_zero_point = create_const(node.graph, input_zp, dtype, input_node)
+        output_zero_point = create_const(node.graph, output_zp, dtype, input_node)
+    return DialectNodeSpec(
+        exir_ops.backend.tosa.NEGATE.default,
+        (input_node, input_zero_point, output_zero_point),
         {},
     )
 
@@ -51,8 +83,6 @@ def rewrite_binary_operator(
             target = exir_ops.backend.tosa.MAXIMUM.default
         case exir_ops.edge.aten.minimum.default:
             target = exir_ops.backend.tosa.MINIMUM.default
-        case exir_ops.edge.aten.mul.Tensor:
-            target = exir_ops.backend.tosa.MUL.default
         case exir_ops.edge.aten.pow.Tensor_Tensor:
             target = exir_ops.backend.tosa.POW.default
         case exir_ops.edge.aten.sub.Tensor:
@@ -83,8 +113,6 @@ def rewrite_unary_operator(
             target = exir_ops.backend.tosa.LOG.default
         case exir_ops.edge.aten.logical_not.default:
             target = exir_ops.backend.tosa.LOGICAL_NOT.default
-        case exir_ops.edge.aten.neg.default:
-            target = exir_ops.backend.tosa.NEGATE.default
         case exir_ops.edge.aten.reciprocal.default:
             target = exir_ops.backend.tosa.RECIPROCAL.default
         case exir_ops.edge.aten.rsqrt.default:
