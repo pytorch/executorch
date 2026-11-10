@@ -988,6 +988,22 @@ class TestCudaExport(unittest.TestCase):
 
     @unittest.skipIf(
         torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_masked_select(self):
+        """A direct masked_select call reaches its fallback kernel, unlike a mask
+        index, which Inductor reads as index.Tensor."""
+
+        class MaskedSelectModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.masked_select(x, x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            MaskedSelectModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_fused_sdpa(self):

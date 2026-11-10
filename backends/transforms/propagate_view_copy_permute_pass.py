@@ -1198,6 +1198,13 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             self._apply_fork_split(node, frontier, producer, branch_splits)
             return True
 
+        if frontier is not node:
+            # The walk already rewrote the operations up to ``frontier`` for
+            # the permute's input, and a region planned from ``node`` may stop
+            # before some of them. Move ``node`` past ``frontier`` instead and
+            # retry the fork from there on the next iteration.
+            return False
+
         # If the branches use each other's results, try moving the dimension
         # reorder past the connected group of operations as one change.
         region_move = self._plan_pointwise_region_move(node)
