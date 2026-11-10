@@ -14,14 +14,19 @@ client, and -- since trimming it makes the turn's visible text != generated text
 turns keep the narrow terminator set so a <tool_call> is never cut before parsing.
 """
 
+import asyncio
 import json
 
 import pytest
 
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
-from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+from executorch.examples.llm_server.python.session_runtime import (
+    GenStats,
+    SessionRuntime,
+)
 from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 from executorch.examples.llm_server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
@@ -285,3 +290,92 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
     )
     assert (content or "") == "".join(prefix)
     assert serving._transcript._turns["s"][0]["ids"] is None
+
+
+def _replay_ignored_eos(chunks, stop=None, finish_reason="length"):
+    serving, _ = _serving([])
+    request = ChatCompletionRequest(
+        model="test-model",
+        messages=[{"role": "user", "content": "hi"}],
+        ignore_eos=True,
+        stop=stop,
+    )
+
+    class Source:
+        def __init__(self):
+            self.chunks = iter(chunks)
+            self.position = 0
+            self.cancellations = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                chunk = next(self.chunks)
+            except StopIteration:
+                raise StopAsyncIteration from None
+            self.position += 1
+            return chunk
+
+        def cancel(self):
+            self.cancellations += 1
+
+    async def collect():
+        source = Source()
+        stop_hit = [False]
+        emitted = []
+        async for text in serving._clean_ignored_eos(
+            request, source, stop_hit, GenStats(finish_reason=finish_reason)
+        ):
+            emitted.append((source.position, text))
+        return emitted, stop_hit[0], source.cancellations
+
+    return asyncio.run(collect())
+
+
+def test_ignored_eos_streams_safe_text_before_reading_next_chunk():
+    emitted, stopped, cancellations = _replay_ignored_eos(["Hello", " world"])
+    assert emitted == [(1, "Hello"), (2, " world")]
+    assert not stopped
+    assert cancellations == 0
+
+
+def test_ignored_eos_retains_only_possible_stop_fragment():
+    emitted, stopped, cancellations = _replay_ignored_eos(
+        ["Hi <|im_", "end", "|>hidden"]
+    )
+    assert emitted == [(1, "Hi ")]
+    assert not stopped
+    assert cancellations == 0
+
+
+def test_ignored_eos_releases_fragment_when_it_is_not_a_stop():
+    emitted, _, _ = _replay_ignored_eos(["猫 <|im_", "possible"])
+    assert emitted == [(1, "猫 "), (2, "<|im_possible")]
+
+
+@pytest.mark.parametrize(
+    "text,stop,finish_reason,expected,stopped",
+    [
+        ("猫 says hi<|im_end|>hidden", None, "length", "猫 says hi", False),
+        (f"Hi{FIM}hidden", None, "length", "Hi", False),
+        ("HiSTOPignored", "STOP", "length", "Hi", True),
+        ("Hi<|im_end|>hidden STOPignored", "STOP", "length", "Hi", True),
+        ("Hi<|im_end|>STOPignored", "<|im_end|>STOP", "length", "Hi", True),
+        ("Hi <|im_", None, "length", "Hi <|im_", False),
+        ("Hi <|im_", "end|>", "stop", "Hi ", False),
+    ],
+)
+def test_ignored_eos_cleanup_across_chunk_boundaries(
+    text, stop, finish_reason, expected, stopped
+):
+    chunkings = [[text[:split], text[split:]] for split in range(len(text) + 1)]
+    chunkings.append(list(text))
+    for chunks in chunkings:
+        emitted, stop_hit, cancellations = _replay_ignored_eos(
+            chunks, stop=stop, finish_reason=finish_reason
+        )
+        assert "".join(part for _, part in emitted) == expected, chunks
+        assert stop_hit == stopped, chunks
+        assert cancellations == int(stopped), chunks

@@ -68,6 +68,16 @@ def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
     return best
 
 
+def _possible_stop_tail(text: str, stops: list[str]) -> int:
+    keep = 0
+    for stop in stops:
+        for size in range(min(len(text), len(stop) - 1), keep, -1):
+            if text.endswith(stop[:size]):
+                keep = size
+                break
+    return keep
+
+
 class _ChatStream:
     """Own the transaction even when an HTTP stream is closed before first read."""
 
@@ -1267,7 +1277,6 @@ class ServingChat:
     ) -> AsyncIterator[str]:
         request_stops = self._request_stops(req)
         visible_stops = self._visible_stops(req) + request_stops
-        hold = max((len(s) for s in visible_stops), default=1) - 1
         buf = ""
         visible = True
         async for token in generation:
@@ -1285,10 +1294,15 @@ class ServingChat:
                     if text:
                         yield text
                     visible = False
-                elif len(buf) > hold:
-                    yield buf[: len(buf) - hold] if hold else buf
+                else:
+                    keep = _possible_stop_tail(buf, visible_stops)
+                    if len(buf) > keep:
+                        yield buf[:-keep] if keep else buf
+                    buf = buf[-keep:] if keep else ""
+                    continue
             # Continue watching request stops after the visible turn ends.
-            buf = buf[-hold:] if hold else ""
+            keep = _possible_stop_tail(buf, request_stops)
+            buf = buf[-keep:] if keep else ""
         if visible and buf:
             if stats.finish_reason == "stop":
                 buf = self._trim_stop_fragment(buf, req)
