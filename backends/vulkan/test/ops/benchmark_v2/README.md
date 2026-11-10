@@ -25,11 +25,29 @@ framework/                Parsing, graph setup, validation, timing, and reportin
 operators/                CPU references, routes, throughput counters, and checks
   <family>/.../cases/      JSON case collections by operator and quantization scheme
 examples/                 Small shader and operator configuration examples
+format_json.py            Formatter for the JSON files
 ```
 
 Each expanded case runs separately. Shader variants can share one binding
 interface through `shader_sweep`; operators can sweep argument sets, dtype and
 storage variables, and execution routes.
+
+## Formatting JSON files
+
+`format_json.py` keeps a JSON value on one line when its one-line form is at
+most 200 characters, not counting its key and indentation, and lists longer
+objects and arrays one entry per line. An object with one entry is measured by
+that entry's value. Parsed content is unchanged, and files with duplicate keys
+are rejected.
+
+The `ETVKJSONFORMAT` lintrunner linter checks these files, and `lintrunner -a`
+formats them. To format without lintrunner, run the script; without paths, it
+formats every JSON file under `benchmark_v2`. Other formatters, such as
+Prettier on save, expand these files; format them again afterwards.
+
+```sh
+python3 backends/vulkan/test/ops/benchmark_v2/format_json.py [PATH ...]
+```
 
 ## Building with CMake
 
