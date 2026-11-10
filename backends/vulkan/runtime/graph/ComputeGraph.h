@@ -1157,12 +1157,6 @@ class ComputeGraph final {
   void prepack();
 
   //
-  // Optional Graph Execution
-  //
-
-  void optional_warmup_execute();
-
-  //
   // Graph Execution
   //
 
