@@ -270,7 +270,7 @@ def define_common_targets(is_fbcode = False):
             }),
             exported_preprocessor_flags = get_vulkan_preprocessor_flags(no_volk, is_fbcode),
             exported_deps = VK_API_DEPS + [
-                "//executorch/backends/vulkan_shared:runtime",
+                "//executorch/backends/vulkan_shared:device",
             ],
         )
 
@@ -334,29 +334,26 @@ def define_common_targets(is_fbcode = False):
             link_whole = True,
         )
 
-    for no_volk in [False, True]:
-        if no_volk and is_fbcode:
-            continue
-        suffix = "_no_volk" if no_volk else ""
-        runtime.cxx_test(
-            name = "vulkan_shared_device_test{}".format(suffix),
-            srcs = [
-                "test/shared_device/SharedDevicePolicyTest.cpp",
-                "test/shared_device/SharedDeviceAdapterTest.cpp",
-            ],
-            headers = ["runtime/ResolveSharedDevice.h"],
-            compiler_flags = get_vulkan_compiler_flags(),
-            labels = get_labels(no_volk),
-            platforms = get_platforms(),
-            deps = [
-                ":vulkan_backend_lib{}".format(suffix),
-                ":vulkan_graph_runtime{}".format(suffix),
-                "//executorch/backends/vulkan_shared:runtime",
-                "//executorch/runtime/backend:interface",
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/platform:platform",
-            ],
-        )
+    # Only the volk variant: the no_volk variants link libvulkan, which the
+    # test hosts do not have.
+    runtime.cxx_test(
+        name = "vulkan_shared_device_test",
+        srcs = [
+            "test/shared_device/SharedDevicePolicyTest.cpp",
+            "test/shared_device/SharedDeviceAdapterTest.cpp",
+        ],
+        headers = ["runtime/ResolveSharedDevice.h"],
+        compiler_flags = get_vulkan_compiler_flags(),
+        platforms = get_platforms(),
+        deps = [
+            ":vulkan_backend_lib",
+            ":vulkan_graph_runtime",
+            "//executorch/backends/vulkan_shared:runtime",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
 
     ##
     ## AOT targets
