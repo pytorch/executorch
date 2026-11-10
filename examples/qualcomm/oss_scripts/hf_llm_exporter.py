@@ -14,11 +14,11 @@ from multiprocessing.connection import Client
 
 import torch
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     get_backend_type,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.hf_transformers.api import get_quant_recipe
 from executorch.examples.qualcomm.utils import make_output_dir
@@ -102,17 +102,17 @@ def inference(args: argparse, qnn_config: QnnConfig, pte_name: str):
                 "> outputs/result.txt",
             ]
         )
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
             runner=runner_bin,
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[tokenizer_json_path])
-        adb.execute(custom_runner_cmd=runner_cmd)
+        device.push(inputs=[], files=[tokenizer_json_path])
+        device.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(host_output_path=args.artifact, callback=post_process)
+        device.pull(host_output_path=args.artifact, callback=post_process)
 
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
