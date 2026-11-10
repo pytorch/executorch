@@ -7,11 +7,13 @@
 
 The Cortex-M backend is implemented as an operator dialect/library based on [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN), together with the `CortexMQuantizer` which targets supported ops, and the `CortexMPassManager` which modifies the exported program to use Cortex-M operators where possible.
 
-The default AOT path retains the established channels-last input and dim-order contract. An experimental explicit-layout path accepts ordinary contiguous inputs, inserts graph-visible NHWC copies, and lowers spatial kernels to the `cortex_m::*_nhwc` operator family. Enable it with `--cortex-m-explicit-layout`; the two modes do not fall back to or mix with each other. Unquantized spatial operators can use portable kernels. Quantized spatial operators must be eligible for NHWC lowering, except max pooling with dilation or ceil mode, which uses the portable int8 kernel.
+The default AOT path retains the established channels-last input and dim-order contract. An experimental explicit-layout path accepts ordinary contiguous inputs, inserts graph-visible NHWC copies, and lowers spatial kernels and channel broadcasts to the `cortex_m::*_nhwc` operator family. Enable it with `--cortex-m-explicit-layout`; the two modes do not fall back to or mix with each other. Unquantized spatial operators can use portable kernels. Quantized spatial operators must be eligible for NHWC lowering, except max pooling with dilation or ceil mode, which uses the portable int8 kernel. Empty or unsupported broadcasts use portable operators.
 
 ### Explicit-layout migration
 
 The `use_explicit_layout=True` modes on `CortexMQuantizer` and `CortexMPassManager` are temporary staging APIs. They keep the experimental path isolated while the default modes and `CortexMTester` continue to exercise the legacy path.
+
+Use the same `use_explicit_layout` setting for the quantizer and pass manager. The pass manager's `passes=` argument overrides only the pass sequence; the layout setting still controls lowering, including channel broadcasts. Custom explicit-layout pass lists therefore require `use_explicit_layout=True`.
 
 When explicit layout becomes the default, its support table and pass list will become the defaults in `CortexMQuantizer` and `CortexMPassManager`. The existing legacy support table and pass list will remain temporarily behind an opt-out AOT flag. This keeps the public Python entry points stable and switches `CortexMTester` to explicit layout without changing its callers. The direct NHWC kernel tests and explicit-only model tests will then be folded into the normal operator and model suites.
 

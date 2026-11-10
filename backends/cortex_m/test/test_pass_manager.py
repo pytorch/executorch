@@ -80,6 +80,43 @@ def test_lowers_and_serializes(entry_point, use_explicit_layout):
     assert not serialized.execution_plan[0].delegates
 
 
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_custom_pass_list_keeps_layout_mode(use_explicit_layout):
+    class ChannelBroadcast(torch.nn.Module):
+        def forward(self, x, y):
+            return (x + y) * y
+
+    torch.manual_seed(0)
+    inputs = (torch.randn(2, 4, 3, 5), torch.rand(1, 4, 1, 1) + 0.5)
+    if use_explicit_layout:
+        passes = CortexMPassManager.explicit_layout_pass_list
+        add = exir_ops.edge.cortex_m.quantized_add_nhwc.default
+        mul = exir_ops.edge.cortex_m.quantized_mul_nhwc.default
+    else:
+        inputs = tuple(x.to(memory_format=torch.channels_last) for x in inputs)
+        passes = CortexMPassManager.legacy_pass_list
+        add = exir_ops.edge.cortex_m.quantized_add.default
+        mul = exir_ops.edge.cortex_m.quantized_mul.default
+    exported, expected, scale = _quantize(
+        ChannelBroadcast(), inputs, use_explicit_layout
+    )
+    lowered = to_edge_transform_and_lower(
+        exported,
+        compile_config=cortex_m_edge_compile_config(),
+        transform_passes=CortexMPassManager(
+            passes=list(passes), use_explicit_layout=use_explicit_layout
+        ),
+    )
+    program = lowered.exported_program()
+    targets = [node.target for node in program.graph.nodes]
+    assert targets.count(add) == 1
+    assert targets.count(mul) == 1
+    torch.testing.assert_close(
+        program.module()(*inputs), expected, rtol=0, atol=2 * scale
+    )
+    assert lowered.to_executorch().buffer
+
+
 def test_transform_uses_each_method_program():
     inputs = {
         "forward": (torch.randn(2, 4),),
