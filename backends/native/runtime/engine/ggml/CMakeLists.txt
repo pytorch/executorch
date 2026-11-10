@@ -19,6 +19,11 @@ endif()
 if(NOT DEFINED BUILD_SHARED_LIBS)
   set(BUILD_SHARED_LIBS OFF)
 endif()
+# ggml defaults CUDA graphs off unless built by llama.cpp; decode replays one
+# graph per token, and launching its kernels one by one costs ~2 ms per step.
+if(NOT DEFINED GGML_CUDA_GRAPHS)
+  set(GGML_CUDA_GRAPHS_DEFAULT ON)
+endif()
 add_subdirectory(${_native_llama_cpp_dir}/ggml ${CMAKE_CURRENT_BINARY_DIR}/ggml)
 if(NOT TARGET ggml-cpu OR GGML_BACKEND_DL)
   message(
