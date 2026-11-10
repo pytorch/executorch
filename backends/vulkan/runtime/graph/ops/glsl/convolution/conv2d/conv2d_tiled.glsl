@@ -14,6 +14,7 @@
 // 16-bit storage, so the half variants only run where float16 is supported.
 $if DTYPE == "half":
   #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+  #define HAS_FLOAT16_ACCUMULATION
 #extension GL_EXT_control_flow_attributes : require
 #define VEC4_T ${buffer_gvec_type(DTYPE, 4)}
 #define SCALAR_T ${buffer_scalar_type(DTYPE)}
@@ -25,6 +26,8 @@ $if WEIGHT_BUFFER:
   ${define_required_extensions("buffer", DTYPE)}
 
 layout(std430) buffer;
+
+#include "common.glslh"
 
 ${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d", precision="mediump" if DTYPE == "half" else "PRECISION")}
@@ -199,7 +202,8 @@ void accumulate() {
     [[unroll]] for (int lane = 0; lane < 4; ++lane) {
       [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
         [[unroll]] for (int s = 0; s < OUT_N4; ++s) {
-          sums[i][s] = fma(weights[s][lane], VEC4_T(inputs[i][lane]), sums[i][s]);
+          sums[i][s] =
+              mul_add(weights[s][lane], VEC4_T(inputs[i][lane]), sums[i][s]);
         }
       }
     }
@@ -251,7 +255,7 @@ void gather_accumulate(ivec3 pos, ivec2 tap, int z4) {
         const VEC4_T x = VEC4_T(
             group_input(p, ci, co), group_input(p, ci, co + 1),
             group_input(p, ci, co + 2), group_input(p, ci, co + 3));
-        sums[i][0] = fma(weights[0][lane], x, sums[i][0]);
+        sums[i][0] = mul_add(weights[0][lane], x, sums[i][0]);
       }
     }
   }

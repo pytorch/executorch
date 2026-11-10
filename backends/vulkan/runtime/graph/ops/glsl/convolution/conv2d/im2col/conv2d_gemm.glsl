@@ -41,14 +41,16 @@
 
 $if IN_STORAGE == "buffer" and DTYPE == "half":
   ${define_explicit_type_extensions(DTYPE)}
+  #define HAS_FLOAT16_ACCUMULATION
 
 // VEC4_T is the input storage's natural texel type, which is also the tile type
 // (the linear_fp_*_tile headers default the tile vec4 type to VEC4_T). For the
 // buffer/half path this resolves to f16vec4, so the GEMM inner loop accumulates
-// in true FP16 — the fma emits mad.f16 and the accumulators live in half-width
-// registers. Texture-sampled half always returns vec4, so FP16 accumulation is
-// naturally confined to the buffer (Mali) path; the texture variants (Adreno),
-// where FP16 accumulation regresses, stay vec4 / FP32 with no extra gating.
+// in true FP16 with f16 multiplies and adds, and the accumulators live in
+// half-width registers. Texture-sampled half always returns vec4, so FP16
+// accumulation is naturally confined to the buffer (Mali) path; the texture
+// variants (Adreno), where FP16 accumulation regresses, stay vec4 / FP32 with
+// no extra gating.
 #define VEC4_T ${texel_load_type(DTYPE, IN_STORAGE)}
 
 #define TILE_M4 ${TILE_M4}
