@@ -3177,6 +3177,43 @@ TEST_F(
   EXPECT_EQ(hit->terminal->stats.prefilled_prompt_tokens, 1u);
 }
 
+TEST_F(PrefixReuseTest, SessionCheckpointRetryDoesNotRestoreResetHistory) {
+  config.prefix_checkpoint_prompt_end = true;
+  start();
+  ASSERT_FALSE(runtime->open_session_async("s").get());
+  executor.decoding.hold();
+  auto cancelled = output();
+  auto handle = submit(cancelled, {1, 2, 3}, "s", 8);
+  ASSERT_TRUE(executor.decoding.wait());
+  handle.cancel();
+  executor.decoding.release();
+  handle.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+
+  auto retry = output();
+  submit(retry, {1, 2, 3, 100, 4}).wait();
+  ASSERT_TRUE(retry->terminal);
+  ASSERT_FALSE(retry->terminal->error);
+  EXPECT_EQ(retry->terminal->stats.reused_prompt_tokens, 3u);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{100, 4}));
+
+  ASSERT_FALSE(runtime->reset_session_async("s").get());
+  auto reset = output();
+  submit(reset, {1, 2, 3, 100, 4}).wait();
+  ASSERT_TRUE(reset->terminal);
+  ASSERT_FALSE(reset->terminal->error);
+  EXPECT_EQ(reset->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(executor.feeds().back().position, 0);
+
+  ASSERT_FALSE(runtime->open_session_async("other").get());
+  auto other = output();
+  submit(other, {1, 2, 3, 100, 4}, "other").wait();
+  ASSERT_TRUE(other->terminal);
+  ASSERT_FALSE(other->terminal->error);
+  EXPECT_EQ(other->terminal->stats.reused_prompt_tokens, 0u);
+}
+
 class DirtySnapshotRetryTest : public PrefixReuseTest,
                                public ::testing::WithParamInterface<bool> {};
 
