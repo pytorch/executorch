@@ -292,12 +292,12 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
     assert serving._transcript._turns["s"][0]["ids"] is None
 
 
-def _replay_ignored_eos(chunks, stop=None, finish_reason="length"):
+def _replay_stream_cleanup(chunks, stop=None, finish_reason="length", ignore_eos=True):
     serving, _ = _serving([])
     request = ChatCompletionRequest(
         model="test-model",
         messages=[{"role": "user", "content": "hi"}],
-        ignore_eos=True,
+        ignore_eos=ignore_eos,
         stop=stop,
     )
 
@@ -306,6 +306,7 @@ def _replay_ignored_eos(chunks, stop=None, finish_reason="length"):
             self.chunks = iter(chunks)
             self.position = 0
             self.cancellations = 0
+            self.drained = False
 
         def __aiter__(self):
             return self
@@ -314,6 +315,7 @@ def _replay_ignored_eos(chunks, stop=None, finish_reason="length"):
             try:
                 chunk = next(self.chunks)
             except StopIteration:
+                self.drained = True
                 raise StopAsyncIteration from None
             self.position += 1
             return chunk
@@ -325,33 +327,51 @@ def _replay_ignored_eos(chunks, stop=None, finish_reason="length"):
         source = Source()
         stop_hit = [False]
         emitted = []
-        async for text in serving._clean_ignored_eos(
-            request, source, stop_hit, GenStats(finish_reason=finish_reason)
-        ):
+
+        def on_stop():
+            stop_hit[0] = True
+            source.cancel()
+
+        stream = (
+            serving._clean_ignored_eos(
+                request, source, stop_hit, GenStats(finish_reason=finish_reason)
+            )
+            if ignore_eos
+            else serving._clean(source, serving._generation_stops(request), on_stop)
+        )
+        async for text in stream:
             emitted.append((source.position, text))
+        assert source.drained
         return emitted, stop_hit[0], source.cancellations
 
     return asyncio.run(collect())
 
 
-def test_ignored_eos_streams_safe_text_before_reading_next_chunk():
-    emitted, stopped, cancellations = _replay_ignored_eos(["Hello", " world"])
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_stream_cleanup_sends_safe_text_before_reading_next_chunk(ignore_eos):
+    emitted, stopped, cancellations = _replay_stream_cleanup(
+        ["Hello", " world"], ignore_eos=ignore_eos
+    )
     assert emitted == [(1, "Hello"), (2, " world")]
     assert not stopped
     assert cancellations == 0
 
 
-def test_ignored_eos_retains_only_possible_stop_fragment():
-    emitted, stopped, cancellations = _replay_ignored_eos(
-        ["Hi <|im_", "end", "|>hidden"]
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_stream_cleanup_retains_only_possible_stop_fragment(ignore_eos):
+    emitted, stopped, cancellations = _replay_stream_cleanup(
+        ["Hi <|im_", "end", "|>hidden", "drain"], ignore_eos=ignore_eos
     )
     assert emitted == [(1, "Hi ")]
-    assert not stopped
-    assert cancellations == 0
+    assert stopped == (not ignore_eos)
+    assert cancellations == int(not ignore_eos)
 
 
-def test_ignored_eos_releases_fragment_when_it_is_not_a_stop():
-    emitted, _, _ = _replay_ignored_eos(["猫 <|im_", "possible"])
+@pytest.mark.parametrize("ignore_eos", [False, True])
+def test_stream_cleanup_releases_fragment_when_it_is_not_a_stop(ignore_eos):
+    emitted, _, _ = _replay_stream_cleanup(
+        ["猫 <|im_", "possible"], ignore_eos=ignore_eos
+    )
     assert emitted == [(1, "猫 "), (2, "<|im_possible")]
 
 
@@ -373,8 +393,32 @@ def test_ignored_eos_cleanup_across_chunk_boundaries(
     chunkings = [[text[:split], text[split:]] for split in range(len(text) + 1)]
     chunkings.append(list(text))
     for chunks in chunkings:
-        emitted, stop_hit, cancellations = _replay_ignored_eos(
+        emitted, stop_hit, cancellations = _replay_stream_cleanup(
             chunks, stop=stop, finish_reason=finish_reason
+        )
+        assert "".join(part for _, part in emitted) == expected, chunks
+        assert stop_hit == stopped, chunks
+        assert cancellations == int(stopped), chunks
+
+
+@pytest.mark.parametrize(
+    "text,stop,expected,stopped",
+    [
+        ("猫 says hi<|im_end|>hidden", None, "猫 says hi", True),
+        (f"Hi{FIM}hidden", None, "Hi", True),
+        ("HiSTOPignored", "STOP", "Hi", True),
+        ("HiSTOPlaterSTOPignored", ["STOP", "STOPHERE"], "Hi", True),
+        ("Hi<|im_end|>hidden STOPignored", "STOP", "Hi", True),
+        ("Hi <|im_", None, "Hi <|im_", False),
+        ("HiSignored", "S", "Hi", True),
+    ],
+)
+def test_normal_stream_cleanup_across_chunk_boundaries(text, stop, expected, stopped):
+    chunkings = [[text[:split], text[split:]] for split in range(len(text) + 1)]
+    chunkings.append(list(text))
+    for chunks in chunkings:
+        emitted, stop_hit, cancellations = _replay_stream_cleanup(
+            chunks, stop=stop, ignore_eos=False
         )
         assert "".join(part for _, part in emitted) == expected, chunks
         assert stop_hit == stopped, chunks

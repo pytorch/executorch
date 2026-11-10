@@ -1058,7 +1058,9 @@ def test_chat_close_joins_active_read_before_releasing_transaction():
         try:
             stream = await serving.create(_request("s", stream=True))
             first = await _call(worker)
-            await anext(stream)  # Role chunk; stop filtering retains the short reply.
+            await anext(stream)  # Role chunk.
+            reply = json.loads((await anext(stream)).removeprefix("data: "))
+            assert reply["choices"][0]["delta"]["content"] == "reply"
             reader = asyncio.create_task(anext(stream))
             await asyncio.sleep(0)
             assert stream._reader is reader

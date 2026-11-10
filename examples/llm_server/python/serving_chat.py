@@ -552,9 +552,6 @@ class ServingChat:
         # `stop`), buffering across tokens so a stop spanning chunks is caught.
         # On a hit: optionally stop the runner early, then drain the source so it
         # finalizes (usage stats recorded, worker thread joined).
-        hold = (
-            max((len(s) for s in stops), default=1) - 1
-        )  # keep a possible partial-stop tail
         buf = ""
         async for token in stream:
             buf += token
@@ -567,12 +564,10 @@ class ServingChat:
                 async for _ in stream:  # drain so stats_cb fires
                     pass
                 return
-            if hold == 0:
-                yield buf
-                buf = ""
-            elif len(buf) > hold:
-                yield buf[:-hold]
-                buf = buf[-hold:]
+            keep = _possible_stop_tail(buf, stops)
+            if len(buf) > keep:
+                yield buf[:-keep] if keep else buf
+            buf = buf[-keep:] if keep else ""
         if buf:
             yield buf
 
