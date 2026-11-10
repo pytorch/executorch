@@ -157,6 +157,23 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_cuda_masked_select(Tensor* self, Tensor* mask, Tensor** ret0);
 
+/**
+ * The coordinates of the nonzero elements of self, with the semantics of
+ * aten::nonzero.
+ *
+ * Inductor calls this fallback since the number of nonzero elements decides
+ * the output size. Reading that count waits for the stream, so a CUDA graph
+ * cannot capture this call.
+ *
+ * @param self Tensor to search (CUDA device, up to 16 dims). Bool, the
+ * integer dtypes, float, double, half and bfloat16 are supported.
+ * @param ret0 Output: new int64 tensor of size (count, self.dim()) with
+ * strides (1, count), the layout ATen gives and Inductor expects
+ * @return AOTITorchError
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_cuda_nonzero(Tensor* self, Tensor** ret0);
+
 #ifdef __cplusplus
 }
 #endif
