@@ -139,6 +139,24 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(
     const char* reduce,
     int32_t include_self);
 
+/**
+ * The elements of self where mask is set, with the semantics of
+ * aten::masked_select: self and mask broadcast together and the selected
+ * elements come out in row-major order of the broadcast shape.
+ *
+ * Inductor calls this fallback since the number of set elements decides the
+ * output size. Reading that count waits for the stream, so a CUDA graph cannot
+ * capture this call.
+ *
+ * @param self Tensor to select from (CUDA device, up to 16 dims, any dtype
+ * aoti_torch_cuda_index_Tensor supports)
+ * @param mask bool or uint8 mask on the CUDA device, broadcastable with self
+ * @param ret0 Output: new contiguous 1-D tensor with the dtype of self
+ * @return AOTITorchError
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_cuda_masked_select(Tensor* self, Tensor* mask, Tensor** ret0);
+
 #ifdef __cplusplus
 }
 #endif

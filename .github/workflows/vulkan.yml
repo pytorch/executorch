@@ -79,7 +79,7 @@ jobs:
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -171,7 +171,7 @@ jobs:
       timeout: 180
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: vulkan-llm-e2e
