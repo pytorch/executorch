@@ -34,6 +34,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - `conda` is recommended as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+  - [uv](https://docs.astral.sh/uv/getting-started/installation/) is also supported.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
 * `python` version 3.11-3.15
@@ -61,16 +62,28 @@ portability details.
    conda activate executorch
    ```
 
-Alternatively, on macOS or Linux, create and activate a virtual environment with uv:
+Alternatively, create a virtual environment with uv:
 
 ```bash
 uv venv --python 3.12 .venv
+```
+
+Activate it on macOS or Linux:
+
+```bash
 source .venv/bin/activate
 ```
 
-The installation scripts use pip when it is available in the current Python
-environment, or fall back to `uv pip` when uv is on `PATH`. There is no need to
-seed pip before running the installer.
+On Windows, use Command Prompt:
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+The installation scripts use pip to install ExecuTorch and its dependencies.
+If pip is missing, they first install it with uv from `PATH`, targeting the
+running Python environment. There is no need to seed pip manually. Subsequent
+installation steps and later runs use pip.
 
 > **_NOTE:_** Additional Windows Setup
 >
