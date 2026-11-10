@@ -182,10 +182,6 @@ class TestXnnpackPartitioner(unittest.TestCase):
             def forward(self, x):
                 return x.mean((-1, -2), keepdim=True)
 
-        class Softmax(torch.nn.Module):
-            def forward(self, x):
-                return torch.softmax(x, -1)
-
         def lower(module, x):
             return to_edge_transform_and_lower(
                 export(module, (x,)),
@@ -200,7 +196,6 @@ class TestXnnpackPartitioner(unittest.TestCase):
             ),
             "max_pool2d": torch.nn.MaxPool2d(2),
             "mean": Mean(),
-            "softmax": Softmax(),
             "upsample_bilinear2d": torch.nn.Upsample(scale_factor=2, mode="bilinear"),
         }
         x = torch.randn(1, 4, 8, 8)
@@ -270,8 +265,9 @@ class TestXnnpackPartitioner(unittest.TestCase):
     )
     def test_enable_bf16_runs_an_attention_block(self):
         """
-        The linear layers and both batch matrix multiplications of a bf16 attention
-        block run in XNNPACK, and the program loads and matches eager bf16.
+        The linear layers, both batch matrix multiplications and the softmax
+        of a bf16 attention block run in XNNPACK, and the program loads and
+        matches eager bf16.
         """
 
         class Attention(torch.nn.Module):
@@ -294,7 +290,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         ops = _ops_outside_delegates(program)
         # The expand copies that matmul adds split the block into 3 delegates.
         self.assertEqual(ops.count("executorch_call_delegate"), 3)
-        self.assertIn("aten._softmax.default", ops)
+        self.assertNotIn("aten._softmax.default", ops)
         matmuls = {
             "aten.addmm.default",
             "aten.bmm.default",
