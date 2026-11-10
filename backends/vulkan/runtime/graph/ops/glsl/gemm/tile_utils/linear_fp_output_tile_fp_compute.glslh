@@ -35,24 +35,24 @@ void fp_accumulate_with_fp_weight(
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
         accum.data[m][n4] =
-            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][0]),
-                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4)][n4]),
-                accum.data[m][n4]);
+            mul_add(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][0]),
+                    MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4)][n4]),
+                    accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][1]),
-                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 1][n4]),
-                accum.data[m][n4]);
+            mul_add(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][1]),
+                    MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 1][n4]),
+                    accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][2]),
-                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 2][n4]),
-                accum.data[m][n4]);
+            mul_add(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][2]),
+                    MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 2][n4]),
+                    accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][3]),
-                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 3][n4]),
-                accum.data[m][n4]);
+            mul_add(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][3]),
+                    MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 3][n4]),
+                    accum.data[m][n4]);
       }
     }
   }

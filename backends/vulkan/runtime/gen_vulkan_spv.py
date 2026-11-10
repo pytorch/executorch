@@ -357,8 +357,11 @@ layout(set = 0, binding = {get_slot_val(slot)}) buffer {precision} restrict {get
 
 # Vulkan leaves the rounding of a store to an rgba16f image to the device, and
 # some devices round toward zero. Rounding to the nearest f16, ties to even, in
-# the shader makes the store exact. Integer texels are stored as is, but stores
-# to rgba32f images would be rounded too, so a shader may not write both.
+# the shader makes the store exact. Integer texels are stored as is, and so are
+# f16 texels in shaders that define HAS_FLOAT16_ACCUMULATION before their first
+# writable image declaration; elsewhere, f16 texels widen to vec4 and take the
+# rounding path. Stores to rgba32f images would be rounded too, so a shader may
+# not write both.
 ROUND_F16_IMAGE_STORES = """
 #ifdef WRITES_RGBA32F_IMAGE
 #error "A shader cannot write both rgba16f and rgba32f images"
@@ -377,6 +380,9 @@ vec4 round_to_f16(const vec4 v) {
 }
 ivec4 round_to_f16(const ivec4 v) { return v; }
 uvec4 round_to_f16(const uvec4 v) { return v; }
+#ifdef HAS_FLOAT16_ACCUMULATION
+vec4 round_to_f16(const f16vec4 v) { return vec4(v); }
+#endif
 #define imageStore(image, pos, texel) imageStore(image, pos, round_to_f16(texel))
 #endif"""
 

@@ -25,6 +25,7 @@
 ${define_required_extensions(STORAGE, DTYPE)}
 $if DTYPE == "half":
   #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+  #define HAS_FLOAT16_ACCUMULATION
 $if WEIGHT_STORAGE == "buffer":
   ${define_required_extensions("buffer", DTYPE)}
 
@@ -164,7 +165,7 @@ void store_output_tile_with_checks(
         imageStore(
             t_out,
             pos,
-            apply_epilogue(vec4(out_tile.data[m][n4]), pos, scale[n4]));
+            apply_epilogue(out_tile.data[m][n4], pos, scale[n4]));
       }
     }
   }

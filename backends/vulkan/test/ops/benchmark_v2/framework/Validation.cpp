@@ -79,6 +79,8 @@ std::map<std::string, ValueRef> add_validation_outputs(
 
 namespace {
 
+double validation_fault_rel = 0;
+
 template <typename T>
 std::vector<double> read_staging(
     ComputeGraph& graph,
@@ -91,6 +93,10 @@ std::vector<double> read_staging(
 }
 
 } // namespace
+
+void set_validation_fault_rel(double fault_rel) {
+  validation_fault_rel = fault_rel;
+}
 
 Report validate_outputs(
     const Json& spec,
@@ -140,7 +146,8 @@ Report validate_outputs(
   const double reference_us = std::chrono::duration<double, std::micro>(
                                   std::chrono::steady_clock::now() - start)
                                   .count();
-  Report result = compare_outputs(spec, expected, actual, dtypes);
+  Report result =
+      compare_outputs(spec, expected, actual, dtypes, validation_fault_rel);
   result["reference_wall_time_us"] = reference_us;
   return result;
 }

@@ -272,8 +272,8 @@ void add_conv2d_pw_tiled_node(
 
   utils::ivec4 stride_padding{stride_h, stride_w, padding_h, padding_w};
 
-  const Conv2dEpilogueParams epilogue_params =
-      create_conv2d_epilogue_params(epilogue);
+  const Conv2dEpilogueParams epilogue_params = create_conv2d_epilogue_params(
+      epilogue, graph.dtype_of(out) == vkapi::kHalf);
 
   vkapi::SpecVarList spec_vars = {s1p0 ? 1 : 0};
   append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
