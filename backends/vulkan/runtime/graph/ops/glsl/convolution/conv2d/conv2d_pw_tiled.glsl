@@ -25,6 +25,7 @@
 ${define_required_extensions(STORAGE, DTYPE)}
 $if DTYPE == "half":
   #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+  #define HAS_FLOAT16_ACCUMULATION
 $if WEIGHT_STORAGE == "buffer":
   ${define_required_extensions("buffer", DTYPE)}
 
