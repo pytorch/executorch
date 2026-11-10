@@ -494,6 +494,20 @@ void add_linear_qw_node(
 // High level operator impl
 //
 
+// Every quantized linear shader reads the weight scales in the output dtype,
+// but an fp16 model quantized from a bf16 or fp32 checkpoint may keep fp32
+// scales. Convert them while prepacking instead of letting the shader
+// misinterpret the bytes.
+static ValueRef prepack_weight_scales_as(
+    ComputeGraph& graph,
+    const ValueRef data,
+    const vkapi::ScalarType dtype) {
+  const ValueRef tensor = graph.add_tensor(
+      graph.sizes_of(data), dtype, utils::kBuffer, utils::kWidthPacked);
+  add_prepack_standard_node(graph, data, tensor);
+  return tensor;
+}
+
 void quantized_linear_impl(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
@@ -522,8 +536,8 @@ void quantized_linear_impl(
 
   const ValueRef packed_weight =
       prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
-  const ValueRef packed_weight_scales = prepack_standard(
-      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+  const ValueRef packed_weight_scales = prepack_weight_scales_as(
+      graph, weight_scales_data, graph.dtype_of(output));
   // Weight affine quant not supported at the moment
   const ValueRef packed_weight_zeros = kDummyValueRef;
 

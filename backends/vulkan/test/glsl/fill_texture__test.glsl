@@ -12,7 +12,7 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} uOutput;
+${layout_declare_image(0, "w", "uOutput", DTYPE, image_ndim=NDIM)}
 layout(set = 0, binding = 1) uniform PRECISION restrict Block {
   ivec3 size;
   int fill;

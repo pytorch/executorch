@@ -12,6 +12,7 @@ layout(set=0, binding=1) uniform sampler2D image1;
 layout(set=0, binding=2) readonly buffer PreviousFlow { uint previousFlow[]; };
 layout(set=0, binding=3) uniform tensorARM<int8_t, 4> tailPhase;
 #define FUSE_BLEND @FUSE_BLEND@
+#define OUTPUT_UNSIGNED @OUTPUT_UNSIGNED@
 #if FUSE_BLEND
 layout(set=0, binding=4) uniform tensorARM<int8_t, 4> output0;
 #else
@@ -28,9 +29,11 @@ const int COMPLEMENT_TABLE[256] = int[](@COMPLEMENT_TABLE@);
 #endif
 @RESCALES@
 
+const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
+
 vec2 uv(ivec2 p, vec2 size, vec2 offset) {
   vec2 baseGrid = vec2(p) * vec2(2.0) / (size - vec2(1.0)) - vec2(1.0);
-  vec2 texel = (baseGrid + offset + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
+  vec2 texel = (baseGrid + offset * FLOW_NORMALIZATION + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
   return (texel + vec2(0.5)) / size;
 }
 
@@ -69,6 +72,11 @@ void main() {
     int left = clamp(rescaleMul0((image0Codes[c] - IMAGE0_ZERO_POINT) * sigmoid), -128, 127);
     int right = clamp(rescaleMul1((image1Codes[c] - IMAGE1_ZERO_POINT) * complement), -128, 127);
     int code = clamp(rescaleOutput(rescaleAdd0(left) + rescaleAdd1(right)), -128, 127);
+#if OUTPUT_UNSIGNED
+    int unsignedCode = clamp(rescaleToUint8(code), 0, 255);
+    // Preserve the UINT8 bits in the TOSA tensor's INT8 storage.
+    code = unsignedCode < 128 ? unsignedCode : unsignedCode - 256;
+#endif
     uint outputCoords[4] = uint[](0u, c, uint(p.y), uint(p.x));
     tensorWriteARM(output0, outputCoords, int8_t(code));
   }

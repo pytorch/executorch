@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast
+
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 
 import torch
@@ -26,7 +28,7 @@ from executorch.backends.transforms.replace_ops_with_channels_last_variants impo
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx import GraphModule, Node
+from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import Target
 
 
@@ -74,6 +76,17 @@ def _supports_max_pool2d(node: Node) -> bool:
     )
 
 
+def _is_nchw_to_ncw_squeeze(node: Node) -> bool:
+    # The squeeze ConvertConv1dToConv2dPass emits: squeeze_copy.dim(conv, 2).
+    return (
+        node.target == exir_ops.edge.aten.squeeze_copy.dim
+        # Squeezes NCHW H; % 4 normalizes a negative dim of the rank-4 input.
+        and cast(int, node.args[1]) % 4 == 2
+        # Squeezing a non-unit dim is a no-op that keeps rank 4.
+        and node.meta["val"].dim() == 3
+    )
+
+
 _EXPLICIT_LAYOUT_OP_MAP: dict[Target, ChannelsLastOpSpec] = {
     exir_ops.edge.aten.convolution.default: ChannelsLastOpSpec(
         target=exir_ops.edge.channels_last.convolution.default,
@@ -99,6 +112,30 @@ _EXPLICIT_LAYOUT_OP_MAP: dict[Target, ChannelsLastOpSpec] = {
 class CortexMReplaceOpsWithChannelsLastVariants(ReplaceOpsWithChannelsLastVariants):
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__(exported_program, op_map=dict(_EXPLICIT_LAYOUT_OP_MAP))
+
+    # Emit a Conv1d-as-Conv2d output as squeeze -> rank-3 layout copy rather
+    # than rank-4 copy -> squeeze, so RemovePermutesAroundElementwiseOps can
+    # cancel the copy against the elementwise ops that consume it.
+    @staticmethod
+    def _permute_node_output(
+        graph: Graph,
+        node_output: Node,
+        original_node_output: Node,
+        implicit_batch: bool,
+    ) -> None:
+        users = list(original_node_output.users)
+        if len(users) != 1 or not _is_nchw_to_ncw_squeeze(users[0]):
+            ReplaceOpsWithChannelsLastVariants._permute_node_output(
+                graph, node_output, original_node_output, implicit_batch
+            )
+            return
+        squeeze = users[0]
+        squeeze.args = (node_output, 1)
+        with graph.inserting_after(squeeze):
+            permute = graph.call_function(LAYOUT_PERMUTE_COPY, (squeeze, [0, 2, 1]))
+        squeeze.replace_all_uses_with(
+            permute, delete_user_cb=lambda n: n is not permute
+        )
 
 
 class CortexMCanonicalizeViewCopyPermutePass(CanonicalizeViewCopyPermutePass):

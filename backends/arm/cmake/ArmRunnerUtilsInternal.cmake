@@ -373,6 +373,28 @@ function(arm_runner_require_baremetal_targets)
 
 endfunction()
 
+function(arm_runner_check_lock_free_atomics OUT_VAR)
+  if(NOT OUT_VAR)
+    message(FATAL_ERROR "OUT_VAR is required.")
+  endif()
+
+  include(CheckCXXSourceCompiles)
+  # Check the selected CPU again if the build directory is reconfigured.
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES TARGET_CPU)
+  unset(_arm_runner_lock_free_atomics CACHE)
+  check_cxx_source_compiles(
+    "#include <atomic>
+     static_assert(std::atomic<bool>::is_always_lock_free);
+     static_assert(std::atomic<void*>::is_always_lock_free);
+     int main() { return 0; }"
+    _arm_runner_lock_free_atomics
+  )
+  set(${OUT_VAR}
+      ${_arm_runner_lock_free_atomics}
+      PARENT_SCOPE
+  )
+endfunction()
+
 function(_arm_runner_verify_targets_exist)
   cmake_parse_arguments(ARG "" "CONTEXT" "TARGETS" ${ARGN})
 

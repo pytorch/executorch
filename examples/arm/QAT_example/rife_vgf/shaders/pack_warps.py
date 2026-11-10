@@ -10,20 +10,27 @@ from . import _compile_shader_source
 OPERATOR_NAME = "rife.warp_pack_concat"
 
 
-def build_packed_warp_payload(payloads, timestep, *, fuse_block0_tail=False):
+def build_packed_warp_payload(
+    payloads, timestep, *, fuse_block0_tail=False, pixel_shuffle=True, resize_scale=2
+):
     """Compile four compatible samplers with a direct C32 concat output.
 
     Args:
         payloads (list[dict]): Validated original sampler descriptors and qparams.
         timestep (int): Constant signed INT8 timestep code.
-        fuse_block0_tail (bool): Read the block0 phase tensor and pack its
+        fuse_block0_tail (bool): Read the block0 head tensor and pack its
             resized state into C32.
+        pixel_shuffle (bool): Read phase-major PixelShuffle channels when true.
+        resize_scale (int): Integer spatial upscale after the optional shuffle.
 
     Returns:
         dict: Vulkan shader payload with separate state or fused block0 input.
 
     """
     source = Path(__file__).with_name("pack_warps.glsl").read_text()
+    normalization = payloads[0].get("flow_normalization", [1.0, 1.0])
+    for axis, value in zip(("X", "Y"), normalization):
+        source = source.replace(f"@FLOW_NORMALIZATION_{axis}@", format(value, ".9g"))
     for key in (
         "flow_scale",
         "flow_zero_point",
@@ -37,6 +44,11 @@ def build_packed_warp_payload(payloads, timestep, *, fuse_block0_tail=False):
         )
     source = source.replace("@TIMESTEP@", str(timestep))
     source = source.replace("@FUSE_BLOCK0_TAIL@", str(int(fuse_block0_tail)))
+    if resize_scale not in (2, 4, 8):
+        raise ValueError("Expected a 2x, 4x or 8x head resize.")
+    source = source.replace("@PIXEL_SHUFFLE@", str(int(pixel_shuffle)))
+    source = source.replace("@RESIZE_SCALE@", str(resize_scale))
+    source = source.replace("@RESIZE_SHIFT@", str((2 * resize_scale).bit_length() - 1))
     payload = {
         "entry_point": "main",
         "shader_language": "SPIR-V",

@@ -1,0 +1,18 @@
+{
+  "name": "conv2d_gemm tile0 fp16 M14464 K576 N128",
+  "shader": "conv2d_gemm_texture2d_half",
+  "gwg_size": [32, 3616, 1],
+  "lwg_size": [8, 8, 1],
+  "sustain_s": 12,
+  "bindings": [
+    {"texture3d": {"name": "out", "sizes": [1, 128, 128, 128], "dtype": "float16", "layout": "channels", "access": "write", "data": {"fill": 0}}},
+    {"texture2d": {"name": "im2col", "sizes": [14464, 576], "dtype": "float16", "data": {"rand_uniform_float": [-1, 1]}}},
+    {"texture2d": {"name": "weight_packed", "sizes": [144, 512], "dtype": "float16", "data": {"rand_uniform_float": [-0.05, 0.05]}}},
+    {"texture2d": {"name": "bias", "sizes": [128], "dtype": "float16", "data": {"rand_uniform_float": [-1, 1]}}},
+    {"texture3d": {"name": "residual", "sizes": [1], "dtype": "float16", "data": {"fill": 0}}},
+    {"texture2d": {"name": "residual_scale", "sizes": [1], "dtype": "float16", "data": {"fill": 0}}},
+    {"meta_ubo": "out", "field": "sizes"}
+  ],
+  "specialization_constants": [{"dtype": "bool", "value": false}, {"dtype": "int32", "value": 0}, {"dtype": "bool", "value": false}, {"dtype": "bool", "value": false}, {"dtype": "int32", "value": 0}],
+  "push_constants": [{"dtype": "int32", "data": [144, 0, 113, 0]}, {"dtype": "float32", "data": [0, 0, 1]}]
+}
