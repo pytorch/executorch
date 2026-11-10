@@ -95,8 +95,12 @@ void check_conv2d_residual_on_resize(
     const ValueRef out,
     const std::vector<ValueRef>& resize_args);
 
+// With `f16_epilogue`, for shaders that compute the epilogue in f16, the params
+// are rounded to the nearest f16 so that the shaders convert them exactly. Some
+// GPUs round f32 to f16 conversions toward zero.
 Conv2dEpilogueParams create_conv2d_epilogue_params(
-    const Conv2dEpilogue& epilogue);
+    const Conv2dEpilogue& epilogue,
+    const bool f16_epilogue);
 
 // Appends the has_activation, activation_op, has_residual, has_scale and
 // residual_op specialization constants.
