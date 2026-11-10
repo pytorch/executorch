@@ -80,6 +80,8 @@ struct EthosUExecutionStats {
   uintptr_t device_identifier = 0;
   // Ethos-U product identifier for the NPU that produced this record.
   uint32_t product = 0;
+  // Number of MACs per cycle supported by the NPU.
+  uint32_t macs_per_cycle = 0;
   // Platform that produced this record.
   EthosUPlatform platform = EthosUPlatform::CoreDriver;
   // NPU PMU cycle count for this execution, when available.

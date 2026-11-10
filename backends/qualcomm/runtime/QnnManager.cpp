@@ -214,17 +214,13 @@ Error QnnManager::RegisterCustomMem(
         tensor_wrapper, data_ptr, pre_registered_handle);
   }
 
-  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
-
   size_t tensor_offset = info.pos;
-  size_t total_custom_mem_size =
-      shared_buffer_manager.GetAllocatedSize(custom_mem_base);
-
-  int32_t mem_fd = shared_buffer_manager.MemToFd(custom_mem_base);
+  SharedBuffer::AllocationInfo allocation =
+      SharedBuffer::GetSharedBufferManager().GetAllocationInfo(custom_mem_base);
   // Note: If obtaining the file descriptor fails, it may be due to memory not
   // being released with QnnExecuTorchFreeCustomMem. In this situation, we could
   // consider adding a map to monitor it.
-  if (mem_fd == -1) {
+  if (allocation.fd == -1) {
     QNN_EXECUTORCH_LOG_WARN(
         "Tensor name %s failed to get file descriptor.",
         tensor_wrapper->GetName().c_str());
@@ -234,9 +230,9 @@ Error QnnManager::RegisterCustomMem(
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_->qnn_mem_manager_ptr_->RegisterCustomMem(
           tensor_wrapper,
-          mem_fd,
+          allocation.fd,
           data_ptr,
-          total_custom_mem_size,
+          allocation.allocated_size,
           tensor_offset,
           info) == Error::Ok,
       Internal,

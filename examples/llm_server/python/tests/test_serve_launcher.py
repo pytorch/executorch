@@ -101,7 +101,7 @@ def native_launch(launch):
     launch.loops = []
     launch.max_inflight_requests = 4
 
-    async def spawn(command):
+    async def spawn(command, *, stderr=None):
         launch.loops.append(("spawn", asyncio.get_running_loop()))
         launch.proc = _AsyncProc()
         worker = MultiplexedWorkerClient(
@@ -228,7 +228,8 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
-        ]
+        ],
+        stderr=None,
     )
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path=args.tokenizer_path,
@@ -240,12 +241,21 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
         "executorch",
         max_context=1024,
         tool_detector_cls=HermesDetector,
+        api_dialect="openai",
+        streaming_preflight_timeout=None,
     )
     app = launch.stages["uvicorn"].call_args.args[0]
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
     factory = launch.stages["app"].call_args.kwargs["serving_factory"]
     launch.stages["app"].assert_called_once_with(
-        None, "executorch", serving_factory=factory
+        None,
+        "executorch",
+        serving_factory=factory,
+        model_path=args.model_path,
+        max_context=1024,
+        max_concurrent_requests=64,
+        hud=True,
+        listen_address="http://127.0.0.1:8000",
     )
     launch.runtime.aclose_worker.assert_awaited_once_with()
     launch.worker.close.assert_not_called()
@@ -810,3 +820,18 @@ def test_launcher_rejects_legacy_readiness_and_reaps_real_child(
 
     launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
     serve.main(argv)
+
+
+@pytest.mark.parametrize("value,expected", [("none", None), ("0", 0.0), ("0.25", 0.25)])
+def test_api_dialect_and_preflight_options(argv, value, expected):
+    args = serve._parse_args(
+        argv + ["--api-dialect", "openrouter", "--streaming-preflight-timeout", value]
+    )
+    assert args.api_dialect == "openrouter"
+    assert args.streaming_preflight_timeout == expected
+
+
+@pytest.mark.parametrize("value", ["-1", "inf", "nan", "invalid"])
+def test_invalid_preflight_option(argv, value):
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + ["--streaming-preflight-timeout", value])
