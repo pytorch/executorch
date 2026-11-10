@@ -5,11 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import importlib.util
+import os
+import runpy
 import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
@@ -78,6 +80,30 @@ class TestPipBootstrap(unittest.TestCase):
             self.assertRaises(subprocess.CalledProcessError),
         ):
             INSTALL_UTILS.ensure_pip()
+
+    def test_entrypoints_bootstrap_pip_before_python_check(self):
+        for script in ("install_executorch.py", "install_requirements.py"):
+            with self.subTest(script=script):
+                path = str(ROOT / script)
+                steps = Mock()
+                steps.python_is_compatible.return_value = False
+                with (
+                    patch.dict(sys.modules, {"install_utils": INSTALL_UTILS}),
+                    patch.object(sys, "path", [str(ROOT), *sys.path]),
+                    patch.object(sys, "argv", [path]),
+                    patch.object(os, "chdir"),
+                    patch.object(INSTALL_UTILS, "ensure_pip", steps.ensure_pip),
+                    patch.object(
+                        INSTALL_UTILS,
+                        "python_is_compatible",
+                        steps.python_is_compatible,
+                    ),
+                    self.assertRaises(SystemExit),
+                ):
+                    runpy.run_path(path, run_name="__main__")
+                self.assertEqual(
+                    steps.mock_calls, [call.ensure_pip(), call.python_is_compatible()]
+                )
 
 
 if __name__ == "__main__":
