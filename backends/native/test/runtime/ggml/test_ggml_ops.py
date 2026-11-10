@@ -1510,6 +1510,18 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["CONT"], 0)
 
+    def test_graph_with_as_many_leafs_as_nodes(self):
+        # 2,100 additions of separate constants fit the default graph size of
+        # 4,096 nodes, but the scheduler also hashes their 2,100 leafs.
+        constants = [torch.randn(4) for _ in range(2100)]
+
+        def forward(x):
+            for constant in constants:
+                x = x + constant
+            return x
+
+        self._check(Lambda(forward), (torch.randn(4),))
+
     def test_cached_graphs_refresh_inputs_and_persistent_cache(self):
         t = Dim("t", min=1, max=8)
         ep = torch.export.export(
