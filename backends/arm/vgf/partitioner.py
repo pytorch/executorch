@@ -45,6 +45,8 @@ class VgfPartitioner(TOSAPartitioner):
         compile_spec: The Vgf compilation specification.
         additional_checks: Optional sequence of additional operator support
             checks.
+        mutable_buffer_names: Exact names to internalize. None selects all
+            mutable buffers; unselected buffers remain program-owned.
 
     """
 
@@ -52,6 +54,7 @@ class VgfPartitioner(TOSAPartitioner):
         self,
         compile_spec: VgfCompileSpec,
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+        mutable_buffer_names: Optional[set[str]] = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(
             VgfBackend.__name__, compile_spec._to_list()
@@ -62,6 +65,7 @@ class VgfPartitioner(TOSAPartitioner):
         self._custom_partition_ops: set[OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
         self.alias_buffer_mutations = compile_spec.alias_buffer_mutations
+        self.mutable_buffer_names = mutable_buffer_names
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
         self._requires_resolved_tensor_shapes = False
@@ -131,6 +135,11 @@ class VgfPartitioner(TOSAPartitioner):
             node.name: node for node in exported_program.graph_module.graph.nodes
         }
         for input_name, buffer_name in signature.inputs_to_buffers.items():
+            if (
+                self.mutable_buffer_names is not None
+                and buffer_name not in self.mutable_buffer_names
+            ):
+                continue
             mutation_names = mutations_by_buffer.get(buffer_name)
             if mutation_names is None:
                 continue
@@ -148,9 +157,10 @@ class VgfPartitioner(TOSAPartitioner):
             )
             if buffer is None:
                 raise ValueError(f"VGF mutable buffer {buffer_name!r} must be present.")
-            if buffer.dtype != torch.int8:
+            if buffer.dtype not in (torch.int8, torch.float32):
                 raise ValueError(
-                    f"VGF mutable buffer {buffer_name!r} must use torch.int8, "
+                    f"VGF mutable buffer {buffer_name!r} must use torch.int8 "
+                    "or torch.float32, "
                     f"got {buffer.dtype}."
                 )
             if any(isinstance(dim, torch.SymInt) for dim in buffer.shape):
@@ -158,6 +168,12 @@ class VgfPartitioner(TOSAPartitioner):
                     f"VGF mutable buffer {buffer_name!r} must have a static shape."
                 )
             mutation_node = nodes_by_name[mutation_names[0]]
+            mutation = mutation_node.meta["val"]
+            if mutation.dtype != buffer.dtype or mutation.shape != buffer.shape:
+                raise ValueError(
+                    f"VGF mutable buffer {buffer_name!r} must preserve its "
+                    "shape and dtype at the mutation output."
+                )
             mutation_tag = mutation_node.meta.get("delegation_tag")
             user_tags = {
                 user.meta.get("delegation_tag")
@@ -183,6 +199,13 @@ class VgfPartitioner(TOSAPartitioner):
         # to own the buffer.
         signature = exported_program.graph_signature
         mutated = set(signature.buffers_to_mutate.values())
+        if self.mutable_buffer_names is not None:
+            missing = self.mutable_buffer_names - mutated
+            if missing:
+                raise ValueError(
+                    f"VGF selected mutable buffers are absent: {sorted(missing)}"
+                )
+            mutated &= self.mutable_buffer_names
         for node in exported_program.graph.nodes:
             buffer_name = signature.inputs_to_buffers.get(node.name)
             if buffer_name in mutated and "delegation_tag" not in node.meta:
@@ -222,5 +245,14 @@ class VgfPartitioner(TOSAPartitioner):
             }
             self._validate_mutable_buffers(result.tagged_exported_program)
             tag_mutated_buffer(result.tagged_exported_program)
+            if self.mutable_buffer_names is not None:
+                signature = result.tagged_exported_program.graph_signature
+                for node in result.tagged_exported_program.graph.nodes:
+                    buffer_name = signature.inputs_to_buffers.get(node.name)
+                    if (
+                        buffer_name in signature.buffers_to_mutate.values()
+                        and buffer_name not in self.mutable_buffer_names
+                    ):
+                        node.meta.pop("delegation_tag", None)
             self._check_mutable_buffers_owned(result.tagged_exported_program)
         return result
