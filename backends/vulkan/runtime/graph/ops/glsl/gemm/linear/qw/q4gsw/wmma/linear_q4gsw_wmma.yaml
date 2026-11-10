@@ -5,8 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # Variants of the architecture-family q4gsw cooperative-matrix linear. Each
-# one is referenced by a row in impl/gemm/linear/qw/CoopmatFamily.cpp, which
-# also carries its tile geometry; the two must stay in sync.
+# one is referenced by a row in impl/gemm/linear/qw/wmma/CoopmatFamily.cpp,
+# which also carries its tile geometry; the two must stay in sync.
 #
 # Name: t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
 # followed by m8 (MMA_M = 8), f (FRAG_LAYOUT), i (IMG_A), b (CSH_BAND) or

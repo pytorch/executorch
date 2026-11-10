@@ -37,7 +37,7 @@ set(VULKAN_OPS_PATH ${EXECUTORCH_ROOT}/backends/vulkan/runtime/graph/ops)
 add_executable(
   vulkan_coopmat_family_test
   ${CMAKE_CURRENT_SOURCE_DIR}/coopmat_family_test.cpp
-  ${VULKAN_OPS_PATH}/impl/gemm/linear/qw/CoopmatFamily.cpp
+  ${VULKAN_OPS_PATH}/impl/gemm/linear/qw/wmma/CoopmatFamily.cpp
 )
 target_include_directories(
   vulkan_coopmat_family_test PRIVATE ${EXECUTORCH_ROOT}/..

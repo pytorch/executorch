@@ -6,8 +6,8 @@
 
 # Variants of the architecture-family 8da4w int8 cooperative-matrix linear
 # (4h4w int8 activations). Each one is referenced by a row in
-# impl/gemm/linear/qw/CoopmatFamily.cpp, which also carries its tile geometry;
-# the two must stay in sync.
+# impl/gemm/linear/qw/wmma/CoopmatFamily.cpp, which also carries its tile
+# geometry; the two must stay in sync.
 #
 # Name: t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
 # m8 (MMA_M = 8), then i (dispatch order) or n<ORDER_NB_MAX> (blocked order).

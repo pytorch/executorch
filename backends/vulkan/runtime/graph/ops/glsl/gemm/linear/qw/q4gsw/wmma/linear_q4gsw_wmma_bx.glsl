@@ -9,7 +9,7 @@
 /*
  * fp16 q4gsw cooperative-matrix linear with texel-wise weight staging and an
  * optional fp32 accumulator, used by the architecture-family path
- * (impl/gemm/linear/qw/q4gsw/Q4gswLinearWmma.cpp) for long-K shapes where
+ * (impl/gemm/linear/qw/q4gsw/wmma/Q4gswLinearWmma.cpp) for long-K shapes where
  * fp16 accumulation loses accuracy. Template header only; the body is
  * linear_q4gsw_wmma_bx_body.glslh.
  *

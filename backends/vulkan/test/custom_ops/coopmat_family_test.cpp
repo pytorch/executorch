@@ -7,7 +7,7 @@
 // Host-only tests of the cooperative-matrix family key and the family kernel
 // selection (CoopmatFamily.h). No GPU needed.
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/CoopmatFamily.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/CoopmatFamily.h>
 
 #include <gtest/gtest.h>
 
@@ -513,10 +513,11 @@ std::string read_file(const std::string& path) {
 TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
   const std::string dir =
       std::string(COOPMAT_FAMILY_TEST_GLSL_DIR) + "/gemm/linear/qw/";
-  const std::string yamls = read_file(dir + "q4gsw/linear_q4gsw_wmma.yaml") +
-      read_file(dir + "q4gsw/linear_q4gsw_wmma_bx.yaml") +
-      read_file(dir + "dq8ca_q4gsw/linear_dq8ca_q4gsw_wmma.yaml") +
-      read_file(dir + "dq8ca_q4gsw/linear_dq8ca_q4gsw_wmma_rowmajor.yaml");
+  const std::string yamls =
+      read_file(dir + "q4gsw/wmma/linear_q4gsw_wmma.yaml") +
+      read_file(dir + "q4gsw/wmma/linear_q4gsw_wmma_bx.yaml") +
+      read_file(dir + "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma.yaml") +
+      read_file(dir + "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma_rowmajor.yaml");
   if (yamls.empty()) {
     GTEST_SKIP() << "shader sources not found under " << dir;
   }

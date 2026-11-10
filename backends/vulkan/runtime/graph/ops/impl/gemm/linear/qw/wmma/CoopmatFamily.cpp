@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/CoopmatFamily.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/CoopmatFamily.h>
 
 namespace vkcompute {
 

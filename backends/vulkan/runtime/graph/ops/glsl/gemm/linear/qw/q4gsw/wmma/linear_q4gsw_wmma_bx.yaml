@@ -5,8 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # Variants of the texel-wise-staging q4gsw cooperative-matrix linear. Each one
-# is referenced by a row in impl/gemm/linear/qw/CoopmatFamily.cpp, which also
-# carries its tile geometry; the two must stay in sync. Name as in
+# is referenced by a row in impl/gemm/linear/qw/wmma/CoopmatFamily.cpp, which
+# also carries its tile geometry; the two must stay in sync. Name as in
 # linear_q4gsw_wmma.yaml, plus f32 (ACC_FP32) and c (CSH_IN_ASH).
 
 linear_q4gsw_wmma_bx:

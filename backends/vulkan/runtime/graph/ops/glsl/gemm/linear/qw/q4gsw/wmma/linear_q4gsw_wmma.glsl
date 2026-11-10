@@ -9,7 +9,7 @@
 /*
  * fp16 q4gsw (4-bit group-symmetric weight) cooperative-matrix linear with
  * per-variant tile geometry, used by the architecture-family path
- * (impl/gemm/linear/qw/q4gsw/Q4gswLinearWmma.cpp).
+ * (impl/gemm/linear/qw/q4gsw/wmma/Q4gswLinearWmma.cpp).
  *
  * This file is the template header: bindings, spec constants and the tile
  * geometry. The kernel body is linear_q4gsw_wmma_body.glslh.
