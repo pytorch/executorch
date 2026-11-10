@@ -13,8 +13,9 @@ namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
-// cppcheck-suppress unusedFunction
-Tensor& quantized_add_out(
+namespace {
+
+Tensor& quantized_add_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
     const int64_t input1_zero_point,
@@ -29,15 +30,17 @@ Tensor& quantized_add_out(
     const int64_t output_shift,
     const int64_t activation_min,
     const int64_t activation_max,
+    ActivationLayout layout,
     Tensor& out) {
   // Validate tensor types and dim order
-  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  bool channel_broadcast =
+      is_channel_broadcast(input1_int8, input2_int8, layout);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/false,
       /*require_same_sizes=*/!channel_broadcast);
 
   // Validate quantization parameters
@@ -101,7 +104,8 @@ Tensor& quantized_add_out(
       std::swap<int>(input1_shift_val, input2_shift_val);
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
-    adds_per_loop = input1_int8.size(1);
+    const int64_t channel_dim = layout == ActivationLayout::NHWCLogical ? 3 : 1;
+    adds_per_loop = input1_int8.size(channel_dim);
   } else {
     adds_per_loop = out.numel();
   }
@@ -142,6 +146,80 @@ Tensor& quantized_add_out(
       "quantized_add_out: Successfully completed with AoT-computed parameters!");
 
   return out;
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_add_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_add_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input1_multiplier,
+      input1_shift,
+      input2_int8,
+      input2_zero_point,
+      input2_multiplier,
+      input2_shift,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      activation_min,
+      activation_max,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_add_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_add_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input1_multiplier,
+      input1_shift,
+      input2_int8,
+      input2_zero_point,
+      input2_multiplier,
+      input2_shift,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      activation_min,
+      activation_max,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native
