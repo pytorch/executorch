@@ -458,8 +458,14 @@ class TestETRecord(unittest.TestCase):
             },
             _delegate_map={
                 "forward": {
-                    "9": {"name": "VgfBackend", "delegate_map": {}},
-                    "7": {"name": "VgfBackend", "delegate_map": {}},
+                    "9": {
+                        "name": "VgfBackend",
+                        "delegate_map": {"vgf/add": (102, 103)},
+                    },
+                    "7": {
+                        "name": "VgfBackend",
+                        "delegate_map": {0: (101, 102), "norm": (102,)},
+                    },
                 },
                 "encode": {},
             },
@@ -475,12 +481,14 @@ class TestETRecord(unittest.TestCase):
                     instruction_id=7,
                     backend_id="VgfBackend",
                     source_debug_handles=(101, 102),
+                    delegate_debug_map={"0": (101, 102), "norm": (102,)},
                 ),
                 DelegatePartitionProvenance(
                     method_name="forward",
                     instruction_id=9,
                     backend_id="VgfBackend",
                     source_debug_handles=(102, 103),
+                    delegate_debug_map={"vgf/add": (102, 103)},
                 ),
             ),
         )
@@ -490,6 +498,33 @@ class TestETRecord(unittest.TestCase):
         # representation must preserve that relation instead of overwriting it.
         self.assertIn(102, provenance["forward"][0].source_debug_handles)
         self.assertIn(102, provenance["forward"][1].source_debug_handles)
+
+        # JSON preserves source handles but turns integer debug IDs into strings.
+        reparsed = ETRecord(
+            _debug_handle_map=json.loads(json.dumps(etrecord._debug_handle_map)),
+            _delegate_map=json.loads(json.dumps(etrecord._delegate_map)),
+        )
+        self.assertEqual(get_delegate_partition_provenance(reparsed), provenance)
+        with self.assertRaises(TypeError):
+            provenance["forward"][0].delegate_debug_map["0"] = (999,)
+        self.assertEqual(
+            hash(provenance["forward"][0]),
+            hash(get_delegate_partition_provenance(reparsed)["forward"][0]),
+        )
+
+    def test_get_delegate_partition_provenance_empty_and_multiple_methods(self):
+        self.assertEqual(get_delegate_partition_provenance(ETRecord()), {})
+        etrecord = ETRecord(
+            _debug_handle_map={"forward": {}, "encode": {4: [301]}},
+            _delegate_map={
+                "forward": {},
+                "encode": {4: {"name": "VgfBackend", "delegate_map": {"op_0": (301,)}}},
+            },
+        )
+        partitions = get_delegate_partition_provenance(etrecord)
+        self.assertEqual(partitions["forward"], ())
+        self.assertEqual(partitions["encode"][0].method_name, "encode")
+        self.assertEqual(partitions["encode"][0].delegate_debug_map["op_0"], (301,))
 
     def test_get_delegate_partition_provenance_rejects_inconsistent_maps(self):
         """Malformed delegate/debug metadata fails clearly instead of guessing."""
@@ -533,6 +568,16 @@ class TestETRecord(unittest.TestCase):
         before = get_delegate_partition_provenance(etrecord)
         self.assertIn("forward", before)
         self.assertGreater(len(before["forward"]), 0)
+        for partition in before["forward"]:
+            self.assertEqual(partition.backend_id, "XnnpackBackend")
+            self.assertTrue(partition.source_debug_handles)
+            self.assertEqual(partition.delegate_debug_map, {})
+            # Compare against the actual emitter output, rather than checking
+            # that two equally incorrect API results survive serialization.
+            expected = et_manager.debug_handle_map["forward"][partition.instruction_id]
+            self.assertEqual(
+                partition.source_debug_handles, tuple(dict.fromkeys(expected))
+            )
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             etrecord_path = tmpdirname + "/delegate_provenance.etrecord"
