@@ -7,7 +7,7 @@
 
 The Cortex-M backend is implemented as an operator dialect/library based on [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN), together with the `CortexMQuantizer` which targets supported ops, and the `CortexMPassManager` which modifies the exported program to use Cortex-M operators where possible.
 
-The default AOT path retains the established channels-last input and dim-order contract. An experimental explicit-layout path accepts ordinary contiguous inputs, inserts graph-visible NHWC copies, and lowers spatial kernels to the `cortex_m::*_nhwc` operator family. Enable it with `--cortex-m-explicit-layout`; the two modes do not fall back to or mix with each other. Unquantized spatial operators can use portable kernels. Quantized spatial operators must be eligible for NHWC lowering, except max pooling with dilation or ceil mode, which uses the portable int8 kernel.
+The default AOT path retains the established channels-last input and dim-order contract. An experimental explicit-layout path accepts ordinary contiguous inputs, inserts graph-visible NHWC copies, and lowers spatial kernels and channel broadcasts to the `cortex_m::*_nhwc` operator family. Enable it with `--cortex-m-explicit-layout`; the two modes do not fall back to or mix with each other. Unquantized spatial operators can use portable kernels. Quantized spatial operators must be eligible for NHWC lowering, except max pooling with dilation or ceil mode, which uses the portable int8 kernel. Empty or unsupported broadcasts use portable operators.
 
 ### Explicit-layout migration
 
