@@ -567,11 +567,16 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
     feeds into a dequant→quant pair, this pass composes the producer, dequantize,
     and downstream quantize qparams into the fused op's output qparams. When the
     producer and dequantize qparams match, this reduces to the downstream target.
+    This is always on because it is never less accurate: the value still ends up
+    on the downstream quantize's grid, rounded once instead of twice, so each
+    element is at least as close to the float result. It is not bit-exact with
+    the q/dq graph, though, and a QAT model was trained with both roundings.
 
     On the input side, when a dequant→quant pair feeds any fused_quant input with
     per-tensor qparams, this pass composes the dequantize, quantize, and consumer
     input qparams, then bypasses the pair. This handles graph inputs, which have
-    no fused producer into which the quantization can be absorbed.
+    no fused producer into which the quantization can be absorbed. It is opt-in:
+    see ``absorb_into_inputs`` below.
 
     It also absorbs a *bare* downstream quantize into a fused op whose output is
     currently unquantized (null out qparams), turning that op into a directly
@@ -581,10 +586,20 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
     Args:
         absorb_with_fork: When True, also absorb dequant→quant pairs where
             the dequant has additional users (a "forked" dequant). The dequant
-            is kept for the other users but its qparams are updated to match
-            the new output qparams. This changes (not necessarily worsens) the
-            numerics of the float path through the dequant, but should improve
-            numerics on the int path since it removes a redundant dq-q pair.
+            is kept for the other users, with the downstream quantize's qparams.
+            Off by default: those float users then see values on the quantize's
+            grid instead of the producer's, which can be coarser.
+        absorb_into_inputs: When True, also absorb a dequant→quant pair into
+            the input qparams of the fused op it feeds. The consumer then reads
+            the producer's values on the dequantize's grid, skipping a rounding.
+            That is more accurate on average, but unlike the output side it can
+            move a value further from the float result: with scales 0.1 then
+            0.25 and zero points 0, a float 0.24 is stored as 0.2, which the
+            q/dq graph rounds to 0.25 and the consumer now reads as 0.2. The
+            consumer also takes the dequantize's zero point and integer range,
+            which its kernel has to support. Off by default for both reasons; a
+            backend that turns it on lists the ops whose kernels need symmetric
+            inputs in ``symmetric_quant_input_ops``.
         symmetric_quant_input_ops: Ops whose inputs must stay symmetrically
             quantized (zero point 0) because their backend kernel ignores input
             zero points. An input absorption that would give them a nonzero input
@@ -594,10 +609,12 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
     def __init__(
         self,
         absorb_with_fork: bool = False,
+        absorb_into_inputs: bool = False,
         symmetric_quant_input_ops: frozenset[EdgeOpOverload] = frozenset(),
     ) -> None:
         super().__init__()
         self._absorb_with_fork = absorb_with_fork
+        self._absorb_into_inputs = absorb_into_inputs
         self._symmetric_quant_input_ops = symmetric_quant_input_ops
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
@@ -615,6 +632,8 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
                 modified |= _try_absorb_quant_into_unquantized_out(
                     exported_program, node, graph
                 )
+            if not self._absorb_into_inputs:
+                continue
             assert isinstance(node.target, EdgeOpOverload)
             input_names, _ = split_fused_arg_names(node.target)
             keep_symmetric = node.target in self._symmetric_quant_input_ops

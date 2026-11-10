@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
 namespace vkcompute {
@@ -28,9 +29,7 @@ void conv2d_direct_impl(
     const ValueRef output_padding,
     const ValueRef groups,
     const ValueRef out,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val,
+    const Conv2dEpilogue& epilogue,
     const bool force_masked = false);
 
 // Eligibility for the tiled shaders' workgroup tuning and the im2col bypass.

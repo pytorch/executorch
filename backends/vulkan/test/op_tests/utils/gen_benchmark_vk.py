@@ -222,6 +222,17 @@ at::Tensor make_casted_randint_tensor(
   return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
+at::Tensor make_nonzero_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int64_t low = 1,
+    int64_t high = 20) {{
+  // Draws from [low, high), replacing zeros so the values can be divisors.
+  const at::Tensor values =
+      at::randint(low, high, sizes, at::device(at::kCPU).dtype(dtype));
+  return values.masked_fill(values == 0, 1);
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,

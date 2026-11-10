@@ -219,7 +219,13 @@ bool require_method(et_model* model) {
 
 extern "C" {
 
+// Defined by the kernel registration that executorch_add_kernels() compiles
+// in, so a project that runs models without declaring them fails to link.
+extern const char et_requires_executorch_add_kernels;
+
 et_model_t* et_model_create(const et_model_config_t* cfg) {
+  static_cast<void>(
+      *static_cast<const volatile char*>(&et_requires_executorch_add_kernels));
   if (cfg == nullptr || cfg->pte == nullptr || cfg->pte_size == 0) {
     ESP_LOGE(kTag, "et_model_create: invalid config");
     return nullptr;

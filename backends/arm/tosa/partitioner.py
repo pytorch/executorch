@@ -275,6 +275,32 @@ def reject_partition(
             )
 
 
+def _has_symbolic_scalar_boundary(nodes: Iterable[torch.fx.Node]) -> bool:
+    """Return whether a symbolic scalar crosses the partition boundary.
+
+    Args:
+        nodes (Iterable[torch.fx.Node]): Nodes in the proposed partition.
+
+    Returns:
+        bool: Whether a symbolic scalar is an input or output of the partition.
+
+    """
+    partition_nodes = set(nodes)
+    symbolic_scalars = (torch.SymInt, torch.SymFloat, torch.SymBool)
+    for node in partition_nodes:
+        if isinstance(node.meta.get("val"), symbolic_scalars) and any(
+            user not in partition_nodes for user in node.users
+        ):
+            return True
+        if any(
+            input_node not in partition_nodes
+            and isinstance(input_node.meta.get("val"), symbolic_scalars)
+            for input_node in node.all_input_nodes
+        ):
+            return True
+    return False
+
+
 def _validate_partition(nodes: set[torch.fx.Node]) -> bool:
     """Check whether a set of nodes can be extracted.
 
@@ -811,6 +837,20 @@ class TOSAPartitioner(Partitioner):
                 tag_iterator,
                 reporter,
             )
+
+        final_partitions: dict[str, list[torch.fx.Node]] = {}
+        for node in module.graph.nodes:
+            node_tag = node.meta.get("delegation_tag")
+            if node_tag in tags:
+                final_partitions.setdefault(node_tag, []).append(node)
+        for tag, nodes in final_partitions.items():
+            if _has_symbolic_scalar_boundary(nodes):
+                reject_partition(
+                    "Partition has unsupported scalar symbolic inputs or outputs.",
+                    Partition(nodes=nodes),
+                    reporter,
+                )
+                tags.remove(tag)
         return tags
 
     def _create_operator_support(
@@ -969,6 +1009,15 @@ class TOSAPartitioner(Partitioner):
             """
             if _is_custom_partition_op(self._custom_partition_ops, node.target):
                 return True
+            # BF16 pad must decompose when the selected TOSA spec lacks +bf16.
+            # Otherwise it is left on the CPU as aten.pad, which has no
+            # portable out variant. Decomposition produces constant_pad_nd.
+            if (
+                node.target == torch.ops.aten.pad.default
+                and get_first_fake_tensor(node).dtype == torch.bfloat16
+                and not self.tosa_spec.support_extension("bf16")
+            ):
+                return False
             if (
                 node.target in ops_to_not_decompose
                 and get_first_fake_tensor(node).dtype == torch.float64
