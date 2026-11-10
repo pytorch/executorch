@@ -76,6 +76,20 @@ executorch::runtime::Result<void*> load_library(
   }
 
 #else
+#if defined(__linux__)
+  // AOTI plugins use a C ABI but can leave GNU C++ runtime references
+  // unresolved. Native hosts may use a different C++ standard library.
+  static void* const gnu_cpp_runtime = []() {
+    void* handle = dlopen("libstdc++.so.6", RTLD_NOW | RTLD_GLOBAL);
+    if (handle == nullptr) {
+      ET_LOG(Error, "Failed to load the AOTI GNU C++ runtime: %s", dlerror());
+    }
+    return handle;
+  }();
+  if (gnu_cpp_runtime == nullptr) {
+    return executorch::runtime::Error::AccessFailed;
+  }
+#endif
   // Before loading the delegate .so, we need to ensure symbols from the current
   // process (e.g. this backend library) are globally visible. Python loads
   // modules with RTLD_LOCAL by default, so we re-open the current module with

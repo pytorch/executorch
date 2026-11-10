@@ -164,6 +164,31 @@ def define_common_targets(is_fbcode = False):
     )
 
     if not is_fbcode:
+        runtime.genrule(
+            name = "test_cuda_runtime_libraries",
+            out = "libs",
+            platforms = [CXX],
+            compatible_with = ["ovr_config//cuda:has_cuda"],
+            cmd = """
+                mkdir -p "$OUT"
+                cp $(location fbsource//third-party/cuda:cublas) "$OUT/"
+                cp $(location fbsource//third-party/cuda:cublasLt) "$OUT/"
+                cp $(location fbsource//third-party/cuda:cudart) "$OUT/"
+                cp $(location fbsource//third-party/cuda:curand) "$OUT/"
+            """,
+        )
+        runtime.cxx_test(
+            name = "test_cuda_mutable_state_native",
+            srcs = ["test/test_cuda_mutable_state.cpp"],
+            env = {"LD_LIBRARY_PATH": "$(location :test_cuda_runtime_libraries)"},
+            platforms = [CXX],
+            compatible_with = ["ovr_config//cuda:has_cuda"],
+            deps = [
+                ":cuda_backend",
+                "//executorch/backends/aoti/slim/factory:from_blob",
+                "fbsource//third-party/googletest:gtest_main",
+            ],
+        )
         return
 
     cpp_unittest(

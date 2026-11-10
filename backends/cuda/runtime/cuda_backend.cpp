@@ -233,6 +233,9 @@ class ET_EXPERIMENTAL CudaBackend final
   Error load_function_pointers_into_handle(
       void* so_handle,
       cuda::CudaDelegateHandle* handle) const {
+    if (handle == nullptr) {
+      return Error::InvalidArgument;
+    }
 #define LOAD_SYMBOL(member, name)                                    \
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
@@ -299,6 +302,9 @@ class ET_EXPERIMENTAL CudaBackend final
         AOTInductorModelContainerGetConstantFromFolded);
     LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
+    LOAD_OPTIONAL_SYMBOL(
+        extract_constants_map_entries,
+        AOTInductorModelContainerExtractConstantsMapEntries);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
         AOTInductorModelContainerUpdateUserManagedConstantBufferPairs);
@@ -628,7 +634,8 @@ class ET_EXPERIMENTAL CudaBackend final
     // Initialize CUDA graph state if enabled for this method. Not on a device
     // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      const std::string host_constants = describe_host_constants(handle);
+      const std::string host_constants =
+          cuda::describe_host_constants_for_graph(*handle);
       if (!host_constants.empty()) {
         // A graph records only the device work of the capture call. Host code,
         // such as the choice of a torch.cond branch on a flag in host memory,
@@ -948,29 +955,6 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
  private:
-  // Names a constant of the program in host memory, or says that the
-  // constants could not be listed, since unknown counts as host memory.
-  // Empty when every constant is on the device.
-  static std::string describe_host_constants(cuda::CudaDelegateHandle* handle) {
-    const char* unlisted = "its constants could not be listed";
-    if (handle->extract_constants_map == nullptr) {
-      return unlisted;
-    }
-    std::unordered_map<std::string, AtenTensorHandle> constants;
-    if (handle->extract_constants_map(
-            handle->container_handle,
-            reinterpret_cast<AOTInductorConstantMapHandle>(&constants),
-            /*use_inactive=*/false) != Error::Ok) {
-      return unlisted;
-    }
-    for (const auto& [fqn, tensor] : constants) {
-      if (reinterpret_cast<SlimTensor*>(tensor)->is_cpu()) {
-        return "constant '" + fqn + "' is in host memory";
-      }
-    }
-    return "";
-  }
-
   // Runs the program once. On the capture step it captures the CUDA graph
   // instead, then launches it once, and sets graph_launched once that launch
   // is queued.
@@ -1513,9 +1497,13 @@ class ET_EXPERIMENTAL CudaBackend final
       const NamedDataMap* named_data_map,
       const std::string& method_name,
       const std::string& weights_blob_key) const {
+    if (handle == nullptr || named_data_map == nullptr) {
+      return Error::InvalidArgument;
+    }
     // Check if the required APIs are available
     if (!handle->get_num_constants || !handle->get_constant_name ||
-        !handle->get_constant_original_fqn || !handle->extract_constants_map ||
+        !handle->get_constant_original_fqn ||
+        !handle->extract_constants_map_entries ||
         !handle->update_user_managed_constant_buffer_pairs) {
       // Fall back to the legacy path
       return load_constants_legacy(handle, named_data_map, weights_blob_key);
@@ -1581,6 +1569,13 @@ class ET_EXPERIMENTAL CudaBackend final
     std::unordered_map<std::string, AtenTensorHandle> extracted_map;
 
     if (!uncached_fqns.empty()) {
+      const auto extract = handle->extract_constants_map_entries;
+      if (extract == nullptr) {
+        ET_LOG(
+            Error,
+            "CUDA blob weight sharing requires C-ABI constants extraction");
+        return Error::NotSupported;
+      }
       // Need to load from blob — use update_constants_from_blob for all,
       // then extract the new constants into the cache.
       auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
@@ -1606,14 +1601,33 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
       buffer_res->Free();
 
-      // Extract all constants from the freshly-loaded container.
+      const AOTInductorConstantMapEntry* entries = nullptr;
+      size_t num_entries = 0;
       ET_CHECK_OK_OR_RETURN_ERROR(
-          handle->extract_constants_map(
+          extract(
               handle->container_handle,
-              reinterpret_cast<AOTInductorConstantMapHandle>(&extracted_map),
+              &entries,
+              &num_entries,
               /*use_inactive=*/false),
           "Failed to extract constants from '%s'",
           method_name.c_str());
+      if (entries == nullptr && num_entries != 0) {
+        ET_LOG(
+            Error, "CUDA constants extraction returned a null entries array");
+        return Error::InvalidProgram;
+      }
+      if (entries != nullptr) {
+        for (size_t i = 0; i < num_entries; ++i) {
+          const auto entry = entries[i];
+          if (entry.name == nullptr || entry.handle == nullptr) {
+            ET_LOG(
+                Error,
+                "CUDA constants extraction returned a null name or tensor handle");
+            return Error::InvalidProgram;
+          }
+          extracted_map.emplace(entry.name, entry.handle);
+        }
+      }
 
       // Validate cache hits against the freshly-extracted tensors, and
       // populate the cache with newly-loaded entries.

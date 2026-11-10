@@ -17,6 +17,7 @@
 #include <executorch/extension/cuda/runtime_api.h>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -51,10 +52,13 @@ Error fake_get_constant_original_fqn(
   return Error::Ok;
 }
 
-Error fake_extract_constants_map(
+Error fake_extract_constants_map_entries(
     aoti::AOTInductorModelContainerHandle,
-    aoti::AOTInductorConstantMapHandle,
+    const aoti::AOTInductorConstantMapEntry** entries,
+    size_t* num_entries,
     bool) {
+  *entries = nullptr;
+  *num_entries = 0;
   return Error::Ok;
 }
 
@@ -71,6 +75,7 @@ struct FakeContainer {
   std::vector<std::string> internal_names;
   std::vector<std::string> fqns;
   std::unordered_map<std::string, aoti::AtenTensorHandle> extracted;
+  std::vector<aoti::AOTInductorConstantMapEntry> entries;
   size_t update_calls = 0;
   size_t last_num_pairs = 0;
   std::string last_name;
@@ -108,14 +113,18 @@ Error fake_container_get_constant_original_fqn(
   return Error::Ok;
 }
 
-Error fake_container_extract_constants_map(
+Error fake_container_extract_constants_map_entries(
     aoti::AOTInductorModelContainerHandle container,
-    aoti::AOTInductorConstantMapHandle map_handle,
+    const aoti::AOTInductorConstantMapEntry** entries,
+    size_t* num_entries,
     bool) {
   auto* c = reinterpret_cast<FakeContainer*>(container);
-  auto* out = reinterpret_cast<
-      std::unordered_map<std::string, aoti::AtenTensorHandle>*>(map_handle);
-  *out = c->extracted;
+  c->entries.clear();
+  for (const auto& item : c->extracted) {
+    c->entries.push_back({item.first.c_str(), item.second});
+  }
+  *entries = c->entries.data();
+  *num_entries = c->entries.size();
   return Error::Ok;
 }
 
@@ -148,7 +157,7 @@ cu::CudaDelegateHandle fake_symbol_handle() {
   handle.get_num_constants = fake_get_num_constants;
   handle.get_constant_name = fake_get_constant_name;
   handle.get_constant_original_fqn = fake_get_constant_original_fqn;
-  handle.extract_constants_map = fake_extract_constants_map;
+  handle.extract_constants_map_entries = fake_extract_constants_map_entries;
   handle.update_user_managed_constant_buffer_pairs =
       fake_update_user_managed_pairs;
   return handle;
@@ -161,7 +170,8 @@ cu::CudaDelegateHandle fake_container_handle(FakeContainer* container) {
   handle.get_num_constants = fake_container_get_num_constants;
   handle.get_constant_name = fake_container_get_constant_name;
   handle.get_constant_original_fqn = fake_container_get_constant_original_fqn;
-  handle.extract_constants_map = fake_container_extract_constants_map;
+  handle.extract_constants_map_entries =
+      fake_container_extract_constants_map_entries;
   handle.update_user_managed_constant_buffer_pairs =
       fake_container_update_user_managed_pairs;
   return handle;
@@ -211,6 +221,91 @@ std::unique_ptr<slim::SlimTensor> make_cpu_tensor(std::vector<float>& values) {
 
 } // namespace
 
+TEST(CudaGraphConstantsTest, MissingSafeExtractionDoesNotCallLegacyMapAPI) {
+  auto handle = fake_symbol_handle();
+  handle.extract_constants_map_entries = nullptr;
+  handle.extract_constants_map = [](aoti::AOTInductorModelContainerHandle,
+                                    aoti::AOTInductorConstantMapHandle,
+                                    bool) {
+    ADD_FAILURE() << "legacy C++ map extraction must not be called";
+    return Error::Internal;
+  };
+  EXPECT_FALSE(cu::describe_host_constants_for_graph(handle).empty());
+}
+
+TEST(CudaGraphConstantsTest, EmptyConstantsPermitCapture) {
+  auto handle = fake_symbol_handle();
+  EXPECT_TRUE(cu::describe_host_constants_for_graph(handle).empty());
+}
+
+TEST(CudaGraphConstantsTest, HostConstantPreventsCapture) {
+  std::vector<float> values{1.0f};
+  auto tensor = make_cpu_tensor(values);
+  FakeContainer container;
+  container.extracted.emplace(
+      "weight", reinterpret_cast<aoti::AtenTensorHandle>(tensor.get()));
+  auto handle = fake_container_handle(&container);
+  EXPECT_EQ(
+      cu::describe_host_constants_for_graph(handle),
+      "constant 'weight' is in host memory");
+}
+
+TEST(CudaGraphConstantsTest, DeviceConstantPermitsCapture) {
+  if (!cuda_device_available()) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+  void* pointer = nullptr;
+  auto tensor = make_device_tensor({1.0f}, &pointer);
+  ASSERT_NE(tensor, nullptr);
+  FakeContainer container;
+  container.extracted.emplace(
+      "weight", reinterpret_cast<aoti::AtenTensorHandle>(tensor.get()));
+  auto handle = fake_container_handle(&container);
+  EXPECT_TRUE(cu::describe_host_constants_for_graph(handle).empty());
+  tensor.reset();
+  EXPECT_EQ(cudaFree(pointer), cudaSuccess);
+}
+
+TEST(CudaGraphConstantsTest, InvalidExtractionPreventsCapture) {
+  using Extract = aoti::AOTInductorModelContainerExtractConstantsMapEntriesFunc;
+  const std::array<Extract, 4> extractors{
+      [](aoti::AOTInductorModelContainerHandle,
+         const aoti::AOTInductorConstantMapEntry** entries,
+         size_t* count,
+         bool) {
+        *entries = nullptr;
+        *count = 1;
+        return Error::Ok;
+      },
+      [](aoti::AOTInductorModelContainerHandle,
+         const aoti::AOTInductorConstantMapEntry** entries,
+         size_t* count,
+         bool) {
+        static const aoti::AOTInductorConstantMapEntry entry{nullptr, nullptr};
+        *entries = &entry;
+        *count = 1;
+        return Error::Ok;
+      },
+      [](aoti::AOTInductorModelContainerHandle,
+         const aoti::AOTInductorConstantMapEntry** entries,
+         size_t* count,
+         bool) {
+        static const aoti::AOTInductorConstantMapEntry entry{"weight", nullptr};
+        *entries = &entry;
+        *count = 1;
+        return Error::Ok;
+      },
+      [](aoti::AOTInductorModelContainerHandle,
+         const aoti::AOTInductorConstantMapEntry**,
+         size_t*,
+         bool) { return Error::Internal; }};
+  for (const auto extract : extractors) {
+    auto handle = fake_symbol_handle();
+    handle.extract_constants_map_entries = extract;
+    EXPECT_FALSE(cu::describe_host_constants_for_graph(handle).empty());
+  }
+}
+
 TEST(CudaMutableStateTest, FallClosedDefaults) {
   const cu::MutableStateContext bad = 999999;
   cu::MutableStateContextOwner c1;
@@ -234,6 +329,84 @@ TEST(CudaMutableStateTest, FallClosedDefaults) {
 
   cu::detail::mutable_state_destroy_session(bad, 0);
   cu::detail::mutable_state_destroy_context(bad);
+}
+
+TEST(CudaMutableStateTest, MissingEntryExtractionFailsClosedWithLegacySymbol) {
+  cu::MutableStateContextOwner context;
+  auto handle = fake_symbol_handle();
+  handle.extract_constants_map_entries = nullptr;
+  handle.extract_constants_map = [](aoti::AOTInductorModelContainerHandle,
+                                    aoti::AOTInductorConstantMapHandle,
+                                    bool) { return Error::Internal; };
+  context.register_fqns({"state"});
+  context.with_load_scope([&] { cu::mutable_state_note_handle(&handle); });
+  EXPECT_FALSE(context.available());
+  EXPECT_EQ(context.validate_coverage(), Error::NotSupported);
+  EXPECT_EQ(context.create_session().error(), Error::NotSupported);
+}
+
+TEST(CudaMutableStateTest, InvalidEntryExtractionPreventsSessions) {
+  struct Case {
+    const char* name;
+    aoti::AOTInductorModelContainerExtractConstantsMapEntriesFunc extract;
+    Error expected;
+  };
+  const std::vector<Case> cases{
+      {"null array",
+       [](aoti::AOTInductorModelContainerHandle,
+          const aoti::AOTInductorConstantMapEntry** entries,
+          size_t* count,
+          bool) {
+         *entries = nullptr;
+         *count = 1;
+         return Error::Ok;
+       },
+       Error::InvalidProgram},
+      {"null name",
+       [](aoti::AOTInductorModelContainerHandle,
+          const aoti::AOTInductorConstantMapEntry** entries,
+          size_t* count,
+          bool) {
+         static const aoti::AOTInductorConstantMapEntry entry{nullptr, nullptr};
+         *entries = &entry;
+         *count = 1;
+         return Error::Ok;
+       },
+       Error::InvalidProgram},
+      {"null handle",
+       [](aoti::AOTInductorModelContainerHandle,
+          const aoti::AOTInductorConstantMapEntry** entries,
+          size_t* count,
+          bool) {
+         static const aoti::AOTInductorConstantMapEntry entry{
+             "model.state", nullptr};
+         *entries = &entry;
+         *count = 1;
+         return Error::Ok;
+       },
+       Error::InvalidProgram},
+      {"extraction error",
+       [](aoti::AOTInductorModelContainerHandle,
+          const aoti::AOTInductorConstantMapEntry**,
+          size_t*,
+          bool) { return Error::Internal; },
+       Error::Internal}};
+  for (const auto& test : cases) {
+    SCOPED_TRACE(test.name);
+    cu::MutableStateContextOwner context;
+    FakeContainer container;
+    container.internal_names = {"internal_state"};
+    container.fqns = {"model.state"};
+    auto handle = fake_container_handle(&container);
+    handle.extract_constants_map_entries = test.extract;
+    context.register_fqns({"model.state"});
+    context.with_load_scope([&] { cu::mutable_state_note_handle(&handle); });
+
+    EXPECT_FALSE(context.available());
+    EXPECT_EQ(context.bytes_per_session(), 0);
+    EXPECT_EQ(context.validate_coverage(), test.expected);
+    EXPECT_EQ(context.create_session().error(), test.expected);
+  }
 }
 
 TEST(CudaMutableStateTest, ForgetHandleDropsAssociation) {
