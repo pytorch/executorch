@@ -171,8 +171,8 @@ def _make_gpt_oss_moe(dtype: torch.dtype) -> tuple[GptOssMLP, GptOssConfig]:
         intermediate_size=16,
         num_local_experts=8,
         num_experts_per_tok=4,
-        experts_implementation="eager",
     )
+    config._experts_implementation = "eager"
     model = GptOssMLP(config)
     model.experts = TensorizedGptOssExperts(config)
     generator = torch.Generator().manual_seed(2648)

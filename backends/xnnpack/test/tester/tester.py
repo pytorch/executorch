@@ -5,7 +5,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Type
+import json
+import os
+import tempfile
+from collections import Counter
+from typing import Any, Callable, Dict, get_args, List, Optional, Sequence, Tuple, Type
 
 import executorch
 import executorch.backends.test.harness.stages as BaseStages
@@ -23,8 +27,14 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
 )
+from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import XNodeUnion
+from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
+    _get_schema_bytes,
+    XNNHeader,
+)
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import EdgeCompileConfig
+from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.backend.partitioner import Partitioner
 from torch._export.pass_base import PassType
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -132,3 +142,44 @@ class Tester(TesterBase):
             dynamic_shapes=dynamic_shapes,
             **kwargs,
         )
+
+    def xnnpack_node_types(self) -> Counter:
+        """Node types in the serialized XNNPACK graph of the single delegate
+        produced by to_edge_transform_and_lower."""
+        graph_module = (
+            self.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            .exported_program()
+            .graph_module
+        )
+        (delegate,) = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
+        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
+        flatbuffer = payload[
+            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            schema_path = os.path.join(d, "schema.fbs")
+            with open(schema_path, "wb") as f:
+                f.write(_get_schema_bytes())
+            bin_path = os.path.join(d, "graph.bin")
+            with open(bin_path, "wb") as f:
+                f.write(flatbuffer)
+            _flatc_decompile(d, schema_path, bin_path)
+            with open(os.path.join(d, "graph.json")) as f:
+                graph = json.load(f)
+        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
+
+    def check_xnnpack_node_count(self, expected: Dict[str, int]):
+        node_type_names = {t.__name__ for t in get_args(XNodeUnion)}
+        unknown = set(expected) - node_type_names
+        assert not unknown, f"Unknown XNNPACK node types: {sorted(unknown)}"
+        node_types = self.xnnpack_node_types()
+        for node_type, count in expected.items():
+            assert (
+                node_types[node_type] == count
+            ), f"Expected {count} {node_type} in the XNNPACK graph, got {node_types}"
+        return self

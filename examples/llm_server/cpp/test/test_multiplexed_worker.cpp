@@ -545,7 +545,7 @@ TEST_F(ProtocolTest, AdmissionFailureDoesNotPoisonOtherRequests) {
   send(generate(2));
   auto error = receive();
   EXPECT_EQ(error.at("request_id"), 2);
-  EXPECT_EQ(error.at("code"), "capacity_exhausted");
+  EXPECT_EQ(error.at("code"), "session_capacity_exhausted");
   send({{"op", "reset"}, {"request_id", 3}, {"session_id", "owned"}});
   EXPECT_TRUE(receive().value("reset", false));
   auto request = generate(4);
@@ -693,6 +693,7 @@ TEST_F(ProtocolTest, MaxUint64IdAndAutoBudgetAreAccepted) {
   send(request);
   auto done = receive();
   EXPECT_EQ(done.at("request_id"), std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(done.at("matched_stop"), "x");
   EXPECT_TRUE(done.value("done", false));
   EXPECT_EQ(done.at("finish_reason"), "stop");
   EXPECT_EQ(finish(), 0);
@@ -1314,6 +1315,40 @@ TEST_F(ProtocolTest, TerminalNewlineRetriesKeepAdmissionReserved) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, IdempotentCloseReportsWhetherSessionExisted) {
+  start();
+  send({{"op", "open"}, {"request_id", 1}, {"session_id", "s"}});
+  ASSERT_TRUE(receive().at("opened"));
+  for (uint64_t id = 2; id <= 3; ++id) {
+    send({{"op", "close"}, {"request_id", id}, {"session_id", "s"}});
+    auto response = receive();
+    EXPECT_TRUE(response.at("closed"));
+    EXPECT_EQ(response.at("existed"), id == 2);
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, RuntimeAdmissionRejectionReportsNotAdmitted) {
+  // Keep transport capacity available while filling the runtime request limit.
+  start({}, 4, 1);
+  executor_.hold();
+  send(generate(1, 1));
+  ASSERT_TRUE(wait_execute());
+  send(generate(2, 1));
+  auto refused = receive();
+  EXPECT_EQ(refused.at("request_id"), 2);
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
+  EXPECT_NE(refused.at("error"), "worker operation capacity exhausted");
+  executor_.release();
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  send(generate(3, 1));
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
@@ -1322,7 +1357,9 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   send(generate(1, 100));
   ASSERT_TRUE(wait_execute());
   send(generate(2));
-  EXPECT_EQ(receive().at("code"), "capacity_exhausted");
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
   send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
   EXPECT_TRUE(receive().value("cancelled", false));
   executor_.release();

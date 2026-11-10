@@ -42,6 +42,7 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/serialization:lib",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/backends/webgpu/partitioner:webgpu_partitioner",
         "//executorch/backends/webgpu/test:tester",
