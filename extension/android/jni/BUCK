@@ -3,7 +3,7 @@ load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_andro
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-load(":build_defs.bzl", "ET_JNI_COMPILER_FLAGS")
+load(":build_defs.bzl", "ET_JNI_COMPILER_FLAGS", "get_generic_jni_compiler_flags")
 
 oncall("executorch")
 
@@ -30,7 +30,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni",
     srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = ET_JNI_COMPILER_FLAGS,
+    compiler_flags = ET_JNI_COMPILER_FLAGS + get_generic_jni_compiler_flags(),
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
@@ -51,7 +51,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni_full",
     srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = ET_JNI_COMPILER_FLAGS,
+    compiler_flags = ET_JNI_COMPILER_FLAGS + get_generic_jni_compiler_flags(),
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
@@ -75,7 +75,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_training_jni",
     srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_layer_training.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+    compiler_flags = ET_JNI_COMPILER_FLAGS + get_generic_jni_compiler_flags() + [
         "-DEXECUTORCH_BUILD_EXTENSION_TRAINING",
     ],
     soname = "libexecutorch.$(ext)",
@@ -102,7 +102,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_llama_jni",
     srcs = ["jni_layer.cpp", "jni_layer_llama.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+    compiler_flags = ET_JNI_COMPILER_FLAGS + get_generic_jni_compiler_flags() + [
         "-DEXECUTORCH_BUILD_LLAMA_JNI",
     ],
     soname = "libexecutorch.$(ext)",
@@ -151,5 +151,6 @@ runtime.cxx_library(
     exported_headers = [
         "jni_layer_constants.h",
         "jni_helper.h",
+        "jni_layer_types.h",
     ]
 )

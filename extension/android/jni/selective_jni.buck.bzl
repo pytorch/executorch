@@ -1,7 +1,7 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
 load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
-load("@fbsource//xplat/executorch/extension/android/jni:build_defs.bzl", "ET_JNI_COMPILER_FLAGS")
+load("@fbsource//xplat/executorch/extension/android/jni:build_defs.bzl", "ET_JNI_COMPILER_FLAGS", "get_generic_jni_compiler_flags")
 
 def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)"):
     non_fbcode_target(
@@ -13,7 +13,7 @@ def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)")
             "//xplat/executorch/extension/android/jni:jni_helper.cpp",
         ] + srcs,
         allow_jni_merging = False,
-        compiler_flags = ET_JNI_COMPILER_FLAGS,
+        compiler_flags = ET_JNI_COMPILER_FLAGS + get_generic_jni_compiler_flags(),
         soname = soname,
         visibility = ["PUBLIC"],
         deps = [
