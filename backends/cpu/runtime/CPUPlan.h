@@ -18,6 +18,9 @@ struct PlanStep {
   KernelRegion region;
   std::unique_ptr<Executable> executable;
   StorageRequirements storage;
+  /// ETDump delegate event name: provider/implementation:first_node[+N].
+  /// Empty unless ET_EVENT_TRACER_ENABLED is defined.
+  std::string trace_name;
 };
 
 /// One static prepared plan. Graph, bindings and allocator outlive the plan.

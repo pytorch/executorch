@@ -65,6 +65,7 @@ def _blend_program(height=4, width=6, *, output_unsigned=False):
             InputKind.CONSTANT_TENSOR,
             torch.tensor([[[[127]]]], dtype=torch.int8),
         )
+        shift = node(TOSA.CONST.default, ([0], [1], torch.int8), (1,), torch.int8)
     scalar = rescale(one, torch.int32, 524288.0, -127)
     up_mask = rescale(sigmoid, torch.int32, 523948.54785029794, -127)
     subtract = node(TOSA.SUB.default, (scalar, up_mask), mask_shape)
@@ -92,7 +93,7 @@ def _blend_program(height=4, width=6, *, output_unsigned=False):
         image = rescale(crop, torch.int32, 1.0, -14)
         centered_mask = rescale(mask, torch.int32, 1.0, -127)
         centered_masks.append(centered_mask)
-        multiply = node(TOSA.MUL.default, (image, centered_mask), image_shape)
+        multiply = node(TOSA.MUL.default, (image, centered_mask, shift), image_shape)
         weighted = rescale(multiply, torch.int8, multiply_scale, 0, -127)
         sides.append(rescale(weighted, torch.int32, add_scale, -127))
     add = node(TOSA.ADD.default, tuple(sides), image_shape)
@@ -157,9 +158,8 @@ def test_keeps_unsupported_blend_in_tosa(unsupported):
                 TOSA.RESCALE.default, (sigmoid, torch.int32, [1.0], -127, 0)
             )
     elif unsupported == "shifted_mul":
-        next(n for n in program.graph.nodes if n.target == TOSA.MUL.default).kwargs = {
-            "shift": 1
-        }
+        multiply = next(n for n in program.graph.nodes if n.target == TOSA.MUL.default)
+        multiply.args[2].args = ([1], [1], torch.int8)
     elif unsupported == "scaled_mask":
         masks[0].args = (*masks[0].args[:2], [2.0], *masks[0].args[3:])
     elif unsupported == "unsigned":

@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -94,11 +95,12 @@ class MatchArgRanksPass(ArmOpTargetedPass):
         rank = len(shape)
         new_shape = list([1] * (max_rank - rank) + list(shape))
         with graph_module.graph.inserting_before(node):
+            materialized_shape = materialize_symints(graph_module.graph, new_shape)
             # The broadcast view belongs to the consuming operator, not its input.
             view = create_node(
                 graph_module.graph,
                 exir_ops.edge.aten.view_copy.default,
-                args=(arg, new_shape),
+                args=(arg, materialized_shape),
                 kwargs={},
                 from_node=node,
             )
