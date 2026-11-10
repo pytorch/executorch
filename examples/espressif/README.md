@@ -15,29 +15,31 @@ cross-compile-then-link flow below, generate a self-contained ESP-IDF
 component from sources in this repository:
 
 ```bash
-./examples/espressif/build_idf_component.sh --profiles wakeword_int8 \
+./examples/espressif/build_idf_component.sh \
     --out /path/to/your_project/components/executorch
 ```
 
 The output is a registry-shaped component (`idf_component.yml`,
-`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime,
-per-profile kernel registration (selected via
-`CONFIG_ET_OP_PROFILE_*`; the component is off until
-`CONFIG_ET_ENABLE=y`), the shared ESP-IDF PAL from
-`platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing), and a C
-inference API (`et_model.h`, flash-XIP model bytes
-with internal/PSRAM arena placement). Application pipelines built on
-the runtime (for example wake word front ends and detectors) stay
-with the application. Op profiles are defined in
-`idf_profiles/<name>.ops`; `wakeword_int8` is an int8 wake-word
-example profile for a Cadence-backend export — profiles may list
-`cadence::` ops, which the generator binds to the Cadence backend's
-generic (portable) kernels under `backends/cadence/generic`, next to
-the `aten::` ops the same profile needs from the portable kernels.
-Consumers need only ESP-IDF — no host CMake build, no flatc.
+`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime, the
+portable, quantized, Cadence generic and `esp_nn::` kernel libraries,
+the ESP-NN delegate, the shared
+ESP-IDF PAL from `platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing),
+and a C inference API (`et_model.h`, flash-XIP model bytes with
+internal/PSRAM arena placement). Only the kernels a project's models
+use are registered: the component's `tools/gen_kernels.py` makes a
+kernel bundle from the project's `.pte` files, and the project declares
+both with `executorch_add_model` and `executorch_add_kernels` (see the
+component's `README.md`). Application pipelines built on the runtime
+(for example wake word front ends and detectors) stay with the
+application.
+Consumers need ESP-IDF, plus the `executorch` Python package of the
+same release to make kernel bundles — no host CMake build, no flatc.
 `idf_component_smoke/` is a minimal consumer that CI generates, builds
-and runs on the ESP32-S3 emulator
-(`.ci/scripts/test_espressif_idf_component.sh`).
+and runs on the emulator (`.ci/scripts/test_espressif_idf_component.sh`).
+`idf_component_consumer/` builds the same app from the packed component
+through the component manager, with ESP-IDF's own Python, for every
+target an emulator runs on ESP-IDF 6.1, and for ESP32-S3 and ESP32-C6
+on ESP-IDF 6.0.1 (`.ci/scripts/test_espressif_idf_consumer.sh`).
 
 The executor runner below remains the reference for the prebuilt-library
 flow and for benchmarking.
@@ -263,6 +265,10 @@ prints the corresponding activation command. It also accepts `IDF_PATH` and
 `IDF_TOOLS_PATH` for an existing ESP-IDF installation. The setup script checks
 the SDK version before installing dependencies into the active environment.
 Use `--skip-idf` or `--skip-emulator` to install only the tools you need.
+`--targets=<chip>,...` installs the compilers for other targets (and, for
+`esp32` without `--skip-emulator`, ESP-IDF's QEMU), and
+`--idf-version=v6.0.1` installs that ESP-IDF
+release instead of 6.1; use a separate `ESPRESSIF_TOOLS_DIR` for it.
 
 ### 2. Export the test model
 

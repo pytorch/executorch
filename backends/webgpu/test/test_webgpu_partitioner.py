@@ -11,7 +11,14 @@ from typing import List
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
+    extract_vk_flatbuffer,
+    flatbuffer_to_vk_graph,
+)
 from executorch.backends.webgpu.partitioner import WebGPUPartitioner
+from executorch.backends.webgpu.partitioner.partitioner import (
+    _WEBGPU_SKIP_FUSION_PATTERNS,
+)
 from executorch.backends.webgpu.test.tester import Partition, ToEdgeTransformAndLower
 from executorch.exir import (
     ExecutorchProgramManager,
@@ -26,6 +33,15 @@ from torch.export import ExportedProgram
 class AddModule(torch.nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return a + b
+
+
+class ConvReluModule(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 4, 3, padding=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.relu(self.conv(x))
 
 
 class ArangeModule(torch.nn.Module):
@@ -76,10 +92,30 @@ class TestWebGPUPartitioner(unittest.TestCase):
 
     def test_lowers_identically_with_vulkan_backend_id(self) -> None:
         webgpu_program = self._lower(WebGPUPartitioner())
-        vulkan_program = self._lower(VulkanPartitioner())
+        vulkan_program = self._lower(
+            VulkanPartitioner(
+                compile_options={"skip_fusion_patterns": _WEBGPU_SKIP_FUSION_PATTERNS}
+            )
+        )
 
         self.assertEqual(webgpu_program.buffer, vulkan_program.buffer)
         self.assertEqual(self._delegate_ids(webgpu_program), ["VulkanBackend"])
+
+    def test_fuses_conv_activation_into_conv_with_clamp(self) -> None:
+        # The WebGPU runtime implements conv_with_clamp, not conv2d.with_epilogue.
+        edge = to_edge_transform_and_lower(
+            torch.export.export(ConvReluModule(), (torch.randn(1, 4, 8, 8),)),
+            partitioner=[WebGPUPartitioner()],
+        )
+        ops = [
+            op.name
+            for _, module in edge.exported_program().graph_module.named_children()
+            for op in flatbuffer_to_vk_graph(
+                extract_vk_flatbuffer(module.processed_bytes)
+            ).chain
+        ]
+        self.assertIn("et_vk.conv_with_clamp.default", ops)
+        self.assertNotIn("et_vk.conv2d.with_epilogue", ops)
 
     def test_forwards_compile_options(self) -> None:
         compile_options = {"skip_bool_tensors": True}
@@ -87,7 +123,12 @@ class TestWebGPUPartitioner(unittest.TestCase):
 
         result = self._assert_same_partitioning(
             WebGPUPartitioner(compile_options=compile_options),
-            VulkanPartitioner(compile_options=compile_options),
+            VulkanPartitioner(
+                compile_options={
+                    **compile_options,
+                    "skip_fusion_patterns": _WEBGPU_SKIP_FUSION_PATTERNS,
+                }
+            ),
         )
 
         self.assertGreater(len(result.partition_tags), 0)
