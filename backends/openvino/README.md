@@ -110,10 +110,15 @@ float32 as well as integer dtypes such as int32 and uint8.
 
 OpenVINO computes every tensor in the default dim order. When a partition input
 or output is in another dim order, such as `channels_last`, the lowering adds a
-transpose to it, and the runtime passes OpenVINO its sizes in memory order. A
-`.pte` lowered by an older ExecuTorch, without these transposes, must be
-exported again: if it has such an input or output, the runtime fails to bind it
-and logs an error.
+transpose to it, and the runtime passes OpenVINO its sizes in memory order.
+
+The lowering marks the blob with a header for this. A `.pte` lowered by an
+older ExecuTorch has no header and no transposes, so the runtime runs it as
+before, with the sizes in logical order. An input or output in another dim
+order then comes back right only when its partition does nothing but
+elementwise ops, or when it is in the default dim order apart from size-1
+dimensions. Otherwise its values are wrong, without an error, so export such a
+`.pte` again.
 
 ## Copies
 

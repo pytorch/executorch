@@ -39,6 +39,15 @@ from torch.fx.passes.shape_prop import _extract_tensor_metadata
 # (OpenvinoBackend.cpp) accepts the same ones.
 _PRECISIONS = ("f32", "f16", "bf16")
 
+# The runtime passes the tensors of a blob with this header with their sizes in
+# memory order, and those of an older blob, without it, as before. The header
+# holds the magic and its own length, padded to 16 bytes.
+_HEADER_MAGIC = b"ETOVHDR1"
+_HEADER_LENGTH = 16
+_HEADER = (_HEADER_MAGIC + _HEADER_LENGTH.to_bytes(4, "little")).ljust(
+    _HEADER_LENGTH, b"\0"
+)
+
 
 def _match_partition_inputs(
     model, module: torch.fx.GraphModule, input_shapes: list, input_types: list
@@ -234,4 +243,4 @@ class OpenvinoBackend(BackendDetails):
         compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()
 
-        return PreprocessResult(processed_bytes=model_bytes.getvalue())
+        return PreprocessResult(processed_bytes=_HEADER + model_bytes.getvalue())

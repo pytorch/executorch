@@ -21,7 +21,6 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -181,15 +180,10 @@ FuncPtr load_symbol(void* handle, const char* name) {
 }
 #endif
 
-// An older ExecuTorch lowered a partition input or output in another dim
-// order without a transpose, so its compiled shape differs from the sizes the
-// runtime now passes.
-const char* reexport_hint(const exa::Tensor& tensor) {
-  return exr::is_contiguous_dim_order(tensor.dim_order().data(), tensor.dim())
-      ? ""
-      : ". It is not in the default dim order, so if an older ExecuTorch "
-        "lowered this .pte, export it again";
-}
+// See _HEADER_MAGIC in preprocess.py.
+constexpr char kHeaderMagic[] = "ETOVHDR1";
+constexpr size_t kHeaderMagicSize = sizeof(kHeaderMagic) - 1;
+constexpr size_t kHeaderMinLength = kHeaderMagicSize + sizeof(uint32_t);
 
 } // namespace
 
@@ -335,15 +329,36 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
     return exr::Error::NotFound;
   }
 
+  const char* data_ptr = static_cast<const char*>(processed->data());
+  size_t data_size = processed->size();
+  // A blob without the header was lowered before the transposes for other dim
+  // orders, so its tensors keep their sizes in logical order.
+  bool sizes_in_memory_order = false;
+  if (data_size >= kHeaderMinLength &&
+      std::memcmp(data_ptr, kHeaderMagic, kHeaderMagicSize) == 0) {
+    uint32_t header_length = 0;
+    for (size_t b = 0; b < sizeof(uint32_t); b++) {
+      header_length |= static_cast<uint32_t>(
+                           static_cast<uint8_t>(data_ptr[kHeaderMagicSize + b]))
+          << (8 * b);
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        header_length >= kHeaderMinLength && header_length <= data_size,
+        InvalidProgram,
+        "OpenVINO: invalid header length %" PRIu32 " in a %zu-byte blob",
+        header_length,
+        data_size);
+    data_ptr += header_length;
+    data_size -= header_length;
+    sizes_in_memory_order = true;
+  }
+
   ov_core_t* core = nullptr;
   ov_status_e status = ov_.core_create(&core);
   if (status != OV_STATUS_OK || !core) {
     ET_LOG(Error, "OpenVINO: failed to create core (status=%d)", status);
     return exr::Error::Internal;
   }
-
-  const char* data_ptr = static_cast<const char*>(processed->data());
-  size_t data_size = processed->size();
 
   std::string device = "CPU";
   std::string precision;
@@ -460,6 +475,7 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   handle->infer_request = infer_request;
   handle->owned_outputs = owned_outputs;
   handle->num_outputs = num_outputs;
+  handle->sizes_in_memory_order = sizes_in_memory_order;
 
   return handle;
 }
@@ -516,7 +532,8 @@ exr::Error OpenvinoBackend::execute(
       }
     } else if (args[i]->isTensor()) {
       auto input_tensor = args[i]->toTensor();
-      auto result = create_ov_tensor(input_tensor);
+      auto result = create_ov_tensor(
+          input_tensor, execution_handle->sizes_in_memory_order);
       if (!result.ok()) {
         return result.error();
       }
@@ -537,11 +554,7 @@ exr::Error OpenvinoBackend::execute(
     ov_.tensor_free(tensor);
     if (status != OV_STATUS_OK) {
       ET_LOG(
-          Error,
-          "OpenVINO: failed to bind input %zu (status=%d)%s",
-          i,
-          status,
-          args[i]->isTensor() ? reexport_hint(args[i]->toTensor()) : "");
+          Error, "OpenVINO: failed to bind input %zu (status=%d)", i, status);
       return exr::Error::Internal;
     }
   }
@@ -556,7 +569,8 @@ exr::Error OpenvinoBackend::execute(
     ov_tensor_t*& owned = execution_handle->owned_outputs[i];
     ov_tensor_t* tensor = nullptr;
     if (output_tensor.shape_dynamism() == exa::TensorShapeDynamism::STATIC) {
-      auto result = create_ov_tensor(output_tensor);
+      auto result = create_ov_tensor(
+          output_tensor, execution_handle->sizes_in_memory_order);
       if (!result.ok()) {
         return result.error();
       }
@@ -585,11 +599,7 @@ exr::Error OpenvinoBackend::execute(
     }
     if (status != OV_STATUS_OK) {
       ET_LOG(
-          Error,
-          "OpenVINO: failed to bind output %zu (status=%d)%s",
-          i,
-          status,
-          reexport_hint(output_tensor));
+          Error, "OpenVINO: failed to bind output %zu (status=%d)", i, status);
       return exr::Error::Internal;
     }
   }
@@ -613,7 +623,8 @@ exr::Error OpenvinoBackend::execute(
           Error, "OpenVINO: failed to get output %zu (status=%d)", i, status);
       return exr::Error::Internal;
     }
-    exr::Error error = copy_output(ov_output, output_tensor);
+    exr::Error error = copy_output(
+        ov_output, output_tensor, execution_handle->sizes_in_memory_order);
     ov_.tensor_free(ov_output);
     if (error != exr::Error::Ok) {
       ET_LOG(Error, "OpenVINO: failed to copy output %zu", i);
@@ -655,7 +666,8 @@ void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
 
 exr::Error OpenvinoBackend::copy_output(
     const ov_tensor_t* ov_output,
-    const exa::Tensor& output) const {
+    const exa::Tensor& output,
+    bool sizes_in_memory_order) const {
   ov_shape_t shape = {};
   ov_status_e status = ov_.tensor_get_shape(ov_output, &shape);
   if (status != OV_STATUS_OK) {
@@ -672,11 +684,13 @@ exr::Error OpenvinoBackend::copy_output(
     ov_.shape_free(&shape);
     return exr::Error::Internal;
   }
-  // OpenVINO gives the sizes in memory order.
   auto dim_order = output.dim_order();
+  const bool permute = sizes_in_memory_order &&
+      dim_order.size() == static_cast<size_t>(shape.rank);
   std::array<exa::SizesType, exr::kTensorDimensionLimit> sizes{};
   for (int64_t d = 0; d < shape.rank; d++) {
-    sizes[dim_order[d]] = static_cast<exa::SizesType>(shape.dims[d]);
+    sizes[permute ? dim_order[d] : d] =
+        static_cast<exa::SizesType>(shape.dims[d]);
   }
   exr::Error error = exr::resize_tensor(
       output,
@@ -766,7 +780,8 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_owned_output(
 }
 
 exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
-    const exa::Tensor& tensor) const {
+    const exa::Tensor& tensor,
+    bool sizes_in_memory_order) const {
   ov_element_type_e ov_type = convert_to_openvino_type(tensor.scalar_type());
   if (ov_type == OV_ELEMENT_UNDEFINED) {
     return exr::Error::NotSupported;
@@ -786,11 +801,11 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
     dims_heap.reset(new int64_t[rank]);
     dims = dims_heap.get();
   }
-  // The lowering added a transpose to any input or output in another dim
-  // order, so OpenVINO takes the sizes in memory order.
   auto dim_order = tensor.dim_order();
+  const bool permute =
+      sizes_in_memory_order && dim_order.size() == static_cast<size_t>(rank);
   for (int64_t d = 0; d < rank; d++) {
-    dims[d] = sizes[dim_order[d]];
+    dims[d] = sizes[permute ? dim_order[d] : d];
   }
   // shape_create refuses rank 0, so a 0-d tensor keeps the zero-initialized
   // shape, which describes a scalar.

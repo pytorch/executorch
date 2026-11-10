@@ -1,7 +1,12 @@
+import contextlib
+import sys
+from unittest import mock
+
 import torch
 from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
     BaseOpenvinoOpTest,
 )
+from executorch.exir.backend.backend_details import BackendDetails
 from torch.export import Dim
 
 
@@ -35,6 +40,23 @@ CASES = {
     ),
     "contiguous": lambda m, x: (x.mean((2, 3)), m.conv(x).flatten(1)),
 }
+
+
+@contextlib.contextmanager
+def lowered_as_before_the_header():
+    """Lower without the header and the transposes, as older ExecuTorch did."""
+    with contextlib.ExitStack() as stack:
+        # Under pytest the backend can be registered from two module paths.
+        for cls in BackendDetails.__subclasses__():
+            if cls.__name__ == "OpenvinoBackend":
+                module = sys.modules[cls.__module__]
+                stack.enter_context(mock.patch.object(module, "_HEADER", b""))
+                stack.enter_context(
+                    mock.patch.object(
+                        module, "_non_default_dim_order", lambda val: None
+                    )
+                )
+        yield
 
 
 class TestDimOrder(BaseOpenvinoOpTest):
@@ -109,3 +131,24 @@ class TestDimOrder(BaseOpenvinoOpTest):
             for name in ("output", "input to mean", "input to flatten"):
                 with self.subTest(shape=shape, case=name):
                     self.check_case(name, (torch.randn(shape),))
+
+    def test_program_lowered_before_the_header(self):
+        # The runtime passes the tensors of such a blob with their sizes in
+        # logical order, as before, so the cases that were right stay right.
+        cases = (
+            ("input to sin", (2, 3, 6, 5)),
+            ("input to mean", (2, 1, 4, 5)),
+            ("input to mean", (2, 3, 1, 1)),
+            ("contiguous", (2, 3, 6, 5)),
+        )
+        with lowered_as_before_the_header():
+            for name, shape in cases:
+                with self.subTest(case=name, shape=shape):
+                    self.check_case(name, (torch.randn(shape),))
+            with self.subTest(case="input to sin", dynamic=True):
+                self.check_case(
+                    "input to sin",
+                    (torch.randn(2, 3, 6, 5),),
+                    more_inputs=((torch.randn(2, 3, 3, 5),),),
+                    dynamic_shapes=({2: Dim("h", min=2, max=8)},),
+                )
