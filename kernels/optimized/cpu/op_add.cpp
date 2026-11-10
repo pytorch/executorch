@@ -98,7 +98,11 @@ Tensor& opt_add_out(
       return out;
     }
   } else if (a.numel() == 1) {
-    return opt_add_out(ctx, b, a, alpha, out);
+    // alpha scales b, so a and b can only be swapped when alpha is 1.
+    double alpha_val = 0;
+    if (utils::extract_scalar(alpha, &alpha_val) && alpha_val == 1) {
+      return opt_add_out(ctx, b, a, alpha, out);
+    }
   }
 
   return torch::executor::kernels::impl::opt_add_sub_out_impl<false, op_name>(
