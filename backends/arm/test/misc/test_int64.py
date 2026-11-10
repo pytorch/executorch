@@ -199,6 +199,25 @@ int64_extension_partition_suite = {
         (torch.tensor([0], dtype=torch.int32),),
         1,
     ),
+    "where_buffer_gt_byte": (
+        Int64Buffer(
+            lambda wide, x, y: torch.where(x > wide, wide, y).abs(),
+            torch.tensor([-(2**31)]),
+        ),
+        (torch.tensor([0], dtype=torch.int8), torch.tensor([0], dtype=torch.int32)),
+        1,
+    ),
+    "index_constant_where": (
+        Int64Constant(
+            lambda index, cond, x: (
+                torch.arange(4, dtype=torch.int32)[index],
+                torch.where(cond, index, x),
+            ),
+            torch.tensor([3, 1]),
+        ),
+        (_COND[:2], _NARROW[:2]),
+        1,
+    ),
     "gt_scalar_constant": (
         Int64Constant(lambda limit, x: x > limit, torch.tensor(2**40)),
         (torch.tensor([1], dtype=torch.int32),),
