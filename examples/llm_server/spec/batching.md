@@ -12,14 +12,20 @@ speculative drafting/verification remain inside the runner and executor.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
 - Exact history extensions continue the existing session. With prefix caching
-  enabled, clean prompt replacements can reuse live state or shared snapshots.
-  Unavailable or dirty state falls back to full prefill without changing the
-  session key. Explicit reset discards state; failed reopen leaves the key
-  unavailable.
+  enabled, replacements and retries can reuse matching shared snapshots. Clean
+  replacements can also reuse a committed live prefix. Dirty live state is
+  discarded; without a usable snapshot, the full supplied prompt is prefilled.
+- Explicit open creates an empty session; opening an existing key preserves it.
+  Explicit reset cancels outstanding generation and discards live state and
+  history while retaining the session key. Failed reopen leaves the key
+  unavailable. Shared snapshots survive open/reset and may be reused by the
+  next generation when they match its supplied full prompt. Reset never adds
+  old conversation content to that prompt and does not guarantee a cold prefill.
 - Prefix caching is optional and disabled by default. It supports both greedy
-  and sampled requests for implicit new-session initialization and clean prompt
-  replacement. Explicit open/reset bypass reuse. `--prefix_cache_entries`
-  reserves snapshot capacity in addition to logical `--max_sessions`.
+  and sampled requests, including the first generation after explicit open or
+  reset. `--prefix-cache-entries` reserves snapshot capacity in addition to
+  logical `--max-sessions`. Set it to zero to disable shared prefix caching
+  when a cold prefill is required after reset or opening a new key.
   Reuse requires a clone-capable executor and complete model state at the
   requested boundary; missing state falls back to prefill.
 - Visible text is not model history. EOS and pending/internal tokens can remain
