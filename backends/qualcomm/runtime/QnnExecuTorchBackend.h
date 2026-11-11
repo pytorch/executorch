@@ -12,8 +12,12 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 
+#include <map>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
+#include <utility>
 
 namespace executorch {
 namespace backends {
@@ -22,7 +26,7 @@ namespace qnn {
 class QnnExecuTorchBackend final
     : public ::executorch::runtime::BackendInterface {
  public:
-  ~QnnExecuTorchBackend(){};
+  ~QnnExecuTorchBackend() override = default;
 
   executorch::runtime::Result<executorch::runtime::DelegateHandle*> init(
       executorch::runtime::BackendInitContext& context,
@@ -51,16 +55,49 @@ class QnnExecuTorchBackend final
   bool is_available() const override;
 
  private:
-  void add_cached_delegate(
-      const std::int64_t& signature,
+  friend class QnnExecuTorchBackendTest;
+
+  // A context binary signature plus the runtime allocator that the methods of
+  // one Module share. Other Modules can be destroyed independently, so they
+  // must never receive this Module's QnnManager.
+  using DelegateKey =
+      std::pair<std::int64_t, const executorch::runtime::MemoryAllocator*>;
+
+  struct SpillFillGroup {
+    std::mutex mutex;
+    // HTP requires the first context to outlive every other group member.
+    std::shared_ptr<executorch::runtime::DelegateHandle> owner;
+  };
+  using SpillFillKey =
+      std::pair<const executorch::runtime::MemoryAllocator*, uint64_t>;
+
+  struct DelegateEntry {
+    executorch::runtime::DelegateHandle* handle;
+    size_t users;
+    // Destroy each member context before releasing the group's first context.
+    std::shared_ptr<SpillFillGroup> group;
+    std::shared_ptr<executorch::runtime::DelegateHandle> manager;
+  };
+
+  std::shared_ptr<SpillFillGroup> get_spill_fill_group(
+      const SpillFillKey& key) const;
+  std::optional<executorch::runtime::DelegateHandle*> get_cached_delegate(
+      const DelegateKey& key) const;
+  executorch::runtime::DelegateHandle* add_cached_delegate(
+      const DelegateKey& key,
+      executorch::runtime::DelegateHandle* handle,
+      std::shared_ptr<executorch::runtime::DelegateHandle> manager = nullptr,
+      std::shared_ptr<SpillFillGroup> group = nullptr) const;
+  bool is_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
+  std::optional<DelegateEntry> erase_cached_delegate(
       executorch::runtime::DelegateHandle* handle) const;
-  void erase_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
 
   mutable std::mutex mutex_;
   mutable std::mutex runtime_option_mutex_;
-  mutable std::unordered_map<int64_t, executorch::runtime::DelegateHandle*>
-      delegate_map_;
-  mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::int64_t>
+  mutable std::map<DelegateKey, DelegateEntry> delegate_map_;
+  mutable std::map<SpillFillKey, std::weak_ptr<SpillFillGroup>>
+      spill_fill_groups_;
+  mutable std::unordered_map<executorch::runtime::DelegateHandle*, DelegateKey>
       delegate_map_rev_;
 
   RuntimeOption qnn_runtime_log_level_{false, 0};

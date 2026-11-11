@@ -13,6 +13,7 @@ are checked in the native test; this verifies the dynamic export side + writes
 goldens.
 """
 
+import copy
 import math
 import os
 import unittest
@@ -97,6 +98,24 @@ class SigmoidModule(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.sigmoid(x)
+
+
+class LayerNormStatsModule(torch.nn.Module):
+    """native_layer_norm returning (out [+ x], mean, rstd), so the live dims of
+    all three outputs are checked; the residual add only resizes if they do."""
+
+    def __init__(self, hidden: int, residual: bool) -> None:
+        super().__init__()
+        self.hidden = hidden
+        self.residual = residual
+        self.weight = torch.nn.Parameter(torch.linspace(0.5, 1.5, hidden))
+        self.bias = torch.nn.Parameter(torch.linspace(-0.25, 0.25, hidden))
+
+    def forward(self, x: torch.Tensor):
+        out, mean, rstd = torch.ops.aten.native_layer_norm.default(
+            x, [self.hidden], self.weight, self.bias, 1e-5
+        )
+        return (out + x if self.residual else out), mean, rstd
 
 
 class SwiGluModule(torch.nn.Module):
@@ -298,6 +317,63 @@ def export_dynamic_conv1d_cases(out_dir: str) -> None:
         golden.detach().numpy().astype("<f4").tofile(prefix + ".golden.bin")
 
 
+def _wave(shape, s: int) -> torch.Tensor:
+    """Deterministic input whose short rows still have O(1) variance. Phase and
+    sign depend on `s`, so a smaller input is not a prefix of a larger one and a
+    stale output from an earlier run cannot match."""
+    n = 1
+    for d in shape:
+        n *= d
+    i = torch.arange(n, dtype=torch.float64)
+    x = torch.sin(0.37 * i + 0.1 * s) + 0.25 * torch.cos(1.3 * i - 0.05 * s)
+    return ((-1.0) ** s * x).float().reshape(shape)
+
+
+def _export_multi_output_case(
+    model, prefix: str, out_dir: str, shape_of_s, dim: int, s_dim, s_values
+) -> None:
+    """Export `model` with input dim `dim` dynamic, then write
+    <prefix>.S<s>.input.bin and one <prefix>.S<s>.golden<i>.bin per output."""
+    _export(
+        model,
+        (_wave(shape_of_s(s_dim.max), s_dim.max),),
+        {"x": {dim: s_dim}},
+        os.path.join(out_dir, f"{prefix}.pte"),
+    )
+    for s in s_values:
+        x = _wave(shape_of_s(s), s)
+        with torch.no_grad():
+            goldens = copy.deepcopy(model).double()(x.double())
+        base = os.path.join(out_dir, f"{prefix}.S{s}.")
+        x.numpy().astype("<f4").tofile(base + "input.bin")
+        for index, golden in enumerate(goldens):
+            golden.numpy().astype("<f4").tofile(base + f"golden{index}.bin")
+
+
+LAYER_NORM_ROWS_MAX = 70000  # above the 65535 1D grid limit: 2D row grid
+
+
+def export_dynamic_layer_norm_cases(out_dir: str, s_dim) -> None:
+    _export_multi_output_case(
+        LayerNormStatsModule(HIDDEN, residual=True),
+        "dyn_layer_norm",
+        out_dir,
+        lambda s: (1, 1, s, HIDDEN),
+        2,
+        s_dim,
+        (MAXS, 125, 7, 1),
+    )
+    _export_multi_output_case(
+        LayerNormStatsModule(4, residual=False),
+        "dyn_layer_norm_rows",
+        out_dir,
+        lambda s: (1, s, 4),
+        1,
+        torch.export.Dim("ln_rows", min=1, max=LAYER_NORM_ROWS_MAX),
+        (LAYER_NORM_ROWS_MAX, 1000, 1),
+    )
+
+
 def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
     """Write a dynamic GELU fixture crossing the old 1D dispatch cap."""
     os.makedirs(out_dir, exist_ok=True)
@@ -426,6 +502,10 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
         os.path.join(out_dir, "dyn_sigmoid.pte"),
     )
     _write_goldens(sig, "dyn_sigmoid", out_dir, [MAXS, 32, 1])
+
+    # 2h.1) native_layer_norm (out + x, mean, rstd) with a DYNAMIC seq-len S,
+    # and with a dynamic row count past the 1D grid limit.
+    export_dynamic_layer_norm_cases(out_dir, s_dim)
 
     # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
     # fused dispatch at M=512; compact variants isolate commutative matching and
@@ -1625,6 +1705,14 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_conv1d.S9.golden.bin",
                 "dyn_conv1d.S5.input.bin",
                 "dyn_conv1d.S5.golden.bin",
+                "dyn_layer_norm.pte",
+                "dyn_layer_norm.S125.input.bin",
+                "dyn_layer_norm.S125.golden0.bin",
+                "dyn_layer_norm.S125.golden2.bin",
+                "dyn_layer_norm.S7.golden1.bin",
+                "dyn_layer_norm_rows.pte",
+                "dyn_layer_norm_rows.S70000.input.bin",
+                "dyn_layer_norm_rows.S1000.golden2.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",

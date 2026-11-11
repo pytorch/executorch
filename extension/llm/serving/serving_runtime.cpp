@@ -235,15 +235,18 @@ struct ServingRuntime::Impl {
     bool dirty = false;
   };
 
+  using Completion = std::function<void(LifecycleResult, bool)>;
+
   struct Command {
     Operation operation;
     std::string key;
     // Queue transfers must not destroy user captures under mutex_.
-    std::unique_ptr<LifecycleCallback> completion;
+    std::unique_ptr<Completion> completion;
     Request request;
     RequestId fence_through = 0;
     bool processed = false;
     LifecycleResult result = std::nullopt;
+    bool existed = false;
   };
 
   Impl(
@@ -294,15 +297,16 @@ struct ServingRuntime::Impl {
   }
 
   static void complete(
-      std::unique_ptr<LifecycleCallback> completion,
-      LifecycleResult result) {
+      std::unique_ptr<Completion> completion,
+      LifecycleResult result,
+      bool existed = false) {
     if (!completion || !*completion) {
       return;
     }
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      (*completion)(std::move(result));
+      (*completion)(std::move(result), existed);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       ET_LOG(Error, "Lifecycle completion callback threw");
@@ -324,10 +328,20 @@ struct ServingRuntime::Impl {
 
   void
   submit(Operation operation, std::string key, LifecycleCallback on_complete) {
+    submit(
+        operation,
+        std::move(key),
+        [callback = std::move(on_complete)](LifecycleResult result, bool) {
+          if (callback)
+            callback(std::move(result));
+        });
+  }
+
+  void submit(Operation operation, std::string key, Completion on_complete) {
     Command command{
         operation,
         std::move(key),
-        std::make_unique<LifecycleCallback>(std::move(on_complete)),
+        std::make_unique<Completion>(std::move(on_complete)),
         {}};
     LifecycleResult error;
     {
@@ -369,6 +383,7 @@ struct ServingRuntime::Impl {
     }
     auto it = sessions_.find(command.key);
     if (command.operation == Operation::Close) {
+      command.existed = it != sessions_.end();
       if (it != sessions_.end()) {
         if (it->second.active_request) {
           cancelled = requests_.at(it->second.active_request);
@@ -396,7 +411,7 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         return ServingError{
-            ErrorCode::CapacityExceeded, "session limit reached"};
+            ErrorCode::SessionCapacityExceeded, "session limit reached"};
       }
       it = sessions_.try_emplace(command.key).first;
       it->second.incarnation = next_incarnation_++;
@@ -562,6 +577,8 @@ struct ServingRuntime::Impl {
       }
     }
     auto& stats = terminal.stats;
+    stats.matched_stop =
+        text.output ? text.output->matched_stop() : std::nullopt;
     stats.completion_tokens =
         text.output ? text.output->completion_tokens() : 0;
     stats.prefill_ms = completion.metrics.prefill_span_us() / 1000.0;
@@ -662,8 +679,23 @@ struct ServingRuntime::Impl {
 
   enum class Selection { Selected, Unavailable, Cancelled };
   using SelectionResult = std::variant<Selection, ServingError>;
+  struct PrefixSelection {
+    batching::PrefixMatch match;
+    batching::GenerationInput delta;
+  };
+  enum class PrefixLookupStatus { Unavailable, Cancelled };
+  using PrefixLookupResult =
+      std::variant<PrefixSelection, PrefixLookupStatus, ServingError>;
+  struct CheckedSuffix {
+    std::optional<std::size_t> start;
+    SelectionResult result = Selection::Unavailable;
+    batching::GenerationInput delta;
+  };
 
-  SelectionResult select_input(const Request& request, std::size_t start) {
+  SelectionResult select_input(
+      const Request& request,
+      std::size_t start,
+      batching::GenerationInput& delta) {
     if (request->cancelled.load()) {
       return Selection::Cancelled;
     }
@@ -686,8 +718,7 @@ struct ServingRuntime::Impl {
           ErrorCode::InvalidArgument, "invalid prepared suffix"};
     }
     if (view->kind() == detail::TokenPreparedInput::type()) {
-      request->request.delta =
-          static_cast<const detail::TokenPreparedInput&>(*view).tokens();
+      delta = static_cast<const detail::TokenPreparedInput&>(*view).tokens();
       return Selection::Selected;
     }
     const auto acceptance = runner_->accepts_async(view).get();
@@ -713,8 +744,44 @@ struct ServingRuntime::Impl {
           ErrorCode::InvalidArgument,
           "executor does not accept prepared input"};
     }
-    request->request.delta = std::move(view);
+    delta = std::move(view);
     return Selection::Selected;
+  }
+
+  SelectionResult select_reuse_input(
+      const Request& request,
+      std::size_t start,
+      CheckedSuffix& checked) {
+    if (request->cancelled.load()) {
+      checked.result = Selection::Cancelled;
+    } else if (checked.start != start) {
+      checked.start = start;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        checked.result = select_input(request, start, checked.delta);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        ET_LOG(Error, "Prefix suffix preparation threw at position %zu", start);
+        checked.result = Selection::Unavailable;
+      }
+#endif
+      // Optional reuse does not replace validation of the full input.
+      if (const auto* error = std::get_if<ServingError>(&checked.result);
+          error && error->code != ErrorCode::NotReady) {
+        ET_LOG(
+            Error,
+            "Prefix suffix at position %zu rejected: %s",
+            start,
+            error->message.c_str());
+        checked.result = Selection::Unavailable;
+      }
+    }
+    if (!std::holds_alternative<Selection>(checked.result) ||
+        std::get<Selection>(checked.result) != Selection::Selected) {
+      checked.delta = {};
+    }
+    return checked.result;
   }
 
   bool try_acquire_capture_lane() {
@@ -738,7 +805,10 @@ struct ServingRuntime::Impl {
     return false;
   }
 
-  SelectionResult clone_prefix(const Request& request, const SessionKey& key) {
+  SelectionResult clone_prefix(
+      const Request& request,
+      const SessionKey& key,
+      CheckedSuffix& checked) {
     if (!try_acquire_capture_lane()) {
       return Selection::Unavailable;
     }
@@ -749,24 +819,43 @@ struct ServingRuntime::Impl {
       }
     } release{capture_lanes_used_};
     batching::Session* source;
-    std::size_t upto;
+    std::size_t upto = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto& slot = sessions_.at(key);
       const auto& prompt = request->text->prompt;
-      if (slot.dirty || !slot.logical_history || !prompt ||
-          prompt->size() < 2) {
+      if (!prompt || prompt->size() < 2) {
         return Selection::Unavailable;
       }
       source = &*slot.session;
-      upto = std::min(
-          {batching::common_prefix(*slot.logical_history, *prompt),
-           static_cast<std::size_t>(source->position()),
-           prompt->size() - 1});
+      if (!slot.dirty && slot.logical_history) {
+        upto = std::min(
+            {batching::common_prefix(*slot.logical_history, *prompt),
+             static_cast<std::size_t>(source->position()),
+             prompt->size() - 1});
+      }
     }
     std::optional<batching::Session> cloned;
+    std::optional<batching::PrefixMatch> match;
+    batching::GenerationInput delta;
     if (upto) {
-      auto selection = select_input(request, upto);
+      auto found = lookup_prefix(
+          request, upto, std::numeric_limits<std::size_t>::max(), &checked);
+      if (auto* error = std::get_if<ServingError>(&found)) {
+        return std::move(*error);
+      }
+      if (auto* candidate = std::get_if<PrefixSelection>(&found)) {
+        match = std::move(candidate->match);
+        delta = std::move(candidate->delta);
+        cloned = std::move(match->session);
+      } else if (
+          std::get<PrefixLookupStatus>(found) ==
+          PrefixLookupStatus::Cancelled) {
+        return Selection::Cancelled;
+      }
+    }
+    if (!cloned && upto) {
+      auto selection = select_reuse_input(request, upto, checked);
       const auto* outcome = std::get_if<Selection>(&selection);
       if (!outcome || *outcome == Selection::Cancelled) {
         return selection;
@@ -778,6 +867,9 @@ struct ServingRuntime::Impl {
           // Only control owns Session objects; clone waits outside locks.
           cloned =
               source->clone_async(static_cast<batching::Position>(upto)).get();
+          if (cloned) {
+            delta = std::move(checked.delta);
+          }
 #if ET_HAS_EXCEPTIONS
         } catch (...) {
           // Try a retained snapshot if the live source cannot be cloned.
@@ -789,15 +881,22 @@ struct ServingRuntime::Impl {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
       }
-      auto match = lookup_prefix(request);
-      if (!match) {
-        return Selection::Unavailable;
+      auto found = lookup_prefix(
+          request,
+          0,
+          upto ? upto : std::numeric_limits<std::size_t>::max(),
+          &checked);
+      if (auto* error = std::get_if<ServingError>(&found)) {
+        return std::move(*error);
       }
-      auto selection = select_input(request, match->matched_tokens);
-      if (auto* outcome = std::get_if<Selection>(&selection);
-          !outcome || *outcome != Selection::Selected) {
-        return selection;
+      if (auto* outcome = std::get_if<PrefixLookupStatus>(&found)) {
+        return *outcome == PrefixLookupStatus::Cancelled
+            ? Selection::Cancelled
+            : Selection::Unavailable;
       }
+      auto candidate = std::get<PrefixSelection>(std::move(found));
+      match = std::move(candidate.match);
+      delta = std::move(candidate.delta);
       cloned = std::move(match->session);
     }
     std::optional<batching::Session> retired;
@@ -811,9 +910,13 @@ struct ServingRuntime::Impl {
       retired = std::move(slot.session);
       retired_history = std::move(slot.logical_history);
       slot.session = std::move(cloned);
+      request->request.delta = std::move(delta);
       slot.incarnation = next_incarnation_++;
       // Completion installs the replacement prompt's history.
       slot.dirty = true;
+    }
+    if (match) {
+      prefix_cache_.touch(*match);
     }
     return Selection::Selected;
   }
@@ -868,6 +971,10 @@ struct ServingRuntime::Impl {
       return std::nullopt;
     }
     if (auto* error = std::get_if<ServingError>(&prepared)) {
+      if (error->context_overflow) {
+        error->context_overflow->completion_tokens =
+            options.max_new_tokens.value_or(1);
+      }
       return std::move(*error);
     }
     text.prepared = std::get<batching::PreparedInputPtr>(std::move(prepared));
@@ -882,7 +989,13 @@ struct ServingRuntime::Impl {
             ? static_cast<std::int32_t>(
                   std::min(available, static_cast<std::size_t>(INT32_MAX)))
             : config_.default_max_new_tokens);
-    if (wanted <= 0 || available == 0) {
+    if (available == 0) {
+      return context_length_error(
+          text.terminal.stats.prompt_tokens,
+          context_limit,
+          options.max_new_tokens.value_or(1));
+    }
+    if (wanted <= 0) {
       return ServingError{
           ErrorCode::InvalidArgument, "no generation budget available"};
     }
@@ -910,11 +1023,13 @@ struct ServingRuntime::Impl {
 
     const batching::PrefixIdentity empty_identity;
     PrefillPlan plan{PrefillPlan::kFull, 0, "new"};
+    bool existing = false;
     bool reset = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
+        existing = true;
         plan = plan_prefill_identity(
             it->second.logical_history ? *it->second.logical_history
                                        : empty_identity,
@@ -928,27 +1043,31 @@ struct ServingRuntime::Impl {
         }
       }
     }
-    auto selection = select_input(request, plan.suffix_start);
+    CheckedSuffix checked;
+    auto selection = plan.suffix_start
+        ? select_reuse_input(request, plan.suffix_start, checked)
+        : select_input(request, 0, request->request.delta);
+    if (plan.suffix_start && std::holds_alternative<Selection>(selection) &&
+        std::get<Selection>(selection) == Selection::Selected) {
+      request->request.delta = std::move(checked.delta);
+    }
     if (auto* outcome = std::get_if<Selection>(&selection);
         outcome && *outcome == Selection::Unavailable) {
-      selection = select_input(request, 0);
+      selection = select_input(request, 0, request->request.delta);
       plan = {PrefillPlan::kFull, 0, "suffix_unavailable"};
       reset = true;
     }
     if (auto* outcome = std::get_if<Selection>(&selection); outcome &&
-        *outcome == Selection::Selected && reset &&
-        (plan.reason == "mismatch" || plan.reason == "equal" ||
-         plan.reason == "suffix_unavailable") &&
+        *outcome == Selection::Selected && existing &&
+        plan.action == PrefillPlan::kFull &&
         config_.prefix_cache_capacity != 0) {
       // Capture and replacement share the transient row budget.
-      auto cold_delta = std::move(request->request.delta);
-      selection = clone_prefix(request, key);
+      selection = clone_prefix(request, key, checked);
       if (auto* cloned = std::get_if<Selection>(&selection)) {
         if (*cloned == Selection::Selected) {
           reset = false;
           plan.reason = "prefix_clone";
         } else if (*cloned == Selection::Unavailable) {
-          request->request.delta = std::move(cold_delta);
           selection = Selection::Selected;
         }
       }
@@ -971,21 +1090,60 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
-  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+  PrefixLookupResult lookup_prefix(
+      const Request& request,
+      std::size_t longer_than = 0,
+      std::size_t at_most = std::numeric_limits<std::size_t>::max(),
+      CheckedSuffix* previous = nullptr) {
+    if (request->cancelled.load()) {
+      return PrefixLookupStatus::Cancelled;
+    }
     if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
-      return std::nullopt;
+      return PrefixLookupStatus::Unavailable;
     }
-    // A lookup clone uses the new request's reserved working-session slot.
+    CheckedSuffix local;
+    auto& checked = previous ? *previous : local;
+    const auto* prior = std::get_if<Selection>(&checked.result);
+    const auto rejected_length = prior && *prior == Selection::Unavailable
+        ? checked.start
+        : std::nullopt;
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup_identity(*request->text->prompt);
+      auto found = prefix_cache_.find_identity(
+          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
+            using Decision = batching::PrefixCache::MatchDecision;
+            if (rejected_length == start) {
+              return Decision::Skip;
+            }
+            auto selected = select_reuse_input(request, start, checked);
+            if (const auto* outcome = std::get_if<Selection>(&selected)) {
+              if (*outcome == Selection::Selected) {
+                return Decision::Use;
+              }
+              if (*outcome == Selection::Unavailable) {
+                return Decision::Skip;
+              }
+            }
+            return Decision::Stop;
+          });
+      if (found.stopped) {
+        if (auto* error = std::get_if<ServingError>(&checked.result)) {
+          return std::move(*error);
+        }
+        return PrefixLookupStatus::Cancelled;
+      }
+      if (found.match) {
+        return PrefixSelection{
+            std::move(*found.match), std::move(checked.delta)};
+      }
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      return std::nullopt;
+      // Cache lookup is optional; keep the previously accepted input.
     }
 #endif
+    return PrefixLookupStatus::Unavailable;
   }
 
   void collect_capture(const Request& request) {
@@ -1054,8 +1212,8 @@ struct ServingRuntime::Impl {
     if (opening) {
       if (sessions_.size() == config_.max_sessions) {
         lock.unlock();
-        request->reject(
-            ServingError{ErrorCode::CapacityExceeded, "session limit reached"});
+        request->reject(ServingError{
+            ErrorCode::SessionCapacityExceeded, "session limit reached"});
         return;
       }
       it = sessions_.try_emplace(key).first;
@@ -1063,6 +1221,7 @@ struct ServingRuntime::Impl {
     }
     it->second.active_request = request->id;
     request->completion.incarnation = it->second.incarnation;
+    std::optional<PrefixSelection> prefix;
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
@@ -1070,24 +1229,18 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto match = lookup_prefix(request);
-        Selection outcome = Selection::Selected;
-        if (match) {
-          opened = std::move(match->session);
-          // Snapshot positions are committed; named history also includes
-          // pending. Keep the accepted full delta until suffix success.
-          auto selection = select_input(request, match->matched_tokens);
-          if (auto* error = std::get_if<ServingError>(&selection)) {
-            preparation_error = std::move(*error);
-          } else {
-            outcome = std::get<Selection>(selection);
-            if (outcome == Selection::Unavailable) {
-              // Queue clone closure outside mutex_ before the cold open.
-              opened.reset();
-            }
-          }
+        auto found = lookup_prefix(request);
+        PrefixLookupStatus outcome = PrefixLookupStatus::Unavailable;
+        if (auto* error = std::get_if<ServingError>(&found)) {
+          preparation_error = std::move(*error);
+        } else if (auto* candidate = std::get_if<PrefixSelection>(&found)) {
+          prefix = std::move(*candidate);
+          opened = std::move(prefix->match.session);
+        } else {
+          outcome = std::get<PrefixLookupStatus>(found);
         }
-        if (!opened && !preparation_error && outcome != Selection::Cancelled &&
+        if (!opened && !preparation_error &&
+            outcome != PrefixLookupStatus::Cancelled &&
             !request->cancelled.load()) {
           opened = runner_->open_session_async().get();
         }
@@ -1116,6 +1269,9 @@ struct ServingRuntime::Impl {
         return;
       }
       it->second.session = std::move(opened);
+      if (prefix) {
+        request->request.delta = std::move(prefix->delta);
+      }
       it->second.phase = SessionPhase::Open;
     }
     auto& session = *it->second.session;
@@ -1128,6 +1284,9 @@ struct ServingRuntime::Impl {
     if (cancelled) {
       request->reject();
       return;
+    }
+    if (prefix) {
+      prefix_cache_.touch(prefix->match);
     }
     if (request->text) {
       request->text->start_position =
@@ -1607,7 +1766,10 @@ struct ServingRuntime::Impl {
               ServingError{ErrorCode::NotReady, "runtime is stopping"};
         }
       }
-      complete(std::move(command.completion), std::move(command.result));
+      complete(
+          std::move(command.completion),
+          std::move(command.result),
+          command.existed);
     }
     decltype(sessions_) retired;
     {
@@ -1834,6 +1996,18 @@ void ServingRuntime::close_session_async(
     std::string key,
     LifecycleCallback on_complete) {
   impl_->submit(Impl::Operation::Close, std::move(key), std::move(on_complete));
+}
+
+void ServingRuntime::close_session_with_result_async(
+    std::string key,
+    CloseCallback on_complete) {
+  impl_->submit(
+      Impl::Operation::Close,
+      std::move(key),
+      [callback = std::move(on_complete)](LifecycleResult error, bool existed) {
+        if (callback)
+          callback(CloseResult{std::move(error), existed});
+      });
 }
 
 std::future<LifecycleResult> ServingRuntime::close_session_async(

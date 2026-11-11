@@ -101,14 +101,14 @@ void main() {
   const int n = pos.z / num_z_per_n;
 
   // Look up the (gx, gy) for this output pixel from the grid SSBO.
-  // The grid is a contiguous buffer of [N, Hout, Wout, 2], so the linear
-  // index for (n, h, w, comp) is ((n*Hout + h)*Wout + w)*2 + comp. This
+  // Each coordinate pair occupies four scalars in the aligned grid buffer.
+  // The index for (n, h, w, comp) is ((n*Hout + h)*Wout + w)*4 + comp. This
   // relies on `inputs_storage` in op_registry.py pinning grid to
   // CONTIGUOUS_BUFFER and the C++ dispatcher re-checking with
   // `is_contiguous_buffer_tensor` — see GridSampler2d.cpp.
   const int Wout = outp.sizes.x;
   const int Hout = outp.sizes.y;
-  const int grid_base = ((n * Hout + pos.y) * Wout + pos.x) * 2;
+  const int grid_base = ((n * Hout + pos.y) * Wout + pos.x) * 4;
   const float gx_norm = float(t_grid[grid_base + 0]);
   const float gy_norm = float(t_grid[grid_base + 1]);
 

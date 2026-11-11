@@ -11,10 +11,16 @@ packaging, cache initialization, and eager numerics through prefill and
 incremental decoding. Runtime operator support is covered by engine tests.
 """
 
+from __future__ import annotations
+
 import operator
 import os
+import subprocess
 import tempfile
 import unittest
+from contextlib import nullcontext
+from importlib.resources import as_file, files
+from pathlib import Path
 
 import torch
 from executorch.backends.native import get_default_compile_config
@@ -225,6 +231,59 @@ class WhisperNativeExportTest(unittest.TestCase):
                 if isinstance(actual, (tuple, list)):
                     actual = actual[0]
                 torch.testing.assert_close(actual, expected)
+
+    def test_ggml_runner_matches_eager(self):
+        runner_override = os.environ.get("NATIVE_WHISPER_RUNNER")
+        resource = files(__package__) / "run_whisper_ggml_cpu"
+        if runner_override is None and not resource.is_file():
+            self.skipTest("set NATIVE_WHISPER_RUNNER to a run_whisper_ggml_cpu build")
+        runner_context = (
+            nullcontext(Path(runner_override)) if runner_override else as_file(resource)
+        )
+        with runner_context as runner, tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "whisper.ptn"
+            to_native(self.programs).save(str(package))
+            features = outdir / "input.bin"
+            features.write_bytes(self.features.contiguous().numpy().tobytes())
+            prompt = outdir / "prompt.txt"
+            prefix = prompt_ids(self.model)
+            prompt.write_text("".join(f"{token}\n" for token in prefix))
+            expected_path = outdir / "expected.txt"
+            for budget, cached_graphs in ((1, 1), (32, 0), (32, 1), (32, 2)):
+                with self.subTest(budget=budget, cached_graphs=cached_graphs):
+                    expected = _greedy_transcript(
+                        self.encoder,
+                        self.cross_kv,
+                        WhisperDecoder(self.model).eval(),
+                        self.features,
+                        prefix,
+                        {2},
+                        budget,
+                    )
+                    expected_path.write_text(
+                        "".join(f"{token}\n" for token in expected)
+                    )
+                    result = subprocess.run(
+                        [
+                            str(runner),
+                            f"--package={package}",
+                            f"--input={features}",
+                            f"--prompt={prompt}",
+                            f"--expected={expected_path}",
+                            "--eos_ids=2",
+                            "--cpu_threads=2",
+                            f"--max_new_tokens={budget}",
+                            f"--max_cached_graphs={cached_graphs}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0, result.stdout + result.stderr
+                    )
+                    self.assertIn("result:    PASS", result.stdout)
 
     def test_three_method_package_saves(self):
         # Regression: each method lifts its own scalar constants under the

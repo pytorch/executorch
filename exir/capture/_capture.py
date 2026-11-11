@@ -9,13 +9,11 @@ import warnings
 from collections import namedtuple
 from contextlib import contextmanager
 from types import MethodType
-from typing import Any, Callable, cast, List, Optional, Tuple
+from typing import Any, Callable, cast, List, Optional, Tuple, TYPE_CHECKING
 
 import torch
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.program import ExirExportedProgram
-from executorch.exir.program._program import _transform, HackedUpExportedProgramDONOTUSE
 from executorch.exir.tracer import (
     _default_decomposition_table,
     dispatch_trace,
@@ -23,7 +21,6 @@ from executorch.exir.tracer import (
     flatten_output,
     Value,
 )
-from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
@@ -46,6 +43,11 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.utils import _pytree as pytree
 
+# exir.program and exir.verification.verifier import executorch.exir.capture
+# (via capture._config), so importing them here at module scope is circular.
+if TYPE_CHECKING:
+    from executorch.exir.program import ExirExportedProgram
+
 
 Val = Any
 
@@ -59,7 +61,7 @@ CallSpec = namedtuple("CallSpec", ["in_spec", "out_spec"])
 
 
 @compatibility(is_backward_compatible=False)
-def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
+def _capture_legacy_do_not_use(f, args) -> "ExirExportedProgram":
     """
     This is a legacy API that should be avoided. Prefer to use capture() instead.
     """
@@ -69,6 +71,9 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
         DeprecationWarning,
         stacklevel=1,
     )
+    from executorch.exir.program import ExirExportedProgram
+    from executorch.exir.program._program import HackedUpExportedProgramDONOTUSE
+    from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 
     graph_module = dispatch_trace(f, args)
     flat_args = tuple(pytree.tree_flatten(args)[0])
@@ -167,12 +172,16 @@ def capture(  # noqa: C901
     args: Tuple[Value, ...],
     config: Optional[CaptureConfig] = None,
     dynamic_shapes: Optional[List[Any]] = None,
-) -> ExirExportedProgram:
+) -> "ExirExportedProgram":
     warnings.warn(
         "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
         DeprecationWarning,
         stacklevel=1,
     )
+    from executorch.exir.program import ExirExportedProgram
+    from executorch.exir.program._program import _transform
+    from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
+
     if not isinstance(args, tuple):
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
