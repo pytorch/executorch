@@ -13,9 +13,10 @@ LICENSE file in the root directory of this source tree.
 [ExecuTorch](https://github.com/pytorch/executorch) repository.
 
 `VERSION` in this directory records the ExecuTorch commit, the generator's
-options, and the kernel libraries the component ships.
-`examples/hello_executorch` is a complete project that runs a small model
-with its kernel bundle; its README says how they were made.
+options, the kernel libraries the component ships and the torch to
+install with executorch. `examples/hello_executorch` is a complete
+project that runs a small model with its kernel bundle; its README says
+how they were made.
 
 ## Using it
 
@@ -26,9 +27,9 @@ dependencies:
   pytorch/executorch: "==@ET_COMPONENT_VERSION@"
 ```
 
-A development copy, versioned `X.Y.Z-dev.YYYYMMDD`, is not on the
-registry; use it from your project's `components/` or through
-`override_path`.
+The registry's dev versions, `X.Y.Z-dev.YYYYMMDD`, come from the
+`nightly` branch. A copy you generate yourself is not published; use it
+from your project's `components/` or through `override_path`.
 
 A kernel bundle is made for one component version, a `~N` respin
 included, and the build refuses a bundle made for another version, or
@@ -52,6 +53,15 @@ component, and keep the bundle in your project:
 
 ```sh
 python <this directory>/tools/gen_kernels.py --pte main/model.pte --out main/et_kernels
+```
+
+The Python environment you export models and run `gen_kernels.py` with
+needs the executorch this component was built from, and the torch that
+`VERSION` names as `torch_requirement`, from its `torch_index`, since
+ExecuTorch's wheels declare no torch:
+
+```sh
+@ET_INSTALL@
 ```
 
 Then declare the models and the bundle, from a component's
