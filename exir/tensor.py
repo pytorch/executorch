@@ -50,7 +50,7 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
 
 
 def dim_order_from_stride(
-    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
 ) -> Tuple[bytes]:
     """
     Dimension order represents how dimensions are laid out in memory,

@@ -11,9 +11,11 @@
 # build runs all three with a kernel bundle the build makes itself; an ESP32-C6
 # build runs the first two, with the Cadence kernels too, and must not link the
 # delegate; two more ESP32-S3 builds run the delegate alone, from a bundle with
-# no kernel libraries and from executorch_add_backend with no bundle. Also
-# checks that stale or mismatched bundles fail at configure time, and that an
-# app declaring nothing links to the same size as one without the component.
+# no kernel libraries and from executorch_add_backend with no bundle, and the
+# component's own example runs too. Also checks the version stamping, the
+# manifest and SBOM, that stale or mismatched bundles fail at configure time,
+# and that an app declaring nothing links to the same size as one without the
+# component.
 
 set -euo pipefail
 
@@ -37,6 +39,10 @@ collect_artifacts() {
 }
 trap collect_artifacts EXIT
 
+# Needs only git and a Python with PyYAML, so a stamp regression fails before
+# the toolchain installs.
+bash examples/espressif/test_version_stamp.sh
+
 bash examples/espressif/setup.sh --minimal --targets=esp32s3,esp32c6 2>&1 \
     | tee "${build_dir}/setup.log"
 # shellcheck source=/dev/null
@@ -50,23 +56,67 @@ python examples/espressif/export_espnn_test_programs.py --output-dir "${build_di
     --only conv-act-pool-linear 2>&1 | tee -a "${build_dir}/export.log"
 cp "${build_dir}/espnn/conv-act-pool-linear.bpte" "${build_dir}/delegate.bpte"
 split=examples/espressif/idf_component_smoke/split_bundled_program.py
-python "${split}" "${build_dir}/smoke.bpte" --atol 0 --rtol 0
+# Each case twice, so a second execute of the same method is checked too.
+python "${split}" "${build_dir}/smoke.bpte" --atol 0 --rtol 0 --repeat 2
 # test_mul.py's tolerance, torch.finfo(torch.float32).eps (1.1920929e-07),
 # rounded up.
-python "${split}" "${build_dir}/mul.bpte" --atol 0 --rtol 1.2e-7
+python "${split}" "${build_dir}/mul.bpte" --atol 0 --rtol 1.2e-7 --repeat 2
 read -r atol rtol < <(python -c '
 import json, sys
 (entry,) = json.load(open(sys.argv[1]))
 print(entry["atol"], entry["rtol"])
 ' "${build_dir}/espnn/manifest.json")
-python "${split}" "${build_dir}/delegate.bpte" --atol "${atol}" --rtol "${rtol}"
+python "${split}" "${build_dir}/delegate.bpte" --atol "${atol}" --rtol "${rtol}" --repeat 2
 cpu_models="${build_dir}/smoke.pte;${build_dir}/mul.pte"
 models="${cpu_models};${build_dir}/delegate.pte"
 
 component_dir="${build_dir}/components/executorch"
 kernels_dir="${build_dir}/smoke_kernels"
-bash examples/espressif/build_idf_component.sh --out "${component_dir}" \
+bash examples/espressif/build_idf_component.sh --allow-dev-stamp --out "${component_dir}" \
     2>&1 | tee "${build_dir}/generate.log"
+compote manifest lint "${component_dir}"
+(cd "${component_dir}" && esp-idf-sbom manifest validate idf_component.yml sbom.yml sbom_*.yml)
+
+# The release path that publishing takes: a clean clone of HEAD, tagged as the
+# release in the clone only, generated without --allow-dev-stamp.
+release_version=$(cat version.txt)
+release_clone="${build_dir}/release-clone"
+rm -rf "${release_clone}" "${build_dir}/release_component" "${build_dir}/rc_component"
+git clone -q --shared --no-checkout "${et_root}" "${release_clone}"
+git -C "${release_clone}" checkout -q --detach "$(git rev-parse HEAD)"
+git -C "${release_clone}" submodule init -q third-party/flatbuffers
+git -C "${release_clone}" config submodule.third-party/flatbuffers.url \
+    "${et_root}/third-party/flatbuffers"
+git -C "${release_clone}" -c protocol.file.allow=always submodule update -q third-party/flatbuffers
+git -C "${release_clone}" tag -f "v${release_version}" > /dev/null
+bash "${release_clone}/examples/espressif/build_idf_component.sh" --version-suffix "" \
+    --out "${build_dir}/release_component" 2>&1 | tee "${build_dir}/generate-release.log"
+compote manifest lint "${build_dir}/release_component"
+python - "${build_dir}/release_component" "${release_version}" "$(git rev-parse HEAD)" <<'PY'
+import sys
+from pathlib import Path
+
+component, version, commit = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+lines = (component / "VERSION").read_text().splitlines()
+for line in (f"component_version: {version}", f"executorch_commit: {commit}"):
+    if line not in lines:
+        sys.exit(f"FAIL: the release component's VERSION has no '{line}'")
+if not any(l.startswith("generator: ") and l.endswith(" --version-suffix ''") for l in lines):
+    sys.exit("FAIL: the release component's VERSION does not record --version-suffix ''")
+if f'version: "{version}"' not in (component / "idf_component.yml").read_text().splitlines():
+    sys.exit(f"FAIL: the release component's idf_component.yml is not version {version}")
+print(f"OK: a clean checkout tagged v{version} generates release {version}")
+PY
+# An RC at the same commit, which a release commit can also be.
+git -C "${release_clone}" tag -f "v${release_version}-rc1" > /dev/null
+bash "${release_clone}/examples/espressif/build_idf_component.sh" --version-suffix -rc.1 \
+    --out "${build_dir}/rc_component" 2>&1 | tee "${build_dir}/generate-rc.log"
+compote manifest lint "${build_dir}/rc_component"
+if ! grep -qxF "component_version: ${release_version}-rc.1" "${build_dir}/rc_component/VERSION"; then
+    echo "FAIL: the RC component's VERSION is not ${release_version}-rc.1" >&2
+    exit 1
+fi
+echo "OK: the clean checkout tagged v${release_version}-rc1 generates RC ${release_version}-rc.1"
 gen_kernels() {
     local out=$1
     shift
@@ -145,8 +195,8 @@ expect_configure_error version-mismatch component_version \
     -DET_SMOKE_MODELS="${models}" \
     -DET_SMOKE_KERNELS="${build_dir}/mismatch_kernels"
 
-# A bundle made by a component of the same version from another commit, as any
-# two commits between version.txt bumps are.
+# A bundle made by a component of the same version from another commit, as two
+# development builds from the same day are.
 rm -rf "${build_dir}/mismatch_kernels"
 cp -r "${kernels_dir}" "${build_dir}/mismatch_kernels"
 python - "${build_dir}/mismatch_kernels/kernels.json" <<'PY'
@@ -261,9 +311,9 @@ run_firmware() {
     local firmware_dir="${build_dir}/firmware-${name}"
     IDF_TARGET="${chip}" idf.py -C "${project}" -B "${firmware_dir}" merge-bin \
         > "${build_dir}/merge-${name}.log" 2>&1
+    local elf=("${firmware_dir}"/*.elf)
     timeout 130s esp-emu --chip "${chip}" \
-        --firmware "${firmware_dir}/merged-binary.bin" \
-        --elf "${firmware_dir}/et_component_smoke.elf" \
+        --firmware "${firmware_dir}/merged-binary.bin" --elf "${elf[0]}" \
         --net user --timeout 120s --exit-on 'Program complete.' \
         2>&1 | tee "${build_dir}/emulator-${name}.log"
     for marker in "$@" "ET_COMPONENT_SMOKE: PASS" "Program complete."; do
@@ -282,6 +332,32 @@ consumer all-esp32s3 esp32s3 -DET_COMPONENT_DIR="${component_dir}" \
     -DET_SMOKE_MODELS="${models}" build
 diff -r "${build_dir}/firmware-all-esp32s3/executorch_kernels" "${kernels_dir}"
 run_firmware all-esp32s3 esp32s3 "smoke: PASS" "mul: PASS" "delegate: PASS"
+# The SBOM esp-idf-sbom makes for a project using the component: one package
+# per vendored library, each with its version.
+esp-idf-sbom create "${build_dir}/firmware-all-esp32s3/project_description.json" \
+    -o "${build_dir}/sbom-all-esp32s3.spdx"
+python - "${build_dir}/sbom-all-esp32s3.spdx" \
+    "$(cat .ci/docker/ci_commit_pins/pytorch.txt)" <<'PY'
+import re
+import sys
+
+spdx, pytorch = open(sys.argv[1]).read(), sys.argv[2]
+packages = {}
+for block in spdx.split("\n\n"):
+    name = re.search(r"^PackageName: (.*)$", block, re.M)
+    if name:
+        version = re.search(r"^PackageVersion: (.*)$", block, re.M)
+        packages.setdefault(name.group(1), []).append(version and version.group(1))
+for name, version in (("c10", pytorch), ("torch-headeronly", pytorch)):
+    if packages.get(name) != [version]:
+        sys.exit(f"FAIL: the SBOM has {name} {packages.get(name)}, expected [{version!r}]")
+flatbuffers = packages.get("flatbuffers", [])
+if len(flatbuffers) != 1 or not flatbuffers[0]:
+    sys.exit(f"FAIL: the SBOM has flatbuffers {flatbuffers}, expected one with a version")
+if "{}" in spdx:
+    sys.exit("FAIL: the SBOM has an unsubstituted {} in a cpe or purl")
+print("OK: the SBOM lists c10, torch-headeronly and flatbuffers once each, with versions")
+PY
 
 # A project may provide esp-nn as its own component instead of the managed one.
 local_project="${build_dir}/local-esp-nn"
@@ -348,5 +424,10 @@ if (( 16#${registry} > 64 )); then
     echo "FAIL: backend-esp32s3 reserves $((16#${registry})) B for kernels it never registers" >&2
     exit 1
 fi
+
+# The example the component ships, built through its override_path.
+example="${component_dir}/examples/hello_executorch"
+project="${example}" consumer example esp32s3 build
+project="${example}" run_firmware example esp32s3 "smoke: PASS"
 
 echo "PASS: generated ESP-IDF component ran every build on the emulator."

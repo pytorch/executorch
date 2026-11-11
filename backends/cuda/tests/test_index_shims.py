@@ -389,3 +389,20 @@ class TestIndexShims(unittest.TestCase):
             (torch.randn(4, 3), torch.ones(3, dtype=torch.bool)),
         ]
         self._run(MaskedSelect(), cases)
+
+    def test_nonzero(self):
+        """A direct nonzero call goes to the shim, unlike a mask index, which
+        Inductor reads as index.Tensor. A transposed input checks that the shim
+        reads strides, and the sum checks the result layout Inductor expects."""
+
+        class Nonzero(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.nonzero(x > 0),
+                    torch.nonzero(x.transpose(0, 1)),
+                    torch.nonzero(x > 0).sum(0),
+                )
+
+        x = torch.tensor([[1.0, -2.0, 3.0], [-4.0, 5.0, -0.0]])
+        cases = [(x,), (torch.zeros(2, 3),), (torch.randn(2, 3),)]
+        self._run(Nonzero(), cases)

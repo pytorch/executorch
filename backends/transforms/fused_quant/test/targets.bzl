@@ -100,6 +100,17 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_replace_clamp_with_hardtanh",
+        srcs = ["test_replace_clamp_with_hardtanh.py"],
+        deps = [
+            ":test_helpers",
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            "//executorch/backends/transforms/fused_quant:replace_clamp_with_hardtanh",
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_replace_sub_constant_with_add",
         srcs = ["test_replace_sub_constant_with_add.py"],
         deps = [

@@ -7,9 +7,10 @@
 """Split a bundled program into the plain .pte and an .io file for idf_component_smoke.
 
 Writes <name>.pte and <name>.io next to <name>.bpte. The .io file holds the
-first forward test case, little-endian: atol and rtol (float32), then the
-inputs and the expected outputs, each as a uint32 count followed by uint32
-byte size and raw data per tensor, with data aligned to 16 bytes.
+forward test cases, which the device runs in order, little-endian: atol and
+rtol (float32) and a uint32 case count, then per case the inputs and the
+expected outputs, each as a uint32 count followed by uint32 byte size and raw
+data per tensor, with data aligned to 16 bytes.
 """
 
 import argparse
@@ -42,13 +43,25 @@ def main():
     parser.add_argument("bpte", type=Path)
     parser.add_argument("--atol", type=float, default=1e-5)
     parser.add_argument("--rtol", type=float, default=1e-5)
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="write the cases this many times; only for models without state",
+    )
     args = parser.parse_args()
 
     bundle = deserialize_from_flatbuffer_to_bundled_program(args.bpte.read_bytes())
     (suite,) = [s for s in bundle.method_test_suites if s.method_name == "forward"]
-    case = suite.test_cases[0]
-    blob = tensors(struct.pack("<ff", args.atol, args.rtol), case.inputs)
-    blob = tensors(blob, case.expected_outputs)
+    if args.repeat < 1:
+        raise SystemExit("--repeat must be at least 1")
+    cases = suite.test_cases * args.repeat
+    if not cases:
+        raise SystemExit(f"{args.bpte} has no forward test cases")
+    blob = struct.pack("<ffI", args.atol, args.rtol, len(cases))
+    for case in cases:
+        blob = tensors(blob, case.inputs)
+        blob = tensors(blob, case.expected_outputs)
     args.bpte.with_suffix(".pte").write_bytes(bundle.program)
     args.bpte.with_suffix(".io").write_bytes(blob)
 

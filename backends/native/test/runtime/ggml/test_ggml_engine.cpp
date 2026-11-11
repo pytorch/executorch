@@ -2032,6 +2032,72 @@ TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
       program.finish("y"), "sum supports trailing dimensions only");
 }
 
+TEST(GgmlEngineTest, AmaxOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  for (const Case& c :
+       {Case{{-1}, true, 5, {2, 3, 4, 1}},
+        Case{{2, 3}, false, 20, {2, 3}},
+        Case{{0, 1, 2, 3}, false, 120, {}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.amax.default",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        // The first row is all -inf, and the last holds +inf.
+        std::fill_n(x.begin(), c.width, -kInf);
+        x.back() = kInf;
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        std::vector<float> expected(y.size(), -kInf);
+        for (size_t i = 0; i < x.size(); ++i) {
+          expected[i / c.width] = std::max(expected[i / c.width], x[i]);
+        }
+        EXPECT_EQ(y, expected);
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.amax.default",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "amax supports trailing dimensions only");
+}
+
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;

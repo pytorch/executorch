@@ -122,6 +122,16 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "replace_clamp_with_hardtanh",
+        srcs = ["pre_quantize_passes/replace_clamp_with_hardtanh.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/transforms:permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
         name = "constant_fold",
         srcs = ["optimization_passes/constant_fold.py"],
         visibility = _VISIBILITY,
