@@ -162,6 +162,13 @@ Report benchmark_operator(
 }
 
 Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
+  return validate_operator_dynamic_resize(spec, graph, nullptr);
+}
+
+Json validate_operator_dynamic_resize(
+    const Json& spec,
+    ComputeGraph& graph,
+    const DynamicResizeStepCheck& step_check) {
   const Json& parameters = spec.at("parameters");
   const std::vector<Json> operator_cases =
       parse_configs(parameters.at("operator_case"));
@@ -201,6 +208,7 @@ Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
         tensor_numel(operator_spec.at("tensors").at(name).at("sizes"));
   };
   Json validations = Json::array();
+  Json step_checks = Json::array();
   for (const Json& step : spec.at("validation_steps")) {
     Json resized = operator_spec;
     auto data = host_data;
@@ -249,11 +257,16 @@ Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
           "Dynamic resize validation failed: " + validation.dump());
       validations.push_back(validation);
     }
+    if (step_check)
+      step_checks.push_back(step_check(step, graph));
   }
-  return {
+  Json result = {
       {"status", "PASS"},
       {"validation_steps", spec.at("validation_steps").size()},
       {"validated_outputs", validations.size()}};
+  if (step_check)
+    result["step_checks"] = std::move(step_checks);
+  return result;
 }
 
 } // namespace vkcompute::shader_profiling

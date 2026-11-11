@@ -1087,6 +1087,15 @@ checks that the output named by `parameters.output_name` resized to
 step sets `validate_output` to false. See the `dynamic_resize` cases in
 `convolution/conv2d/cases/correctness.json`.
 
+`wmma_family_route` (`operators/gemm/linear/qw/wmma/`) runs the same steps
+for the 4-bit linear operators and also checks the kernels each step
+dispatches, read from the shader profiling records. A step's
+`expected_kernels` maps a cooperative-matrix family (`xe2`, `nvidia`) to the
+name prefix of the kernel the step must dispatch on a device of that family;
+a family without an entry, and a device that matches no family, must dispatch
+no `_wmma` kernel. Without timestamp queries (e.g. SwiftShader) the kernels
+are not checked and the result reports `route_asserted: false`.
+
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:
 
