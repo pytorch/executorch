@@ -153,6 +153,17 @@ if [[ "$FLOW" == *nxp* ]]; then
     export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
 fi
 
+if [[ "$FLOW" == *cadence* ]]; then
+    # Every Cadence case runs on the x86 cadence_runner. The suite sets per-test
+    # timeouts, which take effect only with pytest-timeout installed.
+    backends/cadence/build_cadence_runner.sh
+    pip install pytest-timeout==2.4.0
+    # pytest-xdist runs a worker per core. Torch's default of a thread per core in
+    # each worker oversubscribes the machine, and large models then run past the
+    # suite's timeout.
+    export OMP_NUM_THREADS=1
+fi
+
 EXIT_CODE=0
 # An Ethos-U failure captures a few hundred thousand lines of Vela operator
 # listings, and the runner agent throws System.OutOfMemoryException processing
@@ -167,3 +178,9 @@ PYTEST_ARGS+=("backends/test/suite/$SUITE/" -m "flow_$FLOW" --json-report --json
 ${CONDA_RUN_CMD} pytest "${PYTEST_ARGS[@]}" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
+
+# The Cadence flows list their known failures as strict xfails, so any other
+# failure, an unexpected pass or an empty selection fails the job.
+if [[ "$FLOW" == cadence_* ]]; then
+    exit "$EXIT_CODE"
+fi

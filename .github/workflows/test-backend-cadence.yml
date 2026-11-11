@@ -1,0 +1,90 @@
+name: Test Cadence Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    # Every case lowers with the Cadence AOT compiler and runs on the x86
+    # cadence_runner, so a PR runs this job when it changes Cadence, the suite, the
+    # Python packages the lowering imports, what build_cadence_runner.sh compiles,
+    # what the job installs, or this job's CI files.
+    paths:
+      - backends/cadence/**
+      - backends/test/harness/**
+      - backends/test/suite/**
+      - backends/transforms/**
+      - exir/**
+      - devtools/__init__.py
+      - devtools/CMakeLists.txt
+      - devtools/bundled_program/**
+      - devtools/debug_format/**
+      - devtools/etdump/**
+      - devtools/etrecord/**
+      - devtools/inspector/**
+      - runtime/**
+      - kernels/portable/**
+      - kernels/prim_ops/**
+      - extension/**
+      - schema/**
+      - codegen/**
+      - examples/devtools/example_runner/**
+      - examples/portable/executor_runner/**
+      - CMakeLists.txt
+      - tools/cmake/**
+      - configurations/**
+      - backends/xnnpack/third-party/**
+      - third-party/**
+      - shim_et/**
+      - .ci/docker/**
+      - install_requirements.sh
+      - install_requirements.py
+      - install_utils.py
+      - requirements-dev.txt
+      - pyproject.toml
+      - setup.py
+      - src/**
+      - version.txt
+      - .gitmodules
+      - .ci/scripts/test_backend.sh
+      - .ci/scripts/pytest-parallelism.sh
+      - .github/workflows/test-backend-cadence.yml
+      - .github/workflows/_test_backend.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-cadence:
+    uses: ./.github/workflows/_test_backend.yml
+    # _test_backend.yml's test job asks for id-token: write, and a called job
+    # cannot have more than its caller grants. A pull request from a fork still
+    # gets a read-only token and no OIDC token or secrets.
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      backend: cadence
+      flows: '["cadence_generic", "cadence_generic_int8", "cadence_generic_int8_size"]'
+      # A model case takes up to about 5 minutes, so the models suite runs
+      # nightly and on ciflow/nightly tags rather than on every PR and push.
+      exclude: >-
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch'
+             || startsWith(github.ref, 'refs/tags/ciflow/nightly/'))
+            && '[]'
+            || '[{"suite": "models"}]' }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true
+      runner-linux: mt-l-x86iavx512-32-256
