@@ -100,7 +100,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "op_linalg_svd",
         srcs = ["op_linalg_svd.cpp"],
-        headers = ["op_linalg_svd.h"],
+        exported_headers = ["op_linalg_svd.h"],
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
