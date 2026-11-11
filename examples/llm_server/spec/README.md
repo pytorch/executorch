@@ -323,8 +323,11 @@ up before the ACK is enqueued. Later accepted same-session operations stay behin
 that ACK, including commands submitted before it. Other sessions can progress.
 Immediate validation/admission rejections and cancel replies are not covered by
 this ordering. Close acknowledges logical release, not physical executor cleanup.
-Reset acknowledges a cold replacement; a failed replacement does not restore the
-old state.
+Open creates an empty session or preserves an already-open session. Reset
+acknowledges discarding live state and history and reopening the same key; a
+failed replacement does not restore the old state. Matching shared prefix
+snapshots remain eligible for subsequent generation from its supplied full
+prompt, so open/reset does not guarantee a cold prefill.
 
 Cancellation is in-band, not the legacy worker's separate FD pipe:
 

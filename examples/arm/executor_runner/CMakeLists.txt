@@ -195,6 +195,17 @@ target_sources(
                               ../common/arm_memory_allocator.cpp
 )
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  target_sources(arm_executor_runner PRIVATE picolibc_startup.c)
+  target_compile_options(
+    arm_executor_runner
+    PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/picolibc_startup.h"
+  )
+  if(NOT SEMIHOSTING)
+    target_sources(arm_executor_runner PRIVATE picolibc_uart.c)
+  endif()
+endif()
+
 arm_runner_configure_linker_script(
   TARGET arm_executor_runner SYSTEM_CONFIG "${SYSTEM_CONFIG}"
 )
