@@ -61,7 +61,8 @@ class EspMulAdd(EspMul):
     ops_after_transforms = {
         _MUL: 0,
         _ESP_MUL: 1,
-        exir_ops.edge.aten.add.Tensor: 1,
+        exir_ops.edge.aten.add.Tensor: 0,
+        exir_ops.edge.esp_nn.quantized_add_int8.default: 1,
     }
 
     def forward(self, x, y):
@@ -99,7 +100,7 @@ test_cases = {
         EspBroadcastMul(),
         (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (3,))),
     ),
-    "portable_add": EspTestCase(
+    "add": EspTestCase(
         EspMulAdd(),
         (ramp_tensor(-1, 1, (17,)), ramp_tensor(2, -2, (17,))),
     ),
@@ -130,13 +131,6 @@ def test_dialect_mul(test_case):
         atol=0,
         rtol=torch.finfo(torch.float32).eps,
     )
-    for node in tester.get_artifact().exported_program().graph.nodes:
-        if node.target == exir_ops.edge.aten.add.Tensor:
-            assert all(
-                arg.target
-                == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-                for arg in node.args[:2]
-            )
     tester.to_executorch().serialize()
     program = deserialize_pte_binary(tester.get_artifact()).program
     assert not program.execution_plan[0].delegates
