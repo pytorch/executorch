@@ -35,9 +35,9 @@ namespace extension {
 namespace llm {
 namespace serving {
 
-// Initial captures the prompt end of each request that opens a session, which
-// includes every anonymous request. Every also captures named-session
-// continuations and replacements.
+// Initial captures the prompt end of each generation that creates its session,
+// including every anonymous request but not the first generation after an
+// explicit open or reset. Every captures the prompt end of every generation.
 enum class ET_EXPERIMENTAL PromptEndCapture { Initial, Every };
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
@@ -66,14 +66,17 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
-  // Every requires cache capacity and cannot combine with an interval or custom
-  // checkpoint policy. Without those, best-effort prompt-end capture skips
-  // prompt ends already retained and holds its transient row until the clone
-  // settles, not until decode finishes.
+  // Without an interval or custom policy, prompt ends are captured best effort:
+  // one already retained is refreshed instead of cloned again, and a snapshot
+  // is published and its transient row released at the request's first update
+  // after the clone settles, or when the request finishes. Every requires cache
+  // capacity and is rejected with an interval or policy, whose serialized
+  // checkpoint lane would drop prompt ends while another checkpoint is pending.
   PromptEndCapture prefix_checkpoint_prompt_end = PromptEndCapture::Initial;
-  // Override the interval with increasing checkpoints in (start,
-  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
-  // capacity. Runs on control; must not block or reenter the runtime.
+  // Override the interval and prompt-end capture with increasing checkpoints
+  // in (start, prompt.size()]; return prompt.size() to keep the prompt end.
+  // Invalid or throwing policies skip capture. Requires cache capacity. Runs
+  // on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
       const batching::PrefixIdentity& prompt,
       batching::Position start,
@@ -90,10 +93,6 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // keeps the concurrent budget. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
 
-  bool uses_checkpoint_observer() const {
-    return prefix_checkpoint_interval || prefix_checkpoint_policy;
-  }
-
   std::size_t resolved_prefix_captures() const {
     if (prefix_cache_capacity == 0) {
       return 0;
@@ -102,8 +101,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
       return max_prefix_captures;
     }
     const auto concurrency = std::min(max_sessions, max_requests);
-    return uses_checkpoint_observer() ? std::min(concurrency, std::size_t{2})
-                                      : concurrency;
+    return prefix_checkpoint_interval || prefix_checkpoint_policy
+        ? std::min(concurrency, std::size_t{2})
+        : concurrency;
   }
 };
 
@@ -124,10 +124,10 @@ class ET_EXPERIMENTAL ServingRuntime {
  public:
   // Owns one Runner and its scheduler. The borrowed executor must outlive
   // shutdown/destruction and must not be driven by another Runner concurrently.
-  // Initialization happens on the engine thread. A null scheduler or zero
-  // session, operation, request, or event/token limit leaves an inert runtime:
-  // no threads start, info().ready is false, and operations return
-  // InvalidArgument.
+  // Initialization happens on the engine thread. A null scheduler, a zero
+  // session, operation, request, or event/token limit, or prefix settings that
+  // break their documented requirements leave an inert runtime: no threads
+  // start, info().ready is false, and operations return InvalidArgument.
   ServingRuntime(
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,

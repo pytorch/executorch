@@ -88,46 +88,45 @@ class ET_EXPERIMENTAL PrefixCache {
     PromptCapture& operator=(const PromptCapture&) = delete;
 
     // Wrap once per generation; queue a clone before the first output.
-    // on_capture runs from a later update once that clone has settled, or
-    // immediately if none was queued, so collection on another thread does not
-    // wait for the engine. If generation ends first, collect after it ends.
-    // on_capture must not block or throw. User callback exceptions fail
-    // generation.
+    // on_ready runs at most once, from the first update at which collect()
+    // would not block: once that clone has settled, or immediately if none was
+    // queued. If generation ends first, collect after it ends. on_ready must
+    // not block or throw. User callback exceptions fail generation. An inactive
+    // capture returns on_update unchanged.
     GenerationCallback wrap(
         GenerationCallback on_update = {},
-        std::function<void()> on_capture = {}) {
+        std::function<void()> on_ready = {}) {
       if (!state_) {
         return on_update;
       }
-      return
-          [state = state_,
-           on_update = std::move(on_update),
-           on_capture = std::move(on_capture)](const GenerationUpdate& update) {
-            if (!state->attempted && !update.tokens.empty()) {
-              state->attempted = true;
+      return [state = state_,
+              on_update = std::move(on_update),
+              on_ready = std::move(on_ready)](const GenerationUpdate& update) {
+        if (!state->attempted && !update.tokens.empty()) {
+          state->attempted = true;
 #if ET_HAS_EXCEPTIONS
-              try {
+          try {
 #endif
-                state->snapshot = state->request_clone(
-                    static_cast<Position>(state->tokens.size()));
+            state->snapshot = state->request_clone(
+                static_cast<Position>(state->tokens.size()));
 #if ET_HAS_EXCEPTIONS
-              } catch (...) {
-                // Optional capture failure leaves generation usable.
-              }
+          } catch (...) {
+            // Optional capture failure leaves generation usable.
+          }
 #endif
-            }
-            // After notification the collector owns the future.
-            if (on_capture && state->attempted && !state->notified &&
-                (!state->snapshot.valid() ||
-                 state->snapshot.wait_for(std::chrono::seconds(0)) ==
-                     std::future_status::ready)) {
-              state->notified = true;
-              on_capture();
-            }
-            if (on_update) {
-              on_update(update);
-            }
-          };
+        }
+        // After notification the collector owns the future.
+        if (on_ready && state->attempted && !state->notified &&
+            (!state->snapshot.valid() ||
+             state->snapshot.wait_for(std::chrono::seconds(0)) ==
+                 std::future_status::ready)) {
+          state->notified = true;
+          on_ready();
+        }
+        if (on_update) {
+          on_update(update);
+        }
+      };
     }
 
     // Queue without waiting; may run in a Runner callback. Serialize with
@@ -180,7 +179,7 @@ class ET_EXPERIMENTAL PrefixCache {
     }
 
     // May block; serialize with capture_at. With wrap, collect on another
-    // thread after on_capture notification, or wait for generation to finish.
+    // thread after on_ready, or wait for generation to finish.
     // The PrefixCache must outlive collection.
     bool collect() {
       auto state = state_;
@@ -320,13 +319,9 @@ class ET_EXPERIMENTAL PrefixCache {
         snapshot.position() != static_cast<Position>(tokens.size())) {
       return false;
     }
-    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-      if (it->tokens.size() == tokens.size() &&
-          common_prefix(it->tokens, tokens) == tokens.size()) {
-        it->metadata = std::move(metadata);
-        entries_.splice(entries_.begin(), entries_, it);
-        return true;
-      }
+    if (touch_identity(tokens)) {
+      entries_.front().metadata = std::move(metadata);
+      return true;
     }
 #if ET_HAS_EXCEPTIONS
     try {
@@ -372,13 +367,17 @@ class ET_EXPERIMENTAL PrefixCache {
     return lookup_identity(copy_tokens(request));
   }
 
-  // Exact retained identity, without cloning or refreshing recency.
-  bool contains_identity(const PrefixIdentity& request) const {
-    return std::any_of(
-        entries_.begin(), entries_.end(), [&](const Entry& entry) {
-          return entry.tokens.size() == request.size() &&
-              common_prefix(entry.tokens, request) == request.size();
-        });
+  // Refresh recency as inserting this exact identity again would, without a
+  // clone.
+  bool touch_identity(const PrefixIdentity& tokens) {
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+      if (it->tokens.size() == tokens.size() &&
+          common_prefix(it->tokens, tokens) == tokens.size()) {
+        entries_.splice(entries_.begin(), entries_, it);
+        return true;
+      }
+    }
+    return false;
   }
 
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {

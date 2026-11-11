@@ -263,11 +263,11 @@ struct ServingRuntime::Impl {
             config.max_events_per_request > 0 &&
             config.max_tokens_per_request > 0 &&
             !(config.prefix_checkpoint_prompt_end == PromptEndCapture::Every &&
-              config.uses_checkpoint_observer()) &&
+              uses_checkpoint_observer(config)) &&
             config.prefix_checkpoint_interval <=
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
-            ((!config.uses_checkpoint_observer() &&
+            ((!uses_checkpoint_observer(config) &&
               config.prefix_checkpoint_prompt_end != PromptEndCapture::Every) ||
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
@@ -1324,7 +1324,7 @@ struct ServingRuntime::Impl {
           };
       std::function<void(batching::Position)> on_prefill;
       if (request->text && request->text->prompt &&
-          config_.uses_checkpoint_observer()) {
+          uses_checkpoint_observer(config_)) {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
@@ -1386,7 +1386,7 @@ struct ServingRuntime::Impl {
            config_.prefix_checkpoint_prompt_end == PromptEndCapture::Every) &&
           request->text && request->text->prompt &&
           config_.prefix_cache_capacity != 0 &&
-          !prefix_cache_.contains_identity(*request->text->prompt) &&
+          !prefix_cache_.touch_identity(*request->text->prompt) &&
           try_acquire_capture_lane()) {
         // Only a capture needs an extra row beyond the working-session slots.
         request->text->capture_lane = true;
@@ -1666,6 +1666,11 @@ struct ServingRuntime::Impl {
     }
   }
 
+  // Interval and custom checkpoints are captured during prefill.
+  static bool uses_checkpoint_observer(const ServingRuntimeConfig& config) {
+    return config.prefix_checkpoint_interval || config.prefix_checkpoint_policy;
+  }
+
   static bool is_fence(const Command& command) {
     return command.operation == Operation::Close ||
         command.operation == Operation::Reset;
@@ -1753,7 +1758,7 @@ struct ServingRuntime::Impl {
         }
       }
       if (capture) {
-        if (config_.uses_checkpoint_observer()) {
+        if (uses_checkpoint_observer(config_)) {
           collect_capture(capture);
           capture_lanes_used_.fetch_sub(1);
           checkpoint_lane_busy_.store(false);

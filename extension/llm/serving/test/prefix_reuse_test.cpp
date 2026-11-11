@@ -1048,6 +1048,18 @@ TEST_F(
   EXPECT_EQ(runtime->info().active_sessions, 2u);
 }
 
+TEST_F(PrefixReuseTest, SkippedRecaptureStillRefreshesRetainedPrompt) {
+  start();
+  for (std::vector<Token> prompt :
+       {std::vector<Token>{1, 2, 3}, {1, 2, 4}, {1, 2, 3}, {7, 8, 9}}) {
+    submit(output(), std::move(prompt), std::nullopt).wait();
+  }
+  auto event = output();
+  submit(event, {1, 2, 3, 5}, std::nullopt).wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+}
+
 TEST_F(PrefixReuseTest, ExplicitLifecycleRequestsSearchSavedSnapshots) {
   start();
   submit(output(), {1, 2, 3}).wait();
@@ -1116,9 +1128,7 @@ TEST_F(PrefixReuseTest, PromptEndCaptureIncludesReplacementsAndHonorsCapacity) {
   EXPECT_EQ(evicted->terminal->stats.reused_prompt_tokens, 0u);
 }
 
-TEST_F(
-    PrefixReuseTest,
-    PromptEndCaptureRequiresCapacityAndBoundsTransientRows) {
+TEST_F(PrefixReuseTest, PromptEndCaptureRequiresCapacity) {
   EXPECT_EQ(
       ServingRuntimeConfig{}.prefix_checkpoint_prompt_end,
       PromptEndCapture::Initial);
@@ -1186,6 +1196,11 @@ TEST_F(PrefixReuseTest, CancellationDuringPromptEndCloneReleasesAdmission) {
   EXPECT_EQ(executor.clone_calls.load(), before + 2);
   EXPECT_EQ(
       executor.clones().back().prefix, (std::vector<Token>{8, 9, 100, 10}));
+  // The cancelled request's settled clone is still retained.
+  auto replay = output();
+  submit(replay, {1, 2, 100, 3}, "fresh").wait();
+  ASSERT_TRUE(replay->terminal);
+  EXPECT_EQ(replay->terminal->stats.reused_prompt_tokens, 3u);
 }
 
 TEST_F(PrefixReuseTest, PromptEndCaptureRetainsSharedPrefixReplacement) {
@@ -1262,9 +1277,9 @@ TEST_P(EarlyPromptCaptureTest, SnapshotAndSlotAvailableBeforeDecodeCompletes) {
   start(true, std::move(scheduler));
   submit(output(), {1, 2, 8, 9}, "replacement").wait();
   executor.refuse_clone = scenario == 2;
-  std::atomic<int> delivered{0};
+  auto delivered = std::make_shared<std::atomic<int>>(0);
   auto source_events = output();
-  source_events->on_text = [&delivered] { ++delivered; };
+  source_events->on_text = [delivered] { ++*delivered; };
   executor.decoding.hold();
   auto source = submit(source_events, {4, 5, 6}, "source", 8);
   ASSERT_TRUE(executor.decoding.wait());
@@ -1272,7 +1287,7 @@ TEST_P(EarlyPromptCaptureTest, SnapshotAndSlotAvailableBeforeDecodeCompletes) {
   executor.decoding.release();
   // The settled clone is queued before the second token is delivered, and
   // control serves queued captures before lifecycle commands.
-  ASSERT_TRUE(wait_until([&] { return delivered.load() >= 2; }));
+  ASSERT_TRUE(wait_until([&] { return delivered->load() >= 2; }));
   ASSERT_FALSE(runtime->open_session_async("source").get());
   executor.refuse_clone = false;
   auto probe = output();
@@ -1333,12 +1348,12 @@ TEST_P(
   auto* paused = scheduler.get();
   paused->paused = true;
   start(true, std::move(scheduler));
-  std::atomic<int> a_delivered{0};
-  std::atomic<int> b_delivered{0};
+  auto a_delivered = std::make_shared<std::atomic<int>>(0);
+  auto b_delivered = std::make_shared<std::atomic<int>>(0);
   auto a = output();
   auto b = output();
-  a->on_text = [&a_delivered] { ++a_delivered; };
-  b->on_text = [&b_delivered] { ++b_delivered; };
+  a->on_text = [a_delivered] { ++*a_delivered; };
+  b->on_text = [b_delivered] { ++*b_delivered; };
   auto first = submit(a, {1, 2, 3}, "a", 8);
   auto second = submit(b, {8, 9, 10}, "b", 8);
   ASSERT_FALSE(runtime->open_session_async("a").get());
@@ -1352,7 +1367,7 @@ TEST_P(
   paused->paused = true;
   executor.decoding.release();
   ASSERT_TRUE(wait_until(
-      [&] { return a_delivered.load() >= 2 && b_delivered.load() >= 2; }));
+      [&] { return a_delivered->load() >= 2 && b_delivered->load() >= 2; }));
   blocked.cancel();
   replacement_preparation.release();
   blocked.wait();
@@ -2843,6 +2858,11 @@ TEST_F(
   EXPECT_EQ(hit->terminal->stats.reused_prompt_tokens, 2u);
   EXPECT_EQ(hit->terminal->stats.prefilled_prompt_tokens, 1u);
   EXPECT_EQ(executor.clone_calls.load(), 2);
+  // A new prompt is still captured, so the seed released its lane.
+  submit(output(), {4, 5, 6}, "fresh").wait();
+  auto reuse = output();
+  submit(reuse, {4, 5, 6}, std::nullopt).wait();
+  EXPECT_EQ(reuse->terminal->stats.reused_prompt_tokens, 2u);
 }
 
 class ConcurrentPrefixCaptureTest
@@ -2896,9 +2916,7 @@ INSTANTIATE_TEST_SUITE_P(
     ConcurrentPrefixCaptureTest,
     ::testing::Values(0u, 1u, 2u, 4u));
 
-TEST_F(
-    PrefixReuseTest,
-    BusyCaptureLaneAllowsWarmLookupsWithoutLosingCaptureOwnership) {
+TEST_F(PrefixReuseTest, WarmLookupsProceedWhileCapturingRequestIsBlocked) {
   watch_callbacks();
   start();
   submit(output(), {1, 2, 3}, std::nullopt).wait();
@@ -2935,7 +2953,7 @@ TEST_F(
   ASSERT_FALSE(barrier.get());
   EXPECT_EQ(executor.feeds().back().position, 2);
   EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{3}));
-  EXPECT_EQ(executor.clone_calls.load(), 3); // Lookup, but no new capture.
+  EXPECT_EQ(executor.clone_calls.load(), 3); // Lookup; no recapture.
   EXPECT_FALSE(owner.done());
   EXPECT_FALSE(first_hit.done());
 
@@ -3146,6 +3164,47 @@ INSTANTIATE_TEST_SUITE_P(
     StopStringAndExecutorFailure,
     DirtySnapshotRetryTest,
     ::testing::Bool());
+
+class InterruptedContinuationRetryTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<PromptEndCapture> {};
+
+TEST_P(InterruptedContinuationRetryTest, EveryRetainsTheContinuationPrompt) {
+  config.prefix_checkpoint_prompt_end = GetParam();
+  auto scheduler = std::make_unique<PausableScheduler>();
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  submit(output(), {1, 2, 3}).wait();
+  const std::vector<Token> prompt{1, 2, 3, 100, 4, 5};
+  auto delivered = std::make_shared<std::atomic<int>>(0);
+  auto cancelled = output();
+  cancelled->on_text = [delivered] { ++*delivered; };
+  // The session decoded before, so its continuation prefill enters the gate.
+  executor.decoding.hold();
+  auto handle = submit(cancelled, prompt, "s", 8);
+  ASSERT_TRUE(executor.decoding.wait());
+  paused->paused = true;
+  executor.decoding.release();
+  ASSERT_TRUE(wait_until([&] { return delivered->load() >= 1; }));
+  handle.cancel();
+  paused->paused = false;
+  handle.wait();
+  ASSERT_TRUE(cancelled->terminal);
+  EXPECT_EQ(cancelled->terminal->finish_reason, FinishReason::Cancelled);
+  auto retry = output();
+  submit(retry, prompt).wait();
+  ASSERT_TRUE(retry->terminal);
+  ASSERT_FALSE(retry->terminal->error);
+  EXPECT_EQ(retry->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(
+      retry->terminal->stats.reused_prompt_tokens,
+      GetParam() == PromptEndCapture::Every ? prompt.size() - 1 : 3u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InitialAndEvery,
+    InterruptedContinuationRetryTest,
+    ::testing::Values(PromptEndCapture::Initial, PromptEndCapture::Every));
 
 TEST_F(
     PrefixReuseTest,

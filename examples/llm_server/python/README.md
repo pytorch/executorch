@@ -66,14 +66,18 @@ limit; choose a value supported by the export. Capacity defaults are
 `--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
 (the default) automatically allows one pending prompt capture per admitted request,
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
-this allowance. `--prefix-checkpoint-prompt-end initial` (the default) retains the
-prompt end of each request that opens a session, including every anonymous request.
-`every` also retains named-session continuations and replacements, keeps the same
-concurrent capture allowance, and requires `--prefix-cache-entries > 0`. Without
-periodic checkpoints, prompt-end capture skips prompt ends already retained, and a
-snapshot becomes reusable and releases its capture slot once its clone completes,
-without waiting for the source request to finish decoding.
-Capture is best effort: occupied transient rows can prevent a snapshot.
+this allowance; with `every`, lower values can leave replacements and retries
+without a row, so they prefill cold. `--prefix-checkpoint-prompt-end initial` (the
+default) captures the prompt end of each request that creates a session, including
+every anonymous request. `every` captures the prompt end of every request and
+requires `--prefix-cache-entries > 0`; each captured turn takes a cache entry.
+Without periodic checkpoints, a prompt end already in the cache is refreshed instead
+of cloned again, and a snapshot becomes reusable and frees its capture slot at the
+source request's first output after the clone completes, or when the request
+finishes. Capture is best effort. See the [batching guide](../spec/batching.md) for
+what `every` reuses in practice and its MLX memory cost. Retained snapshots are
+shared by all clients, and `cached_tokens` reports matches, so enable prefix caching
+only when clients trust each other.
 With periodic checkpoints enabled, automatic sizing uses at most two rows:
 checkpoint collection is serialized, but one replacement can overlap. Explicit
 values above two add unused row capacity in that mode.
@@ -309,7 +313,7 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional prefix reuse for new sessions and clean prompt replacements. It
+and optional prefix reuse for new sessions, retries, and prompt replacements. It
 does not yet migrate Muse image or DFlash execution. The serialized-worker
 limitations below describe the legacy path, not the new batching worker.
 

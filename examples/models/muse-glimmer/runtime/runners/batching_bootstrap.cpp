@@ -47,7 +47,7 @@ DEFINE_int32(
 DEFINE_string(
     prefix_checkpoint_prompt_end,
     "initial",
-    "Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)");
+    "Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
@@ -77,11 +77,16 @@ create_muse_glimmer_batching_runtime() {
         "--prefix_checkpoint_prompt_end=every cannot be combined with "
         "--prefix_checkpoint_interval");
   }
+  if (every_prompt_end && FLAGS_prefix_cache_entries <= 0) {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end=every requires "
+        "--prefix_cache_entries > 0");
+  }
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
       FLAGS_prefix_checkpoint_interval < 0 || FLAGS_prefix_capture_slots < 0 ||
-      ((FLAGS_prefix_checkpoint_interval > 0 || every_prompt_end) &&
+      (FLAGS_prefix_checkpoint_interval > 0 &&
        FLAGS_prefix_cache_entries == 0) ||
       FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
       FLAGS_max_input_frame_bytes == 0 ||

@@ -225,26 +225,38 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 ## Session Behavior
 
 With prefix caching enabled, `--prefix-checkpoint-prompt-end initial` (the default)
-retains the prompt end of each request that opens a session, including every
-anonymous request. Use `--prefix-checkpoint-prompt-end every` to also retain later
-boundaries of named sessions, including tool-result continuations and replacements.
-Repeated or branched requests from any session can reuse those snapshots; new
-tool-result text still needs prefill. Without periodic checkpoints, exact prompt
-ends already in the cache are not cloned again, and snapshots become reusable and
-release their capture slots once the clone completes, without waiting for decoding
-to finish.
+captures the prompt end of each request that creates a session, including every
+anonymous request. `--prefix-checkpoint-prompt-end every` captures the prompt end of
+every request, including tool-result continuations and replacements. It requires
+`--prefix-cache-entries > 0` and cannot be combined with a nonzero
+`--prefix-checkpoint-interval`, whose serialized capture lane would drop prompt ends
+while another checkpoint is pending. Capture is best effort. Without periodic
+checkpoints, a prompt end already in the cache is refreshed instead of cloned again,
+and a snapshot becomes reusable and frees its capture slot at the source request's
+first output after the clone completes, or when the request finishes.
 
-Prompt-end capture preserves per-request capture concurrency and the default
-transient-row budget. All snapshots share the bounded cache and global LRU, so new
-boundaries can evict earlier prompts. Capture is best effort: concurrent captures
-or session replacements can occupy the available rows. Measure capture overhead
-and reuse for your workload before enabling `every`.
+A snapshot only helps a request whose prompt starts with the same tokens. The server
+splices each named session's generated tokens, including reasoning, into its earlier
+assistant turns, so `every` mainly helps that session after a turn that was
+cancelled, cut short by a stop string, or failed. The retry or next turn then reuses
+that turn's prompt if the interruption came after its first output token, and
+otherwise the previous turn's prompt, instead of only the opening prompt that
+`initial` keeps. Other sessions, anonymous requests, and sessions whose transcript
+cache was cleared render those turns as text, and earlier reasoning is rendered only
+when the client echoes `reasoning_content`. Such requests usually match that
+session's snapshots only up to the first assistant turn, which `initial` already
+keeps.
 
-`--prefix-checkpoint-prompt-end every` cannot be combined with a nonzero
-`--prefix-checkpoint-interval`; both the launcher and native worker reject it.
-Periodic checkpoints use one serialized lane and may skip a boundary while an
-earlier clone is pending. Automatic transient-row sizing is capped at two in
-periodic mode; prompt-end capture retains the ordinary concurrency budget.
+All snapshots share the bounded cache and global LRU, and with `every` each captured
+turn takes an entry, so new turns can evict earlier prompts. On MLX, snapshots share
+no KV storage: each keeps the source's whole KV buffers, including growth slack and
+full sliding-window buffers, and the source's next decode step copies them, so
+memory grows with the number and length of retained snapshots. Use fewer entries with `every` at long contexts, and measure
+memory, capture overhead, and reuse before enabling it. An explicit
+`--prefix-capture-slots` below request concurrency can leave replacements and
+retries without a row under `every`, so they prefill cold. Retained snapshots are
+shared by all clients, and `cached_tokens` reports matches, so enable prefix caching
+only when clients trust each other.
 
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
   close the least recently used idle session when logical session slots are exhausted, clearing
@@ -349,8 +361,8 @@ cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
 reduce the context or slot counts if they do not fit.
-The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
-session's cells by reference, sharing the prompt's KV rather than copying it.
+The cell pool tracks at most 64 resident sessions. Unlike on MLX, prefix snapshots
+clone a session's cells by reference, sharing the prompt's KV rather than copying it.
 
 For DFlash, export the tapped target and packed draft with
 `export_dflash --backend cuda --use-offgraph-kv-cache` (add `--draft-max-cells`

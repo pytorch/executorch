@@ -159,18 +159,19 @@ def test_checkpoint_options_reach_worker(argv, launch):
 
 def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch, capsys):
     assert serve._parse_args(argv).prefix_checkpoint_prompt_end == "initial"
-    for value in ("every", "always"):
+    for value, error in (
+        ("every", "requires --prefix-cache-entries > 0"),
+        ("always", "invalid choice"),
+    ):
         with pytest.raises(SystemExit):
             serve._parse_args(argv + ["--prefix-checkpoint-prompt-end", value])
-    assert "requires --prefix-cache-entries > 0" in capsys.readouterr().err
+        assert error in capsys.readouterr().err
     serve.main(
         argv
         + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end", "every"]
     )
-    assert (
-        "--prefix_checkpoint_prompt_end=every"
-        in launch.stages["spawn"].call_args.args[0]
-    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_checkpoint_prompt_end") + 1] == "every"
 
 
 def test_every_prompt_end_rejects_periodic_capture(argv, capsys):
@@ -235,7 +236,7 @@ def test_capture_capacity_validation_and_worker_override(
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
-    assert ("--prefix_checkpoint_prompt_end=every" in command) == prompt_end
+    assert ("--prefix_checkpoint_prompt_end" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,

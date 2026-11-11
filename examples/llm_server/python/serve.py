@@ -121,7 +121,7 @@ def _parse_args(argv=None):
         "--prefix-checkpoint-prompt-end",
         choices=("initial", "every"),
         default="initial",
-        help="Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)",
+        help="Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -230,7 +230,7 @@ def main(argv=None) -> None:
                     else []
                 )
                 + (
-                    ["--prefix_checkpoint_prompt_end=every"]
+                    ["--prefix_checkpoint_prompt_end", "every"]
                     if args.prefix_checkpoint_prompt_end == "every"
                     else []
                 ),

@@ -42,7 +42,7 @@ DEFINE_int32(
 DEFINE_string(
     prefix_checkpoint_prompt_end,
     "initial",
-    "Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)");
+    "Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(

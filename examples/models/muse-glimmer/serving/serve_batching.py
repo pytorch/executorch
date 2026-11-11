@@ -91,7 +91,7 @@ def _parse_args(argv=None):
         "--prefix-checkpoint-prompt-end",
         choices=("initial", "every"),
         default="initial",
-        help="Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)",
+        help="Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",
