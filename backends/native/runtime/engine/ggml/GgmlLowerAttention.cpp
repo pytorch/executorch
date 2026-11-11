@@ -398,7 +398,8 @@ void GraphBuilder::lower_sdpa(const Node& node) {
 }
 
 // Writes this step's K/V into the cache rows the executor uploads, then
-// attends the cache prefix under the uploaded causal mask. Q/K/V are [B,H,T,D].
+// attends the layer's rows under the uploaded mask: a flat layer's prefix, or
+// all of a ring layer. Q/K/V are [B,H,T,D].
 void GraphBuilder::lower_update_and_attend(const Node& node) {
   if (offgraph_cache_ == nullptr) {
     throw std::runtime_error(
@@ -416,7 +417,7 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer_id " + std::to_string(layer) +
         " is outside the cache's " + std::to_string(num_layers) + " layers");
   }
-  const auto [k_cache, v_cache] =
+  const auto [k_cache, v_cache, window] =
       offgraph_cache_->layers[static_cast<size_t>(layer)];
   if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
       val.sizes.size() != 4 || query.sizes[0] != 1 || key.sizes[0] != 1 ||
@@ -436,28 +437,40 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer " + std::to_string(layer) +
         " K/V shape disagrees with the cache geometry");
   }
-  const int64_t keys = offgraph_cache_->keys;
+  const int64_t keys = window > 0 ? k_cache->ne[1] : offgraph_cache_->keys;
   ggml_context* ctx = instance_.context.get();
   if (!instance_.offgraph) {
-    ggml_tensor* rows = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, tokens);
-    ggml_set_name(rows, "kv_cache.rows");
-    ggml_set_input(rows);
-    ggml_tensor* mask = new_tensor(ctx, GGML_TYPE_F16, {1, 1, tokens, keys});
-    ggml_set_name(mask, "kv_cache.mask");
-    ggml_set_input(mask);
-    instance_.offgraph = OffGraphUploads{
-        .rows = instance_.uploads.size(),
-        .mask = instance_.uploads.size() + 1,
-        .tokens = tokens,
-        .keys = keys};
-    instance_.uploads.push_back(Upload{.tensor = rows});
-    instance_.uploads.push_back(Upload{.tensor = mask});
+    instance_.offgraph = OffGraphUploads{.tokens = tokens};
   } else if (instance_.offgraph->tokens != tokens) {
     throw std::runtime_error(
         "ggml: every update_and_attend in a method must see the same tokens");
   }
-  ggml_tensor* rows = instance_.uploads[instance_.offgraph->rows].tensor;
-  ggml_tensor* mask = instance_.uploads[instance_.offgraph->mask].tensor;
+  std::vector<OffGraphUploads::Group>& groups = instance_.offgraph->groups;
+  auto group =
+      std::ranges::find(groups, window, &OffGraphUploads::Group::window);
+  if (group == groups.end()) {
+    ggml_tensor* rows = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, tokens);
+    ggml_format_name(rows, "kv_cache.rows.w%d", window);
+    ggml_set_input(rows);
+    ggml_tensor* mask = new_tensor(ctx, GGML_TYPE_F16, {1, 1, tokens, keys});
+    ggml_format_name(mask, "kv_cache.mask.w%d", window);
+    ggml_set_input(mask);
+    groups.push_back(OffGraphUploads::Group{
+        .window = window,
+        .layer = static_cast<int>(layer),
+        .rows = instance_.uploads.size(),
+        .mask = instance_.uploads.size() + 1,
+        .keys = keys});
+    instance_.uploads.push_back(Upload{.tensor = rows});
+    instance_.uploads.push_back(Upload{.tensor = mask});
+    group = groups.end() - 1;
+  } else if (group->keys != keys) {
+    throw std::runtime_error(
+        "ggml: update_and_attend layers with one window must hold the same "
+        "rows");
+  }
+  ggml_tensor* rows = instance_.uploads[group->rows].tensor;
+  ggml_tensor* mask = instance_.uploads[group->mask].tensor;
 
   const auto write = [&](ggml_tensor* cache, ggml_tensor* step) {
     ggml_tensor* source =

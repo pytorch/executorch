@@ -29,6 +29,7 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     OffGraphLastTokenLM,
 )
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
+from executorch.extension.llm.cache.reference_cache import LayerPolicy
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from transformers import (
     AutoModelForCausalLM,
@@ -37,11 +38,13 @@ from transformers import (
     GemmaConfig,
     GraniteConfig,
     LlamaConfig,
+    MistralConfig,
     PreTrainedModel,
     Qwen2Config,
     Qwen3Config,
 )
 
+# Architectures gguf_hf maps; the GGUF test covers each.
 _CONFIGS = {
     "llama": LlamaConfig,
     "granite": GraniteConfig,
@@ -53,8 +56,10 @@ _CONFIGS = {
 }
 
 
-def _tiny(arch: str = "llama", tie_word_embeddings: bool = True) -> PreTrainedModel:
-    config = _CONFIGS[arch](
+def _tiny(
+    arch: str = "llama", tie_word_embeddings: bool = True, **config_kwargs
+) -> PreTrainedModel:
+    config = (_CONFIGS | {"mistral": MistralConfig})[arch](
         vocab_size=128,
         hidden_size=64,
         intermediate_size=128,
@@ -64,6 +69,7 @@ def _tiny(arch: str = "llama", tie_word_embeddings: bool = True) -> PreTrainedMo
         head_dim=16,
         max_position_embeddings=64,
         tie_word_embeddings=tie_word_embeddings,
+        **config_kwargs,
     )
     model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
     model.config._attn_implementation = "sdpa"
@@ -370,9 +376,76 @@ class ExportHfLlmTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot change the KV dtype"):
             LastTokenLM(_tiny("gemma3"), 32, torch.float16)
 
-    def test_offgraph_cache_rejects_sliding_window_layers(self) -> None:
-        with self.assertRaisesRegex(ValueError, "sliding-window"):
-            OffGraphLastTokenLM(_tiny("gemma3"), 32)
+    def test_offgraph_cache_windows_sliding_layers_like_hf(self) -> None:
+        # Mistral windows every layer; Gemma3 alternates sliding and full.
+        register_offgraph_attention("offgraph")
+        prompts = [[3, 4, 5, 6, 7, 8, 9], [9, 10]]
+        for arch, kwargs in (
+            ("mistral", {"sliding_window": 3}),
+            (
+                "gemma3",
+                {
+                    "sliding_window": 3,
+                    "layer_types": ["sliding_attention", "full_attention"],
+                },
+            ),
+        ):
+            with self.subTest(arch=arch):
+                torch.manual_seed(7)
+                model = _tiny(arch, **kwargs)
+                offgraph_model = copy.deepcopy(model)
+                offgraph_model.config._attn_implementation = "offgraph"
+                offgraph = OffGraphLastTokenLM(offgraph_model, 32).eval()
+
+                samples = golden_samples(offgraph, prompts, 3)
+
+                for sample in samples.samples:
+                    # Each call feeds the tokens it appends: the prompt, then one.
+                    sequence = []
+                    for call in sample.calls:
+                        sequence += call.inputs[0][0].tolist()
+                        with torch.no_grad():
+                            want = model(torch.tensor([sequence])).logits[:, -1:]
+                        torch.testing.assert_close(
+                            call.outputs[0], want, atol=1e-5, rtol=1e-5
+                        )
+
+    def test_offgraph_cache_metadata_gives_each_layer_its_window(self) -> None:
+        for model, windows in (
+            (_tiny(), [0, 0]),
+            (_tiny("mistral", sliding_window=8), [8, 8]),
+            (_tiny("mistral", sliding_window=None), [0, 0]),
+            (
+                _tiny(
+                    "gemma3",
+                    sliding_window=8,
+                    layer_types=["sliding_attention", "full_attention"],
+                ),
+                [8, 0],
+            ),
+            (_tiny("qwen2", use_sliding_window=False), [0, 0]),
+        ):
+            with self.subTest(arch=model.config.model_type):
+                wrapper = OffGraphLastTokenLM(model, 32)
+                self.assertEqual(
+                    wrapper.cache_metadata(),
+                    {
+                        "get_n_caches": 2,
+                        "get_kv_heads": [2, 2],
+                        "get_head_dims": [16, 16],
+                        "get_windows": windows,
+                    },
+                )
+                self.assertEqual(
+                    wrapper._reference.config.layers,
+                    [LayerPolicy.ring(w) if w else LayerPolicy.flat() for w in windows],
+                )
+
+    def test_offgraph_cache_rejects_other_attention_layer_types(self) -> None:
+        model = _tiny()
+        model.config.layer_types = ["chunked_attention", "full_attention"]
+        with self.assertRaisesRegex(ValueError, "chunked_attention"):
+            OffGraphLastTokenLM(model, 32)
 
     def test_offgraph_cache_scope_uninstalls_its_reference_cache(self) -> None:
         wrapper = OffGraphLastTokenLM(_tiny(), 32)

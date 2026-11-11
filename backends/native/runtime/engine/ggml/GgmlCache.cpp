@@ -45,13 +45,25 @@ const cache::CacheGeometry& checked(
   if (geometry.dflash_block_size) {
     throw std::invalid_argument("ggml cache: DFlash geometry is unsupported");
   }
-  for (const cache::LayerGeometry& layer : geometry.layers) {
-    if (layer.policy.kind != cache::LayerPolicy::Kind::Flat) {
-      throw std::invalid_argument(
-          "ggml cache: only flat (full-history) layers are supported");
-    }
-  }
   return geometry;
+}
+
+// SequenceCache's ring: window + max_write - 1 slots, max_write defaulting to
+// the window. Positions below capacity never reach a slot past it.
+std::vector<int> ring_rows(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg) {
+  std::vector<int> out;
+  out.reserve(geometry.layers.size());
+  for (const cache::LayerGeometry& layer : geometry.layers) {
+    const int window = layer.policy.window;
+    out.push_back(
+        layer.policy.kind == cache::LayerPolicy::Kind::Ring
+            ? std::min(
+                  window + cfg.max_write.value_or(window) - 1, cfg.capacity)
+            : 0);
+  }
+  return out;
 }
 
 } // namespace
@@ -61,6 +73,7 @@ GgmlSequenceCache::GgmlSequenceCache(
     const cache::CacheConfig& cfg)
     : SequenceCache(checked(geometry, cfg), cfg),
       geometry_(geometry),
+      ring_rows_(ring_rows(geometry, cfg)),
       type_(kv_type(cfg.kv_dtype)),
       initial_rows_(std::clamp(cfg.initial_capacity, 1, cfg.capacity)) {}
 
@@ -99,13 +112,13 @@ void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
   }
   for (size_t i = 0; i < geometry_.layers.size(); ++i) {
     const cache::LayerGeometry& layer = geometry_.layers[i];
-    Layer out;
+    Layer out{.window = layer.policy.window};
     for (ggml_tensor** t : {&out.k, &out.v}) {
       *t = ggml_new_tensor_3d(
           next->context.get(),
           type_,
           layer.head_dim,
-          next->rows,
+          ring_rows_[i] > 0 ? ring_rows_[i] : next->rows,
           layer.n_kv_heads);
       ggml_format_name(*t, "kv_cache.%s.%zu", t == &out.k ? "k" : "v", i);
     }
@@ -120,7 +133,8 @@ void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
   }
   ggml_backend_buffer_clear(next->buffer.get(), 0);
 
-  // Each head's rows are contiguous, but the head stride grows with the rows.
+  // Each head's rows are contiguous, but a flat layer's head stride grows with
+  // its rows. A ring layer keeps its size, so its rows land where they were.
   std::vector<uint8_t> staging;
   for (size_t i = 0; storage_ && i < storage_->layers.size(); ++i) {
     const Layer& old = storage_->layers[i];

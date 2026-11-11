@@ -34,10 +34,12 @@ from executorch.exir.native import Call, Sample, SampleSet, to_native, write_sam
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import (
     CacheConfig,
+    LayerPolicy,
     SequenceReferenceCache,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
+from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.export import Dim, export
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -212,44 +214,71 @@ class LastTokenLM(nn.Module):
         return contextlib.nullcontext()
 
 
+def _cache_windows(config) -> list[int]:
+    """Per layer, the sliding window HF attends over, or 0 for full attention.
+
+    Without layer_types (e.g. Mistral), HF windows every layer when
+    sliding_window is set.
+    """
+    window = getattr(config, "sliding_window", None)
+    layer_types = getattr(config, "layer_types", None)
+    if not layer_types:
+        return [window or 0] * config.num_hidden_layers
+    unsupported = set(layer_types) - {"full_attention", "sliding_attention"}
+    if unsupported:
+        raise ValueError(
+            f"--offgraph_cache does not support {sorted(unsupported)} layers "
+            f"({config.model_type})"
+        )
+    if "sliding_attention" in layer_types and not window:
+        raise ValueError(f"{config.model_type} has sliding layers but no window")
+    return [window if t == "sliding_attention" else 0 for t in layer_types]
+
+
 class OffGraphLastTokenLM(nn.Module):
     """Last-position logits with the KV cache outside the graph.
 
     Each attention layer emits ``kvcache::update_and_attend`` over this step's
-    K/V. Eager calls (golden samples) run inside ``cache_scope()``, which makes
-    a reference cache of ``capacity`` positions the active one.
+    K/V; the cache, not the graph, applies a sliding layer's window, so the
+    runner learns the windows from ``cache_metadata()``. Eager calls (golden
+    samples) run inside ``cache_scope()``, which makes a reference cache of
+    ``capacity`` positions the active one.
     """
 
     def __init__(self, model: PreTrainedModel, capacity: int) -> None:
         super().__init__()
         self.model = model
         config = model.config.get_text_config()
-        # The cache op attends every position it holds, so a windowed layer
-        # would silently attend past its window. Without layer_types (e.g.
-        # Mistral), HF windows every layer when sliding_window is set.
-        layer_types = getattr(config, "layer_types", None)
-        if (
-            "sliding_attention" in layer_types
-            if layer_types
-            else getattr(config, "sliding_window", None) is not None
-        ):
-            raise ValueError(
-                "--offgraph_cache does not support sliding-window attention "
-                f"layers ({config.model_type})"
-            )
-        head_dim = (
+        self._windows = _cache_windows(config)
+        self._head_dim = (
             getattr(config, "head_dim", None)
             or config.hidden_size // config.num_attention_heads
         )
+        self._kv_heads = config.num_key_value_heads
         self._reference = SequenceReferenceCache(
             CacheConfig(
                 n_layers=config.num_hidden_layers,
-                n_kv_heads=config.num_key_value_heads,
-                head_dim=head_dim,
+                n_kv_heads=self._kv_heads,
+                head_dim=self._head_dim,
                 capacity=capacity,
+                layers=[
+                    LayerPolicy.ring(w) if w else LayerPolicy.flat()
+                    for w in self._windows
+                ],
             )
         )
         self._key = f"export_hf_llm/{id(self)}"
+
+    def cache_metadata(self) -> dict[str, int | list[int]]:
+        """The cache geometry, under the names LLM runners read it by."""
+        n = len(self._windows)
+        geometry = write_cache_geometry(
+            [self._kv_heads] * n, [self._head_dim] * n, self._windows
+        )
+        return {
+            name: value.tolist() if isinstance(value, torch.Tensor) else value
+            for name, value in geometry.items()
+        }
 
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
@@ -460,7 +489,8 @@ def main() -> None:
     report_lowering(ep, "forward")
 
     if args.output:
-        to_native(ep).save(args.output)
+        metadata = wrapper.cache_metadata() if args.offgraph_cache else None
+        to_native(ep, metadata=metadata).save(args.output)
         print(f"saved {args.output}")
     if prompts:
         samples = golden_samples(wrapper, prompts, _DECODE_STEPS)

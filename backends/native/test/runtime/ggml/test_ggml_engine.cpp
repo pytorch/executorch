@@ -1379,19 +1379,29 @@ struct InstalledCache {
   }
 };
 
+// One layer per entry of `windows`: flat for 0, else a ring of that window.
 InstalledCache install_cache(
     int capacity,
     int initial_capacity,
     ScalarType kv_dtype = ScalarType::Float,
-    int head_dim = static_cast<int>(kOffGraphDim)) {
+    int head_dim = static_cast<int>(kOffGraphDim),
+    const std::vector<int>& windows = {0},
+    std::optional<int> max_write = std::nullopt) {
   register_ggml_cache_builders();
   kv::CacheGeometry geometry;
-  geometry.layers.push_back(kv::LayerGeometry{
-      .n_kv_heads = static_cast<int>(kOffGraphKvHeads), .head_dim = head_dim});
+  for (const int window : windows) {
+    geometry.layers.push_back(kv::LayerGeometry{
+        .policy = window > 0
+            ? kv::LayerPolicy{kv::LayerPolicy::Kind::Ring, window}
+            : kv::LayerPolicy{},
+        .n_kv_heads = static_cast<int>(kOffGraphKvHeads),
+        .head_dim = head_dim});
+  }
   const kv::CacheConfig cfg{
       .capacity = capacity,
       .kv_dtype = static_cast<int>(kv_dtype),
-      .initial_capacity = initial_capacity};
+      .initial_capacity = initial_capacity,
+      .max_write = max_write};
   auto built = kv::CacheFactory::global().build(
       kGgmlCacheBackendId, kv::kind::kSingle, geometry, cfg);
   if (!built.ok()) {
@@ -1412,9 +1422,12 @@ InstalledCache install_cache(
 }
 
 // What the cache should hold: K and V [Hkv, D] per position, written by each
-// step, attended causally by naive softmax attention.
+// step, attended causally by naive softmax attention, over the last `window`
+// positions when it is nonzero.
 class OffGraphReference {
  public:
+  explicit OffGraphReference(int window = 0) : window_(window) {}
+
   // Runs `tokens` tokens from `start` through `executable`, with inputs that
   // depend on the position and `seed`, and returns the largest difference
   // from the reference.
@@ -1469,8 +1482,10 @@ class OffGraphReference {
       for (int64_t t = 0; t < tokens; ++t) {
         const float* query = &q[(h * tokens + t) * kOffGraphDim];
         const int64_t keys = start + t + 1;
+        const int64_t first =
+            window_ > 0 ? std::max<int64_t>(0, keys - window_) : 0;
         std::vector<double> weights(keys);
-        for (int64_t s = 0; s < keys; ++s) {
+        for (int64_t s = first; s < keys; ++s) {
           weights[s] = std::exp(
               std::inner_product(
                   query,
@@ -1480,10 +1495,10 @@ class OffGraphReference {
               kOffGraphScale);
         }
         const double total =
-            std::accumulate(weights.begin(), weights.end(), 0.0);
+            std::accumulate(weights.begin() + first, weights.end(), 0.0);
         for (int64_t d = 0; d < kOffGraphDim; ++d) {
           double sum = 0.0;
-          for (int64_t s = 0; s < keys; ++s) {
+          for (int64_t s = first; s < keys; ++s) {
             sum += weights[s] * v_[s][kv_head * kOffGraphDim + d];
           }
           worst = std::max(
@@ -1498,6 +1513,7 @@ class OffGraphReference {
   }
 
  private:
+  int window_;
   std::vector<std::vector<float>> k_;
   std::vector<std::vector<float>> v_;
 };
@@ -1626,6 +1642,90 @@ TEST(GgmlEngineTest, RejectsOffGraphStepsPastCapacityOrNotConsecutive) {
   prefill->set_input(2, kv_step.data(), kv_step.size(), ScalarType::Float);
   prefill->set_input(3, positions.data(), positions.size(), ScalarType::Long);
   EXPECT_THROW(prefill->execute(), std::invalid_argument);
+}
+
+// A ring layer attends each query's window, within a prefill wider than the
+// window too, while decoding wraps the ring several times.
+TEST(GgmlEngineTest, OffGraphRingAttentionMatchesReference) {
+  for (const size_t graphs : {size_t{0}, size_t{4}}) {
+    for (const int window : {2, 5}) {
+      for (const auto& [dtype, tol] :
+           {std::pair{ScalarType::Float, 1e-4f},
+            std::pair{ScalarType::Half, 2e-2f}}) {
+        SCOPED_TRACE(
+            "graphs " + std::to_string(graphs) + ", window " +
+            std::to_string(window) + ", " +
+            std::string(scalar_type_name(dtype)));
+        InstalledCache cache = install_cache(
+            64, 1, dtype, static_cast<int>(kOffGraphDim), {window}, 3);
+        auto host = GgmlEngineHost::create({.max_cached_graphs = graphs});
+        auto prefill_context = make_context(
+            *host, make_update_and_attend_program(3), cache.options);
+        auto decode_context = make_context(
+            *host, make_update_and_attend_program(1), cache.options);
+        auto prefill = prefill_context->compile("forward");
+        auto decode = decode_context->compile("forward");
+        OffGraphReference reference(window);
+        EXPECT_LT(reference.step(*prefill, 0, 3), tol);
+        for (int64_t pos = 3; pos < 20; ++pos) {
+          SCOPED_TRACE(pos);
+          EXPECT_LT(reference.step(*decode, pos, 1), tol);
+        }
+        EXPECT_LT(reference.step(*prefill, 20, 3), tol);
+      }
+    }
+  }
+}
+
+// A flat and a ring layer share one sequence: each layer's executable runs
+// every step, the second re-running the first's positions.
+TEST(GgmlEngineTest, OffGraphFlatAndRingLayersShareASequence) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {0, 3}, 3);
+  auto host = GgmlEngineHost::create();
+  std::vector<std::unique_ptr<EngineContext>> contexts;
+  std::vector<std::unique_ptr<EngineExecutable>> prefill;
+  std::vector<std::unique_ptr<EngineExecutable>> decode;
+  for (int64_t layer = 0; layer < 2; ++layer) {
+    contexts.push_back(make_context(
+        *host, make_update_and_attend_program(3, layer), cache.options));
+    prefill.push_back(contexts.back()->compile("forward"));
+    contexts.push_back(make_context(
+        *host, make_update_and_attend_program(1, layer), cache.options));
+    decode.push_back(contexts.back()->compile("forward"));
+  }
+  OffGraphReference flat;
+  OffGraphReference ring(3);
+  EXPECT_LT(flat.step(*prefill[0], 0, 3), 1e-4f);
+  EXPECT_LT(ring.step(*prefill[1], 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 12; ++pos) {
+    SCOPED_TRACE(pos);
+    EXPECT_LT(flat.step(*decode[0], pos, 1), 1e-4f);
+    EXPECT_LT(ring.step(*decode[1], pos, 1), 1e-4f);
+  }
+}
+
+// A ring layer can rewind only as far as the rows it still holds.
+TEST(GgmlEngineTest, OffGraphRingRewindsWithinTheRowsItHolds) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {4}, 3);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference(4);
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 10; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  // The ring holds positions 4..9; the step after a rewind to 7 reads 4..7.
+  EXPECT_FALSE(cache.control().rewind(6));
+  EXPECT_THROW(reference.step(*decode, 6, 1), std::runtime_error);
+  EXPECT_LT(reference.step(*decode, 7, 1, /*seed=*/4), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 8, 1, /*seed=*/4), 1e-4f);
 }
 
 TEST(GgmlEngineTest, OffGraphAttentionNeedsAMatchingCache) {
