@@ -90,7 +90,7 @@ def get_labels(no_volk):
 def get_platforms():
     return [ANDROID, APPLE, CXX]
 
-def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = False):
+def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = False, shader_allowlist_args = ""):
     gen_vulkan_spv_target = "//xplat/executorch/backends/vulkan:gen_vulkan_spv_bin"
     glslc_path = "//xplat/caffe2/fb/vulkan/dotslash:glslc"
 
@@ -122,7 +122,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
             "ovr_config//os:android": "--optimize",
             "ovr_config//os:linux": "--replace-u16vecn",
             "ovr_config//os:windows": "--optimize --spv_debug",
-        })
+        }) + shader_allowlist_args
     )
 
     genrule_name = "gen_{}_cpp".format(name)
@@ -159,6 +159,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
 def define_common_targets(is_fbcode = False):
     debug_mode = read_config("etvk", "debug", "0") == "1"
     vma_dep = read_config("etvk", "vma_dep", "xplat")
+    shader_allowlist = read_config("etvk", "shader_allowlist", "")
+    shader_allowlist_args = " --shader-allowlist=$(location {})".format(shader_allowlist) if shader_allowlist else ""
 
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
@@ -306,6 +308,7 @@ def define_common_targets(is_fbcode = False):
             },
             is_fbcode = is_fbcode,
             no_volk = no_volk,
+            shader_allowlist_args = shader_allowlist_args,
         )
 
         runtime.cxx_library(

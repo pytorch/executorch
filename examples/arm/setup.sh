@@ -40,6 +40,7 @@ enable_model_explorer=0
 toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
+toolchain_sha256_checksum=""
 toolchain_archive=""
 
 # Load logging helpers early so option parsing can emit status messages.
@@ -51,7 +52,7 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
-  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl. Repeat the option to install multiple toolchains."
+  "--target-toolchain Select toolchain: gnu (default), clang, zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
   "--disable-fvps Disable FVP setup"
   "--fvp Select FVP instead of the default corstone300 and corstone320: corstone300, corstone320, or corstone1000. Repeat the option to install multiple."
@@ -224,8 +225,8 @@ function add_target_toolchain() {
     local toolchain=$1
     if [[ "${toolchain}" == "" ]]; then
         toolchain="gnu"
-    elif [[ "${toolchain}" != "gnu" && "${toolchain}" != "zephyr" && "${toolchain}" != "linux-musl" ]]; then
-        echo "Error: Unsupported target toolchain '${toolchain}'. Valid options are gnu, zephyr, linux-musl." >&2
+    elif [[ "${toolchain}" != "gnu" && "${toolchain}" != "clang" && "${toolchain}" != "zephyr" && "${toolchain}" != "linux-musl" ]]; then
+        echo "Error: Unsupported target toolchain '${toolchain}'. Valid options are gnu, clang, zephyr, linux-musl." >&2
         exit 1
     fi
 
