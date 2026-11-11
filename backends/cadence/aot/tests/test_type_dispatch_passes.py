@@ -250,6 +250,33 @@ class TestTypeDispatchPasses(unittest.TestCase):
         # Should be replaced with dtype-specific variant
         self.assertEqual(count_node(gm, expected_op), 1)
 
+    def _nhwc_conv_with_offset(self, offset: torch.Tensor | None) -> PassResult:
+        x = torch.randint(-128, 127, (1, 8, 8, 3), dtype=torch.int8)
+        w = torch.randint(-128, 127, (16, 3, 3, 3), dtype=torch.int8)
+        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
+        placeholders = (x, w, b) if offset is None else (x, w, b, offset)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1, offset),
+        )
+        return cast(PassResult, CompileTimeTypeDispatchPass()(gm))
+
+    def test_dispatch_quantized_conv_2d_nhwc_with_bound_offset(self) -> None:
+        """BindOptionalArgsPass binds offset=None, which the typed variants lack."""
+        gm = self._nhwc_conv_with_offset(None).graph_module
+
+        typed = (
+            exir_ops.edge.cadence.quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor
+        )
+        self.assertEqual(count_node(gm, typed), 1)
+        node = gm.graph.find_nodes(op="call_function", target=typed)[0]
+        self.assertEqual(len(node.args), 14)
+
+    def test_dispatch_quantized_conv_2d_nhwc_rejects_an_offset(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "no operand for the extra args"):
+            self._nhwc_conv_with_offset(torch.zeros(16, dtype=torch.int32))
+
     @expand(
         [
             (

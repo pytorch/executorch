@@ -176,4 +176,17 @@ class CompileTimeTypeDispatchPass(ExportPass):
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant
         )
 
+        # The generic op can have trailing optional args that its typed variants
+        # lack, such as quantized_conv2d_nhwc's offset. They have to be unset.
+        typed_arg_names = [arg.name for arg in typed_op._schema.arguments]
+        extra_args = list(args[len(typed_arg_names) :]) + [
+            value for name, value in kwargs.items() if name not in typed_arg_names
+        ]
+        if any(arg is not None for arg in extra_args):
+            raise RuntimeError(
+                f"{typed_op_name} has no operand for the extra args of {op}: {extra_args}"
+            )
+        args = args[: len(typed_arg_names)]
+        kwargs = {name: kwargs[name] for name in kwargs if name in typed_arg_names}
+
         return super().call_operator(typed_op, args, kwargs, meta)
