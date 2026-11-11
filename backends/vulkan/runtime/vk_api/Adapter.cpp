@@ -527,6 +527,7 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
+      // Full subgroups only on a device this Adapter created.
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
@@ -573,6 +574,7 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
+      // Full subgroups only on a device this Adapter created.
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),

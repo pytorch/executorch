@@ -327,6 +327,10 @@ class ComputePipelineCache final {
   void create_pipelines(const std::unordered_set<Key, Hasher>&);
   VkPipeline retrieve(const Key&);
   void purge();
+
+  inline bool full_subgroups() const {
+    return full_subgroups_;
+  }
 };
 
 //

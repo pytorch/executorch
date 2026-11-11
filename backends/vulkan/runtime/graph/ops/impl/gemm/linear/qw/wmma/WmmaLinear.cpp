@@ -38,10 +38,13 @@ CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph) {
   CoopmatDeviceKey key;
   key.vendor_id = adapter->vendor_id();
   key.driver_id = adapter->driver_id();
-  key.subgroup_size = adapter->subgroup_size();
   key.min_subgroup_size = adapter->min_subgroup_size();
   key.max_subgroup_size = adapter->max_subgroup_size();
   key.subgroup_size_control = adapter->supports_subgroup_size_control();
+  key.compute_required_subgroup_size =
+      adapter->supports_required_subgroup_size_for_compute();
+  key.full_subgroups = adapter->compute_pipeline_cache().full_subgroups();
+  key.vulkan_memory_model = adapter->supports_vulkan_memory_model();
   key.coopmat = adapter->supports_cooperative_matrix();
   key.int8_coopmat = adapter->supports_int8_cooperative_matrix();
   key.max_shared_bytes = adapter->max_compute_shared_memory_size();

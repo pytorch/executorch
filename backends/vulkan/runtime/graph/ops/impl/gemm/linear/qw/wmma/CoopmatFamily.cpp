@@ -27,12 +27,14 @@ bool has_shape(
   return false;
 }
 
+// The pipeline sets the kernel's subgroup size as its required size, even
+// when it is the default one.
 bool subgroup_size_available(
     const CoopmatDeviceKey& device,
     const uint32_t size) {
-  return device.subgroup_size == size ||
-      (device.subgroup_size_control && size >= device.min_subgroup_size &&
-       size <= device.max_subgroup_size);
+  return device.subgroup_size_control &&
+      device.compute_required_subgroup_size &&
+      size >= device.min_subgroup_size && size <= device.max_subgroup_size;
 }
 
 //
@@ -132,7 +134,8 @@ const std::vector<WmmaRow>& nvidia_rows() {
 } // namespace
 
 CoopmatFamily coopmat_family(const CoopmatDeviceKey& device) {
-  if (!device.coopmat || !device.int8_coopmat) {
+  if (!device.coopmat || !device.int8_coopmat || !device.full_subgroups ||
+      !device.vulkan_memory_model) {
     return CoopmatFamily::kNone;
   }
   using T = CoopmatComponentType;
