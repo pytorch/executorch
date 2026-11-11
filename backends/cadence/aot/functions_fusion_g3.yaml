@@ -182,10 +182,10 @@
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::G3::native::quantize_per_tensor_out
+      kernel_name: impl::G3::quantize_per_tensor_out
 
 - func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::G3::native::dequantize_per_tensor_out
+      kernel_name: impl::G3::dequantize_per_tensor_out
