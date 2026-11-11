@@ -24,6 +24,7 @@ from executorch.backends.xnnpack.utils.utils import (
     get_param_tensor,
     is_dtype_cast,
     is_foldable_broadcast_operand,
+    is_global_avg_pool_mean,
     is_param_node,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -69,7 +70,6 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
-        exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.max.dim,
@@ -137,32 +137,14 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             quantize_node = node.args[0]
             if len(quantize_node.all_input_nodes) > 0:
                 actual_node = quantize_node.args[0]
-                if actual_node.op == "placeholder":
-                    return ChannelsLastTaggedReshapePass.is_nhwc_tensor(
-                        actual_node.meta["val"][0]
-                    )
-                else:
-                    return actual_node.meta.get(
-                        ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False
-                    )
+                return actual_node.meta.get(
+                    ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False
+                )
 
         return node.meta.get(ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False)
 
     @staticmethod
     def is_nchw_node(node: torch.fx.Node) -> bool:
-        if is_dequant(node) and len(node.all_input_nodes) > 0:
-            quantize_node = node.args[0]
-            if len(quantize_node.all_input_nodes) > 0:
-                actual_node = quantize_node.args[0]
-                if actual_node.op == "placeholder":
-                    return not ChannelsLastTaggedReshapePass.is_nhwc_tensor(
-                        actual_node.meta["val"][0]
-                    )
-                else:
-                    return not actual_node.meta.get(
-                        ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False
-                    )
-
         return not ChannelsLastTaggedReshapePass.is_nhwc_node(node)
 
     @staticmethod
@@ -316,11 +298,17 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         ]
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.edge.aten.mean.dim:
+            return is_global_avg_pool_mean(node)
         return node.target in self.memory_sensitive_ops_nhwc
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.view_copy.default:
             return True
+        # A mean.dim that is not Global Average Pooling reduces over the dims
+        # as given, which index the NCHW layout.
+        if node.target == exir_ops.edge.aten.mean.dim:
+            return not is_global_avg_pool_mean(node)
 
         return node.target in self.memory_sensitive_ops_nchw
 
@@ -545,12 +533,6 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # Mark the constant data tensor to be converted to NHWC when
             # serializing graph, but don't do anything else here
             self.mark_as_nhwc_node(input_node)
-
-        if input_node.op == "placeholder":
-            if self._is_nhwc(input_node.meta["val"][0]):
-                return
-        elif ChannelsLastTaggedReshapePass.is_nhwc_node(input_node):
-            return
 
         if self.input_dim_order(input_node, InputDimOrder.NHWC):
             return

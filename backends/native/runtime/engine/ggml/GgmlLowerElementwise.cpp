@@ -294,6 +294,20 @@ void GraphBuilder::lower_sum(const Node& node) {
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
+// Gathers each row's argmax element. Unlike max pooling, which starts from
+// -FLT_MAX, this keeps an all -inf row at -inf. NaN does not propagate.
+void GraphBuilder::lower_amax(const Node& node) {
+  auto [rows, sizes] = trailing_rows(node, "amax");
+  ggml_context* ctx = instance_.context.get();
+  const int64_t width = rows->ne[0];
+  const int64_t count = rows->ne[1];
+  ggml_tensor* index = ggml_reshape_2d(ctx, ggml_argmax(ctx, rows), 1, count);
+  ggml_tensor* values =
+      ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
+  ggml_tensor* result = reshape(ctx, values, sizes);
+  set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
 // step(b - a).
 void GraphBuilder::lower_compare(const Node& node, bool strict) {

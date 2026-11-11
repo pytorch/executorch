@@ -25,7 +25,10 @@ from executorch.backends.native.examples.hf_llm.gguf_hf import (
     gguf_architecture,
     gguf_to_hf,
 )
-from executorch.backends.native.examples.hf_llm.hf_utils import report_lowering
+from executorch.backends.native.examples.hf_llm.hf_utils import (
+    PositionedStaticLayer,
+    report_lowering,
+)
 from executorch.exir.native import Call, Sample, SampleSet, to_native, write_samples
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from torch.export import Dim, export
@@ -44,7 +47,6 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.cache_utils import StaticLayer
-from transformers.integrations.accelerate import init_empty_weights
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
@@ -64,6 +66,9 @@ def _load(
             text_config.layer_types = text_config.layer_types[:layers]
     kwargs = {"torch_dtype": torch.float32, "attn_implementation": "sdpa"}
     if empty_weights:
+        # transformers 5.11 no longer ships init_empty_weights; only --gguf needs it.
+        from accelerate import init_empty_weights
+
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(config, **kwargs)
     elif random_weights:
@@ -116,15 +121,6 @@ def load_gguf(
 _CACHE_DTYPE_SDPA = "sdpa_in_cache_dtype"
 
 
-class _CastingStaticLayer(StaticLayer):
-    """A static cache layer that casts K/V writes to its own dtype."""
-
-    def update(self, key_states, value_states, cache_kwargs=None):
-        return super().update(
-            key_states.to(self.dtype), value_states.to(self.dtype), cache_kwargs
-        )
-
-
 def _sdpa_in_cache_dtype(module, query, key, value, attention_mask, **kwargs):
     output, weights = sdpa_attention_forward(
         module, query.to(key.dtype), key, value, attention_mask, **kwargs
@@ -153,20 +149,29 @@ class LastTokenLM(nn.Module):
             if hasattr(self.cached, "static_cache")
             else self.cached.cache
         )
-        if kv_cache_dtype != model.dtype:
-            self._store_kv_as(model, kv_cache_dtype)
+        change_dtype = kv_cache_dtype != model.dtype
+        self._write_cache_at_input_positions(kv_cache_dtype, change_dtype)
+        if change_dtype:
+            self._attend_in_cache_dtype(model)
 
-    def _store_kv_as(self, model: PreTrainedModel, dtype: torch.dtype) -> None:
+    def _write_cache_at_input_positions(
+        self, dtype: torch.dtype, change_dtype: bool
+    ) -> None:
         for i, old in enumerate(self.cache.layers):
             if type(old) is not StaticLayer:
-                raise ValueError(f"cannot change the KV dtype of {type(old).__name__}")
-            layer = _CastingStaticLayer(old.max_cache_len)
-            layer.lazy_initialization(old.keys[:, :, :1].to(dtype))
+                if change_dtype:
+                    raise ValueError(
+                        f"cannot change the KV dtype of {type(old).__name__}"
+                    )
+                continue
+            layer = PositionedStaticLayer.replacing(old, dtype)
             self.cache.layers[i] = layer
             self.cached.register_buffer(f"key_cache_{i}", layer.keys, persistent=False)
             self.cached.register_buffer(
                 f"value_cache_{i}", layer.values, persistent=False
             )
+
+    def _attend_in_cache_dtype(self, model: PreTrainedModel) -> None:
         # Keep the vmap-free mask TorchExportableModuleForDecoderOnlyLM selected.
         mask = ALL_MASK_ATTENTION_FUNCTIONS[model.config._attn_implementation]
         AttentionInterface.register(_CACHE_DTYPE_SDPA, _sdpa_in_cache_dtype)
@@ -176,6 +181,11 @@ class LastTokenLM(nn.Module):
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
     ) -> torch.Tensor:
+        # transformers 5 takes positions from the cache's length, not cache_position.
+        for layer in self.cache.layers:
+            layer.cumulative_length = cache_position[:1].clone()
+            if isinstance(layer, PositionedStaticLayer):
+                layer.positions = cache_position
         return self.cached.model(
             input_ids=input_ids,
             cache_position=cache_position,

@@ -23,8 +23,8 @@ class _Inputs(torch.nn.Module):
         return inputs[0]
 
 
-def _program():
-    tensors = [torch.zeros(1, 8, 12, 3, dtype=torch.int8)] * 2
+def _program(factor=2):
+    tensors = [torch.zeros(1, 4 * factor, 6 * factor, 3, dtype=torch.int8)] * 2
     tensors += [torch.zeros(1, 4, 6, 4, dtype=torch.int8)] * 2
     program = torch.export.export(_Inputs(), tuple(tensors))
     graph = program.graph
@@ -53,7 +53,12 @@ def _program():
     for image in inputs[:2]:
         resize = graph.call_function(
             TOSA.RESIZE.default,
-            (image, [2, 4, 2, 4], [1, 1], [-1, -1]),
+            (
+                image,
+                [2, 2 * factor, 2, 2 * factor],
+                [factor - 1, factor - 1],
+                [1 - factor, 1 - factor],
+            ),
             {"resize_mode": "bilinear"},
         )
         resize.meta["val"] = image.meta["val"].new_empty(
@@ -80,8 +85,9 @@ def _program():
 
 @pytest.mark.parametrize("adapted", [False, True])
 @pytest.mark.parametrize("zero_point", [-127, 0, 17])
-def test_pads_concat_and_preserves_convolution(adapted, zero_point):
-    program, _, concat, conv = _program()
+@pytest.mark.parametrize("factor", [2, 4])
+def test_pads_concat_and_preserves_convolution(adapted, zero_point, factor):
+    program, _, concat, conv = _program(factor)
     old_weight = conv.args[1]
     weight = pad._constant_tensor(program, old_weight).clone()
     bias = pad._constant_tensor(program, conv.args[2]).double()
@@ -101,13 +107,9 @@ def test_pads_concat_and_preserves_convolution(adapted, zero_point):
         resize = branch.args[0]
         image = resize.args[0]
         assert image.target == TOSA.PAD.default
-        assert len(image.args) == 3 and not image.kwargs
-        assert image.args[2].target == TOSA.CONST.default
         assert image.args[2].args == ([code], [1], torch.int8)
-        assert tuple(image.args[2].meta["val"].shape) == (1,)
-        assert image.args[2].meta["val"].dtype == torch.int8
         assert pad._shape_values(image.args[1]) == [0, 0, 0, 0, 0, 0, 0, 1]
-        assert tuple(image.meta["val"].shape) == (1, 8, 12, 4)
+        assert tuple(image.meta["val"].shape) == (1, 4 * factor, 6 * factor, 4)
         assert tuple(resize.meta["val"].shape) == (1, 4, 6, 4)
     extended = pad._constant_tensor(program, conv.args[1])
     assert torch.equal(extended[..., :3], weight[..., :3])
@@ -120,14 +122,29 @@ def test_pads_concat_and_preserves_convolution(adapted, zero_point):
     assert conv.meta["val"].dtype == output_value.dtype
 
     generator = torch.Generator().manual_seed(2026)
-    images = torch.randint(-128, 128, (2, 1, 8, 12, 3), generator=generator).double()
+    images = torch.randint(
+        -128, 128, (2, 1, 4 * factor, 6 * factor, 3), generator=generator
+    ).double()
     features = torch.randint(-128, 128, (1, 4, 6, 8), generator=generator).double()
 
     def resize_image(image):
-        sums = image.reshape(1, 4, 2, 6, 2, -1).sum((2, 4))
+        center = factor // 2 - 1
+        sums = sum(
+            image[:, center + y :: factor, center + x :: factor, :]
+            for y in (0, 1)
+            for x in (0, 1)
+        )
         return torch.floor((sums + 2) / 4)
 
     rgb = [resize_image(image) for image in images]
+    for image, resized in zip(images, rgb):
+        reference = F.interpolate(
+            image.permute(0, 3, 1, 2),
+            scale_factor=1.0 / factor,
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1)
+        assert torch.equal(resized, torch.floor(reference + 0.5))
     values = torch.cat((*rgb, features, torch.full((1, 4, 6, 1), 40)), dim=-1)
     before = F.conv2d(
         values.permute(0, 3, 1, 2) - zero_point,
@@ -135,7 +152,9 @@ def test_pads_concat_and_preserves_convolution(adapted, zero_point):
         bias,
     )
     padded = [
-        resize_image(torch.cat((image, torch.full((1, 8, 12, 1), code)), dim=-1))
+        resize_image(
+            torch.cat((image, torch.full((1, 4 * factor, 6 * factor, 1), code)), dim=-1)
+        )
         for image, code in zip(images, (40, 0))
     ]
     values = torch.cat((*padded, features), dim=-1)
@@ -161,11 +180,15 @@ def test_pads_concat_and_preserves_convolution(adapted, zero_point):
         "timestep",
         "rescale",
         "resize",
+        "resize_offset",
+        "resize_border",
+        "resize_shape",
         "shared_resize",
     ],
 )
-def test_unsupported_concat_is_unchanged(unsupported):
-    program, inputs, concat, conv = _program()
+@pytest.mark.parametrize("factor", [2, 4])
+def test_unsupported_concat_is_unchanged(unsupported, factor):
+    program, inputs, concat, conv = _program(factor)
     if unsupported == "axis":
         concat.kwargs = {"axis": 1}
     elif unsupported == "dtype":
@@ -184,6 +207,16 @@ def test_unsupported_concat_is_unchanged(unsupported):
     elif unsupported == "resize":
         node = concat.args[0][0].args[0]
         node.kwargs = {"resize_mode": "nearest"}
+    elif unsupported in ("resize_offset", "resize_border"):
+        node = concat.args[0][0].args[0]
+        args = list(node.args)
+        args[2 if unsupported == "resize_offset" else 3] = [0, 0]
+        node.args = tuple(args)
+    elif unsupported == "resize_shape":
+        image = inputs[0]
+        image.meta["val"] = image.meta["val"].new_empty(
+            (1, 4 * factor, 6 * factor + 1, 3)
+        )
     elif unsupported == "shared_resize":
         program.graph.output_node().args = ((conv, concat.args[0][0].args[0]),)
     else:
@@ -202,89 +235,44 @@ def test_requires_exported_program():
         pad.PadRifeBlock0ConcatPass()(program.graph_module)
 
 
-@pytest.mark.parametrize(
-    "pad_before_resize,consumer_before_resize",
-    [(False, False), (True, False), (True, True)],
-)
-@pytest.mark.parametrize(
-    "consumer",
-    [
-        "packed",
-        "final_blend",
-        "warp_rgb",
-        "warp_rgb_nchw",
-        "warp_rgba",
-        "warp_rgba_nchw",
-        "unknown",
-    ],
-)
-def test_reuses_padding_only_when_alpha_is_unused(
-    consumer, pad_before_resize, consumer_before_resize
-):
-    import operator
-
-    program, inputs, concat, conv = _program()
+@pytest.mark.parametrize("factor", [2, 4])
+@pytest.mark.parametrize("before_resize", [False, True])
+@pytest.mark.parametrize("code", [-11, 0, 40])
+def test_reuses_padding_only_when_value_matches(factor, before_resize, code):
+    program, inputs, concat, conv = _program(factor)
     graph = program.graph
     resize = concat.args[0][0].args[0]
-    with graph.inserting_before(resize if pad_before_resize else graph.output_node()):
-        pad_value = pad.create_const(graph, -11, torch.int8, inputs[0])
+    with graph.inserting_before(resize if before_resize else graph.output_node()):
+        pad_value = graph.call_function(TOSA.CONST.default, ([code], [1], torch.int8))
+        pad_value.meta["val"] = inputs[0].meta["val"].new_empty((1,))
         image = graph.call_function(
             TOSA.PAD.default, (inputs[0], [0, 0, 0, 0, 0, 0, 0, 1], pad_value)
         )
-        image.meta["val"] = inputs[0].meta["val"].new_empty((1, 8, 12, 4))
-    with graph.inserting_before(
-        resize if consumer_before_resize else graph.output_node()
-    ):
-        name = (
-            pad.OPERATOR_NAME
-            if consumer == "packed"
-            else (
-                pad.BLEND_OPERATOR_NAME
-                if consumer == "final_blend"
-                else pad.flow_offset_grid_sampler_operator_name()
-            )
+        image.meta["val"] = (
+            inputs[0].meta["val"].new_empty((1, 4 * factor, 6 * factor, 4))
         )
-        custom = graph.call_function(
-            TOSA.CUSTOM.default,
-            ([image],),
-            {
-                "domain_name": pad.CUSTOM_SHADER_DOMAIN_NAME,
-                "operator_name": "unknown" if consumer == "unknown" else name,
-            },
-        )
-        output = graph.call_function(operator.getitem, (custom, 0))
-        channels = 4 if consumer.startswith("warp_rgba") else 3
-        shape = [1, 8, 12, channels]
-        if consumer.endswith("_nchw"):
-            output = graph.call_function(TOSA.TRANSPOSE.default, (output, [0, 3, 1, 2]))
-            shape = [1, channels, 8, 12]
-        crop = graph.call_function(TOSA.SLICE.default, (output, [0, 0, 0, 0], shape))
-    graph.output_node().args = ((conv, crop),)
-    graph.lint()
+        consumer = graph.call_function(TOSA.ADD.default, (image, image))
+        consumer.meta = dict(image.meta)
+    graph.output_node().args = ((conv, consumer),)
+    original_args = image.args
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
     padded_input = concat.args[0][0].args[0].args[0]
-    positions = {node: index for index, node in enumerate(graph.nodes)}
-    assert positions[image.args[2]] < positions[image] < positions[custom]
-    if consumer in ("packed", "final_blend", "warp_rgb", "warp_rgb_nchw"):
-        assert padded_input is image
-        assert image.args[2].args == ([40], [1], torch.int8)
-        assert positions[image] < positions[resize]
-    else:
-        assert padded_input is not image
-        assert image.args[2] is pad_value
-        assert pad_value.args == ([-11], [1], torch.int8)
+    assert (padded_input is image) == (code == 40)
+    assert image.args == original_args
+    assert pad_value.args == ([code], [1], torch.int8)
+    assert consumer.args == (image, image)
     graph.lint()
 
 
 @pytest.mark.parametrize("final_blend", [False, True])
-def test_preserves_order_when_pads_share_shape_and_value_constants(final_blend):
+def test_preserves_shared_padding_values(final_blend):
     program, inputs, concat, conv = _program()
     graph = program.graph
     with graph.inserting_before(graph.output_node()):
         shape = graph.call_function(
             TOSA.CONST_SHAPE.default, ([0, 0, 0, 0, 0, 0, 0, 1],)
         )
-        pad_value = pad.create_const(graph, -11, torch.int8, inputs[0])
+        pad_value = graph.call_function(TOSA.CONST.default, ([-11], [1], torch.int8))
         images = []
         for source in inputs[:2]:
             image = graph.call_function(TOSA.PAD.default, (source, shape, pad_value))
@@ -294,8 +282,8 @@ def test_preserves_order_when_pads_share_shape_and_value_constants(final_blend):
             TOSA.CUSTOM.default,
             (images,),
             {
-                "domain_name": pad.CUSTOM_SHADER_DOMAIN_NAME,
-                "operator_name": pad.OPERATOR_NAME,
+                "domain_name": "test",
+                "operator_name": "test",
             },
         )
         outputs = [conv, custom]
@@ -305,16 +293,18 @@ def test_preserves_order_when_pads_share_shape_and_value_constants(final_blend):
                     TOSA.CUSTOM.default,
                     (images,),
                     {
-                        "domain_name": pad.CUSTOM_SHADER_DOMAIN_NAME,
-                        "operator_name": pad.BLEND_OPERATOR_NAME,
+                        "domain_name": "test",
+                        "operator_name": "test",
                     },
                 )
             )
     graph.output_node().args = (tuple(outputs),)
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
-    assert [branch.args[0].args[0] for branch in concat.args[0][:2]] == images
-    assert images[0].args[2].args == ([40], [1], torch.int8)
-    assert images[1].args[2].args == ([0], [1], torch.int8)
-    assert images[0].args[2] is not images[1].args[2]
-    assert sum(n.target == TOSA.PAD.default for n in graph.nodes) == 2
+    assert all(
+        branch.args[0].args[0] is not image
+        for branch, image in zip(concat.args[0][:2], images)
+    )
+    assert all(image.args[2] is pad_value for image in images)
+    assert pad_value.args == ([-11], [1], torch.int8)
+    assert sum(n.target == TOSA.PAD.default for n in graph.nodes) == 4
     graph.lint()

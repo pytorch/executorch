@@ -45,6 +45,7 @@ def define_common_targets():
         srcs = ["decompose_fused_quant.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             ":pass_base",
@@ -122,6 +123,16 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "replace_clamp_with_hardtanh",
+        srcs = ["pre_quantize_passes/replace_clamp_with_hardtanh.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/transforms:permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
         name = "constant_fold",
         srcs = ["optimization_passes/constant_fold.py"],
         visibility = _VISIBILITY,
@@ -150,6 +161,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_last.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//executorch/exir/dialects/fused_quant:ops_utils",
@@ -165,6 +177,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_first.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
