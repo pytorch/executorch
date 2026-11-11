@@ -170,6 +170,9 @@ class vTensorStorage final {
   // GPU Storage
   mutable vkapi::VulkanImage image_;
   mutable vkapi::VulkanBuffer buffer_;
+  // Wraps a resource created and bound elsewhere. Such an image stays in
+  // VK_IMAGE_LAYOUT_GENERAL, so its owner always knows the layout.
+  bool external_ = false;
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
@@ -782,6 +785,10 @@ class vTensor final {
    */
   void virtual_transpose(const int64_t dim0, const int64_t dim1);
 
+  inline bool has_external_storage() const {
+    return storage_->external_;
+  }
+
   /*
    * Check if this vTensor instance is a view of another vTensor instance
    */
@@ -868,6 +875,12 @@ utils::ivec4 flip_and_unsqueezed_ivec4(
     const std::vector<int64_t>& tensor_metadata,
     const vTensor::Attribute metadata_type,
     const size_t numel);
+
+/*
+ * Sampler properties of the image of a texture tensor of dtype `dtype`.
+ */
+vkapi::ImageSampler::Properties image_sampler_properties(
+    const vkapi::ScalarType dtype);
 
 } // namespace api
 } // namespace vkcompute
