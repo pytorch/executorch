@@ -41,15 +41,14 @@ If building the runtime from source, ensure that the build is done in release mo
 
 Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an `XnnpackPartitioner` to `to_edge_transform_and_lower`. See [Building and Running ExecuTorch with XNNPACK Backend](tutorial-xnnpack-delegate-lowering.md) for more information.
 
-Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch will currently use as many threads as there are cores. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
+Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch uses one thread per performance core where it can tell core types apart, and one per logical core otherwise. On Linux other than Android, it also uses no more threads than the CPUs the process may run on, for example under `taskset` or in a container with a CPU set, and currently at most 63. It reads that limit once, from the thread that first uses the thread pool. CPU quotas, such as `docker --cpus`, are not detected. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
 
-Thread count can be set with the following function. Ensure this is done prior to loading or running a model.
+Thread count can be set with the following function. Call it before loading a model. Methods loaded earlier keep their XNNPACK work on the old thread count, and their `CpuBackend` work fails to run. To load such a method again, call `Module::unload_method()` before `load_method()`, or create a new `Module`. Changing the thread count while a method that uses `CpuBackend` is loading or running is not safe.
 ```
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
-This needs `extension/threadpool/threadpool.h`, which a source build provides. The pip
-package does not publish it, because the header holds a `pthreadpool` member by value and
-the wheel vendors no pthreadpool headers to compile it against.
+It is declared in `executorch/extension/threadpool/threadpool.h`. The pip package ships
+this header, so a C++ application built against the package can call it.
 
 For a deeper investigation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for more information.
 
@@ -73,7 +72,7 @@ This can also occur if the ExecuTorch portable library does not yet have an impl
 
 ### Error 0x20 (Not Found)
 
-This error can occur for a few reasons, but the most common is a missing backend target. Ensure the appropriate backend target is linked. For XNNPACK, this is `xnnpack_backend`. If the backend is linked but is still not available, try linking with --whole-archive: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive`.
+This error can occur for a few reasons, but the most common is a missing backend target. Ensure the appropriate backend target is linked. For XNNPACK, this is `xnnpack_backend`. If the backend is linked but is still not available, try linking with --whole-archive: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive libxnnpack_profiler.a`.
 
 ### Duplicate Kernel Registration Abort
 

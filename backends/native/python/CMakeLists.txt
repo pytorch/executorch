@@ -95,6 +95,14 @@ install(
   EXPORT ExecuTorchNativeTargets
   LIBRARY DESTINATION lib COMPONENT executorch_native
 )
+
+# The native Vulkan engine links against this process-wide shared registry.
+# Include it in the same scikit-build install component as
+# libexecutorch_native.so so auditwheel can resolve the DT_NEEDED dependency
+# through $ORIGIN.
+install(TARGETS executorch_vulkan_shared_runtime
+        LIBRARY DESTINATION lib COMPONENT executorch_native
+)
 install(
   EXPORT ExecuTorchNativeTargets
   NAMESPACE executorch_native::
@@ -133,13 +141,25 @@ install(
   COMPONENT executorch_native
   FILES_MATCHING
   PATTERN "CMakeLists.txt"
+  PATTERN "ClassificationRunner.cpp"
   PATTERN "run_classification.cpp"
   PATTERN "runner_utils.cpp"
   PATTERN "runner_utils.h"
 )
 install(
+  FILES ../examples/vision/run_classification.py
+  DESTINATION .
+  RENAME vision.py
+  COMPONENT executorch_native
+)
+install(
   FILES ../examples/runner_utils/runner_utils.h
   DESTINATION include/executorch/backends/native/examples/runner_utils
+  COMPONENT executorch_native
+)
+install(
+  FILES ../examples/vision/ClassificationRunner.h
+  DESTINATION include/executorch/backends/native/examples/vision
   COMPONENT executorch_native
 )
 install(

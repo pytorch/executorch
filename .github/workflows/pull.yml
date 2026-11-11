@@ -37,7 +37,16 @@ jobs:
     uses: ./.github/workflows/_ci-run-decision.yml
 
   test-qnn-wheel-packages-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -213,7 +222,13 @@ jobs:
           EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
-        if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then
+        NO_ATEN_LINKS="$(ldd cmake-out-no-aten/_C*.so)"
+        printf '%s\n' "$NO_ATEN_LINKS"
+        if grep -q 'not found' <<<"$NO_ATEN_LINKS"; then
+          echo "torch-free pybindings have a missing runtime dependency"
+          exit 1
+        fi
+        if grep -Eiq '^[[:space:]]*(lib(torch|aten|c10)[^[:space:]/]*\.so|[^[:space:]]*/lib(torch|aten|c10)[^[:space:]/]*\.so)' <<<"$NO_ATEN_LINKS"; then
           echo "torch-free pybindings unexpectedly link against ATen"
           exit 1
         fi
@@ -728,11 +743,12 @@ jobs:
         cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          setup_script_args="--fvp corstone300"
           toolchain_prefix=arm-none-eabi-
           threshold="35000" # GCC 15.2, minimal PAL + nano baseline: 32180 bytes, 2026-10-28
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
-          setup_script_args="--target-toolchain zephyr"
+          setup_script_args="--target-toolchain zephyr --disable-fvps"
           toolchain_prefix=arm-zephyr-eabi-
           threshold="50000" # Zephyr SDK 1.0.1, minimal PAL baseline: 46112 bytes, 2026-10-28
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
@@ -808,7 +824,14 @@ jobs:
         fi
 
   test-mcu-cortex-m-backend:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-mcu-cortex-m-backend
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -829,14 +852,14 @@ jobs:
         install_executorch "--use-pt-pinned-commit"
 
         # Install arm dependencies
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --fvp corstone300
         source examples/arm/arm-scratch/setup_path.sh
 
         # To build cortex-m test runner
         backends/cortex_m/test/build_test_runner.sh
 
         # To run cortex_m tests
-        pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
+        pytest -c backends/arm/test/pytest.ini backends/cortex_m/test
 
   android:
     uses: ./.github/workflows/_android.yml
@@ -871,14 +894,36 @@ jobs:
   unittest:
     uses: ./.github/workflows/_unittest.yml
     permissions:
+      actions: read
       id-token: write
       contents: read
     with:
+      upload-test-run-reports: true
       build-mode: Debug
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  # The editable install exercises the same unit tests as `unittest`; what it
+  # adds is coverage of the editable install path. Run it on PRs that touch
+  # Python packaging or the unittest/setup scripts, and on every push to main.
   unittest-editable:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_unittest.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'requirements-') ||
+      contains(needs.changed-files.outputs.changed-files, 'src/executorch') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/unittest-') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-linux.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh')
     uses: ./.github/workflows/_unittest.yml
     permissions:
       id-token: write
@@ -900,7 +945,16 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-qnn-buck-build-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-buck-build-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -933,6 +987,9 @@ jobs:
 
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
+
+        # Run the host allocator regressions without a device or RPC library.
+        buck2 test //backends/qualcomm/runtime/tests:shared_buffer_test
 
   test-arm-backend-docgen:
     needs: [docker-image, changed-files]
@@ -995,7 +1052,13 @@ jobs:
         fi
 
   test-arm-backend-no-driver:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-no-driver
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1047,7 +1110,13 @@ jobs:
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-vkml
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1087,7 +1156,13 @@ jobs:
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-public-api-backward-compatibility:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-public-api-backward-compatibility
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1107,7 +1182,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-fvps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
         source examples/arm/arm-scratch/setup_path.sh
 
         backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh
@@ -1115,7 +1190,18 @@ jobs:
         python backends/arm/test/public_api_bc/run_public_api_bc_scenarios.py
 
   test-llama-runner-qnn-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-llama-runner-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1155,7 +1241,18 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
   test-static-llama-qnn-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-static-llama-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1190,7 +1287,18 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-sqnr-static-llm-qnn-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_qnn_static_llm.sh')
     name: test-sqnr-static-llm-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1225,7 +1333,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }} sqnr
 
   test-qnn-models-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1251,7 +1368,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-qnn-direct-build-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-direct-build-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1271,6 +1397,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-direct-sdk.sh
 
   test-qnn-testsuite-linux:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/harness') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh')
     name: test-qnn-testsuite-linux
     permissions:
       id-token: write
@@ -1288,7 +1423,16 @@ jobs:
       # job was killed. The default label is a little under 8 GiB per core.
 
   test-qnn-passes-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-passes-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1319,6 +1463,10 @@ jobs:
         # test_mha_to_sha imports oss_scripts/llama which transitively needs torchtune
         pip install -r requirements-examples.txt
 
+        # The QNN manager loads the SDK libraries by name. Without this, every test
+        # that needs the real backend fails.
+        export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
 
@@ -1327,7 +1475,16 @@ jobs:
         pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-delegate-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1370,7 +1527,14 @@ jobs:
             -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator or TestQNNFcb"
 
   test-phi-3-mini-runner-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/phi-3-mini') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_phi_3_mini.sh')
     name: test-phi-3-mini-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1379,7 +1543,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
+      runner: mt-l-x86iavx512-32-256
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1401,7 +1565,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
 
   test-qnn-python-imports-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-direct-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_wheel_package_qnn.sh')
     name: test-qnn-python-imports-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1450,7 +1623,14 @@ jobs:
           --module-prefix executorch.examples.qualcomm
 
   test-eval_llama-wikitext-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_eval_llama_wikitext.sh')
     name: test-eval_llama-wikitext-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1459,7 +1639,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
+      runner: mt-l-x86iavx512-32-256
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1506,7 +1686,14 @@ jobs:
   #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
 
   test-llama_runner_eager-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama_runner_eager.sh')
     name: test-llama_runner_eager-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1515,7 +1702,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
+      runner: mt-l-x86iavx512-32-256
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1534,7 +1721,19 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
   test-lora-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/named_data_map') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/module') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora_multimethod.sh')
     name: test-lora-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1543,7 +1742,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
+      runner: mt-l-x86iavx512-32-256
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1562,7 +1761,19 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora.sh
 
   test-lora-multimethod-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/named_data_map') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/module') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_lora_multimethod.sh')
     name: test-lora-multimethod-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1571,7 +1782,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
+      runner: mt-l-x86iavx512-32-256
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1620,7 +1831,14 @@ jobs:
         # placeholder for mediatek to add more tests
 
   test-openvino-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/openvino') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/openvino') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-openvino.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_openvino.sh')
     name: test-openvino-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1643,7 +1861,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
 
   test-build-wasm-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'scripts/build_wasm_tests.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-emscripten.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-build-wasm-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1676,7 +1902,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash scripts/build_wasm_tests.sh --webgpu
 
   unittest-wasm-bindings:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/wasm') ||
+      contains(needs.changed-files.outputs.changed-files, 'scripts/build_wasm_tests.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-emscripten.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: unittest-wasm-bindings
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1723,7 +1957,13 @@ jobs:
         pnpm test
 
   unittest-nxp-neutron:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -1767,7 +2007,12 @@ jobs:
         bash backends/nxp/run_unittests.sh
 
   test-vulkan-models-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh')
     name: test-vulkan-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1809,7 +2054,12 @@ jobs:
         done
 
   test-vulkan-operators-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh')
     name: test-vulkan-operators-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1837,15 +2087,13 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark/build_and_run.sh
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=add
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q4gsw_linear --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=choose_qparams_per_row --set=correctness,performance
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/qdq --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/clone --set=correctness
-        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/binary --set=correctness
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
+        for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+            --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
+        done
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
@@ -1905,7 +2153,13 @@ jobs:
         echo "::endgroup::"
 
   nxp-build-test:
-    needs: docker-image
+    needs: [docker-image, changed-files]
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
     name: nxp-build-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1936,21 +2190,15 @@ jobs:
         fi
 
   nxp-mcuxpresso-test:
-    needs: docker-image
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_nxp_mcuxpresso.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp')
     name: nxp-mcuxpresso-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: ./.github/workflows/_test_nxp_mcuxpresso.yml
     permissions:
       id-token: write
       contents: read
-    with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        ./examples/nxp/mcuxpresso/imxrt700/executorch_cifarnet/test_build_from_scratch.sh

@@ -21,6 +21,8 @@
 
 namespace executorch::extension::llm {
 
+class MuseGlimmerModelEmbeddings;
+
 class MuseGlimmerMLXExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
@@ -43,7 +45,6 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
       override;
 
  private:
-  struct EngineEmbeddings;
   struct DFlash;
   using Probabilities = std::vector<std::vector<float>>;
   struct SessionState {
@@ -94,7 +95,7 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
   std::unique_ptr<Module> module_;
   cache::BatchControl* const ctl_;
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
-  std::unique_ptr<EngineEmbeddings> embeddings_;
+  std::unique_ptr<MuseGlimmerModelEmbeddings> embeddings_;
   const int max_sessions_;
   bool initialization_attempted_ = false;
   bool initialized_ = false;

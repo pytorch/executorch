@@ -105,6 +105,7 @@ set(optional_lib_list
     coreml_util
     coreml_inmemoryfs
     coremldelegate
+    coreaidelegate
     mlxdelegate
     mlx
     metal_backend
@@ -123,6 +124,7 @@ set(optional_lib_list
     extension_threadpool
     extension_training
     xnnpack_backend
+    cpu_backend
     vulkan_backend
     optimized_kernels
     optimized_portable_kernels

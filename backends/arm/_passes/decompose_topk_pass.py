@@ -78,8 +78,8 @@ def get_static_topk_config(
         return None, reason
     tokens, experts = shape
     k = arguments["k"]
-    if type(k) is not int or not 1 <= k <= min(4, experts):
-        return None, "TopK requires constant 1 <= K <= min(4, E)."
+    if type(k) is not int or not 1 <= k <= min(8, experts):
+        return None, "TopK requires constant 1 <= K <= min(8, E)."
     dim = arguments.get("dim", -1)
     if type(dim) is not int or dim not in (-1, 1):
         return None, "TopK requires dim=-1 or dim=1."
@@ -219,6 +219,7 @@ class DecomposeTopKPass(ArmPass):
         graph: torch.fx.Graph,
         scores: torch.fx.Node,
         config: StaticTopKConfig,
+        source_node: torch.fx.Node,
     ) -> torch.fx.Node:
         """Build int32 indices using repeated ARGMAX and cumulative masking.
 
@@ -226,6 +227,7 @@ class DecomposeTopKPass(ArmPass):
             graph (torch.fx.Graph): Graph with the insertion point set.
             scores (torch.fx.Node): Original score tensor of shape [T, E].
             config (StaticTopKConfig): Validated static TopK parameters.
+            source_node (torch.fx.Node): Original TopK operator for provenance.
 
         Returns:
             torch.fx.Node: Int32 indices with shape [T, K].
@@ -240,29 +242,36 @@ class DecomposeTopKPass(ArmPass):
                 exir_ops.edge.aten.arange.start_step,
                 (0, config.experts, 1),
                 {"dtype": torch.int32, "device": scores_tensor.device},
+                from_node=source_node,
             )
             expert_ids = create_node(
                 graph,
                 exir_ops.edge.aten.view_copy.default,
                 (expert_ids, [1, config.experts]),
+                from_node=source_node,
             )
             minus_inf = create_node(
                 graph,
                 exir_ops.edge.aten.full.default,
                 ([1, 1], float("-inf")),
                 {"dtype": scores_tensor.dtype, "device": scores_tensor.device},
+                from_node=source_node,
             )
         remaining = scores
         selected_indices: list[torch.fx.Node] = []
         for step in range(config.k):
             # ARGMAX reduces [T, E] to int32 indices [T].
             index = create_node(
-                graph, exir_ops.backend.tosa.ARGMAX.default, (remaining, 1)
+                graph,
+                exir_ops.backend.tosa.ARGMAX.default,
+                (remaining, 1),
+                from_node=source_node,
             )
             index = create_node(
                 graph,
                 exir_ops.edge.aten.view_copy.default,
                 (index, [config.tokens, 1]),
+                from_node=source_node,
             )
             selected_indices.append(index)
             if step + 1 < config.k:
@@ -270,20 +279,27 @@ class DecomposeTopKPass(ArmPass):
                 # Compare expert IDs [1, E] with selected indices [T, 1]
                 # to produce a mask [T, E].
                 mask = create_node(
-                    graph, exir_ops.edge.aten.eq.Tensor, (expert_ids, index)
+                    graph,
+                    exir_ops.edge.aten.eq.Tensor,
+                    (expert_ids, index),
+                    from_node=source_node,
                 )
                 # Mask selected scores in remaining [T, E] with -inf.
                 remaining = create_node(
                     graph,
                     exir_ops.edge.aten.where.self,
                     (mask, minus_inf, remaining),
+                    from_node=source_node,
                 )
         if config.k == 1:
             indices = selected_indices[0]
         else:
             # Concatenate K selections of shape [T, 1] into [T, K].
             indices = create_node(
-                graph, exir_ops.edge.aten.cat.default, (selected_indices, 1)
+                graph,
+                exir_ops.edge.aten.cat.default,
+                (selected_indices, 1),
+                from_node=source_node,
             )
         return indices
 
@@ -301,11 +317,14 @@ class DecomposeTopKPass(ArmPass):
                 raise RuntimeError("Delegated TopK requires prepared int32 indices.")
             scores = topk.args[0] if topk.args else topk.kwargs["self"]
             with graph.inserting_before(topk):
-                indices = self._build_topk_indices(graph, scores, config)
+                indices = self._build_topk_indices(graph, scores, config, topk)
                 # Gather from scores [T, E] using indices [T, K]
                 # to produce values [T, K].
                 values = create_node(
-                    graph, exir_ops.edge.aten.gather.default, (scores, 1, indices)
+                    graph,
+                    exir_ops.edge.aten.gather.default,
+                    (scores, 1, indices),
+                    from_node=topk,
                 )
             # Redirect TopK getitem consumers to the new values and indices.
             for extraction in list(topk.users):
