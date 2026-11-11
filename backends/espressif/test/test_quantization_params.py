@@ -614,9 +614,7 @@ def test_linear_parameters_are_precomputed(linear_program):
     weight_dq = transpose.args[0]
     scales = get_param_tensor(original, weight_dq.args[1]).to(torch.float64)
     output_q = next(n for n in linear.users if n.target == _QUANTIZE)
-    expected_bias = torch.round(
-        get_param_tensor(original, bias).to(torch.float64) / (input_dq.args[1] * scales)
-    ).to(torch.int32)
+    expected_bias = get_param_tensor(original, bias.args[0])
     rescales = [
         quantize_multiplier(input_dq.args[1] * scale / output_q.args[1])
         for scale in scales.tolist()
@@ -628,6 +626,7 @@ def test_linear_parameters_are_precomputed(linear_program):
         if n.target == exir_ops.edge.esp_nn.quantized_linear_int8.default
     )
     torch.testing.assert_close(get_param_tensor(result, lowered.args[2]), expected_bias)
+    assert lowered.args[2].target == bias.args[0].target
     for index, values in enumerate(zip(*rescales), 3):
         torch.testing.assert_close(
             get_param_tensor(result, lowered.args[index]),
@@ -644,6 +643,8 @@ def test_linear_parameters_are_precomputed(linear_program):
         "alpha",
         "beta",
         "weight_zero_point",
+        "bias_scale",
+        "bias_zero_point",
         "bias_overflow",
         "positive_shift_overflow",
         "negative_shift",
@@ -663,8 +664,12 @@ def test_linear_unsupported_parameters_stay_portable(linear_program, unsupported
         linear.kwargs = {unsupported: 2}
     elif unsupported == "weight_zero_point":
         get_param_tensor(program, weight_dq.args[2]).fill_(1)
+    elif unsupported == "bias_scale":
+        get_param_tensor(program, bias.args[1]).mul_(2)
+    elif unsupported == "bias_zero_point":
+        get_param_tensor(program, bias.args[2]).fill_(1)
     elif unsupported == "bias_overflow":
-        get_param_tensor(program, bias).data.fill_(1e20)
+        get_param_tensor(program, bias.args[0]).fill_(torch.iinfo(torch.int32).max)
     elif unsupported.startswith("float_"):
         input_scale, weight_scale, output_scale = {
             "float_input_overflow": (1e38, 1e-38, 1.0),
@@ -677,11 +682,18 @@ def test_linear_unsupported_parameters_stay_portable(linear_program, unsupported
         quantize.args = (quantize.args[0], output_scale, 0, -128, 127, torch.int8)
     else:
         get_param_tensor(program, weight_dq.args[1]).fill_(1.0)
-        get_param_tensor(program, bias).data.zero_()
+        get_param_tensor(program, bias.args[0]).zero_()
         input_dq.args = (input_dq.args[0], 1.0, 0, -128, 127, torch.int8)
         quantize = next(n for n in linear.users if n.target == _QUANTIZE)
         scale = 2.0**32 if unsupported == "negative_shift" else 2.0**-20
         quantize.args = (quantize.args[0], scale, 0, -128, 127, torch.int8)
+    if unsupported.startswith("float_") or unsupported in (
+        "positive_shift_overflow",
+        "negative_shift",
+    ):
+        get_param_tensor(program, bias.args[1]).copy_(
+            get_param_tensor(program, weight_dq.args[1]) * input_dq.args[1]
+        )
     program.graph_module.recompile()
     result = EspPassManager()(program)
     assert not result.modified

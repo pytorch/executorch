@@ -690,22 +690,57 @@ class TensorRegistry:
             )
         return self._new_int8_activation(node, *quantization)
 
+    def _resolve_int32_bias(self, node, input_scale, weight_scales):
+        if node is None or node.op != "call_function":
+            return None
+        target = str(node.target)
+        if "dequantize_per_channel" in target and node.args[6] == torch.int32:
+            if node.args[3] != 0:
+                return None
+            scales = self.resolver.resolve(node.args[1])
+            zero_points = self.resolver.resolve(node.args[2])
+            if scales is None or zero_points is None or torch.any(zero_points != 0):
+                return None
+        elif "dequantize_per_tensor" in target and node.args[5] == torch.int32:
+            if node.args[2] != 0:
+                return None
+            scales = torch.full_like(weight_scales, node.args[1])
+        else:
+            return None
+        expected_scales = torch.tensor(
+            input_scale, dtype=torch.float32
+        ) * weight_scales.to(torch.float32)
+        if not torch.equal(
+            scales.detach().cpu().to(torch.float64), expected_scales.to(torch.float64)
+        ):
+            return None
+        bias = self.resolver.resolve(node.args[0])
+        if (
+            bias is None
+            or bias.dtype != torch.int32
+            or bias.shape != weight_scales.shape
+        ):
+            return None
+        return bias.detach().cpu()
+
     def add_int32_bias(
         self, node, input_scale: float, weight_scales: torch.Tensor
     ) -> int:
         scales = weight_scales.detach().cpu().to(torch.float64).reshape(-1)
-        if node is None:
-            bias = torch.zeros(scales.numel(), dtype=torch.float64)
-        else:
-            bias = self.resolver.resolve(node)
-            if bias is None:
-                raise ValueError(f"Unable to resolve bias tensor {node.name}")
-            bias = bias.detach().cpu().to(torch.float64).reshape(-1)
-        if bias.numel() != scales.numel():
-            raise ValueError("Bias and per-channel weight scale counts differ")
-        bias_q = torch.round(bias / (float(input_scale) * scales))
-        if torch.any(bias_q < -(1 << 31)) or torch.any(bias_q > (1 << 31) - 1):
-            raise ValueError("Quantized bias overflows int32")
+        bias_q = self._resolve_int32_bias(node, input_scale, scales)
+        if bias_q is None:
+            if node is None:
+                bias = torch.zeros(scales.numel(), dtype=torch.float64)
+            else:
+                bias = self.resolver.resolve(node)
+                if bias is None:
+                    raise ValueError(f"Unable to resolve bias tensor {node.name}")
+                bias = bias.detach().cpu().to(torch.float64).reshape(-1)
+            if bias.numel() != scales.numel():
+                raise ValueError("Bias and per-channel weight scale counts differ")
+            bias_q = torch.round(bias / (float(input_scale) * scales))
+            if torch.any(bias_q < -(1 << 31)) or torch.any(bias_q > (1 << 31) - 1):
+                raise ValueError("Quantized bias overflows int32")
         tensor_id = len(self.tensors)
         tensor = XTS3Tensor(
             tensor_id=tensor_id,

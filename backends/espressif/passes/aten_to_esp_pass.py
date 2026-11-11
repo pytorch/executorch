@@ -238,16 +238,7 @@ def _linear_parameters(
 ) -> tuple | None:
     weight = weight.detach().cpu()
     scales = scales.detach().cpu().to(torch.float64)
-    bias = bias.detach().cpu().to(torch.float64) if bias is not None else None
-    bias_q = (
-        torch.round(bias / (input_params.scale * scales)) if bias is not None else None
-    )
-    if bias_q is not None and (
-        not torch.all(torch.isfinite(bias_q))
-        or torch.any(bias_q < -(1 << 31))
-        or torch.any(bias_q > (1 << 31) - 1)
-    ):
-        return None
+    bias = bias.detach().cpu() if bias is not None else None
     try:
         rescales = [
             quantize_multiplier(input_params.scale * scale / output_params.scale)
@@ -260,8 +251,8 @@ def _linear_parameters(
     max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
     weight_sums = weight.to(torch.int64).abs().sum(dim=1)
     limits = max_input * weight_sums
-    if bias_q is not None:
-        limits += bias_q.to(torch.int64).abs()
+    if bias is not None:
+        limits += bias.to(torch.int64).abs()
     if any(
         int(limit) << max(shift, 0)
         > torch.iinfo(torch.int32).max - abs(output_params.zp)
@@ -274,7 +265,12 @@ def _linear_parameters(
         dim=1
     )
     if bias is not None:
-        max_float_outputs += bias.abs()
+        bias_scales = torch.tensor(input_params.scale, dtype=torch.float32) * scales.to(
+            torch.float32
+        )
+        max_float_outputs += (
+            (bias.to(torch.float32) * bias_scales).abs().to(torch.float64)
+        )
     # Bound float32 accumulation rounding, including the bias addition.
     max_float_outputs /= 1 - (weight.shape[1] + 1) * torch.finfo(torch.float32).eps
     if (
@@ -285,23 +281,40 @@ def _linear_parameters(
         return None
     multipliers, shifts = zip(*rescales)
     return (
-        bias_q.to(torch.int32) if bias_q is not None else None,
         torch.tensor(multipliers, dtype=torch.int32),
         torch.tensor(shifts, dtype=torch.int32),
     )
 
 
+def _linear_bias(
+    node: Node, input_scale: float, weight_scales: torch.Tensor, constants: dict
+) -> tuple[Node, torch.Tensor] | None:
+    if (
+        node.target != exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
+        or node.args[3] != 0
+        or node.args[6] != torch.int32
+    ):
+        return None
+    bias, scales, zero_points = (constants.get(arg) for arg in node.args[:3])
+    if (
+        bias is None
+        or bias.dtype != torch.int32
+        or not bias.is_contiguous()
+        or bias.shape != weight_scales.shape
+        or scales is None
+        or not torch.equal(scales, weight_scales * input_scale)
+        or zero_points is None
+        or zero_points.shape != bias.shape
+        or torch.any(zero_points != 0)
+    ):
+        return None
+    return node.args[0], bias
+
+
 def _linear_args(node: Node, quantize: Node, constants: dict) -> tuple | None:
     if any(node.kwargs.get(key, 1) != 1 for key in ("alpha", "beta")):
         return None
-    if node.target == exir_ops.edge.aten.addmm.default:
-        bias_node, input_node, transpose = node.args
-        bias = constants.get(bias_node)
-        if bias is None or bias.dtype != torch.float32:
-            return None
-    else:
-        input_node, transpose = node.args
-        bias = None
+    input_node, transpose = node.args[-2:]
     if (
         input_node.target != _DEQUANTIZE
         or transpose.target != exir_ops.edge.aten.permute_copy.default
@@ -334,12 +347,17 @@ def _linear_args(node: Node, quantize: Node, constants: dict) -> tuple | None:
         or zero_points.shape != scales.shape
         or torch.any(zero_points != 0)
         or not torch.all(torch.isfinite(scales) & (scales > 0))
-        or (bias is not None and bias.shape != scales.shape)
     ):
         return None
     input_params, output_params = _qparams(input_node), _qparams(quantize)
     if input_params is None or output_params is None:
         return None
+    bias_node, bias = None, None
+    if node.target == exir_ops.edge.aten.addmm.default:
+        bias_args = _linear_bias(node.args[0], input_params.scale, scales, constants)
+        if bias_args is None:
+            return None
+        bias_node, bias = bias_args
     input_value = input_node.args[0].meta.get("val")
     output_value = quantize.meta.get("val")
     if not all(
@@ -369,6 +387,7 @@ def _linear_args(node: Node, quantize: Node, constants: dict) -> tuple | None:
     return (
         input_node.args[0],
         weight_node,
+        bias_node,
         *parameters,
         -input_params.zp,
         output_params.zp,
@@ -383,22 +402,18 @@ def _lower_linear(node: Node, program: ExportedProgram, constants: dict) -> bool
     args = _linear_args(node, quantize, constants)
     if args is None:
         return False
-    input_node, weight_node, *parameters, input_offset, output_offset = args
+    input_node, weight_node, bias_node, *parameters, input_offset, output_offset = args
     first_input = next(n for n in node.graph.nodes if n.op == "placeholder")
     with node.graph.inserting_before(first_input):
         parameter_nodes = [
-            (
-                create_constant_placeholder(
-                    program,
-                    node.graph,
-                    f"_esp_{node.name}_{name}",
-                    InputKind.CONSTANT_TENSOR,
-                    value,
-                )
-                if value is not None
-                else None
+            create_constant_placeholder(
+                program,
+                node.graph,
+                f"_esp_{node.name}_{name}",
+                InputKind.CONSTANT_TENSOR,
+                value,
             )
-            for name, value in zip(("bias", "multiplier", "shift"), parameters)
+            for name, value in zip(("multiplier", "shift"), parameters)
         ]
     with node.graph.inserting_before(quantize):
         replacement = node.graph.call_function(
@@ -406,6 +421,7 @@ def _lower_linear(node: Node, program: ExportedProgram, constants: dict) -> bool
             (
                 input_node,
                 weight_node,
+                bias_node,
                 *parameter_nodes,
                 input_offset,
                 output_offset,

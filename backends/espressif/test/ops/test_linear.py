@@ -80,6 +80,14 @@ class EspLinearChain(EspLinear):
         return self.linear(self.linear(x))
 
 
+class EspLinearWithCoarseBias(EspLinear):
+    def __init__(self):
+        super().__init__(in_features=2, out_features=1)
+        with torch.no_grad():
+            self.linear.weight.copy_(torch.tensor([[1.0, 0.0]]))
+            self.linear.bias.fill_(0.1)
+
+
 class EspUnsupportedLinearRank(EspLinear):
     def __init__(self):
         super().__init__()
@@ -115,6 +123,10 @@ test_cases = {
         EspLinearWithFloatUsers(), (ramp_tensor(-3, 5, (2, 17)),)
     ),
     "chain": EspTestCase(EspLinearChain(), (ramp_tensor(-3, 5, (2, 17)),)),
+    "bias_rounding": EspTestCase(
+        EspLinearWithCoarseBias(),
+        (torch.tensor([[0.0, 100000.0], [0.0, -100000.0]]),),
+    ),
     "vector_fallback": EspTestCase(
         EspUnsupportedLinearRank(), (ramp_tensor(-3, 5, (17,)),)
     ),
