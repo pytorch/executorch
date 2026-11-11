@@ -75,6 +75,24 @@ class ConvertToLinearPass(ExportPass):
             map_ = {"input": 0, "weight": 1}
             return None if arg == "bias" else node.args[map_[arg]]
 
+    @staticmethod
+    def can_convert(node: torch.fx.Node, src_partition: SourcePartition) -> bool:
+        """
+        Whether a linear can be rebuilt from node. A transpose must lie between
+        the weight that find() resolves to and the node, and a bmm must have no
+        bias, since find_bias_for_mm only finds an add right after an mm.
+        """
+        if node.target == exir_ops.edge.aten.bmm.default and any(
+            n.target == exir_ops.edge.aten.add.Tensor for n in src_partition.nodes
+        ):
+            return False
+        weight = ConvertToLinearPass.get_arg(node, "weight")
+        while weight.op == "call_function" and not is_dequant(weight):
+            if is_transpose(weight):
+                return True
+            weight = weight.args[0]
+        return False
+
     def find_bias_for_mm(self, src_partition: SourcePartition, mm_node: torch.fx.Node):
         """
         For linear decomposed with mm + add, find bias in src partition
@@ -161,15 +179,14 @@ class ConvertToLinearPass(ExportPass):
                 graph_module.graph, self.linear_modules
             )
 
+            # linear takes the weight from before its transpose, which constant
+            # propagation can fold away.
             src_node_dict = {
                 node: src_partition
                 for src_partitions in src_partition_dict.values()
                 for src_partition in src_partitions
                 for node in src_partition.nodes
-                # linear takes the weight from before its transpose, which
-                # constant propagation can fold away.
-                if node.target in self.targets
-                and is_transpose(self.get_arg(node, "weight"))
+                if node.target in self.targets and self.can_convert(node, src_partition)
             }
 
             # No more [add]mm target in source partitions

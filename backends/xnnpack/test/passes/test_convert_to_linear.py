@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import unittest
 
 import torch
@@ -58,8 +59,65 @@ class TestConvertToLinear(unittest.TestCase):
                     {f"executorch_exir_dialects_edge__ops_aten_{mm}_default": 1}
                 )
                 .check_not(["executorch_exir_dialects_edge__ops_aten_linear_default"])
+                .partition()
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_not([f"executorch_exir_dialects_edge__ops_aten_{mm}_default"])
+                .to_executorch()
+                .serialize()
                 .run_method_and_compare_outputs()
             )
+
+    def test_fp32_only_folded_linear_is_not_converted(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(6, 6)
+
+            def forward(self, x, weight):
+                # The weight is an input, so its transpose is not folded.
+                return torch.nn.functional.linear(self.linear(x), weight)
+
+        inputs = (torch.randn(4, 6), torch.randn(6, 6))
+        tester = Tester(Model(), inputs).export().to_edge()
+        constant_prop_pass(tester.get_artifact().exported_program())
+        (
+            tester.run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten_addmm_default": 1,
+                    "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+                }
+            )
+            .run_method_and_compare_outputs(inputs=inputs)
+        )
+
+    def test_fp32_bmm_in_linear_partition(self):
+        class Model(torch.nn.Module):
+            def __init__(self, bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 6, bias=bias)
+
+            def forward(self, x):
+                # A non-contiguous input makes the linear decompose to bmm.
+                return self.linear(x.transpose(1, 2))
+
+        x = torch.randn(3, 8, 4)
+        for bias, fold in itertools.product([False, True], [False, True]):
+            torch._dynamo.reset()
+            tester = Tester(Model(bias), (x,)).export().to_edge()
+            if fold:
+                constant_prop_pass(tester.get_artifact().exported_program())
+            tester.run_passes(self.PassStage)
+            # The bias add of a bmm is not found, so it stays a bmm.
+            if fold or bias:
+                tester.check_count(
+                    {"executorch_exir_dialects_edge__ops_aten_bmm_default": 1}
+                ).check_not(["executorch_exir_dialects_edge__ops_aten_linear_default"])
+            else:
+                tester.check_count(
+                    {"executorch_exir_dialects_edge__ops_aten_linear_default": 1}
+                ).check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
+            tester.run_method_and_compare_outputs(inputs=(x,))
 
     def test_fp32_view_after_two_linears_with_dynamic_shapes(self):
         class Model(torch.nn.Module):
