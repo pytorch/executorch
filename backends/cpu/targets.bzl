@@ -3,6 +3,20 @@ load("@fbsource//xplat/executorch/build:build_variables.bzl", "CPU_RUNTIME_BUCK_
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":cpu_backend.bzl", "cpu_backend", "cpu_provider")
 
+_EVENT_TRACER = "fbsource//xplat/executorch/tools/buck/constraints:event-tracer-enabled"
+_OPERATOR_SHAPES = "fbsource//xplat/executorch/tools/buck/constraints:cpu-xnnpack-operator-shapes-enabled"
+
+def _if_operator_shapes(values):
+    """Returns values in builds that attach XNNPACK operator shapes to traces."""
+    if native.read_config("executorch", "cpu_xnnpack_operator_shapes", "false") == "true":
+        return values
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        _OPERATOR_SHAPES: values,
+    })
+
 def define_common_targets():
     runtime.cxx_library(
         name = "cpu_runtime",
@@ -46,10 +60,13 @@ def define_common_targets():
         srcs = ["runtime/providers/xnnpack/XNNPACKProvider.cpp"],
         exported_headers = ["runtime/providers/xnnpack/XNNPACKProvider.h"],
         exported_deps = [":cpu_runtime"],
+        preprocessor_flags = _if_operator_shapes(["-DENABLE_CPU_XNNPACK_OPERATOR_SHAPES"]),
         deps = [
+            "//executorch/backends/xnnpack:xnnpack_profiler",
+            "//executorch/extension/memory_allocator:malloc_memory_allocator",
             "//executorch/extension/threadpool:threadpool",
             third_party_dep("XNNPACK"),
-        ],
+        ] + _if_operator_shapes([third_party_dep("XNNPACK_internal_headers")]),
         visibility = ["PUBLIC"],
     )
 
@@ -76,6 +93,7 @@ def define_common_targets():
         srcs = ["test/runner.cpp"],
         deps = [
             ":cpu_backend",
+            "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/module:module",
             "//executorch/extension/tensor:tensor",
             "//executorch/extension/threadpool:threadpool",
@@ -89,16 +107,32 @@ def define_common_targets():
         visibility = [":provider_test"],
     )
 
+    plan_test_deps = [
+        ":cpu_runtime",
+        ":cpu_reference",
+        ":cpu_xnnpack",
+        "//executorch/devtools/etdump:etdump_flatcc",
+        "//executorch/configurations:optimized_native_cpu_ops",
+    ]
     runtime.cxx_test(
         name = "plan_test",
         srcs = ["runtime/test/CPUPlanTest.cpp"],
-        deps = [
-            ":cpu_runtime",
-            ":cpu_reference",
-            ":cpu_xnnpack",
-            "//executorch/configurations:optimized_native_cpu_ops",
-        ],
+        preprocessor_flags = _if_operator_shapes(["-DENABLE_CPU_XNNPACK_OPERATOR_SHAPES"]),
+        deps = plan_test_deps,
     )
+
+    if not runtime.is_oss:
+        for suffix, modifiers in [
+            ("_event_tracer", [_EVENT_TRACER]),
+            ("_operator_shapes", [_EVENT_TRACER, _OPERATOR_SHAPES]),
+        ]:
+            runtime.cxx_test(
+                name = "plan_test" + suffix,
+                srcs = ["runtime/test/CPUPlanTest.cpp"],
+                preprocessor_flags = _if_operator_shapes(["-DENABLE_CPU_XNNPACK_OPERATOR_SHAPES"]),
+                deps = plan_test_deps,
+                modifiers = modifiers,
+            )
 
     runtime.cxx_test(
         name = "provider_test",

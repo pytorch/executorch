@@ -38,6 +38,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    PACKED_LAYOUTS,
     parse_offgraph_kv_manifest,
 )
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
@@ -62,6 +63,9 @@ from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
@@ -1216,6 +1220,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_index_put_out": None,
             "aoti_torch_cuda_scatter_reduce_two_out": None,
             "aoti_torch_cuda_scatter_src_out": None,
+            "aoti_torch_cuda_masked_select": None,
+            "aoti_torch_cuda_nonzero": None,
         }
 
     @classmethod
@@ -1266,23 +1272,23 @@ class CudaBackend(AotiBackend, BackendDetails):
                 triton_kernel_mode = mode
         passes = [
             RemoveAssertAsyncPass(),
+            ReplaceComplexWithRealPass(),
             MoveCondPredicateToCpuPass(),
             ReplaceInt64FloorDivWithFloatPass(),
             ReplaceFusedSdpaWithSdpaPass(),
             ReplaceMaskedCopyWithWherePass(),
         ]
-        cell_layout = any(
-            spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
-            for spec in compile_specs
+        layout = next(
+            (
+                parse_offgraph_kv_manifest(spec.value)["layout"]
+                for spec in compile_specs
+                if spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            ),
+            "sequence",
         )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC:
-                passes.append(
-                    CheckOffGraphKVStepWidthPass(
-                        spec.value, layout="cell" if cell_layout else "sequence"
-                    )
-                )
+                passes.append(CheckOffGraphKVStepWidthPass(spec.value, layout=layout))
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
                 passes.append(
@@ -1355,6 +1361,18 @@ class CudaBackend(AotiBackend, BackendDetails):
         options["max_autotune"] = max_autotune
         if autotune_at_compile_time is not None:
             options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+        # The final autotuning pass picks each kernel's launch settings by
+        # running it on random tensors shaped like its inputs, weights included,
+        # so in low-memory mode the real weights wait in a file meanwhile instead
+        # of taking GPU memory next to their random stand-ins. The threshold of
+        # 0.0 moves them for every model, because low-memory mode is for models
+        # that are short of GPU memory, and moving a small model costs little.
+        # TODO: drop the hasattr once every torch the repo installs has the option.
+        if cls._is_low_memory_mode(compile_specs) and hasattr(
+            torch._inductor.config.aot_inductor,
+            "autotune_offload_constants_min_device_fraction",
+        ):
+            options["aot_inductor.autotune_offload_constants_min_device_fraction"] = 0.0
         # Add platform-specific options
 
         if platform == "windows":
@@ -1423,9 +1441,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
                 cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
-        cell_layout = any(
+        packed_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            and parse_offgraph_kv_manifest(spec.value)["layout"] in PACKED_LAYOUTS
             for spec in compile_specs or []
         )
 
@@ -1479,8 +1497,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         cuda_graph_timing(offload=_moved_program_tensors)
                     )
-                if cell_layout:
-                    # The cell layout's step buffers are constants the graph
+                if packed_layout:
+                    # A packed layout's step buffers are constants the graph
                     # only reads, while the runtime rewrites them before every
                     # forward. Folding them, or inlining a small one as a
                     # literal, would evaluate them at compile time -- on

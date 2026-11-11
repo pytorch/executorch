@@ -9,6 +9,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <flatbuffers/flatbuffers.h>
@@ -153,6 +154,131 @@ TEST_F(XNNPackedLhsTest, RuntimeSpecOverridesGlobalDefault) {
       EXPECT_EQ(std::get<bool>(global_options.view()[0].value), global_default);
     }
   }
+}
+
+TEST(XNNCompilerTest, Bf16BatchMatrixMultiplyOutputWithoutDims) {
+  runtime::runtime_init();
+  auto* backend = runtime::get_backend_class(xnnpack_backend_key);
+  ASSERT_NE(backend, nullptr);
+
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<std::vector<uint32_t>> input_dims = {{2, 3, 4}, {2, 4, 6}};
+  std::vector<flatbuffers::Offset<fb_xnnpack::XValue>> values;
+  for (uint32_t id = 0; id < 3; ++id) {
+    flatbuffers::Offset<flatbuffers::Vector<uint32_t>> dims;
+    if (id < 2) {
+      dims = builder.CreateVector(input_dims[id]);
+    }
+    const auto tensor = fb_xnnpack::CreateXNNTensorValue(
+        builder,
+        fb_xnnpack::XNNDatatype::xnn_datatype_bf16,
+        id < 2 ? 3 : 0,
+        dims,
+        0,
+        id,
+        id == 2 ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT
+                : XNN_VALUE_FLAG_EXTERNAL_INPUT,
+        id);
+    values.push_back(fb_xnnpack::CreateXValue(
+        builder, fb_xnnpack::XValueUnion::XNNTensorValue, tensor.Union()));
+  }
+  const auto bmm = fb_xnnpack::Create_XNNNode2x1(builder, 0, 1, 2);
+  const auto node = fb_xnnpack::CreateXNode(
+      builder, fb_xnnpack::XNodeUnion::XNNBatchMatrixMultiply, bmm.Union());
+  const auto graph = fb_xnnpack::CreateXNNGraph(
+      builder,
+      builder.CreateString("0"),
+      builder.CreateVector(&node, 1),
+      builder.CreateVector(values),
+      3,
+      builder.CreateVector<uint32_t>({0, 1}),
+      builder.CreateVector<uint32_t>({2}));
+  fb_xnnpack::FinishXNNGraphBuffer(builder, graph);
+
+  std::array<uint8_t, 4096> memory{};
+  runtime::MemoryAllocator allocator(memory.size(), memory.data());
+  runtime::BackendInitContext context(&allocator);
+  runtime::FreeableBuffer processed(
+      builder.GetBufferPointer(), builder.GetSize(), nullptr);
+  // XNNPACK works out the output shape itself, so the graph still loads.
+  auto handle = backend->init(context, &processed, {});
+  ASSERT_TRUE(handle.ok());
+  backend->destroy(handle.get());
+}
+
+TEST(XNNCompilerTest, RuntimeKeepsItsThreadpoolAcrossReset) {
+  runtime::runtime_init();
+  auto* backend = runtime::get_backend_class(xnnpack_backend_key);
+  ASSERT_NE(backend, nullptr);
+  auto* threadpool = extension::threadpool::get_threadpool();
+  struct RestoreThreadCount {
+    extension::threadpool::ThreadPool* threadpool;
+    uint32_t threads;
+    ~RestoreThreadCount() {
+      // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+      threadpool->_unsafe_reset_threadpool(threads);
+    }
+  } restore{threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<fb_xnnpack::XValue>> values;
+  for (uint32_t id = 0; id < 3; ++id) {
+    const auto tensor = fb_xnnpack::CreateXNNTensorValue(
+        builder,
+        fb_xnnpack::XNNDatatype::xnn_datatype_fp32,
+        1,
+        builder.CreateVector<uint32_t>({4}),
+        0,
+        id,
+        id == 2 ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT
+                : XNN_VALUE_FLAG_EXTERNAL_INPUT,
+        id);
+    values.push_back(fb_xnnpack::CreateXValue(
+        builder, fb_xnnpack::XValueUnion::XNNTensorValue, tensor.Union()));
+  }
+  const auto add = fb_xnnpack::Create_XNNNode2x1(builder, 0, 1, 2);
+  const auto node = fb_xnnpack::CreateXNode(
+      builder, fb_xnnpack::XNodeUnion::XNNAdd, add.Union());
+  const auto graph = fb_xnnpack::CreateXNNGraph(
+      builder,
+      builder.CreateString("0"),
+      builder.CreateVector(&node, 1),
+      builder.CreateVector(values),
+      3,
+      builder.CreateVector<uint32_t>({0, 1}),
+      builder.CreateVector<uint32_t>({2}));
+  fb_xnnpack::FinishXNNGraphBuffer(builder, graph);
+
+  std::array<uint8_t, 4096> memory{};
+  runtime::MemoryAllocator allocator(memory.size(), memory.data());
+  runtime::BackendInitContext context(&allocator);
+  runtime::FreeableBuffer processed(
+      builder.GetBufferPointer(), builder.GetSize(), nullptr);
+  auto handle = backend->init(context, &processed, {});
+  ASSERT_TRUE(handle.ok());
+  const std::weak_ptr<pthreadpool> loaded_with =
+      extension::threadpool::get_shared_pthreadpool();
+
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(3));
+  ASSERT_FALSE(loaded_with.expired());
+  TensorFactory<executorch::aten::ScalarType::Float> tf;
+  EValue a(tf.make({4}, {1, 2, 3, 4}));
+  EValue b(tf.make({4}, {10, 20, 30, 40}));
+  EValue out(tf.zeros({4}));
+  std::array<EValue*, 3> args{&a, &b, &out};
+  runtime::BackendExecutionContext execution_context;
+  EXPECT_EQ(
+      backend->execute(execution_context, handle.get(), {args.data(), 3}),
+      Error::Ok);
+  const float* sum = out.toTensor().const_data_ptr<float>();
+  EXPECT_EQ(
+      std::vector<float>(sum, sum + 4), (std::vector<float>{11, 22, 33, 44}));
+
+  backend->destroy(handle.get());
+  EXPECT_TRUE(loaded_with.expired());
 }
 
 } // namespace executorch::backends::xnnpack::delegate

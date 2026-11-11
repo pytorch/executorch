@@ -4,6 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
@@ -18,7 +19,7 @@ using namespace convolution;
 namespace {
 
 std::optional<utils::StorageType> storage_option(const Json& options) {
-  check_options(options, true);
+  check_options(options, {"intermediate_storage"});
   if (!options.contains("intermediate_storage")) {
     return std::nullopt;
   }
@@ -55,8 +56,19 @@ bool floating(vkapi::ScalarType dtype) {
   return dtype == vkapi::kFloat || dtype == vkapi::kHalf;
 }
 
+bool masked_option(const Json& options) {
+  check_options(options, {"masked"});
+  if (!options.contains("masked")) {
+    return false;
+  }
+  if (!options.at("masked").is_boolean()) {
+    throw std::invalid_argument("masked must be a boolean");
+  }
+  return options.at("masked").get<bool>();
+}
+
 ConvShape conv_shape(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  if (args.size() != 10u)
+  if (args.size() != 10u && args.size() != 12u && args.size() != 17u)
     throw std::invalid_argument(
         "Convolution route received wrong argument count");
   const ValueRef input = args[0];
@@ -143,9 +155,8 @@ Json build_conv2d_direct(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args,
     const Json& options) {
-  check_options(options);
-  const ConvShape shape = conv_shape(graph, args);
-  grouped_packing(shape);
+  const bool masked = masked_option(options);
+  conv_shape(graph, args);
   conv2d_direct_impl(
       graph,
       args[0],
@@ -157,11 +168,10 @@ Json build_conv2d_direct(
       args[6],
       args[7],
       args[8],
-      args[9],
-      false,
-      0,
-      0);
-  return selected("direct");
+      args.back(),
+      conv2d_epilogue_from_args(graph, args),
+      masked);
+  return masked ? selected("direct", {{"masked", true}}) : selected("direct");
 }
 
 Json build_conv2d_im2col(
@@ -181,10 +191,8 @@ Json build_conv2d_im2col(
       args[3],
       args[4],
       args[5],
-      args[9],
-      false,
-      0,
-      0,
+      args.back(),
+      conv2d_epilogue_from_args(graph, args),
       storage);
   const ValueRef scratch =
       graph.execute_nodes().at(first)->args().at(0).refs.at(0);
@@ -217,7 +225,7 @@ Json inspect_conv2d_route(
     if (name.rfind("conv_transpose2d", 0) == 0) {
       return selected("transposed");
     }
-    if (name == "conv2d_float" || name == "conv2d_half") {
+    if (name.rfind("conv2d_", 0) == 0) {
       return selected("direct");
     }
   }
@@ -230,6 +238,16 @@ REGISTER_OPERATOR_ROUTES {
   REGISTER_OPERATOR_ROUTE(
       aten.convolution.default, im2col, build_conv2d_im2col);
   REGISTER_ROUTE_INSPECTOR(aten.convolution.default, inspect_conv2d_route);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv_with_clamp.default, direct, build_conv2d_direct);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv_with_clamp.default, im2col, build_conv2d_im2col);
+  REGISTER_ROUTE_INSPECTOR(et_vk.conv_with_clamp.default, inspect_conv2d_route);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv2d.with_epilogue, direct, build_conv2d_direct);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv2d.with_epilogue, im2col, build_conv2d_im2col);
+  REGISTER_ROUTE_INSPECTOR(et_vk.conv2d.with_epilogue, inspect_conv2d_route);
 }
 
 } // namespace vkcompute::shader_profiling

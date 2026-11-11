@@ -125,16 +125,6 @@ def define_common_targets(is_fbcode = False):
         )
 
         python_unittest(
-            name = "test_gen_vulkan_spv",
-            srcs = [
-                "spv_codegen/test_gen_vulkan_spv.py",
-            ],
-            deps = [
-                "//executorch/backends/vulkan:gen_vulkan_spv_lib",
-            ],
-        )
-
-        python_unittest(
             name = "test_serialization",
             srcs = [
                 "test_serialization.py",
@@ -208,3 +198,9 @@ def define_common_targets(is_fbcode = False):
         )
 
         define_compute_api_test_targets()
+
+    runtime.python_test(
+        name = "test_gen_vulkan_spv",
+        srcs = ["spv_codegen/test_gen_vulkan_spv.py"],
+        deps = ["//executorch/backends/vulkan:gen_vulkan_spv_lib"],
+    )

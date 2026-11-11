@@ -262,6 +262,29 @@ def _match_pixel_shuffle(slices, height, width):
     return phase, nodes
 
 
+def _match_previous_flow(concat, customs, nodes):
+    flow_transpose = customs[0].args[0][1]
+    residuals = [n for n in flow_transpose.users if n not in customs]
+    if len(residuals) != 1 or not _is_op(residuals[0], TOSA.RESCALE.default, 5):
+        raise ValueError("Expected one previous-flow rescale.")
+    residual = residuals[0]
+    if (
+        residual.args[1] != torch.int32
+        or len(residual.args[2]) != 1
+        or residual.args[4] != 0
+        or any(residual.kwargs.values())
+    ):
+        raise ValueError("Expected a signed per-tensor INT32 previous-flow rescale.")
+    nodes.add(flow_transpose)
+    allowed = nodes | set(customs) | {concat, residual}
+    if any(user not in allowed for node in nodes for user in node.users):
+        raise ValueError("The block0 tail has additional consumers.")
+    positions = {node: i for i, node in enumerate(concat.graph.nodes)}
+    if any(positions[user] <= positions[concat] for user in residual.users):
+        raise ValueError("Previous flow is needed before the packed shader.")
+    return residual
+
+
 def _match_block0_tail(concat, customs):
     _, height, width, _ = _tensor_shape(concat)
     if height % 4 or width % 4:
@@ -291,26 +314,62 @@ def _match_block0_tail(concat, customs):
         slices.append(source)
     phase, shuffle_nodes = _match_pixel_shuffle(slices, height, width)
     nodes.update(shuffle_nodes)
-    flow_transpose = customs[0].args[0][1]
-    residuals = [n for n in flow_transpose.users if n not in customs]
-    if len(residuals) != 1 or not _is_op(residuals[0], TOSA.RESCALE.default, 5):
-        raise ValueError("Expected one previous-flow rescale.")
-    residual = residuals[0]
-    if (
-        residual.args[1] != torch.int32
-        or len(residual.args[2]) != 1
-        or residual.args[4] != 0
-        or any(residual.kwargs.values())
-    ):
-        raise ValueError("Expected a signed per-tensor INT32 previous-flow rescale.")
-    nodes.add(flow_transpose)
-    allowed = nodes | set(customs) | {concat, residual}
-    if any(user not in allowed for node in nodes for user in node.users):
-        raise ValueError("The block0 tail has additional consumers.")
-    positions = {node: i for i, node in enumerate(concat.graph.nodes)}
-    if any(positions[user] <= positions[concat] for user in residual.users):
-        raise ValueError("Previous flow is needed before the packed shader.")
-    return phase, residual
+    return phase, _match_previous_flow(concat, customs, nodes)
+
+
+def _match_direct_head_tail(concat, customs):
+    _, height, width, _ = _tensor_shape(concat)
+    nodes = set()
+    head = None
+    factor = None
+    for rescale, offset, channels in zip(concat.args[0][5:], (4, 5, 0), (1, 8, 4)):
+        if not _is_op(rescale, TOSA.RESCALE.default, 5):
+            raise ValueError("Expected a resized head rescale.")
+        resize = rescale.args[0]
+        if not _is_op(resize, TOSA.RESIZE.default, 4):
+            raise ValueError("Expected a resized head slice.")
+        source = resize.args[0]
+        if not _is_op(source, TOSA.SLICE.default, 3):
+            raise ValueError("Expected an NHWC head slice.")
+        current_head = source.args[0]
+        batch, h, w, c = _tensor_shape(current_head)
+        if batch != 1 or c != 13 or h <= 0 or w <= 0 or height % h or width % w:
+            raise ValueError("Expected a 13-channel integer-scale head.")
+        current_factor = height // h
+        if current_factor not in (2, 4, 8) or width // w != current_factor:
+            raise ValueError("Expected a uniform 2x, 4x or 8x head resize.")
+        if head is not None and (head is not current_head or factor != current_factor):
+            raise ValueError("Expected one shared head for all state slices.")
+        head, factor = current_head, current_factor
+        denominator = 2 * factor
+        if (
+            current_head.meta["val"].dtype != torch.int8
+            or _shape_values(source.args[1]) != [0, 0, 0, offset]
+            or _shape_values(source.args[2]) != [1, h, w, channels]
+            or resize.meta["val"].dtype != torch.int32
+            or resize.kwargs != {"resize_mode": "bilinear"}
+            or [_shape_values(v) for v in resize.args[1:]]
+            != [
+                [denominator, 2, denominator, 2],
+                [1 - factor, 1 - factor],
+                [factor - 1, factor - 1],
+            ]
+            or rescale.args[1:] != (torch.int8, [1.0 / denominator**2], 0, 0)
+            or any(rescale.kwargs.values())
+        ):
+            raise ValueError("Expected the original signed integer head resize.")
+        nodes.update((source, resize, rescale))
+    return (head, _match_previous_flow(concat, customs, nodes)), factor
+
+
+def _match_head_tail(program, concat, customs):
+    try:
+        tail = _match_block0_tail(concat, customs)
+        parameters = _phase_major_parameters(program, tail[0])
+        return tail, parameters, True, 2
+    except ValueError:
+        tail, factor = _match_direct_head_tail(concat, customs)
+        return tail, None, False, factor
 
 
 def _phase_major_parameters(program, phase):
@@ -348,6 +407,8 @@ def _phase_major_parameters(program, phase):
 
 
 def _reorder_pixel_shuffle_output(program, phase, parameters):
+    if parameters is None:
+        return
     producer, weight, bias, scales = parameters
     graph = phase.graph
     constants = []
@@ -368,7 +429,7 @@ def _reorder_pixel_shuffle_output(program, phase, parameters):
 class PackRifeWarpsAndConcatPass(ArmPass):
     """Pack four private RIFE warps and their C28 concat into one C32 shader.
 
-    Fuse a compatible block0 PixelShuffle and state preparation into the shader.
+    Fuse compatible block0 head resizing and state preparation into the shader.
     Reorder block0 output channels during export so each PixelShuffle read
     accesses 13 contiguous channels. Keep sampling quantization boundaries.
     Four zero weight columns make the following convolution ignore padding.
@@ -489,18 +550,25 @@ class PackRifeWarpsAndConcatPass(ArmPass):
             return PassResult(graph_module, False)
 
         phase_parameters = None
+        pixel_shuffle = True
+        resize_scale = 2
         try:
-            tail = _match_block0_tail(concat, customs)
-            phase_parameters = _phase_major_parameters(exported_program, tail[0])
+            tail, phase_parameters, pixel_shuffle, resize_scale = _match_head_tail(
+                exported_program, concat, customs
+            )
         except ValueError as error:
-            logger.debug("Keeping the original PixelShuffle layout: %s", error)
+            logger.debug("Keeping the original head layout: %s", error)
             tail = None
         if tail is None:
             payload = build_packed_warp_payload(payloads, timestep)
             shader_inputs = [*images, *concat.args[0][5:]]
         else:
             payload = build_packed_warp_payload(
-                payloads, timestep, fuse_block0_tail=True
+                payloads,
+                timestep,
+                fuse_block0_tail=True,
+                pixel_shuffle=pixel_shuffle,
+                resize_scale=resize_scale,
             )
             shader_inputs = [*images, tail[0]]
             _reorder_pixel_shuffle_output(exported_program, tail[0], phase_parameters)

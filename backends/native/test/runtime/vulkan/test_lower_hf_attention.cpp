@@ -375,6 +375,34 @@ TEST(LowerHFAttentionTest, RejectsInterleavedRope) {
   EXPECT_NO_THROW(validate_graph(graph));
 }
 
+// Exported graphs omit default arguments, so attention_scale can sit at the
+// position of an omitted interleaved.
+TEST(LowerHFAttentionTest, ReadsNamedRopeInputsAfterOmittedDefault) {
+  Graph graph = make_graph();
+  std::vector<NamedArgument>& rope_inputs = graph.node(10).inputs;
+  rope_inputs.erase(rope_inputs.begin() + 3);
+
+  EXPECT_EQ(lower_hf_attention(graph), 1);
+}
+
+TEST(LowerHFAttentionTest, ReadsUnnamedInputsByPosition) {
+  Graph graph = make_graph();
+  for (Node& node : graph.nodes) {
+    for (NamedArgument& input : node.inputs) {
+      input.name.clear();
+    }
+  }
+
+  EXPECT_EQ(lower_hf_attention(graph), 1);
+}
+
+TEST(LowerHFAttentionTest, RejectsSdpaInputOfUnknownName) {
+  Graph graph = make_graph();
+  graph.node(24).inputs[5] = {.name = "causal", .arg = BoolArg{true}};
+
+  EXPECT_EQ(lower_hf_attention(graph), 0);
+}
+
 TEST(LowerHFAttentionTest, RejectsNonDefaultScale) {
   Graph graph = make_graph();
   graph.node(24).inputs[6].arg = FloatArg{0.5};

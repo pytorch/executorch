@@ -766,6 +766,8 @@ namespace {
 ET_NODISCARD Error validate_input_tensor_layout(
     const executorch::aten::Tensor& t_dst,
     const executorch::aten::Tensor& t_src,
+    [[maybe_unused]] Span<const executorch::aten::DimOrderType>
+        expected_dim_order,
     size_t input_idx) {
   const auto dim = t_src.dim();
   if (dim == 0 || t_src.numel() == 0) {
@@ -802,7 +804,27 @@ ET_NODISCARD Error validate_input_tensor_layout(
   }
 #endif
 
-  const auto dst_strides = t_dst.strides();
+  auto dst_strides = t_dst.strides();
+#ifdef USE_ATEN_LIB
+  std::array<executorch::aten::StridesType, kTensorDimensionLimit>
+      expected_strides{};
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(dim) <= kTensorDimensionLimit &&
+          expected_dim_order.size() == static_cast<size_t>(dim),
+      InvalidArgument,
+      "Input %" ET_PRIsize_t " has unsupported rank %zd.",
+      input_idx,
+      dim);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      dim_order_to_stride(
+          t_src.sizes().data(),
+          expected_dim_order.data(),
+          dim,
+          expected_strides.data()),
+      "Failed to compute expected strides for input %" ET_PRIsize_t,
+      input_idx);
+  dst_strides = {expected_strides.data(), static_cast<size_t>(dim)};
+#endif
   bool matches = true;
   bool src_is_contiguous = true;
   int64_t contiguous_stride = 1;
@@ -1464,9 +1486,16 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
     ET_CHECK_OK_OR_RETURN_ERROR(
-        validate_input_tensor_layout(t_dst, t_src, input_idx),
+        validate_input_tensor_layout(
+            t_dst, t_src, tensor_meta->dim_order(), input_idx),
         "Error validating tensor layout at input %" ET_PRIsize_t,
         input_idx);
+#ifdef USE_ATEN_LIB
+    // resize_tensor() reset t_dst to contiguous strides, but its data is about
+    // to be t_src's bytes, which kernels must read with t_src's strides.
+    t_dst.unsafeGetTensorImpl()->set_sizes_and_strides(
+        t_src.sizes(), t_src.strides());
+#endif
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),

@@ -10,6 +10,9 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import sympy  # type: ignore[import-untyped]
 import torch
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
 from executorch.backends.arm._passes.resolve_view_copy_inferred_dim_pass import (
     ResolveViewCopyInferredDimPass,
 )
@@ -615,3 +618,69 @@ def test_symbolic_to_tosa_shapes_rewrites_nested_symbolic_expression() -> None:
         == exir_ops.backend.tosa.DIV_FLOOR_SHAPE.default
     )
     graph_module.graph.lint()
+
+
+def test_convert_squeezes_to_view_normalizes_negative_squeeze_dim() -> None:
+    class SqueezeLastDim(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.squeeze(x, (-1,))
+
+    edge_model = to_edge(
+        export(
+            SqueezeLastDim(),
+            (torch.randn(2, 1),),
+            dynamic_shapes={"x": {0: Dim("width", min=1, max=5)}},
+        )
+    )
+    result = ConvertSqueezesToViewPass()(edge_model.exported_program().graph_module)
+    assert result is not None
+    view_node = _single_node_with_target(
+        result.graph_module, exir_ops.edge.aten.view_copy.default
+    )
+
+    view_shape = cast(list[Any], view_node.args[1])
+    assert len(view_shape) == 1
+
+
+def test_convert_squeezes_to_view_preserves_non_singleton_dims() -> None:
+    class SqueezeNonSingletonDim(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.squeeze(x, (1,))
+
+    edge_model = to_edge(
+        export(
+            SqueezeNonSingletonDim(),
+            (torch.randn(2, 3),),
+            dynamic_shapes={"x": {0: Dim("width", min=1, max=5)}},
+        )
+    )
+    result = ConvertSqueezesToViewPass()(edge_model.exported_program().graph_module)
+    assert result is not None
+    view_node = _single_node_with_target(
+        result.graph_module, exir_ops.edge.aten.view_copy.default
+    )
+
+    view_shape = cast(list[Any], view_node.args[1])
+    assert len(view_shape) == 2
+
+
+def test_convert_squeezes_to_view_normalizes_negative_unsqueeze_dim() -> None:
+    class UnsqueezeLastDim(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.unsqueeze(x, -1)
+
+    edge_model = to_edge(
+        export(
+            UnsqueezeLastDim(),
+            (torch.randn(2, 3),),
+            dynamic_shapes={"x": {0: Dim("width", min=1, max=5)}},
+        )
+    )
+    result = ConvertSqueezesToViewPass()(edge_model.exported_program().graph_module)
+    assert result is not None
+    view_node = _single_node_with_target(
+        result.graph_module, exir_ops.edge.aten.view_copy.default
+    )
+
+    view_shape = cast(list[Any], view_node.args[1])
+    assert view_shape[-1] == 1

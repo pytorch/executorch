@@ -153,6 +153,65 @@ final class SwiftSpecializationTests: XCTestCase {
       loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
   }
 
+  func testComputeUnitsMapToSDKSpecializationOptions() throws {
+    let expected: [(ETCoreAIComputeUnit, SpecializationOptions)] = [
+      (.default, .default),
+      (.cpuOnly, .cpuOnly),
+      (.preferCPU, SpecializationOptions(preferredComputeUnitKind: .cpu)),
+      (.preferGPU, SpecializationOptions(preferredComputeUnitKind: .gpu)),
+      (.preferNeuralEngine, SpecializationOptions(preferredComputeUnitKind: .neuralEngine)),
+    ]
+    var variants: [(options: SpecializationOptions, identifier: String)] = []
+    var report: [String] = []
+    for (unit, options) in expected {
+      XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
+      for reshapes in [false, true] {
+        var expectedOptions = options
+        expectedOptions.expectFrequentReshapes = reshapes
+        XCTAssertEqual(
+          ETCoreAISwiftModelLoader.specializationOptions(
+            for: unit, expectFrequentReshapes: reshapes),
+          expectedOptions)
+        let loader = try XCTUnwrap(
+          ETCoreAISwiftModelLoader(computeUnit: unit, expectFrequentReshapes: reshapes))
+        XCTAssertEqual(
+          loader.specializationIdentifier,
+          try CoreAISpecialization(options: expectedOptions).identifier)
+        variants.append((expectedOptions, loader.specializationIdentifier))
+        report.append(
+          "\(unit.rawValue) reshapes=\(reshapes): \(expectedOptions) -> "
+            + loader.specializationIdentifier)
+      }
+    }
+    assertIdentifiersMatchExactlyWhenOptionsMatch(variants, report: report)
+    XCTAssertEqual(
+      ETCoreAISwiftModelLoader(computeUnit: .default, expectFrequentReshapes: false)?
+        .specializationIdentifier,
+      "default")
+    XCTAssertNil(
+      ETCoreAISwiftModelLoader(
+        computeUnit: ETCoreAIComputeUnit(rawValue: 99)!, expectFrequentReshapes: false))
+  }
+
+  // The SDK limits allowed units to the hardware (a CPU-only machine makes
+  // cpuOnly equal default), so identifiers must match exactly when options do.
+  private func assertIdentifiersMatchExactlyWhenOptionsMatch(
+    _ variants: [(options: SpecializationOptions, identifier: String)],
+    report: [String],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    for a in variants.indices {
+      for b in variants.indices where a < b {
+        XCTAssertEqual(
+          variants[a].identifier == variants[b].identifier,
+          variants[a].options == variants[b].options,
+          "variants \(a) and \(b):\n" + report.joined(separator: "\n"),
+          file: file, line: line)
+      }
+    }
+  }
+
   func testDescriptorIsVersionedAndUsesStableComputeUnitNames() throws {
     var options = SpecializationOptions(preferredComputeUnitKind: .gpu)
     options.expectFrequentReshapes = !SpecializationOptions.default.expectFrequentReshapes
