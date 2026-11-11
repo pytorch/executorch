@@ -41,6 +41,7 @@ from typing import Callable, Optional, Sequence
 
 import torch
 import triton
+from executorch.backends.cuda._cpu_count import available_cpu_count
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import splitk_reduce
 from torch.library import triton_op, wrap_triton
 
@@ -180,7 +181,7 @@ def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
 
 
 def _compile_workers() -> int:
-    return min(_MAX_COMPILE_THREADS, os.cpu_count() or 1)
+    return min(_MAX_COMPILE_THREADS, available_cpu_count())
 
 
 _PROCESS_POOL_LOCK = threading.Lock()
