@@ -276,6 +276,8 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
+          - test_arm_backend: test_run_ethos_u85_clang
+            arm_setup_args: --target-toolchain clang
           - test_arm_backend: test_smaller_stories_llama_tosa
           - test_arm_backend: test_model_smollm2_135M_ethos_u85
           - test_arm_backend: test_runtime_ethos_u
@@ -298,7 +300,8 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        ARM_SETUP_ARGS=(${{ matrix.arm_setup_args }})
+        .ci/scripts/setup-arm-baremetal-tools.sh "${ARM_SETUP_ARGS[@]}"
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
