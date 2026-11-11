@@ -107,17 +107,6 @@ def test_the_openvino_delegate_runs() -> None:
         )
         return
     subprocess.run(
-        install
-        + [
-            "-r",
-            str(
-                Path(test_base._repository_root_dir())
-                / "backends/openvino/requirements.txt"
-            ),
-        ],
-        check=True,
-    )
-    subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "--openvino"], check=True
     )
     importlib.invalidate_caches()
