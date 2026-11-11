@@ -68,14 +68,21 @@ def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
     return best
 
 
-def _possible_stop_tail(text: str, stops: list[str]) -> int:
-    keep = 0
+def _safe_emit_end(text: str, stops: list[str]) -> int:
+    split = len(text)
     for stop in stops:
-        for size in range(min(len(text), len(stop) - 1), keep, -1):
-            if text.endswith(stop[:size]):
-                keep = size
+        if not stop:
+            continue
+        start = max(0, len(text) - len(stop) + 1)
+        while start < split:
+            start = text.find(stop[0], start, split)
+            if start < 0:
                 break
-    return keep
+            if stop.startswith(text[start:]):
+                split = start
+                break
+            start += 1
+    return split
 
 
 class _ChatStream:
@@ -383,29 +390,41 @@ class ServingChat:
         cut = _earliest_stop(text, stops)
         return text[:cut] if cut is not None else text
 
-    def _trim_stop_fragment(self, text: str, req: ChatCompletionRequest) -> str:
+    def _trim_stop_fragment(
+        self, text: str, req: ChatCompletionRequest, matched_stop: Optional[str]
+    ) -> str:
         # A native string stop inside a special token can remove its remainder.
-        # Hide only suffixes that would be completed by a requested stop.
+        # Hide only suffixes completed by the stop that actually matched.
+        if not matched_stop:
+            return text
         cut = len(text)
         for marker in self._visible_stops(req):
-            for stop in self._request_stops(req):
-                at = marker.find(stop)
-                if at > 0 and text.endswith(marker[:at]):
-                    cut = min(cut, len(text) - at)
+            at = marker.find(matched_stop)
+            if at > 0 and text.endswith(marker[:at]):
+                cut = min(cut, len(text) - at)
         return text[:cut]
 
     def _truncate_raw(
-        self, text: str, req: ChatCompletionRequest, stopped: bool = False
+        self,
+        text: str,
+        req: ChatCompletionRequest,
+        stopped: bool = False,
+        matched_stop: Optional[str] = None,
     ) -> str:
         """Cut raw model output at the earliest special token or request stop
         sequence BEFORE tool parsing, so a tool call (or any text) past the stop
         boundary is neither parsed nor emitted."""
         visible_cut = _earliest_stop(text, self._visible_stops(req))
-        request_cut = _earliest_stop(text, self._request_stops(req))
+        request_stops = self._request_stops(req)
+        request_cut = _earliest_stop(text, request_stops)
+        if request_cut is not None:
+            matched_stop = next(
+                stop for stop in request_stops if text.startswith(stop, request_cut)
+            )
         cuts = [cut for cut in (visible_cut, request_cut) if cut is not None]
         text = text[: min(cuts)] if cuts else text
         return (
-            self._trim_stop_fragment(text, req)
+            self._trim_stop_fragment(text, req, matched_stop)
             if req.ignore_eos
             and stopped
             and (visible_cut is None or request_cut == min(cuts))
@@ -475,7 +494,7 @@ class ServingChat:
                 and (visible_cut is None or request_cut <= visible_cut)
             )
         )
-        raw_text = self._truncate_raw(text, req, stopped)
+        raw_text = self._truncate_raw(text, req, stopped, matched_stop)
         reasoning, text = self._split_reasoning(raw_text)
         tool_calls = None
         if self._tools_active(req):
@@ -564,10 +583,10 @@ class ServingChat:
                 async for _ in stream:  # drain so stats_cb fires
                     pass
                 return
-            keep = _possible_stop_tail(buf, stops)
-            if len(buf) > keep:
-                yield buf[:-keep] if keep else buf
-            buf = buf[-keep:] if keep else ""
+            split = _safe_emit_end(buf, stops)
+            if split:
+                yield buf[:split]
+            buf = buf[split:]
         if buf:
             yield buf
 
@@ -1285,22 +1304,27 @@ class ServingChat:
                 if cut is not None:
                     text = buf[:cut]
                     if cut == request_cut:
-                        text = self._trim_stop_fragment(text, req)
+                        matched_stop = next(
+                            stop
+                            for stop in request_stops
+                            if buf.startswith(stop, request_cut)
+                        )
+                        text = self._trim_stop_fragment(text, req, matched_stop)
                     if text:
                         yield text
                     visible = False
                 else:
-                    keep = _possible_stop_tail(buf, visible_stops)
-                    if len(buf) > keep:
-                        yield buf[:-keep] if keep else buf
-                    buf = buf[-keep:] if keep else ""
+                    split = _safe_emit_end(buf, visible_stops)
+                    if split:
+                        yield buf[:split]
+                    buf = buf[split:]
                     continue
             # Continue watching request stops after the visible turn ends.
-            keep = _possible_stop_tail(buf, request_stops)
-            buf = buf[-keep:] if keep else ""
+            split = _safe_emit_end(buf, request_stops)
+            buf = buf[split:]
         if visible and buf:
             if stats.finish_reason == "stop":
-                buf = self._trim_stop_fragment(buf, req)
+                buf = self._trim_stop_fragment(buf, req, stats.matched_stop)
             if buf:
                 yield buf
 

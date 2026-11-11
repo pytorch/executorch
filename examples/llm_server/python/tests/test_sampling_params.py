@@ -607,6 +607,7 @@ def test_ignore_eos_request_stop_inside_terminator_never_leaks_fragment(
     client, _ = make_client(
         tokens=tokens,
         finish_reason="stop",
+        matched_stop="end",
         streaming_parser_factory=Parser if mode == "parser" else None,
         content_filter=(lambda text: text) if mode == "filter" else None,
         reasoning_extractor=(

@@ -292,7 +292,9 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
     assert serving._transcript._turns["s"][0]["ids"] is None
 
 
-def _replay_stream_cleanup(chunks, stop=None, finish_reason="length", ignore_eos=True):
+def _replay_stream_cleanup(
+    chunks, stop=None, finish_reason="length", ignore_eos=True, matched_stop=""
+):
     serving, _ = _serving([])
     request = ChatCompletionRequest(
         model="test-model",
@@ -334,7 +336,10 @@ def _replay_stream_cleanup(chunks, stop=None, finish_reason="length", ignore_eos
 
         stream = (
             serving._clean_ignored_eos(
-                request, source, stop_hit, GenStats(finish_reason=finish_reason)
+                request,
+                source,
+                stop_hit,
+                GenStats(finish_reason=finish_reason, matched_stop=matched_stop),
             )
             if ignore_eos
             else serving._clean(source, serving._generation_stops(request), on_stop)
@@ -376,29 +381,90 @@ def test_stream_cleanup_releases_fragment_when_it_is_not_a_stop(ignore_eos):
 
 
 @pytest.mark.parametrize(
-    "text,stop,finish_reason,expected,stopped",
+    "text,stop,finish_reason,matched_stop,expected,stopped",
     [
-        ("猫 says hi<|im_end|>hidden", None, "length", "猫 says hi", False),
-        (f"Hi{FIM}hidden", None, "length", "Hi", False),
-        ("HiSTOPignored", "STOP", "length", "Hi", True),
-        ("Hi<|im_end|>hidden STOPignored", "STOP", "length", "Hi", True),
-        ("Hi<|im_end|>STOPignored", "<|im_end|>STOP", "length", "Hi", True),
-        ("Hi <|im_", None, "length", "Hi <|im_", False),
-        ("Hi <|im_", "end|>", "stop", "Hi ", False),
+        ("猫 says hi<|im_end|>hidden", None, "length", "", "猫 says hi", False),
+        (f"Hi{FIM}hidden", None, "length", "", "Hi", False),
+        ("HiSTOPignored", "STOP", "length", "", "Hi", True),
+        ("Hi<|im_end|>hidden STOPignored", "STOP", "length", "", "Hi", True),
+        ("Hi<|im_end|>STOPignored", "<|im_end|>STOP", "length", "", "Hi", True),
+        ("Hi <|im_", None, "length", "", "Hi <|im_", False),
+        ("Hi <|im_", "end|>", "stop", "end|>", "Hi ", False),
+        ("Hi <|im_XY", ["end|>", "XY"], "length", "", "Hi <|im_", True),
+        ("Hi <|im_XY", ["XY", "end|>"], "length", "", "Hi <|im_", True),
     ],
 )
 def test_ignored_eos_cleanup_across_chunk_boundaries(
-    text, stop, finish_reason, expected, stopped
+    text, stop, finish_reason, matched_stop, expected, stopped
 ):
     chunkings = [[text[:split], text[split:]] for split in range(len(text) + 1)]
     chunkings.append(list(text))
     for chunks in chunkings:
         emitted, stop_hit, cancellations = _replay_stream_cleanup(
-            chunks, stop=stop, finish_reason=finish_reason
+            chunks, stop=stop, finish_reason=finish_reason, matched_stop=matched_stop
         )
         assert "".join(part for _, part in emitted) == expected, chunks
         assert stop_hit == stopped, chunks
         assert cancellations == int(stopped), chunks
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        ["Hi <|im_XY"],
+        ["Hi <|im_", "XY"],
+        ["Hi <|im_X", "Y"],
+        list("Hi <|im_XY"),
+    ],
+)
+def test_ignored_eos_multiple_stops_preserve_unrelated_marker_fragment(
+    stream, chunks, make_client
+):
+    client, _ = make_client(
+        tokens=chunks, special_tokens=_SpecialTok.all_special_tokens
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "ignore_eos": True,
+            "stop": ["end|>", "XY"],
+            "stream": stream,
+        },
+    )
+    assert response.status_code == 200
+    if stream:
+        content, finish = _sse_content(response.text)
+    else:
+        choice = response.json()["choices"][0]
+        content, finish = choice["message"]["content"], choice["finish_reason"]
+    assert content == "Hi <|im_"
+    assert finish == "stop"
+
+
+@pytest.mark.parametrize(
+    "matched_stop,expected",
+    [("end|>", "Hi "), ("XY", "Hi <|im_"), ("", "Hi <|im_")],
+)
+def test_native_stop_fragment_uses_only_reported_match(matched_stop, expected):
+    stops = ["end|>", "XY"]
+    emitted, _, _ = _replay_stream_cleanup(
+        ["Hi ", "<|im_"],
+        stop=stops,
+        finish_reason="stop",
+        matched_stop=matched_stop,
+    )
+    assert "".join(part for _, part in emitted) == expected
+    serving, _ = _serving([])
+    request = ChatCompletionRequest(
+        model="test-model",
+        messages=[{"role": "user", "content": "hi"}],
+        ignore_eos=True,
+        stop=stops,
+    )
+    assert serving._truncate_raw("Hi <|im_", request, True, matched_stop) == expected
 
 
 @pytest.mark.parametrize(
