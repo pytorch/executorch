@@ -23,10 +23,6 @@ from executorch.exir._serialize._named_data_store import (
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_api import (
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
@@ -75,6 +71,9 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -826,8 +825,8 @@ def _generate_edge_program(
     program = remove_unused_parameters_pass(program)
 
     if not config._skip_dim_order:
-        # Normalize constants, buffers and parameters before partitioning, so a
-        # delegate sees the layout the program stores, and before
+        # Normalize constants, buffers, parameters and inputs before
+        # partitioning, so a delegate sees the layout the program stores, and before
         # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
         # represent arbitrary dim orders.
         program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
@@ -884,8 +883,8 @@ def _generate_edge_program(
 
     # Normalize tensor constants introduced by the preceding passes. With
     # _skip_dim_order this is the only call, so it fixes the layout of
-    # parameters, buffers and constants, but ops computed from them keep the
-    # old strides.
+    # parameters, buffers, constants and inputs, but ops computed from them
+    # keep the old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1253,6 +1252,8 @@ def _gen_edge_manager_for_partitioners(
                     _restore_transformed_ops_to_aten_ops(program)
             ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
 
+        # Edge programs have no complex dtypes for ops such as mul.
+        ReplaceComplexWithRealPass()(program)
         edge_programs[name] = _generate_edge_program(
             config,
             program,
@@ -1344,6 +1345,14 @@ def to_edge_transform_and_lower(  # noqa: C901
     or wrong behavior.
 
     This API is the primary recommended way to lower to the CPU based XNNPack backend.
+
+    Unlike to_edge, it replaces complex numbers with real numbers before it builds the
+    Edge programs, since the Edge dialect has no complex dtypes for ops such as mul. A
+    complex tensor becomes a real tensor with a last dim of size 2 that holds its real and
+    imaginary parts, as torch.view_as_real gives. This includes complex constants,
+    parameters and buffers, so the returned programs store them in that layout. A program
+    that the pass cannot rewrite completely keeps all its complex numbers. See
+    ReplaceComplexWithRealPass.
 
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
@@ -1712,6 +1721,13 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             specified subgraphs lowered.
         """
+        # backend_api imports executorch.exir.program (via program._fake_program),
+        # so importing it at module scope is circular.
+        from executorch.exir.backend.backend_api import (
+            MethodProgramsPartitionerSpec,
+            to_backend,
+        )
+
         new_edge_programs: Dict[str, ExportedProgram] = {}
         method_to_partitioner: Dict[str, Partitioner] = {}
         if not isinstance(partitioner, dict):

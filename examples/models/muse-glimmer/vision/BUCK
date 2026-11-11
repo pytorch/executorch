@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "preprocess",
+    exported_headers = ["preprocess.h"],
+    header_namespace = "executorch/examples/models/muse-glimmer/vision",
+    visibility = ["PUBLIC"],
+    exported_deps = [
+        "fbsource//third-party/stb:stb-no-symbols",
+        "//executorch/extension/tensor:tensor",
+    ],
+)

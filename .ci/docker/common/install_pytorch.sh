@@ -98,12 +98,26 @@ torch.linalg.qr(torch.randn(4, 4))
 ")
 
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
+  TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION:-release/2.11}
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.29
+  TORCHVISION_VERSION=${TORCHVISION_VERSION:-release/0.29}
   export TORCHVISION_VERSION
 
   install_domains
+
+  if [[ "${TORCHCI_REPORTS:-}" == "1" ]]; then
+    (cd / && conda_run python -c '
+import os
+import torch
+from torch.testing._internal.torchci import environment, plugin, report
+
+if torch.version.git_version != os.environ["TORCH_VERSION"]:
+    raise RuntimeError("Installed torch differs from the image source pin")
+if report.SCHEMA_VERSION != "1.0":
+    raise RuntimeError("The image requires torchci report schema 1.0")
+environment.capture()
+')
+  fi
 
   popd || true
   # Clean up the cloned PyTorch repo to reduce the Docker image size

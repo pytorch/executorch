@@ -20,8 +20,6 @@
 
 #define LOCAL_WG_SIZE 64
 
-#define op(X, A, B) ${OPERATOR}
-
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -30,6 +28,8 @@ ${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_tensor(4, "r", "t_residual", DTYPE, "texture3d")}
+${layout_declare_tensor(5, "r", "t_scale", DTYPE, "texture2d")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_limits;
@@ -41,11 +41,20 @@ layout(push_constant) uniform restrict Block {
   ivec2 overlay_region;
   int in_group_size;
   int dummy_padding;
-  float out_min;
-  float out_max;
+  float activation_a;
+  float activation_b;
+  float residual_alpha;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+${layout_declare_spec_const(C, "bool", "has_activation", "false")}
+${layout_declare_spec_const(C, "int", "activation_op", "0")}
+${layout_declare_spec_const(C, "bool", "has_residual", "false")}
+${layout_declare_spec_const(C, "bool", "has_scale", "false")}
+${layout_declare_spec_const(C, "int", "residual_op", "0")}
+
+#include "conv2d_epilogue.glslh"
 
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
@@ -125,11 +134,16 @@ void main() {
   }
 
   const VEC4_T bias = texelFetch(t_bias, ivec2(pos.z, 0), 0);
+  const vec4 scale =
+      has_scale ? texelFetch(t_scale, ivec2(pos.z, 0), 0) : vec4(1);
   for (int y = 0; y < BATCH_SIZE_Y; y++) {
     for (int x = 0; x < BATCH_SIZE_X; x++) {
       const ivec3 out_pos = ivec3(pos.x + x, pos.y + y, pos.z);
       if (all(lessThan(out_pos.xy, out_limits.xy))) {
-        imageStore(t_out, out_pos, op(sum[y * BATCH_SIZE_X + x] + bias, out_min, out_max));
+        imageStore(
+            t_out,
+            out_pos,
+            apply_epilogue(vec4(sum[y * BATCH_SIZE_X + x] + bias), out_pos, scale));
       }
     }
   }

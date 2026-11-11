@@ -328,7 +328,7 @@ https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
 Setup:
 
 ```
-./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl --fvp corstone1000
 source ./examples/arm/arm-scratch/setup_path.sh
 ```
 
@@ -340,7 +340,8 @@ Build:
   --build_type=Debug
 ```
 
-Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+Note: setup selects the linux-musl toolchain and the Corstone-1000 FVP, which is
+not installed by default; build uses the aarch64-linux-musl GCC toolchain name.
 
 If your Yocto image enables the dropbear SSH server, you can copy the
 `executor_runner` binary into the running FVP via scp:
@@ -485,7 +486,7 @@ cp backends/arm/scripts/pre-push .git/hooks/
 
 The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
 
-- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. Also pass `compile_config=EdgeCompileConfig(_check_ir_validity=False)`, as the Arm tools do: these passes can leave a `cat` or `stack` with both int64 and int32 inputs, which the edge dialect check rejects.
 - For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
 List of model specific and optional passes:

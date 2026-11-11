@@ -1,0 +1,193 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Element-wise unary ops, selected by an op type argument.
+ *
+ * The including shader defines:
+ * - IN_T and OUT_T: operand and result types
+ * - PARAM_T: type of the op parameters A and B (clamp bounds, hardshrink
+ *   thresholds, leaky_relu slope)
+ * - UNARY_OP_IS_FLOAT if the operands are floating point; integer shaders
+ *   compile in clamp only
+ * - UNARY_OP_IS_BITWISE to compile in bitwise_not only
+ */
+
+#ifndef UNARY_OP_GLSLH
+#define UNARY_OP_GLSLH
+
+// Values of op_type. Must match UnaryOpType in UnaryOp.h.
+#define UNARY_OP_CLAMP 0
+#define UNARY_OP_ABS 1
+#define UNARY_OP_COS 2
+#define UNARY_OP_EXP 3
+#define UNARY_OP_GELU 4
+#define UNARY_OP_GELU_ERF 5
+#define UNARY_OP_NEG 6
+#define UNARY_OP_SIGMOID 7
+#define UNARY_OP_SIN 8
+#define UNARY_OP_SQRT 9
+#define UNARY_OP_RSQRT 10
+#define UNARY_OP_TANH 11
+#define UNARY_OP_HARDSHRINK 12
+#define UNARY_OP_HARDSWISH 13
+#define UNARY_OP_HARDSIGMOID 14
+#define UNARY_OP_LEAKY_RELU 15
+#define UNARY_OP_LOG10 16
+#define UNARY_OP_ROUND 17
+#define UNARY_OP_TAN 18
+#define UNARY_OP_BITWISE_NOT 19
+#define UNARY_OP_RELU 20
+
+#ifdef UNARY_OP_IS_FLOAT
+float gelu_erf(float x) {
+  // Abramowitz and Stegun 7.1.26: maximum absolute erf error is 1.5e-7.
+  const float a = abs(x) * 0.7071067811865475;
+  const float t = 1.0 / (1.0 + 0.3275911 * a);
+  const float polynomial =
+      (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
+        0.284496736) *
+           t +
+       0.254829592) *
+      t;
+  const float erf = sign(x) * (1.0 - polynomial * exp(-a * a));
+  return 0.5 * x * (1.0 + erf);
+}
+
+vec4 gelu_erf(vec4 tex) {
+  return vec4(
+      gelu_erf(tex.x), gelu_erf(tex.y), gelu_erf(tex.z), gelu_erf(tex.w));
+}
+
+float hardswish(float x) {
+  if (x <= -3) {
+    return 0;
+  } else if (x >= 3) {
+    return x;
+  } else {
+    return x * (x + 3) / 6;
+  }
+}
+
+vec4 hardswish(vec4 tex) {
+  return vec4(
+      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.w));
+}
+
+float hardshrink(float x, float lambda, float neg_lambda) {
+  return x * (float(x > lambda) + float(x < neg_lambda));
+}
+
+vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
+  return tex *
+      (vec4(greaterThan(tex, vec4(lambda))) +
+       vec4(lessThan(tex, vec4(neg_lambda))));
+}
+
+float hardsigmoid(float x) {
+  return mix(float(x >= 0.0), x / 6 + 0.5, float(abs(x) <= 3.0));
+}
+
+vec4 hardsigmoid(vec4 tex) {
+  return vec4(
+      hardsigmoid(tex.x),
+      hardsigmoid(tex.y),
+      hardsigmoid(tex.z),
+      hardsigmoid(tex.w));
+}
+
+vec4 leaky_relu(vec4 tex, float negative_slope) {
+  return mix(tex * negative_slope, tex, greaterThan(tex, vec4(0)));
+}
+#endif
+
+// Whether the op maps zero to zero for any parameters, so that zero padding
+// lanes stay zero without masking.
+bool unary_op_preserves_zero(const int op_type) {
+  switch (op_type) {
+    case UNARY_OP_ABS:
+    case UNARY_OP_GELU:
+    case UNARY_OP_GELU_ERF:
+    case UNARY_OP_NEG:
+    case UNARY_OP_SIN:
+    case UNARY_OP_SQRT:
+    case UNARY_OP_TANH:
+    case UNARY_OP_HARDSHRINK:
+    case UNARY_OP_HARDSWISH:
+    case UNARY_OP_ROUND:
+    case UNARY_OP_TAN:
+    case UNARY_OP_RELU:
+      return true;
+    default:
+      return false;
+  }
+}
+
+OUT_T apply_unary_op(
+    const int op_type,
+    const IN_T X,
+    const PARAM_T A,
+    const PARAM_T B) {
+  switch (op_type) {
+#if defined(UNARY_OP_IS_BITWISE)
+    default: // UNARY_OP_BITWISE_NOT
+      return OUT_T(1 - X);
+#else
+#ifdef UNARY_OP_IS_FLOAT
+    case UNARY_OP_ABS:
+      return OUT_T(abs(X));
+    case UNARY_OP_COS:
+      return OUT_T(cos(X));
+    case UNARY_OP_EXP:
+      return OUT_T(exp(X));
+    case UNARY_OP_GELU:
+      return OUT_T(
+          0.5 * X *
+          (1 +
+           tanh(clamp(
+               sqrt(2 / 3.141593) * (X + 0.044715 * X * X * X),
+               -15.0,
+               15.0))));
+    case UNARY_OP_GELU_ERF:
+      return OUT_T(gelu_erf(X));
+    case UNARY_OP_NEG:
+      return OUT_T(-X);
+    case UNARY_OP_SIGMOID:
+      return OUT_T(1 / (1 + exp(-1 * X)));
+    case UNARY_OP_SIN:
+      return OUT_T(sin(X));
+    case UNARY_OP_SQRT:
+      return OUT_T(sqrt(X));
+    case UNARY_OP_RSQRT:
+      return OUT_T(1 / sqrt(X));
+    case UNARY_OP_TANH:
+      return OUT_T(tanh(clamp(X, -15.0, 15.0)));
+    case UNARY_OP_HARDSHRINK:
+      return OUT_T(hardshrink(X, A, B));
+    case UNARY_OP_HARDSWISH:
+      return OUT_T(hardswish(X));
+    case UNARY_OP_HARDSIGMOID:
+      return OUT_T(hardsigmoid(X));
+    case UNARY_OP_LEAKY_RELU:
+      return OUT_T(leaky_relu(X, A));
+    case UNARY_OP_LOG10:
+      return OUT_T(log(X) * 0.4342944819);
+    case UNARY_OP_ROUND:
+      return OUT_T(round(X));
+    case UNARY_OP_TAN:
+      return OUT_T(tan(X));
+    case UNARY_OP_RELU:
+      return OUT_T(max(X, IN_T(0)));
+#endif
+    default: // UNARY_OP_CLAMP
+      return OUT_T(clamp(X, A, B));
+#endif
+  }
+}
+
+#endif // UNARY_OP_GLSLH

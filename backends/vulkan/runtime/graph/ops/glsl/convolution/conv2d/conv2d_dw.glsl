@@ -12,8 +12,6 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
-#define op(X, A, B) ${OPERATOR}
-
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -22,17 +20,25 @@ ${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
-${layout_declare_ubo(4, "ivec3", "out_limits")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
-${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
-${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
+${layout_declare_tensor(4, "r", "t_residual", DTYPE, "texture3d")}
+${layout_declare_tensor(5, "r", "t_scale", DTYPE, "texture2d")}
+${layout_declare_ubo(6, "ivec3", "out_limits")}
+${layout_declare_ubo(7, "ivec4", "in_sizes")}
+${layout_declare_ubo(8, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+${layout_declare_ubo(9, "ivec2", "overlay_region", "int", "in_group_size")}
+${layout_declare_ubo(10, "float", "activation_a", "float", "activation_b", "float", "residual_alpha")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "dispatch.glslh"
 
-${layout_declare_spec_const(C, "int", "ngroups", "1")}
+${layout_declare_spec_const(C, "bool", "has_activation", "false")}
+${layout_declare_spec_const(C, "int", "activation_op", "0")}
+${layout_declare_spec_const(C, "bool", "has_residual", "false")}
+${layout_declare_spec_const(C, "bool", "has_scale", "false")}
+${layout_declare_spec_const(C, "int", "residual_op", "0")}
+
+#include "conv2d_epilogue.glslh"
 
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
@@ -79,5 +85,7 @@ void main() {
     }
   }
 
-  imageStore(t_out, pos, op(sum, out_min, out_max));
+  const vec4 scale =
+      has_scale ? texelFetch(t_scale, ivec2(pos.z, 0), 0) : vec4(1);
+  imageStore(t_out, pos, apply_epilogue(vec4(sum), pos, scale));
 }

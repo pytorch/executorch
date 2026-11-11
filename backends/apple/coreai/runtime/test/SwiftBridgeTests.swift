@@ -153,6 +153,65 @@ final class SwiftSpecializationTests: XCTestCase {
       loader.specializationIdentifier, try CoreAISpecialization(options: options).identifier)
   }
 
+  func testComputeUnitsMapToSDKSpecializationOptions() throws {
+    let expected: [(ETCoreAIComputeUnit, SpecializationOptions)] = [
+      (.default, .default),
+      (.cpuOnly, .cpuOnly),
+      (.preferCPU, SpecializationOptions(preferredComputeUnitKind: .cpu)),
+      (.preferGPU, SpecializationOptions(preferredComputeUnitKind: .gpu)),
+      (.preferNeuralEngine, SpecializationOptions(preferredComputeUnitKind: .neuralEngine)),
+    ]
+    var variants: [(options: SpecializationOptions, identifier: String)] = []
+    var report: [String] = []
+    for (unit, options) in expected {
+      XCTAssertEqual(ETCoreAISwiftModelLoader.specializationOptions(for: unit), options)
+      for reshapes in [false, true] {
+        var expectedOptions = options
+        expectedOptions.expectFrequentReshapes = reshapes
+        XCTAssertEqual(
+          ETCoreAISwiftModelLoader.specializationOptions(
+            for: unit, expectFrequentReshapes: reshapes),
+          expectedOptions)
+        let loader = try XCTUnwrap(
+          ETCoreAISwiftModelLoader(computeUnit: unit, expectFrequentReshapes: reshapes))
+        XCTAssertEqual(
+          loader.specializationIdentifier,
+          try CoreAISpecialization(options: expectedOptions).identifier)
+        variants.append((expectedOptions, loader.specializationIdentifier))
+        report.append(
+          "\(unit.rawValue) reshapes=\(reshapes): \(expectedOptions) -> "
+            + loader.specializationIdentifier)
+      }
+    }
+    assertIdentifiersMatchExactlyWhenOptionsMatch(variants, report: report)
+    XCTAssertEqual(
+      ETCoreAISwiftModelLoader(computeUnit: .default, expectFrequentReshapes: false)?
+        .specializationIdentifier,
+      "default")
+    XCTAssertNil(
+      ETCoreAISwiftModelLoader(
+        computeUnit: ETCoreAIComputeUnit(rawValue: 99)!, expectFrequentReshapes: false))
+  }
+
+  // The SDK limits allowed units to the hardware (a CPU-only machine makes
+  // cpuOnly equal default), so identifiers must match exactly when options do.
+  private func assertIdentifiersMatchExactlyWhenOptionsMatch(
+    _ variants: [(options: SpecializationOptions, identifier: String)],
+    report: [String],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    for a in variants.indices {
+      for b in variants.indices where a < b {
+        XCTAssertEqual(
+          variants[a].identifier == variants[b].identifier,
+          variants[a].options == variants[b].options,
+          "variants \(a) and \(b):\n" + report.joined(separator: "\n"),
+          file: file, line: line)
+      }
+    }
+  }
+
   func testDescriptorIsVersionedAndUsesStableComputeUnitNames() throws {
     var options = SpecializationOptions(preferredComputeUnitKind: .gpu)
     options.expectFrequentReshapes = !SpecializationOptions.default.expectFrequentReshapes
@@ -448,7 +507,7 @@ final class SwiftBridgeTests: XCTestCase {
     XCTAssertThrowsError(try CoreAITensorPayload.byteCount(shape: [1], scalarType: unsupported)) {
       XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
     }
-    XCTAssertThrowsError(try prepareOutput(NDArray(shape: [2], scalarType: .int32))) {
+    XCTAssertThrowsError(try prepareOutput(NDArray(shape: [2], scalarType: .int8))) {
       XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.unsupported.rawValue)
     }
   }
@@ -461,7 +520,7 @@ final class SwiftBridgeTests: XCTestCase {
       ] {
         let count = shape.reduce(1, *)
         let expected = (0..<(count * info.byteWidth)).map {
-          UInt8(truncatingIfNeeded: $0 * 73 + 255)
+          info.sdkType == .bool ? UInt8($0 % 2) : UInt8(truncatingIfNeeded: $0 * 73 + 255)
         }
         var array = NDArray(shape: shape, scalarType: info.sdkType, strides: strides)
         do {
@@ -498,6 +557,13 @@ final class SwiftBridgeTests: XCTestCase {
     XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [], scalarType: .float32), 4)
     XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [2, 3], scalarType: .float16), 12)
     XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [2, 0, 3], scalarType: .float32), 0)
+    XCTAssertEqual(try CoreAIScalarInfo.from(sdkType: .int32).bridgeType, .int32)
+    XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [], scalarType: .int32), 4)
+    XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [2, 3], scalarType: .int32), 24)
+    XCTAssertEqual(try CoreAIScalarInfo.from(sdkType: .bool).bridgeType, .bool)
+    XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [], scalarType: .bool), 1)
+    XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [2, 3], scalarType: .bool), 6)
+    XCTAssertEqual(try CoreAITensorPayload.byteCount(shape: [2, 0, 3], scalarType: .bool), 0)
     for shape in [[-1], [Int.max / 4, 8]] {
       XCTAssertThrowsError(try CoreAITensorPayload.byteCount(shape: shape, scalarType: .float32)) {
         XCTAssertEqual(($0 as NSError).domain, ETCoreAIErrorDomain)
@@ -536,6 +602,8 @@ final class SwiftBridgeTests: XCTestCase {
   func testInputsBorrowStorage() throws {
     try assertBorrows(Array((0..<12).map(Float.init)), scalarType: .float32)
     try assertBorrows(Array((0..<12).map(Float16.init)), scalarType: .float16)
+    try assertBorrows(Array((0..<12).map(Int32.init)), scalarType: .int32)
+    try assertBorrows((0..<12).map { $0 % 2 == 0 }, scalarType: .bool)
   }
 
   private func assertBorrows<T>(_ values: [T], scalarType: ETCoreAIScalarType) throws {
@@ -591,12 +659,15 @@ final class SwiftBridgeTests: XCTestCase {
   }
 
   func testPreparedOutputsRetainSDKStorageAndCopyIntoCallerSubranges() throws {
-    try assertOwnedOutput([Float(3), 7], scalarType: .float32)
-    try assertOwnedOutput([Float16(3), 7], scalarType: .float16)
+    try assertOwnedOutput([Float(3), 7], scalarType: .float32, sentinel: 99)
+    try assertOwnedOutput([Float16(3), 7], scalarType: .float16, sentinel: 99)
+    try assertOwnedOutput(
+      [Int32.min, -16_777_217, 16_777_217, Int32.max], scalarType: .int32, sentinel: 99)
+    try assertOwnedOutput([false, true, true, false], scalarType: .bool, sentinel: true)
   }
 
-  private func assertOwnedOutput<T: BinaryFloatingPoint & BitwiseCopyable>(
-    _ values: [T], scalarType: NDArray.ScalarType
+  private func assertOwnedOutput<T: Equatable & BitwiseCopyable>(
+    _ values: [T], scalarType: NDArray.ScalarType, sentinel: T
   ) throws {
     let output: ETCoreAITensor = try {
       var array = NDArray(shape: [values.count], scalarType: scalarType)
@@ -610,11 +681,11 @@ final class SwiftBridgeTests: XCTestCase {
     }()
     XCTAssertEqual(output.byteCount, UInt(values.count * MemoryLayout<T>.stride))
     for _ in 0..<2 {
-      var destination = [T](repeating: 99, count: values.count + 2)
+      var destination = [T](repeating: sentinel, count: values.count + 2)
       destination.withUnsafeMutableBytes { bytes in
         output.copyBytes(to: bytes.baseAddress!.advanced(by: MemoryLayout<T>.stride))
       }
-      XCTAssertEqual(destination, [T(99)] + values + [T(99)])
+      XCTAssertEqual(destination, [sentinel] + values + [sentinel])
     }
   }
 

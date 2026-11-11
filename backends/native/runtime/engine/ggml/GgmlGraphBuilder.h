@@ -186,7 +186,7 @@ class GraphBuilder {
   void set_single_output(const Node& node, TensorRef result);
   void lower(const Node& node);
   void lower_linear(const Node& node);
-  void lower_embedding(const Node& node);
+  void lower_row_gather(const Node& node);
   void check_row_indices(ValueId id, int64_t rows);
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
@@ -222,6 +222,7 @@ class GraphBuilder {
   using Unary = ggml_tensor* (*)(ggml_context*, ggml_tensor*);
 
   void lower_unary(const Node& node, Unary fn);
+  void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,
@@ -239,11 +240,19 @@ class GraphBuilder {
   void lower_batch_norm(const Node& node);
   void lower_max_pool2d(const Node& node);
   void lower_mean(const Node& node);
+  void lower_sum(const Node& node);
+  void lower_amax(const Node& node);
+  // The `self` of a mean, sum or amax over trailing dims as ggml rows of the
+  // reduced elements, and the result sizes.
+  std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
+      const Node& node,
+      const std::string& op);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);
   void lower_squeeze(const Node& node);
   void lower_expand(const Node& node);
+  void lower_repeat(const Node& node);
   void lower_cat(const Node& node);
   void lower_matmul(const Node& node);
   void lower_update_cache(const Node& node);

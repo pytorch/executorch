@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/CaseCheckRegistry.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/OperatorBenchmark.h>
 
 #include <stdexcept>
 
@@ -27,7 +28,12 @@ CaseCheckFunction CaseCheckRegistry::get_check(const std::string& name) const {
 }
 
 CaseCheckRegistry& case_check_registry() {
-  static CaseCheckRegistry registry;
+  static CaseCheckRegistry registry = [] {
+    CaseCheckRegistry builtin;
+    builtin.register_check(
+        "operator_dynamic_resize", &validate_operator_dynamic_resize);
+    return builtin;
+  }();
   return registry;
 }
 

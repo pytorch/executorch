@@ -35,6 +35,10 @@ class XNNExecutor {
   // we need to hold onto the buffers to keep them alive.
   std::vector<executorch::runtime::FreeableBuffer> unpacked_buffers_;
 
+  // Keeps runtime_'s threadpool alive across thread count resets. Declared
+  // before runtime_, so it outlives it.
+  std::shared_ptr<pthreadpool> threadpool_;
+
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
       nullptr,
       &xnn_delete_runtime};

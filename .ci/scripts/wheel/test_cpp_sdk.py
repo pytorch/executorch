@@ -1233,6 +1233,14 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     assert (
         headers
     ), f"no headers found under {include_root}, so this check would prove nothing"
+    # Everything ships under include/executorch. A header at the top of the include directory is on
+    # every consumer's include path, where it can shadow the consumer's own copy of that library.
+    outside = [
+        header.relative_to(include_root).as_posix()
+        for header in headers
+        if header.relative_to(include_root).parts[0] != "executorch"
+    ]
+    assert not outside, f"the wheel ships headers outside include/executorch: {outside}"
 
     # The same include directories the CMake package exports, since that is what a consumer gets.
     includes = [
@@ -1498,6 +1506,12 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
             "using namespace executorch::extension;\n"
             "int main() { return get_thread_count() > 0 && "
             "parallel_for(0, 1, 1, [](int64_t, int64_t) {}) ? 0 : 1; }\n"
+        ),
+        # The call the documentation gives for setting the thread count.
+        "extension/threadpool/threadpool.h": (
+            "#include <executorch/extension/threadpool/threadpool.h>\n"
+            "using namespace executorch::extension::threadpool;\n"
+            "int main() { return get_threadpool()->_unsafe_reset_threadpool(2) ? 0 : 1; }\n"
         ),
     }
 
