@@ -47,7 +47,7 @@ jobs:
         pip install -e . --no-build-isolation > /dev/null
         pip install beartype later pyre_extensions pytest-rerunfailures==15.1 pytest-xdist
 
-        python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
+        python -m pytest backends/cadence/aot/tests/ backends/cadence/test/ backends/cadence/runtime/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
