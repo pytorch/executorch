@@ -12,6 +12,7 @@ import gguf
 import numpy as np
 import torch
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
+    check_config_tensors,
     gguf_architecture,
     gguf_to_hf,
 )
@@ -39,6 +40,38 @@ def _tiny(config_cls, heads: int = 4, kv_heads: int = 2, head_dim: int = 16, **k
         **kw,
     )
     return AutoModelForCausalLM.from_config(config)
+
+
+def _tiny_muse_glimmer():
+    """A 4-layer Muse Glimmer with its vision tower, or None where transformers
+    has no Muse Glimmer."""
+    try:
+        from transformers import MuseGlimmerConfig, MuseGlimmerForConditionalGeneration
+    except ImportError:
+        return None
+    config = MuseGlimmerConfig(
+        text_config={
+            "vocab_size": 32,
+            "hidden_size": 64,
+            "intermediate_size": 32,
+            "num_hidden_layers": 4,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 2,
+            "head_dim": 16,
+            "sliding_window": 4,
+            "layer_types": ["sliding_attention"] * 3 + ["full_attention"],
+            "layer_rope_theta": [10000.0] * 3 + [0],
+        },
+        vision_config={
+            "hidden_size": 32,
+            "intermediate_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+        },
+        projector_hidden_size=32,
+        out_hidden_size=32,
+    )
+    return MuseGlimmerForConditionalGeneration(config)
 
 
 def _to_gguf_rows(weight: torch.Tensor, heads: int) -> torch.Tensor:
@@ -192,6 +225,77 @@ class GgufHfTest(unittest.TestCase):
                     torch.zeros(1, 144, dtype=torch.uint8), "q4_k", torch.float32
                 ),
             )
+
+    def test_maps_muse_glimmer_names(self) -> None:
+        model = _tiny_muse_glimmer()
+        if model is None:
+            self.skipTest("transformers has no Muse Glimmer")
+        key_map, _ = gguf_to_hf(model, "muse-glimmer")
+        text = "model.language_model"
+        names = {
+            "token_embd.weight": f"{text}.embed_tokens.weight",
+            "output_norm.weight": f"{text}.norm.weight",
+            "output.weight": "lm_head.weight",
+            "blk.3.attn_gate.weight": f"{text}.layers.3.self_attn.gate_proj.weight",
+            "blk.0.ffn_norm.weight": f"{text}.layers.0.pre_feedforward_layernorm.weight",
+            "blk.1.post_ffw_norm.weight": (
+                f"{text}.layers.1.post_feedforward_layernorm.weight"
+            ),
+            "blk.2.attn_q_norm.weight": None,
+            "blk.2.attn_k_norm.weight": None,
+        }
+
+        self.assertEqual({n: key_map(n) for n in names}, names)
+        params = dict(model.named_parameters())
+        self.assertTrue(all(fqn in params for fqn in names.values() if fqn))
+        with self.assertRaisesRegex(ValueError, "maps to no muse_glimmer_text"):
+            key_map("blk.4.attn_q.weight")
+
+    def test_restores_muse_glimmer_weights(self) -> None:
+        model = _tiny_muse_glimmer()
+        if model is None:
+            self.skipTest("transformers has no Muse Glimmer")
+        _, convert = gguf_to_hf(model, "muse-glimmer")
+        text = "model.language_model"
+        q = torch.randn(64, 64)
+        decoder_norm = torch.randn(64)
+        final_norm = torch.randn(64)
+
+        self.assertTrue(
+            torch.equal(
+                convert(
+                    f"{text}.layers.0.self_attn.q_proj.weight", _to_gguf_rows(q, 4)
+                ),
+                q,
+            )
+        )
+        torch.testing.assert_close(
+            convert(f"{text}.layers.0.input_layernorm.weight", decoder_norm + 1),
+            decoder_norm,
+        )
+        self.assertIs(convert(f"{text}.norm.weight", final_norm), final_norm)
+
+    def test_checks_muse_glimmer_qk_norms_against_the_config(self) -> None:
+        model = _tiny_muse_glimmer()
+        if model is None:
+            self.skipTest("transformers has no Muse Glimmer")
+        scale = torch.full((16,), model.config.get_text_config().qk_scale_factor)
+        ones = torch.ones(16)
+        stored = [
+            ("blk.0.attn_q_norm.weight", scale),
+            ("blk.0.attn_k_norm.weight", ones),
+            ("blk.0.attn_q.weight", torch.zeros(64, 64)),
+        ]
+
+        checked = list(check_config_tensors(model, "muse-glimmer", stored))
+
+        self.assertEqual([n for n, _ in checked], [n for n, _ in stored])
+        for name, value in (
+            ("blk.1.attn_q_norm.weight", ones),
+            ("blk.1.attn_k_norm.weight", scale),
+        ):
+            with self.assertRaisesRegex(ValueError, name):
+                list(check_config_tensors(model, "muse-glimmer", [(name, value)]))
 
     def test_keeps_qwen_weights_as_stored(self) -> None:
         _, convert = gguf_to_hf(_tiny(Qwen2Config), "qwen2")
