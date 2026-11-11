@@ -4,10 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import unittest
-from typing import List
+from typing import List, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -19,6 +17,12 @@ from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.partitioner.partitioner import (
     _WEBGPU_SKIP_FUSION_PATTERNS,
 )
+from executorch.backends.webgpu.test.ops.test_elu_silu import (
+    EluModule,
+    SiluCondModule,
+    SiluModule,
+    SiluMulModule,
+)
 from executorch.backends.webgpu.test.tester import Partition, ToEdgeTransformAndLower
 from executorch.exir import (
     ExecutorchProgramManager,
@@ -26,7 +30,9 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.utils import get_non_lowered_nodes
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from torch.export import ExportedProgram
 
 
@@ -200,7 +206,7 @@ class TestWebGPUPartitioner(unittest.TestCase):
             exported_program
         )
 
-        self.assertEqual(webgpu_ops, vulkan_ops)
+        self.assertEqual(webgpu_ops, vulkan_ops + [torch.ops.aten.silu.default])
         self.assertIsNotNone(webgpu_filter)
         self.assertIsNotNone(vulkan_filter)
         assert webgpu_filter is not None
@@ -275,6 +281,125 @@ class TestWebGPUPartitioner(unittest.TestCase):
                         VulkanPartitioner(), module, example_input, dynamic_shapes
                     )
                 )
+
+    def _lower_split(
+        self,
+        partitioner: Partitioner,
+        module: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        dynamic_shapes: object = None,
+    ) -> Tuple[List[torch.fx.Node], List[object]]:
+        """Returns the non-lowered nodes and the targets inside the delegates."""
+        exported_program = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes
+        )
+        edge = to_edge_transform_and_lower(exported_program, partitioner=[partitioner])
+        graph_module = edge.exported_program().graph_module
+        delegated_targets = [
+            node.target
+            for _, lowered, _ in get_lowered_submodules(graph_module)
+            for node in lowered.original_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        return get_non_lowered_nodes(graph_module.graph), delegated_targets
+
+    def _targets(self, nodes: List[torch.fx.Node]) -> List[object]:
+        return [node.target for node in nodes]
+
+    def test_layer_norm_over_last_dim_only(self) -> None:
+        layer_norm = exir_ops.edge.aten.native_layer_norm.default
+        cases = {
+            "last_dim": ([16], (2, 8, 16), True),
+            "unit_leading_dim": ([1, 16], (2, 1, 16), True),
+            "multi_dim": ([4, 3, 8], (1, 4, 3, 8), False),
+        }
+        for name, (normalized_shape, shape, delegated) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, in_delegate = self._lower_split(
+                    WebGPUPartitioner(),
+                    torch.nn.LayerNorm(normalized_shape),
+                    (torch.randn(*shape),),
+                )
+                self.assertEqual(layer_norm in in_delegate, delegated)
+                self.assertEqual(
+                    layer_norm in self._targets(non_lowered), not delegated
+                )
+
+    def test_elu_and_silu_are_delegated(self) -> None:
+        cases = {
+            "elu_alpha": (EluModule(alpha=0.5), exir_ops.edge.aten.elu.default),
+            "elu_scaled": (
+                EluModule(alpha=1.5, scale=2.0, input_scale=0.5),
+                exir_ops.edge.aten.elu.default,
+            ),
+            "elu_param_input": (
+                EluModule(param_shape=(4, 16)),
+                exir_ops.edge.aten.elu.default,
+            ),
+            "silu": (SiluModule(), exir_ops.edge.aten.silu.default),
+            "silu_param_input": (
+                SiluModule(param_shape=(4, 16)),
+                exir_ops.edge.aten.silu.default,
+            ),
+        }
+        x = torch.linspace(-4.0, 4.0, 64).reshape(4, 16)
+        for name, (module, target) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(target, delegated)
+
+    def test_dynamic_silu_is_delegated(self) -> None:
+        non_lowered, delegated = self._lower_split(
+            WebGPUPartitioner({"require_dynamic_shapes": True}),
+            SiluModule(),
+            (torch.randn(1, 8, 16),),
+            {"x": {1: torch.export.Dim("s", min=1, max=8)}},
+        )
+        self.assertEqual(non_lowered, [])
+        self.assertIn(exir_ops.edge.aten.silu.default, delegated)
+
+    def test_silu_decomposes_where_it_would_not_be_delegated(self) -> None:
+        # Kept silu that stays on CPU fails lowering, so each of these must
+        # decompose to x * sigmoid(x) instead.
+        x = torch.randn(4, 16)
+        allowlist_without_silu = WebGPUPartitioner(
+            operator_allowlist=[
+                exir_ops.edge.aten.sigmoid.default,
+                exir_ops.edge.aten.mul.Tensor,
+            ]
+        )
+        cases = {
+            # The SwiGLU fusion matches x * sigmoid(x) * up.
+            "feeds_mul": (WebGPUPartitioner(), SiluMulModule(), (x, x)),
+            "not_allowlisted": (allowlist_without_silu, SiluModule(), (x,)),
+            "rank5": (WebGPUPartitioner(), SiluModule(), (torch.randn(1, 2, 3, 4, 5),)),
+        }
+        for name, (partitioner, module, inputs) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(partitioner, module, inputs)
+                self.assertNotIn(exir_ops.edge.aten.silu.default, delegated)
+                self.assertNotIn(
+                    exir_ops.edge.aten.silu.default, self._targets(non_lowered)
+                )
+
+    def test_silu_in_cond_branch_stays_decomposed(self) -> None:
+        # Control-flow submodules are not partitioned, so a silu in a torch.cond
+        # branch must decompose (a kept one would make lowering raise).
+        exported_program = torch.export.export(SiluCondModule(), (torch.randn(4, 16),))
+        edge = to_edge_transform_and_lower(
+            exported_program, partitioner=[WebGPUPartitioner()]
+        )
+        targets = [
+            node.target
+            for module in edge.exported_program().graph_module.modules()
+            if isinstance(module, torch.fx.GraphModule)
+            for node in module.graph.nodes
+        ]
+        self.assertNotIn(exir_ops.edge.aten.silu.default, targets)
+        self.assertIn(exir_ops.edge.aten.sigmoid.default, targets)
 
 
 if __name__ == "__main__":

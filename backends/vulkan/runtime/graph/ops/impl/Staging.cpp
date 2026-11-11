@@ -88,6 +88,22 @@ void add_staging_to_tensor_node(
       nullptr));
 }
 
+// The output staging elements that the shader writes. An external staging
+// buffer may be larger than the data, so only the elements that staging
+// allocated for the tensor, without texel padding, would hold are written.
+size_t written_staging_numel(
+    ComputeGraph* graph,
+    const ValueRef in_tensor,
+    const ValueRef out_staging) {
+  StagingPtr staging = graph->get_staging(out_staging);
+  if (staging->is_external()) {
+    return api::get_staging_nbytes(
+               staging->dtype(), graph->numel_of(in_tensor)) /
+        vkapi::element_size(staging->dtype());
+  }
+  return staging->numel();
+}
+
 GlobalWorkGrid tensor_to_staging_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -95,6 +111,7 @@ GlobalWorkGrid tensor_to_staging_gwg(
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
   const ValueRef in_tensor = args.at(1).refs.at(0);
+  const ValueRef out_staging = args.at(0).refs.at(0);
 
   GlobalWorkGrid gwg = graph->is_buffer_storage(in_tensor)
       ? graph->create_linear_gwg(
@@ -103,11 +120,10 @@ GlobalWorkGrid tensor_to_staging_gwg(
 
   // The bitw8 shader writes out a complete 32 bit integer (containing 4 packed
   // 8-bit integers) per thread, so its global work group size is the number of
-  // elements divided by 4, rounded up. Sizing by the tensor rather than the
-  // staging buffer avoids idle threads for a buffer larger than the data.
+  // elements in the output buffer divided by 4.
   if (is_bitw8_shader(shader)) {
     const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
-        utils::div_up_4(graph->numel_of(in_tensor)));
+        written_staging_numel(graph, in_tensor, out_staging) / 4);
     gwg = graph->create_linear_gwg(buffer_len);
   } else if (is_coalesced_image_to_nchw_shader(shader)) {
     // The coalesced (output-centric) image_to_nchw variant dispatches one
@@ -115,8 +131,8 @@ GlobalWorkGrid tensor_to_staging_gwg(
     // consecutive NCHW offsets, keeping writes to the PCIe-backed staging
     // buffer fully coalesced. This mirrors the buffer_to_nchw path, whose
     // global size is already numel-based via create_gwg.
-    const uint32_t buffer_len =
-        utils::safe_downcast<uint32_t>(graph->numel_of(in_tensor));
+    const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
+        written_staging_numel(graph, in_tensor, out_staging));
     gwg = graph->create_linear_gwg(buffer_len);
   }
   // Otherwise (texel-centric image_to_nchw, used on unified-memory GPUs) keep
