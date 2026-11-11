@@ -55,6 +55,10 @@ void main() {
   }
 
   TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
+  if (out_of_bounds(outp_tidx, outp)) {
+    t_outp[outp_bufi] = T(0);
+    return;
+  }
 
   // NCHW dim indices for W (last), H (second-last), C (third-last).
   const int nd = int_ndim(outp);

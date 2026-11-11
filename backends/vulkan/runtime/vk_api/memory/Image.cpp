@@ -198,6 +198,7 @@ VulkanImage::VulkanImage(
       memory_{},
       owns_memory_(false),
       memory_bundled_(false),
+      owns_view_(false),
       is_copy_(false),
       handles_{
           image,
@@ -205,6 +206,18 @@ VulkanImage::VulkanImage(
           sampler,
       },
       layout_{layout} {}
+
+VulkanImage VulkanImage::alias(
+    VkDevice device,
+    const ImageProperties& image_props,
+    VkImage image,
+    VkImageView image_view,
+    VkSampler sampler,
+    const VkImageLayout layout) {
+  VulkanImage alias(device, image_props, image, image_view, sampler, layout);
+  alias.is_copy_ = true;
+  return alias;
+}
 
 VulkanImage::VulkanImage(const VulkanImage& other) noexcept
     : device_(other.device_),
@@ -214,6 +227,7 @@ VulkanImage::VulkanImage(const VulkanImage& other) noexcept
       allocator_(other.allocator_),
       memory_(other.memory_),
       owns_memory_{false},
+      memory_bundled_{false},
       owns_view_{false},
       is_copy_(true),
       handles_(other.handles_),
@@ -240,10 +254,14 @@ VulkanImage::VulkanImage(VulkanImage&& other) noexcept
 }
 
 VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
+  VkDevice tmp_device = device_;
+  VmaAllocator tmp_allocator = allocator_;
   VkImage tmp_image = handles_.image;
   VkImageView tmp_image_view = handles_.image_view;
   bool tmp_owns_memory = owns_memory_;
   bool tmp_memory_bundled = memory_bundled_;
+  bool tmp_owns_view = owns_view_;
+  bool tmp_is_copy = is_copy_;
 
   device_ = other.device_;
   image_properties_ = other.image_properties_;
@@ -253,14 +271,21 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   memory_ = std::move(other.memory_);
   owns_memory_ = other.owns_memory_;
   memory_bundled_ = other.memory_bundled_;
+  owns_view_ = other.owns_view_;
   is_copy_ = other.is_copy_;
   handles_ = other.handles_;
   layout_ = other.layout_;
 
+  // `other` takes this instance's previous image and destroys it, so it must
+  // also take what the destructor needs to know about it.
+  other.device_ = tmp_device;
+  other.allocator_ = tmp_allocator;
   other.handles_.image = tmp_image;
   other.handles_.image_view = tmp_image_view;
   other.owns_memory_ = tmp_owns_memory;
   other.memory_bundled_ = tmp_memory_bundled;
+  other.owns_view_ = tmp_owns_view;
+  other.is_copy_ = tmp_is_copy;
 
   return *this;
 }

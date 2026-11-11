@@ -63,7 +63,11 @@ void ETHOSU_PMU_PMCCNTR_CFG_Set_Start_Event(
     ethosu_pmu_event_type) {}
 
 void ETHOSU_PMU_CNTR_Enable(ethosu_driver* driver, uint32_t mask) {
-  pmu(driver).enabled_mask = mask;
+  pmu(driver).enabled_mask |= mask;
+}
+
+void ETHOSU_PMU_CNTR_Disable(ethosu_driver* driver, uint32_t mask) {
+  pmu(driver).enabled_mask &= ~mask;
 }
 
 void ETHOSU_PMU_CYCCNT_Reset(ethosu_driver* driver) {

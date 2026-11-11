@@ -231,10 +231,13 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
       std::memcpy(tmp.data(), src_data, span_nbytes);
     } else {
       if (stream) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost, stream));
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+      } else {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost));
       }
-      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
-          tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost));
     }
 
     const size_t ndim = slim_tensor->dim();

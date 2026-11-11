@@ -25,15 +25,20 @@ def define_common_targets():
     runtime.cxx_library(
         name = "ethosu_invocation_context",
         exported_headers = ["EthosUBackend_Pmu.h"],
+        exported_deps = ["//executorch/runtime/core:event_tracer"],
         visibility = ["PUBLIC"],
     )
     runtime.cxx_library(
         name = "ethosu_execution_stats",
         srcs = ["EthosUExecutionStats.cpp"],
+        compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         exported_headers = ["EthosUExecutionStats.h"],
-        exported_deps = [":ethosu_invocation_context"],
+        exported_deps = [
+            ":ethosu_invocation_context",
+            "//executorch/runtime/core:core",
+            "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
+        ],
         visibility = ["PUBLIC"],
-        deps = ["fbsource//third-party/ethos-u-core-driver:core_driver_headers_only"],
     )
     runtime.cxx_library(
         name = "vela_bin_stream",
@@ -84,6 +89,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-global-constructors"],
         preprocessor_flags = _persistent_region_flags(),
         deps = [
+            ":ethosu_invocation_context",
             ":vela_bin_stream",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
@@ -105,6 +111,7 @@ def define_common_targets():
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFBoundaryIO.h",
             "VGFExecutionStats.h",
             "VGFMutableAlias.h",
             "VGFNeuralStatistics.h",

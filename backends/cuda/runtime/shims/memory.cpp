@@ -46,6 +46,30 @@ using c10::ScalarType;
 
 namespace {
 
+// A graph capture cannot record a copy that the host waits for, and such a copy
+// aborts the process when it fails, so a shim that copies refuses first, even
+// between device buffers, to keep one rule. Info, not Error: the backend then
+// retries the call without a graph. An empty tensor copies nothing, so it needs
+// no check.
+AOTITorchError refuse_inside_capture(
+    const SlimTensor* tensor,
+    const char* what) {
+#if defined(CUDA_AVAILABLE)
+  if (tensor->is_cuda() && tensor->numel() > 0) {
+    auto stream = getCurrentCUDAStream(tensor->device_index());
+    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaStreamIsCapturing(stream.get(), &capture));
+    if (capture != cudaStreamCaptureStatusNone) {
+      ET_LOG(Info, "%s: not supported inside a CUDA graph capture", what);
+      return Error::NotSupported;
+    }
+  }
+#endif
+  return Error::Ok;
+}
+
 // Reads the one element as T. Dispatch on the dtype the tensor actually holds:
 // item<T>() copies sizeof(T) bytes and does not check, so asking for the wrong
 // width reads past a one-element allocation.
@@ -67,25 +91,8 @@ AOTITorchError narrow_to(From value, To* ret_value) {
 
 template <typename T>
 AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
-#if defined(CUDA_AVAILABLE)
-  // A graph capture cannot record the copy to the host below, and the copy
-  // aborts the process when it fails, so refuse first. Info, not Error: the
-  // backend then retries the call without a graph.
-  if (tensor->is_cuda()) {
-    auto stream = getCurrentCUDAStream(tensor->device_index());
-    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
-    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(
-        cudaStreamIsCapturing(stream.get(), &capture));
-    if (capture != cudaStreamCaptureStatusNone) {
-      ET_LOG(
-          Info,
-          "reading a single element: a device value cannot be read inside a "
-          "CUDA graph capture");
-      return Error::NotSupported;
-    }
-  }
-#endif
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      refuse_inside_capture(tensor, "reading a single element"));
   switch (tensor->dtype()) {
     case ScalarType::Byte:
       return narrow_to(tensor->item<uint8_t>(), ret_value);
@@ -352,6 +359,8 @@ AOTITorchError aoti_torch_clone_preserve_strides(
       ret_new_tensor != nullptr,
       InvalidArgument,
       "aoti_torch_clone_preserve_strides: ret_new_tensor is null");
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      refuse_inside_capture(self, "aoti_torch_clone_preserve_strides"));
 
   *ret_new_tensor = new SlimTensor(self->clone());
   return Error::Ok;
@@ -365,6 +374,7 @@ AOTITorchError aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor) {
       ret_new_tensor != nullptr,
       InvalidArgument,
       "aoti_torch_clone: ret_new_tensor is null");
+  ET_CHECK_OK_OR_RETURN_ERROR(refuse_inside_capture(self, "aoti_torch_clone"));
 
   *ret_new_tensor = new SlimTensor(self->clone());
   return Error::Ok;
@@ -429,13 +439,16 @@ AOTITorchError aoti_torch_as_strided(
 
 AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking) {
-  (void)non_blocking; // SlimTensor::copy_() is always synchronous for now
+  (void)non_blocking; // SlimTensor::copy_() decides when the host waits
 
   ET_CHECK_OR_RETURN_ERROR(
       self != nullptr, InvalidArgument, "aoti_torch_copy_: self is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       src != nullptr, InvalidArgument, "aoti_torch_copy_: src is null");
+
+  ET_CHECK_OK_OR_RETURN_ERROR(refuse_inside_capture(self, "aoti_torch_copy_"));
+  ET_CHECK_OK_OR_RETURN_ERROR(refuse_inside_capture(src, "aoti_torch_copy_"));
 
   // SlimTensor::copy_() handles:
   // - Same numel validation

@@ -619,12 +619,12 @@ def show_mlx_summary(pte_data: bytes) -> None:  # noqa: C901
         traceback.print_exc()
 
 
-def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
+def show_mlx_instructions(pte_data: bytes) -> bool:  # noqa: C901
     try:
         mlx_delegates = _find_mlx_delegates(pte_data)
         if not mlx_delegates:
             print("No MLX delegates found in this PTE file.", file=sys.stderr)
-            sys.exit(1)
+            return False
 
         if len(mlx_delegates) > 1:
             print(
@@ -632,11 +632,13 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
                 file=sys.stderr,
             )
 
+        ok = True
         for idx, (delegate_idx, _delegate) in enumerate(mlx_delegates):
             try:
                 mlx = _load_mlx_payload(pte_data, delegate_index=idx)
             except ValueError as e:
                 print(f"\nError: {e}", file=sys.stderr)
+                ok = False
                 continue
 
             graph = parse_mlx_flatbuffer(mlx.fb_data)
@@ -645,6 +647,7 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
                     f"\nError parsing delegate {idx}: {graph['error']}",
                     file=sys.stderr,
                 )
+                ok = False
                 continue
 
             # Print delegate header
@@ -743,7 +746,8 @@ def show_mlx_instructions(pte_data: bytes) -> None:  # noqa: C901
     except Exception as e:
         print(f"Error showing MLX instructions: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(1)
+        return False
+    return ok
 
 
 def main():  # noqa: C901
@@ -826,7 +830,8 @@ Examples:
     print(f"Loaded {len(pte_data)} bytes from {args.pte_file}", file=sys.stderr)
 
     if args.mlx_instructions:
-        show_mlx_instructions(pte_data)
+        if not show_mlx_instructions(pte_data):
+            sys.exit(1)
         return
 
     if args.mlx_summary:

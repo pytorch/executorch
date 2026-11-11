@@ -1,0 +1,6 @@
+dependencies:
+  pytorch/executorch:
+    # The model and kernel bundle next to this file are made for exactly this
+    # version of the component.
+    version: "==@ET_COMPONENT_VERSION@"
+    override_path: "../../../"

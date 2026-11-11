@@ -78,8 +78,8 @@ def get_static_topk_config(
         return None, reason
     tokens, experts = shape
     k = arguments["k"]
-    if type(k) is not int or not 1 <= k <= min(4, experts):
-        return None, "TopK requires constant 1 <= K <= min(4, E)."
+    if type(k) is not int or not 1 <= k <= min(8, experts):
+        return None, "TopK requires constant 1 <= K <= min(8, E)."
     dim = arguments.get("dim", -1)
     if type(dim) is not int or dim not in (-1, 1):
         return None, "TopK requires dim=-1 or dim=1."

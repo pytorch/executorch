@@ -136,14 +136,30 @@ StagingBuffer::StagingBuffer(
     const vkapi::CopyDirection direction)
     : context_p_(context_p),
       dtype_(get_staging_dtype(context_p, dtype)),
-      // For 8-bit types, align numel to the next multiple of 4. Devices that
-      // lack 8-bit storage buffer support will interpret the data as int32, so
-      // the buffer size must be a multiple of 4 bytes.
       vulkan_buffer_(context_p_->adapter_ptr()->vma().create_staging_buffer(
-          element_size(dtype_) *
-              (element_size(dtype_) == 1 ? utils::align_up_4(numel) : numel),
+          get_staging_nbytes(dtype_, numel),
           direction)),
+      external_(false),
       mapped_data_(nullptr) {}
+
+StagingBuffer::StagingBuffer(
+    Context* context_p,
+    const vkapi::ScalarType dtype,
+    const size_t numel,
+    vkapi::VulkanBuffer&& external_buffer)
+    : context_p_(context_p),
+      dtype_(get_staging_dtype(context_p, dtype)),
+      vulkan_buffer_(std::move(external_buffer)),
+      external_(true),
+      mapped_data_(nullptr) {
+  const size_t nbytes = get_staging_nbytes(dtype_, numel);
+  VK_CHECK_COND(
+      vulkan_buffer_.mem_size() >= nbytes,
+      "the external buffer holds ",
+      vulkan_buffer_.mem_size(),
+      " bytes, the staging data needs ",
+      nbytes);
+}
 
 vkapi::ScalarType get_staging_dtype(
     Context* context_p,
@@ -153,6 +169,14 @@ vkapi::ScalarType get_staging_dtype(
     return vkapi::kFloat;
   }
   return dtype;
+}
+
+size_t get_staging_nbytes(vkapi::ScalarType dtype, size_t numel) {
+  // For 8-bit types, align numel to the next multiple of 4. Devices that
+  // lack 8-bit storage buffer support will interpret the data as int32, so
+  // the buffer size must be a multiple of 4 bytes.
+  return element_size(dtype) *
+      (element_size(dtype) == 1 ? utils::align_up_4(numel) : numel);
 }
 
 void StagingBuffer::cast_half_to_float_and_copy_from(
