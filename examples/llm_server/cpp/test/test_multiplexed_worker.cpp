@@ -122,7 +122,8 @@ class ProtocolTest : public ::testing::Test {
       MultiplexedWorkerConfig config = {},
       std::size_t max_sessions = 4,
       std::size_t max_requests = 8,
-      std::size_t max_pending_operations = 64) {
+      std::size_t max_pending_operations = 64,
+      std::vector<batching::Token> default_stop_tokens = {}) {
     signal(SIGPIPE, SIG_IGN);
     ASSERT_EQ(pipe(input_), 0);
     ASSERT_EQ(pipe(output_), 0);
@@ -133,6 +134,10 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
+    const Json decoded_stops = default_stop_tokens.empty() ? Json::array()
+        : tokenizer_.piece.empty()                         ? Json(nullptr)
+                                   : Json::array({tokenizer_.piece});
+    runtime_config.default_stop_tokens = std::move(default_stop_tokens);
     runtime_ = std::make_unique<serving::ServingRuntime>(
         executor_,
         batching::DecodeFirstScheduler::create(16, 8, 8),
@@ -145,9 +150,11 @@ class ProtocolTest : public ::testing::Test {
     auto ready = receive();
     ASSERT_TRUE(ready.value("ready", false));
     ASSERT_TRUE(ready.value("multiplexed", false));
+    ASSERT_TRUE(ready.value("supports_ignore_eos", false));
     ASSERT_FALSE(ready.contains("request_id"));
     ASSERT_EQ(ready.at("max_named_sessions"), max_sessions);
     ASSERT_EQ(ready.at("max_inflight_requests"), config.max_inflight_requests);
+    EXPECT_EQ(ready.at("default_stop_strings"), decoded_stops);
   }
 
   std::shared_ptr<CheckpointGate> gate() {
@@ -538,7 +545,7 @@ TEST_F(ProtocolTest, AdmissionFailureDoesNotPoisonOtherRequests) {
   send(generate(2));
   auto error = receive();
   EXPECT_EQ(error.at("request_id"), 2);
-  EXPECT_EQ(error.at("code"), "capacity_exhausted");
+  EXPECT_EQ(error.at("code"), "session_capacity_exhausted");
   send({{"op", "reset"}, {"request_id", 3}, {"session_id", "owned"}});
   EXPECT_TRUE(receive().value("reset", false));
   auto request = generate(4);
@@ -573,6 +580,12 @@ TEST_F(ProtocolTest, StrictFieldsAndUnsupportedModalitiesAreIsolated) {
         Json(std::numeric_limits<uint64_t>::max())}) {
     auto request = generate(id++);
     request["max_new_tokens"] = value;
+    invalid.push_back(request);
+  }
+  for (const auto& value :
+       {Json(), Json(0), Json(1), Json("true"), Json::array()}) {
+    auto request = generate(id++);
+    request["ignore_eos"] = value;
     invalid.push_back(request);
   }
   auto image = generate(id++);
@@ -680,6 +693,7 @@ TEST_F(ProtocolTest, MaxUint64IdAndAutoBudgetAreAccepted) {
   send(request);
   auto done = receive();
   EXPECT_EQ(done.at("request_id"), std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(done.at("matched_stop"), "x");
   EXPECT_TRUE(done.value("done", false));
   EXPECT_EQ(done.at("finish_reason"), "stop");
   EXPECT_EQ(finish(), 0);
@@ -1301,6 +1315,40 @@ TEST_F(ProtocolTest, TerminalNewlineRetriesKeepAdmissionReserved) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, IdempotentCloseReportsWhetherSessionExisted) {
+  start();
+  send({{"op", "open"}, {"request_id", 1}, {"session_id", "s"}});
+  ASSERT_TRUE(receive().at("opened"));
+  for (uint64_t id = 2; id <= 3; ++id) {
+    send({{"op", "close"}, {"request_id", id}, {"session_id", "s"}});
+    auto response = receive();
+    EXPECT_TRUE(response.at("closed"));
+    EXPECT_EQ(response.at("existed"), id == 2);
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, RuntimeAdmissionRejectionReportsNotAdmitted) {
+  // Keep transport capacity available while filling the runtime request limit.
+  start({}, 4, 1);
+  executor_.hold();
+  send(generate(1, 1));
+  ASSERT_TRUE(wait_execute());
+  send(generate(2, 1));
+  auto refused = receive();
+  EXPECT_EQ(refused.at("request_id"), 2);
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
+  EXPECT_NE(refused.at("error"), "worker operation capacity exhausted");
+  executor_.release();
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  send(generate(3, 1));
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  EXPECT_TRUE(receive().value("done", false));
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
@@ -1309,7 +1357,9 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   send(generate(1, 100));
   ASSERT_TRUE(wait_execute());
   send(generate(2));
-  EXPECT_EQ(receive().at("code"), "capacity_exhausted");
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
   send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
   EXPECT_TRUE(receive().value("cancelled", false));
   executor_.release();
@@ -1320,6 +1370,32 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   EXPECT_TRUE(done.value("cancelled", false));
   EXPECT_EQ(finish(), 0);
 }
+TEST_F(ProtocolTest, AcceptsBothIgnoreEosValues) {
+  executor_.stop_token = 999;
+  executor_.emit_before_stop = 1;
+  start({}, 4, 8, 64, {999});
+  for (uint64_t id = 1; id <= 2; ++id) {
+    auto request = generate(id, 4);
+    request["ignore_eos"] = id == 2;
+    send(request);
+    Json done;
+    do {
+      done = receive();
+      ASSERT_FALSE(done.contains("error")) << done;
+    } while (done.contains("token"));
+    EXPECT_TRUE(done.value("done", false));
+    EXPECT_EQ(done.at("completion_tokens"), id == 1 ? 1 : 4);
+    EXPECT_EQ(done.at("finish_reason"), id == 1 ? "stop" : "length");
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, UndecodableDefaultStopsAdvertiseNull) {
+  tokenizer_.piece.clear();
+  start({}, 4, 8, 64, {999});
+  EXPECT_EQ(finish(), 0);
+}
+
 // Subprocess mode for Python validation regressions. The inherited socket is
 // separate from JSONL: 'A' witnesses active execution, and 'R' releases it.
 int run_validation_worker(int gate_fd) {

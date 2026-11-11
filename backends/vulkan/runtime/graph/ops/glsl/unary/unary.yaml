@@ -1,0 +1,23 @@
+# The op is selected at dispatch through the op_type specialization constant.
+unary:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    DYNAMIC_PARAMS: false
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int32
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+  shader_variants:
+    # int32 implements clamp only; uint8 implements bitwise_not only.
+    - NAME: unary_op
+    - NAME: unary_op_uint8
+      DTYPE: uint8
+    # Reads its parameters from uniform buffers, for clamp bounds that are only
+    # known at runtime.
+    - NAME: unary_op_dynamic
+      DYNAMIC_PARAMS: true

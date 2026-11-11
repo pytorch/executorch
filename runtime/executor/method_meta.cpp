@@ -96,22 +96,22 @@ Result<Tag> get_tag(
   switch (serialization_value->val_type()) {
     case executorch_flatbuffer::KernelTypes::Null: {
       return Tag::None;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Int: {
       return Tag::Int;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Double: {
       return Tag::Double;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Bool: {
       return Tag::Bool;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::String: {
       return Tag::String;
-    } break;
+    }
     case executorch_flatbuffer::KernelTypes::Tensor: {
       return Tag::Tensor;
-    } break;
+    }
     default:
       ET_LOG(
           Error,
@@ -539,7 +539,13 @@ Result<const char*> MethodMeta::get_backend_name(size_t index) const {
       "Index %zu out of range. num_backends: %zu",
       index,
       count);
-  return s_plan_->delegates()->Get(index)->id()->c_str();
+  const auto delegate = s_plan_->delegates()->Get(index);
+  ET_CHECK_OR_RETURN_ERROR(
+      delegate != nullptr && delegate->id() != nullptr,
+      InvalidProgram,
+      "Missing backend id at index %zu",
+      index);
+  return delegate->id()->c_str();
 }
 
 size_t MethodMeta::num_instructions() const {

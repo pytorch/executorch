@@ -53,9 +53,19 @@ class QnnManagerRegistry:
         return self._registry[key]
 
     def destroy_all(self):
-        for qnn_manager in self._registry.values():
-            qnn_manager.Destroy()
-        self._registry.clear()
+        errors = []
+        try:
+            for qnn_manager in self._registry.values():
+                try:
+                    qnn_manager.Destroy()
+                except Exception as error:
+                    errors.append(error)
+        finally:
+            self._registry.clear()
+        if errors:
+            for error in errors[1:]:
+                logging.error("Failed to destroy QNN manager: %s", error)
+            raise errors[0]
 
 
 def _get_target_option(
@@ -109,8 +119,10 @@ def QnnManagerContext(compile_specs: Dict[str, List[CompileSpec]]):
                 get_current_qnn_manager(compile_spec_list, soc_model)
         yield
     finally:
-        current_context_registry.destroy_all()
-        _current_qnn_managers.active_registry = previous_registry
+        try:
+            current_context_registry.destroy_all()
+        finally:
+            _current_qnn_managers.active_registry = previous_registry
 
 
 def get_current_qnn_manager(

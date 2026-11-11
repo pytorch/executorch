@@ -187,7 +187,7 @@ class FuseRifeFinalWarpsPass(ArmPass):
             [p["flow_channel_offset"] for p in payloads] != [0, 2]
             or any(
                 payloads[0][k] != payloads[1][k]
-                for k in ("flow_scale", "flow_zero_point")
+                for k in ("flow_scale", "flow_zero_point", "flow_normalization")
             )
             or customs[0].args[0][1] is not customs[1].args[0][1]
         ):

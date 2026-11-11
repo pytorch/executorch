@@ -12,6 +12,9 @@ layout(set=0, binding=1) uniform sampler2D image1;
 layout(set=0, binding=2) uniform sampler2D image2;
 layout(set=0, binding=3) uniform sampler2D image3;
 #define FUSE_BLOCK0_TAIL @FUSE_BLOCK0_TAIL@
+#define PIXEL_SHUFFLE @PIXEL_SHUFFLE@
+#define RESIZE_SCALE @RESIZE_SCALE@
+#define RESIZE_SHIFT @RESIZE_SHIFT@
 #if FUSE_BLOCK0_TAIL
 layout(set=0, binding=4) uniform tensorARM<int8_t, 4> tailPhase;
 layout(set=0, binding=5) writeonly buffer Output { uint output0[]; };
@@ -24,6 +27,7 @@ layout(set=0, binding=7) writeonly buffer Output { uint output0[]; };
 layout(local_size_x=8, local_size_y=8, local_size_z=1) in;
 
 const float FLOW_SCALE = @FLOW_SCALE@;
+const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
 const int FLOW_ZERO_POINT = @FLOW_ZERO_POINT@;
 const float INPUT_SCALE = @INPUT_SCALE@;
 const int INPUT_ZERO_POINT = @INPUT_ZERO_POINT@;
@@ -32,20 +36,25 @@ const int OUTPUT_ZERO_POINT = @OUTPUT_ZERO_POINT@;
 
 #if FUSE_BLOCK0_TAIL
 void readPhase(ivec2 p, out int8_t result[13]) {
+#if PIXEL_SHUFFLE
   uint phase = uint((p.y & 1) * 2 + (p.x & 1));
   uint coords[4] = uint[](0u, uint(p.y >> 1), uint(p.x >> 1), phase * 13u);
+#else
+  uint coords[4] = uint[](0u, uint(p.y), uint(p.x), 0u);
+#endif
   tensorReadARM(tailPhase, coords, result);
 }
 
 void resizeTail(ivec2 p, out int8_t result[13]) {
-  ivec2 scaled = p * 2 - ivec2(1);
-  ivec2 low = scaled >> 2;
-  ivec2 fraction = scaled - low * 4;
-  ivec2 maximum = ivec2(tensorSizeARM(tailPhase, 2), tensorSizeARM(tailPhase, 1)) * 2 - 1;
+  ivec2 scaled = p * 2 - ivec2(RESIZE_SCALE - 1);
+  ivec2 low = scaled >> RESIZE_SHIFT;
+  ivec2 fraction = scaled - low * (2 * RESIZE_SCALE);
+  ivec2 maximum = ivec2(tensorSizeARM(tailPhase, 2), tensorSizeARM(tailPhase, 1)) * (PIXEL_SHUFFLE + 1) - 1;
   ivec2 p00 = clamp(low, ivec2(0), maximum);
   ivec2 p11 = clamp(low + ivec2(1), ivec2(0), maximum);
   int dx = fraction.x, dy = fraction.y;
-  int weights[4] = int[]((4-dy)*(4-dx), (4-dy)*dx, dy*(4-dx), dy*dx);
+  const int d = 2 * RESIZE_SCALE;
+  int weights[4] = int[]((d-dy)*(d-dx), (d-dy)*dx, dy*(d-dx), dy*dx);
   ivec2 corners[4] = ivec2[](p00, ivec2(p11.x, p00.y), ivec2(p00.x, p11.y), p11);
   int accumulators[13];
   for (uint c=0u; c<13u; ++c) accumulators[c] = 0;
@@ -55,13 +64,13 @@ void resizeTail(ivec2 p, out int8_t result[13]) {
     for (uint c=0u; c<13u; ++c) accumulators[c] += int(values[c]) * weights[corner];
   }
   for (uint c=0u; c<13u; ++c)
-    result[c] = int8_t(clamp((accumulators[c] + 8) >> 4, -128, 127));
+    result[c] = int8_t(clamp((accumulators[c] + (d*d/2)) >> (2*RESIZE_SHIFT), -128, 127));
 }
 #endif
 
 vec2 uv(ivec2 p, vec2 size, vec2 offset) {
   vec2 baseGrid = (vec2(p) * vec2(2.0) / (size - vec2(1.0))) - vec2(1.0);
-  vec2 texel = (baseGrid + offset + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
+  vec2 texel = (baseGrid + offset * FLOW_NORMALIZATION + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
   return (texel + vec2(0.5)) / size;
 }
 

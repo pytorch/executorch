@@ -12,6 +12,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
 from torch._ops import OpOverload
+from torch.fx.operator_schemas import normalize_function
 
 
 class ReplaceScalarWithTensorArgPass(ExportPass):
@@ -63,7 +64,7 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
                     full_op,
                     args=(
                         (1,),
-                        float(args[1]),
+                        args[1] if isinstance(args[1], int) else float(args[1]),
                     ),
                     kwargs={
                         "dtype": args[0].to_tensor().dtype,
@@ -71,8 +72,6 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
                     },
                     meta=meta,
                 ),
-                # Other args.
-                *args[2:],
             ),
             kwargs=kwargs,
             meta=meta,
@@ -96,4 +95,10 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
         ):
             return super().call_operator(op, args, kwargs, meta)
 
-        return self.get_replacement(op, args, kwargs, meta)
+        # alpha is positional in add/sub.Scalar but keyword-only in .Tensor.
+        bound = normalize_function(
+            op, args, kwargs, normalize_to_only_use_kwargs=True
+        ).kwargs
+        return self.get_replacement(
+            op, (bound["input"], bound["other"]), {"alpha": bound["alpha"]}, meta
+        )

@@ -182,14 +182,19 @@ ET_EXPERIMENTAL size_t inline utf8_safe_prefix_len(
 ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     const std::string& text,
     const std::vector<std::string>& stops,
-    bool& stop_hit) {
+    bool& stop_hit,
+    size_t* matched_stop_index = nullptr) {
   stop_hit = false;
+  if (matched_stop_index) {
+    *matched_stop_index = std::string::npos;
+  }
   if (stops.empty()) {
     return text.size();
   }
   size_t earliest = std::string::npos;
   size_t max_len = 0;
-  for (const auto& s : stops) {
+  for (size_t index = 0; index < stops.size(); ++index) {
+    const auto& s = stops[index];
     if (s.empty()) {
       continue;
     }
@@ -198,6 +203,9 @@ ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     if (p != std::string::npos &&
         (earliest == std::string::npos || p < earliest)) {
       earliest = p;
+      if (matched_stop_index) {
+        *matched_stop_index = index;
+      }
     }
   }
   if (earliest != std::string::npos) {

@@ -18,6 +18,7 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
 )
 from executorch.backends.vulkan._passes import (
     Conv1dAsConv2dPass,
+    FoldForceFp16CastsPass,
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
@@ -28,6 +29,9 @@ from executorch.backends.vulkan._passes import (
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -102,7 +106,9 @@ def _parse_external_constants_max_data_bytes(value_bytes: bytes) -> int:
     return value
 
 
-def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
+def parse_compile_spec(  # noqa: C901
+    compile_specs: List[CompileSpec],
+) -> Dict[str, Any]:
     options = {}
     for spec in compile_specs:
         if spec.key == "storage_type_override":
@@ -136,6 +142,9 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
 
         if spec.key == "external_constants_max_data_bytes":
             options[spec.key] = _parse_external_constants_max_data_bytes(spec.value)
+
+        if spec.key == "skip_fusion_patterns":
+            options[spec.key] = set(filter(None, spec.value.decode().split(",")))
 
         # Unhandled options are ignored
 
@@ -190,10 +199,13 @@ class VulkanBackend(BackendDetails):
                 FuseBatchNormPass(program),
                 AddmmToLinearTransform(),
                 InsertDtypePromotionPass(),
-                FusePatternsPass(),
+                FusePatternsPass(compile_options.get("skip_fusion_patterns", ())),
                 Conv1dAsConv2dPass(),
+                # Fuses activations into the convolutions FusePatternsPass left
+                # unfused, such as conv1d.
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
+                ReplaceInstanceNormPass(),
                 FuseQuantizedOpsTransform(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
@@ -221,7 +233,8 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveAssertsTransform(),
                 insert_prepack_nodes,
-            ],
+            ]
+            + ([FoldForceFp16CastsPass()] if force_fp16 else []),
         )
 
         # Optionally apply the memory metadata tagging pass, which will insert storage
