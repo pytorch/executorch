@@ -342,10 +342,10 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
     worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
-    async def generate(key):
+    async def generate(key, prompt="hello"):
         async with runtime.generate_stream(
             key,
-            PromptInput(text="hello"),
+            PromptInput(text=prompt),
             GenerationOptions(max_new_tokens=1, temperature=0.0, seed=123),
         ) as generation:
             pieces = [piece async for piece in generation]
@@ -365,10 +365,19 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
         assert replacement.prefilled_prompt_tokens == 1
         await asyncio.wait_for(worker.reset_session("first"), 5)
         reset = await asyncio.wait_for(generate("first"), 10)
-        assert reset.reused_prompt_tokens == 0
+        assert reset.reused_prompt_tokens == 4
+        assert reset.prefilled_prompt_tokens == 1
+        assert reset.session_reset_reason == "prefix_clone"
         await asyncio.wait_for(worker.open_session("explicit"), 5)
         explicit = await asyncio.wait_for(generate("explicit"), 10)
-        assert explicit.reused_prompt_tokens == 0
+        assert explicit.reused_prompt_tokens == 4
+        assert explicit.prefilled_prompt_tokens == 1
+        assert explicit.session_reset_reason == "prefix_clone"
+        await asyncio.wait_for(worker.reset_session("first"), 5)
+        fresh = await asyncio.wait_for(generate("first", "world"), 10)
+        assert fresh.prompt_tokens == 5
+        assert fresh.reused_prompt_tokens == 0
+        assert fresh.prefilled_prompt_tokens == 5
     finally:
         await asyncio.wait_for(runtime.aclose_worker(), 15)
 
