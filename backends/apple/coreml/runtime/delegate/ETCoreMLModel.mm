@@ -172,8 +172,20 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
 
 }
 
+namespace {
+/// A pixel buffer bound to the model, with the array Core ML reads or writes it through.
+struct BoundPixelBuffer {
+    void *baseAddress = nullptr;
+    id pixelBuffer = nil; // CVPixelBufferRef
+    MLMultiArray *multiArray = nil;
+    std::vector<size_t> multiArrayShape;
+};
+} // namespace
+
 #pragma mark - ETCoreMLModel
-@interface ETCoreMLModel ()
+@interface ETCoreMLModel () {
+    std::vector<BoundPixelBuffer> _boundPixelBuffers;
+}
 
 @property (strong, readonly, nonatomic) NSCache<ETCoreMLMultiArrayDescriptor *, NSMutableData *> *cache;
 @property (copy, readonly, nonatomic) NSDictionary<NSString *, MLMultiArrayConstraint *> *inputConstraintsByName;
@@ -318,8 +330,24 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
 
         const auto& layout = arg.layout();
         auto dataType = to_ml_multiarray_data_type(layout.dataType());
+        MLMultiArray *pixelBufferArray = nil;
+        if (![self getPixelBufferMultiArray:&pixelBufferArray forArg:arg error:error]) {
+            return nil;
+        }
+
         MLMultiArray *multiArrayArg = nil;
-        if (dataType == constraint.dataType) {
+        if (pixelBufferArray) {
+            if (pixelBufferArray.dataType != constraint.dataType) {
+                ETCoreMLLogErrorAndSetNSError(error,
+                                              ETCoreMLErrorInternalError,
+                                              "The pixel buffer bound to arg '%@' does not match the model feature's data type.",
+                                              argName);
+                return nil;
+            }
+            multiArrayArg = pixelBufferArray;
+            // Core ML reads and writes the pixel buffer at its own row stride, not the arg's strides.
+            lCopyData = NO;
+        } else if (dataType == constraint.dataType) {
             // We can use the same data storage.
             multiArrayArg = [[MLMultiArray alloc] initWithDataPointer:arg.data()
                                                                 shape:to_array(layout.shape())
@@ -428,6 +456,85 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
     }
 
     return result;
+}
+
+- (BOOL)bindPixelBuffer:(CVPixelBufferRef)pixelBuffer error:(NSError * __autoreleasing *)error {
+    BOOL bindable = NO;
+    if (@available(macOS 12.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+        bindable = CVPixelBufferGetIOSurface(pixelBuffer) != NULL &&
+            CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_OneComponent16Half;
+    }
+    if (!bindable) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorInternalError,
+                                      "Only an IOSurface-backed fp16 pixel buffer can be bound to a model, on macOS 12 / iOS 16 or later.");
+        return NO;
+    }
+
+    const CVReturn lockStatus = CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+    if (lockStatus != kCVReturnSuccess) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorInternalError,
+                                      "Failed to lock the pixel buffer for binding (status=%d).",
+                                      static_cast<int>(lockStatus));
+        return NO;
+    }
+    void *baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
+    CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+    if (baseAddress == nullptr) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorInternalError,
+                                      "The pixel buffer has no base address and cannot be bound.");
+        return NO;
+    }
+
+    BoundPixelBuffer bound;
+    bound.baseAddress = baseAddress;
+    bound.pixelBuffer = (__bridge id)pixelBuffer;
+    for (auto& existing : _boundPixelBuffers) {
+        if (existing.baseAddress == bound.baseAddress) {
+            existing = std::move(bound);
+            return YES;
+        }
+    }
+    _boundPixelBuffers.push_back(std::move(bound));
+    return YES;
+}
+
+- (BOOL)getPixelBufferMultiArray:(MLMultiArray * _Nullable __autoreleasing *)multiArray
+                          forArg:(const executorchcoreml::MultiArray&)arg
+                           error:(NSError * __autoreleasing *)error {
+    *multiArray = nil;
+    for (auto& bound : _boundPixelBuffers) {
+        if (bound.baseAddress != arg.data()) {
+            continue;
+        }
+
+        // Wrapping the buffer costs Core ML a setup per array, so the array is made once per shape.
+        const auto& shape = arg.layout().shape();
+        if (bound.multiArray == nil || bound.multiArrayShape != shape) {
+            bound.multiArray = nil;
+            bound.multiArrayShape = shape;
+            CVPixelBufferRef buffer = (__bridge CVPixelBufferRef)bound.pixelBuffer;
+            if (@available(macOS 12.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+                if (!shape.empty() && shape.back() == CVPixelBufferGetWidth(buffer) &&
+                    std::accumulate(shape.cbegin(), shape.cend() - 1, size_t(1), std::multiplies<size_t>{}) == CVPixelBufferGetHeight(buffer)) {
+                    bound.multiArray = [[MLMultiArray alloc] initWithPixelBuffer:buffer shape:to_array(shape)];
+                }
+            }
+        }
+        if (bound.multiArray == nil || arg.layout().dataType() != MultiArray::DataType::Float16) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorInternalError,
+                                          "The pixel buffer bound at an arg's data pointer doesn't match the arg's shape and data type.");
+            return NO;
+        }
+
+        *multiArray = bound.multiArray;
+        return YES;
+    }
+
+    return YES;
 }
 
 @end

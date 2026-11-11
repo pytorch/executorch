@@ -131,11 +131,6 @@ struct Conv2dParams final {
 
 } // namespace
 
-struct OutputParams final {
-  float out_min;
-  float out_max;
-};
-
 Conv2dParams create_conv2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
@@ -186,7 +181,6 @@ struct Conv2dVariant {
   std::array<uint32_t, 3> tile;
   bool full_grid;
   bool tune_channels;
-  bool transposed = false;
 };
 
 constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
@@ -201,7 +195,7 @@ constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
     {"conv2d_2x2x8_border_buffer", {2, 2, 2}, false, false},
     {"conv2d_1x1x4_buffer", {1, 1, 1}, false, false},
     {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false, false},
-    {"conv_transpose2d", {1, 1, 1}, true, false, true},
+    {"conv_transpose2d", {1, 1, 1}, true, false},
 }};
 
 /*
@@ -263,13 +257,13 @@ Conv2dVariant pick_conv2d_variant(
   const ValueRef in = args.at(1).refs.at(0);
   const ValueRef weight = args.at(1).refs.at(1);
   const ValueRef weight_data = resize_args.at(0);
-  const int64_t groups = graph->get_int(resize_args.at(8));
+  const int64_t groups = graph->get_int(resize_args.at(7));
   const int64_t in_group = graph->size_at<int64_t>(1, weight_data);
   const int64_t out_group = graph->size_at<int64_t>(0, weight_data) / groups;
   const int32_t out_slices = graph->logical_limits_of(out)[2];
   const int64_t height = graph->size_at<int64_t>(-2, out);
   const int64_t width = graph->size_at<int64_t>(-1, out);
-  const bool fast_tiled = graph->get_bool(resize_args.at(9));
+  const bool fast_tiled = graph->get_bool(resize_args.at(8));
   const bool grouped = groups > 1;
   const bool half = graph->dtype_of(out) == vkapi::kHalf;
   const bool mali = graph->device_is_mali();
@@ -338,11 +332,7 @@ vkapi::ShaderInfo pick_conv2d_tiled_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
-  std::string name = variant.name;
-  if (variant.transposed && graph->get_bool(resize_args.at(7))) {
-    name += "_clamp";
-  }
+  std::string name = pick_conv2d_variant(graph, args, resize_args).name;
   add_dtype_suffix(name, graph->dtype_of(args.at(0).refs.at(0)));
   return VK_KERNEL_FROM_STR(name);
 }
@@ -475,35 +465,42 @@ void add_conv2d_direct_node(
     const ValueRef out,
     const Kernel2dParams& kernel_params,
     const Conv2dParams& extra_params,
-    const OutputParams& out_params,
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args,
     const ValueRef groups,
     const int64_t groups_val,
     const bool has_bias,
     const bool force_masked,
-    const bool fast_tiled,
-    const bool clamp_out) {
+    const bool fast_tiled) {
+  const Conv2dEpilogueParams epilogue_params =
+      create_conv2d_epilogue_params(epilogue);
   vkapi::ParamsBindList param_buffers = {
       graph.logical_limits_ubo(out),
       graph.sizes_ubo(in),
       graph.create_params_buffer(kernel_params),
       graph.create_params_buffer(extra_params),
-      graph.create_params_buffer(out_params),
+      graph.create_params_buffer(epilogue_params),
   };
 
-  const int32_t in_quads = extra_params.in_group_size / 4;
-  vkapi::SpecVarList spec_vars = {utils::safe_downcast<int32_t>(groups_val)};
+  vkapi::SpecVarList spec_vars;
   if (!graph.get_bool(transposed)) {
-    spec_vars.append(vkapi::SpecVar(in_quads));
-    spec_vars.append(vkapi::SpecVar(kernel_params.kernel_size[0]));
-    spec_vars.append(vkapi::SpecVar(clamp_out));
-    spec_vars.append(vkapi::SpecVar(has_bias));
-    spec_vars.append(vkapi::SpecVar(graph.size_at<int32_t>(1, weight_data)));
-    spec_vars.append(vkapi::SpecVar(utils::safe_downcast<int32_t>(
-        graph.size_at<int64_t>(0, weight_data) / groups_val)));
+    const int32_t in_quads = extra_params.in_group_size / 4;
+    spec_vars = {
+        utils::safe_downcast<int32_t>(groups_val),
+        in_quads,
+        kernel_params.kernel_size[0],
+        has_bias,
+        graph.size_at<int32_t>(1, weight_data),
+        utils::safe_downcast<int32_t>(
+            graph.size_at<int64_t>(0, weight_data) / groups_val)};
   }
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
   const std::vector<ArgGroup> args = {
-      {out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}};
+      {out, vkapi::kWrite},
+      {{in, arg_weight, arg_bias, epilogue_args.residual, epilogue_args.scale},
+       vkapi::kRead}};
+
   const std::vector<ValueRef> resize_args = {
       weight_data,
       stride,
@@ -512,9 +509,9 @@ void add_conv2d_direct_node(
       transposed,
       output_padding,
       graph.add_scalar<bool>(force_masked),
-      graph.add_scalar<bool>(clamp_out),
       groups,
-      graph.add_scalar<bool>(fast_tiled)};
+      graph.add_scalar<bool>(fast_tiled),
+      epilogue.residual};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_tiled_shader,
@@ -540,9 +537,7 @@ void conv2d_direct_impl(
     const ValueRef output_padding,
     const ValueRef groups,
     const ValueRef out,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val,
+    const Conv2dEpilogue& epilogue,
     const bool force_masked) {
   const bool transposed_val = graph.get_bool(transposed);
   const int64_t groups_val = graph.get_int(groups);
@@ -574,6 +569,8 @@ void conv2d_direct_impl(
       transposed_val,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, transposed_val);
 
   const std::vector<int64_t> in_sizes = graph.sizes_of(in);
   if (in_sizes.at(0) > 1) {
@@ -584,8 +581,6 @@ void conv2d_direct_impl(
 
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
-
-  OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
   if (!transposed_val) {
@@ -611,13 +606,13 @@ void conv2d_direct_impl(
       out,
       kernel_params,
       extra_params,
-      out_params,
+      epilogue,
+      Conv2dEpilogueArgs(epilogue, in, arg_bias, packed_scale),
       groups,
       groups_val,
       !graph.val_is_none(bias),
       force_masked,
-      fast_tiled,
-      clamp_out);
+      fast_tiled);
 }
 
 } // namespace vkcompute

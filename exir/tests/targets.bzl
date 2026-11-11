@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
@@ -110,6 +115,16 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "import_order",
+        srcs = [
+            "test_import_order.py",
+        ],
+        deps = [
+            "//executorch/exir:lib",
+        ],
+    )
+
+    python_unittest(
         name = "tensor",
         srcs = [
             "test_tensor.py",
@@ -205,6 +220,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:sym_shape_eval_pass",
             "//executorch/examples/models/llama:custom_kv_cache",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
         ],
     )
 
@@ -474,6 +490,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/capture:config",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/passes:lib",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
         ],
     )
 

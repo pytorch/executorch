@@ -103,7 +103,9 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         78, 12, 69, 2,  74, 56, 93, 39, 62,  22, 55, 67, 68, 74, 12, 69,
         15, 73, 28, 70, 86, 20, 90, 49, 52,  26, 58, 2,  82, 17, 70, 55,
         54, 83, 70, 11, 27, 9,  5,  42, 34,  62, 29, 94, 69, 81, 54, 4};
-    std::vector<CTYPE> expected_grad_input_data = {
+    // Some values are not exact in Half. GCC on aarch64 rejects them as
+    // narrowing in a braced Half list, so they are held as float.
+    std::vector<float> expected_grad_input_data = {
         1134,  7578,  686,   2682,  0, 4148,  7136,  2406,  8698, 0,
         3759,  6003,  2163,  2395,  0, 2929,  5830,  3469,  6955, 0,
         720,   6201,  495,   2063,  0, 5260,  5989,  3060,  7079, 0,
@@ -146,7 +148,7 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         6821,  19615, 4491,  13281, 0, 424,   1146,  999,   2906, 0,
         15177, 15480, 8849,  12442, 0, 1222,  544,   2687,  1859, 0,
         20215, 9693,  11441, 4964,  0, 1206,  555,   2466,  860,  0};
-    std::vector<CTYPE> expected_grad_weight_data = {
+    std::vector<float> expected_grad_weight_data = {
         9246,  22073, 12431, 19714, 11179, 19032, 8458,  6495,  18707, 13830,
         20445, 17089, 17124, 18710, 11827, 17236, 16824, 9008,  14086, 18834,
         17419, 16759, 13152, 9339,  13801, 20888, 13976, 27277, 13010, 23949,
@@ -190,9 +192,15 @@ class OpConvolutionBackwardOutTest : public OperatorTest {
         grad_weight,
         grad_bias);
 
-    auto expected_grad_input = tf.make({2, 6, 7, 5}, expected_grad_input_data);
-    auto expected_grad_weight =
-        tf.make({4, 3, 4, 2}, expected_grad_weight_data);
+    auto expected_grad_input = tf.make(
+        {2, 6, 7, 5},
+        std::vector<CTYPE>(
+            expected_grad_input_data.begin(), expected_grad_input_data.end()));
+    auto expected_grad_weight = tf.make(
+        {4, 3, 4, 2},
+        std::vector<CTYPE>(
+            expected_grad_weight_data.begin(),
+            expected_grad_weight_data.end()));
     auto expected_grad_bias = tf.make({4}, expected_grad_bias_data);
 
     if (DTYPE == ScalarType::Half || DTYPE == ScalarType::BFloat16) {

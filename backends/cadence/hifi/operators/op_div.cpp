@@ -325,7 +325,9 @@ Tensor& div_out_mode(
               }
               CTYPE_COMPUTE value = val_a / val_b;
               if (mode_is_trunc) {
-                value = std::trunc(value);
+                if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
+                  value = std::trunc(value);
+                }
               } else {
                 // We established above that the mode is either trunc or floor,
                 // so it must be floor.

@@ -335,6 +335,17 @@ function(arm_runner_configure_ethos_u_platform)
   add_corstone_subdirectory(
     "${ARG_SYSTEM_CONFIG}" "${ARG_SDK_PATH}" "${ARG_MEMORY_MODE}"
   )
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND TARGET ethosu_target_link)
+    get_target_property(
+      _ethosu_target_link_options ethosu_target_link INTERFACE_LINK_OPTIONS
+    )
+    list(REMOVE_ITEM _ethosu_target_link_options --entry Reset_Handler)
+    list(APPEND _ethosu_target_link_options "LINKER:--entry=Reset_Handler")
+    set_property(
+      TARGET ethosu_target_link PROPERTY INTERFACE_LINK_OPTIONS
+                                         "${_ethosu_target_link_options}"
+    )
+  endif()
   configure_timing_adapters("${ARG_SYSTEM_CONFIG}" "${ARG_MEMORY_MODE}")
   foreach(_platform_variable TARGET_BOARD ETHOSU_MODEL ETHOSU_ARENA)
     if(DEFINED ${_platform_variable})
@@ -371,6 +382,28 @@ function(arm_runner_require_baremetal_targets)
     )
   endif()
 
+endfunction()
+
+function(arm_runner_check_lock_free_atomics OUT_VAR)
+  if(NOT OUT_VAR)
+    message(FATAL_ERROR "OUT_VAR is required.")
+  endif()
+
+  include(CheckCXXSourceCompiles)
+  # Check the selected CPU again if the build directory is reconfigured.
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES TARGET_CPU)
+  unset(_arm_runner_lock_free_atomics CACHE)
+  check_cxx_source_compiles(
+    "#include <atomic>
+     static_assert(std::atomic<bool>::is_always_lock_free);
+     static_assert(std::atomic<void*>::is_always_lock_free);
+     int main() { return 0; }"
+    _arm_runner_lock_free_atomics
+  )
+  set(${OUT_VAR}
+      ${_arm_runner_lock_free_atomics}
+      PARENT_SCOPE
+  )
 endfunction()
 
 function(_arm_runner_verify_targets_exist)
@@ -725,14 +758,14 @@ function(arm_runner_configure_linker_script)
 
   get_corstone_linker_script(_linker_script "${ARG_SYSTEM_CONFIG}")
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
     set(LINK_FILE_EXT ld)
     set(LINK_FILE_OPTION "-T")
     set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
   else()
     message(
       FATAL_ERROR
-        "arm_runner_configure_linker_script only supports the GNU compiler."
+        "arm_runner_configure_linker_script only supports GNU and Clang."
     )
   endif()
 
