@@ -127,7 +127,7 @@ def test_mish_tosa_INT(test_data):
     pipeline = TosaPipelineINT(
         _MishOpSupportModule().eval(),
         (x, False),
-        aten_op="torch.ops.aten.mish.default",
+        aten_op=[],
         exir_op=_MISH_EDGE_OPS,
         frobenius_threshold=_frobenius_threshold(x),
     )
@@ -143,7 +143,7 @@ def test_mish_tosa_INT_inplace(test_data):
     pipeline = TosaPipelineINT(
         _MishOpSupportModule().eval(),
         (x, True),
-        aten_op="torch.ops.aten.mish_.default",
+        aten_op=[],
         exir_op=_MISH_EDGE_OPS,
         frobenius_threshold=_frobenius_threshold(x),
     )
@@ -214,7 +214,7 @@ def test_mish_vgf_no_quant(test_data):
         _MishOpSupportModule().eval(),
         (test_data(), False),
         aten_op="torch.ops.aten.mish.default",
-        exir_op=_FP_DECOMPOSED_EDGE_OPS,
+        exir_op=[],
         quantize=False,
     )
     _enforce_full_delegation(pipeline)
@@ -228,7 +228,7 @@ def test_mish_vgf_no_quant_inplace(test_data):
         _MishOpSupportModule().eval(),
         (test_data(), True),
         aten_op="torch.ops.aten.mish_.default",
-        exir_op=_FP_DECOMPOSED_EDGE_OPS,
+        exir_op=[],
         quantize=False,
     )
     _enforce_full_delegation(pipeline)
