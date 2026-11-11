@@ -63,8 +63,9 @@ PYTHON_EXECUTABLE="$PWD/env/bin/python" \
 
 It can also run after dependency installation to detect replacement of the
 pinned build. Linux and macOS CI verify after installing ExecuTorch, before
-building the test runner. On Linux this also checks that the Docker image
-provides the commit required by the checkout.
+building the test runner. On Linux the check preserves the commit provided by
+the image or PyTorch CI, which may intentionally differ from the shared checkout
+pin.
 
 The shared implementation lives in `common/install_pinned_pytorch.sh` so it is
 also available in the Docker build context. Docker and macOS CI use this same

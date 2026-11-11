@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,7 +17,7 @@ REUSABLE = "./.github/workflows/_unittest.yml"
 
 
 def load_workflow(name):
-    return yaml.safe_load((WORKFLOWS / name).read_text())
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
 class TorchciWorkflowTest(unittest.TestCase):
