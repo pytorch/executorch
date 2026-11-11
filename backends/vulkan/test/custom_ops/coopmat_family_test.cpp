@@ -15,6 +15,8 @@
 #include <functional>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace vkcompute {
 namespace {
@@ -27,13 +29,14 @@ constexpr uint32_t kDriverIntelWindows = 5;
 constexpr uint32_t kDriverMesaLlvmpipe = 13;
 constexpr uint32_t kDriverMesaNvk = 24;
 
-CoopmatDeviceKey
-base_key(const uint32_t sg, const uint32_t sg_min, const uint32_t sg_max) {
+CoopmatDeviceKey base_key(const uint32_t sg_min, const uint32_t sg_max) {
   CoopmatDeviceKey d;
-  d.subgroup_size = sg;
   d.min_subgroup_size = sg_min;
   d.max_subgroup_size = sg_max;
   d.subgroup_size_control = true;
+  d.compute_required_subgroup_size = true;
+  d.full_subgroups = true;
+  d.vulkan_memory_model = true;
   d.coopmat = true;
   d.int8_coopmat = true;
   d.max_shared_bytes = 65536;
@@ -43,7 +46,7 @@ base_key(const uint32_t sg, const uint32_t sg_min, const uint32_t sg_max) {
 // Keys as Xe2 (Arc B580 / Arc Pro B70) and NVIDIA (Ampere / Ada) devices
 // report them.
 CoopmatDeviceKey xe2_key(const uint32_t driver = kDriverIdIntelMesa) {
-  CoopmatDeviceKey d = base_key(32, 8, 32);
+  CoopmatDeviceKey d = base_key(8, 32);
   d.vendor_id = kVendorIdIntel;
   d.driver_id = driver;
   d.coopmat_shapes = {
@@ -55,7 +58,7 @@ CoopmatDeviceKey xe2_key(const uint32_t driver = kDriverIdIntelMesa) {
 
 CoopmatDeviceKey nvidia_key(
     const uint32_t driver = kDriverIdNvidiaProprietary) {
-  CoopmatDeviceKey d = base_key(32, 32, 32);
+  CoopmatDeviceKey d = base_key(32, 32);
   d.vendor_id = kVendorIdNvidia;
   d.driver_id = driver;
   d.coopmat_shapes = {
@@ -68,7 +71,7 @@ CoopmatDeviceKey nvidia_key(
 
 // Mesa llvmpipe (lavapipe): 8x8x8 shapes only, fixed subgroup 8.
 CoopmatDeviceKey llvmpipe_key() {
-  CoopmatDeviceKey d = base_key(8, 8, 8);
+  CoopmatDeviceKey d = base_key(8, 8);
   d.vendor_id = 0x10005;
   d.driver_id = kDriverMesaLlvmpipe;
   d.max_shared_bytes = 32768;
@@ -82,7 +85,7 @@ CoopmatDeviceKey llvmpipe_key() {
 
 // AMD RDNA3 under RADV: no family yet.
 CoopmatDeviceKey radv_key() {
-  CoopmatDeviceKey d = base_key(64, 32, 64);
+  CoopmatDeviceKey d = base_key(32, 64);
   d.vendor_id = 0x1002;
   d.driver_id = kDriverMesaRadv;
   d.coopmat_shapes = {
@@ -201,7 +204,6 @@ TEST(CoopmatFamilyTest, FamilyKey) {
 
   // Xe2 needs subgroup size 16 to be available.
   CoopmatDeviceKey xe2_sg8 = xe2_key();
-  xe2_sg8.subgroup_size = 8;
   xe2_sg8.min_subgroup_size = 8;
   xe2_sg8.max_subgroup_size = 8;
   EXPECT_EQ(coopmat_family(xe2_sg8), CoopmatFamily::kNone);
@@ -216,6 +218,41 @@ TEST(CoopmatFamilyTest, FamilyKey) {
   CoopmatDeviceKey no_coopmat = xe2_key();
   no_coopmat.coopmat = false;
   EXPECT_EQ(coopmat_family(no_coopmat), CoopmatFamily::kNone);
+}
+
+// The family kernels need the logical device to enable subgroup size control
+// for the compute stage (their required subgroup size, even when it is the
+// default one), full subgroups and the Vulkan memory model. A device that
+// lacks any of them, e.g. a borrowed VkDevice whose enabled features are
+// unknown, keeps the existing kernels.
+TEST(CoopmatFamilyTest, LogicalDevicePrerequisites) {
+  const WmmaShape q4 =
+      prefill(WmmaOp::kQ4gsw, 2048, 2048, 2048, WmmaStorage::kTexture3D);
+  const WmmaShape dq8ca =
+      prefill(WmmaOp::kDq8caQ4gsw, 2048, 2048, 2048, WmmaStorage::kTexture3D);
+  for (const CoopmatDeviceKey& base : {xe2_key(), nvidia_key()}) {
+    ASSERT_NE(coopmat_family(base), CoopmatFamily::kNone);
+    ASSERT_NE(selected(base, q4), "");
+    ASSERT_NE(selected(base, dq8ca), "");
+    std::vector<std::pair<const char*, CoopmatDeviceKey>> missing;
+    CoopmatDeviceKey d = base;
+    d.subgroup_size_control = false;
+    missing.emplace_back("no subgroup size control", d);
+    d = base;
+    d.compute_required_subgroup_size = false;
+    missing.emplace_back("no compute-stage required subgroup size", d);
+    d = base;
+    d.full_subgroups = false;
+    missing.emplace_back("full subgroups not enabled", d);
+    d = base;
+    d.vulkan_memory_model = false;
+    missing.emplace_back("Vulkan memory model not enabled", d);
+    for (const auto& [what, key] : missing) {
+      EXPECT_EQ(coopmat_family(key), CoopmatFamily::kNone) << what;
+      EXPECT_EQ(selected(key, q4), "") << what;
+      EXPECT_EQ(selected(key, dq8ca), "") << what;
+    }
+  }
 }
 
 TEST(CoopmatFamilyTest, LlvmpipeHasNoFamily) {

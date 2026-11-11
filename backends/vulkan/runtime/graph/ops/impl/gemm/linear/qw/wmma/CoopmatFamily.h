@@ -13,9 +13,10 @@
 //
 // A device belongs to a family by its vendor ID, its driver ID and a property
 // signature (cooperative-matrix shapes, available subgroup sizes), never by
-// its name. Each family has a small set of kernel rows; a device that matches
-// no family, or a shape no row of its family accepts, keeps the existing
-// kernels unchanged.
+// its name, and only if its logical device enables what the family kernels
+// need (required subgroup sizes, full subgroups, the Vulkan memory model). Each
+// family has a small set of kernel rows; a device that matches no family, or a
+// shape no row of its family accepts, keeps the existing kernels unchanged.
 //
 // Pure C++ (no Vulkan or ComputeGraph types) so it can be unit-tested on a
 // host without a GPU (test/custom_ops/coopmat_family_test.cpp). The Vulkan
@@ -54,10 +55,16 @@ constexpr uint32_t kDriverIdIntelMesa = 6;
 struct CoopmatDeviceKey {
   uint32_t vendor_id = 0;
   uint32_t driver_id = 0; // VkDriverId, 0 when not reported
-  uint32_t subgroup_size = 0; // default subgroup size
   uint32_t min_subgroup_size = 0;
   uint32_t max_subgroup_size = 0;
-  bool subgroup_size_control = false; // a required subgroup size can be set
+  // Logical-device state. The family kernels declare a required subgroup
+  // size and are cooperative-matrix modules below SPIR-V 1.6, so they need
+  // subgroup size control for the compute stage, pipelines created with
+  // REQUIRE_FULL_SUBGROUPS, and the Vulkan memory model.
+  bool subgroup_size_control = false;
+  bool compute_required_subgroup_size = false; // requiredSubgroupSizeStages
+  bool full_subgroups = false;
+  bool vulkan_memory_model = false;
   bool coopmat = false; // VK_KHR_cooperative_matrix is usable
   bool int8_coopmat = false; // an int8 cooperative-matrix shape is enumerated
   uint32_t max_shared_bytes = 0; // maxComputeSharedMemorySize
