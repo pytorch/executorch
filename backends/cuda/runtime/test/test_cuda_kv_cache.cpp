@@ -745,6 +745,58 @@ TEST_F(CudaKVCacheTest, ReloadingAHandleBindsEachConstantOnce) {
   kv.forget_handle(&handle);
 }
 
+// A method on another device than the one the cache serves is refused, and
+// the method already using the cache keeps running. Only the device tag of
+// the second handle differs, so this needs one GPU.
+TEST_F(CudaKVCacheTest, MethodOnAnotherDeviceIsRefusedWithoutBreakingTheCache) {
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+
+  auto other_container = flat_and_ring_container();
+  auto other = make_handle(other_container);
+  other.device_index = 1;
+  EXPECT_EQ(kv.note_handle(&other).error(), Error::InvalidArgument);
+
+  // A method without KV storage may be on any device.
+  FakeContainer embedding{{"weight"}, {"tok_embeddings.weight"}, {}, 0};
+  auto vision = make_handle(embedding);
+  vision.device_index = 1;
+  const auto serves = kv.note_handle(&vision);
+  ASSERT_EQ(serves.error(), Error::Ok);
+  EXPECT_FALSE(serves.get());
+
+  ASSERT_EQ(kv.prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(kv.commit_step(2), Error::Ok);
+  EXPECT_EQ(other_container.updates, 0);
+  kv.forget_handle(&handle);
+}
+
+// The device a pool serves is only pinned while it holds a method or storage,
+// so a method that failed init before the first step does not decide it.
+TEST_F(CudaKVCacheTest, ForgettingTheOnlyMethodBeforeAStepUnpinsTheDevice) {
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto first = make_handle(container);
+  first.device_index = 1;
+  ASSERT_TRUE(kv.note_handle(&first).get());
+  kv.forget_handle(&first);
+
+  auto second_container = flat_and_ring_container();
+  auto second = make_handle(second_container);
+  ASSERT_TRUE(kv.note_handle(&second).get());
+  ASSERT_EQ(kv.prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.rebind_for_execute(&second), Error::Ok);
+  EXPECT_EQ(kv.commit_step(2), Error::Ok);
+  kv.forget_handle(&second);
+}
+
 TEST_F(CudaKVCacheTest, CommitAdmitsTheStepOnEveryLayer) {
   // The flat layer alone would accept an 8-token step; the ring, sized for
   // max_write 4, cannot, and commit must refuse it as prepare would.
