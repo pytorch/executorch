@@ -31,6 +31,7 @@ from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 from executorch.examples.llm_server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
 
+NATIVE_EOS = "<|native_end|>"
 FIM = "<|fim_pad|>"  # a broad content special that is NOT a turn terminator
 CHANNEL_OPEN = "<|channel>"
 CHANNEL_CLOSE = "<channel|>"
@@ -119,8 +120,12 @@ def _serving(
     gen_ids=None,
     content_filter=None,
     content_filter_specials=None,
+    supports_ignore_eos=False,
 ):
     runner = _Runner(tokens, gen_ids=gen_ids, honor_stops=honor_stops)
+    if supports_ignore_eos:
+        runner.supports_ignore_eos = True
+        runner.default_stop_strings = [_SpecialTok.eos_token, NATIVE_EOS]
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     template._hf = _SpecialTok()
     serving = ServingChat(
@@ -295,13 +300,14 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
 def _replay_stream_cleanup(
     chunks, stop=None, finish_reason="length", ignore_eos=True, matched_stop=""
 ):
-    serving, _ = _serving([])
+    serving, _ = _serving([], supports_ignore_eos=True)
     request = ChatCompletionRequest(
         model="test-model",
         messages=[{"role": "user", "content": "hi"}],
         ignore_eos=ignore_eos,
         stop=stop,
     )
+    serving._reject_unsupported_params(request)
 
     class Source:
         def __init__(self):
@@ -330,26 +336,40 @@ def _replay_stream_cleanup(
         stop_hit = [False]
         emitted = []
 
-        def on_stop():
-            stop_hit[0] = True
-            source.cancel()
-
-        stream = (
-            serving._clean_ignored_eos(
-                request,
-                source,
-                stop_hit,
-                GenStats(finish_reason=finish_reason, matched_stop=matched_stop),
-            )
-            if ignore_eos
-            else serving._clean(source, serving._generation_stops(request), on_stop)
+        stream = serving._stream_content_deltas(
+            request,
+            source,
+            serving._generation_stops(request),
+            stop_hit,
+            GenStats(finish_reason=finish_reason, matched_stop=matched_stop),
         )
-        async for text in stream:
-            emitted.append((source.position, text))
+        async for delta in stream:
+            if delta.content:
+                emitted.append((source.position, delta.content))
         assert source.drained
         return emitted, stop_hit[0], source.cancellations
 
     return asyncio.run(collect())
+
+
+def _assert_emission_positions(chunks, emitted, expected, stop, ignore_eos=True):
+    stops = list(_SpecialTok.all_special_tokens)
+    if ignore_eos:
+        stops.append(NATIVE_EOS)
+    stops.extend([stop] if isinstance(stop, str) else stop or [])
+    received = ""
+    for position, chunk in enumerate(chunks, 1):
+        received += chunk
+        cuts = [received.find(marker) for marker in stops if marker in received]
+        safe_end = min(cuts) if cuts else len(received)
+        if not cuts:
+            for size in range(1, len(received) + 1):
+                if any(marker.startswith(received[-size:]) for marker in stops):
+                    safe_end = min(safe_end, len(received) - size)
+        if position == len(chunks):
+            safe_end = len(expected)
+        delivered = "".join(part for at, part in emitted if at <= position)
+        assert delivered == expected[:safe_end], (chunks, position, emitted)
 
 
 @pytest.mark.parametrize("ignore_eos", [False, True])
@@ -385,6 +405,7 @@ def test_stream_cleanup_releases_fragment_when_it_is_not_a_stop(ignore_eos):
     [
         ("猫 says hi<|im_end|>hidden", None, "length", "", "猫 says hi", False),
         (f"Hi{FIM}hidden", None, "length", "", "Hi", False),
+        (f"Hi{NATIVE_EOS}hidden", None, "length", "", "Hi", False),
         ("HiSTOPignored", "STOP", "length", "", "Hi", True),
         ("Hi<|im_end|>hidden STOPignored", "STOP", "length", "", "Hi", True),
         ("Hi<|im_end|>STOPignored", "<|im_end|>STOP", "length", "", "Hi", True),
@@ -404,6 +425,7 @@ def test_ignored_eos_cleanup_across_chunk_boundaries(
             chunks, stop=stop, finish_reason=finish_reason, matched_stop=matched_stop
         )
         assert "".join(part for _, part in emitted) == expected, chunks
+        _assert_emission_positions(chunks, emitted, expected, stop)
         assert stop_hit == stopped, chunks
         assert cancellations == int(stopped), chunks
 
@@ -487,5 +509,6 @@ def test_normal_stream_cleanup_across_chunk_boundaries(text, stop, expected, sto
             chunks, stop=stop, ignore_eos=False
         )
         assert "".join(part for _, part in emitted) == expected, chunks
+        _assert_emission_positions(chunks, emitted, expected, stop, ignore_eos=False)
         assert stop_hit == stopped, chunks
         assert cancellations == int(stopped), chunks
