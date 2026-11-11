@@ -50,6 +50,7 @@ namespace ptn {
 namespace {
 
 using namespace ggml_detail;
+using executorch::extension::llm::cache::Run;
 using executorch::extension::llm::cache::SeqStepPlan;
 
 // Multiplies each slice of the leading dimension by its scale.
@@ -1303,7 +1304,8 @@ class GgmlExecutable final : public EngineExecutable {
     offgraph_storage_ = kv_cache_->storage();
     offgraph_cache_.layers.clear();
     for (const GgmlSequenceCache::Layer& layer : offgraph_storage_->layers) {
-      offgraph_cache_.layers.emplace_back(layer.k, layer.v);
+      offgraph_cache_.layers.push_back(
+          {.k = layer.k, .v = layer.v, .window = layer.window});
     }
   }
 
@@ -1354,8 +1356,8 @@ class GgmlExecutable final : public EngineExecutable {
     return {start, tokens};
   }
 
-  // Plans the step on the cache and fills the graph's cache rows and mask.
-  // Returns the plan to commit once the step has run.
+  // Plans the step on the cache and fills each window's cache rows and mask.
+  // Returns a plan to commit once the step has run.
   std::optional<SeqStepPlan> prepare_offgraph(GraphInstance& instance) {
     if (!instance.offgraph) {
       return std::nullopt;
@@ -1366,42 +1368,69 @@ class GgmlExecutable final : public EngineExecutable {
           "ggml: update_and_attend needs one position per token");
     }
     const int64_t start = offgraph_step_->start;
-    std::optional<SeqStepPlan> plan;
-    for (size_t layer = 0; layer < offgraph_cache_.layers.size(); ++layer) {
-      plan = kv_cache_->plan(
-          static_cast<int>(layer),
-          static_cast<int>(start),
-          static_cast<int>(slots.tokens));
-      if (!plan || plan->n_write != 1 || plan->n_read != 1 ||
-          plan->read_base_pos != 0 || plan->read[0].start != 0) {
+    const auto plan_layer = [&](int layer) {
+      const std::optional<SeqStepPlan> plan = kv_cache_->plan(
+          layer, static_cast<int>(start), static_cast<int>(slots.tokens));
+      if (!plan) {
         throw std::runtime_error(
-            "ggml: the KV cache planned a non-flat step");
+            "ggml: the KV cache cannot plan a " + std::to_string(slots.tokens) +
+            "-token step at position " + std::to_string(start) + " for layer " +
+            std::to_string(layer));
       }
+      return *plan;
+    };
+    // Layers outside the method's calls must fit the step too.
+    for (size_t layer = 0; layer < offgraph_cache_.layers.size(); ++layer) {
+      plan_layer(static_cast<int>(layer));
     }
-    const int64_t read_end = plan->read[0].len;
-    if (read_end > slots.keys) {
-      throw std::logic_error("ggml: KV cache read exceeds the graph's keys");
-    }
-    std::vector<uint8_t>& rows = instance.uploads[slots.rows].bytes;
-    rows.resize(static_cast<size_t>(slots.tokens) * sizeof(int32_t));
-    auto* row = reinterpret_cast<int32_t*>(rows.data());
-    for (int64_t i = 0; i < slots.tokens; ++i) {
-      row[i] = plan->write[0].start + static_cast<int32_t>(i);
-    }
-    std::vector<uint8_t>& mask = instance.uploads[slots.mask].bytes;
-    mask.resize(
-        static_cast<size_t>(slots.tokens * slots.keys) * sizeof(ggml_fp16_t));
-    auto* bias = reinterpret_cast<ggml_fp16_t*>(mask.data());
     const ggml_fp16_t attend = ggml_fp32_to_fp16(0.0f);
     const ggml_fp16_t masked =
         ggml_fp32_to_fp16(-std::numeric_limits<float>::infinity());
-    for (int64_t i = 0; i < slots.tokens; ++i) {
-      for (int64_t j = 0; j < slots.keys; ++j) {
-        bias[i * slots.keys + j] =
-            j <= start + i && j < read_end ? attend : masked;
+    std::optional<SeqStepPlan> committed;
+    for (const OffGraphUploads::Group& group : slots.groups) {
+      const SeqStepPlan plan = plan_layer(group.layer);
+      // The logical position each row holds this step, or -1 if it is unread.
+      std::vector<int64_t> positions(static_cast<size_t>(group.keys), -1);
+      int64_t position = plan.read_base_pos;
+      for (int r = 0; r < plan.n_read; ++r) {
+        const Run run = plan.read[r];
+        if (run.start < 0 || run.start + run.len > group.keys) {
+          throw std::logic_error(
+              "ggml: KV cache read exceeds the graph's keys");
+        }
+        for (int i = 0; i < run.len; ++i) {
+          positions[static_cast<size_t>(run.start + i)] = position++;
+        }
       }
+      std::vector<uint8_t>& rows = instance.uploads[group.rows].bytes;
+      rows.resize(static_cast<size_t>(slots.tokens) * sizeof(int32_t));
+      auto* row = reinterpret_cast<int32_t*>(rows.data());
+      int64_t written = 0;
+      for (int w = 0; w < plan.n_write; ++w) {
+        for (int i = 0; i < plan.write[w].len && written < slots.tokens; ++i) {
+          row[written++] = plan.write[w].start + i;
+        }
+      }
+      if (written != slots.tokens) {
+        throw std::logic_error("ggml: KV cache planned the wrong rows");
+      }
+      std::vector<uint8_t>& mask = instance.uploads[group.mask].bytes;
+      mask.resize(
+          static_cast<size_t>(slots.tokens * group.keys) * sizeof(ggml_fp16_t));
+      auto* bias = reinterpret_cast<ggml_fp16_t*>(mask.data());
+      for (int64_t i = 0; i < slots.tokens; ++i) {
+        const int64_t query = start + i;
+        for (int64_t j = 0; j < group.keys; ++j) {
+          const int64_t key = positions[static_cast<size_t>(j)];
+          bias[i * group.keys + j] = key >= 0 && key <= query &&
+                  (group.window == 0 || query - key < group.window)
+              ? attend
+              : masked;
+        }
+      }
+      committed = plan;
     }
-    return plan;
+    return committed;
   }
 
   // Small integer constants, e.g. a key offset, read once from the package.

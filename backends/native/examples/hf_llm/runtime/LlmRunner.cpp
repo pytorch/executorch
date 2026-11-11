@@ -35,6 +35,7 @@
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/extension/llm/runner/constants.h>
 #include <executorch/runtime/backend/options.h>
 #include <gflags/gflags.h>
 #include <pytorch/tokenizers/error.h>
@@ -126,10 +127,12 @@ size_t kv_cache_length(const ptn::Method& method) {
 constexpr std::string_view kUpdateAndAttend =
     "torch.ops.kvcache.update_and_attend.default";
 
-// The off-graph KV cache a method's update_and_attend calls need: one flat
-// layer per cache id, shaped like its K. nullopt if the method has none.
+// The off-graph KV cache a method's update_and_attend calls need: one layer per
+// cache id, shaped like its K, with the sliding window (or none) the package's
+// metadata gives it. nullopt if the method has none.
 std::optional<cache::CacheGeometry> offgraph_cache_geometry(
-    const ptn::Method& method) {
+    const ptn::Method& method,
+    const ptn::Package& package) {
   std::map<int64_t, cache::LayerGeometry> layers;
   for (const ptn::Node& node : method.graph.nodes) {
     if (node.target != kUpdateAndAttend) {
@@ -184,6 +187,45 @@ std::optional<cache::CacheGeometry> offgraph_cache_geometry(
     }
     geometry.layers.push_back(layer);
   }
+
+  namespace llm = executorch::extension::llm;
+  const auto per_layer = [&](const char* name) {
+    std::optional<std::vector<int64_t>> values = package.metadata_ints(name);
+    if (values && values->size() != geometry.layers.size()) {
+      throw std::runtime_error(
+          std::string("package metadata ") + name + " has " +
+          std::to_string(values->size()) + " entries for " +
+          std::to_string(geometry.layers.size()) + " cache layers");
+    }
+    return values;
+  };
+  const auto kv_heads = per_layer(llm::kKVHeads);
+  const auto head_dims = per_layer(llm::kHeadDims);
+  const auto windows = per_layer(llm::kWindows);
+  // Without them a sliding layer would silently attend its whole history.
+  if (!windows) {
+    throw std::runtime_error(
+        std::string("package metadata has no ") + llm::kWindows +
+        "; export the package with export_hf_llm.py --offgraph_cache");
+  }
+  for (size_t i = 0; i < geometry.layers.size(); ++i) {
+    cache::LayerGeometry& layer = geometry.layers[i];
+    if ((kv_heads && (*kv_heads)[i] != layer.n_kv_heads) ||
+        (head_dims && (*head_dims)[i] != layer.head_dim)) {
+      throw std::runtime_error(
+          "package metadata disagrees with the graph on cache layer " +
+          std::to_string(i) + "'s shape");
+    }
+    const int64_t window = (*windows)[i];
+    if (window < 0 || window > std::numeric_limits<int>::max()) {
+      throw std::runtime_error(
+          "package metadata gives cache layer " + std::to_string(i) +
+          " an invalid window");
+    }
+    if (window > 0) {
+      layer.policy = {cache::LayerPolicy::Kind::Ring, static_cast<int>(window)};
+    }
+  }
   return geometry;
 }
 
@@ -195,9 +237,11 @@ struct OffGraphCache {
   ptn::EngineOptions options;
 };
 
+// `max_write` is the most tokens one call writes, which sizes a ring layer.
 OffGraphCache install_offgraph_cache(
     const char* backend_id,
-    const cache::CacheGeometry& geometry) {
+    const cache::CacheGeometry& geometry,
+    int max_write) {
   if (backend_id == nullptr) {
     throw std::runtime_error(
         "the package keeps its KV cache off-graph, which this engine's "
@@ -211,7 +255,8 @@ OffGraphCache install_offgraph_cache(
           FLAGS_kv_capacity > 0 ? FLAGS_kv_capacity : FLAGS_max_seq_length,
       .kv_dtype = static_cast<int>(
           FLAGS_kv_dtype == "fp16" ? ptn::ScalarType::Half
-                                   : ptn::ScalarType::Float)};
+                                   : ptn::ScalarType::Float),
+      .max_write = max_write};
   if (FLAGS_kv_initial_capacity >= 0) {
     cfg.initial_capacity = FLAGS_kv_initial_capacity;
   }
@@ -237,10 +282,15 @@ OffGraphCache install_offgraph_cache(
     throw std::runtime_error("failed to publish the KV cache key");
   }
   out.options.emplace(cache::kCacheKeyOption, key);
+  const auto sliding = std::ranges::count_if(
+      geometry.layers, [](const cache::LayerGeometry& layer) {
+        return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
+      });
   std::printf(
-      "kv cache:  off-graph, %zu layers, %d tokens (%d allocated up front), "
-      "%s\n",
+      "kv cache:  off-graph, %zu layers (%td sliding), %d tokens (%d "
+      "allocated up front), %s\n",
       geometry.layers.size(),
+      sliding,
       cfg.capacity,
       std::min(std::max(cfg.initial_capacity, 1), cfg.capacity),
       FLAGS_kv_dtype.c_str());
@@ -299,7 +349,8 @@ struct Generation {
 
 // Prefills `prompt_tokens` from `start_position` in calls of at most
 // `max_chunk` tokens, then decodes one token per call until `limit` tokens or
-// an EOS, streaming the text to stdout.
+// an EOS, streaming the text to stdout. With --warmup_prefill it prefills the
+// prompt once beforehand, then clears `offgraph_cache` if there is one.
 Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
@@ -310,7 +361,8 @@ Generation generate(
     int64_t start_position,
     size_t limit,
     const std::unordered_set<uint64_t>& eos_ids,
-    const NextToken& next_token_of) {
+    const NextToken& next_token_of,
+    cache::CacheControl* offgraph_cache) {
   std::vector<float> logits;
 
   auto set_positions = [&](int64_t start, size_t count) {
@@ -421,6 +473,11 @@ Generation generate(
           "warmup_prefill cannot be combined with logits diagnostics");
     }
     prefill(start_position);
+    // A sliding layer cannot rewind to the start of a prompt longer than its
+    // window, so the real prefill starts from an empty cache.
+    if (offgraph_cache != nullptr) {
+      offgraph_cache->clear();
+    }
   }
 
   Generation generation;
@@ -543,8 +600,16 @@ int run_llm(
     const std::unique_ptr<ptn::EngineHost> host = make_host();
     // Declared before the context, which may hold the cache, so it outlives it.
     std::optional<OffGraphCache> kv;
-    if (const auto geometry = offgraph_cache_geometry(method)) {
-      kv = install_offgraph_cache(cache_backend_id, *geometry);
+    if (const auto geometry = offgraph_cache_geometry(method, *package)) {
+      // Serialized input sizes are upper bounds; the tokens are [1, T].
+      const std::vector<int64_t>& token_bound =
+          method.graph.value(method.graph.input_ids.at(0)).tensor_meta().sizes;
+      if (token_bound.empty() || token_bound.back() <= 0 ||
+          token_bound.back() > std::numeric_limits<int>::max()) {
+        throw std::runtime_error("token input must have shape [1, sequence]");
+      }
+      kv = install_offgraph_cache(
+          cache_backend_id, *geometry, static_cast<int>(token_bound.back()));
     } else if (FLAGS_interactive) {
       throw std::invalid_argument(
           "--interactive needs a package exported with --offgraph_cache");
@@ -745,7 +810,8 @@ int run_llm(
             0,
             calls.size(),
             {},
-            check_then_force);
+            check_then_force,
+            nullptr);
         std::printf("%s", report.c_str());
       }
       std::printf(
@@ -834,7 +900,8 @@ int run_llm(
             position,
             limit,
             eos_ids,
-            ptn::greedy_argmax_last_row);
+            ptn::greedy_argmax_last_row,
+            nullptr);
         position += static_cast<int64_t>(tokens.size() + reply.decode_steps);
         unfed = reply.ended_on_eos ? std::nullopt
                                    : std::optional(reply.unfed_token);
@@ -859,7 +926,8 @@ int run_llm(
         0,
         limit,
         eos_ids,
-        ptn::greedy_argmax_last_row);
+        ptn::greedy_argmax_last_row,
+        kv ? kv->control : nullptr);
 
     const double prompt_tokens_per_second = generation.prompt_ms > 0.0
         ? 1000.0 * static_cast<double>(prompt_tokens.size()) /

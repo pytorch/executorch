@@ -37,6 +37,7 @@ runtime.cxx_library(
         "//executorch/backends/native/runtime/graph:scalar_type",
         "//executorch/examples/models/llama/tokenizer:tiktoken",
         "//executorch/extension/llm/cache:kv_cache",
+        "//executorch/extension/llm/runner:constants",
     ],
     exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
     external_deps = ["gflags"],

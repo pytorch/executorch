@@ -90,21 +90,34 @@ struct RowIndexCheck {
 
 // The off-graph KV cache as one graph sees it.
 struct OffGraphCacheBinding {
-  // Per cache layer: K and V storage, ggml [head_dim, capacity, n_kv_heads].
-  std::vector<std::pair<ggml_tensor*, ggml_tensor*>> layers;
-  // Cache rows the graph's attention reads, a prefix of capacity.
+  struct Layer {
+    // K and V storage, ggml [head_dim, rows, n_kv_heads].
+    ggml_tensor* k = nullptr;
+    ggml_tensor* v = nullptr;
+    // Sliding window of a ring layer, which attends all its rows; 0 for a
+    // flat layer.
+    int window = 0;
+  };
+  std::vector<Layer> layers;
+  // Rows a flat layer's attention reads, a prefix of its storage.
   int64_t keys = 0;
 };
 
 // Uploads of a graph's off-graph attention, which the executor fills from the
-// cache's plan before every run. Every layer shares them.
+// cache's plan before every run. Layers with the same window share them.
 struct OffGraphUploads {
-  // I32 [tokens]: the cache row each token writes.
-  size_t rows = 0;
-  // F16 [tokens, keys]: additive mask of the rows each token attends.
-  size_t mask = 0;
+  struct Group {
+    int window = 0;
+    // A layer with this window, whose plan fills the uploads.
+    int layer = 0;
+    // I32 [tokens]: the cache row each token writes.
+    size_t rows = 0;
+    // F16 [tokens, keys]: additive mask of the rows each token attends.
+    size_t mask = 0;
+    int64_t keys = 0;
+  };
   int64_t tokens = 0;
-  int64_t keys = 0;
+  std::vector<Group> groups;
 };
 
 struct GraphInstance {
