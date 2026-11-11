@@ -41,6 +41,7 @@ collect_artifacts() {
             artifact_dir="${RUNNER_ARTIFACT_DIR}/esp32s3/${operator_dir##*/}"
             mkdir -p "${artifact_dir}"
             for file in "${operator_dir}"/*.log "${operator_dir}"/*.bpte \
+                "${operator_dir}"/*.pte \
                 "${operator_dir}/sdkconfig" "${operator_dir}"/*.elf \
                 "${operator_dir}/merged-binary.bin"; do
                 if [[ -f "${file}" ]]; then
@@ -67,9 +68,6 @@ python examples/espressif/export_espnn_test_programs.py \
 # runs inline without pthreadpool, which needs POSIX calls ESP-IDF lacks.
 espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
-if [[ "${espnn_kernels}" == optimized ]]; then
-    espnn_ops="${espnn_ops},aten::sin.out"
-fi
 
 cmake --preset esp-baremetal -G Ninja -B "${build_dir}/runtime" \
     -DCMAKE_TOOLCHAIN_FILE="${IDF_PATH}/tools/cmake/toolchain-esp32s3.cmake" \
