@@ -6,7 +6,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 # Build the Cadence Xtensa op-level gtest tests for the configured backend and
-# run them on the Instruction Set Simulator (xt-run).
+# run them on the Instruction Set Simulator (xt-run). On backends that opt in,
+# also build and run cadence_op_registry_test, which checks that every op in the
+# backend's functions yaml is registered by cadence_ops_lib.
 #
 # Requires the Xtensa toolchain env to already be set (run
 # .ci/scripts/setup-xtensa-tools.sh <backend> first): XTENSA_TOOLCHAIN,
@@ -22,21 +24,27 @@ set -euo pipefail
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
 : "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
-# Map the optimized-kernel flag to the backend dir + gtest target name.
+# Map the optimized-kernel flag to the backend dir + gtest target name, and
+# whether the backend runs cadence_op_registry_test.
 case "${CADENCE_OPT_FLAG}" in
-  EXECUTORCH_NNLIB_OPT) TARGET_DIR=hifi ;;
-  EXECUTORCH_VISION_OPT) TARGET_DIR=vision ;;
-  EXECUTORCH_FUSION_G3_OPT) TARGET_DIR=fusion_g3 ;;
+  EXECUTORCH_NNLIB_OPT) TARGET_DIR=hifi RUN_REGISTRY_TEST=1 ;;
+  EXECUTORCH_VISION_OPT) TARGET_DIR=vision RUN_REGISTRY_TEST=0 ;;
+  EXECUTORCH_FUSION_G3_OPT) TARGET_DIR=fusion_g3 RUN_REGISTRY_TEST=0 ;;
   *)
     echo "ERROR: unknown CADENCE_OPT_FLAG='${CADENCE_OPT_FLAG}'" >&2
     exit 1
     ;;
 esac
 TEST_TARGET="cadence_${TARGET_DIR}_op_tests"
-TEST_ELF="cmake-out/backends/cadence/${TARGET_DIR}/operators/tests/${TEST_TARGET}"
+TEST_ELFS=("cmake-out/backends/cadence/${TARGET_DIR}/operators/tests/${TEST_TARGET}")
+BUILD_TARGETS=("${TEST_TARGET}")
+if [[ "${RUN_REGISTRY_TEST}" == "1" ]]; then
+  BUILD_TARGETS+=(cadence_op_registry_test)
+  TEST_ELFS+=(cmake-out/backends/cadence/cadence_op_registry_test)
+fi
 
 NPROC=$(nproc)
-echo "=== building ${TEST_TARGET} for ${XTENSA_CORE} (${CADENCE_OPT_FLAG}) ==="
+echo "=== building ${BUILD_TARGETS[*]} for ${XTENSA_CORE} (${CADENCE_OPT_FLAG}) ==="
 xt-clang --version | head -1
 
 rm -rf cmake-out
@@ -61,24 +69,26 @@ cmake \
   -DPYTHON_EXECUTABLE="$(which python3)" \
   -Bcmake-out .
 
-cmake --build cmake-out --target "${TEST_TARGET}" -j"${NPROC}"
+cmake --build cmake-out --target "${BUILD_TARGETS[@]}" -j"${NPROC}"
 
-if [[ ! -f "${TEST_ELF}" ]]; then
-  echo "ERROR: ${TEST_ELF} was not produced" >&2
-  exit 1
-fi
-
-echo "=== running ${TEST_TARGET} on xt-run ==="
-LOG=$(mktemp)
-# --exit_with_target_code propagates gtest_main's exit code, so a failing test
-# fails this step; also assert on the gtest summary lines as a backstop.
-xt-run --turbo --exit_with_target_code "${TEST_ELF}" 2>&1 | tee "${LOG}"
-if grep -q "\[  FAILED  \]" "${LOG}"; then
-  echo "ERROR: gtest reported failures for ${TEST_TARGET}" >&2
-  exit 1
-fi
-if ! grep -q "\[  PASSED  \]" "${LOG}"; then
-  echo "ERROR: ${TEST_TARGET} did not report a gtest PASSED summary" >&2
-  exit 1
-fi
+for TEST_ELF in "${TEST_ELFS[@]}"; do
+  if [[ ! -f "${TEST_ELF}" ]]; then
+    echo "ERROR: ${TEST_ELF} was not produced" >&2
+    exit 1
+  fi
+  TEST_NAME=$(basename "${TEST_ELF}")
+  echo "=== running ${TEST_NAME} on xt-run ==="
+  LOG=$(mktemp)
+  # --exit_with_target_code propagates gtest_main's exit code, so a failing test
+  # fails this step; also assert on the gtest summary lines as a backstop.
+  xt-run --turbo --exit_with_target_code "${TEST_ELF}" 2>&1 | tee "${LOG}"
+  if grep -q "\[  FAILED  \]" "${LOG}"; then
+    echo "ERROR: gtest reported failures for ${TEST_NAME}" >&2
+    exit 1
+  fi
+  if ! grep -q "\[  PASSED  \]" "${LOG}"; then
+    echo "ERROR: ${TEST_NAME} did not report a gtest PASSED summary" >&2
+    exit 1
+  fi
+done
 echo "Cadence ${TARGET_DIR} op tests passed on ${XTENSA_CORE}."
