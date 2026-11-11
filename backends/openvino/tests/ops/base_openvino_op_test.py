@@ -55,11 +55,14 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         compile_specs: tuple[CompileSpec, ...] = (),
         more_inputs: tuple[tuple[torch.Tensor, ...], ...] = (),
         compile_config: Optional[EdgeCompileConfig] = None,
+        dynamic_shapes=None,
     ):
 
         module = module.eval()
         # Export to aten dialect using torch.export
-        aten_dialect: ExportedProgram = export(module, sample_inputs)
+        aten_dialect: ExportedProgram = export(
+            module, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
 
         # Convert to edge dialect and lower the module to the backend with a custom partitioner
         compile_spec = [CompileSpec("device", self.device.encode()), *compile_specs]

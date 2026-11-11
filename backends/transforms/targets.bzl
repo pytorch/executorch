@@ -405,6 +405,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":propagate_view_copy_permute_pass",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
@@ -417,6 +418,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
@@ -708,6 +710,7 @@ def define_common_targets():
         srcs = ["permute_pass_utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "//executorch/frontends/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
@@ -851,6 +854,7 @@ def define_common_targets():
             "test/test_permute_optimization_passes.py",
         ],
         deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
             "//caffe2:torch",
             "//executorch/backends/test:graph_builder",
             "//executorch/exir:lib",

@@ -36,17 +36,11 @@ vkapi::ShaderInfo pick_linear_shader(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef input = args.at(1).refs.at(0);
   const ValueRef packed_weight = args.at(1).refs.at(1);
   bool has_bias = graph->get_bool(resize_args.at(1));
   uint32_t tile_m = pick_matmul_tile_m(graph, out);
 
-  bool is_buffer = graph->storage_type_of(out) == utils::kBuffer;
-  // Use vec4 shader when all tensor widths are aligned to 4, even for buffers
-  uint32_t K = graph->size_at<uint32_t>(-1, input);
-  uint32_t N = graph->size_at<uint32_t>(-1, out);
-  bool use_scalar = is_buffer && (K % 4 != 0 || N % 4 != 0);
-  std::string base = use_scalar ? "linear" : "linear_vec";
+  const std::string base = "linear_vec";
 
   std::string kernel_name;
   if (has_bias) {
