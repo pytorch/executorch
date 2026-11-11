@@ -422,6 +422,19 @@ test_run_ethos_u85() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_run_ethos_u85_clang() {
+    echo "${TEST_SUITE_NAME}: Test Clang runner on Ethos-U85"
+
+    examples/arm/run.sh \
+        --toolchain=arm-none-eabi-clang \
+        --et_build_root=arm_test/test_run_clang \
+        --target=ethos-u85-128 \
+        --model_name=qops \
+        --bundleio
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # ----------------------------------------------------------
 # -------- Vulkan Graph Format (VGF) specific tests --------
 # ----------------------------------------------------------
