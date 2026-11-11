@@ -89,11 +89,11 @@ bool try_add_q4gsw_linear_wmma_node(
     return false;
   }
   // A storage-image read of the input needs VK_IMAGE_LAYOUT_GENERAL
-  // (VUID-vkCmdDispatch-imageLayout-00344), which read-write access selects.
-  // The fallback kernels sample the input, which GENERAL also allows.
+  // (VUID-vkCmdDispatch-imageLayout-00344). The fallback kernels sample the
+  // input, which GENERAL also allows.
   const vkapi::MemoryAccessFlags input_access = build_choice->image_a &&
           graph.storage_type_of(fp_input) == utils::kTexture3D
-      ? vkapi::kReadWrite
+      ? vkapi::kReadStorageImage
       : vkapi::kRead;
 
   const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
