@@ -5,6 +5,10 @@ on:
     - cron: '0 8 * * 1'  # runs every Monday at 8:00 UTC
   workflow_dispatch:
 
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
   needs-user-input:
     runs-on: ubuntu-latest
@@ -23,4 +27,5 @@ jobs:
       - name: Run needs-user-input script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
         run: python .github/workflows/pending_user_response.py
