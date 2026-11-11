@@ -35,7 +35,7 @@ struct ET_EXPERIMENTAL PrefillPlan {
   // Reported as session_reset_reason: "new" (no resident), "exact_prefix"
   // (suffix reuse), "dirty", "mismatch", "equal" (prompt == resident),
   // "suffix_unavailable" (runtime cold fallback after optional reuse refusal),
-  // "prefix_clone" (runtime cloned a clean replacement's common prefix).
+  // "prefix_clone" (runtime adopted a saved snapshot or cloned a live prefix).
   std::string reason;
 };
 

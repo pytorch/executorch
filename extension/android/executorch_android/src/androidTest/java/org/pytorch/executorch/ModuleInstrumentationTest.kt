@@ -103,15 +103,15 @@ class ModuleInstrumentationTest {
 
   @Test
   @Throws(IOException::class)
-  fun testNonPteFile() {
-    Assert.assertThrows(RuntimeException::class.java) {
-      val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))
-      try {
-        module.loadMethod(FORWARD_METHOD)
-      } finally {
-        module.destroy()
-      }
-    }
+  fun testNonPteFilePreservesInvalidProgramError() {
+    val nonPteFile = File(getTestFilePath(NON_PTE_FILE_NAME))
+    // Allow the native header read to succeed so program validation rejects the invalid identifier.
+    nonPteFile.appendBytes(ByteArray(64))
+    val exception =
+        Assert.assertThrows(ExecutorchRuntimeException::class.java) {
+          Module.load(nonPteFile.absolutePath).destroy()
+        }
+    Assert.assertEquals(ExecutorchRuntimeException.INVALID_PROGRAM, exception.errorCode)
   }
 
   @Test
