@@ -4,6 +4,7 @@
  */
 #include <executorch/backends/arm/runtime/VGFSharedDevice.h>
 #include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -155,6 +156,9 @@ TEST(VgfSharedDevice, StateReleasesItsDeviceReferenceOnTeardown) {
 
 #if defined(EXECUTORCH_VGF_SHARED_DEVICE) && EXECUTORCH_VGF_SHARED_DEVICE
 TEST(VgfSharedDevice, ImplicitCreationIsRejectedAtDelegateInit) {
+  // ET_LOG in the expected rejection path requires PAL initialization.
+  executorch::runtime::runtime_init();
+
   BackendOptions<1> options;
   ASSERT_EQ(
       options.set_option("vulkan_shared_device_name", "vgf-order-test"),
