@@ -75,10 +75,12 @@ void accumulate_out_tile_with_int_accum_from_int4_weights(
           (weight_sums.data[n4] + 8 * group_size) * input_zp_m +
           mul_8(group_size * input_zp_m - input_sum_m);
 
-      out_tile.data[m][n4] =
-          fma(VEC4_T(accum_adjusted),
-              VEC4_T(input_scale_m * weight_scales.data[n4]),
-              out_tile.data[m][n4]);
+      // Computed in fp32: the scale product can be below the smallest normal
+      // fp16 value, and some devices flush fp16 subnormals to zero.
+      out_tile.data[m][n4] = VEC4_T(
+          fma(vec4(accum_adjusted),
+              input_scale_m * vec4(weight_scales.data[n4]),
+              vec4(out_tile.data[m][n4])));
     }
   }
 }
