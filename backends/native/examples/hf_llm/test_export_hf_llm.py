@@ -43,6 +43,7 @@ from transformers import (
     Qwen2Config,
     Qwen3Config,
 )
+from transformers.cache_utils import StaticLayer
 
 # Architectures gguf_hf maps; the GGUF test covers each.
 _CONFIGS = {
@@ -136,6 +137,9 @@ class ExportHfLlmTest(unittest.TestCase):
                     weight.uniform_(-0.5, 0.5)
                 torch.manual_seed(2)
                 loaded = _tiny(arch, tie)
+                # Newer transformers' sdpa rejects Gemma 2's attention softcap.
+                for model in (reference, loaded):
+                    model.config._attn_implementation = "eager"
                 pairs = _as_gguf_tensors(reference, arch)
 
                 load_gguf(loaded, "model.gguf", arch, lambda _, p=pairs: iter(p))
@@ -373,8 +377,14 @@ class ExportHfLlmTest(unittest.TestCase):
             self.assertEqual(samples.tol, tol)
 
     def test_fp16_kv_cache_rejects_sliding_window_layers(self) -> None:
+        model = _tiny("gemma3")
+        if all(
+            type(layer) is StaticLayer
+            for layer in LastTokenLM(copy.deepcopy(model), 32).cache.layers
+        ):
+            self.skipTest("this transformers windows static layers with the mask")
         with self.assertRaisesRegex(ValueError, "cannot change the KV dtype"):
-            LastTokenLM(_tiny("gemma3"), 32, torch.float16)
+            LastTokenLM(model, 32, torch.float16)
 
     def test_offgraph_cache_windows_sliding_layers_like_hf(self) -> None:
         # Mistral windows every layer; Gemma3 alternates sliding and full.
