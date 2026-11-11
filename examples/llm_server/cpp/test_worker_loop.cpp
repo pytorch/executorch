@@ -500,6 +500,7 @@ void test_stop_string_marks_dirty_and_omits_ids() {
   auto em = run(st, true, req);
   check("stop: text=ab (stop trimmed)", em.text == "ab");
   check("stop: finish=stop", em.done["finish_reason"] == "stop");
+  check("stop: reports removed stop", em.done["matched_stop"] == "X");
   check(
       "stop: no generated_token_ids", !em.done.contains("generated_token_ids"));
   check("stop: session marked dirty", st.dirty);
@@ -1008,6 +1009,19 @@ void test_additional_terminal_stats_reject_reserved_key() {
   check("terminal stats: no partial terminal event", em.done.is_null());
 }
 
+void test_close_named_reports_existence() {
+  FakeEngine engine;
+  WorkerSessions sessions(engine);
+  std::string code;
+  check("close_named: missing is idempotent", !sessions.close_named("s"));
+  check(
+      "close_named: open succeeds", sessions.open_named("s", code) != nullptr);
+  check("close_named: releases existing slot", sessions.close_named("s"));
+  check(
+      "close_named: repeated close reports absence",
+      !sessions.close_named("s"));
+}
+
 void test_reset_named_only_clears_on_success() {
   FakeEngine engine;
   WorkerSessions sessions(engine);
@@ -1076,6 +1090,7 @@ int main() {
   test_additional_terminal_stats();
   test_additional_terminal_stats_reject_reserved_key();
   test_reset_named_only_clears_on_success();
+  test_close_named_reports_existence();
   printf(
       "\n%s (%d failure(s))\n",
       g_failures ? "FAILURES" : "ALL PASS",

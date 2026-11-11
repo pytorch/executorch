@@ -598,20 +598,23 @@ TEST_F(CudaDFlashNative, FinalWholeBlockFitsExactlyAndPreservesAllPrefillRows) {
   ASSERT_TRUE(executor_);
   const auto sid = open();
   b::BatchOutput out;
+  const auto start = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 0, Tokens(78, 1), false)}}, out));
   Peer::check(*executor_, sid, 78);
   EXPECT_EQ(executor_->stats().hidden_rows_d2h, 78);
+  // 78 prefill rows exceed the fresh context, so the prefill itself drains
+  // them through the dynamic draft.
+  const auto prefilled = executor_->stats();
+  EXPECT_GT(prefilled.draft_forwards - start.draft_forwards, 0);
+  EXPECT_EQ(prefilled.static_draft_forwards, start.static_draft_forwards);
   fixture_->rejected.fill(0);
-  const auto drain = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 78, {1})}}, out));
   EXPECT_EQ(out.outputs[0]->tokens, predictions(78, 2));
   Peer::check(*executor_, sid, 80);
-  // 79 rows exceed one static block: drain dynamically, then draft statically.
-  const auto drained = executor_->stats();
-  EXPECT_EQ(drained.static_draft_forwards - drain.static_draft_forwards, 1);
-  EXPECT_GT(
-      drained.draft_forwards - drain.draft_forwards,
-      drained.static_draft_forwards - drain.static_draft_forwards);
+  // The drained remainder fits one block: the decode drafts statically.
+  const auto drafted = executor_->stats();
+  EXPECT_EQ(drafted.draft_forwards - prefilled.draft_forwards, 1);
+  EXPECT_EQ(drafted.static_draft_forwards - prefilled.static_draft_forwards, 1);
   fixture_->rejected.fill(15);
   const auto before = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 80, {prediction(79)})}}, out));

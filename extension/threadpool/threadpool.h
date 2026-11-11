@@ -12,9 +12,16 @@
 #include <memory>
 #include <mutex>
 
-#include <pthreadpool.h>
-
 #include <executorch/runtime/core/function_ref.h>
+
+// The pip package does not ship pthreadpool.h, so the pool type is declared
+// here. Where the header is available, it is still included, because existing
+// code calls pthreadpool functions through this header.
+struct pthreadpool;
+typedef struct pthreadpool* pthreadpool_t;
+#if __has_include(<pthreadpool.h>)
+#include <pthreadpool.h>
+#endif
 
 /*
  * Threadpool Options:
@@ -30,6 +37,15 @@
  * - EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES (flag) - Sizes the threadpool
  * equal to the number of logical cores on system. This is the historical
  * behavior.
+ *
+ * On Linux other than Android, the threadpool starts with no more threads than
+ * the CPUs in the affinity mask of the thread that first calls
+ * get_threadpool(). taskset and cgroup cpusets shrink that mask, CPU quotas do
+ * not. The mask also sizes the threadpool when the performance core count is
+ * unknown, as on x86. It is read once: the threadpool does not follow later
+ * changes to the mask, and a child created by fork() keeps its parent's size.
+ * If the mask can grow later, set the thread count you need with
+ * _unsafe_reset_threadpool() before loading any model.
  */
 
 namespace executorch::extension::threadpool {
@@ -59,11 +75,16 @@ class ThreadPool final {
   /**
    * INTERNAL: Resets the threadpool by creating a new threadpool with requested
    * # of threads. This is not a thread safe call. When calling this method,
-   * threads of the threadpool might be doing some work. Some other code may
-   * also be holding on to the threadpool pointer, that is no longer valid. This
-   * is a private API, which will later be replaced by something that allows
-   * creating of threadpool with requested size and use such a threadpool with
-   * backend delegates, custom ops or optimized lib.
+   * threads of the threadpool might be doing some work. A pointer returned by
+   * get_pthreadpool() is no longer valid, while one returned by
+   * get_shared_pthreadpool() keeps the old threadpool alive until it is
+   * released. So the XNNPACK parts of a method loaded before this call keep
+   * the old thread count until the method is destroyed, and its CpuBackend
+   * parts fail to run. Resetting while a CpuBackend part is loading or
+   * running is not safe. This method is a private API, which will later be
+   * replaced by something that allows creating of threadpool with requested
+   * size and use such a threadpool with backend delegates, custom ops or
+   * optimized lib.
    * For Meta internal use, there is
    * executorch::extension::threadpool::UseNThreadsThreadPoolGuard API that
    * provides a safer way to select a subset of threads, from threadpool, to run
@@ -76,8 +97,9 @@ class ThreadPool final {
   /**
    * INTERNAL: Destroys the threadpool. This is not a thread safe call. When
    * calling this method, threads of the threadpool might be doing some work.
-   * Some other code may also be holding on to the threadpool pointer, that is
-   * no longer valid.
+   * As with _unsafe_reset_threadpool(), a pointer returned by get_pthreadpool()
+   * is no longer valid, while one returned by get_shared_pthreadpool() keeps
+   * the threadpool alive until it is released.
    */
   [[deprecated("This API is experimental and may change without notice.")]]
   void _unsafe_destroy_threadpool();
@@ -93,14 +115,16 @@ class ThreadPool final {
 
  private:
   friend pthreadpool_t get_pthreadpool();
+  friend std::shared_ptr<pthreadpool> get_shared_pthreadpool();
 
  private:
-  // This mutex is used inside get_thread_count API but it is not really needed
-  // since data members of ThreadPool objects are not really mutable.
-  // TODO(kimishpatel): Figure out if we will allow set_num_threads API, in
-  // which case this mutex will be useful. Otherwise remove it.
+  // Guards threadpool_ and thread_count_. run() holds it for the whole
+  // parallel call, so that a reset or destroy cannot free the pool mid-run.
   mutable std::mutex mutex_;
-  std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> threadpool_;
+  // Held with mutex_ to change threadpool_, and alone to read it in the
+  // getters, so that they do not wait for run().
+  std::mutex threadpool_mutex_;
+  std::shared_ptr<pthreadpool> threadpool_;
   // The number of threads in the threadpool.
   size_t thread_count_;
 };
@@ -114,9 +138,22 @@ ThreadPool* get_threadpool();
  * Returns the underlying pthreadpool instance used by the implementation of
  * ThreadPool returned by `get_threadpool()`. Only for use in external libraries
  * so as to unify threading across internal (i.e. ATen, etc.) and external (e.g.
- * NNPACK, QNNPACK, XNNPACK) use cases.
+ * NNPACK, QNNPACK, XNNPACK) use cases. The pointer is no longer valid after the
+ * next ThreadPool::_unsafe_reset_threadpool() or
+ * ThreadPool::_unsafe_destroy_threadpool(), so a caller that keeps the instance
+ * should use get_shared_pthreadpool().
  */
 pthreadpool_t get_pthreadpool();
+
+/**
+ * Same as get_pthreadpool(), but the caller shares ownership of the instance,
+ * so it stays valid while the returned pointer is held, even after
+ * ThreadPool::_unsafe_reset_threadpool() or
+ * ThreadPool::_unsafe_destroy_threadpool(). For external libraries that keep
+ * the instance, such as an XNNPACK runtime. Safe to call while another thread
+ * resets or destroys the threadpool.
+ */
+std::shared_ptr<pthreadpool> get_shared_pthreadpool();
 
 } // namespace executorch::extension::threadpool
 

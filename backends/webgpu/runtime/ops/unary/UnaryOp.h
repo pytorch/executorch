@@ -17,7 +17,8 @@ namespace executorch::backends::webgpu {
 // Dummy min/max for no-param activations; mirrors Vulkan kDummyFloat.
 inline constexpr float kUnaryDummyFloat = -1.0f;
 
-// Generic elementwise unary op; mirrors Vulkan add_unary_op_node.
+// Generic elementwise unary op; mirrors Vulkan add_unary_op_node. min/max/aux
+// fill the three float slots after num_elements in the shader's Params.
 void add_unary_op(
     WebGPUGraph& graph,
     int in_id,
@@ -26,6 +27,7 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min = kUnaryDummyFloat,
-    float max = kUnaryDummyFloat);
+    float max = kUnaryDummyFloat,
+    float aux = kUnaryDummyFloat);
 
 } // namespace executorch::backends::webgpu

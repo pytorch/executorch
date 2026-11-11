@@ -35,20 +35,20 @@ def define_common_targets(is_fbcode = False):
         name = "runtime_shims",
         srcs = [
             "shims/cuda_guard.cpp",
+            "shims/index.cu",
             "shims/int4mm.cu",
             "shims/memory.cpp",
             "shims/rand.cu",
             "shims/sort.cu",
-            "shims/tensor_attribute.cpp",
         ],
         headers = [
             "shims/cuda_guard.h",
+            "shims/index.h",
             "shims/int4mm.cuh",
             "shims/int4mm.h",
             "shims/memory.h",
             "shims/rand.h",
             "shims/sort.h",
-            "shims/tensor_attribute.h",
             "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -163,6 +163,27 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_output_copy",
+        srcs = [
+            "test/test_cuda_output_copy.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            ":runtime_shims",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),

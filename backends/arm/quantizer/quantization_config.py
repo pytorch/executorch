@@ -232,14 +232,13 @@ class QuantizationConfig:
     ) -> Optional[QuantizationSpecBase]:
         """Get the validated weight spec.
 
-        Validate that the weight qscheme is supported (per-tensor or
-        per-channel symmetric) before returning the spec.
+        Validate that the weight qscheme is supported before returning the spec.
 
         Returns:
             Optional[QuantizationSpecBase]: Weight spec, or ``None`` when unset.
 
         Raises:
-            ValueError: If the qscheme is not a supported symmetric scheme.
+            ValueError: If the qscheme is not a supported static scheme.
 
         """
         if self.weight is None:
@@ -248,6 +247,8 @@ class QuantizationConfig:
         if not hasattr(self.weight, "qscheme") or self.weight.qscheme not in [
             torch.per_tensor_symmetric,
             torch.per_channel_symmetric,
+            torch.per_tensor_affine,
+            torch.per_channel_affine,
         ]:
             raise ValueError(f"Unsupported quantization_spec {self.weight} for weight")
         return self.weight
@@ -354,7 +355,10 @@ class QuantizationConfig:
                 )
                 ch_axis = None
                 if self.weight is not None:
-                    if qscheme == torch.per_channel_symmetric:
+                    if qscheme in (
+                        torch.per_channel_symmetric,
+                        torch.per_channel_affine,
+                    ):
                         ch_axis = self.weight.ch_axis
                         if (
                             node.target == torch.ops.aten.conv_transpose2d.input
@@ -466,7 +470,8 @@ class TOSAQuantizationConfig(QuantizationConfig):
             node is not None
             and weight_qspec is not None
             and isinstance(weight_qspec, QuantizationSpec)
-            and weight_qspec.qscheme == torch.per_channel_symmetric
+            and weight_qspec.qscheme
+            in (torch.per_channel_symmetric, torch.per_channel_affine)
             and node.target == torch.ops.aten.conv_transpose2d.input
         ):
             # MLETORCH-1853: Fix lazy import when moving files around

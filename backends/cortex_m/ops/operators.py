@@ -581,13 +581,30 @@ def quantized_linear_impl(
         output_reshaped = output.reshape(output_shape)
 
     output = requantize_cmsis(
-        output_reshaped,
-        int(requantize_multipliers[0]),
-        int(requantize_shifts[0]),
+        output_reshaped, requantize_multipliers, requantize_shifts
     )
     output += output_offset
     output = torch.clamp(output, activation_min, activation_max).to(torch.int8)
     return output
+
+
+# Same as quantized_linear, with one int32 requantization multiplier and shift
+# per output feature.
+_LINEAR_PER_CHANNEL_ARGS = (
+    "Tensor input, Tensor weights, Tensor? bias, Tensor? kernel_sum, "
+    "int input_offset, int filter_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_max, int activation_min"
+)
+lib.define(f"quantized_linear_per_channel({_LINEAR_PER_CHANNEL_ARGS}) -> Tensor")
+lib.define(
+    f"quantized_linear_per_channel.out({_LINEAR_PER_CHANNEL_ARGS}, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+register_fake("cortex_m::quantized_linear_per_channel")(quantized_linear_meta)
+impl(lib, "quantized_linear_per_channel", "CompositeExplicitAutograd")(
+    quantized_linear_impl
+)
 
 
 # ===================================================================

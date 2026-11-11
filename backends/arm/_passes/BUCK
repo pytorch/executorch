@@ -66,6 +66,7 @@ fbcode_target(
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:canonicalize_view_copy_permute_pass",
         "//executorch/backends/transforms:permute_view_meta",
+        "//executorch/backends/transforms:symbolic_shape_utils",
         "//executorch/backends/transforms:fuse_duplicate_users_pass",
         "//executorch/backends/transforms:propagate_view_copy_permute_pass",
         "//executorch/backends/transforms:fuse_identical_input_transforms_pass",

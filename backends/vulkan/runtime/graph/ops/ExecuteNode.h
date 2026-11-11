@@ -82,6 +82,10 @@ class ExecuteNode {
     return name_;
   }
 
+  inline const std::vector<ArgGroup>& args() const {
+    return args_;
+  }
+
  protected:
   uint32_t node_id_;
   const ResizeFunction resize_fn_;

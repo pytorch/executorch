@@ -80,8 +80,10 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
     TARGET nemotron3_diarization_runner
     POST_BUILD
     COMMAND
-      ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+      ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:nemotron3_diarization_runner>
       $<TARGET_FILE_DIR:nemotron3_diarization_runner>
+    COMMAND_EXPAND_LISTS
   )
 endif()
 if(EXECUTORCH_BUILD_VULKAN)

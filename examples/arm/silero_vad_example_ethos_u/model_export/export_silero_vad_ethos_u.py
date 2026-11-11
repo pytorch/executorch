@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import importlib
 import math
 import os
 import struct
@@ -39,7 +38,6 @@ from executorch.exir import (  # noqa: E402
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from executorch.exir.dialects._ops import ops as exir_ops  # noqa: E402
 from executorch.exir.passes.init_mutable_pass import (  # noqa: E402
     InitializedMutableBufferPass,
 )
@@ -250,12 +248,17 @@ def run_stream(
     if max_frames is not None:
         total_frames = min(total_frames, max_frames)
 
-    reset_state(model, initial_state)
-    with torch.no_grad():
-        for frame_index in range(total_frames):
-            model_input, context = make_model_input(audio, frame_index, context)
-            prob = model(model_input)
-            probs.append(float(prob.flatten()[0].item()))
+    saved_state = model.get_buffer(STATE_BUFFER_NAME).detach().clone()
+    try:
+        reset_state(model, initial_state)
+        with torch.no_grad():
+            for frame_index in range(total_frames):
+                model_input, context = make_model_input(audio, frame_index, context)
+                prob = model(model_input)
+                probs.append(float(prob.flatten()[0].item()))
+    finally:
+        # ExportedProgram.module() shares this buffer with the program to serialize.
+        reset_state(model, saved_state)
 
     return torch.tensor(probs, dtype=torch.float32)
 
@@ -265,53 +268,6 @@ def write_float32_file(path: str, values: torch.Tensor) -> None:
     data = values.detach().cpu().flatten().tolist()
     with open(path, "wb") as output_file:
         output_file.write(struct.pack(f"<{len(data)}f", *data))
-
-
-def ensure_quantized_out_variants() -> None:
-    try:
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default.to_out_variant()
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default.to_out_variant()
-        return
-    except RuntimeError:
-        pass
-
-    configured_library = os.environ.get("EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY")
-    if configured_library:
-        library_path = Path(configured_library).expanduser().resolve()
-        if not library_path.is_file():
-            raise FileNotFoundError(f"Quantized ops library not found: {library_path}")
-        torch.ops.load_library(str(library_path))
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default.to_out_variant()
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default.to_out_variant()
-        return
-
-    try:
-        import executorch.extension.pybindings.portable_lib  # noqa: F401
-    except ImportError:
-        pass
-
-    candidate_roots = [REPO_ROOT]
-    executorch_pkg = importlib.import_module("executorch")
-    for package_path in getattr(executorch_pkg, "__path__", []):
-        resolved_package_path = Path(package_path).resolve()
-        if resolved_package_path.parent.name == "src":
-            candidate_roots.append(resolved_package_path.parent.parent)
-
-    suffixes = (".so", ".dylib", ".dll")
-    for root in dict.fromkeys(candidate_roots):
-        quantized_dir = root / "kernels" / "quantized"
-        for suffix in suffixes:
-            candidate = quantized_dir / f"libquantized_ops_aot_lib{suffix}"
-            if candidate.exists():
-                torch.ops.load_library(str(candidate))
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default.to_out_variant()
-                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default.to_out_variant()
-                return
-
-    raise RuntimeError(
-        "Could not load quantized q/dq out variants. Build or install the "
-        "quantized AOT op library before exporting this example."
-    )
 
 
 def quantize_model(
@@ -439,7 +395,6 @@ if __name__ == "__main__":
             _check_ir_validity=False,
         ),
     )
-    ensure_quantized_out_variants()
     executorch_program = edge_program.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=False,

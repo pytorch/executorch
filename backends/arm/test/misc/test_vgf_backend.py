@@ -10,15 +10,20 @@ from typing import cast
 from unittest import mock
 
 import pytest
+import torch
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import EnsureUniqueOutputNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     clear_registered_pass_insertions,
     PassInsertions,
 )
 
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
+)
 from executorch.backends.arm.vgf import backend, backend as vgf_backend, VgfCompileSpec
+from executorch.backends.arm.vgf._passes import GroupIndependentCustomShadersPass
 from executorch.backends.arm.vgf.backend import (
     _copy_failure_artifacts,
     _format_repro_command,
@@ -28,9 +33,13 @@ from executorch.backends.arm.vgf.backend import (
     vgf_compile,
 )
 from executorch.exir.backend.backend_details import PreprocessResult
+from executorch.exir.backend.utils import WhyNoPartitionReporter
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.passes.infra.pass_base import PassResult
 
 
@@ -79,10 +88,18 @@ def test_vgf_preprocess_restores_pass_registry(monkeypatch) -> None:
         )
         original_registry = _registry_state()
         _set_up_fake_vgf_preprocess(monkeypatch)
+
+        def fake_preprocess(edge_program, compile_specs):
+            assert (
+                GroupIndependentCustomShadersPass
+                in _registry_state()[EnsureUniqueOutputNodesPass][0]
+            )
+            return PreprocessResult(processed_bytes=b"")
+
         monkeypatch.setattr(
             vgf_backend.TOSABackend,
             "_preprocess",
-            lambda edge_program, compile_specs: PreprocessResult(processed_bytes=b""),
+            fake_preprocess,
         )
 
         result = vgf_backend.VgfBackend.preprocess(
@@ -531,3 +548,38 @@ def test_vgf_compile_success_artifacts_are_distinct_per_tag(
     assert not (artifact_path / "output.tosa.vgf").exists()
 
     assert mock_run.call_count == 2
+
+
+@pytest.mark.parametrize("dynamic", [False, True])
+@pytest.mark.parametrize(
+    "target,args",
+    [
+        (exir_ops.edge.aten.view_copy.default, ([-1],)),
+        (exir_ops.edge.aten.permute_copy.default, ([1, 0],)),
+        (torch.ops.aten.sym_size.int, (0,)),
+        (exir_ops.edge.aten.relu.default, ()),
+    ],
+)
+def test_vgf_dynamic_shape_support(target, args, dynamic) -> None:
+    shape_env = ShapeEnv()
+    inputs = torch.empty((2, 3))
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    with FakeTensorMode(shape_env=shape_env) as mode:
+        x.meta["val"] = mode.from_tensor(inputs, static_shapes=not dynamic)
+        node = graph.call_function(target, (x, *args))
+        node.meta["val"] = target(x.meta["val"], *args)
+
+    checker = CheckResolvedTensorShapes(
+        WhyNoPartitionReporter(),
+        targets=(
+            exir_ops.edge.aten.view_copy.default,
+            exir_ops.edge.aten.permute_copy.default,
+        ),
+        reject_symbolic_scalars=True,
+    )
+    expected_support = not dynamic or target == exir_ops.edge.aten.relu.default
+    assert checker.is_node_supported({}, node) is expected_support
+
+    default_checker = CheckResolvedTensorShapes(WhyNoPartitionReporter())
+    assert default_checker.is_node_supported({}, node) is (not dynamic)

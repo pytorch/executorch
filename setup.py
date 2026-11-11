@@ -105,10 +105,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         "runtime/executor/tensor_parser.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
-        # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
-        # publish either. The component it belongs to is a link dependency the runtime carries, not
-        # something a consumer includes.
-        "extension/threadpool/threadpool.h",
         # Declares CPUCachingAllocator, whose implementation is in a component no shipped library links,
         # so including it compiles and then fails at link time with an undefined reference.
         "extension/memory_allocator/cpu_caching_malloc_allocator.h",
@@ -735,9 +731,9 @@ def _cuda_train() -> str:
 
     Raises when a release row names a train the installed toolkit does not provide. The
     declared packages and the loader paths both come from this value, so disagreeing with
-    the toolkit that compiled the libraries produces a wheel that installs cleanly and then
-    cannot load: a cu126 row built against a 13.0 toolkit declares the CUDA 12 runtime for
-    binaries that need libcudart.so.13.
+    the toolkit that compiled the libraries produces a wheel that installs cleanly but
+    declares a train it was not compiled for, such as a cu134 row built against a 13.2
+    toolkit.
     """
     # An explicit OFF first, ahead of the release field. A CPU row on a builder that has a
     # toolkit installed sets both, so reading the row field first would declare a runtime
@@ -1136,11 +1132,9 @@ def _torchao_requirement() -> str:
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
 
-    version = module.TORCHAO_NIGHTLY_VERSION
-    if (
-        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
-        and not module.torchao_from_source()
-    ):
+    torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
+    version = module.get_torchao_version(torch_url)
+    if torch_url.endswith("/cu134") and not module.torchao_from_source():
         version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
@@ -1154,15 +1148,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module
@@ -1176,9 +1166,8 @@ def _base_dependencies() -> List[str]:
         # The MLX backend needs it too, though indirectly: it registers a torchao operator that
         # only exists once torchao has been imported.
         #
-        # The lower bound is the nightly install_requirements.py pins, so that installing this
-        # package over a development checkout leaves that pin in place. A bound at the stable
-        # release instead would evict it, because a dev release sorts below its own final.
+        # Match the version selected by install_requirements.py so installing the
+        # package preserves the CPU release or the selected nightly.
         #
         # The upper bound is what makes naming a pre-release safe. A specifier that names one
         # accepts pre-releases for this requirement, so without the bound pip would resolve a
@@ -1398,6 +1387,18 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_backend_xnnpack",
             None,
             ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+        (
+            "backends/xnnpack/",
+            "executorch_xnnpack",
+            None,
+            ["EXECUTORCH_BUILD_XNNPACK", "EXECUTORCH_BUILD_NATIVE_CPU"],
+        ),
+        (
+            "backends/cpu/",
+            "executorch_backend_cpu",
+            None,
+            ["EXECUTORCH_BUILD_CPU"],
         ),
         (
             "backends/cuda/",
@@ -2725,7 +2726,7 @@ class CustomBuild(build):
                     ]
             else:
                 if windows_cuda_home:
-                    log.warning(
+                    log.warn(
                         "building the CUDA backend with the Visual Studio generator, "
                         "because ninja, clang-cl and cl are not all on PATH; run from "
                         "a Visual Studio developer prompt with ninja for the Ninja "
@@ -2907,6 +2908,9 @@ class CustomBuild(build):
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
+                # VGF can configure the registry target without linking it.
+                # Only Vulkan requires this DSO in the Python wheel today.
+                cmake_build_args += ["--target", "executorch_vulkan_shared_runtime"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
                 cmake_build_args += ["--target", "cmsis_nn"]
@@ -2942,6 +2946,8 @@ class CustomBuild(build):
                 cmake_build_args += ["--target", "etdump"]
                 if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
                     cmake_build_args += ["--target", "coremldelegate"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREAI"):
+                    cmake_build_args += ["--target", "coreaidelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
@@ -2954,6 +2960,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_CPU"):
+                    cmake_build_args += ["--target", "cpu_backend"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]
@@ -3196,6 +3204,26 @@ setup(
                         "EXECUTORCH_BUILD_XNNPACK",
                     ],
                 ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_xnnpack"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch_xnnpack"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                        "EXECUTORCH_BUILD_NATIVE_CPU",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cpu/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_backend_cpu"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_cpu"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CPU",
+                    ],
+                ),
                 # Install the MLX delegate beside them, so a C++ consumer can link
                 # it out of the wheel rather than only reaching it from Python.
                 BuiltFile(
@@ -3220,6 +3248,25 @@ setup(
                         # extension on non-Apple platforms, where this shared library
                         # is not built. This flag is set only when it actually is.
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
+                    ],
+                ),
+                # The Vulkan delegate requires one shared registry DSO even
+                # when its own library is static. VGF currently configures this
+                # target but does not use it, so do not ship it for VGF-only wheels.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/vulkan_shared/%BUILD_TYPE%/",
+                    src_name=get_dynamic_lib_name("executorch_vulkan_shared_runtime"),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_VULKAN"],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreai/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreai"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreai"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_COREAI",
                     ],
                 ),
                 *_windows_import_libraries(),

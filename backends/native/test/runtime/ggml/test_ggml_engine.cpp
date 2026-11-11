@@ -81,6 +81,11 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 
 constexpr size_t kQ4KBlockBytes = 144;
 
+// The safetensors header of the affine linear program's constants.
+constexpr const char* kQ4_0SafeTensorsHeader =
+    R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
+    R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+
 // A [1, 256] x [256] linear with gguf:q4_k weights, or with symmetric int4
 // AffineGroup weights whose fp16 scales `weight_scale` cover groups of 32.
 // `cache` is an unused mutable buffer.
@@ -232,6 +237,10 @@ std::vector<uint8_t> make_linear_program(
       builder.GetBufferPointer() + builder.GetSize()};
 }
 
+// For tests of quantized linears whose activation numerics aren't under test.
+constexpr GgmlEngineOptions kAllowActivationQuant{
+    .allow_activation_quant_for_weight_only = true};
+
 std::unique_ptr<GgmlEngineContext> make_context(
     GgmlEngineHost& host,
     const std::vector<uint8_t>& program_bytes) {
@@ -260,9 +269,19 @@ std::unique_ptr<GgmlEngineContext> make_context(
   return host.create_ggml_context(std::move(program), std::move(package));
 }
 
-// A tensor (by name), an int, a float, an int list, or None.
-using TestArg = std::
-    variant<std::string, int64_t, double, std::vector<int64_t>, std::monostate>;
+// A bool argument, wrapped so that string literals never convert to it.
+struct BoolValue {
+  bool value = false;
+};
+
+// A tensor (by name), an int, a float, an int list, None, or a bool.
+using TestArg = std::variant<
+    std::string,
+    int64_t,
+    double,
+    std::vector<int64_t>,
+    std::monostate,
+    BoolValue>;
 
 // A one-method program assembled value by value; every node's output value
 // carries the node's name.
@@ -423,6 +442,12 @@ class TestProgram {
     if (std::holds_alternative<std::monostate>(arg)) {
       return create_none_arg(builder_);
     }
+    if (const auto* flag = std::get_if<BoolValue>(&arg)) {
+      return fbs::CreateArgument(
+          builder_,
+          fbs::ArgumentValue::BoolArg,
+          fbs::CreateBoolArgDirect(builder_, flag->value).Union());
+    }
     if (const auto* list = std::get_if<std::vector<int64_t>>(&arg)) {
       return fbs::CreateArgument(
           builder_,
@@ -473,7 +498,7 @@ std::vector<uint8_t> make_cache_update_program(
 
 // cppcheck-suppress syntaxError
 TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, make_linear_program());
   auto executable = context->compile("forward");
 
@@ -491,8 +516,9 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
 TEST(GgmlEngineTest, RepeatedExecutionsReadFreshInputs) {
   for (const size_t max_cached_graphs : {size_t{0}, size_t{1}}) {
     SCOPED_TRACE(max_cached_graphs);
-    auto host = GgmlEngineHost::create(
-        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .max_cached_graphs = max_cached_graphs,
+        .allow_activation_quant_for_weight_only = true});
     auto context = make_context(*host, make_linear_program());
     auto executable = context->compile("forward");
     for (const float value : {1.0f, 2.0f, -1.0f}) {
@@ -580,7 +606,7 @@ TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
 }
 
 TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -590,17 +616,195 @@ TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
 }
 
 void expect_compile_error(
-    const std::vector<uint8_t>& program,
+    GgmlEngineContext& context,
     const std::string& message) {
-  auto host = GgmlEngineHost::create();
-  auto context = make_context(*host, program);
   try {
-    context->compile("forward");
+    context.compile("forward");
     FAIL() << "compile accepted the program";
   } catch (const std::runtime_error& error) {
     EXPECT_NE(std::string(error.what()).find(message), std::string::npos)
         << error.what();
   }
+}
+
+void expect_compile_error(
+    const std::vector<uint8_t>& program,
+    const std::string& message) {
+  auto host = GgmlEngineHost::create();
+  expect_compile_error(*make_context(*host, program), message);
+}
+
+TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
+  expect_compile_error(
+      make_linear_program(), "allow_activation_quant_for_weight_only");
+  const std::vector<uint8_t> program_bytes = make_linear_program(
+      "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
+  auto host = GgmlEngineHost::create();
+  auto context = host->create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry,
+               testing::make_safetensors(
+                   kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
+          })))));
+  expect_compile_error(*context, "allow_activation_quant_for_weight_only");
+}
+
+TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const size_t cached : {size_t{0}, size_t{1}}) {
+    for (const bool transposed : {false, true}) {
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, {2, 4});
+      std::string input = "x";
+      if (transposed) {
+        program.call(
+            "xt",
+            "torch.ops.aten.permute_copy.default",
+            {{"self", input}, {"dims", std::vector<int64_t>{1, 0}}},
+            fbs::ScalarType::FLOAT,
+            {4, 2});
+        input = "xt";
+      }
+      program.call(
+          "y",
+          "torch.ops.aten.sqrt.default",
+          {{"self", input}},
+          fbs::ScalarType::FLOAT,
+          transposed ? std::vector<int64_t>{4, 2} : std::vector<int64_t>{2, 4});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, 4.0f}) {
+        const std::vector<float> x{
+            0.0f,
+            -0.0f,
+            scale * 4.0f,
+            scale * 2.0f,
+            inf,
+            -scale,
+            nan,
+            scale * 9.0f};
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(x.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          const size_t source = transposed ? (i % 2) * 4 + i / 2 : i;
+          const float expected =
+              static_cast<float>(std::sqrt(static_cast<double>(x[source])));
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i]));
+          } else {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
+  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
+    TestProgram program;
+    program.input("x", dtype, {2, 4});
+    program.call(
+        "y",
+        "torch.ops.aten.sqrt.default",
+        {{"self", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {2, 4});
+    expect_compile_error(program.finish("y"), "F32");
+  }
+}
+
+// tanh of x [4, 3], or of its transpose.
+std::vector<uint8_t> make_tanh_program(
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.tanh.default",
+      {{"self", self}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of tanh in double; NaN, +-1 and signed zero exactly.
+TEST(GgmlEngineTest, TanhMatchesLibmIncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -30.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f,
+      3e38f,
+      0.75f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_tanh_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+          const auto expected =
+              static_cast<float>(std::tanh(static_cast<double>(input[source])));
+          SCOPED_TRACE(input[source]);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (std::abs(expected) == 1.0f || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsIntegerTanh) {
+  expect_compile_error(
+      make_tanh_program(false, fbs::ScalarType::INT),
+      "supports floating-point tensors only");
 }
 
 TEST(GgmlEngineTest, RejectsIntegerGelu) {
@@ -613,6 +817,204 @@ TEST(GgmlEngineTest, RejectsIntegerGelu) {
       fbs::ScalarType::LONG,
       {2, 3});
   expect_compile_error(program.finish("y"), "floating-point");
+}
+
+// exp of x [4, 3], or of its transpose.
+std::vector<uint8_t> make_exp_program(
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.exp.default",
+      {{"self", self}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of exp in double; NaN, infinities and zero exactly.
+TEST(GgmlEngineTest, ExpMatchesLibmIncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -30.0f,
+      100.0f,
+      -80.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_exp_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+          const auto expected =
+              static_cast<float>(std::exp(static_cast<double>(input[source])));
+          SCOPED_TRACE(input[source]);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (std::isinf(expected) || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+// The Half or BFloat16 bits of x, which must be exact in that dtype.
+uint16_t to_16_bit(float x, fbs::ScalarType dtype) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &x, sizeof(bits));
+  if (dtype == fbs::ScalarType::BFLOAT16) {
+    return static_cast<uint16_t>(bits >> 16);
+  }
+  const auto sign = static_cast<uint16_t>((bits >> 16) & 0x8000);
+  if (std::isnan(x)) {
+    return sign | 0x7E00;
+  }
+  if (std::isinf(x)) {
+    return sign | 0x7C00;
+  }
+  if (x == 0.0f) {
+    return sign;
+  }
+  const uint32_t exponent = ((bits >> 23) & 0xFF) - 127 + 15;
+  return static_cast<uint16_t>(
+      sign | (exponent << 10) | ((bits >> 13) & 0x3FF));
+}
+
+// Within one unit in the last place of exp in double, overflowing to infinity
+// and underflowing to zero at the range of each dtype.
+TEST(GgmlEngineTest, ExpOfHalfAndBFloat16) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  struct Case {
+    fbs::ScalarType dtype;
+    ScalarType runtime_dtype;
+    // Each exact in dtype.
+    std::vector<float> x;
+    // The smallest exp that rounds to infinity in dtype.
+    float overflow;
+    float epsilon;
+    float min_subnormal;
+  };
+  const std::vector<Case> cases = {
+      {fbs::ScalarType::HALF,
+       ScalarType::Half,
+       {-0.0f,
+        0.0f,
+        1.5f,
+        -2.25f,
+        0.75f,
+        -8.0f,
+        11.0f,
+        12.0f,
+        -20.0f,
+        kInf,
+        -kInf,
+        std::nanf("")},
+       65520.0f,
+       0x1p-10f,
+       0x1p-24f},
+      {fbs::ScalarType::BFLOAT16,
+       ScalarType::BFloat16,
+       {-0.0f,
+        0.0f,
+        1.5f,
+        -2.25f,
+        -8.0f,
+        80.0f,
+        100.0f,
+        -80.0f,
+        -110.0f,
+        kInf,
+        -kInf,
+        std::nanf("")},
+       std::numeric_limits<float>::max(),
+       0x1p-7f,
+       0x1p-133f},
+  };
+  for (const Case& test_case : cases) {
+    for (const bool transposed : {false, true}) {
+      SCOPED_TRACE(
+          std::to_string(static_cast<int>(test_case.dtype)) +
+          std::to_string(transposed));
+      auto host = GgmlEngineHost::create();
+      auto context =
+          make_context(*host, make_exp_program(transposed, test_case.dtype));
+      auto executable = context->compile("forward");
+      std::vector<uint16_t> input(test_case.x.size());
+      std::ranges::transform(
+          test_case.x, input.begin(), [&test_case](float value) {
+            return to_16_bit(value, test_case.dtype);
+          });
+      executable->set_input(
+          0, input.data(), input.size(), test_case.runtime_dtype);
+      executable->execute();
+      std::vector<float> y(input.size());
+      executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+      for (size_t i = 0; i < y.size(); ++i) {
+        // y[r][c] reads x[c][r] when transposed.
+        const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+        const double expected =
+            std::exp(static_cast<double>(test_case.x[source]));
+        SCOPED_TRACE(test_case.x[source]);
+        if (std::isnan(expected)) {
+          EXPECT_TRUE(std::isnan(y[i])) << y[i];
+        } else if (expected >= test_case.overflow) {
+          EXPECT_EQ(y[i], kInf);
+        } else {
+          EXPECT_NEAR(
+              y[i],
+              expected,
+              test_case.epsilon * expected + test_case.min_subnormal);
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsIntegerExp) {
+  for (const fbs::ScalarType dtype :
+       {fbs::ScalarType::INT, fbs::ScalarType::LONG}) {
+    SCOPED_TRACE(static_cast<int>(dtype));
+    expect_compile_error(
+        make_exp_program(false, dtype), "supports floating-point tensors only");
+  }
 }
 
 TEST(GgmlEngineTest, RejectsUserInputMutation) {
@@ -773,7 +1175,7 @@ TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
 }
 
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -1067,7 +1469,7 @@ TEST(GgmlEngineTest, Q4KLinearOfAHalfInput) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::HALF,
       {1, 1});
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, program.finish("y"));
   auto executable = context->compile("forward");
   // The IEEE half bit pattern of 1.0.
@@ -1399,7 +1801,9 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::FLOAT,
       {1, 1});
-  expect_compile_error(program.finish("y"), "divisible by 256");
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, program.finish("y")), "divisible by 256");
 }
 
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
@@ -1478,9 +1882,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     // alternate fp16 scales 0.5 and 1.0.
     constexpr size_t kScaleBytes = 16;
     constexpr size_t kWeightBytes = 128;
-    std::string header =
-        R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
-        R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+    std::string header = kQ4_0SafeTensorsHeader;
     // The safetensors member comes first, so its payload starts right after
     // the local header, name, size prefix and JSON header. read_constant views
     // the scales in place only at an even offset.
@@ -1522,7 +1924,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     ASSERT_TRUE(view.has_value());
     ASSERT_EQ(reinterpret_cast<uintptr_t>(view->span().data()) % 2, misaligned);
 
-    auto host = GgmlEngineHost::create();
+    auto host = GgmlEngineHost::create(kAllowActivationQuant);
     auto context = host->create_ggml_context(
         std::make_shared<const Program>(
             Program::load(program_bytes.data(), program_bytes.size())),
@@ -1563,6 +1965,137 @@ TEST(GgmlEngineTest, CastsInt64ToHalfAndBFloat16) {
     executable->get_output(0, y.data(), y.size(), ScalarType::Float);
     EXPECT_EQ(y, (std::vector<float>{0, 1, 2, 3, 4, 5}));
   }
+}
+
+TEST(GgmlEngineTest, SumOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  for (const Case& c :
+       {Case{{3}, true, 5, {2, 3, 4, 1}},
+        Case{{-1}, false, 5, {2, 3, 4}},
+        Case{{2, 3}, true, 20, {2, 3, 1, 1}},
+        Case{{3, -2}, false, 20, {2, 3}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.sum.dim_IntList",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t row = 0; row < y.size(); ++row) {
+          double expected = 0.0;
+          for (size_t i = 0; i < c.width; ++i) {
+            expected += x[row * c.width + i];
+          }
+          EXPECT_NEAR(y[row], expected, 1e-5) << row;
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.sum.dim_IntList",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "sum supports trailing dimensions only");
+}
+
+TEST(GgmlEngineTest, AmaxOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  for (const Case& c :
+       {Case{{-1}, true, 5, {2, 3, 4, 1}},
+        Case{{2, 3}, false, 20, {2, 3}},
+        Case{{0, 1, 2, 3}, false, 120, {}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.amax.default",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        // The first row is all -inf, and the last holds +inf.
+        std::fill_n(x.begin(), c.width, -kInf);
+        x.back() = kInf;
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        std::vector<float> expected(y.size(), -kInf);
+        for (size_t i = 0; i < x.size(); ++i) {
+          expected[i / c.width] = std::max(expected[i / c.width], x[i]);
+        }
+        EXPECT_EQ(y, expected);
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.amax.default",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "amax supports trailing dimensions only");
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
