@@ -17,6 +17,7 @@ import torch
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
@@ -126,6 +127,59 @@ def test_tosa_FP_can_skip_ref_model_output_comparison(test_data: input_t1):
     ]
     assert validation_compare_stage.kwargs["compare_outputs"] is False
     assert validation_compare_stage.kwargs["inputs"] == test_data
+
+
+@common.parametrize(
+    "dtype_extension",
+    {
+        "e4m3": (torch.float8_e4m3fn, torch.float8_e4m3fn, "fp8e4m3"),
+        "e5m2": (torch.float8_e5m2, torch.float8_e5m2, "fp8e5m2"),
+        "e4m3_fp32": (torch.float8_e4m3fn, torch.float32, "fp8e4m3"),
+        "fp32_e4m3": (torch.float32, torch.float8_e4m3fn, "fp8e4m3"),
+        "e5m2_fp32": (torch.float8_e5m2, torch.float32, "fp8e5m2"),
+        "fp32_e5m2": (torch.float32, torch.float8_e5m2, "fp8e5m2"),
+    },
+)
+def test_fp8_mismatch_reports_and_saves_diagnostics(dtype_extension, tmp_path, caplog):
+    reference_dtype, result_dtype, extension = dtype_extension
+    reference = (
+        torch.tensor([1.0, 2.0, 3.0, 4.0]).reshape(1, 2, 1, 2).to(reference_dtype)
+    )
+    result = torch.tensor([1.0, 2.0, 4.0, 5.0]).reshape(1, 2, 1, 2).to(result_dtype)
+    tester = ArmTester(
+        torch.nn.Identity(),
+        (reference,),
+        common.get_vgf_compile_spec(
+            f"TOSA-1.0+FP+{extension}", custom_path=str(tmp_path)
+        ),
+    )
+
+    # The base comparator only widens inputs when the result is FP8.
+    def compare_in_fp32(reference, result, _):
+        ArmTester._assert_outputs_equal(
+            [result.float()], [reference.float()], atol=0, rtol=0
+        )
+
+    with pytest.raises(
+        AssertionError, match="Output 0 does not match reference output"
+    ):
+        tester._compare_outputs(
+            reference,
+            result,
+            atol=0,
+            rtol=0,
+            compare_callback=compare_in_fp32 if result_dtype == torch.float32 else None,
+        )
+
+    assert "ERROR DIFFERENCE" in caplog.text
+    assert "MEAN      MEDIAN    MAX       MIN" in caplog.text
+    for filename, expected in (
+        ("torch_tosa_output.pt", result),
+        ("torch_ref_output.pt", reference),
+    ):
+        saved = torch.load(tmp_path / filename, weights_only=True)
+        assert saved.dtype == expected.dtype
+        torch.testing.assert_close(saved.float(), expected.float(), atol=0, rtol=0)
 
 
 @common.parametrize("test_data", Linear.inputs)

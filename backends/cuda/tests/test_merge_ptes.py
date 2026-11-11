@@ -58,6 +58,7 @@ class TestMergeCudaPtes(unittest.TestCase):
         fqn: str = "model.weight",
         weight_key: str = "cuda_fqn_weight:cuda:model.weight",
         ptx_compute: int | None = None,
+        data_name: str | None = None,
     ) -> CudaPteInput:
         if ptx_compute is None:
             ptx_compute = target_sm
@@ -79,6 +80,8 @@ class TestMergeCudaPtes(unittest.TestCase):
         compile_specs.append(
             CompileSpec("cuda_include_ptx", b"ON" if ptx_compute else b"OFF")
         )
+        if data_name is not None:
+            compile_specs.append(CompileSpec("data_name", data_name.encode()))
         delegate = BackendDelegate(
             id="CudaBackend",
             processed=BackendDelegateDataReference(DataLocation.INLINE, 0),
@@ -148,8 +151,12 @@ class TestMergeCudaPtes(unittest.TestCase):
             sm80.mkdir()
             sm120.mkdir()
             inputs = [
-                self._write_artifact(sm80, 80, b"sm80-so", b"shared-weight"),
-                self._write_artifact(sm120, 120, b"sm120-so", b"shared-weight"),
+                self._write_artifact(
+                    sm80, 80, b"sm80-so", b"shared-weight", data_name="model_sm80"
+                ),
+                self._write_artifact(
+                    sm120, 120, b"sm120-so", b"shared-weight", data_name="model_sm120"
+                ),
             ]
 
             merged = deserialize_pte_binary(bytes(merge_cuda_pte_files(inputs)))
@@ -176,14 +183,14 @@ class TestMergeCudaPtes(unittest.TestCase):
                     hashlib.sha256(b"sm120-so").hexdigest() + "_so_blob",
                 },
             )
-            self.assertNotIn(
-                "cuda_include_ptx",
+            self.assertEqual(
                 {
                     spec.key
                     for spec in merged.program.execution_plan[0]
                     .delegates[0]
                     .compile_specs
                 },
+                {"method_name"},
             )
 
     def test_uses_ptx_only_from_explicit_fallback(self) -> None:

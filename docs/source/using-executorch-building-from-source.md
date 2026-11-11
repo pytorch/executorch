@@ -34,9 +34,10 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - `conda` is recommended as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+  - [uv](https://docs.astral.sh/uv/getting-started/installation/) is also supported.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.14
+* `python` version 3.11-3.15
 * `cmake` version 3.26 or higher
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
@@ -57,9 +58,32 @@ portability details.
    ```bash
    git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10
+   conda create -yn executorch python=3.11
    conda activate executorch
    ```
+
+Alternatively, create a virtual environment with uv:
+
+```bash
+uv venv --python 3.12 .venv
+```
+
+Activate it on macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+On Windows, activate it from a [Visual Studio Developer PowerShell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+The installation scripts use pip to install ExecuTorch and its dependencies.
+If pip is missing, they first install it with uv from `PATH`, targeting the
+running Python environment. There is no need to seed pip manually. Subsequent
+installation steps and later runs use pip.
 
 > **_NOTE:_** Additional Windows Setup
 >
@@ -77,6 +101,12 @@ portability details.
    ```bash
    # Install ExecuTorch pip package and its dependencies.
    ./install_executorch.sh
+   ```
+
+   On Windows, run this command in the same Developer PowerShell:
+
+   ```powershell
+   .\install_executorch.bat
    ```
 
    The `install_executorch.sh` script supports the following flags:
@@ -305,6 +335,20 @@ cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n 
 ```
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+
+#### Limiting Build Parallelism
+
+The `-j` value above applies only when invoking `cmake --build` directly. The workflow presets (`cmake --workflow --preset llm-release`) and the `Makefile` runner targets that wrap them (`make llama-cpu`, `make whisper-cpu`, and so on) build with unbounded parallelism, so the number of concurrent compiler processes is limited by the build graph rather than by core count.
+
+Set `CMAKE_BUILD_PARALLEL_LEVEL` to cap the job count. It takes precedence over the parallelism configured by a preset, so it works for every build entry point:
+
+```bash
+# Start low on a memory-constrained machine, and raise it if the build
+# stays comfortably within available RAM.
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+
+make llama-cpu
+```
 
 <hr/>
 

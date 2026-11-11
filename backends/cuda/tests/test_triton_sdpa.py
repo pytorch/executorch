@@ -83,10 +83,8 @@ HEAD_DIMS_POW2 = [64, 128, 256]
 HEAD_DIMS_NON_POW2 = [80, 96]
 
 # Sequence length pairs (seqlen_q, seqlen_kv) adapted from FlashAttention
-# Note: Lk must be >= BLOCK_N (32) to avoid unmasked zero-padding in K
-# that dilutes softmax. This is a pre-existing kernel limitation for very
-# short KV sequences.
 SEQLEN_PAIRS_BASIC = [
+    (1, 1),
     (1, 64),
     (1, 128),
     (1, 512),
@@ -299,6 +297,106 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
+    def test_every_tile_packed_or_not_matches(self):
+        """Each standard-kernel tile over a masked GQA step bounded by kv_len:
+        packing changes which rows share a tile, not any row's arithmetic, so
+        packed and unpacked agree exactly, and both match the reference."""
+        import triton
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        kernel = sdpa_module._sdpa_fwd_kernel
+        B, H_q, H_kv, D, Lk, kv_len = 1, 32, 2, 128, 512, 300
+        torch.manual_seed(0)
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int64, device="cuda")
+        configs = sdpa_module._sdpa_fwd_prune(
+            kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=H_q // H_kv
+        )
+        self.assertEqual({c.kwargs["PACK_GQA"] for c in configs}, {False, True})
+        for Lq in (5, 32, 64):
+            q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+            # Query i sees an interleaved subset of the live cells, as a cell
+            # step's mask does.
+            mask = torch.zeros(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+            cells = torch.arange(kv_len, device="cuda")
+            mask[0, 0, cells % Lq, cells] = True
+            ref = _reference_sdpa(
+                q, k[:, :, :kv_len], v[:, :, :kv_len], attn_mask=mask[..., :kv_len]
+            )
+            # Few cells per row leave outputs near V's magnitude, where bf16
+            # rounding of the output alone approaches MAX_ABS_TOL.
+            tol = max(MAX_ABS_TOL, 2 * _max_abs_error(ref.to(torch.bfloat16), ref))
+            outs = {}
+            for config in configs:
+                single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+                with self.subTest(Lq=Lq, config=str(config)), mock.patch.object(
+                    sdpa_module, "_sdpa_fwd_kernel", single
+                ):
+                    out = self.sdpa(
+                        q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len_t
+                    )
+                    self.assertLess(_max_abs_error(out, ref), tol)
+                    tile = (
+                        tuple(
+                            sorted(
+                                (key, value)
+                                for key, value in config.kwargs.items()
+                                if key != "PACK_GQA"
+                            )
+                        ),
+                        config.num_warps,
+                        config.num_stages,
+                    )
+                    outs.setdefault(tile, []).append(out)
+            for tile, (unpacked, packed) in outs.items():
+                with self.subTest(Lq=Lq, tile=tile):
+                    self.assertTrue(torch.equal(unpacked, packed))
+
+    def test_every_tile_drops_keys_past_the_end(self):
+        """Each standard-kernel tile without a mask: keys at or past the key
+        count, or past kv_len, stay out of the softmax."""
+        import triton
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        kernel = sdpa_module._sdpa_fwd_kernel
+        B, H, Lq, D = 1, 4, 16, 64
+        configs = sdpa_module._sdpa_fwd_prune(
+            kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=1
+        )
+        # No tile size divides 80 keys, only the 32-key tiles divide 96, and
+        # kv_len is only known on the device.
+        for Lk, kv_len in ((80, None), (96, None), (128, 80)):
+            torch.manual_seed(Lk)
+            q = torch.randn(B, H, Lq, D, dtype=torch.bfloat16, device="cuda")
+            k = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            v = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            valid = Lk if kv_len is None else kv_len
+            ref = _reference_sdpa(q, k[:, :, :valid], v[:, :, :valid])
+            kwargs = {}
+            if kv_len is not None:
+                kwargs["kv_len"] = torch.tensor([kv_len], device="cuda")
+            for config in configs:
+                single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+                with self.subTest(Lk=Lk, kv_len=kv_len, config=str(config)):
+                    with mock.patch.object(sdpa_module, "_sdpa_fwd_kernel", single):
+                        out = self.sdpa(q, k, v, **kwargs)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_mha_never_packs(self):
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        configs = sdpa_module._sdpa_fwd_prune(
+            sdpa_module._sdpa_fwd_kernel.configs, None, HEAD_DIM=128, NUM_GROUPS=1
+        )
+        self.assertTrue(configs)
+        self.assertFalse(any(c.kwargs["PACK_GQA"] for c in configs))
+
     def test_gqa_non_pow2_head_dim(self):
         """GQA with non-power-of-2 head dimensions."""
         for D in HEAD_DIMS_NON_POW2:
@@ -504,6 +602,12 @@ class TestTritonSdpa(unittest.TestCase):
         v = torch.randn(B, H, 128, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
             self.sdpa(q, k, v, is_causal=True)
+
+    def test_wide_non_pow2_head_rejected(self):
+        """A non-pow2 head wider than one tile should raise, not be cut short."""
+        q = torch.randn(1, 2, 64, 640, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, q, q)
 
     def test_non_pow2_no_mask(self):
         """Non-pow2 head dim without mask should work (mask_ptr=0 path)."""

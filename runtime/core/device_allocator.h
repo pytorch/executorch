@@ -95,6 +95,23 @@ class DeviceAllocator {
    * Returns the device type this allocator handles.
    */
   virtual etensor::DeviceType device_type() const = 0;
+
+  /**
+   * Waits until the copies to device `index` that this allocator made on the
+   * calling thread have finished, so that work on any stream of the device can
+   * read their results. Call it with the same per-thread settings the copies
+   * were made with: an allocator that copies on a stream chosen per thread
+   * waits for the stream chosen when this is called.
+   * The default does nothing, which suits allocators whose copies finish
+   * before they return.
+   *
+   * @param index The device index.
+   * @return Error::Ok on success, or an appropriate error code on failure.
+   */
+  virtual Error synchronize(etensor::DeviceIndex index) {
+    (void)index;
+    return Error::Ok;
+  }
 };
 
 /**

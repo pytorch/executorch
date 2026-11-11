@@ -85,7 +85,11 @@ def sample_rows(logits: torch.Tensor, params: torch.Tensor) -> torch.Tensor:
     first_pass = torch.where(passes, ranks, torch.full_like(ranks, vocab_size)).amin(
         dim=-1, keepdim=True
     )
-    sorted_choice = torch.where(first_pass < vocab_size, first_pass, last_kept)
+    # The valid distribution always keeps a token. Explicit bounds also
+    # protect Inductor's masked reduction lanes from an unused gather index.
+    sorted_choice = torch.where(first_pass < vocab_size, first_pass, last_kept).clamp(
+        min=0, max=vocab_size - 1
+    )
     truncated = sorted_indices.gather(-1, sorted_choice).squeeze(-1)
 
     # The full distribution samples in token order, as the host does.

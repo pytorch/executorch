@@ -7,8 +7,8 @@
 """`et_vk.conv_with_clamp` module + configs for the WebGPU op-test framework.
 
 `ConvWithClampModule` is a plain `nn.Conv2d` followed by `F.relu6`, which the
-Vulkan fusion rewrites to a delegated `et_vk.conv_with_clamp` (fp32 general conv
-+ output clamp[0,6]). The conv weight/bias are baked params; only the float
+WebGPU lowering rewrites to a delegated `et_vk.conv_with_clamp` (fp32 general
+conv + output clamp[0,6]). The conv weight/bias are baked params; only the float
 tensor `x` is a runtime input. Goldened vs the module's fp32 eager.
 `ConvWithClampTest` is the export-delegation smoke test.
 """
@@ -20,7 +20,7 @@ import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 import torch
 import torch.nn as nn
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, ic, oc, k, stride, padding, dilation, bias)
@@ -34,14 +34,25 @@ CONFIGS = {
 
 
 class ConvWithClampModule(nn.Module):
-    def __init__(self, ic, oc, k, stride, padding, dilation, bias) -> None:
+    def __init__(
+        self, ic, oc, k, stride, padding, dilation, bias, groups=1, act="relu6"
+    ) -> None:
         super().__init__()
         self.c = nn.Conv2d(
-            ic, oc, k, stride=stride, padding=padding, dilation=dilation, bias=bias
+            ic,
+            oc,
+            k,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            groups=groups,
         )
+        # relu6 -> clamp [0, 6]; relu -> clamp [0, +inf) (no upper bound).
+        self.act = {"relu6": nn.functional.relu6, "relu": nn.functional.relu}[act]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.relu6(self.c(x))
+        return self.act(self.c(x))
 
 
 def _det(shape):
@@ -52,7 +63,7 @@ def _det(shape):
 def _lower(shape, ic, oc, k, stride, padding, dilation, bias):
     mod = ConvWithClampModule(ic, oc, k, stride, padding, dilation, bias).eval()
     ep = torch.export.export(mod, (_det(shape),))
-    return to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+    return to_edge_transform_and_lower(ep, partitioner=[WebGPUPartitioner()])
 
 
 def _delegated(et) -> bool:

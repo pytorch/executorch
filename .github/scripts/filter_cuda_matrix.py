@@ -37,7 +37,7 @@ from typing import Any, Dict, List
 #
 # This is documentation, not the gate. The gate is SUPPORTED_PYTHON_VERSIONS below: anything
 # not on that list is rejected whether or not it appears here.
-DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
+DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15t"]
 
 # CUDA versions to publish, when the generator offers them.
 #
@@ -52,12 +52,6 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #
 # Skip wholly absent trains so an upstream removal cannot block the remaining releases.
 # Offered trains must still cover every supported Python version.
-#
-# cu126 was the floor until PyTorch stopped offering it on the nightly channel. The generator
-# still offers it when a release is cut, so keeping it here would publish a train that no
-# nightly has built since, and a release is the wrong place to find out that it no longer
-# builds. A machine on CUDA 12.6 can still build from source, where the pinned torch comes
-# from a channel that carries 12.6.
 #
 # cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
 # other projects, and its release-candidate builds do not carry it, so a release would have
@@ -74,7 +68,7 @@ SUPPORTED_CUDA_VERSIONS: List[str] = ["cu132", "cu134"]
 # guard below unable to notice a python that disappeared from every supported train: with
 # nothing left to compare, a release quietly published nine wheels instead of twelve.
 # Keep in step with the python-versions list in the CUDA wheel workflows.
-SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
 # little signal, and cu132 is the version with a machine on hand that can run a model on it.
@@ -91,9 +85,8 @@ PR_CUDA_VERSION: str = "cu132"
 # version. Kept empty on purpose today, so no Jetson row is emitted.
 #
 # Published PyTorch stopped shipping sm_87 device code after 2.8.0, so a Jetson row today
-# would produce a wheel whose PyTorch dependency cannot execute on the device. The aarch64
-# CUDA 12.6 row, which was the one that compiled sm_87 device code for an embedded module,
-# is no longer published either. Populate this when both change.
+# would produce a wheel whose PyTorch dependency cannot execute on the device, and no
+# published row compiles sm_87 device code. Populate this when both change.
 #
 # Because both lists are empty, asking for the JetPack rows can only produce an empty result.
 # No workflow asks, and the request is rejected up front with that reason rather than left to

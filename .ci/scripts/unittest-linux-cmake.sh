@@ -29,8 +29,13 @@ if ! python -c "import tosa_serializer" >/dev/null 2>&1; then
   python -c "import tosa_serializer"
 fi
 
+bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
+
+source .ci/scripts/torchci-report-args.sh unittest-linux-cmake
+
 # Run pytest with coverage
-pytest -n auto --cov=./ --cov-report=xml
+pytest -n auto --cov=./ --cov-report=xml \
+  ${TORCHCI_REPORT_ARGS[@]+"${TORCHCI_REPORT_ARGS[@]}"}
 # Run gtest
 LLVM_PROFDATA=llvm-profdata-12 LLVM_COV=llvm-cov-12 \
 test/run_oss_cpp_tests.sh

@@ -103,6 +103,9 @@ table TileNode {
     reps: [IntOrVid] (required);
 }
 
+// Index values are clamped like ScatterNode's, so a bad index reads the
+// first or last element instead of memory outside x. A non-empty take from
+// an empty axis fails.
 table TakeAlongAxisNode {
     x: Tid (required);
     indices: Tid (required);
@@ -463,13 +466,29 @@ table QuantizedMatmulNode {
 }
 
 // Scatter-add: accumulate updates into input at index positions along an axis
-// Maps to mlx::scatter_add(a, indices, updates, axis)
+// Maps to mlx::scatter_add_axis(a, indices, updates, axis)
 table ScatterAddNode {
     x: Tid (required);          // Input tensor to scatter into
     indices: Tid (required);    // Index tensor
     updates: Tid (required);    // Values to accumulate
     out: Tid (required);
     axis: int32;                // Dimension to scatter along
+}
+
+// Scatter: write updates into x at the positions given by one index tensor
+// per indexed axis. Maps to mlx::scatter, or mlx::scatter_add for "sum".
+// Index values are clamped to [-size, size - 1], where negative values count
+// from the end as in PyTorch. So a bad index updates the first or last slice
+// instead of memory outside x. If an indexed axis is empty, x is returned.
+table ScatterNode {
+    x: Tid (required);
+    indices: [Tid] (required);   // Index tensors (one per indexed axis)
+    // Shape: broadcast(indices).shape followed by x.shape, with size 1 on
+    // every indexed axis, so rank(updates) = rank(indices) + rank(x).
+    updates: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);    // Which axes the indices address
+    reduce: string (required);   // "none" overwrites x at the indices, "sum" adds into x
 }
 
 table ConcatenateNode {
@@ -1211,7 +1230,8 @@ union OpNode {
     UpdateAndAttendNode,
     TruncNode,
     FlipNode,
-    CummaxNode
+    CummaxNode,
+    ScatterNode
     // BC: Add new op nodes here (append only)
 }
 

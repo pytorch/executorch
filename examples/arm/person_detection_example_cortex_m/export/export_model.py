@@ -75,7 +75,7 @@ def load_model(checkpoint_path: Path = PRUNED_PATH) -> MicroYolo:
     return model
 
 
-def export_cortex_m(model: MicroYolo):
+def export_cortex_m(model: MicroYolo, calibration_samples: int = CALIBRATION_SAMPLES):
     """Quantize and lower a µYOLO model for Cortex-M."""
     example_input = torch.ones(1, 3, 128, 128)
     captured = torch.export.export(model, (example_input,))
@@ -92,8 +92,8 @@ def export_cortex_m(model: MicroYolo):
     )
     for index, (images, _) in enumerate(calibration_loader, start=1):
         prepared(images)
-        print(f"Calibrating {index}/{CALIBRATION_SAMPLES}", end="\r", flush=True)
-        if index == CALIBRATION_SAMPLES:
+        print(f"Calibrating {index}/{calibration_samples}", end="\r", flush=True)
+        if index == calibration_samples:
             break
     print()
     quantized = convert_pt2e(prepared, fold_quantize=True)
@@ -119,6 +119,7 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--pte", type=Path, default=PTE_PATH)
     parser.add_argument("--eager", type=Path, default=EAGER_PATH)
+    parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument(
         "--etrecord",
         type=Path,
@@ -130,7 +131,8 @@ def main() -> None:
     input_path = args.input or PRUNED_PATH
     report_input("checkpoint", input_path)
     model = load_model(input_path)
-    edge = export_cortex_m(model)
+    calibration_samples = 1 if args.smoke_test else CALIBRATION_SAMPLES
+    edge = export_cortex_m(model, calibration_samples)
     save_artifact(
         args.eager, lambda path: save_exported_program(edge.exported_program(), path)
     )

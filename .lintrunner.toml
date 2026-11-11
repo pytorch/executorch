@@ -397,6 +397,8 @@ exclude_patterns = [
     # muse_glimmer is a symlink to this directory; the linter resolves it and
     # then fails on a directory.
     'examples/models/muse-glimmer',
+    # src/executorch/frontends is a symlink to this directory.
+    'frontends',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',
@@ -447,6 +449,7 @@ exclude_patterns = [
     # Zephyr sample application can use std::vector in the sample code
     'zephyr/samples/**',
     'scripts/**',
+    '**/.ci/**',
     'third-party/**',
     'util/**',
 ]
@@ -688,6 +691,19 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'ETVKJSONFORMAT'
+include_patterns = [
+    'backends/vulkan/test/ops/benchmark_v2/**/*.json',
+]
+command = [
+    'python',
+    'backends/vulkan/test/ops/benchmark_v2/format_json.py',
+    '--lintrunner',
+    '@{{PATHSFILE}}',
+]
+is_formatter = true
 
 [[linter]]
 code = 'RUFF_DOCS'

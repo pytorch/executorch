@@ -20,6 +20,34 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
+namespace {
+
+// Below this many wide tile invocations the GPU is underfilled, and Half
+// convolutions are faster with the narrow tile. The threshold sits between the
+// largest swept Half grid that was faster with the narrow tile on most GPUs
+// (2560 wide tile invocations) and the smallest faster with the wide tile on
+// every GPU (12288); grids in between were not swept.
+constexpr uint64_t kMinWideTileInvocations = 4096;
+
+/*
+ * The 2x2-pixel x 8-channel tile issues half as many input and weight loads per
+ * FMA as the 2x1-pixel x 4-channel tile. Float uses it on every GPU except
+ * Mali, where the wide Float tile spills registers in the Mali offline compiler
+ * and was 2-31% slower than the narrow tile.
+ */
+bool use_wide_pw_tile(ComputeGraph* graph, const ValueRef out) {
+  if (graph->dtype_of(out) != vkapi::kHalf) {
+    return !graph->device_is_mali();
+  }
+  const uint64_t M = uint64_t(graph->size_at<uint32_t>(-1, out)) *
+      graph->size_at<uint32_t>(-2, out);
+  const uint64_t N4 = utils::div_up_4(graph->size_at<uint32_t>(-3, out));
+  return utils::div_up(M, uint64_t(4)) * utils::div_up(N4, uint64_t(2)) >=
+      kMinWideTileInvocations;
+}
+
+} // namespace
+
 void resize_conv2d_pw_tiled_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -52,6 +80,7 @@ void resize_conv2d_pw_tiled_node(
   new_out_sizes.at(self_sizes.size() - 1) = out_w;
 
   graph->virtual_resize(out, new_out_sizes);
+  check_conv2d_residual_on_resize(graph, out, extra_args);
 }
 
 vkapi::ShaderInfo pick_conv2d_pw_tiled_shader(
@@ -60,9 +89,16 @@ vkapi::ShaderInfo pick_conv2d_pw_tiled_shader(
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef packed_weight = args.at(1).refs.at(1);
 
   std::string kernel_name = "conv2d_pw_tiled";
   kernel_name.reserve(kShaderNameReserve);
+  if (use_wide_pw_tile(graph, out)) {
+    kernel_name += "_4x8";
+  }
+  if (graph->is_buffer_storage(packed_weight)) {
+    kernel_name += "_bufw";
+  }
   add_dtype_suffix(kernel_name, graph->dtype_of(out));
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -78,10 +114,64 @@ GlobalWorkGrid pick_conv2d_pw_tiled_gwg(
   uint32_t W = graph->size_at<uint32_t>(-1, out);
   uint32_t H = graph->size_at<uint32_t>(-2, out);
   uint32_t C_out = graph->size_at<uint32_t>(-3, out);
-  uint32_t M = H * W;
   uint32_t N4 = utils::div_up_4(C_out);
-  // TILE_N4=1, TILE_M=2. Must match conv2d_pw_tiled.yaml.
-  return GlobalWorkGrid({N4, utils::div_up(M, 2u), 1u}, kTiledWorkGrid);
+  // Tile sizes must match conv2d_pw_tiled.yaml.
+  const bool wide = use_wide_pw_tile(graph, out);
+  const uint32_t tile_n4 = wide ? 2u : 1u;
+  const uint32_t tile_w = 2u;
+  const uint32_t tile_h = wide ? 2u : 1u;
+  const uint32_t n_tiles = utils::div_up(N4, tile_n4);
+  const uint32_t m_tiles = utils::div_up(W, tile_w) * utils::div_up(H, tile_h);
+  // The wide tile variant puts pixel tiles on x.
+  if (wide) {
+    return GlobalWorkGrid({m_tiles, n_tiles, 1u}, kTiledWorkGrid);
+  }
+  return GlobalWorkGrid({n_tiles, m_tiles, 1u}, kTiledWorkGrid);
+}
+
+/*
+ * Wide tile work groups span the channel tiles of a row of pixel tiles, so the
+ * input they share is read through one core's cache: y covers the channel tiles
+ * (rounded up to a power of two) while x keeps at least min_x pixel tiles, and
+ * x takes the remaining threads.
+ *
+ * The thread count and min_x per GPU family come from sweeping 12 local sizes
+ * (32 to 512 threads with min_x 4 to 32, and an 8x8 square) over 57 Float and
+ * Half 1x1 convolutions with 7x7 to 1008x756 outputs on Mali, Adreno and
+ * Xclipse phones. On the large convolutions, Mali was 5-8% faster with 512
+ * threads than with 128, Adreno was 1-10% slower with 512 than with 128, and
+ * Xclipse was 30% slower with 128 than with 64.
+ */
+LocalWorkGroup pick_conv2d_pw_tiled_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  if (use_wide_pw_tile(graph, args.at(0).refs.at(0))) {
+    const bool mali = graph->device_is_mali();
+    const bool adreno = graph->device_is_adreno();
+    uint32_t nthreads = mali ? 512u : adreno ? 128u : 64u;
+    const uint32_t min_x = mali || adreno ? 16u : 4u;
+    const vkapi::Adapter* const adapter = graph->context()->adapter_ptr();
+    while (nthreads > adapter->max_compute_workgroup_invocations() ||
+           nthreads > adapter->max_compute_workgroup_size()[0]) {
+      nthreads /= 2u;
+    }
+    // y stays at or below nthreads / min_x (32 at most), within the 128 that
+    // Vulkan guarantees for the second work group dimension.
+    uint32_t y = 1u;
+    while (y < gwg[1] && y * min_x < nthreads) {
+      y *= 2u;
+    }
+    return LocalWorkGroup(nthreads / y, y, 1u);
+  }
+  // On Mali, a work group of pixel tiles that share one channel tile lets each
+  // warp read a single weight stream instead of one per channel tile.
+  if (graph->device_is_mali() && gwg[1] >= 64u) {
+    return LocalWorkGroup(1u, 64u, 1u);
+  }
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -107,9 +197,13 @@ ValueRef prepack_conv2d_pw_weight(
   const int64_t output_height = K4;
   const int64_t output_width = N4 * 4 * 4;
 
+  // Buffer weights are faster than texture weights on every GPU measured.
+  // Half buffers need 16-bit storage support.
   utils::StorageType weight_storage = utils::kTexture2D;
   uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  if (output_width / 4 > max_extent ||
+  const bool buffer_weights = graph.dtype_of(weight_data) != vkapi::kHalf ||
+      graph.float16_buffers_enabled();
+  if (buffer_weights || output_width / 4 > max_extent ||
       static_cast<uint32_t>(output_height) > max_extent) {
     weight_storage = utils::kBuffer;
   }
@@ -131,7 +225,7 @@ ValueRef prepack_conv2d_pw_weight(
 
   std::string pack_kernel_name = "pack_fp_linear_weight";
   add_storage_type_suffix(pack_kernel_name, weight_storage);
-  add_dtype_suffix(pack_kernel_name, graph.dtype_of(weight_data));
+  add_dtype_suffix(pack_kernel_name, graph.dtype_of(packed_weight));
   add_dtype_suffix(pack_kernel_name, graph.get_staging_dtype_for(weight_data));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -161,9 +255,8 @@ void add_conv2d_pw_tiled_node(
     const ValueRef padding,
     const ValueRef out,
     const ValueRef weight_data,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val) {
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args) {
   int32_t stride_h, stride_w, padding_h, padding_w;
   {
     const auto stride_list = graph.get_int_list(stride);
@@ -179,31 +272,34 @@ void add_conv2d_pw_tiled_node(
 
   utils::ivec4 stride_padding{stride_h, stride_w, padding_h, padding_w};
 
-  struct ClampParams final {
-    float out_min;
-    float out_max;
-  };
-  ClampParams clamp_params{out_min_val, out_max_val};
+  const Conv2dEpilogueParams epilogue_params =
+      create_conv2d_epilogue_params(epilogue);
 
-  ValueRef clamp_out_ref = graph.add_scalar(clamp_out);
+  vkapi::SpecVarList spec_vars = {s1p0 ? 1 : 0};
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_pw_tiled_shader,
       pick_conv2d_pw_tiled_gwg,
-      pick_xy_square_lwg,
+      pick_conv2d_pw_tiled_lwg,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{in, packed_weight, packed_bias}, vkapi::kRead}},
+      {{out, vkapi::kWrite},
+       {{in,
+         packed_weight,
+         packed_bias,
+         epilogue_args.residual,
+         epilogue_args.scale},
+        vkapi::kRead}},
       // Shader params buffers
       {graph.sizes_ubo(in), graph.sizes_ubo(out)},
       // Push Constants
       {PushConstantDataInfo(&stride_padding, sizeof(stride_padding)),
-       PushConstantDataInfo(&clamp_params, sizeof(clamp_params))},
+       PushConstantDataInfo(&epilogue_params, sizeof(epilogue_params))},
       // Specialization Constants
-      // activation_type: 0=none, 1=relu, 2=clamp
-      {s1p0 ? 1 : 0, clamp_out ? 2 : 0},
+      spec_vars,
       // Resize Args
-      {weight_data, stride, padding, clamp_out_ref},
+      {weight_data, stride, padding, epilogue.residual},
       // Resizing Logic
       resize_conv2d_pw_tiled_node));
 }
@@ -221,9 +317,7 @@ void conv2d_pw_impl(
     const ValueRef padding,
     const ValueRef out,
     const bool transposed_val,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val) {
+    const Conv2dEpilogue& epilogue) {
   ValueRef packed_weight = prepack_conv2d_pw_weight(graph, weight_data);
 
   ValueRef packed_bias = prepack_biases(
@@ -233,6 +327,8 @@ void conv2d_pw_impl(
       transposed_val,
       utils::kTexture2D,
       utils::kWidthPacked);
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, transposed_val);
 
   check_conv_args(graph, in, out);
 
@@ -250,9 +346,8 @@ void conv2d_pw_impl(
       padding,
       out,
       weight_data,
-      clamp_out,
-      out_min_val,
-      out_max_val);
+      epilogue,
+      Conv2dEpilogueArgs(epilogue, in, packed_bias, packed_scale));
 }
 
 } // namespace vkcompute

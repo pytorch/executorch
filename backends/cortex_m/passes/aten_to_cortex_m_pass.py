@@ -360,21 +360,32 @@ def _get_linear_replacement(
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
-    weight_scale = node.meta["input_qparams"][1].scale
-    weight_zp = node.meta["input_qparams"][1].zp
+    weight_qparams = node.meta["input_qparams"][1]
     output_scale = node.meta["output_qparams"][0].scale
     output_zp = node.meta["output_qparams"][0].zp
     output_min = node.meta["output_qparams"][0].qmin
     output_max = node.meta["output_qparams"][0].qmax
 
-    if weight_zp != 0:
+    # Per-channel weights carry one scale and zero point per output feature.
+    if weight_qparams.per_channel:
+        assert (
+            weight_qparams.axis == 0
+        ), f"Per-channel linear weights must be quantized on axis 0; got {weight_qparams.axis}"
+        weight_scales = weight_qparams.get_scale_per_channel()
+        weight_zps = weight_qparams.get_zp_per_channel()
+    else:
+        weight_scales, weight_zps = [weight_qparams.scale], [weight_qparams.zp]
+    if any(zp != 0 for zp in weight_zps):
         raise NotImplementedError(
             f"cortex_m::quantized_linear assumes symmetric weight "
-            f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+            f"quantization (weight_zp == 0); got weight_zp={weight_qparams.zp}"
         )
 
-    quantized_multiplier, quantized_shift = quantize_multiplier_aot(
-        (input_scale * weight_scale) / output_scale
+    quantized_multipliers, quantized_shifts = zip(
+        *(
+            quantize_multiplier_aot((input_scale * weight_scale) / output_scale)
+            for weight_scale in weight_scales
+        )
     )
 
     # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
@@ -393,7 +404,7 @@ def _get_linear_replacement(
 
     if target_config.backend == cmsis_nn.Backend.MVE:
         kernel_sum_tensor = _compute_kernel_sum(
-            weights_tensor, bias_tensor, -input_zp, -weight_zp
+            weights_tensor, bias_tensor, -input_zp, -weight_zps[0]
         )
         with node.graph.inserting_after(weights):
             kernel_sum_arg = create_constant_placeholder(
@@ -408,21 +419,45 @@ def _get_linear_replacement(
         kernel_sum_arg = None
         bias_arg = bias_node
 
+    multipliers_arg: Argument
+    shifts_arg: Argument
+    if len(weight_scales) == 1:
+        target = exir_ops.edge.cortex_m.quantized_linear.default
+        multipliers_arg = list(quantized_multipliers)
+        shifts_arg = list(quantized_shifts)
+    else:
+        target = exir_ops.edge.cortex_m.quantized_linear_per_channel.default
+        with node.graph.inserting_after(weights):
+            multipliers_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+            shifts_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
     args = (
         linear_args[0],
         weights,
         bias_arg,
         kernel_sum_arg,
         -input_zp,
-        -weight_zp,
+        -weight_zps[0],
         output_zp,
-        [quantized_multiplier],
-        [quantized_shift],
+        multipliers_arg,
+        shifts_arg,
         output_max,
         output_min,
     )
 
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_linear.default, args)
+    return DialectNodeSpec(target, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(

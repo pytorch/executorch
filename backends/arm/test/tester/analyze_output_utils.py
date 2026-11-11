@@ -173,6 +173,11 @@ def print_error_diffs(  # noqa: C901
         result = _ensure_tensor(result_or_reference)
         reference_tensor = _ensure_tensor(reference)
 
+    fp8_dtypes = (torch.float8_e4m3fn, torch.float8_e5m2)
+    if result.dtype in fp8_dtypes or reference_tensor.dtype in fp8_dtypes:
+        result = result.to(torch.float32)
+        reference_tensor = reference_tensor.to(torch.float32)
+
     if result.shape != reference_tensor.shape:
         raise ValueError(
             f"Output needs to be of same shape: {result.shape} != {reference_tensor.shape}"
@@ -294,8 +299,8 @@ def print_error_diffs(  # noqa: C901
 
 def dump_error_output(
     tester: Any,
-    reference_output: TensorLike,
     stage_output: TensorLike,
+    reference_output: TensorLike,
     quantization_scale: float | None = None,
     atol: float = 1e-03,
     rtol: float = 1e-03,

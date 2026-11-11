@@ -592,6 +592,39 @@ def _for_each_filtered_node(
             yield node
 
 
+def _strip_exported_program_guards(model: GraphModule) -> None:
+    """Discard torch.export's side-effect-only input-guard call before PT2E.
+
+    Since torch 2.15, ExportedProgram.module() may insert a call_module node
+    targeting ``_guards_fn``. The Arm annotation passes cannot lower that node.
+    This is equivalent to using ``module(check_guards=False)`` for PT2E;
+    unrelated call_module nodes must not be removed.
+
+    """
+    guard_nodes = [
+        node
+        for node in model.graph.nodes
+        if node.op == "call_module" and node.target == "_guards_fn"
+    ]
+    if not guard_nodes:
+        return
+
+    # The generated guard returns None and has no consumers. Never erase a
+    # call whose result is used, even if it happens to have this name.
+    if any(node.users for node in guard_nodes):
+        raise RuntimeError("Cannot remove _guards_fn: its result is in use")
+
+    for node in guard_nodes:
+        model.graph.erase_node(node)
+
+    # PyTorch's exported-module pre-hook tests for this attribute. Removing it
+    # also restores the standard input constraint checks provided by the hook,
+    # as happens with module(check_guards=False).
+    if hasattr(model, "_guards_fn"):
+        delattr(model, "_guards_fn")
+    model.recompile()
+
+
 class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends.
 
@@ -898,6 +931,7 @@ class TOSAQuantizer(Quantizer):
             GraphModule: Transformed model prepared for annotation.
 
         """
+        _strip_exported_program_guards(model)
         return self.quantizer.transform_for_annotation(model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
@@ -932,32 +966,19 @@ class TOSAQuantizer(Quantizer):
             if node.op != "call_function":
                 continue
 
-            devices = set()
+            devices: set[str] = set()
             for arg_node in node.all_input_nodes:
                 meta_val = arg_node.meta.get("val", None)
                 if meta_val is None:
                     continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+                values = (
+                    meta_val if isinstance(meta_val, (tuple, list)) else (meta_val,)
+                )
+                devices.update(
+                    str(value.device)
+                    for value in values
+                    if isinstance(value, torch.Tensor)
+                )
 
                 if len(devices) > 1:
                     raise ValueError(
@@ -1269,7 +1290,14 @@ class _TOSAQuantizerV2(ComposableQuantizer):
             )
 
         self.pattern_matcher = PatternMatcher(support_dict)
-        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        excluded_targets = TOSAQuantizationConfig.SHARED_INPUT_ACT_QSPEC_PATTERNS
+        self.shared_qspec_quantizer = SharedQspecQuantizer(
+            targets=[
+                target
+                for target in SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT
+                if target not in excluded_targets
+            ]
+        )
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None
         self._quantizers: List[Quantizer] = []

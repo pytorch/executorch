@@ -36,6 +36,7 @@ if [[ $# -eq 0 ]]; then
         run_mobilesam_e2e_ethos_u
         run_swin2sr_e2e_vgf
         run_silero_vad_e2e_ethos_u
+        run_person_detection_e2e_cortex_m
     )
 else
     TEST_SUITES=("$1")
@@ -48,6 +49,73 @@ import notebook  # noqa: F401
 import nbconvert  # noqa: F401
 PY
 }
+
+run_person_detection_e2e_cortex_m() (
+    local example_dir="${et_root_dir}/examples/arm/person_detection_example_cortex_m"
+    local work_root
+    mkdir -p "${et_root_dir}/arm_test"
+    work_root=$(mktemp -d "${et_root_dir}/arm_test/person_detection_ootb.XXXXXX")
+    local artifacts_dir="${example_dir}/artifacts"
+    local image_path="${example_dir}/example.jpg"
+    local pte_path="${artifacts_dir}/person_detection.pte"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    echo "${FUNCNAME}: Work directory: ${work_root}"
+
+    source "${et_root_dir}/examples/arm/arm-scratch/setup_path.sh"
+    source "${et_root_dir}/backends/arm/scripts/utils.sh"
+    pip install -r "${example_dir}/requirements.txt"
+
+    python3 "${example_dir}/training/pretrain.py" --smoke-test
+    python3 "${example_dir}/training/training.py" --smoke-test
+    test -s "${artifacts_dir}/trained_unpruned.pt"
+    test -s "${artifacts_dir}/trained_fully_pruned.pt"
+    python3 "${example_dir}/training/test_model.py" \
+        --pt "${artifacts_dir}/trained_fully_pruned.pt" --image "${image_path}" \
+        --no-display --output "${work_root}/prediction.jpg"
+    python3 "${example_dir}/training/pruning.py" \
+        --input "${artifacts_dir}/trained_fully_pruned.pt" \
+        --output "${artifacts_dir}/pruned.pt"
+    python3 "${example_dir}/export/export_model.py" \
+        --input "${artifacts_dir}/pruned.pt" --smoke-test --pte "${pte_path}" \
+        --eager "${artifacts_dir}/person_detection.eager" \
+        --etrecord "${artifacts_dir}/person_detection.etrecord"
+    python3 "${example_dir}/export/test_exported_model.py" \
+        --pte "${pte_path}" --eager "${artifacts_dir}/person_detection.eager"
+    python3 "${example_dir}/deploy/generate_qparams_header.py" \
+        --pte "${pte_path}" --output "${work_root}/model_qparams.h"
+
+    local profiling build_dir host_log
+    for profiling in OFF ON; do
+        build_dir="${work_root}/build-${profiling}"
+        host_log="${work_root}/host-${profiling}.log"
+        cmake -S "${example_dir}/deploy" -B "${build_dir}" \
+            -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+            -DCMAKE_BUILD_TYPE=Release -DET_PTE_FILE_PATH="${pte_path}" \
+            -DET_ENABLE_PROFILING="${profiling}"
+        cmake --build "${build_dir}" --target person_detection -j"$(get_parallel_jobs)"
+        (
+            setsid python3 "${example_dir}/deploy/run_fvp.py" \
+                --elf "${build_dir}/person_detection" --pte "${pte_path}" \
+                --input "${image_path}" --headless \
+                > "${work_root}/fvp-${profiling}.log" 2>&1 &
+            fvp_pid=$!
+            trap 'kill -- "-${fvp_pid}" 2>/dev/null || true; wait "${fvp_pid}" 2>/dev/null || true' EXIT
+            host_args=(--tcp 127.0.0.1:5000 --timeout 120 --once)
+            if [[ "${profiling}" == ON ]]; then
+                host_args+=(--expect-etdump --etrecord "${artifacts_dir}/person_detection.etrecord"
+                    --etdump-output "${work_root}/profile.etdp")
+            fi
+            timeout 180 python3 "${example_dir}/deploy/host.py" "${host_args[@]}" \
+                > "${host_log}"
+            grep -q 'Inference time:' "${host_log}"
+            if [[ "${profiling}" == ON ]]; then
+                grep -q 'ETDump:' "${host_log}"
+                test -s "${work_root}/profile.etdp"
+            fi
+        )
+    done
+    echo "${FUNCNAME}: PASS"
+)
 
 
 run_ootb_tests_ethos_u() {
@@ -320,14 +388,11 @@ run_silero_vad_e2e_ethos_u() {
     local build_dir="${work_root}/silero_vad_app"
     local fvp_out_dir="${work_root}/fvp"
     local et_build_dir="${et_root_dir}/cmake-out-arm"
-    local quantized_aot_build_dir="${work_root}/quantized_ops_aot"
-    local python_package_dir="${work_root}/python_package"
     local pte_path="${export_dir}/silero_vad_ethos_u.pte"
     local expected_path="${export_dir}/expected_probs.bin"
     local fvp_log_path="${fvp_out_dir}/fvp.log"
     local validation_threshold="0.55"
     local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
-    local export_pythonpath="${et_root_dir}/third-party/ao:${python_package_dir}:${PYTHONPATH:-}"
     local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
     local platform_cmake_args=()
     if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -345,39 +410,6 @@ run_silero_vad_e2e_ethos_u() {
     echo "${FUNCNAME}: Building ExecuTorch (if needed)"
     cmake --preset arm-baremetal -B "${et_build_dir}"
     cmake --build "${et_build_dir}" --target install -j"$n_proc"
-
-    echo "${FUNCNAME}: Building host quantized AOT library"
-    local python_executable
-    python_executable="$(python3 -c 'import sys; print(sys.executable)')"
-    cmake \
-        -S "${et_root_dir}" \
-        -B "${quantized_aot_build_dir}" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_CPUINFO=OFF \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=OFF \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
-        -DEXECUTORCH_BUILD_XNNPACK=OFF \
-        -DPYTHON_EXECUTABLE="${python_executable}"
-    cmake --build "${quantized_aot_build_dir}" --target quantized_ops_aot_lib -j"$n_proc"
-
-    local quantized_ops_library
-    quantized_ops_library="$(
-        find "${quantized_aot_build_dir}/kernels/quantized" \
-            -name 'libquantized_ops_aot_lib.*' \
-            -type f \
-            -print \
-            -quit
-    )"
-    [[ -n "${quantized_ops_library}" ]] || {
-        echo "${FUNCNAME}: Missing quantized AOT library under ${quantized_aot_build_dir}"
-        return 1
-    }
 
     if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" rev-parse HEAD 2>/dev/null)" != "${model_revision}" ]]; then
         echo "${FUNCNAME}: Cloning Silero VAD repository"
@@ -402,18 +434,8 @@ run_silero_vad_e2e_ethos_u() {
         --duration-seconds 2.5 \
         --output "${validation_audio_path}"
 
-    echo "${FUNCNAME}: Preparing ExecuTorch Python package"
-    rm -rf "${python_package_dir}"
-    (
-        cd "${et_root_dir}"
-        EXECUTORCH_BUILD_PYBIND=OFF python3 setup.py build_py \
-            --build-lib="${python_package_dir}"
-    )
-
     echo "${FUNCNAME}: Exporting quantized Silero VAD PTE"
-    env EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY="${quantized_ops_library}" \
-        PYTHONPATH="${export_pythonpath}" \
-        python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
+    python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
         --jit-model "${jit_path}" \
         --calibration-audio "${calibration_audio_path}" \
         --validation-audio "${validation_audio_path}" \

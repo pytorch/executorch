@@ -111,7 +111,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
         super().__init__(None, tokenizer, max_seq_length)
         import getpass
 
-        from executorch.backends.qualcomm.export_utils import SimpleADB
+        from executorch.backends.qualcomm.export_utils import Device
 
         self._model = model
         self.output_dir = output_dir
@@ -124,12 +124,12 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
             soc_model=soc_model,
             target=target,
         )
-        self.adb = SimpleADB(
+        self.device = Device(
             qnn_config=qnn_config,
             pte_path=model,
             workspace=workspace,
         )
-        self.adb.push()
+        self.device.push()
 
     def _model_call(self, inps):
         # Given inps (tokens), return the logits from a single
@@ -146,8 +146,8 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
             inputs.append([inps[:, pos : pos + 1], pos_tensor])
 
         inputs, input_list = create_device_inputs(inputs)
-        self.adb.push(inputs=inputs, input_list=input_list, init_env=False)
-        self.adb.execute()
+        self.device.push(inputs=inputs, input_list=input_list, init_env=False)
+        self.device.execute()
         output_data_folder = f"{self.output_dir}/outputs"
         make_output_dir(output_data_folder)
 
@@ -174,7 +174,7 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
 
                 result_logits.append(output_tensor)
 
-        self.adb.pull(host_output_path=self.output_dir, callback=post_process)
+        self.device.pull(host_output_path=self.output_dir, callback=post_process)
         return torch.cat(result_logits, dim=1)
 
 

@@ -1,5 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "CXX")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
@@ -18,6 +19,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = runtime.python_library,
     name = "test_qnn_delegate",
     srcs = [
+        "rework/src/fcb_utils.py",
         "test_qnn_delegate.py",
         "utils.py",
     ],
@@ -89,6 +91,14 @@ fbcode_target(_kind = runtime.python_test,
         "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
         "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
     },
+    # Puts the quantized_decomposed out variants in the AOT operator registry, so
+    # a test that leaves a q/dq node on CPU can reach to_executorch(). OSS gets
+    # them from QnnQuantizer's import of executorch.kernels.quantized, and could
+    # not build this lib regardless: it needs :quantized_operators_aten, which
+    # get_aten_mode_options() leaves out of the OSS graph.
+    preload_deps = [] if runtime.is_oss else [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":models",
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
@@ -132,5 +142,33 @@ None if runtime.is_oss else fbcode_target(
     },
     deps = [
         ":test_qnn_delegate",
+    ],
+)
+
+None if runtime.is_oss else fbcode_target(_kind = runtime.python_test,
+    name = "test_qnn_shared_delegate",
+    srcs = ["test_qnn_shared_delegate.py"],
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+    ],
+)
+
+fbcode_target(_kind = runtime.cxx_test,
+    name = "qnn_delegate_cache_test",
+    srcs = ["QnnExecuTorchBackendTest.cpp"],
+    platforms = [CXX],
+    deps = [
+        "//executorch/backends/qualcomm/runtime:runtime",
+        "//executorch/runtime/core:memory_allocator",
     ],
 )

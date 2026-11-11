@@ -19,7 +19,7 @@ OS=ubuntu
 OS_VERSION=22.04
 CLANG_VERSION=""
 GCC_VERSION=""
-PYTHON_VERSION=3.10
+PYTHON_VERSION=3.11
 MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
@@ -107,6 +107,20 @@ case "${IMAGE_NAME}" in
 esac
 
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+TORCHVISION_VERSION=""
+TORCHAUDIO_VERSION=""
+TORCHCI_REPORTS=""
+if [[ "${IMAGE_NAME}" == "executorch-ubuntu-22.04-clang12" ]]; then
+  for pin in TORCH_VERSION:pytorch TORCHVISION_VERSION:torchvision TORCHAUDIO_VERSION:torchaudio; do
+    override=$(cat "ci_commit_pins/${pin#*:}-linux-clang12.txt")
+    if [[ ! "${override}" =~ ^[0-9a-f]{40}$ ]]; then
+      echo "Expected a 40-character source commit in ${pin#*:}-linux-clang12.txt" >&2
+      exit 1
+    fi
+    printf -v "${pin%:*}" '%s' "${override}"
+  done
+  TORCHCI_REPORTS=1
+fi
 BUILD_DOCS=1
 
 if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
@@ -115,6 +129,10 @@ fi
 
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
+
+# Copy the Arm setup scripts that pin the FVP and toolchain downloads
+mkdir -p arm-setup
+cp ../../backends/arm/scripts/{utils,fvp_utils,toolchain_utils}.sh arm-setup/
 
 # OSDC runners have no docker daemon, so the build runs on the in-cluster
 # BuildKit pool via a remote buildx builder. That builder has nowhere to load
@@ -134,6 +152,9 @@ fi
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
+  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}" \
+  --build-arg "TORCHCI_REPORTS=${TORCHCI_REPORTS}" \
   --build-arg "PYTORCH_BUILD_MAX_JOBS=${PYTORCH_BUILD_MAX_JOBS:-}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \

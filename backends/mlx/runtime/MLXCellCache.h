@@ -91,6 +91,9 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
       const Tensor& v,
       float scale,
       StreamOrDevice s) override {
+    if (q.ndim() != 4 || q.shape(2) != static_cast<int>(positions.size())) {
+      throw std::runtime_error("attend: one query per position expected");
+    }
     return ::executorch::backends::mlx::attend(
         update_and_fetch(layer, positions, k, v, s), q, scale, s);
   }
@@ -121,6 +124,9 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
       const cache::CacheConfig& cfg) {
     if (!cache::valid(geometry, cfg)) {
       throw std::runtime_error("MLXCellCache: invalid geometry or config");
+    }
+    if (geometry.dflash_block_size.has_value()) {
+      throw std::runtime_error("MLXCellCache: DFlash is unsupported");
     }
     return geometry;
   }

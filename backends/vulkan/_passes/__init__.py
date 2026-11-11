@@ -21,7 +21,11 @@ from executorch.backends.vulkan._passes.remove_asserts import (
     RemoveAssertsTransform,
 )
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
+    FoldForceFp16CastsPass,
     RemoveRedundantOpsTransform,
+)
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
 )
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
@@ -37,7 +41,9 @@ __all__ = [
     "insert_prepack_nodes",
     "remove_asserts",
     "RemoveAssertsTransform",
+    "FoldForceFp16CastsPass",
     "RemoveRedundantOpsTransform",
+    "ReplaceInstanceNormPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]

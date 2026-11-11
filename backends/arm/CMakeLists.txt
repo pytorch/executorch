@@ -90,6 +90,19 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
+    add_library(
+      ethosu_execution_stats STATIC EXCLUDE_FROM_ALL
+      ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
+    )
+    target_include_directories(
+      ethosu_execution_stats PRIVATE ${_common_include_directories}
+    )
+    target_include_directories(
+      ethosu_execution_stats PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
+    )
+    target_link_libraries(
+      ethosu_execution_stats PUBLIC ethosu_core_driver executorch_core
+    )
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_sources(
       executorch_delegate_ethos_u
@@ -277,6 +290,15 @@ if(EXECUTORCH_BUILD_VGF)
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
 
+  option(EXECUTORCH_VGF_ZERO_COPY_IO "Enable VGF model-boundary zero-copy I/O"
+         OFF
+  )
+  if(EXECUTORCH_VGF_ZERO_COPY_IO)
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=1)
+  else()
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_ZERO_COPY_IO=0)
+  endif()
+
   # Should be absent in ordinary production builds.
   option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
          OFF
@@ -360,6 +382,20 @@ if(EXECUTORCH_BUILD_VGF)
       target_link_libraries(vgf_neural_statistics_test PRIVATE gtest gtest_main)
     endif()
     add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
+
+    add_executable(
+      vgf_shape_utils_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_shape_utils_test.cpp
+    )
+    target_include_directories(
+      vgf_shape_utils_test PRIVATE ${_common_include_directories}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_shape_utils_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_shape_utils_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_shape_utils_test COMMAND vgf_shape_utils_test)
 
     add_executable(
       vgf_vulkan_features_test

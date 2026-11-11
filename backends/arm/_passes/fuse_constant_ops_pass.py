@@ -14,11 +14,13 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_first_fake_tensor,
     get_param_tensor,
+    is_mutable_buffer,
     is_persistent_buffer,
 )
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
@@ -49,7 +51,7 @@ class FuseConstantArgsPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgDtypePass}
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -247,12 +249,18 @@ class FuseConstantArgsPass(ArmPass):
             input_nodes = node.all_input_nodes
             if len(input_nodes) == 0:
                 continue
+            # A mutable buffer is streaming state, not a constant: folding it
+            # would freeze its initial value, and deleting its now-unused
+            # placeholder would strand its BUFFER_MUTATION output.
             input_nodes_constant = (
-                torch._export.utils.is_param(self.exported_program, input_node)
-                or torch._export.utils.is_lifted_tensor_constant(
-                    self.exported_program, input_node
+                (
+                    torch._export.utils.is_param(self.exported_program, input_node)
+                    or torch._export.utils.is_lifted_tensor_constant(
+                        self.exported_program, input_node
+                    )
+                    or torch._export.utils.is_buffer(self.exported_program, input_node)
                 )
-                or torch._export.utils.is_buffer(self.exported_program, input_node)
+                and not is_mutable_buffer(self.exported_program, input_node)
                 for input_node in input_nodes
             )
             if not all(input_nodes_constant):
@@ -320,7 +328,9 @@ class ComputeConstantOpsAOTPass(ArmPass):
         output_qparams = node.meta.get("output_qparams", None)
         if output_qparams:
             # If we have output_qparams, compute data in fp and quantize
-            data = node.target(*node.args)  #  type: ignore
+            data = node.target(  #  type: ignore
+                *node.args, **{**node.kwargs, "dtype": torch.float32}
+            )
             output_qparams = output_qparams[0]
             data = output_qparams.quantize_value(data)
         else:
