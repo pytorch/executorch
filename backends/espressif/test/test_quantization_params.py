@@ -247,7 +247,7 @@ def test_malformed_qparams_fail_with_node_name(
         torch.empty(0, dtype=torch.int8, device="meta"),
         torch.empty(1 << 31, dtype=torch.int8, device="meta"),
     ],
-    ids=["broadcast", "noncontiguous", "empty", "too_many_elements"],
+    ids=["shape_mismatch", "noncontiguous", "empty", "too_many_elements"],
 )
 def test_unsupported_storage_stays_portable(binary_program, value):
     input1, _, output = _pattern(binary_program.graph_module)

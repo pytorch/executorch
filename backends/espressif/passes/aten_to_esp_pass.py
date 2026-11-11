@@ -125,7 +125,24 @@ def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
         and 0 < value.numel() <= torch.iinfo(torch.int32).max
         and value.is_contiguous()
         for value in values
-    ) or not all(value.shape == values[0].shape for value in values[1:]):
+    ):
+        return None
+    if node.target == exir_ops.edge.aten.mul.Tensor:
+        # ESP-NN repeats one trailing block of input2 across the full input1.
+        if values[0].numel() < values[1].numel():
+            inputs = inputs[::-1]
+            params[0], params[1] = params[1], params[0]
+            values[0], values[1] = values[1], values[0]
+        rank = max(values[0].dim(), values[1].dim())
+        full_shape = (1,) * (rank - values[0].dim()) + tuple(values[0].shape)
+        block_shape = tuple(values[1].shape)
+        while block_shape and block_shape[0] == 1:
+            block_shape = block_shape[1:]
+        if values[2].shape != full_shape or (
+            block_shape and full_shape[-len(block_shape) :] != block_shape
+        ):
+            return None
+    elif not all(value.shape == values[0].shape for value in values[1:]):
         return None
     if not all(
         isinstance(arg.meta.get("val"), torch.Tensor)
