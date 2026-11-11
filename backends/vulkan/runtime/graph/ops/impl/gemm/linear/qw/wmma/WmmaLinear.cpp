@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/WmmaLinear.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/QuantizedLinear.h>
 
 namespace vkcompute {
@@ -77,6 +78,35 @@ WmmaStorage to_wmma_storage(const utils::StorageType storage) {
     default:
       return WmmaStorage::kOther;
   }
+}
+
+WmmaShape wmma_shape(
+    ComputeGraph& graph,
+    const WmmaOp op,
+    const ValueRef fp_input,
+    const ValueRef output,
+    const ValueRef group_size,
+    const ValueRef bias,
+    const utils::StorageType weight_storage) {
+  const std::vector<int64_t> out_sizes = graph.sizes_of(output);
+  WmmaShape s;
+  s.op = op;
+  s.N = utils::val_at(-1, out_sizes);
+  s.M = utils::val_at(-2, out_sizes);
+  s.K = utils::val_at(-1, graph.sizes_of(fp_input));
+  s.group_size = graph.extract_scalar<int64_t>(group_size);
+  for (int64_t d = 0; d < graph.dim_of(output) - 2; d++) {
+    s.batch *= utils::val_at(d, out_sizes);
+  }
+  s.gemv = is_gemv(&graph, fp_input);
+  s.has_bias = !graph.val_is_none(bias);
+  s.half = graph.dtype_of(output) == vkapi::kHalf;
+  s.input = to_wmma_storage(graph.storage_type_of(fp_input));
+  s.output = to_wmma_storage(graph.storage_type_of(output));
+  s.weight = to_wmma_storage(weight_storage);
+  s.io_width_packed = graph.packed_dim_of(output) == WHCN::kWidthDim &&
+      graph.packed_dim_of(fp_input) == WHCN::kWidthDim;
+  return s;
 }
 
 utils::StorageType predicted_q4_weight_storage(
