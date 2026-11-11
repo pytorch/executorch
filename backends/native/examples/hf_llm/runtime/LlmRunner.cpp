@@ -14,7 +14,6 @@
 #include <functional>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -27,6 +26,7 @@
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunner.h>
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunnerUtils.h>
 #include <executorch/backends/native/examples/runner_utils/runner_utils.h>
+#include <executorch/backends/native/runtime/OffGraphCache.h>
 #include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 #include <executorch/backends/native/runtime/deserialize/Samples.h>
@@ -35,7 +35,6 @@
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
-#include <executorch/extension/llm/runner/constants.h>
 #include <executorch/runtime/backend/options.h>
 #include <gflags/gflags.h>
 #include <pytorch/tokenizers/error.h>
@@ -122,111 +121,6 @@ size_t kv_cache_length(const ptn::Method& method) {
     }
   }
   return length;
-}
-
-constexpr std::string_view kUpdateAndAttend =
-    "torch.ops.kvcache.update_and_attend.default";
-
-// The off-graph KV cache a method's update_and_attend calls need: one layer per
-// cache id, shaped like its K, with the sliding window (or none) the package's
-// metadata gives it. nullopt if the method has none.
-std::optional<cache::CacheGeometry> offgraph_cache_geometry(
-    const ptn::Method& method,
-    const ptn::Package& package) {
-  std::map<int64_t, cache::LayerGeometry> layers;
-  for (const ptn::Node& node : method.graph.nodes) {
-    if (node.target != kUpdateAndAttend) {
-      continue;
-    }
-    const auto arg = [&](std::string_view name,
-                         size_t positional) -> const ptn::Argument& {
-      for (const ptn::NamedArgument& input : node.inputs) {
-        if (input.name == name) {
-          return input.arg;
-        }
-      }
-      if (positional >= node.inputs.size()) {
-        throw std::runtime_error(
-            "update_and_attend is missing argument " + std::string(name));
-      }
-      return node.inputs[positional].arg;
-    };
-    const ptn::Argument& layer_arg = arg("layer_id", 4);
-    const ptn::Argument& k_arg = arg("k", 1);
-    if (layer_arg.kind() != ptn::ArgKind::Int ||
-        ptn::valid(layer_arg.as_int().id) ||
-        k_arg.kind() != ptn::ArgKind::Tensor) {
-      throw std::runtime_error(
-          "update_and_attend needs a constant layer_id and a K tensor");
-    }
-    const std::vector<int64_t>& k_sizes =
-        method.graph.value(k_arg.as_tensor().id).tensor_meta().sizes;
-    if (k_sizes.size() != 4) {
-      throw std::runtime_error("update_and_attend K must be [B, H, T, D]");
-    }
-    const cache::LayerGeometry layer{
-        .n_kv_heads = static_cast<int>(k_sizes[1]),
-        .head_dim = static_cast<int>(k_sizes[3])};
-    const auto [it, inserted] =
-        layers.try_emplace(layer_arg.as_int().value, layer);
-    if (!inserted &&
-        (it->second.n_kv_heads != layer.n_kv_heads ||
-         it->second.head_dim != layer.head_dim)) {
-      throw std::runtime_error(
-          "update_and_attend calls disagree on cache layer " +
-          std::to_string(it->first) + "'s shape");
-    }
-  }
-  if (layers.empty()) {
-    return std::nullopt;
-  }
-  cache::CacheGeometry geometry;
-  for (const auto& [id, layer] : layers) {
-    if (id != static_cast<int64_t>(geometry.layers.size())) {
-      throw std::runtime_error("update_and_attend cache ids must be 0..n-1");
-    }
-    geometry.layers.push_back(layer);
-  }
-
-  namespace llm = executorch::extension::llm;
-  const auto per_layer = [&](const char* name) {
-    std::optional<std::vector<int64_t>> values = package.metadata_ints(name);
-    if (values && values->size() != geometry.layers.size()) {
-      throw std::runtime_error(
-          std::string("package metadata ") + name + " has " +
-          std::to_string(values->size()) + " entries for " +
-          std::to_string(geometry.layers.size()) + " cache layers");
-    }
-    return values;
-  };
-  const auto kv_heads = per_layer(llm::kKVHeads);
-  const auto head_dims = per_layer(llm::kHeadDims);
-  const auto windows = per_layer(llm::kWindows);
-  // Without them a sliding layer would silently attend its whole history.
-  if (!windows) {
-    throw std::runtime_error(
-        std::string("package metadata has no ") + llm::kWindows +
-        "; export the package with export_hf_llm.py --offgraph_cache");
-  }
-  for (size_t i = 0; i < geometry.layers.size(); ++i) {
-    cache::LayerGeometry& layer = geometry.layers[i];
-    if ((kv_heads && (*kv_heads)[i] != layer.n_kv_heads) ||
-        (head_dims && (*head_dims)[i] != layer.head_dim)) {
-      throw std::runtime_error(
-          "package metadata disagrees with the graph on cache layer " +
-          std::to_string(i) + "'s shape");
-    }
-    const int64_t window = (*windows)[i];
-    if (window < 0 || window > std::numeric_limits<int>::max()) {
-      throw std::runtime_error(
-          "package metadata gives cache layer " + std::to_string(i) +
-          " an invalid window");
-    }
-    if (window > 0) {
-      layer.policy = {cache::LayerPolicy::Kind::Ring, static_cast<int>(window)};
-    }
-  }
-  return geometry;
 }
 
 // A runner-owned off-graph KV cache, published for the engine to bind.
@@ -605,16 +499,9 @@ int run_llm(
     const std::unique_ptr<ptn::EngineHost> host = make_host();
     // Declared before the context, which may hold the cache, so it outlives it.
     std::optional<OffGraphCache> kv;
-    if (const auto geometry = offgraph_cache_geometry(method, *package)) {
-      // Serialized input sizes are upper bounds; the tokens are [1, T].
-      const std::vector<int64_t>& token_bound =
-          method.graph.value(method.graph.input_ids.at(0)).tensor_meta().sizes;
-      if (token_bound.empty() || token_bound.back() <= 0 ||
-          token_bound.back() > std::numeric_limits<int>::max()) {
-        throw std::runtime_error("token input must have shape [1, sequence]");
-      }
+    if (const auto geometry = ptn::offgraph_cache_geometry(method, *package)) {
       kv = install_offgraph_cache(
-          cache_backend_id, *geometry, static_cast<int>(token_bound.back()));
+          cache_backend_id, *geometry, ptn::max_step_tokens(method));
     } else if (FLAGS_interactive) {
       throw std::invalid_argument(
           "--interactive needs a package exported with --offgraph_cache");
