@@ -55,8 +55,10 @@ std::vector<std::string> dispatched_kernels(ComputeGraph& graph) {
 //     profiling records to check, and a case that does not run (unsupported
 //     shader or route) fails instead of reporting SKIP.
 //   software: a device without timestamp queries (e.g. SwiftShader); it must
-//     match no family, and kernels are checked only when records exist.
-//   unset: the selector's family is taken as is; records are still required.
+//     match no family, a case that does not run fails as above, and kernels
+//     are checked only when records exist.
+//   unset: the selector's family is taken as is; records are still required,
+//     and a case that does not run reports SKIP.
 struct RouteExpectation {
   std::string family; // empty: take the selector's
   bool strict = false;
@@ -70,7 +72,7 @@ RouteExpectation route_expectation() {
     return {};
   }
   if (value == "software") {
-    return {"none", false, true};
+    return {"none", true, true};
   }
   reference::require(
       value == "xe2" || value == "nvidia" || value == "none",
