@@ -19,6 +19,7 @@
 
 #include <executorch/backends/native/runtime/Method.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlTypes.h>
+#include <executorch/backends/native/runtime/graph/StringFormat.h>
 
 namespace ptn::ggml_detail {
 
@@ -209,6 +210,33 @@ void GraphBuilder::lower_sqrt(const Node& node) {
       TensorRef{
           ggml_sqrt(instance_.context.get(), contiguous(input.tensor)),
           input.sizes});
+}
+
+// ATen computes x ** 2 as x * x and x ** 0.5 as sqrt(x), so sqrt(-0) is -0.
+void GraphBuilder::lower_pow(const Node& node) {
+  const double exponent = float_arg(node, "exponent", 1, 0);
+  if (exponent != 2.0 && exponent != 0.5) {
+    throw std::runtime_error(
+        "ggml: op '" + node.target +
+        "' supports the exponents 2 and 0.5 only, not " +
+        format_double(exponent));
+  }
+  const ValueId input_id = tensor_arg_id(node, "self", 0);
+  // Integer and Bool values carried as F32 would pass require_f32.
+  const ScalarType dtype = method_.graph.value(input_id).tensor_meta().dtype;
+  if (dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        "ggml: op '" + node.target + "' supports Float tensors only, not " +
+        scalar_type_name(dtype));
+  }
+  const TensorRef input = tensor(input_id);
+  require_f32(node, input.tensor);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(input.tensor);
+  set_single_output(
+      node,
+      TensorRef{
+          exponent == 2.0 ? ggml_sqr(ctx, x) : ggml_sqrt(ctx, x), input.sizes});
 }
 
 void GraphBuilder::lower_hardtanh(const Node& node) {

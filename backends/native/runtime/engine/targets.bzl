@@ -79,6 +79,7 @@ def define_common_targets():
                 "//executorch/backends/native/runtime/graph:ids",
                 "//executorch/backends/native/runtime/graph:node",
                 "//executorch/backends/native/runtime/graph:scalar_type",
+                "//executorch/backends/native/runtime/graph:string_format",
                 "//executorch/backends/native/runtime/graph:tensor_meta",
                 "//executorch/backends/native/runtime/graph:value",
                 ggml_dep,
