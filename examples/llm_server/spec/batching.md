@@ -12,22 +12,20 @@ speculative drafting/verification remain inside the runner and executor.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
 - Exact history extensions continue the existing session. With prefix caching
-  enabled, replacements and retries can reuse matching retained snapshots. Clean
+  enabled, replacements and retries can reuse matching shared snapshots. Clean
   replacements can also reuse a committed live prefix. Dirty live state is
   discarded; without a usable snapshot, the full supplied prompt is prefilled.
 - Explicit open creates an empty session; opening an existing key preserves it.
-  Explicit reset cancels outstanding generation and discards live state,
-  history, and session-owned checkpoints while retaining the session key.
-  Failed reopen leaves the key unavailable. Shared snapshots survive open/reset
-  and may be reused by the next generation when they match its supplied full
-  prompt. Reset never adds old conversation content to that prompt and does not
-  guarantee a cold prefill.
+  Explicit reset cancels outstanding generation and discards live state and
+  history while retaining the session key. Failed reopen leaves the key
+  unavailable. Shared snapshots survive open/reset and may be reused by the
+  next generation when they match its supplied full prompt. Reset never adds
+  old conversation content to that prompt and does not guarantee a cold prefill.
 - Prefix caching is optional and disabled by default. It supports both greedy
-  and sampled requests. In shared-cache mode this includes the first generation
-  after explicit open or reset. `--prefix-cache-entries` reserves snapshot
-  capacity in addition to logical `--max-sessions`. Set it to zero to disable
-  shared prefix caching when a cold prefill is required after reset or opening
-  a new key.
+  and sampled requests, including the first generation after explicit open or
+  reset. `--prefix-cache-entries` reserves snapshot capacity in addition to
+  logical `--max-sessions`. Set it to zero to disable shared prefix caching
+  when a cold prefill is required after reset or opening a new key.
   Reuse requires a clone-capable executor and complete model state at the
   requested boundary; missing state falls back to prefill.
 - Visible text is not model history. EOS and pending/internal tokens can remain
@@ -41,27 +39,23 @@ speculative drafting/verification remain inside the runner and executor.
 
 `--prefix-checkpoint-interval N` captures prompt snapshots at absolute multiples
 of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
-Zero (the default) disables periodic capture. With prefix caching enabled and no
-other capture options, only initial prompts are retained.
-`--prefix-checkpoint-prompt-end` instead retains prompt ends within each named
-session, including continuations and replacements. This mode is opt-in.
-`--prefix-cache-entries`
-defaults to two per session. Checkpoints cannot be reused or evicted by another
-session, and close/reset clears them. Anonymous requests do not use this cache.
-This mode cannot be combined with a nonzero interval or custom checkpoint policy.
-Otherwise `--prefix-cache-entries` sets the shared-cache limit (default zero).
-Prompt-end mode reserves `max_sessions * prefix_cache_entries`
-snapshot rows in addition to working sessions and transient captures.
-Capture slots are released after clone collection, before decode completes.
-Capture is best effort: occupied transient rows can skip a boundary. Already-retained
-prompt ends are not cloned again. Default retention uses LRU within each cache.
+Zero (the default) disables periodic capture.
+`--prefix-checkpoint-prompt-end initial` (the default) retains the prompt end of
+each request that opens a session, which includes every anonymous request. `every`
+also requests snapshots of named-session continuation and replacement prompt ends,
+such as tool-result turns and retries. It preserves per-request capture concurrency
+and cannot be combined with a nonzero interval or custom checkpoint policy. Without
+periodic checkpoints, already-retained prompt ends are not cloned again, and
+snapshots become reusable and capture slots are released when their clones
+complete, before decode finishes. Capture is best effort: occupied transient rows
+can skip a boundary. Retention uses global LRU; early checkpoints are not protected.
 
 C++ applications can customize two independent policies in
 [`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
 
 - `prefix_checkpoint_policy` chooses capture positions and optional application metadata,
   overriding `prefix_checkpoint_interval`. It cannot be combined with
-  `prefix_checkpoint_prompt_end`. This C++ callback is not a launcher option.
+  `PromptEndCapture::Every`. This C++ callback is not a launcher option.
 - `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
 
 The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)

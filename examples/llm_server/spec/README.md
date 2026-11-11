@@ -139,7 +139,7 @@ keepalive comments every 15 seconds. Model launchers may bound initial readiness
 waiting to return headers during prefill; errors detected after headers arrive
 as SSE error events.
 
-The batching launcher accepts `--api-dialect openai|openrouter`.
+The generic and Muse batching launchers accept `--api-dialect openai|openrouter`.
 The `openrouter` dialect attaches requested usage to the finish chunk, once, for
 clients that stop consuming on `finish_reason`, and supplies overflow metadata
 for context recovery. The default `openai` dialect retains the separate
@@ -324,10 +324,10 @@ that ACK, including commands submitted before it. Other sessions can progress.
 Immediate validation/admission rejections and cancel replies are not covered by
 this ordering. Close acknowledges logical release, not physical executor cleanup.
 Open creates an empty session or preserves an already-open session. Reset
-acknowledges discarding live state, history, and session-owned checkpoints and
-reopening the same key; a failed replacement does not restore the old state.
-Matching shared prefix snapshots remain eligible for subsequent generation
-from its supplied full prompt, so open/reset does not guarantee a cold prefill.
+acknowledges discarding live state and history and reopening the same key; a
+failed replacement does not restore the old state. Matching shared prefix
+snapshots remain eligible for subsequent generation from its supplied full
+prompt, so open/reset does not guarantee a cold prefill.
 
 Cancellation is in-band, not the legacy worker's separate FD pipe:
 
@@ -388,32 +388,28 @@ loads only the program before ModuleExecutor construction, reads activation dtyp
 and context length, resolves model/tokenizer EOS, binds the backend's default
 batched cache via `cache::kind::kBatched`, derives scheduler width from
 `preferred_batch_tokens()`, and constructs
-one `ServingRuntime`. It does not preload `forward` or run token-step loops.
-Prefix caching is disabled by default.
+one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
+Glimmer's legacy session implementation. Prefix caching is disabled by default.
 `--prefix_cache_entries=N` enables retained-prefix reuse for both greedy and
 sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
 unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
 `min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
-their initial prompt. Alternatively, `--prefix_checkpoint_prompt_end=true` retains
-initial, continuation, and replacement snapshots separately for each named session.
-`--prefix_cache_entries=2` is the default per-session limit. This mode adds
-`max_sessions * prefix_cache_entries + C` physical rows. The existing
-`--prefix_cache_entries` flag now sets the per-session limit when prompt-end mode
-is enabled; otherwise it keeps the shared-cache meaning and default of zero.
-Exact prompt identities already retained
-within the session are not cloned again. Close/reset clears the session's snapshots,
-and anonymous requests neither reuse nor retain them. LRU eviction stays within
-each session. Transient slots are released after clone collection without waiting
-for the request to finish decoding.
+their initial prompt. `--prefix_checkpoint_prompt_end=every` additionally requests
+continuation and replacement snapshots with the same concurrent allowance; it
+requires nonzero cache capacity. Without periodic checkpoints, prompt-end capture
+skips exact prompt ends already retained, and snapshots are published and their
+transient slots released once the clone completes, without waiting for the request
+to finish decoding.
 With periodic checkpoints enabled, automatic sizing uses at most two
 rows because checkpoint collection remains serialized and one replacement can
 overlap. A positive value overrides automatic sizing; values above two add unused
-row capacity in checkpoint mode. Disabling both cache modes reserves no capture rows.
-Capture is best effort. Prompt-end capture cannot be combined with a nonzero
-checkpoint interval or a custom checkpoint policy; invalid combinations are
-rejected. A C++ `prefix_checkpoint_policy` overrides the interval. Periodic/custom
-checkpoints share a serialized lane; a pending clone can skip another boundary.
+row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
+Capture is best effort. `--prefix_checkpoint_prompt_end=every` cannot be combined
+with a nonzero checkpoint interval or a custom checkpoint policy; invalid
+combinations are rejected. A C++ `prefix_checkpoint_policy` overrides the interval.
+Periodic/custom checkpoints share a serialized lane; a pending clone can skip
+another boundary.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,
@@ -429,7 +425,7 @@ contains multiple session slices. Overlapping HTTP requests or sequential
 single-session forwards are not proof. Real-model smoke testing is explicitly
 deferred: no compatible local PTE/tokenizer has been confirmed, and this stack
 must not download/export weights or claim that a real combined forward was
-verified. An `embed_text`/`forward_from_embeddings` last-logits artifact is
+verified. A Glimmer `embed_text`/`forward_from_embeddings` last-logits artifact is
 not assumed compatible with this packed construction path.
 
 Idle-session recovery retries at most once and only for native

@@ -25,7 +25,6 @@ from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
 from executorch.examples.llm_server.python.serve import (
-    _DEFAULT_SESSION_CHECKPOINTS,
     _parse_preflight_timeout,
     _validate_limits,
 )
@@ -77,7 +76,9 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--prefix-cache-entries",
         type=int,
-        help=f"Retained snapshots per named session (default: {_DEFAULT_SESSION_CHECKPOINTS}); shared with prompt-end checkpoints disabled (default: 0)",
+        default=0,
+        help="Opt-in prefix reuse for new sessions and prompt replacements; "
+        "requires batching executor cache-clone support.",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -88,11 +89,9 @@ def _parse_args(argv=None):
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument(
         "--prefix-checkpoint-prompt-end",
-        nargs="?",
-        choices=("true", "false"),
-        const="true",
-        default="true",
-        help="Retain prompt-end checkpoints separately for each named session (default: true; false disables)",
+        choices=("initial", "every"),
+        default="initial",
+        help="Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)",
     )
     parser.add_argument(
         "--prefix-checkpoint-interval",
@@ -128,11 +127,6 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    args.prefix_checkpoint_prompt_end = args.prefix_checkpoint_prompt_end == "true"
-    if args.prefix_cache_entries is None:
-        args.prefix_cache_entries = (
-            _DEFAULT_SESSION_CHECKPOINTS if args.prefix_checkpoint_prompt_end else 0
-        )
     _validate_limits(
         parser,
         args,
@@ -209,12 +203,12 @@ def _worker_command(args):
         ("prefix_cache_entries", args.prefix_cache_entries),
         (
             "prefix_capture_slots",
-            (args.prefix_capture_slots if args.prefix_cache_entries else None),
+            args.prefix_capture_slots if args.prefix_cache_entries else None,
         ),
         ("prefix_checkpoint_interval", args.prefix_checkpoint_interval or None),
         (
             "prefix_checkpoint_prompt_end",
-            str(args.prefix_checkpoint_prompt_end).lower(),
+            "every" if args.prefix_checkpoint_prompt_end == "every" else None,
         ),
         ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),

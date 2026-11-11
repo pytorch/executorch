@@ -35,7 +35,7 @@ DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Retained snapshots per session (default: 2); shared with prompt-end checkpoints disabled (default: 0)");
+    "Text/image prefix snapshots; zero disables");
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
@@ -44,10 +44,10 @@ DEFINE_int32(
     prefix_capture_slots,
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
-DEFINE_bool(
+DEFINE_string(
     prefix_checkpoint_prompt_end,
-    true,
-    "Retain prompt-end checkpoints separately for each named session (enabled by default)");
+    "initial",
+    "Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
@@ -67,23 +67,21 @@ DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 namespace executorch::extension::llm {
 std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
-  if (FLAGS_prefix_checkpoint_prompt_end &&
-      gflags::GetCommandLineFlagInfoOrDie("prefix_cache_entries").is_default) {
-    FLAGS_prefix_cache_entries =
-        serving::ServingRuntimeConfig::kDefaultSessionCheckpoints;
-  }
-  if (FLAGS_prefix_checkpoint_prompt_end && FLAGS_prefix_checkpoint_interval) {
+  const bool every_prompt_end = FLAGS_prefix_checkpoint_prompt_end == "every";
+  if (!every_prompt_end && FLAGS_prefix_checkpoint_prompt_end != "initial") {
     throw std::invalid_argument(
-        "--prefix_checkpoint_prompt_end cannot be combined with "
+        "--prefix_checkpoint_prompt_end must be initial or every");
+  }
+  if (every_prompt_end && FLAGS_prefix_checkpoint_interval) {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end=every cannot be combined with "
         "--prefix_checkpoint_interval");
   }
-
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
       FLAGS_prefix_checkpoint_interval < 0 || FLAGS_prefix_capture_slots < 0 ||
-      ((FLAGS_prefix_checkpoint_interval > 0 ||
-        FLAGS_prefix_checkpoint_prompt_end) &&
+      ((FLAGS_prefix_checkpoint_interval > 0 || every_prompt_end) &&
        FLAGS_prefix_cache_entries == 0) ||
       FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
       FLAGS_max_input_frame_bytes == 0 ||
@@ -100,9 +98,13 @@ create_muse_glimmer_batching_runtime() {
   serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   serving.max_prefix_captures = FLAGS_prefix_capture_slots;
   serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
-  serving.prefix_checkpoint_prompt_end = FLAGS_prefix_checkpoint_prompt_end;
-  const auto physical = serving.required_executor_rows();
-  if (!physical || *physical > std::numeric_limits<int>::max())
+  serving.prefix_checkpoint_prompt_end = every_prompt_end
+      ? serving::PromptEndCapture::Every
+      : serving::PromptEndCapture::Initial;
+  const int64_t physical = static_cast<int64_t>(FLAGS_max_sessions) +
+      FLAGS_prefix_cache_entries +
+      static_cast<int64_t>(serving.resolved_prefix_captures());
+  if (physical > std::numeric_limits<int>::max())
     throw std::invalid_argument("too many physical sessions");
   auto result = std::make_unique<MuseGlimmerBatchingRuntime>();
   result->tokenizer = std::make_unique<tokenizers::HFTokenizer>();
@@ -118,7 +120,7 @@ create_muse_glimmer_batching_runtime() {
   backend.model_path = FLAGS_pte;
   backend.data_path = FLAGS_data_path;
   backend.pos_embed_path = FLAGS_pos_embed_path;
-  backend.max_sessions = static_cast<int>(*physical);
+  backend.max_sessions = static_cast<int>(physical);
   backend.max_session_tokens = FLAGS_max_session_tokens;
   backend.max_vision_patches = FLAGS_max_vision_patches;
   backend.image_limits.max_encoded_bytes = FLAGS_max_image_bytes;

@@ -775,21 +775,6 @@ TEST_F(PrefixCacheTest, WrappedCaptureOwnsMetadataUntilCollection) {
   EXPECT_TRUE(saved.expired());
 }
 
-TEST_F(PrefixCacheTest, RetiredCaptureDoesNotRepopulateClearedCache) {
-  auto source = open();
-  PrefixCache cache(1);
-  auto capture = cache.capture_prompt(source, {1, 2, 3});
-  run_callback(source, {1, 2, 3}, capture.wrap());
-  // Closing a serving session can clear its cache before control collects
-  // an already-queued clone. Drain that clone without retaining its state.
-  source = Session{};
-  cache.clear();
-  EXPECT_FALSE(capture.collect(false));
-  EXPECT_EQ(cache.size(), 0u);
-  EXPECT_FALSE(capture.collect());
-  EXPECT_FALSE(cache.lookup({1, 2, 3}));
-}
-
 TEST_F(PrefixCacheTest, ObserverMatchesMetadataAfterSkippingABoundary) {
   auto source = open();
   generate(source, Tokens(8, 7), 1);
@@ -1286,6 +1271,31 @@ TEST_F(PrefixCacheTest, PromptCapturePrecedesDecodeRetentionLoss) {
   ASSERT_TRUE(match);
   EXPECT_EQ(match->matched_tokens, prompt.size() - 1);
   expect_cold_match(*match, prompt);
+}
+
+TEST_F(PrefixCacheTest, WrappedCaptureNotifiesOnceAfterCloneSettles) {
+  const Tokens prompt{1, 2, 3};
+  for (int count : {1, 4}) {
+    PrefixCache cache(1);
+    auto source = open();
+    auto capture = cache.capture_prompt(source, prompt);
+    std::size_t delivered = 0;
+    std::vector<std::size_t> notified_after;
+    auto generation = run_callback(
+        source,
+        prompt,
+        capture.wrap(
+            [&](const auto&) { ++delivered; },
+            [&] { notified_after.push_back(delivered); }),
+        count);
+    EXPECT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
+    // The clone queued by the first update settles before a later one.
+    EXPECT_EQ(
+        notified_after,
+        count == 1 ? std::vector<std::size_t>{} : std::vector<std::size_t>{1});
+    ASSERT_TRUE(capture.collect());
+    EXPECT_TRUE(cache.lookup(prompt));
+  }
 }
 
 TEST_F(PrefixCacheTest, PromptCaptureCopiesFullHistoryAfterPrefixReuse) {

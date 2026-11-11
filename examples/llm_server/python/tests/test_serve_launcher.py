@@ -157,78 +157,47 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
-@pytest.mark.parametrize("capacity", [None, 8, 2])
-def test_prompt_end_capture_reaches_worker_with_session_capacity(
-    argv, launch, capacity
-):
-    assert not serve._parse_args(argv).prefix_checkpoint_prompt_end
-    assert (
-        serve._parse_args(
-            argv + ["--prefix-checkpoint-prompt-end"]
-        ).prefix_cache_entries
-        == 2
+def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch, capsys):
+    assert serve._parse_args(argv).prefix_checkpoint_prompt_end == "initial"
+    for value in ("every", "always"):
+        with pytest.raises(SystemExit):
+            serve._parse_args(argv + ["--prefix-checkpoint-prompt-end", value])
+    assert "requires --prefix-cache-entries > 0" in capsys.readouterr().err
+    serve.main(
+        argv
+        + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end", "every"]
     )
-    options = ["--prefix-checkpoint-prompt-end"]
-    if capacity is not None:
-        options += ["--prefix-cache-entries", str(capacity)]
-    serve.main(argv + options)
     assert (
-        "--prefix_checkpoint_prompt_end=true"
+        "--prefix_checkpoint_prompt_end=every"
         in launch.stages["spawn"].call_args.args[0]
     )
-    command = launch.stages["spawn"].call_args.args[0]
-    assert command[command.index("--prefix_cache_entries") + 1] == str(
-        2 if capacity is None else capacity
-    )
 
 
-def test_prompt_end_rejects_periodic_capture(argv, capsys):
+def test_every_prompt_end_rejects_periodic_capture(argv, capsys):
     with pytest.raises(SystemExit):
         serve._parse_args(
             argv
             + [
+                "--prefix-cache-entries",
+                "3",
                 "--prefix-checkpoint-prompt-end",
+                "every",
                 "--prefix-checkpoint-interval",
                 "64",
             ]
         )
     assert "cannot be combined" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        ["--prefix-cache-entries", "0"],
-        ["--prefix-cache-entries", "-1"],
-        ["--max-sessions", str(1 << 30)],
-        ["--prefix-cache-entries", str((1 << 31) - 1)],
-    ],
-)
-def test_session_checkpoint_limits_reject_invalid_combinations_and_row_overflow(
-    argv, options
-):
-    with pytest.raises(SystemExit):
-        serve._parse_args(argv + ["--prefix-checkpoint-prompt-end"] + options)
-
-
-def test_session_checkpoint_rows_include_every_sessions_budget(argv):
-    maximum = (1 << 31) - 1
-    # Two working rows + two checkpoint budgets + one transient row.
-    capacity = (maximum - 3) // 2
-    flags = [
-        "--prefix-checkpoint-prompt-end",
-        "--max-sessions",
-        "2",
-        "--prefix-capture-slots",
-        "1",
-        "--prefix-cache-entries",
-    ]
-    assert (
-        serve._parse_args(argv + flags + [str(capacity)]).prefix_cache_entries
-        == capacity
+    serve._parse_args(
+        argv
+        + [
+            "--prefix-cache-entries",
+            "3",
+            "--prefix-checkpoint-prompt-end",
+            "initial",
+            "--prefix-checkpoint-interval",
+            "64",
+        ]
     )
-    with pytest.raises(SystemExit):
-        serve._parse_args(argv + flags + [str(capacity + 1)])
 
 
 @pytest.mark.parametrize(
@@ -262,11 +231,11 @@ def test_capture_capacity_validation_and_worker_override(
             "--prefix-capture-slots",
             str(override),
         ]
-        + (["--prefix-checkpoint-prompt-end"] if prompt_end else [])
+        + (["--prefix-checkpoint-prompt-end", "every"] if prompt_end else [])
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
-    assert ("--prefix_checkpoint_prompt_end=true" in command) == prompt_end
+    assert ("--prefix_checkpoint_prompt_end=every" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,
@@ -281,7 +250,7 @@ def test_capture_capacity_validation_and_worker_override(
             Mock(),
             args,
             prefix_capture_slots=override,
-            prefix_checkpoint_prompt_end=prompt_end,
+            prefix_checkpoint_prompt_end="every" if prompt_end else "initial",
         )
         == expected
     )

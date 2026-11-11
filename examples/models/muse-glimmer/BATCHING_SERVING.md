@@ -219,39 +219,29 @@ submitted history; server-side image references are not supported.
 
 The base64/framing check does not guarantee that an arbitrarily long text history
 fits. Whole-frame, decoded-pixel, vision-patch, and model context limits still
-apply.
+apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
+(default 0).
 
 ## Session Behavior
 
-The Muse-Glimmer batching launcher and native workers enable
-`--prefix-checkpoint-prompt-end` by default. General LLM serving keeps it opt-in.
-This mode retains prompt boundaries separately for each named session, including tool-result
-continuations and replacements. `--prefix-cache-entries` defaults to two
-checkpoints per session. Repeated or branched requests using the same session ID can
-reuse its snapshots; other sessions and anonymous requests cannot. New tool-result
-text still needs prefill. Exact prompt ends already retained in that session are
-not cloned again. Close/reset, including idle-session eviction, clears its snapshots.
+With prefix caching enabled, `--prefix-checkpoint-prompt-end initial` (the default)
+retains the prompt end of each request that opens a session, including every
+anonymous request. Use `--prefix-checkpoint-prompt-end every` to also retain later
+boundaries of named sessions, including tool-result continuations and replacements.
+Repeated or branched requests from any session can reuse those snapshots; new
+tool-result text still needs prefill. Without periodic checkpoints, exact prompt
+ends already in the cache are not cloned again, and snapshots become reusable and
+release their capture slots once the clone completes, without waiting for decoding
+to finish.
 
-Use `--prefix-checkpoint-prompt-end=false` to disable this mode in the Python launcher,
-or `--prefix_checkpoint_prompt_end=false` in a native worker. With it disabled,
-`--prefix-cache-entries` defaults to zero; a positive value enables shared prefix
-caching, which retains initial prompts unless periodic capture is configured.
-
-Prompt-end-only capture preserves per-request capture concurrency and the default
-transient-row budget. LRU eviction stays within each session, so one session cannot
-evict another's checkpoints. Capture slots are released after clone collection,
-without waiting for decoding to finish. Capture is best effort: concurrent captures
+Prompt-end capture preserves per-request capture concurrency and the default
+transient-row budget. All snapshots share the bounded cache and global LRU, so new
+boundaries can evict earlier prompts. Capture is best effort: concurrent captures
 or session replacements can occupy the available rows. Measure capture overhead
-and reuse to choose the entry limit for your workload.
+and reuse for your workload before enabling `every`.
 
-`--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
-`--prefix-checkpoint-interval`; both the launcher and native worker reject that combination.
-To use periodic capture, disable prompt-end capture and set a positive
-`--prefix-cache-entries` limit.
-Prompt-end mode reserves `max_sessions * prefix_cache_entries` snapshot rows plus
-working sessions and capture slots: four sessions use 16 physical rows with the
-default settings. Eight sessions with two checkpoints each and eight automatic
-capture slots require 32 physical rows.
+`--prefix-checkpoint-prompt-end every` cannot be combined with a nonzero
+`--prefix-checkpoint-interval`; both the launcher and native worker reject it.
 Periodic checkpoints use one serialized lane and may skip a boundary while an
 earlier clone is pending. Automatic transient-row sizing is capped at two in
 periodic mode; prompt-end capture retains the ordinary concurrency budget.
@@ -274,7 +264,7 @@ periodic mode; prompt-end capture retains the ordinary concurrency budget.
 - Resubmit the complete history, including the image, on every turn. A clean
   named session whose history is an exact prefix reuses its KV and executes only
   the remaining prepared suffix. Pending generated tokens are handled by Runner.
-- Snapshots can also reuse mixed prefixes across requests. Existing
+- Opt-in snapshots can also reuse mixed prefixes across requests. Existing
   policies remain: equal, shorter, mismatched, or dirty named histories replay;
   snapshots leave at least one fresh prompt position to execute.
 - Omitting an earlier image changes the supplied context; serving does not
@@ -325,7 +315,6 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --backend cuda \
   --gguf /path/to/models/mg/model.gguf \
   --use-offgraph-kv-cache \
-  --max-cells 131073 \
   --output-dir /path/to/models/mg-batching-cuda
 ```
 
@@ -351,22 +340,15 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 
 `--data-path` is required. Image artifacts read `pos_embed.bin` beside
 `model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
-pool: requests, shared `--prefix-cache-entries` snapshots or
-`max_sessions * prefix_cache_entries` per-session snapshots, and the resolved number of
+pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
 capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
-matches request concurrency, including prompt-end-only mode; periodic checkpoints
-cap the automatic count at two; a
-positive value sets an explicit limit. Their total reservation must leave one
+matches request concurrency, including with `--prefix-checkpoint-prompt-end every`;
+periodic checkpoints cap the automatic count at two; a positive value sets an
+explicit limit. Their total reservation must leave one
 cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
 reduce the context or slot counts if they do not fit.
-The example exports 131073 cells: 16 rows at 8192 tokens each, plus one padded
-write cell. An existing 65536-cell export supports at most 4095 tokens per row
-with these defaults; use a smaller `--max-context`, re-export with more cells,
-or disable prompt-end checkpoints. For eight sessions and eight capture slots,
-8192 tokens require at least 262145 cells. The native worker's automatic context
-mode uses `(max_cells - 1) / rows`, so adding checkpoints reduces that limit.
 The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
 session's cells by reference, sharing the prompt's KV rather than copying it.
 

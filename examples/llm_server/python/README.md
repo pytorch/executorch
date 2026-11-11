@@ -66,21 +66,18 @@ limit; choose a value supported by the export. Capacity defaults are
 `--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
 (the default) automatically allows one pending prompt capture per admitted request,
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
-this allowance. Alternatively, `--prefix-checkpoint-prompt-end` retains initial,
-continuation, and replacement prompt boundaries separately for each named session.
-This mode is opt-in.
-`--prefix-cache-entries` defaults to two snapshots per session; duplicates
-are skipped and LRU eviction stays within the owning session. Close/reset clears
-that session's snapshots. Anonymous requests neither use nor retain them.
-This mode reserves `max_sessions * prefix_cache_entries` snapshot rows,
-plus working sessions and capture slots. Eight sessions with two checkpoints each
-and automatic capture sizing need 32 rows in total. Capture slots are released
-after clone collection, without waiting for decoding to finish.
+this allowance. `--prefix-checkpoint-prompt-end initial` (the default) retains the
+prompt end of each request that opens a session, including every anonymous request.
+`every` also retains named-session continuations and replacements, keeps the same
+concurrent capture allowance, and requires `--prefix-cache-entries > 0`. Without
+periodic checkpoints, prompt-end capture skips prompt ends already retained, and a
+snapshot becomes reusable and releases its capture slot once its clone completes,
+without waiting for the source request to finish decoding.
 Capture is best effort: occupied transient rows can prevent a snapshot.
 With periodic checkpoints enabled, automatic sizing uses at most two rows:
 checkpoint collection is serialized, but one replacement can overlap. Explicit
 values above two add unused row capacity in that mode.
-`--prefix-checkpoint-prompt-end` cannot be combined with a nonzero
+`--prefix-checkpoint-prompt-end every` cannot be combined with a nonzero
 `--prefix-checkpoint-interval`; the launcher and native worker reject that combination.
 Logical sessions, packed decode width, and in-flight request capacity are independent
 limits. Python concurrency follows advertised request capacity, not the single
@@ -98,7 +95,8 @@ event loop. Post-spawn startup failures also await worker cleanup. CLI validatio
 and chat-template preflight still happen before any worker is started.
 
 The batching guide covers the native build, supported export contract, and
-integration checks. The legacy launcher below is unchanged.
+integration checks. The existing generic launcher below and Muse-specific
+launcher are unchanged.
 
 ## Run a legacy worker
 
@@ -255,8 +253,8 @@ worker JSONL protocol is covered separately by `tests/test_worker_client.py`,
 and `tests/test_stream_disconnect.py` uses real loopback Uvicorn/TCP plus a
 model-free subprocess to verify disconnect cancellation end to end.
 The BPE splice tests use an in-memory tokenizer with no model downloads. Optional
-integration tests require `transformers` and local tokenizer directories; see the
-environment variables in `tests/test_warm_resume_scaffold.py`.
+integration tests use local tokenizer directories set with `QWEN_HF_DIR`,
+`GEMMA_HF_DIR`, or `MUSE_GLIMMER_HF_DIR` and require `transformers`.
 
 ## Architecture
 
@@ -311,8 +309,8 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional prefix reuse for new sessions and clean prompt replacements. Image
-and speculative execution require a model-specific worker. The serialized-worker
+and optional prefix reuse for new sessions and clean prompt replacements. It
+does not yet migrate Muse image or DFlash execution. The serialized-worker
 limitations below describe the legacy path, not the new batching worker.
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -87,9 +88,11 @@ class ET_EXPERIMENTAL PrefixCache {
     PromptCapture& operator=(const PromptCapture&) = delete;
 
     // Wrap once per generation; queue a clone before the first output.
-    // on_capture notifies after the attempt, allowing collection on another
-    // thread before generation ends. It must not block or throw.
-    // User callback exceptions fail generation.
+    // on_capture runs from a later update once that clone has settled, or
+    // immediately if none was queued, so collection on another thread does not
+    // wait for the engine. If generation ends first, collect after it ends.
+    // on_capture must not block or throw. User callback exceptions fail
+    // generation.
     GenerationCallback wrap(
         GenerationCallback on_update = {},
         std::function<void()> on_capture = {}) {
@@ -112,9 +115,14 @@ class ET_EXPERIMENTAL PrefixCache {
                 // Optional capture failure leaves generation usable.
               }
 #endif
-              if (on_capture) {
-                on_capture();
-              }
+            }
+            // After notification the collector owns the future.
+            if (on_capture && state->attempted && !state->notified &&
+                (!state->snapshot.valid() ||
+                 state->snapshot.wait_for(std::chrono::seconds(0)) ==
+                     std::future_status::ready)) {
+              state->notified = true;
+              on_capture();
             }
             if (on_update) {
               on_update(update);
@@ -173,9 +181,8 @@ class ET_EXPERIMENTAL PrefixCache {
 
     // May block; serialize with capture_at. With wrap, collect on another
     // thread after on_capture notification, or wait for generation to finish.
-    // The PrefixCache must outlive collection. retain=false drains a retired
-    // session's pending clone without publishing it back into the cache.
-    bool collect(bool retain = true) {
+    // The PrefixCache must outlive collection.
+    bool collect() {
       auto state = state_;
       if (!state || !state->snapshot.valid()) {
         return false;
@@ -185,7 +192,7 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
         auto metadata = std::move(state->metadata);
         auto snapshot = state->snapshot.get();
-        if (!snapshot || !retain) {
+        if (!snapshot) {
           return false;
         }
         PrefixIdentity prefix;
@@ -221,6 +228,7 @@ class ET_EXPERIMENTAL PrefixCache {
       std::size_t captured_tokens = 0;
       bool attempted = false;
       CheckpointMetadata metadata;
+      bool notified = false;
     };
 
     static bool queue_capture(

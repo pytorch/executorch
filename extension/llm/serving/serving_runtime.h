@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <functional>
 #include <future>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,8 +35,12 @@ namespace extension {
 namespace llm {
 namespace serving {
 
+// Initial captures the prompt end of each request that opens a session, which
+// includes every anonymous request. Every also captures named-session
+// continuations and replacements.
+enum class ET_EXPERIMENTAL PromptEndCapture { Initial, Every };
+
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
-  static constexpr std::size_t kDefaultSessionCheckpoints = 2;
   std::size_t max_sessions = 1;
   // Decoder-position context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
@@ -55,38 +58,36 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Retained snapshots: a shared limit normally, or a limit per named session
-  // with prefix_checkpoint_prompt_end. Zero disables caching and is invalid
-  // with prompt-end capture. Launchers use kDefaultSessionCheckpoints in
-  // per-session mode. Explicit close/reset clears per-session snapshots.
-  // Provision required_executor_rows() rows when caching is enabled.
+  // Shared snapshots for matching full prompts, including retries and the
+  // first generation after open/reset. Zero disables reuse. When enabled,
+  // provision max_sessions + prefix_cache_capacity + resolved_prefix_captures()
+  // rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
-  // Best-effort capture at each named session request's prompt end, including
-  // continuations and replacements. Uses per-request capture admission,
-  // released after the clone is collected, without waiting for decode to
-  // finish. Uses prefix_cache_capacity per named session; anonymous requests
-  // do not retain snapshots. Cannot combine with an interval or custom policy.
-  bool prefix_checkpoint_prompt_end = false;
-  // Override the interval with increasing checkpoints in
-  // (start, prompt.size()]. Invalid or throwing policies skip capture. Requires
-  // cache capacity. Runs on control; must not block or reenter the runtime.
+  // Every requires cache capacity and cannot combine with an interval or custom
+  // checkpoint policy. Without those, best-effort prompt-end capture skips
+  // prompt ends already retained and holds its transient row until the clone
+  // settles, not until decode finishes.
+  PromptEndCapture prefix_checkpoint_prompt_end = PromptEndCapture::Initial;
+  // Override the interval with increasing checkpoints in (start,
+  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
+  // capacity. Runs on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
       const batching::PrefixIdentity& prompt,
       batching::Position start,
       bool opening)>
       prefix_checkpoint_policy = {};
-  // Empty uses LRU within each cache without protected early checkpoints.
+  // Empty uses global LRU without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
   // Transient rows shared by prompt capture and named-session replacement.
   // Zero matches request concurrency, bounded by max_sessions; replacements
   // compete with prompt captures for these rows.
   // Periodic/custom checkpoints need at most two automatic rows because
-  // collection is serialized; one replacement may overlap. Prompt-end-only
-  // capture keeps the concurrent budget. Positive values override sizing.
+  // collection is serialized; one replacement may overlap. Prompt-end capture
+  // keeps the concurrent budget. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
 
   bool uses_checkpoint_observer() const {
@@ -103,28 +104,6 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
     const auto concurrency = std::min(max_sessions, max_requests);
     return uses_checkpoint_observer() ? std::min(concurrency, std::size_t{2})
                                       : concurrency;
-  }
-
-  // Includes working sessions, retained snapshots, and transient captures.
-  // Overflow leaves the runtime invalid and must be rejected by workers.
-  std::optional<std::size_t> required_executor_rows() const {
-    const auto limit = std::numeric_limits<std::size_t>::max();
-    if (!max_sessions) {
-      return std::nullopt;
-    }
-    auto snapshots = prefix_cache_capacity;
-    if (prefix_checkpoint_prompt_end) {
-      if (prefix_cache_capacity > limit / max_sessions) {
-        return std::nullopt;
-      }
-      snapshots = max_sessions * prefix_cache_capacity;
-    }
-    const auto captures = resolved_prefix_captures();
-    if (snapshots > limit - max_sessions ||
-        captures > limit - max_sessions - snapshots) {
-      return std::nullopt;
-    }
-    return max_sessions + snapshots + captures;
   }
 };
 
@@ -196,7 +175,6 @@ class ET_EXPERIMENTAL ServingRuntime {
 
   // Idempotent, including absent keys. Cancels prior same-key requests and
   // releases the logical slot before acknowledging callback quiescence.
-  // Discards session-owned checkpoints; shared snapshots remain available.
   // Session closure is through RAII, not synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
@@ -206,8 +184,7 @@ class ET_EXPERIMENTAL ServingRuntime {
       std::string key,
       CloseCallback on_complete);
 
-  // Discards live state, history, and session-owned checkpoints, retaining the
-  // key and logical slot.
+  // Discards live state and history, retaining the key and logical slot.
   // Success means reopening and old-response callback cleanup completed.
   // Failure destroys the old state and leaves the key unavailable, still
   // reserving its slot until reset succeeds or close releases it. A missing key
@@ -225,7 +202,7 @@ class ET_EXPERIMENTAL ServingRuntime {
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
   // capture cleanup. Exact strict prefixes continue. With prefix caching
-  // enabled, replacements and retries may reuse matching retained snapshots;
+  // enabled, replacements and retries may reuse matching shared snapshots;
   // clean replacements may also clone a common committed live prefix.
   // Unusable live state is discarded; absent a usable snapshot, prefill starts
   // from the full supplied prompt. Sinks share one delivery thread and must do

@@ -24,7 +24,6 @@ from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
 
 _MAX_INT32 = (1 << 31) - 1
-_DEFAULT_SESSION_CHECKPOINTS = 2
 
 
 def _parse_preflight_timeout(value):
@@ -42,11 +41,7 @@ def _parse_preflight_timeout(value):
 
 
 def _validate_limits(
-    parser,
-    args,
-    *,
-    prefix_capture_slots=0,
-    prefix_checkpoint_prompt_end=False,
+    parser, args, *, prefix_capture_slots=0, prefix_checkpoint_prompt_end="initial"
 ) -> int:
     for flag, value, minimum in (
         ("--max-context", args.max_context, 1),
@@ -59,17 +54,21 @@ def _validate_limits(
     ):
         if not minimum <= value <= _MAX_INT32:
             parser.error(f"{flag} must be between {minimum} and {_MAX_INT32}")
-    if prefix_checkpoint_prompt_end and args.prefix_checkpoint_interval:
+    every_prompt_end = prefix_checkpoint_prompt_end == "every"
+    if every_prompt_end and args.prefix_checkpoint_interval:
         parser.error(
-            "--prefix-checkpoint-prompt-end cannot be combined with "
+            "--prefix-checkpoint-prompt-end every cannot be combined with "
             "--prefix-checkpoint-interval"
         )
-    if prefix_checkpoint_prompt_end and not args.prefix_cache_entries:
-        parser.error(
-            "--prefix-checkpoint-prompt-end requires --prefix-cache-entries > 0"
+    if (
+        args.prefix_checkpoint_interval or every_prompt_end
+    ) and not args.prefix_cache_entries:
+        flag = (
+            "--prefix-checkpoint-prompt-end every"
+            if every_prompt_end
+            else "--prefix-checkpoint-interval"
         )
-    if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
-        parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
+        parser.error(f"{flag} requires --prefix-cache-entries > 0")
     # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
@@ -77,12 +76,9 @@ def _validate_limits(
             prefix_capture_slots = min(prefix_capture_slots, 2)
     if not args.prefix_cache_entries:
         prefix_capture_slots = 0
-    snapshots = (
-        args.max_sessions * args.prefix_cache_entries
-        if prefix_checkpoint_prompt_end
-        else args.prefix_cache_entries
+    physical_sessions = (
+        args.max_sessions + args.prefix_cache_entries + prefix_capture_slots
     )
-    physical_sessions = args.max_sessions + snapshots + prefix_capture_slots
     if physical_sessions > _MAX_INT32:
         parser.error("session and prefix-cache capacity exceeds the row limit")
     if not 1 <= args.port <= 65535:
@@ -120,15 +116,12 @@ def _parse_args(argv=None):
     parser.add_argument("--max-sessions", type=int, default=16)
     parser.add_argument("--max-decode-sequences", type=int, default=8)
     parser.add_argument("--max-inflight-requests", type=int, default=64)
-    parser.add_argument(
-        "--prefix-cache-entries",
-        type=int,
-        help=f"Retained snapshots: shared by default (0), per named session with prompt-end checkpoints ({_DEFAULT_SESSION_CHECKPOINTS})",
-    )
+    parser.add_argument("--prefix-cache-entries", type=int, default=0)
     parser.add_argument(
         "--prefix-checkpoint-prompt-end",
-        action="store_true",
-        help="Retain prompt-end checkpoints separately for each named session",
+        choices=("initial", "every"),
+        default="initial",
+        help="Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)",
     )
     parser.add_argument(
         "--prefix-capture-slots",
@@ -154,10 +147,6 @@ def _parse_args(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    if args.prefix_cache_entries is None:
-        args.prefix_cache_entries = (
-            _DEFAULT_SESSION_CHECKPOINTS if args.prefix_checkpoint_prompt_end else 0
-        )
 
     _validate_limits(
         parser,
@@ -241,8 +230,8 @@ def main(argv=None) -> None:
                     else []
                 )
                 + (
-                    ["--prefix_checkpoint_prompt_end=true"]
-                    if args.prefix_checkpoint_prompt_end
+                    ["--prefix_checkpoint_prompt_end=every"]
+                    if args.prefix_checkpoint_prompt_end == "every"
                     else []
                 ),
                 stderr=stderr,

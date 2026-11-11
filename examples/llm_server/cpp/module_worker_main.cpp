@@ -30,7 +30,7 @@ DEFINE_int32(max_sessions, 4, "Maximum logical serving sessions");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Retained snapshots: shared by default (0), per session with prompt-end checkpoints (2)");
+    "Retained prefix snapshots; zero disables prefix caching");
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
@@ -39,10 +39,10 @@ DEFINE_int32(
     prefix_capture_slots,
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
-DEFINE_bool(
+DEFINE_string(
     prefix_checkpoint_prompt_end,
-    false,
-    "Retain prompt-end checkpoints separately for each named session");
+    "initial",
+    "Prompt ends to retain, best effort: initial (requests that open a session) or every (also continuations and replacements)");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -52,42 +52,44 @@ DEFINE_int32(
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  if (FLAGS_prefix_checkpoint_prompt_end &&
-      gflags::GetCommandLineFlagInfoOrDie("prefix_cache_entries").is_default) {
-    FLAGS_prefix_cache_entries = executorch::extension::llm::serving::
-        ServingRuntimeConfig::kDefaultSessionCheckpoints;
+  const bool every_prompt_end = FLAGS_prefix_checkpoint_prompt_end == "every";
+  if (!every_prompt_end && FLAGS_prefix_checkpoint_prompt_end != "initial") {
+    std::cerr << "--prefix_checkpoint_prompt_end must be initial or every\n";
+    return 1;
   }
-  if (FLAGS_prefix_checkpoint_prompt_end && FLAGS_prefix_checkpoint_interval) {
-    std::cerr << "--prefix_checkpoint_prompt_end cannot be combined with "
+  if (every_prompt_end && FLAGS_prefix_checkpoint_interval) {
+    std::cerr << "--prefix_checkpoint_prompt_end=every cannot be combined with "
                  "--prefix_checkpoint_interval\n";
     return 1;
   }
-
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_session_tokens <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_prefix_cache_entries < 0 ||
       FLAGS_prefix_capture_slots < 0 || FLAGS_prefix_checkpoint_interval < 0 ||
-      ((FLAGS_prefix_checkpoint_interval > 0 ||
-        FLAGS_prefix_checkpoint_prompt_end) &&
+      ((FLAGS_prefix_checkpoint_interval > 0 || every_prompt_end) &&
        FLAGS_prefix_cache_entries == 0)) {
     std::cerr
         << "--pte and --tokenizer are required; capacity limits must be positive"
            "; prefix-cache limits must be nonnegative; "
-           "--prefix_checkpoint_interval and --prefix_checkpoint_prompt_end require --prefix_cache_entries > 0\n";
+           "--prefix_checkpoint_interval and --prefix_checkpoint_prompt_end=every require --prefix_cache_entries > 0\n";
     return 1;
   }
-  executorch::extension::llm::serving::ServingRuntimeConfig config;
+  namespace serving = executorch::extension::llm::serving;
+  serving::ServingRuntimeConfig config;
   config.max_sessions = FLAGS_max_sessions;
   config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   config.max_prefix_captures = FLAGS_prefix_capture_slots;
   config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
-  config.prefix_checkpoint_prompt_end = FLAGS_prefix_checkpoint_prompt_end;
+  config.prefix_checkpoint_prompt_end = every_prompt_end
+      ? serving::PromptEndCapture::Every
+      : serving::PromptEndCapture::Initial;
   config.max_context_length = FLAGS_max_session_tokens;
   config.max_requests = FLAGS_max_inflight_requests;
   config.max_pending_operations = FLAGS_max_inflight_requests;
-  const auto physical_sessions = config.required_executor_rows();
-  if (!physical_sessions ||
-      *physical_sessions > std::numeric_limits<int>::max()) {
+  const auto physical_sessions = static_cast<std::int64_t>(FLAGS_max_sessions) +
+      FLAGS_prefix_cache_entries +
+      static_cast<int64_t>(config.resolved_prefix_captures());
+  if (physical_sessions > std::numeric_limits<int>::max()) {
     std::cerr
         << "session and prefix-cache capacity exceeds executor row limit\n";
     return 1;
@@ -118,7 +120,7 @@ int main(int argc, char** argv) {
     const auto eos = llm::get_eos_ids(tokenizer.get(), module.get());
     auto executor = llm::batching::ModuleExecutor::create(
         std::move(module),
-        static_cast<int>(*physical_sessions),
+        static_cast<int>(physical_sessions),
         FLAGS_max_session_tokens,
         static_cast<int>(*dtype),
         -1,
