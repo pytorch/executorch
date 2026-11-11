@@ -1,6 +1,24 @@
 [
   {"name": "wmma family rows shared memory", "check": "wmma_family_shared_memory", "parameters": {}},
   {
+    "name": "wmma memory model gate",
+    "check": "wmma_memory_model_gate",
+    "parameters": {
+      "memory_model_shaders": [
+        "linear_coopmat_float",
+        "linear_coopmat_half",
+        "linear_coopmat_bias_float",
+        "linear_coopmat_bias_half",
+        "matmul_coopmat_float",
+        "matmul_coopmat_half",
+        "linear_q4gsw_coopmat_buffer_buffer_half",
+        "linear_q4gsw_coopmat_buffer_texture2d_half",
+        "linear_dq8ca_q4gsw_coopmat_buffer_buffer_half",
+        "linear_dq8ca_q4gsw_coopmat_buffer_texture2d_half"
+      ]
+    }
+  },
+  {
     "name": "wmma q4gsw M256 K256 N384 g128 texture3d",
     "check": "wmma_family_route",
     "parameters": {

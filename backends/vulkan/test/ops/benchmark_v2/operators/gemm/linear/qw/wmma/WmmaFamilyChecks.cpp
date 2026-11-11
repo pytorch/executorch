@@ -11,6 +11,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <stdexcept>
@@ -241,10 +242,92 @@ Json check_wmma_family_shared_memory(const Json&, ComputeGraph&) {
   return {{"status", "PASS"}, {"variants", variants}};
 }
 
+// The Vulkan memory model is enabled only on a device that matches a family.
+// On any other device the capability gate keeps rejecting every shader that
+// declares VulkanMemoryModel, as main does (its gate has no mapping for it):
+// parameters.memory_model_shaders lists upstream kernels that declare it
+// (linear_coopmat, matmul_coopmat, the q4gsw / dq8ca coopmat kernels). On a
+// family device it is enabled and every family variant passes the gate.
+Json check_wmma_memory_model_gate(const Json& spec, ComputeGraph& graph) {
+  const RouteExpectation expectation = route_expectation();
+  const CoopmatFamily family = coopmat_family(coopmat_device_key(&graph));
+  const std::string family_name = coopmat_family_name(family);
+  reference::require(
+      expectation.family.empty() || family_name == expectation.family,
+      "Device matches family " + family_name +
+          "; ETVK_WMMA_EXPECTED_FAMILY expects " + expectation.family);
+  api::Context& context = *graph.context();
+  vkapi::Adapter& adapter = *context.adapter_ptr();
+  const uint32_t memory_model =
+      static_cast<uint32_t>(vkapi::SpirvCapability::VULKAN_MEMORY_MODEL);
+  const bool enabled = adapter.supports_vulkan_memory_model();
+  const bool accepted = adapter.supports_spirv_capability(memory_model);
+  const auto passes_gate = [&](const std::string& name) {
+    const vkapi::ShaderInfo& shader = VK_KERNEL_FROM_STR(name);
+    const auto& capabilities = shader.required_capabilities;
+    reference::require(
+        std::find(capabilities.begin(), capabilities.end(), memory_model) !=
+            capabilities.end(),
+        name + " does not declare VulkanMemoryModel");
+    try {
+      context.check_device_capabilities(shader);
+      return true;
+    } catch (const vkapi::ShaderNotSupportedError&) {
+      return false;
+    }
+  };
+  Json upstream = Json::object();
+  for (const std::string& name :
+       spec.at("parameters").at("memory_model_shaders")) {
+    upstream[name] = passes_gate(name) ? "accepted" : "rejected";
+  }
+  Json family_kernels = Json::array();
+  if (family == CoopmatFamily::kNone) {
+    reference::require(
+        !enabled && !accepted,
+        "Vulkan memory model enabled or accepted on a device that matches no family");
+    for (const auto& [name, result] : upstream.items()) {
+      reference::require(
+          result == "rejected",
+          name +
+              " passes the capability gate on a device that matches no family");
+    }
+  } else {
+    reference::require(
+        enabled && accepted,
+        "Vulkan memory model not enabled on family " + family_name);
+    for (const WmmaRow& row : coopmat_family_rows(family)) {
+      for (const char* io :
+           {"_texture3d_texture2d_half", "_buffer_texture2d_half"}) {
+        if ((row.storages & (io[1] == 't' ? kWmmaTex3dTex2d : kWmmaBufTex2d)) ==
+            0) {
+          continue;
+        }
+        for (const char* zp : row.op == WmmaOp::kQ4gsw
+                 ? std::vector<const char*>{""}
+                 : std::vector<const char*>{"_zpint8", "_zpinherit"}) {
+          const std::string name = row.kernel_base + std::string(io) + zp;
+          reference::require(
+              passes_gate(name), name + " rejected on family " + family_name);
+          family_kernels.push_back(name);
+        }
+      }
+    }
+  }
+  return {
+      {"status", "PASS"},
+      {"family", family_name},
+      {"memory_model_enabled", enabled},
+      {"memory_model_capability_accepted", accepted},
+      {"upstream_memory_model_shaders", upstream},
+      {"family_kernels_accepted", family_kernels}};
+}
+
 REGISTER_CASE_CHECKS {
   REGISTER_CASE_CHECK(wmma_family_route, check_wmma_family_route);
   REGISTER_CASE_CHECK(
       wmma_family_shared_memory, check_wmma_family_shared_memory);
+  REGISTER_CASE_CHECK(wmma_memory_model_gate, check_wmma_memory_model_gate);
 }
 
 } // namespace vkcompute::shader_profiling

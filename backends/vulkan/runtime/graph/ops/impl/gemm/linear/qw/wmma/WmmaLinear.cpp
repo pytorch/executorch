@@ -30,7 +30,62 @@ CoopmatComponentType to_component_type(const VkComponentTypeKHR t) {
       return CoopmatComponentType::kOther;
   }
 }
+
+void add_coopmat_shapes(
+    CoopmatDeviceKey& key,
+    const std::vector<VkCooperativeMatrixPropertiesKHR>& properties) {
+  for (const VkCooperativeMatrixPropertiesKHR& p : properties) {
+    if (p.scope != VK_SCOPE_SUBGROUP_KHR || p.AType != p.BType ||
+        p.CType != p.ResultType) {
+      continue;
+    }
+    key.coopmat_shapes.push_back(
+        {p.MSize,
+         p.NSize,
+         p.KSize,
+         to_component_type(p.AType),
+         to_component_type(p.ResultType)});
+  }
+}
 #endif /* VK_KHR_cooperative_matrix */
+
+// The family kernels use the Vulkan memory model, so a device needs it enabled
+// to match a family; on every other device it stays off and the shaders that
+// declare it (also upstream's linear_coopmat, matmul_coopmat and the q4gsw /
+// dq8ca coopmat kernels) stay rejected, as without the family kernels. The key
+// assumes the state an Adapter that creates the device enables.
+bool family_device_needs_vulkan_memory_model(const vkapi::PhysicalDevice& p) {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+  (void)p;
+  return false;
+#else
+  CoopmatDeviceKey key;
+  key.vendor_id = p.properties.vendorID;
+  key.driver_id = p.driver_id;
+  key.min_subgroup_size = p.min_subgroup_size;
+  key.max_subgroup_size = p.max_subgroup_size;
+  key.subgroup_size_control = p.supports_subgroup_size_control;
+  key.compute_required_subgroup_size = p.supports_subgroup_size_control &&
+      (p.required_subgroup_size_stages & VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  key.full_subgroups =
+      p.supports_subgroup_size_control && p.supports_compute_full_subgroups;
+  key.vulkan_memory_model = true;
+  key.max_shared_bytes = p.properties.limits.maxComputeSharedMemorySize;
+#ifdef VK_KHR_cooperative_matrix
+  key.coopmat = p.cooperative_matrix_features.cooperativeMatrix == VK_TRUE;
+  key.int8_coopmat = p.supports_int8_coopmat;
+  add_coopmat_shapes(key, p.cooperative_matrix_properties);
+#endif /* VK_KHR_cooperative_matrix */
+  return coopmat_family(key) != CoopmatFamily::kNone;
+#endif /* ETVK_FORCE_NO_EXTENSIONS */
+}
+
+// Registered before main(), so before the runtime creates its first Adapter.
+const bool vulkan_memory_model_policy_registered = [] {
+  vkapi::set_vulkan_memory_model_policy(
+      &family_device_needs_vulkan_memory_model);
+  return true;
+}();
 
 } // namespace
 
@@ -50,19 +105,7 @@ CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph) {
   key.int8_coopmat = adapter->supports_int8_cooperative_matrix();
   key.max_shared_bytes = adapter->max_compute_shared_memory_size();
 #ifdef VK_KHR_cooperative_matrix
-  for (const VkCooperativeMatrixPropertiesKHR& p :
-       adapter->cooperative_matrix_properties()) {
-    if (p.scope != VK_SCOPE_SUBGROUP_KHR || p.AType != p.BType ||
-        p.CType != p.ResultType) {
-      continue;
-    }
-    key.coopmat_shapes.push_back(
-        {p.MSize,
-         p.NSize,
-         p.KSize,
-         to_component_type(p.AType),
-         to_component_type(p.ResultType)});
-  }
+  add_coopmat_shapes(key, adapter->cooperative_matrix_properties());
 #endif /* VK_KHR_cooperative_matrix */
   return key;
 }
