@@ -84,6 +84,44 @@ TEST(TextOutputTest, StringStopCanTrimInsideSpeculativeTokenOutput) {
   EXPECT_EQ(tokenizer.decoded.size(), 2u);
 }
 
+TEST(TextOutputTest, EmitsSafeTextBeforeTheNextToken) {
+  PieceTokenizer tokenizer;
+  tokenizer.pieces = {
+      {1, "Hello"}, {2, " <|im_"}, {3, "possible"}, {4, "<|im_end|>hidden"}};
+  std::string text;
+  TextOutput output(
+      tokenizer, 0, {}, {"<|im_end|>"}, [&](const auto& s) { text += s; });
+  EXPECT_EQ(output.append({1}), Error::Ok);
+  EXPECT_EQ(text, "Hello");
+  EXPECT_EQ(output.append({2}), Error::Ok);
+  EXPECT_EQ(text, "Hello ");
+  EXPECT_EQ(output.append({3}), Error::Ok);
+  EXPECT_EQ(text, "Hello <|im_possible");
+  EXPECT_EQ(output.append({4}), Error::Ok);
+  EXPECT_TRUE(output.string_stopped());
+  output.finish();
+  EXPECT_EQ(text, "Hello <|im_possible");
+}
+
+TEST(TextOutputTest, Utf8StopMatchesAcrossEveryByteSplit) {
+  const std::string stop =
+      "\xe2\x82\xac"
+      "END";
+  const std::string raw = "Hi " + stop + "hidden";
+  for (size_t split = 0; split <= raw.size(); ++split) {
+    SCOPED_TRACE(split);
+    PieceTokenizer tokenizer;
+    tokenizer.pieces = {{1, raw.substr(0, split)}, {2, raw.substr(split)}};
+    std::string text;
+    TextOutput output(
+        tokenizer, 0, {}, {stop}, [&](const auto& s) { text += s; });
+    EXPECT_EQ(output.append({1, 2}), Error::Ok);
+    output.finish();
+    EXPECT_EQ(text, "Hi ");
+    EXPECT_TRUE(output.string_stopped());
+  }
+}
+
 TEST(TextOutputTest, HoldsUtf8AcrossUpdatesAndFlushesStopLookbehind) {
   PieceTokenizer tokenizer;
   tokenizer.pieces = {{1, "a\xE4"}, {2, "\xB8"}, {3, "\x96"}};
@@ -91,9 +129,9 @@ TEST(TextOutputTest, HoldsUtf8AcrossUpdatesAndFlushesStopLookbehind) {
   TextOutput output(
       tokenizer, 0, {}, {"END"}, [&](const auto& s) { text += s; });
   EXPECT_EQ(output.append({1}), Error::Ok);
-  EXPECT_TRUE(text.empty());
-  EXPECT_EQ(output.append({2, 3}), Error::Ok);
   EXPECT_EQ(text, "a");
+  EXPECT_EQ(output.append({2, 3}), Error::Ok);
+  EXPECT_EQ(text, "a\xE4\xB8\x96");
   output.finish();
   output.finish();
   EXPECT_EQ(text, "a\xE4\xB8\x96");

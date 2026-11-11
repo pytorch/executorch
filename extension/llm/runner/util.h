@@ -170,11 +170,8 @@ ET_EXPERIMENTAL size_t inline utf8_safe_prefix_len(
 //   and
 //     sets stop_hit=true — text before it is safe; the stop and everything
 //     after are dropped (the stop is excluded from output).
-//   * Otherwise returns the length minus the longest possible partial-stop tail
-//     (max(len(stop))-1 bytes), snapped DOWN to a UTF-8 boundary so a
-//     multi-byte character is never split; stop_hit=false. Holding back that
-//     conservative tail lets a stop that straddles the next piece still be
-//     caught without suffix-prefix matching each stop.
+//   * Otherwise holds only a suffix that could complete a stop in the next
+//     piece, snapped down to a UTF-8 boundary; stop_hit=false.
 // `text` is expected to be complete-UTF-8 (e.g. the assembled output of
 // utf8_complete_prefix_len) and stops are expected to be real text, so a found
 // stop offset cannot split a UTF-8 character. Empty `stops` => emit everything,
@@ -192,13 +189,11 @@ ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     return text.size();
   }
   size_t earliest = std::string::npos;
-  size_t max_len = 0;
   for (size_t index = 0; index < stops.size(); ++index) {
     const auto& s = stops[index];
     if (s.empty()) {
       continue;
     }
-    max_len = std::max(max_len, s.size());
     const size_t p = text.find(s);
     if (p != std::string::npos &&
         (earliest == std::string::npos || p < earliest)) {
@@ -212,11 +207,27 @@ ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
     stop_hit = true;
     return earliest;
   }
-  const size_t hold = max_len > 0 ? max_len - 1 : 0;
-  if (text.size() <= hold) {
-    return 0;
+  size_t safe = text.size();
+  for (const auto& stop : stops) {
+    if (stop.empty()) {
+      continue;
+    }
+    size_t start =
+        text.size() >= stop.size() ? text.size() - stop.size() + 1 : 0;
+    while (start < safe) {
+      start = text.find(stop.front(), start);
+      if (start == std::string::npos || start >= safe) {
+        break;
+      }
+      const size_t suffix_len = text.size() - start;
+      if (text.compare(start, suffix_len, stop, 0, suffix_len) == 0) {
+        safe = start;
+        break;
+      }
+      ++start;
+    }
   }
-  return utf8_safe_prefix_len(text, text.size() - hold);
+  return utf8_safe_prefix_len(text, safe);
 }
 
 // ----------------------------------------------------------------------------
