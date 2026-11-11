@@ -21,6 +21,18 @@ CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph);
 
 WmmaStorage to_wmma_storage(utils::StorageType storage);
 
+// The shape of a 4-bit linear op for kernel selection, from its activation,
+// output, group size and bias refs and the storage of its packed weight (the
+// predicted one before prepacking). dq8ca callers set int8_layout.
+WmmaShape wmma_shape(
+    ComputeGraph& graph,
+    WmmaOp op,
+    ValueRef fp_input,
+    ValueRef output,
+    ValueRef group_size,
+    ValueRef bias,
+    utils::StorageType weight_storage);
+
 // The storage prepack_quantized_linear_weight() picks for a 4-bit weight:
 // texture2d unless the packed extents exceed the device limit.
 utils::StorageType predicted_q4_weight_storage(

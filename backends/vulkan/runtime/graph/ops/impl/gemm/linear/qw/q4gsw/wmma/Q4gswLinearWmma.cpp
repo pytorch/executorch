@@ -21,65 +21,6 @@ namespace vkcompute {
 
 namespace {
 
-// Dispatch node args:
-// {{output}, {fp_input}, {packed_weight, packed_weight_scales, packed_bias}}
-// resize_args: {group_size, weight_data, bias_data}
-WmmaShape q4gsw_runtime_shape(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef output = args.at(0).refs.at(0);
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_weight = args.at(2).refs.at(0);
-
-  const std::vector<int64_t> out_sizes = graph->sizes_of(output);
-  WmmaShape s;
-  s.op = WmmaOp::kQ4gsw;
-  s.N = utils::val_at(-1, out_sizes);
-  s.M = utils::val_at(-2, out_sizes);
-  s.K = utils::val_at(-1, graph->sizes_of(fp_input));
-  s.group_size = graph->extract_scalar<int64_t>(resize_args.at(0));
-  for (int64_t d = 0; d < graph->dim_of(output) - 2; d++) {
-    s.batch *= utils::val_at(d, out_sizes);
-  }
-  s.gemv = is_gemv(graph, fp_input);
-  s.has_bias = !graph->val_is_none(resize_args.at(2));
-  s.half = graph->dtype_of(output) == vkapi::kHalf;
-  s.input = to_wmma_storage(graph->storage_type_of(fp_input));
-  s.output = to_wmma_storage(graph->storage_type_of(output));
-  s.weight = to_wmma_storage(graph->storage_type_of(packed_weight));
-  s.io_width_packed = graph->packed_dim_of(output) == WHCN::kWidthDim &&
-      graph->packed_dim_of(fp_input) == WHCN::kWidthDim;
-  return s;
-}
-
-// args: {input, weight, weight_scales, group_size, bias, output}
-WmmaShape q4gsw_build_time_shape(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  const ValueRef fp_input = args.at(0);
-  const ValueRef output = args.at(5);
-  const std::vector<int64_t> out_sizes = graph.sizes_of(output);
-  WmmaShape s;
-  s.op = WmmaOp::kQ4gsw;
-  s.N = utils::val_at(-1, out_sizes);
-  s.M = utils::val_at(-2, out_sizes);
-  s.K = utils::val_at(-1, graph.sizes_of(fp_input));
-  s.group_size = graph.extract_scalar<int64_t>(args.at(3));
-  for (int64_t d = 0; d < graph.dim_of(output) - 2; d++) {
-    s.batch *= utils::val_at(d, out_sizes);
-  }
-  s.gemv = is_gemv(&graph, fp_input);
-  s.has_bias = !graph.val_is_none(args.at(4));
-  s.half = graph.dtype_of(output) == vkapi::kHalf;
-  s.input = to_wmma_storage(graph.storage_type_of(fp_input));
-  s.output = to_wmma_storage(graph.storage_type_of(output));
-  s.weight = to_wmma_storage(predicted_q4_weight_storage(graph, args.at(1)));
-  s.io_width_packed = graph.packed_dim_of(output) == WHCN::kWidthDim &&
-      graph.packed_dim_of(fp_input) == WHCN::kWidthDim;
-  return s;
-}
-
 vkapi::ShaderInfo pick_q4gsw_linear_wmma_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -88,8 +29,17 @@ vkapi::ShaderInfo pick_q4gsw_linear_wmma_shader(
   const ValueRef fp_input = args.at(1).refs.at(0);
   const ValueRef packed_weight = args.at(2).refs.at(0);
 
+  // resize_args: {group_size, weight_data, bias_data}
   const std::optional<WmmaChoice> choice = select_wmma_kernel(
-      coopmat_device_key(graph), q4gsw_runtime_shape(graph, args, resize_args));
+      coopmat_device_key(graph),
+      wmma_shape(
+          *graph,
+          WmmaOp::kQ4gsw,
+          fp_input,
+          output,
+          resize_args.at(0),
+          resize_args.at(2),
+          graph->storage_type_of(packed_weight)));
 
   std::string kernel_name;
   if (choice.has_value()) {
@@ -126,7 +76,15 @@ bool try_add_q4gsw_linear_wmma_node(
   // Take the op over only if a row applies to its build-time shape; otherwise
   // it stays entirely on the existing path, including for later resizes.
   const std::optional<WmmaChoice> build_choice = select_wmma_kernel(
-      coopmat_device_key(&graph), q4gsw_build_time_shape(graph, args));
+      coopmat_device_key(&graph),
+      wmma_shape(
+          graph,
+          WmmaOp::kQ4gsw,
+          fp_input,
+          output,
+          group_size,
+          bias_data,
+          predicted_q4_weight_storage(graph, weight_data)));
   if (!build_choice.has_value()) {
     return false;
   }

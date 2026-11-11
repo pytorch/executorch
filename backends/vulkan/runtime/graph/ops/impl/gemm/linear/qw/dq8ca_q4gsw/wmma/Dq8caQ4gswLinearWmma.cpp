@@ -21,73 +21,6 @@ namespace vkcompute {
 
 namespace {
 
-// Dispatch node args:
-// {{output}, {fp_input, packed_int_input, int_input_sums, input_scale,
-//   input_zp, packed_weight, weight_sums, weight_scales, bias}}
-// resize_args: {group_size, weight_data, bias_data}
-WmmaShape dq8ca_runtime_shape(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef output = args.at(0).refs.at(0);
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_int_input = args.at(1).refs.at(1);
-  const ValueRef packed_weight = args.at(1).refs.at(5);
-
-  const std::vector<int64_t> out_sizes = graph->sizes_of(output);
-  WmmaShape s;
-  s.op = WmmaOp::kDq8caQ4gsw;
-  s.N = utils::val_at(-1, out_sizes);
-  s.M = utils::val_at(-2, out_sizes);
-  s.K = utils::val_at(-1, graph->sizes_of(fp_input));
-  s.group_size = graph->extract_scalar<int64_t>(resize_args.at(0));
-  for (int64_t d = 0; d < graph->dim_of(output) - 2; d++) {
-    s.batch *= utils::val_at(d, out_sizes);
-  }
-  s.gemv = is_gemv(graph, fp_input);
-  s.has_bias = !graph->val_is_none(resize_args.at(2));
-  s.half = graph->dtype_of(output) == vkapi::kHalf;
-  s.input = to_wmma_storage(graph->storage_type_of(fp_input));
-  s.output = to_wmma_storage(graph->storage_type_of(output));
-  s.weight = to_wmma_storage(graph->storage_type_of(packed_weight));
-  s.io_width_packed = graph->packed_dim_of(output) == WHCN::kWidthDim &&
-      graph->packed_dim_of(fp_input) == WHCN::kWidthDim;
-  s.int8_layout = graph->estimate_memory_layout_of(packed_int_input) ==
-          utils::kPackedInt8_4W
-      ? WmmaInt8Layout::kRowMajor
-      : WmmaInt8Layout::k4H4W;
-  return s;
-}
-
-// args: {input, input_scale, input_zp, weight, weight_sums, weight_scales,
-//        group_size, bias, output}
-WmmaShape dq8ca_build_time_shape(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  const ValueRef fp_input = args.at(0);
-  const ValueRef output = args.at(8);
-  const std::vector<int64_t> out_sizes = graph.sizes_of(output);
-  WmmaShape s;
-  s.op = WmmaOp::kDq8caQ4gsw;
-  s.N = utils::val_at(-1, out_sizes);
-  s.M = utils::val_at(-2, out_sizes);
-  s.K = utils::val_at(-1, graph.sizes_of(fp_input));
-  s.group_size = graph.extract_scalar<int64_t>(args.at(6));
-  for (int64_t d = 0; d < graph.dim_of(output) - 2; d++) {
-    s.batch *= utils::val_at(d, out_sizes);
-  }
-  s.gemv = is_gemv(&graph, fp_input);
-  s.has_bias = !graph.val_is_none(args.at(7));
-  s.half = graph.dtype_of(output) == vkapi::kHalf;
-  s.input = to_wmma_storage(graph.storage_type_of(fp_input));
-  s.output = to_wmma_storage(graph.storage_type_of(output));
-  s.weight = to_wmma_storage(predicted_q4_weight_storage(graph, args.at(3)));
-  s.io_width_packed = graph.packed_dim_of(output) == WHCN::kWidthDim &&
-      graph.packed_dim_of(fp_input) == WHCN::kWidthDim;
-  s.int8_layout = WmmaInt8Layout::kAny;
-  return s;
-}
-
 vkapi::ShaderInfo pick_dq8ca_q4gsw_linear_wmma_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -97,8 +30,22 @@ vkapi::ShaderInfo pick_dq8ca_q4gsw_linear_wmma_shader(
   const ValueRef input_zp = args.at(1).refs.at(4);
   const ValueRef packed_weight = args.at(1).refs.at(5);
 
+  const ValueRef packed_int_input = args.at(1).refs.at(1);
+
   const CoopmatDeviceKey device = coopmat_device_key(graph);
-  WmmaShape shape = dq8ca_runtime_shape(graph, args, resize_args);
+  // resize_args: {group_size, weight_data, bias_data}
+  WmmaShape shape = wmma_shape(
+      *graph,
+      WmmaOp::kDq8caQ4gsw,
+      fp_input,
+      output,
+      resize_args.at(0),
+      resize_args.at(2),
+      graph->storage_type_of(packed_weight));
+  shape.int8_layout = graph->estimate_memory_layout_of(packed_int_input) ==
+          utils::kPackedInt8_4W
+      ? WmmaInt8Layout::kRowMajor
+      : WmmaInt8Layout::k4H4W;
   std::optional<WmmaChoice> choice = select_wmma_kernel(device, shape);
   if (!choice.has_value() && shape.int8_layout == WmmaInt8Layout::kRowMajor &&
       !shape.gemv) {
@@ -151,7 +98,14 @@ bool try_add_dq8ca_q4gsw_linear_wmma_node(
     return false;
   }
   const CoopmatDeviceKey device = coopmat_device_key(&graph);
-  const WmmaShape shape = dq8ca_build_time_shape(graph, args);
+  const WmmaShape shape = wmma_shape(
+      graph,
+      WmmaOp::kDq8caQ4gsw,
+      fp_input,
+      output,
+      group_size,
+      bias_data,
+      predicted_q4_weight_storage(graph, weight_data));
   // Take the op over only if a row applies to its build-time shape; otherwise
   // it stays entirely on the existing path. The kernel chosen here also fixes
   // the int8 activation layout.
