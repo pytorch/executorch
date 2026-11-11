@@ -11,6 +11,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 
+#include <cstdlib>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -46,6 +47,36 @@ std::vector<std::string> dispatched_kernels(ComputeGraph& graph) {
   context.set_shader_profiling_enabled(false);
   context.flush();
   return kernels;
+}
+
+// What the run expects of the device, from ETVK_WMMA_EXPECTED_FAMILY rather
+// than from the selector under test:
+//   xe2, nvidia, none: the device must match that family, every step must have
+//     profiling records to check, and a case that does not run (unsupported
+//     shader or route) fails instead of reporting SKIP.
+//   software: a device without timestamp queries (e.g. SwiftShader); it must
+//     match no family, and kernels are checked only when records exist.
+//   unset: the selector's family is taken as is; records are still required.
+struct RouteExpectation {
+  std::string family; // empty: take the selector's
+  bool strict = false;
+  bool records_optional = false;
+};
+
+RouteExpectation route_expectation() {
+  const char* env = std::getenv("ETVK_WMMA_EXPECTED_FAMILY");
+  const std::string value = env == nullptr ? "" : env;
+  if (value.empty()) {
+    return {};
+  }
+  if (value == "software") {
+    return {"none", false, true};
+  }
+  reference::require(
+      value == "xe2" || value == "nvidia" || value == "none",
+      "ETVK_WMMA_EXPECTED_FAMILY must be xe2, nvidia, none or software, not " +
+          value);
+  return {value, true, false};
 }
 
 bool is_family_kernel(const std::string& kernel) {
@@ -104,38 +135,66 @@ uint64_t workgroup_bytes(const vkapi::ShaderInfo& shader) {
 // the prefix of the kernel it must dispatch; a family without an entry, and
 // every device that matches no family, must dispatch no family kernel.
 Json check_wmma_family_route(const Json& spec, ComputeGraph& graph) {
+  const RouteExpectation expectation = route_expectation();
   const std::string family =
       coopmat_family_name(coopmat_family(coopmat_device_key(&graph)));
+  reference::require(
+      expectation.family.empty() || family == expectation.family,
+      "Device matches family " + family +
+          "; ETVK_WMMA_EXPECTED_FAMILY expects " + expectation.family);
   bool asserted = false;
-  Json result = validate_operator_dynamic_resize(
-      spec, graph, [&](const Json& step, ComputeGraph& step_graph) {
-        const std::vector<std::string> kernels = dispatched_kernels(step_graph);
-        Json expected = nullptr;
-        if (step.contains("expected_kernels") &&
-            step.at("expected_kernels").contains(family)) {
-          expected = step.at("expected_kernels").at(family);
-        }
-        if (!kernels.empty()) {
-          asserted = true;
-          bool found = false;
-          for (const std::string& kernel : kernels) {
-            if (expected.is_string()) {
-              found |= kernel.rfind(expected.get<std::string>(), 0) == 0;
-            } else {
-              reference::require(
-                  !is_family_kernel(kernel),
-                  "Family kernel " + kernel + " dispatched on family " +
-                      family + ", which expects none for this step");
-            }
-          }
-          reference::require(
-              !expected.is_string() || found,
-              "Family " + family + " did not dispatch " + expected.dump() +
-                  "; dispatched: " + Json(kernels).dump());
-        }
-        return Json{{"kernels", kernels}, {"expected", expected}};
-      });
+  const auto check_step = [&](const Json& step, ComputeGraph& step_graph) {
+    const std::vector<std::string> kernels = dispatched_kernels(step_graph);
+    Json expected = nullptr;
+    if (step.contains("expected_kernels") &&
+        step.at("expected_kernels").contains(family)) {
+      expected = step.at("expected_kernels").at(family);
+    }
+    if (kernels.empty()) {
+      reference::require(
+          expectation.records_optional,
+          "No shader profiling records to check the dispatched kernels; on a "
+          "device without timestamp queries set "
+          "ETVK_WMMA_EXPECTED_FAMILY=software");
+      return Json{{"kernels", kernels}, {"expected", expected}};
+    }
+    asserted = true;
+    bool found = false;
+    for (const std::string& kernel : kernels) {
+      if (expected.is_string()) {
+        found |= kernel.rfind(expected.get<std::string>(), 0) == 0;
+      } else {
+        reference::require(
+            !is_family_kernel(kernel),
+            "Family kernel " + kernel + " dispatched on family " + family +
+                ", which expects none for this step");
+      }
+    }
+    reference::require(
+        !expected.is_string() || found,
+        "Family " + family + " did not dispatch " + expected.dump() +
+            "; dispatched: " + Json(kernels).dump());
+    return Json{{"kernels", kernels}, {"expected", expected}};
+  };
+  Json result;
+  try {
+    result = validate_operator_dynamic_resize(spec, graph, check_step);
+  } catch (const vkapi::ShaderNotSupportedError& error) {
+    if (!expectation.strict) {
+      throw;
+    }
+    throw std::runtime_error(
+        std::string("Required case did not run: ") + error.what());
+  } catch (const UnsupportedRoute& error) {
+    if (!expectation.strict) {
+      throw;
+    }
+    throw std::runtime_error(
+        std::string("Required case did not run: ") + error.what());
+  }
   result["family"] = family;
+  result["expected_family"] =
+      expectation.family.empty() ? Json(nullptr) : Json(expectation.family);
   result["route_asserted"] = asserted;
   return result;
 }
