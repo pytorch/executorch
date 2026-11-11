@@ -9,7 +9,8 @@
 Use with ``iter_checkpoint`` / ``load_checkpoint``: :func:`gguf_to_hf` returns the
 ``key_map`` and ``convert`` that load a GGUF file of a supported architecture into
 a Hugging Face model. Names come from gguf-py's standard tensor map, the one
-llama.cpp's ``convert_hf_to_gguf.py`` writes with, and ``convert`` undoes the
+llama.cpp's ``convert_hf_to_gguf.py`` writes with, or a table here for an
+architecture gguf-py does not know; ``convert`` undoes the
 weight changes that converter makes for the architecture. Those changes move whole
 rows or touch only unquantized norms, so quantized GGUF blocks stay byte-exact.
 """
@@ -81,18 +82,67 @@ def _restore_qk_rows(config) -> Convert:
     return convert
 
 
-def _remove_norm_offset(config) -> Convert:
-    """Subtract the 1 llama.cpp adds to Gemma norm weights; HF Gemma adds it in
-    its forward instead."""
+def _norm_offset_remover(suffix: str) -> Convert:
+    """Subtract the 1 llama.cpp adds to the norm weights ending in ``suffix``,
+    for HF norms that add it in their forward instead."""
 
     def convert(fqn: str, value: torch.Tensor) -> torch.Tensor:
-        if not fqn.endswith("norm.weight"):
+        if not fqn.endswith(suffix):
             return value
         if isinstance(value, ExportableGGUFTensor):
             raise ValueError(f"{fqn}: expected an unquantized norm weight")
         return value.float() - 1
 
     return convert
+
+
+def _remove_norm_offset(config) -> Convert:
+    """Gemma adds the 1 in every norm."""
+    return _norm_offset_remover("norm.weight")
+
+
+def _muse_glimmer_convert(config) -> Convert:
+    """Muse Glimmer rotates like Llama, and adds the 1 in its decoder layer
+    norms but not its final norm."""
+    restore_qk = _restore_qk_rows(config)
+    remove_offset = _norm_offset_remover("layernorm.weight")
+    return lambda fqn, value: remove_offset(fqn, restore_qk(fqn, value))
+
+
+_MG_TEXT = "model.language_model"
+# GGUF name -> HF module, for the blocks and the rest; None skips a tensor.
+_MUSE_GLIMMER_BLOCK = {
+    "attn_q": "self_attn.q_proj",
+    "attn_k": "self_attn.k_proj",
+    "attn_v": "self_attn.v_proj",
+    "attn_output": "self_attn.o_proj",
+    "attn_gate": "self_attn.gate_proj",
+    "attn_norm": "input_layernorm",
+    "post_attention_norm": "post_attention_layernorm",
+    "ffn_norm": "pre_feedforward_layernorm",
+    "post_ffw_norm": "post_feedforward_layernorm",
+    "ffn_gate": "mlp.gate_proj",
+    "ffn_up": "mlp.up_proj",
+    "ffn_down": "mlp.down_proj",
+    # The QK norm has no weight in HF; llama.cpp stores it as ones.
+    "attn_q_norm": None,
+    "attn_k_norm": None,
+}
+_MUSE_GLIMMER_TOP = {
+    "token_embd": f"{_MG_TEXT}.embed_tokens",
+    "output_norm": f"{_MG_TEXT}.norm",
+    "output": "lm_head",
+}
+
+
+def _muse_glimmer_names(layers: int) -> dict[str, str | None]:
+    names = {f"{g}.weight": f"{h}.weight" for g, h in _MUSE_GLIMMER_TOP.items()}
+    for i in range(layers):
+        for g, h in _MUSE_GLIMMER_BLOCK.items():
+            names[f"blk.{i}.{g}.weight"] = (
+                f"{_MG_TEXT}.layers.{i}.{h}.weight" if h else None
+            )
+    return names
 
 
 # GGUF architecture -> (the Hugging Face model types it holds, what undoes
@@ -105,6 +155,13 @@ _ARCHITECTURES: dict[str, tuple[frozenset[str], Callable[..., Convert] | None]] 
     "gemma": (frozenset({"gemma"}), _remove_norm_offset),
     "gemma2": (frozenset({"gemma2"}), _remove_norm_offset),
     "gemma3": (frozenset({"gemma3_text"}), _remove_norm_offset),
+    "muse-glimmer": (frozenset({"muse_glimmer_text"}), _muse_glimmer_convert),
+}
+
+# Architectures gguf-py has no tensor map for: layer count -> GGUF name -> HF
+# parameter, or None to skip.
+_NAMES: dict[str, Callable[[int], dict[str, str | None]]] = {
+    "muse-glimmer": _muse_glimmer_names,
 }
 
 
@@ -129,13 +186,16 @@ def gguf_to_hf(
         raise ValueError(
             f"a {architecture!r} GGUF cannot load a {config.model_type!r} model"
         )
-    arch = next(a for a, n in gguf.MODEL_ARCH_NAMES.items() if n == architecture)
-    tensor_map = gguf.get_tensor_name_map(arch, config.num_hidden_layers)
-    names = {}
-    for fqn in model.state_dict():
-        name = tensor_map.get_name(fqn, try_suffixes=(".weight", ".bias"))
-        if name is not None:
-            names[name] = fqn
+    if architecture in _NAMES:
+        names = _NAMES[architecture](config.num_hidden_layers)
+    else:
+        arch = next(a for a, n in gguf.MODEL_ARCH_NAMES.items() if n == architecture)
+        tensor_map = gguf.get_tensor_name_map(arch, config.num_hidden_layers)
+        names = {}
+        for fqn in model.state_dict():
+            name = tensor_map.get_name(fqn, try_suffixes=(".weight", ".bias"))
+            if name is not None:
+                names[name] = fqn
 
     def key_map(name: str) -> str | None:
         if name in names:
