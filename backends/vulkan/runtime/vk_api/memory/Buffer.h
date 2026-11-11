@@ -37,6 +37,10 @@ enum MemoryAccessType : MemoryAccessFlags {
   NONE = 0u << 0u,
   READ = 1u << 0u,
   WRITE = 1u << 1u,
+  // With READ: an image read through a storage image descriptor, which needs
+  // VK_IMAGE_LAYOUT_GENERAL (vk_layout gives it to every compute access other
+  // than a plain READ) but is not a write.
+  STORAGE_IMAGE = 1u << 2u,
 };
 
 static constexpr MemoryAccessFlags kReadWrite =
@@ -57,6 +61,9 @@ const AHardwareBufferFns& ahardwarebuffer_fns();
 static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
 
 static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
+static constexpr MemoryAccessFlags kReadStorageImage =
+    MemoryAccessType::READ | MemoryAccessType::STORAGE_IMAGE;
 
 class VulkanBuffer final {
  public:
