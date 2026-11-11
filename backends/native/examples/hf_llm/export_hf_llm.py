@@ -20,6 +20,7 @@ for a prefill and a few greedy decode steps per prompt.
 
 import argparse
 import contextlib
+import inspect
 import logging
 from collections.abc import Iterator
 
@@ -56,7 +57,6 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.cache_utils import StaticLayer
-from transformers.integrations.accelerate import init_empty_weights
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
@@ -66,6 +66,28 @@ from transformers.masking_utils import (
 
 
 _OFFGRAPH_ATTENTION = "offgraph"
+
+
+@contextlib.contextmanager
+def _parameters_on_meta() -> Iterator[None]:
+    """Create parameters on the meta device and buffers as usual, so computed
+    buffers such as RoPE frequencies keep their values. Weights are assigned
+    later. What accelerate's ``init_empty_weights`` did, which transformers no
+    longer re-exports."""
+    register = nn.Module.register_parameter
+
+    def register_on_meta(module, name, param):
+        register(module, name, param)
+        if param is not None:
+            module._parameters[name] = nn.Parameter(
+                param.to("meta"), requires_grad=param.requires_grad
+            )
+
+    nn.Module.register_parameter = register_on_meta
+    try:
+        yield
+    finally:
+        nn.Module.register_parameter = register
 
 
 def _load(
@@ -84,9 +106,9 @@ def _load(
     if offgraph_cache:
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
-    kwargs = {"torch_dtype": torch.float32, "attn_implementation": attn}
+    kwargs = {"dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
-        with init_empty_weights():
+        with _parameters_on_meta():
             model = AutoModelForCausalLM.from_config(config, **kwargs)
     elif random_weights:
         model = AutoModelForCausalLM.from_config(config, **kwargs)
@@ -183,7 +205,11 @@ class LastTokenLM(nn.Module):
             if type(old) is not StaticLayer:
                 raise ValueError(f"cannot change the KV dtype of {type(old).__name__}")
             layer = _CastingStaticLayer(old.max_cache_len)
-            layer.lazy_initialization(old.keys[:, :, :1].to(dtype))
+            states = [old.keys[:, :, :1].to(dtype), old.values[:, :, :1].to(dtype)]
+            # transformers 5.4+ also sizes the values from value_states.
+            if len(inspect.signature(layer.lazy_initialization).parameters) == 1:
+                states = states[:1]
+            layer.lazy_initialization(*states)
             self.cache.layers[i] = layer
             self.cached.register_buffer(f"key_cache_{i}", layer.keys, persistent=False)
             self.cached.register_buffer(
