@@ -74,6 +74,7 @@ def _compile(adapter, artifact_dir, **overrides):
         "file_name": _FILE_NAME,
         "soc_model": TEST_SOC_CHIPSET,
         "backend_type": TEST_BACKEND_TYPE,
+        "executorch_config": MagicMock(name="executorch_config"),
     }
     kwargs.update(overrides)
 
@@ -222,37 +223,18 @@ class TestDefaultCompilerAdapterLoweringArguments(unittest.TestCase):
 
 class TestDefaultCompilerAdapterExecutorchConfig(unittest.TestCase):
 
-    def test_leaves_graph_io_unallocated_by_default(self):
-        """Graph I/O is not allocated, since a shared buffer supplies it."""
-        with tempfile.TemporaryDirectory() as tmp:
-            _, _, edge_prog_mgr = _compile(DefaultCompilerAdapter(), Path(tmp))
-
-        config = edge_prog_mgr.to_executorch.call_args.args[0]
-        self.assertFalse(config.memory_planning_pass.alloc_graph_input)
-        self.assertFalse(config.memory_planning_pass.alloc_graph_output)
-
-    def test_builds_quant_io_by_default(self):
-        """BuildQuantIo runs, so quantized I/O tensors get their types."""
-        from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
-
-        with tempfile.TemporaryDirectory() as tmp:
-            _, _, edge_prog_mgr = _compile(DefaultCompilerAdapter(), Path(tmp))
-
-        config = edge_prog_mgr.to_executorch.call_args.args[0]
-        self.assertTrue(any(isinstance(p, BuildQuantIo) for p in config.passes))
-
-    def test_extra_options_can_override_the_config(self):
-        """A caller-supplied backend config replaces the default."""
-        override = MagicMock(name="executorch_backend_config")
+    def test_applies_the_given_executorch_config(self):
+        """The strategy's per-component config reaches to_executorch as is."""
+        config = MagicMock(name="executorch_config")
 
         with tempfile.TemporaryDirectory() as tmp:
             _, _, edge_prog_mgr = _compile(
                 DefaultCompilerAdapter(),
                 Path(tmp),
-                extra_options={"executorch_backend_config": override},
+                executorch_config=config,
             )
 
-        self.assertIs(edge_prog_mgr.to_executorch.call_args.args[0], override)
+        edge_prog_mgr.to_executorch.assert_called_once_with(config)
 
 
 class TestDefaultCompilerAdapterEtrecord(unittest.TestCase):
@@ -297,6 +279,7 @@ class TestDefaultCompilerAdapterValidation(unittest.TestCase):
                     file_name=_FILE_NAME,
                     soc_model=TEST_SOC_CHIPSET,
                     backend_type=TEST_BACKEND_TYPE,
+                    executorch_config=MagicMock(name="executorch_config"),
                 )
 
         self.assertIn("example_inputs", str(cm.exception))
@@ -359,6 +342,7 @@ class TestDefaultCompilerAdapterTargetConsistency(unittest.TestCase):
                     file_name=_FILE_NAME,
                     soc_model=TEST_SOC_MODEL,
                     backend_type=TEST_BACKEND_TYPE,
+                    executorch_config=MagicMock(name="executorch_config"),
                 )
 
         self.assertIn("soc_model", str(cm.exception))
@@ -379,6 +363,7 @@ class TestDefaultCompilerAdapterTargetConsistency(unittest.TestCase):
                     file_name=_FILE_NAME,
                     soc_model=QcomChipset.SM8750,
                     backend_type=TEST_BACKEND_TYPE,
+                    executorch_config=MagicMock(name="executorch_config"),
                 )
 
         self.assertIn("soc_model", str(cm.exception))
@@ -399,6 +384,7 @@ class TestDefaultCompilerAdapterTargetConsistency(unittest.TestCase):
                     file_name=_FILE_NAME,
                     soc_model=TEST_SOC_CHIPSET,
                     backend_type=QnnExecuTorchBackendType.kGpuBackend,
+                    executorch_config=MagicMock(name="executorch_config"),
                 )
 
         self.assertIn("backend_type", str(cm.exception))
@@ -435,6 +421,7 @@ class TestDefaultCompilerAdapterTargetConsistency(unittest.TestCase):
                         file_name=_FILE_NAME,
                         soc_model=TEST_SOC_CHIPSET,
                         backend_type=TEST_BACKEND_TYPE,
+                        executorch_config=MagicMock(name="executorch_config"),
                     )
 
         lower.assert_not_called()

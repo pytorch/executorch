@@ -8,14 +8,26 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+)
+from executorch.backends.qualcomm.genai_pipeline.compilation.component_spec_policy import (
+    build_component_compile_specs,
+    build_executorch_config,
+)
+from executorch.backends.qualcomm.genai_pipeline.compilation.pass_policy import (
+    build_component_pass_config,
+    resolve_num_sharding,
+)
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_input_config import (
     CompilationInputConfig,
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_output_config import (
     CompilationOutputConfig,
 )
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
 from executorch.backends.qualcomm.genai_pipeline.exceptions import StageError
 from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compilation_strategy import (
@@ -24,6 +36,9 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compilat
 from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compiler_adapter import (
     CompilerAdapter,
 )
+
+if TYPE_CHECKING:
+    from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
 
 logger = logging.getLogger(__name__)
 
@@ -38,54 +53,35 @@ _COMPILE_EXTRA_KEYS = (
     "skip_node_op_set",
     "skip_mutable_buffer",
     "convert_linear_to_conv2d",
-    "executorch_backend_config",
 )
 
 
 class ExecuTorchCompilationStrategy(CompilationStrategy):
     """ExecuTorch-based compilation using QNN compiler backend.
 
-    Delegates to a ``CompilerAdapter`` for all external API calls,
-    enabling dependency injection for testability.
+    Delegates to a ``CompilerAdapter`` for all external API calls, enabling
+    dependency injection for testability.
 
-    The compilation flow:
-    1. Validate the input configuration
-    2. Delegate to the compiler adapter (wrapping
-       ``to_edge_transform_and_lower_to_qnn``)
-    3. Return artifact paths and optional ETRecord
+    Takes one of two paths, depending on how the input names what to compile:
 
-    .. note::
-        **Single-graph only; multi-graph is a follow-up.** This strategy makes
-        exactly **one** ``compile_model`` call, mirroring the single-graph
-        contract of the adapter it delegates to. Models exported as several
-        graphs from the same weights (the hybrid AR-N prefill / AR-1 decode
-        pair, plus an optional token-embedding graph) need a loop over the
-        *deployed* graphs, which is why it is deliberately not attempted here:
+    * ``input_config.graphs`` -- one ``compile_graph_group`` call per component,
+      each producing one ``.pte``. A component's graphs go into a single call so
+      that they share weights, which is why fanning out over *components* is
+      this strategy's job while grouping *graphs* is the adapter's.
+    * ``input_config.model`` -- a single ``compile_model`` call, for a model with
+      one graph.
 
-        * only deployed graphs reach compilation: the full-auto-regressive
-          calibration graph a hybrid decoder also builds exists purely to
-          source quantization encodings, is reconciled into the deployed graphs
-          by the quantization stage and released there, so the loop is over
-          prefill and decode -- not over every graph the model preparation
-          stage produced;
-        * each deployed graph carries its own module, example inputs and
-          compile specs, so the lowering call takes graph-name-keyed dicts
-          rather than single values. ExecuTorch's
-          ``to_edge_transform_and_lower_to_qnn`` already accepts those dicts,
-          so this needs *using*, not building;
-        * grouping the graphs into one multi-method ``.pte`` (weight sharing) is
-          a property of that single lowering call, so it cannot be recovered by
-          calling this single-graph path repeatedly.
-
-        So the eventual interface is a per-graph map of module to example inputs
-        and compile specs, which is additive to ``CompilationInputConfig``, so
-        deferring costs nothing structurally. Per the layering used throughout
-        this package, the fan-out belongs in this *strategy* -- adapters stay
-        thin 1:1 wrappers over one graph.
+    Deriving the compile specs and the per-graph pass configuration also belongs
+    here rather than upstream: both depend on which component a graph belongs to
+    and on how the graphs are grouped, neither of which the quantization stage
+    knows. Deriving them together also keeps them consistent -- the shard count
+    that requests multiple contexts is the one that inserts the splitting pass.
 
     Args:
         compiler_adapter: Injectable adapter for compilation operations.
-            Defaults to ``DefaultCompilerAdapter`` if not provided.
+            Defaults to ``DefaultCompilerAdapter``. An LLM flow injects
+            ``LLMCompilerAdapter`` instead, which is what keeps the decoder's
+            model-specific lowering settings out of this strategy.
     """
 
     def __init__(
@@ -120,8 +116,8 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
             CompilationOutputConfig with artifact paths and optional ETRecord.
 
         Raises:
-            StageError: If the model or example inputs are missing, or if
-                compilation fails.
+            StageError: If the input names nothing to compile, or if compilation
+                fails.
         """
         self._validate_input(input_config)
 
@@ -133,43 +129,19 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
         )
 
         try:
-            artifact_dir = Path(input_config.artifact_dir)
-            file_name = context.model_name
-
-            # Pass compilation-relevant options from context.extra_options.
-            # Only forward keys that the compiler adapter may need, avoiding
-            # leaking unrelated pipeline options.
-            compile_extra = {
-                k: v
-                for k, v in context.extra_options.items()
-                if k in _COMPILE_EXTRA_KEYS
-            }
-
-            # ``example_inputs`` is passed explicitly rather than through
-            # ``extra_options``: it comes from the model (see
-            # ``CompilationInputConfig.example_inputs``) and ``torch.export``
-            # cannot run without it, so it is part of the adapter's signature.
-            result = self._adapter.compile_model(
-                model=input_config.model,
-                example_inputs=input_config.example_inputs,
-                compile_specs=input_config.compile_specs,
-                artifact_dir=artifact_dir,
-                file_name=file_name,
-                soc_model=input_config.soc_model,
-                backend_type=input_config.backend_type,
-                extra_options=compile_extra if compile_extra else None,
-            )
+            graphs = input_config.graphs or self._unquantized_graphs(input_config)
+            if graphs:
+                self._validate_component_graphs(graphs)
+                output = self._compile_components(context, input_config, graphs)
+            else:
+                output = self._compile_single_graph(context, input_config)
 
             logger.info(
                 "Compilation completed: %d artifact(s) produced (%s)",
-                len(result.artifact_paths),
-                ", ".join(sorted(map(str, result.artifact_paths))),
+                len(output.artifact_paths or {}),
+                ", ".join(sorted(output.artifact_paths or {})),
             )
-
-            return CompilationOutputConfig(
-                artifact_paths=result.artifact_paths,
-                etrecord=result.etrecord,
-            )
+            return output
 
         except StageError:
             raise
@@ -180,6 +152,260 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
                 original_exception=e,
             ) from e
 
+    def _compile_single_graph(
+        self,
+        context: PipelineContext,
+        input_config: CompilationInputConfig,
+    ) -> CompilationOutputConfig:
+        """Compile a model that has exactly one graph.
+
+        Args:
+            context: The pipeline context with global settings.
+            input_config: The compilation input configuration.
+
+        Returns:
+            CompilationOutputConfig with the one artifact path.
+        """
+        # ``example_inputs`` is passed explicitly rather than through
+        # ``extra_options``: it comes from the model (see
+        # ``CompilationInputConfig.example_inputs``) and ``torch.export``
+        # cannot run without it, so it is part of the adapter's signature.
+        result = self._adapter.compile_model(
+            model=input_config.model,
+            example_inputs=input_config.example_inputs,
+            compile_specs=input_config.compile_specs,
+            artifact_dir=Path(input_config.artifact_dir),
+            file_name=context.model_name,
+            soc_model=input_config.soc_model,
+            backend_type=input_config.backend_type,
+            executorch_config=build_executorch_config(ARTIFACT_TEXT_DECODER),
+            extra_options=self._compile_extra(context),
+        )
+
+        return CompilationOutputConfig(
+            artifact_paths=result.artifact_paths,
+            etrecord=result.etrecord,
+        )
+
+    @staticmethod
+    def _unquantized_graphs(
+        input_config: CompilationInputConfig,
+    ) -> Optional[Dict[str, Dict[str, "GraphBundle"]]]:
+        """Bundle a component-keyed model whose quantization was skipped.
+
+        Args:
+            input_config: The compilation input configuration.
+
+        Returns:
+            Unquantized bundles, or ``None`` for a single-graph model.
+        """
+        if not isinstance(input_config.model, dict):
+            return None
+
+        from executorch.backends.qualcomm.genai_pipeline.unquantized_bundles import (
+            build_unquantized_bundles,
+        )
+
+        logger.info("Quantization was skipped; compiling unquantized graphs")
+        return build_unquantized_bundles(
+            model_module=input_config.model,
+            example_inputs=input_config.example_inputs,
+            meta=input_config.meta,
+        )
+
+    @staticmethod
+    def _component_quantized(
+        artifact_key: str,
+        graphs: Dict[str, "GraphBundle"],
+    ) -> bool:
+        """Whether one component's graphs were quantized.
+
+        Args:
+            artifact_key: The component being compiled.
+            graphs: The component's graphs, keyed by graph name.
+
+        Returns:
+            The component's shared ``quantized`` flag.
+
+        Raises:
+            StageError: If the component mixes quantized and unquantized graphs,
+                since one ``.pte`` gets one precision.
+        """
+        flags = {bundle.quantized for bundle in graphs.values()}
+        if len(flags) > 1:
+            raise StageError(
+                stage_name=_STAGE_NAME,
+                message=(
+                    f"component '{artifact_key}' mixes quantized and unquantized "
+                    "graphs"
+                ),
+            )
+        return flags.pop()
+
+    def _compile_components(
+        self,
+        context: PipelineContext,
+        input_config: CompilationInputConfig,
+        all_graphs: Dict[str, Dict[str, "GraphBundle"]],
+    ) -> CompilationOutputConfig:
+        """Compile each component into its own ``.pte``.
+
+        Args:
+            context: The pipeline context with global settings.
+            input_config: The compilation input configuration.
+            all_graphs: The graphs to compile, keyed by artifact key then graph
+                name.
+
+        Returns:
+            CompilationOutputConfig holding one path per compiled component.
+            Components the model does not have are simply absent.
+        """
+        control_args = ControlArgs.from_pipeline_context(context)
+        builder = self._build_spec_builder(control_args, input_config)
+        extra_options = self._compile_extra(context)
+
+        artifact_paths: Dict[str, Path] = {}
+        etrecord = None
+        etrecord_source = None
+
+        # The token embedding's quantized IO is tagged against the *decoder's*
+        # shapes, as in the legacy flow, so the decoder's graphs have to be
+        # reachable while another component is being configured.
+        decoder_graphs = all_graphs.get(ARTIFACT_TEXT_DECODER)
+
+        for artifact_key, graphs in all_graphs.items():
+            # One count for both specs and passes, so multiple contexts are
+            # requested only for a graph that is really split.
+            num_sharding = resolve_num_sharding(
+                artifact_key,
+                graphs,
+                self._component_num_sharding(input_config, artifact_key),
+            )
+            compile_specs = build_component_compile_specs(
+                builder=builder,
+                artifact_key=artifact_key,
+                graph_names=list(graphs),
+                control_args=control_args,
+                num_sharding=num_sharding,
+                quantized=self._component_quantized(artifact_key, graphs),
+            )
+            dep_table, passes_job = build_component_pass_config(
+                artifact_key=artifact_key,
+                graphs=graphs,
+                control_args=control_args,
+                num_sharding=num_sharding,
+                decoder_graphs=decoder_graphs,
+            )
+
+            logger.debug(
+                "Compiling component '%s' from graph(s) %s",
+                artifact_key,
+                sorted(graphs),
+            )
+            result = self._adapter.compile_graph_group(
+                graphs=graphs,
+                compile_specs=compile_specs,
+                artifact_dir=Path(input_config.artifact_dir),
+                file_name=f"{context.model_name}_{artifact_key}",
+                soc_model=input_config.soc_model,
+                backend_type=input_config.backend_type,
+                executorch_config=build_executorch_config(artifact_key),
+                dep_table=dep_table,
+                passes_job=passes_job,
+                artifact_key=artifact_key,
+                extra_options=extra_options,
+            )
+
+            artifact_paths.update(result.artifact_paths)
+            if etrecord is None and result.etrecord is not None:
+                etrecord, etrecord_source = result.etrecord, artifact_key
+
+        if etrecord_source is not None:
+            # CompilationOutputConfig holds one ETRecord; the first one wins.
+            logger.info("Using the ETRecord of component '%s'", etrecord_source)
+
+        return CompilationOutputConfig(
+            artifact_paths=artifact_paths,
+            etrecord=etrecord,
+        )
+
+    @staticmethod
+    def _component_num_sharding(
+        input_config: CompilationInputConfig,
+        artifact_key: str,
+    ) -> int:
+        """The shard count requested for one component.
+
+        ``num_sharding`` is per-component, since an encoder's shard count comes
+        from its own config rather than the decoder's
+        (``GraniteSpeechEncoder.num_sharding``). A plain ``int`` is still
+        accepted and taken to describe the decoder, which is what a single-shard
+        text-only flow passes.
+
+        Args:
+            input_config: The compilation input configuration.
+            artifact_key: The component being compiled.
+
+        Returns:
+            The requested shard count, 1 when it is not described.
+        """
+        num_sharding = input_config.num_sharding
+        if isinstance(num_sharding, dict):
+            return int(num_sharding.get(artifact_key, 1))
+
+        # A scalar describes the decoder only.
+        if artifact_key == ARTIFACT_TEXT_DECODER:
+            return int(num_sharding)
+
+        return 1
+
+    @staticmethod
+    def _build_spec_builder(
+        control_args: ControlArgs,
+        input_config: CompilationInputConfig,
+    ) -> Any:
+        """Construct the compile spec builder for this run's target.
+
+        One builder describes one target, which is all a single-backend model
+        needs. Splitting components across backends would need one builder per
+        backend, so this is the place that would grow a mapping.
+
+        Args:
+            control_args: The flow's control arguments.
+            input_config: The compilation input configuration, whose
+                ``soc_model`` is authoritative.
+
+        Returns:
+            A ``QnnCompileSpecBuilder`` for the target.
+        """
+        from executorch.backends.qualcomm.genai_pipeline.compilation.compile_spec_builder import (
+            QnnCompileSpecBuilder,
+        )
+
+        return QnnCompileSpecBuilder(
+            soc_model=input_config.soc_model,
+            backend=control_args.backend,
+            enable_x86_64=control_args.enable_x86_64,
+        )
+
+    @staticmethod
+    def _compile_extra(context: PipelineContext) -> Optional[Dict[str, Any]]:
+        """Collect the lowering knobs this stage forwards from the context.
+
+        Only the keys the compiler adapter may need are forwarded, so unrelated
+        pipeline options do not leak into lowering.
+
+        Args:
+            context: The pipeline context with global settings.
+
+        Returns:
+            The forwarded options, or ``None`` if there are none.
+        """
+        extra = {
+            k: v for k, v in context.extra_options.items() if k in _COMPILE_EXTRA_KEYS
+        }
+        return extra or None
+
     def _validate_input(self, input_config: CompilationInputConfig) -> None:
         """Validate required fields in the input configuration.
 
@@ -189,10 +415,28 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
         Raises:
             StageError: If required fields are missing.
         """
+        if input_config.soc_model is None:
+            raise StageError(
+                stage_name=_STAGE_NAME,
+                message="soc_model is required for compilation",
+            )
+        if input_config.backend_type is None:
+            raise StageError(
+                stage_name=_STAGE_NAME,
+                message="backend_type is required for compilation",
+            )
+
+        if input_config.graphs:
+            self._validate_component_graphs(input_config.graphs)
+            return
+
         if input_config.model is None:
             raise StageError(
                 stage_name=_STAGE_NAME,
-                message="model is required for compilation",
+                message=(
+                    "compilation needs either graphs, produced by the "
+                    "quantization stage, or a single model"
+                ),
             )
         # ``is None`` rather than a truthiness test: an empty tuple is a valid
         # export signature for a model taking no positional inputs, and only the
@@ -206,13 +450,37 @@ class ExecuTorchCompilationStrategy(CompilationStrategy):
                     "from the model by ModelLoaderAdapter.get_example_inputs"
                 ),
             )
-        if input_config.soc_model is None:
+
+    @staticmethod
+    def _validate_component_graphs(
+        graphs: Dict[str, Dict[str, "GraphBundle"]],
+    ) -> None:
+        """Check the component map is well formed before any lowering starts.
+
+        Args:
+            graphs: The graphs to compile, keyed by artifact key then graph name.
+
+        Raises:
+            StageError: If a component names an unknown artifact key, or has no
+                graphs -- the latter would otherwise produce an empty ``.pte``.
+        """
+        from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+            ALL_ARTIFACT_KEYS,
+        )
+
+        unknown = sorted(set(graphs) - ALL_ARTIFACT_KEYS)
+        if unknown:
             raise StageError(
                 stage_name=_STAGE_NAME,
-                message="soc_model is required for compilation",
+                message=(
+                    f"graphs names unknown artifact key(s) {unknown}; valid "
+                    f"keys: {sorted(ALL_ARTIFACT_KEYS)}"
+                ),
             )
-        if input_config.backend_type is None:
+
+        empty = sorted(key for key, component in graphs.items() if not component)
+        if empty:
             raise StageError(
                 stage_name=_STAGE_NAME,
-                message="backend_type is required for compilation",
+                message=f"component(s) {empty} have no graphs to compile",
             )

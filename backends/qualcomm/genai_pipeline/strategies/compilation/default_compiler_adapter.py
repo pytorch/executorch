@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_TEXT_DECODER,
@@ -16,6 +16,10 @@ from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
 from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compiler_adapter import (
     CompilationResult,
 )
+
+if TYPE_CHECKING:
+    from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +32,6 @@ _LOWERING_OPTION_KEYS = (
     "skip_node_id_set",
     "skip_node_op_set",
 )
-
-# ``extra_options`` key overriding the ``to_executorch`` configuration wholesale.
-_KEY_EXECUTORCH_BACKEND_CONFIG = "executorch_backend_config"
 
 
 def _decode_qnn_options(compile_specs: Any) -> Optional[Any]:
@@ -128,53 +129,87 @@ def _verify_target_matches_specs(
         )
 
 
-def _default_executorch_config() -> Any:
-    """Build the ``to_executorch`` configuration for QNN graph I/O.
+def _needs_spill_fill(compile_specs: Any) -> bool:
+    """Whether a graph's specs ask for the multi-context spill-fill buffer.
 
-    Graph inputs and outputs are deliberately left unallocated: with a shared
-    buffer the caller supplies the addresses, which are allocated from RPC
-    memory rather than by memory planning. ``BuildQuantIo`` then gives the
-    quantized I/O tensors their types.
+    ``update_spill_fill_size`` initialises a QNN backend and context cache per
+    partition, so it is only worth calling for graphs that actually requested
+    multiple contexts. It is also HTP-only, and is set only when a graph is
+    sharded, which makes this equivalent to the legacy ``num_sharding > 1`` gate
+    while reading the answer off the specs rather than needing the count.
+
+    Args:
+        compile_specs: The compile specs for one graph.
 
     Returns:
-        An ``ExecutorchBackendConfig`` suitable for QNN lowering.
+        ``True`` if the specs target HTP with ``use_multi_contexts`` set.
     """
-    from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
-    from executorch.exir.capture._config import ExecutorchBackendConfig
-    from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+    from executorch.backends.qualcomm.serialization.qc_schema import (
+        QnnExecuTorchBackendType,
+    )
 
-    return ExecutorchBackendConfig(
-        memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=False,
-            alloc_graph_output=False,
-        ),
-        passes=[BuildQuantIo()],
+    options = _decode_qnn_options(compile_specs)
+    if options is None:
+        return False
+
+    if options.backend_options.backend_type != QnnExecuTorchBackendType.kHtpBackend:
+        return False
+
+    return bool(options.backend_options.htp_options.use_multi_contexts)
+
+
+def _write_program(
+    edge_prog_mgr: Any,
+    executorch_config: Any,
+    artifact_dir: Path,
+    file_name: str,
+    artifact_key: str,
+    generate_etrecord: bool,
+) -> CompilationResult:
+    """Convert a lowered edge program to a ``.pte`` on disk.
+
+    Shared by the single-graph and group paths, which differ only in how they
+    reach the edge program.
+
+    Args:
+        edge_prog_mgr: The lowered edge program manager.
+        executorch_config: The ``to_executorch`` configuration.
+        artifact_dir: Directory to write into. Created if it does not exist.
+        file_name: Base name for the output .pte file.
+        artifact_key: Name to key the written artifact under.
+        generate_etrecord: Whether to return the ETRecord as well.
+
+    Returns:
+        CompilationResult holding the written artifact and optional ETRecord.
+    """
+    exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
+
+    artifact_dir = Path(artifact_dir)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    pte_path = artifact_dir / f"{file_name}.pte"
+    with open(pte_path, "wb") as file:
+        exec_prog_mgr.write_to_file(file)
+
+    logger.info("Wrote artifact to %s", pte_path)
+
+    return CompilationResult(
+        artifact_paths={artifact_key: pte_path},
+        etrecord=exec_prog_mgr.get_etrecord() if generate_etrecord else None,
     )
 
 
 class DefaultCompilerAdapter:
     """Default adapter delegating to ``to_edge_transform_and_lower_to_qnn``.
 
-    Lowers one graph to a single ``.pte``: the model is lowered to QNN, the
-    resulting edge program is converted to an ExecuTorch program, and that is
-    written to ``artifact_dir``.
+    ``compile_model`` lowers one graph to one ``.pte``; ``compile_graph_group``
+    lowers several graphs into one multi-method ``.pte`` so they share weights,
+    and sizes the spill-fill buffer shared across their contexts. In both cases
+    the edge program is converted to an ExecuTorch program and written to
+    ``artifact_dir``.
 
     .. note::
-        This adapter is a **1:1 wrapper over one graph**, mirroring the
-        single-graph form of ``to_edge_transform_and_lower_to_qnn``. Two things
-        therefore sit deliberately outside it:
-
-        * **Multi-graph grouping.** That function also accepts graph-name-keyed
-          dicts, which is how several graphs (a hybrid decoder's prefill and
-          decode) become one multi-method ``.pte`` that shares weights. Fanning
-          out over graphs is the compilation *strategy*'s job; passing dicts
-          through here would make the adapter's contract depend on which of two
-          shapes its arguments take.
-        * **Spill-fill sizing.** A sharded model wants one spill-fill
-          allocation reused across its contexts, which ``update_spill_fill_size``
-          computes from the lowered program. It is a property of the group, so
-          it belongs with the call that lowers the group; for a single graph
-          there is nothing to share.
+        Deciding *which* graphs form a group is the compilation **strategy**'s
+        job -- this adapter lowers the group it is handed.
 
         A recipe-based implementation (``ExportRecipe`` + ``ExportSession``) was
         considered and rejected: ``QNNRecipeProvider`` accepts only ``soc_model``
@@ -193,6 +228,7 @@ class DefaultCompilerAdapter:
         file_name: str,
         soc_model: Any,
         backend_type: Any,
+        executorch_config: Any,
         constant_methods: Optional[Dict[str, Any]] = None,
         dep_table: Optional[Dict] = None,
         passes_job: Optional[Any] = None,
@@ -214,6 +250,8 @@ class DefaultCompilerAdapter:
                 logged and checked against the specs.
             backend_type: QNN backend type. As with ``soc_model``, lowering
                 reads this from ``compile_specs``; it is logged and checked.
+            executorch_config: The ``to_executorch`` configuration, chosen by
+                the strategy per component.
             constant_methods: Methods returning constants in eager mode. For a
                 decoder this carries the quantization attributes written into
                 ``meta`` during quantization, so it is only complete once that
@@ -227,9 +265,8 @@ class DefaultCompilerAdapter:
                 decoder, the only artifact a text-only model produces.
             extra_options: Optional tuning knobs forwarded to lowering:
                 ``skip_node_id_set``, ``skip_node_op_set``,
-                ``skip_mutable_buffer``, ``convert_linear_to_conv2d``,
-                ``generate_etrecord``, and ``executorch_backend_config`` to
-                override the ``to_executorch`` configuration.
+                ``skip_mutable_buffer``, ``convert_linear_to_conv2d`` and
+                ``generate_etrecord``.
 
         Returns:
             CompilationResult holding the written artifact under
@@ -276,24 +313,172 @@ class DefaultCompilerAdapter:
             **lowering_options,
         )
 
-        executorch_config = (
-            options.get(_KEY_EXECUTORCH_BACKEND_CONFIG) or _default_executorch_config()
+        return _write_program(
+            edge_prog_mgr=edge_prog_mgr,
+            executorch_config=executorch_config,
+            artifact_dir=artifact_dir,
+            file_name=file_name,
+            artifact_key=artifact_key,
+            generate_etrecord=generate_etrecord,
         )
-        exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
 
-        artifact_dir = Path(artifact_dir)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        pte_path = artifact_dir / f"{file_name}.pte"
-        with open(pte_path, "wb") as file:
-            exec_prog_mgr.write_to_file(file)
+    def compile_graph_group(
+        self,
+        graphs: Dict[str, "GraphBundle"],
+        compile_specs: Dict[str, List["CompileSpec"]],
+        artifact_dir: Path,
+        file_name: str,
+        soc_model: Any,
+        backend_type: Any,
+        executorch_config: Any,
+        constant_methods: Optional[Dict[str, Any]] = None,
+        dep_table: Optional[Dict[str, Any]] = None,
+        passes_job: Optional[Dict[str, Any]] = None,
+        artifact_key: str = ARTIFACT_TEXT_DECODER,
+        extra_options: Optional[Dict[str, Any]] = None,
+    ) -> CompilationResult:
+        """Lower several graphs into one multi-method ``.pte``.
 
-        logger.info("Wrote artifact to %s", pte_path)
+        One ``to_edge_transform_and_lower_to_qnn`` call with graph-name-keyed
+        dicts, which is what lets the graphs share weights. Spill-fill is sized
+        afterwards, per graph whose specs asked for multiple contexts.
 
-        etrecord = None
-        if generate_etrecord:
-            etrecord = exec_prog_mgr.get_etrecord()
+        Args:
+            graphs: The graphs to lower, keyed by graph name.
+            compile_specs: QNN compiler specifications, keyed by graph name.
+            artifact_dir: Directory to store the compiled .pte artifact.
+            file_name: Base name for the output .pte file.
+            soc_model: Target SoC chipset; checked against each graph's specs.
+            backend_type: QNN backend type; checked against each graph's specs.
+            executorch_config: The ``to_executorch`` configuration. One for the
+                whole ``.pte``.
+            constant_methods: Methods returning constants in eager mode. One set
+                for the whole ``.pte``.
+            dep_table: Pass dependency tables, keyed by graph name. Derived by
+                the strategy from the graphs' metadata, as ``compile_specs`` is;
+                ``None`` leaves lowering to apply its own defaults.
+            passes_job: Pass configurations, keyed by graph name. Per graph
+                rather than per group, since the quantized-IO tagging depends on
+                a graph's AR length.
+            artifact_key: Name to key the written artifact under.
+            extra_options: Optional tuning knobs, as for ``compile_model``.
 
-        return CompilationResult(
-            artifact_paths={artifact_key: pte_path},
-            etrecord=etrecord,
+        Returns:
+            CompilationResult holding the one written artifact under
+            ``artifact_key``, and the ETRecord when one was requested.
+
+        Raises:
+            ValueError: If ``graphs`` is empty, if its keys do not match
+                ``compile_specs`` or a supplied ``dep_table`` / ``passes_job``,
+                if a bundle has no ``inputs``, or if ``soc_model`` /
+                ``backend_type`` contradict any graph's specs.
+        """
+        from executorch.backends.qualcomm.utils.utils import (
+            to_edge_transform_and_lower_to_qnn,
+            update_spill_fill_size,
         )
+
+        self._validate_group(graphs, compile_specs, dep_table, passes_job)
+
+        for specs in compile_specs.values():
+            _verify_target_matches_specs(specs, soc_model, backend_type)
+
+        options = dict(extra_options or {})
+        lowering_options = {
+            key: options[key] for key in _LOWERING_OPTION_KEYS if key in options
+        }
+        generate_etrecord = bool(lowering_options.get("generate_etrecord", False))
+
+        graph_names = list(graphs)
+        logger.info(
+            "Compiling '%s' as one .pte over %d graph(s) (%s) for SoC=%s, "
+            "backend=%s",
+            file_name,
+            len(graph_names),
+            ", ".join(graph_names),
+            getattr(soc_model, "name", soc_model),
+            backend_type,
+        )
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module={name: graphs[name].module for name in graph_names},
+            inputs={name: graphs[name].inputs for name in graph_names},
+            compiler_specs={name: compile_specs[name] for name in graph_names},
+            constant_methods=constant_methods,
+            dep_table=dep_table,
+            passes_job=passes_job,
+            **lowering_options,
+        )
+
+        for graph_name in graph_names:
+            if _needs_spill_fill(compile_specs[graph_name]):
+                logger.debug("Sizing spill-fill buffer for graph '%s'", graph_name)
+                update_spill_fill_size(edge_prog_mgr.exported_program(graph_name))
+
+        self._on_lowered(edge_prog_mgr, graph_names)
+
+        return _write_program(
+            edge_prog_mgr=edge_prog_mgr,
+            executorch_config=executorch_config,
+            artifact_dir=artifact_dir,
+            file_name=file_name,
+            artifact_key=artifact_key,
+            generate_etrecord=generate_etrecord,
+        )
+
+    def _on_lowered(self, edge_prog_mgr: Any, graph_names: List[str]) -> None:
+        """Hook run after a group is lowered and before ``to_executorch``.
+
+        A no-op here; subclasses use it to inspect the lowered programs, which is
+        only possible at this point in the call.
+
+        Args:
+            edge_prog_mgr: The lowered edge program manager.
+            graph_names: The names of the graphs that were lowered.
+        """
+
+    @staticmethod
+    def _validate_group(
+        graphs: Dict[str, "GraphBundle"],
+        compile_specs: Dict[str, List["CompileSpec"]],
+        dep_table: Optional[Dict[str, Any]] = None,
+        passes_job: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Check a graph group is lowerable before any graph work starts.
+
+        Args:
+            graphs: The graphs to lower, keyed by graph name.
+            compile_specs: QNN compiler specifications, keyed by graph name.
+            dep_table: Pass dependency tables, keyed by graph name, if supplied.
+            passes_job: Pass configurations, keyed by graph name, if supplied.
+
+        Raises:
+            ValueError: If the group is empty, a per-graph mapping's key set
+                differs from the graph names, or a bundle carries no example
+                inputs.
+        """
+        if not graphs:
+            raise ValueError("graphs is empty; nothing to compile")
+
+        if set(graphs) != set(compile_specs):
+            raise ValueError(
+                f"compile_specs keys {sorted(compile_specs)} do not match graph "
+                f"names {sorted(graphs)}; every graph in the group needs its own "
+                "specs"
+            )
+
+        for name, keyed in (("dep_table", dep_table), ("passes_job", passes_job)):
+            if keyed is not None and set(keyed) != set(graphs):
+                raise ValueError(
+                    f"{name} keys {sorted(keyed)} do not match graph names "
+                    f"{sorted(graphs)}; a graph lowered with another graph's "
+                    "pass configuration would be silently mis-transformed"
+                )
+
+        missing = sorted(name for name, b in graphs.items() if b.inputs is None)
+        if missing:
+            raise ValueError(
+                f"graph(s) {missing} have no inputs; torch.export cannot trace "
+                "without the positional signature produced by "
+                "ModelLoaderAdapter.get_example_inputs"
+            )
