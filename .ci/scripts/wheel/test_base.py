@@ -60,8 +60,7 @@ def test_a_model_runs_through_the_openvino_delegate(required: bool = False) -> N
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.runtime import Runtime
 
-    # The openvino extra supplies the runtime. nncf is not needed to export and run, so only the
-    # runtime decides whether this can run. Any other import failure is a real one.
+    # Only a missing runtime skips; any other import failure is a real one.
     if importlib.util.find_spec("openvino") is None:
         if required:
             raise ImportError("the openvino runtime is not installed")

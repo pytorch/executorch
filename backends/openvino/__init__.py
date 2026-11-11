@@ -26,4 +26,4 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted(list(globals()) + list(LAZY_IMPORTS))
+    return sorted(set(globals()) | set(LAZY_IMPORTS))

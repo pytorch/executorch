@@ -95,9 +95,9 @@ def test_the_openvino_delegate_runs() -> None:
         f"executorch[openvino]=={importlib.metadata.version('executorch')}",
     ]
     # The same bound as the python_version marker on the openvino extra.
+    subprocess.run(install, check=True)
+    importlib.invalidate_caches()
     if sys.version_info >= (3, 15):
-        subprocess.run(install, check=True)
-        importlib.invalidate_caches()
         assert (
             importlib.util.find_spec("openvino") is None
         ), "the openvino extra installed a runtime on a Python its marker leaves out"
