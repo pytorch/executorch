@@ -15,3 +15,21 @@ def define_common_targets():
             "//pytorch/ao:torchao",
         ],
     )
+
+    runtime.python_test(
+        name = "test_colorer",
+        srcs = ["test_colorer.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/test:program_builder",
+            "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
+            "//executorch/backends/transforms/fused_quant:to_channels_first",
+            "//executorch/backends/transforms/fused_quant/test:test_helpers",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:partitioner",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects/fused_quant:ops",
+            "//executorch/frontends/fused_quant:colorer",
+        ],
+    )
