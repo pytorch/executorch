@@ -60,14 +60,12 @@ class InitialBatchGate final : public batching::Scheduler {
 
   bool has_work() const override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return released_ && inner_->has_work();
+    return inner_->has_work() && gate_open_();
   }
 
   std::vector<batching::Task> get_work() override {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!released_ ||
-        (first_batch_dispatched_ && !decode_gate_.empty() &&
-         !std::ifstream(decode_gate_).good())) {
+    if (!gate_open_()) {
       return {};
     }
     auto tasks = inner_->get_work();
@@ -92,6 +90,12 @@ class InitialBatchGate final : public batching::Scheduler {
   }
 
  private:
+  bool gate_open_() const {
+    return released_ &&
+        (!first_batch_dispatched_ || decode_gate_.empty() ||
+         std::ifstream(decode_gate_).good());
+  }
+
   std::unique_ptr<batching::DecodeFirstScheduler> inner_;
   mutable std::mutex mutex_;
   std::set<batching::SessionId> queued_;
