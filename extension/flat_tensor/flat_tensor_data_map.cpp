@@ -64,17 +64,17 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
   }
   for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
     const auto* entry = named_data->Get(i);
-    if (entry == nullptr || entry->key() == nullptr) {
-      continue;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        entry != nullptr && entry->key() != nullptr,
+        InvalidExternalData,
+        "Named data entry or key at index %" PRIu32
+        " is null. Malformed PTD file.",
+        i);
     if (key.size() == entry->key()->size() &&
-        std::strncmp(
-            entry->key()->c_str(),
-            key.data(),
-            entry->key()->size()) == 0) {
-      const auto* found = entry;
+        std::strncmp(entry->key()->c_str(), key.data(), entry->key()->size()) ==
+            0) {
       // Validate the named_data.
-      const flatbuffers::uoffset_t segment_index = found->segment_index();
+      const flatbuffers::uoffset_t segment_index = entry->segment_index();
       ET_CHECK_OR_RETURN_ERROR(
           segment_index < segments->size(),
           InvalidExternalData,
@@ -98,7 +98,7 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
           segments->Get(segment_index)->offset(),
           segments->Get(segment_index)->size(),
           segment_data_size);
-      return found;
+      return entry;
     }
   }
   return Error::NotFound;
@@ -253,35 +253,24 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
 }
 
 ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
-  if (flat_tensor_ == nullptr || flat_tensor_->named_data() == nullptr) {
-    return 0;
-  }
   return flat_tensor_->named_data()->size();
 }
 
 ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
     uint32_t index) const {
-  Result<uint32_t> num_keys_res = get_num_keys();
-  if (!num_keys_res.ok()) {
-    return num_keys_res.error();
-  }
-  uint32_t num_keys = num_keys_res.get();
+  const auto* named_data = flat_tensor_->named_data();
   ET_CHECK_OR_RETURN_ERROR(
-      index < num_keys,
+      index < named_data->size(),
       InvalidArgument,
       "Index %" PRIu32 " out of range of size %" PRIu32,
       index,
-      num_keys);
-  const auto* named_data = flat_tensor_->named_data();
-  ET_CHECK_OR_RETURN_ERROR(
-      named_data != nullptr,
-      InvalidExternalData,
-      "Named data is null");
+      named_data->size());
   const auto* entry = named_data->Get(index);
   ET_CHECK_OR_RETURN_ERROR(
       entry != nullptr && entry->key() != nullptr,
       InvalidExternalData,
-      "Named data entry or key at index %u is null",
+      "Named data entry or key at index %" PRIu32
+      " is null. Malformed PTD file.",
       index);
   return entry->key()->c_str();
 }

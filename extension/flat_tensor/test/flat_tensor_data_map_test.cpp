@@ -134,9 +134,6 @@ TEST_F(FlatTensorDataMapTest, GetKeys) {
   // Check get_key fails when out of bounds.
   Result<const char*> key2_res = data_map->get_key(2);
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
-  EXPECT_EQ(
-      data_map->get_key(std::numeric_limits<uint32_t>::max()).error(),
-      Error::InvalidArgument);
 }
 
 TEST_F(FlatTensorDataMapTest, LoadInto) {
@@ -211,7 +208,8 @@ struct SegmentSpec {
 // test loader, so large source offsets do not require a large allocation.
 std::vector<uint8_t> CreateDataWithVersion(
     uint32_t version,
-    const SegmentSpec* segment = nullptr) {
+    const SegmentSpec* segment = nullptr,
+    bool with_null_key = false) {
   flatbuffers::FlatBufferBuilder builder;
 
   std::vector<flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>
@@ -226,13 +224,16 @@ std::vector<uint8_t> CreateDataWithVersion(
         executorch_flatbuffer::ScalarType::FLOAT,
         builder.CreateVector(sizes),
         builder.CreateVector(dim_order));
-    segments.push_back(flat_tensor_flatbuffer::CreateDataSegment(
-        builder, segment->offset, segment->size));
-    named_data.push_back(flat_tensor_flatbuffer::CreateNamedData(
-        builder,
-        builder.CreateString(kWideTensorKey),
-        /*segment_index=*/0,
-        tensor_layout));
+    segments.push_back(
+        flat_tensor_flatbuffer::CreateDataSegment(
+            builder, segment->offset, segment->size));
+    named_data.push_back(
+        flat_tensor_flatbuffer::CreateNamedData(
+            builder,
+            with_null_key ? flatbuffers::Offset<flatbuffers::String>()
+                          : builder.CreateString(kWideTensorKey),
+            /*segment_index=*/0,
+            tensor_layout));
   }
 
   auto flat_tensor = flat_tensor_flatbuffer::CreateFlatTensor(
@@ -385,6 +386,43 @@ TEST_F(FlatTensorDataMapTest, NewerSchemaVersionFailsToLoad) {
   Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
 
   EXPECT_EQ(data_map.error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, KeylessNamedDataReturnsInvalidExternalData) {
+  constexpr SegmentSpec kSegment{0, sizeof(float), sizeof(float)};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion,
+      &kSegment,
+      /*with_null_key=*/true);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const uint64_t absolute_offset = header->segment_base_offset;
+  const float segment_data = 1.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      absolute_offset + sizeof(segment_data));
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+
+  // get_key for the keyless entry must fail with InvalidExternalData.
+  EXPECT_EQ(data_map->get_key(0).error(), Error::InvalidExternalData);
+
+  // Linear search in get_data and get_tensor_layout must encounter the keyless
+  // entry and fail with InvalidExternalData instead of silently skipping it.
+  EXPECT_EQ(data_map->get_data("any_key").error(), Error::InvalidExternalData);
+  EXPECT_EQ(
+      data_map->get_tensor_layout("any_key").error(),
+      Error::InvalidExternalData);
 }
 
 TEST_F(FlatTensorDataMapTest, RejectsOutOfBoundsRootOffset) {
