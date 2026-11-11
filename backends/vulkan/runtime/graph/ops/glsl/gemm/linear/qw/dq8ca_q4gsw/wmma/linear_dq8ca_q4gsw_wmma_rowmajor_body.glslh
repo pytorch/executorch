@@ -207,7 +207,7 @@ void main() {
     const uint m4 = min(
         (tile_m_start >> 2u) + gl_LocalInvocationID.x, (M_rows + 3u) / 4u - 1u);
     const vec4  sc = vec4(texelFetch(t_int8_input_scales, ivec3(m4, 0, 0), 0));
-    const ivec4 zp = texelFetch(t_int8_input_zps,         ivec3(m4, 0, 0), 0);
+    const ivec4 zp = ivec4(texelFetch(t_int8_input_zps,   ivec3(m4, 0, 0), 0));
     const uint base = gl_LocalInvocationID.x * 4u;
     ifs_sh[base + 0u] = sc.x;  ifs_sh[base + 1u] = sc.y;
     ifs_sh[base + 2u] = sc.z;  ifs_sh[base + 3u] = sc.w;

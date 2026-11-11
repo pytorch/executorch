@@ -25,6 +25,14 @@ linear_dq8ca_q4gsw_wmma_rowmajor:
     SG_GRID_X: 2
     SG_GRID_Y: 4
     SUBGROUP_SIZE: 32
+    ZP_DTYPE_MODE: zpint8
+  # Zero-point binding: int8 image (zpint8) or the float dtype of the scales
+  # (zpinherit), selected from the zero-point tensor's dtype as for
+  # linear_dq8ca_q4gsw_tiled.
+  generate_variant_forall:
+    ZP_DTYPE_MODE:
+      - VALUE: zpint8
+      - VALUE: zpinherit
   shader_variants:
     # NVIDIA: subgroup 32, int8 MMA 16x16x32.
     - NAME: linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half

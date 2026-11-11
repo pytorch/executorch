@@ -69,7 +69,7 @@ layout(std430, set = 0, binding = 2) buffer restrict readonly t_packed_int8_inpu
 };
 ${layout_declare_tensor(B, "r", "t_int8_input_sums",     "int",  "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_int8_input_scales",   "half", "texture3d")}
-${layout_declare_tensor(B, "r", "t_int8_input_zps",      "int8", "texture3d")}
+${layout_declare_tensor(B, "r", "t_int8_input_zps",      "int8" if ZP_DTYPE_MODE == "zpint8" else "half", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_packed_weight",       "int",  WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_sums",         "int",  "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_weight_scales",       "half", "buffer", is_scalar_array=False)}

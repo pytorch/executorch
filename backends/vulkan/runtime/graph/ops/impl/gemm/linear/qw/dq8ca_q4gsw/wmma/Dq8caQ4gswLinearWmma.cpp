@@ -116,18 +116,15 @@ vkapi::ShaderInfo pick_dq8ca_q4gsw_linear_wmma_shader(
   std::string kernel_name;
   if (choice.has_value()) {
     kernel_name = choice->kernel_base;
-    add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
-    add_storage_type_suffix(kernel_name, graph->storage_type_of(packed_weight));
-    add_dtype_suffix(kernel_name, graph->dtype_of(output));
   } else {
     // The kernels for the 4h4w layout (as in pick_linear_dqa_qw_shader).
     kernel_name = "linear_dq8ca_q4gsw";
     kernel_name += is_gemv(graph, fp_input) ? "_coop" : "_tiled";
-    add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
-    add_storage_type_suffix(kernel_name, graph->storage_type_of(packed_weight));
-    add_dtype_suffix(kernel_name, graph->dtype_of(output));
-    add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zp));
   }
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(packed_weight));
+  add_dtype_suffix(kernel_name, graph->dtype_of(output));
+  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zp));
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
