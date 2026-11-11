@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -17,11 +18,23 @@
 namespace ptn::ggml_detail {
 namespace {
 
-constexpr std::string_view kQ4KCodec = "gguf:q4_k";
-constexpr std::string_view kQ6KCodec = "gguf:q6_k";
+struct KQuantCodec {
+  std::string_view name;
+  ggml_type type;
+  size_t block_bytes;
+};
+constexpr KQuantCodec kKQuantCodecs[] = {
+    {"gguf:q4_k", GGML_TYPE_Q4_K, 144},
+    {"gguf:q5_k", GGML_TYPE_Q5_K, 176},
+    {"gguf:q6_k", GGML_TYPE_Q6_K, 210},
+};
 constexpr int64_t kKQuantBlockElements = 256;
-constexpr size_t kQ4KBlockBytes = 144;
-constexpr size_t kQ6KBlockBytes = 210;
+
+const KQuantCodec* kquant_codec(std::string_view name) {
+  const auto found = std::ranges::find(kKQuantCodecs, name, &KQuantCodec::name);
+  return found == std::end(kKQuantCodecs) ? nullptr : found;
+}
+
 constexpr size_t kQ40BlockElements = 32;
 
 struct BlockQ40 {
@@ -62,11 +75,12 @@ const PackedQuant* packed_quant(const TensorMeta& meta) {
 
 size_t packed_nbytes(const TensorMeta& meta) {
   const PackedQuant* packed = packed_quant(meta);
-  if (packed == nullptr ||
-      (packed->codec != kQ4KCodec && packed->codec != kQ6KCodec)) {
+  const KQuantCodec* codec =
+      packed == nullptr ? nullptr : kquant_codec(packed->codec);
+  if (codec == nullptr) {
     throw std::runtime_error(
-        "ggml: only PackedQuant codecs 'gguf:q4_k' and 'gguf:q6_k' "
-        "are supported");
+        "ggml: only PackedQuant codecs 'gguf:q4_k', 'gguf:q5_k' and "
+        "'gguf:q6_k' are supported");
   }
   if (meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
       meta.sizes[1] % kKQuantBlockElements != 0) {
@@ -74,12 +88,9 @@ size_t packed_nbytes(const TensorMeta& meta) {
         "ggml: K-quant weight must have logical shape [O, I] with I divisible "
         "by 256");
   }
-  const ggml_type type =
-      packed->codec == kQ4KCodec ? GGML_TYPE_Q4_K : GGML_TYPE_Q6_K;
-  const size_t block_bytes =
-      packed->codec == kQ4KCodec ? kQ4KBlockBytes : kQ6KBlockBytes;
-  if (ggml_type_size(type) != block_bytes ||
-      ggml_blck_size(type) != kKQuantBlockElements) {
+  const size_t block_bytes = codec->block_bytes;
+  if (ggml_type_size(codec->type) != block_bytes ||
+      ggml_blck_size(codec->type) != kKQuantBlockElements) {
     throw std::runtime_error("ggml: unexpected GGUF K-quant block layout");
   }
   const size_t rows = static_cast<size_t>(meta.sizes[0]);
@@ -187,15 +198,7 @@ static ggml_type to_ggml_type(const TensorMeta& meta) {
   }
   if (packed_quant(meta) != nullptr) {
     packed_nbytes(meta);
-    if (packed_quant(meta)->codec == kQ4KCodec) {
-      return GGML_TYPE_Q4_K;
-    }
-    if (packed_quant(meta)->codec == kQ6KCodec) {
-      return GGML_TYPE_Q6_K;
-    }
-    throw std::runtime_error(
-        "ggml: unsupported PackedQuant codec '" + packed_quant(meta)->codec +
-        "'");
+    return kquant_codec(packed_quant(meta)->codec)->type;
   }
   switch (meta.dtype) {
     case ScalarType::Float:

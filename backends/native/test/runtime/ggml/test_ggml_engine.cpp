@@ -83,13 +83,14 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 
 constexpr size_t kQ4KBlockBytes = 144;
 
-// A [1, 256] x [256] linear with gguf:q4_k weights, or with symmetric int4
-// AffineGroup weights whose fp16 scales `weight_scale` cover groups of 32.
-// `cache` is an unused mutable buffer.
+// A [1, 256] x [256] linear with `codec` packed weights, or with symmetric
+// int4 AffineGroup weights whose fp16 scales `weight_scale` cover groups of
+// 32. `cache` is an unused mutable buffer.
 std::vector<uint8_t> make_linear_program(
     const char* target = "torch.ops.aten.linear.default",
     bool with_cache = false,
-    bool affine = false) {
+    bool affine = false,
+    const char* codec = "gguf:q4_k") {
   flatbuffers::FlatBufferBuilder builder;
   const auto quant = affine
       ? fbs::CreateQuantSpec(
@@ -101,7 +102,7 @@ std::vector<uint8_t> make_linear_program(
       : fbs::CreateQuantSpec(
             builder,
             fbs::QuantScheme::PackedQuant,
-            fbs::CreatePackedQuantDirect(builder, "gguf:q4_k").Union());
+            fbs::CreatePackedQuantDirect(builder, codec).Union());
   const auto input_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 256});
   const auto weight_meta =
@@ -234,20 +235,28 @@ std::vector<uint8_t> make_linear_program(
       builder.GetBufferPointer() + builder.GetSize()};
 }
 
-std::unique_ptr<GgmlEngineContext> make_context(
+// One K-quant super-block of `block_bytes`: the 16-byte header block_q4_K
+// and block_q5_K share (d = 1.0, dmin = 0, every sub-block scale 1 and min 0),
+// then `high_bits` bytes of fifth bits, then nibbles 1 (low) / 2 (high).
+std::vector<uint8_t> kquant_block(size_t block_bytes, uint8_t high_bits = 0) {
+  std::vector<uint8_t> block(block_bytes, 0x21);
+  std::fill_n(block.begin(), 16, uint8_t{0});
+  block[1] = 0x3C;
+  std::fill_n(block.begin() + 4, 4, uint8_t{1});
+  std::fill_n(block.begin() + 12, 4, uint8_t{1});
+  std::fill(block.begin() + 16, block.end() - 128, high_bits);
+  return block;
+}
+
+std::unique_ptr<GgmlEngineContext> make_context_with_weight(
     GgmlEngineHost& host,
     const std::vector<uint8_t>& program_bytes,
+    const std::vector<uint8_t>& packed_weight,
     const EngineOptions& options = {}) {
-  // One block_q4_K: d = 1.0 (fp16), dmin = 0, every sub-block scale 1 and
-  // min 0, and nibbles 1 (low) / 2 (high), so half the weights are 1 and
-  // half are 2.
-  std::vector<uint8_t> packed_weight(kQ4KBlockBytes, 0x21);
-  std::fill_n(packed_weight.begin(), 16, uint8_t{0});
-  packed_weight[1] = 0x3C;
-  std::fill_n(packed_weight.begin() + 4, 4, uint8_t{1});
-  std::fill_n(packed_weight.begin() + 12, 4, uint8_t{1});
+  const std::string size = std::to_string(packed_weight.size());
   std::vector<uint8_t> safetensors = testing::make_safetensors(
-      R"({"weight":{"dtype":"U8","shape":[144],"data_offsets":[0,144]}})",
+      R"({"weight":{"dtype":"U8","shape":[)" + size +
+          R"(],"data_offsets":[0,)" + size + "]}}",
       packed_weight.size());
   std::copy(
       packed_weight.begin(),
@@ -262,6 +271,15 @@ std::unique_ptr<GgmlEngineContext> make_context(
       Program::load(program_bytes.data(), program_bytes.size()));
   return host.create_ggml_context(
       std::move(program), std::move(package), options);
+}
+
+// Half the weights are 1 and half are 2.
+std::unique_ptr<GgmlEngineContext> make_context(
+    GgmlEngineHost& host,
+    const std::vector<uint8_t>& program_bytes,
+    const EngineOptions& options = {}) {
+  return make_context_with_weight(
+      host, program_bytes, kquant_block(kQ4KBlockBytes), options);
 }
 
 // A tensor (by name), an int, a float, an int list, or None.
@@ -490,6 +508,26 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
   float output = 0.0f;
   executable->get_output(0, &output, 1, ScalarType::Float);
   EXPECT_NEAR(output, 128.0f * 1.0f + 128.0f * 2.0f, 1e-2f);
+}
+
+// Every fifth bit set adds 16 to each weight, so the dot product with ones is
+// 128 * (1 + 16) + 128 * (2 + 16).
+TEST(GgmlEngineTest, ExecutesPackedQ5KLinear) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context_with_weight(
+      *host,
+      make_linear_program(
+          "torch.ops.aten.linear.default", false, false, "gguf:q5_k"),
+      kquant_block(176, 0xFF));
+  auto executable = context->compile("forward");
+
+  EXPECT_EQ(context->materialized_constant_bytes(), 176);
+  const std::vector<float> input(256, 1.0f);
+  executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+  executable->execute();
+  float output = 0.0f;
+  executable->get_output(0, &output, 1, ScalarType::Float);
+  EXPECT_NEAR(output, 128.0f * 17.0f + 128.0f * 18.0f, 1e-1f);
 }
 
 TEST(GgmlEngineTest, RepeatedExecutionsReadFreshInputs) {
