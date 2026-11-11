@@ -74,8 +74,9 @@ class StagingBuffer final {
   }
 
   inline void* data() {
-    VK_CHECK_COND(!external_, "an external staging buffer has no host mapping");
     if (!mapped_data_) {
+      VK_CHECK_COND(
+          !external_, "an external staging buffer has no host mapping");
       mapped_data_ = vulkan_buffer_.allocation_info().pMappedData;
     }
     return mapped_data_;

@@ -289,18 +289,19 @@ class GraphBuilder {
   TensorProperties get_tensor_properties(
       const uint32_t fb_id,
       VkTensorPtr tensor_fb) {
-    UIntVector dims_fb = tensor_fb->dims();
-    std::vector<int64_t> sizes(dims_fb->cbegin(), dims_fb->cend());
-    const utils::GPUMemoryLayout memory_layout =
-        get_resolved_memory_layout(fb_id, tensor_fb, sizes);
-    return {
-        get_scalar_type(tensor_fb->datatype()),
+    TensorProperties props{};
+    props.dtype = get_scalar_type(tensor_fb->datatype());
+    props.storage_type =
         tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
-            ? compute_graph_->suggested_storage_type()
-            : get_storage_type(tensor_fb->storage_type()),
-        std::move(sizes),
-        memory_layout,
-    };
+        ? compute_graph_->suggested_storage_type()
+        : get_storage_type(tensor_fb->storage_type());
+
+    UIntVector dims_fb = tensor_fb->dims();
+    props.sizes.assign(dims_fb->cbegin(), dims_fb->cend());
+
+    props.memory_layout =
+        get_resolved_memory_layout(fb_id, tensor_fb, props.sizes);
+    return props;
   }
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
@@ -579,15 +580,30 @@ class GraphBuilder {
     return Error::Ok;
   }
 
-  // Stages input or output `ref` in the resource of its staging binding.
-  Error set_external_staging(
+  // Sets input or output `ref` over the resource of its binding: as the tensor
+  // itself, or as its staging buffer.
+  Error set_external_io(
       const ValueRef ref,
       const uint32_t fb_id,
       const ExternalIOBinding& binding) {
+    const bool is_input = binding.slot == SlotType::Input;
+    if (binding.target == ExternalIOTarget::Tensor) {
+      if (is_input) {
+        compute_graph_->set_input_tensor(ref, /*use_staging=*/false);
+      } else {
+        compute_graph_->set_output_tensor(ref, /*use_staging=*/false);
+      }
+      return Error::Ok;
+    }
+#ifdef ET_EVENT_TRACER_ENABLED
+    if (!is_input) {
+      get_current_operator_count(true);
+    }
+#endif // ET_EVENT_TRACER_ENABLED
     try {
       vkapi::VulkanBuffer buffer = external_buffer(binding.resource);
       const vkapi::ScalarType staging_dtype = get_staging_scalar_type_of(fb_id);
-      if (binding.slot == SlotType::Input) {
+      if (is_input) {
         compute_graph_->set_input_tensor(ref, staging_dtype, std::move(buffer));
       } else {
         compute_graph_->set_output_tensor(
@@ -609,16 +625,23 @@ class GraphBuilder {
     // Resize the mapping to the number of values in the flatbuffer
     resize(flatbuffer_->values()->size());
 
-    ET_CHECK_OK_OR_RETURN_ERROR(map_external_io(external_io));
+    // The external I/O state is only filled, and read, if the method requested
+    // external I/O.
+    const bool has_external_io = !external_io.empty();
+    if (has_external_io) {
+      ET_CHECK_OK_OR_RETURN_ERROR(map_external_io(external_io));
+    }
 
     // First, add all values to the graph. A tensor-backed input or output
     // wraps its resource instead of allocating memory.
     for (uint32_t fb_id = 0; fb_id < flatbuffer_->values()->size(); ++fb_id) {
-      const auto binding = tensor_bindings_.find(fb_id);
-      if (binding != tensor_bindings_.end()) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            add_external_tensor(fb_id, *binding->second));
-        continue;
+      if (has_external_io) {
+        const auto binding = tensor_bindings_.find(fb_id);
+        if (binding != tensor_bindings_.end()) {
+          ET_CHECK_OK_OR_RETURN_ERROR(
+              add_external_tensor(fb_id, *binding->second));
+          continue;
+        }
       }
       VkValuePtr value = flatbuffer_->values()->Get(fb_id);
       add_value_to_graph(fb_id, value);
@@ -630,11 +653,9 @@ class GraphBuilder {
     for (uint32_t i = 0; i < flatbuffer_->input_ids()->size(); ++i) {
       const uint32_t fb_id = flatbuffer_->input_ids()->Get(i);
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      const ExternalIOBinding* const binding = input_bindings_[i];
-      if (binding != nullptr && binding->target == ExternalIOTarget::Tensor) {
-        compute_graph_->set_input_tensor(ref, /*use_staging=*/false);
-      } else if (binding != nullptr) {
-        ET_CHECK_OK_OR_RETURN_ERROR(set_external_staging(ref, fb_id, *binding));
+      if (has_external_io && input_bindings_[i] != nullptr) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            set_external_io(ref, fb_id, *input_bindings_[i]));
       } else if (compute_graph_->val_is_tensor(ref)) {
         compute_graph_->set_input_tensor(
             ref, get_staging_scalar_type_of(fb_id));
@@ -670,20 +691,15 @@ class GraphBuilder {
     for (uint32_t i = 0; i < flatbuffer_->output_ids()->size(); ++i) {
       const uint32_t fb_id = flatbuffer_->output_ids()->Get(i);
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      const ExternalIOBinding* const binding = output_bindings_[i];
-      if (binding != nullptr && binding->target == ExternalIOTarget::Tensor) {
-        compute_graph_->set_output_tensor(ref, /*use_staging=*/false);
+      if (has_external_io && output_bindings_[i] != nullptr) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            set_external_io(ref, fb_id, *output_bindings_[i]));
       } else if (compute_graph_->val_is_tensor(ref)) {
 #ifdef ET_EVENT_TRACER_ENABLED
         get_current_operator_count(true);
 #endif // ET_EVENT_TRACER_ENABLED
-        if (binding != nullptr) {
-          ET_CHECK_OK_OR_RETURN_ERROR(
-              set_external_staging(ref, fb_id, *binding));
-        } else {
-          compute_graph_->set_output_tensor(
-              ref, get_staging_scalar_type_of(fb_id));
-        }
+        compute_graph_->set_output_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
       } else {
         compute_graph_->set_output_value(ref);
       }
@@ -793,6 +809,7 @@ struct VulkanDelegateHandle final {
   std::shared_ptr<vkapi::Adapter> shared_adapter;
   // Storage belongs to the runtime arena.
   ComputeGraph* compute_graph = nullptr;
+  bool claimed_external_io = false;
 
   ~VulkanDelegateHandle() {
     if (compute_graph) {
@@ -800,7 +817,9 @@ struct VulkanDelegateHandle final {
     }
     // Only now that the graph no longer uses the resources of an external I/O
     // set bound to this handle may the app unregister and destroy them.
-    release_external_io(this);
+    if (claimed_external_io) {
+      release_external_io(this);
+    }
     // shared_adapter is released only after graph/context resources.
   }
 };
@@ -941,6 +960,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         if (!claimed.ok()) {
           return claimed.error();
         }
+        handle->claimed_external_io = true;
         external_io = std::move(claimed.get());
       } else if (external_io_name.error() != Error::NotFound) {
         ET_LOG(

@@ -1,0 +1,2 @@
+CONFIG_ET_CONSUMER_MODEL="smoke;mul;wakeword;delegate"
+CONFIG_ET_ENABLE_LOGGING=n
