@@ -6,8 +6,11 @@
 
 # The idf_component_smoke consumer, but with executorch resolved by the
 # component manager, the way a project using the published component gets it.
-# Pass the version to resolve as ET_COMPONENT_VERSION and the smoke project's
-# ET_SMOKE_* variables. Used by .ci/scripts/test_espressif_idf_consumer.sh.
+# Pass the version to resolve as ET_COMPONENT_VERSION, and either the smoke
+# project's ET_SMOKE_* variables, as .ci/scripts/test_espressif_idf_consumer.sh
+# does, or ET_CONSUMER_MODELS_DIR, from which CONFIG_ET_CONSUMER_MODEL (set by
+# the sdkconfig.ci.* configurations) picks the models, as
+# .ci/scripts/test_espressif_idf_nightly.sh does.
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -20,10 +23,5 @@ file(CONFIGURE OUTPUT "${CMAKE_CURRENT_LIST_DIR}/main/idf_component.yml"
      CONTENT
      "dependencies:\n  pytorch/executorch: \"==${ET_COMPONENT_VERSION}\"\n"
 )
-if(NOT SDKCONFIG_DEFAULTS)
-  set(SDKCONFIG_DEFAULTS
-      "${CMAKE_CURRENT_LIST_DIR}/../idf_component_smoke/sdkconfig.defaults"
-  )
-endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(et_component_smoke)

@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
+import importlib.util
 import os
 import platform
 import re
@@ -22,6 +23,25 @@ SUPPORTED_CUDA_VERSIONS = (
     (13, 2),
     (13, 4),
 )
+
+
+def ensure_pip() -> None:
+    """Bootstrap pip with uv when it is missing from the running Python."""
+    if importlib.util.find_spec("pip") is not None:
+        return
+
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError(
+            "Neither pip nor uv is available. "
+            f'Install pip with "{sys.executable} -m ensurepip --upgrade", '
+            "or install uv and ensure it is on PATH: "
+            "https://docs.astral.sh/uv/getting-started/installation/"
+        )
+
+    subprocess.run(
+        [uv, "pip", "install", "--python", sys.executable, "pip"], check=True
+    )
 
 
 def is_cmake_option_on(
