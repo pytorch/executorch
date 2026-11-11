@@ -375,12 +375,12 @@ void add_q8ta_conv2d_pw_node(
   // addressing is selected by spec constant, so both share one shader.
   const uint32_t use_flat_tile = is_im2col ? 1u : 0u;
 
-  const bool use_hw_dot =
-      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
+  const bool use_hw_dot = adapter->accelerates_signed_packed4x8_dot();
   std::string kernel_name;
   if (use_unsigned_dot) {
     VK_CHECK_COND(
-        use_hw_dot,
+        adapter->supports_int8_dot_product(),
         "Unsigned q8ta pointwise convolution requires integer dot product");
     kernel_name = "q8ta_conv2d_pw_unsigned";
     if (graph.storage_type_of(packed_weight) == utils::kBuffer) {
