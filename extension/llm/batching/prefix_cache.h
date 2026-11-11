@@ -33,6 +33,7 @@ namespace batching {
 struct ET_EXPERIMENTAL PrefixMatch {
   Session session;
   std::size_t matched_tokens;
+  std::uint64_t cache_entry_id = 0;
 };
 
 struct ET_EXPERIMENTAL PrefixCheckpoint {
@@ -70,6 +71,11 @@ class ET_EXPERIMENTAL PrefixCache {
   using EntryView = PrefixCacheEntryView;
   using Entries = PrefixCacheEntries;
   using RetentionPolicy = PrefixCacheRetentionPolicy;
+  enum class MatchDecision { Use, Skip, Stop };
+  struct FindResult {
+    std::optional<PrefixMatch> match;
+    bool stopped = false;
+  };
 
   // Best-effort capture; callbacks retain state independently of this handle.
   class PromptCapture {
@@ -327,8 +333,8 @@ class ET_EXPERIMENTAL PrefixCache {
         }
         victim = std::prev(entries_.end(), entries_.size() - *index);
       }
-      entries_.push_front(
-          Entry{tokens, std::move(snapshot), std::move(metadata)});
+      entries_.push_front(Entry{
+          tokens, std::move(snapshot), std::move(metadata), next_entry_id_++});
       if (victim != entries_.end()) {
         entries_.erase(victim);
       }
@@ -347,8 +353,29 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
+    auto result = find_identity(request);
+    if (result.match) {
+      touch(*result.match);
+    }
+    return std::move(result.match);
+  }
+
+  // Select candidates before cloning, without refreshing recency. Call
+  // touch() after adopting the match. The selector must not mutate this cache.
+  // Matched lengths are capped at request.size() - 1 and must lie in
+  // (longer_than, at_most]: the lower bound is exclusive, the upper inclusive.
+  // Candidates arrive in descending length order, with repeated lengths
+  // allowed. Use attempts a clone and continues if refused; Skip tries the next
+  // candidate without cloning. Stop returns stopped=true, distinct from an
+  // exhausted search. Allocation failure
+  // ends the search as a miss; other exceptions propagate.
+  FindResult find_identity(
+      const PrefixIdentity& request,
+      std::size_t longer_than = 0,
+      std::size_t at_most = std::numeric_limits<std::size_t>::max(),
+      const std::function<MatchDecision(std::size_t)>& select = {}) {
     if (request.size() < 2 || entries_.empty()) {
-      return std::nullopt;
+      return {};
     }
 #if ET_HAS_EXCEPTIONS
     try {
@@ -364,7 +391,7 @@ class ET_EXPERIMENTAL PrefixCache {
       for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
         const auto matched =
             std::min(common_prefix(it->tokens, request), request.size() - 1);
-        if (matched > 0) {
+        if (matched > longer_than && matched <= at_most) {
           candidates.push_back(Candidate{it, matched, rank});
         }
       }
@@ -376,21 +403,41 @@ class ET_EXPERIMENTAL PrefixCache {
                                           : a.rank < b.rank;
           });
       for (const auto& candidate : candidates) {
+        if (select) {
+          const auto decision = select(candidate.matched);
+          if (decision == MatchDecision::Stop) {
+            return {std::nullopt, true};
+          }
+          if (decision == MatchDecision::Skip) {
+            continue;
+          }
+        }
         auto session =
             candidate.entry->snapshot
                 .clone_async(static_cast<Position>(candidate.matched))
                 .get();
-        if (session) {
-          entries_.splice(entries_.begin(), entries_, candidate.entry);
-          return PrefixMatch{std::move(*session), candidate.matched};
+        if (!session) {
+          continue;
         }
+        return {PrefixMatch{
+            std::move(*session), candidate.matched, candidate.entry->id}};
       }
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
-      return std::nullopt;
+      return {};
     }
 #endif
-    return std::nullopt;
+    return {};
+  }
+
+  // Refresh only a match from this cache; eviction invalidates its entry ID.
+  void touch(const PrefixMatch& match) {
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+      if (it->id == match.cache_entry_id) {
+        entries_.splice(entries_.begin(), entries_, it);
+        return;
+      }
+    }
   }
 
   // Session destruction queues closes. Runner::shutdown() is the completion
@@ -423,11 +470,13 @@ class ET_EXPERIMENTAL PrefixCache {
     PrefixIdentity tokens;
     Session snapshot;
     CheckpointMetadata metadata;
+    std::uint64_t id;
   };
 
   const std::size_t max_entries_;
   RetentionPolicy retention_policy_;
   std::list<Entry> entries_; // most recently used first
+  std::uint64_t next_entry_id_ = 1;
 };
 
 } // namespace batching

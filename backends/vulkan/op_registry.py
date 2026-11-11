@@ -2304,4 +2304,6 @@ def get_op_features(target: Any) -> OpFeatures:
 
 
 def handles_own_prepacking(target: OpKey) -> bool:
-    return get_op_features(target).supports_prepacking
+    # Ops without a Vulkan registration (e.g. ones only a backend's
+    # op_features_overrides delegates) read constants through prepack nodes.
+    return has_impl(target) and get_op_features(target).supports_prepacking

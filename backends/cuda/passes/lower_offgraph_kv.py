@@ -14,6 +14,9 @@ import torch
 # Imported for its registration side effect: the decomposition calls
 # torch.ops.triton.sdpa, which only exists once this module has been loaded.
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa  # noqa: F401
+from executorch.backends.cuda.triton.kernels.sdpa_varlen import (  # noqa: F401
+    sdpa_varlen,
+)
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
@@ -34,6 +37,26 @@ OFFGRAPH_KV_FQN_PREFIX = "__et_offgraph_kv_"
 # may keep.
 OFFGRAPH_KV_CELLS_FQN = OFFGRAPH_KV_FQN_PREFIX + "cells"
 OFFGRAPH_KV_READ_LEN_FQN = OFFGRAPH_KV_FQN_PREFIX + "read_len"
+
+
+# Batched-sequence layout: each sequence keeps its own column of every layer's
+# storage, and the runtime cache writes which column each token belongs to
+# (seq_cols) and each run of one sequence's query rows (seq_info) before each
+# forward. Declared once per program at a fixed shape, like the cell buffers.
+OFFGRAPH_KV_SEQ_COLS_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_cols"
+OFFGRAPH_KV_SEQ_INFO_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_info"
+
+# Layouts whose step packs tokens of several sequences on one axis.
+PACKED_LAYOUTS = ("cell", "batched-sequence")
+
+
+def batched_sequence_max_segments(max_seqs: int) -> int:
+    """Rows of seq_info: one per run of a sequence's query rows in a step.
+
+    Same rule as batched_sequence_max_segments() in
+    backends/cuda/runtime/cuda_kv_cache.h, which checks steps against it.
+    """
+    return 2 * max_seqs
 
 
 def offgraph_kv_mask_fqn(window: int) -> str:
@@ -70,8 +93,25 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     if not isinstance(max_write, int) or max_write <= 0:
         raise ValueError("off-graph max_write must be positive")
     layout = manifest.setdefault("layout", "sequence")
-    if layout not in ("sequence", "cell"):
+    if layout not in ("sequence", *PACKED_LAYOUTS):
         raise ValueError(f"invalid off-graph KV layout {layout!r}")
+    if layout == "batched-sequence":
+        for key in ("max_seqs", "max_segments"):
+            if not isinstance(manifest.get(key), int) or manifest[key] <= 0:
+                raise ValueError(f"off-graph batched-sequence layout needs {key} > 0")
+        if manifest["max_segments"] != batched_sequence_max_segments(
+            manifest["max_seqs"]
+        ):
+            raise ValueError(
+                "off-graph batched-sequence max_segments must equal "
+                "batched_sequence_max_segments(max_seqs)"
+            )
+        if not isinstance(manifest.setdefault("causal", True), bool):
+            raise ValueError("off-graph causal must be a bool")
+        if not isinstance(manifest.setdefault("context_window", False), bool):
+            raise ValueError("off-graph context_window must be a bool")
+        if manifest["context_window"] and manifest["causal"]:
+            raise ValueError("off-graph context_window requires non-causal attention")
     if layout == "cell":
         # A cell step packs tokens of several sequences into the shared pool,
         # so the pool bounds its width, not one sequence's capacity.
@@ -240,6 +280,92 @@ def cell_step(
     return out
 
 
+def batched_sequence_step(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    position: torch.Tensor,
+    k_storage: torch.Tensor,
+    v_storage: torch.Tensor,
+    seq_cols: torch.Tensor,
+    seq_info: torch.Tensor,
+    scale: float,
+    rows: int,
+    columns: int,
+    window: int,
+    ring: bool,
+    causal: bool,
+    out_dtype: torch.dtype | None = None,
+    context_window: bool = False,
+) -> torch.Tensor:
+    """Write this step's K/V into each sequence's column, then attend.
+
+    The storage is declared ``[1, rows * columns, H, D]``: row ``r`` of
+    column ``c`` is slot ``r * columns + c``, so it is ``[rows, columns, H, D]``
+    and grows by whole rows, as the sequence layout's does. Token ``i`` lands
+    in column ``seq_cols[i]`` at row ``position % rows`` (a ring layer's rows
+    wrap; a flat layer's never do). ``seq_info`` names each segment's query
+    rows and length, so every query reads only its own column.
+
+    ``seq_cols`` is declared at the widest step; writes use the first
+    K/V-width entries. ``k``/``v`` are BHSD; the storage is BSHD.
+    ``context_window`` gives every draft block query the same retained context
+    before the block; ordinary attention uses each query's own window.
+    """
+    position = position.reshape(-1)
+    slots = (position % rows) * columns + seq_cols[: k.shape[2]]
+    _write(k_storage, slots, k)
+    _write(v_storage, slots, v)
+    heads, dim = k_storage.shape[2], k_storage.shape[3]
+    out = torch.ops.triton.sdpa_varlen(
+        q,
+        k_storage.view(rows, columns, heads, dim),
+        v_storage.view(rows, columns, heads, dim),
+        seq_info,
+        scale,
+        causal,
+        window,
+        rows if ring else 0,
+        context_window=context_window,
+    )
+    if out_dtype is not None and out.dtype != out_dtype:
+        out = out.to(out_dtype)
+    return out
+
+
+def _batched_sequence_step_fn(
+    scale: float,
+    rows: int,
+    columns: int,
+    window: int,
+    ring: bool,
+    causal: bool,
+    out_dtype,
+    context_window: bool = False,
+):
+    def fn(q, k, v, position, k_storage, v_storage, seq_cols, seq_info):
+        return batched_sequence_step(
+            q,
+            k,
+            v,
+            position,
+            k_storage,
+            v_storage,
+            seq_cols,
+            seq_info,
+            scale,
+            rows,
+            columns,
+            window,
+            ring,
+            causal,
+            out_dtype,
+            context_window,
+        )
+
+    return fn
+
+
 def _cell_step_fn(scale: float, out_dtype):
     def fn(q, k, v, k_pool, v_pool, cells, read_len, mask):
         return cell_step(
@@ -380,9 +506,9 @@ class CheckOffGraphKVStepWidthPass:
     requires_exported_program = True
 
     def __init__(self, value: bytes, layout: str = "sequence") -> None:
-        if layout not in ("sequence", "cell"):
+        if layout not in ("sequence", *PACKED_LAYOUTS):
             raise ValueError(f"invalid off-graph KV layout {layout!r}")
-        self._cell_layout = layout == "cell"
+        self._packed = layout in PACKED_LAYOUTS
         text = value.decode("utf-8")
         fields = text.split(":")
         if len(fields) != 2 or not all(f.isdigit() for f in fields):
@@ -411,7 +537,7 @@ class CheckOffGraphKVStepWidthPass:
             position = node.args[3]
             source = (
                 _cell_position_source(position)
-                if self._cell_layout
+                if self._packed
                 else _source_input(position)
             )
             if source is not declared:
@@ -449,6 +575,15 @@ class LowerOffGraphKVPass:
     def _cell_layout(self) -> bool:
         return self._manifest.get("layout", "sequence") == "cell"
 
+    @property
+    def _batched_sequence_layout(self) -> bool:
+        return self._manifest.get("layout", "sequence") == "batched-sequence"
+
+    @property
+    def _columns(self) -> int:
+        # One per sequence, and a scratch column static-width padding writes.
+        return self._manifest["max_seqs"] + 1
+
     @staticmethod
     def _compile_storage(shape, dtype: torch.dtype, device):
         storage = torch.empty(shape, dtype=dtype, device=device)
@@ -485,7 +620,12 @@ class LowerOffGraphKVPass:
             # cell layout keeps every layer's history in the one pool.
             return self._manifest["max_cells"]
         if layer["policy"] == "ring":
-            return ring_physical_capacity(layer["window"], self._manifest["max_write"])
+            rows = ring_physical_capacity(layer["window"], self._manifest["max_write"])
+            if self._batched_sequence_layout:
+                # A sequence never reaches past its capacity, so a ring that
+                # large never wraps.
+                rows = min(rows, self._manifest["maximum_capacity"])
+            return rows
         return self._manifest["maximum_capacity"]
 
     def _storage_nodes(
@@ -508,6 +648,9 @@ class LowerOffGraphKVPass:
         # back this with an allocation holding only the rows written so far
         # and grow it. A BHSD declaration would put head h at h * capacity,
         # past any smaller allocation.
+        if self._batched_sequence_layout:
+            # Rows outermost, so the runtime grows every column at once.
+            capacity *= self._columns
         shape = (kv.shape[0], capacity, kv.shape[1], kv.shape[3])
         prefix = f"{OFFGRAPH_KV_FQN_PREFIX}layer_{layer_id}"
         names = (f"{prefix}_k", f"{prefix}_v")
@@ -534,7 +677,7 @@ class LowerOffGraphKVPass:
             )
 
     def _cell_buffer(self, exported_program, name: str, shape, dtype, device):
-        """A step buffer of the cell layout, declared once per program.
+        """A step buffer of a packed layout, declared once per program.
 
         Unlike the pools these are small, so they carry real (zero) bytes at
         compile time: Inductor reads small constants while it compiles, and
@@ -579,6 +722,39 @@ class LowerOffGraphKVPass:
         )
         example_args = tuple(n.meta["val"] for n in call_args)
         return _cell_step_fn(node.args[5], out_dtype), call_args, example_args
+
+    def _lower_batched_sequence(
+        self, exported_program, node, layer, k_storage, v_storage, out_dtype
+    ):
+        device = node.args[1].meta["val"].device
+        seq_cols = self._cell_buffer(
+            exported_program,
+            OFFGRAPH_KV_SEQ_COLS_FQN,
+            (self._manifest["max_write"],),
+            torch.int64,
+            device,
+        )
+        seq_info = self._cell_buffer(
+            exported_program,
+            OFFGRAPH_KV_SEQ_INFO_FQN,
+            (self._manifest["max_segments"], 4),
+            torch.int32,
+            device,
+        )
+        call_args = (*node.args[0:4], k_storage, v_storage, seq_cols, seq_info)
+        example_args = tuple(n.meta["val"] for n in call_args)
+        ring = layer["policy"] == "ring"
+        fn = _batched_sequence_step_fn(
+            node.args[5],
+            self._layer_capacity(layer),
+            self._columns,
+            layer["window"] if ring else 0,
+            ring,
+            self._manifest["causal"],
+            out_dtype,
+            self._manifest.get("context_window", False),
+        )
+        return fn, call_args, example_args
 
     def _ring_mask(self, graph, position, buf_size: int, window: int, before):
         """Emit the ring mask once and share it across layers that match.
@@ -669,6 +845,10 @@ class LowerOffGraphKVPass:
             k_storage, v_storage = self._storage_nodes(exported_program, node, layer)
             if self._cell_layout:
                 fn, call_args, example_args = self._lower_cell(
+                    exported_program, node, layer, k_storage, v_storage, out_dtype
+                )
+            elif self._batched_sequence_layout:
+                fn, call_args, example_args = self._lower_batched_sequence(
                     exported_program, node, layer, k_storage, v_storage, out_dtype
                 )
             else:
