@@ -22,7 +22,11 @@ import pytest
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
-from executorch.examples.llm_server.python.serving_chat import ServingChat
+from executorch.examples.llm_server.python.serving_chat import (
+    _earliest_stop,
+    _earliest_stop_match,
+    ServingChat,
+)
 from executorch.examples.llm_server.python.session_runtime import (
     GenStats,
     SessionRuntime,
@@ -295,6 +299,23 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
     )
     assert (content or "") == "".join(prefix)
     assert serving._transcript._turns["s"][0]["ids"] is None
+
+
+@pytest.mark.parametrize(
+    "text,stops,expected",
+    [
+        ("aXY", ["X", "XY"], (1, "X")),
+        ("aXY", ["XY", "X"], (1, "XY")),
+        ("aXbY", ["Y", "X"], (1, "X")),
+        ("猫 XY", ["XY"], (2, "XY")),
+        ("hello", [], (None, None)),
+        ("hello", ["STOP"], (None, None)),
+        ("aX", ["", "X"], (0, "")),
+    ],
+)
+def test_earliest_stop_match_preserves_position_and_list_order(text, stops, expected):
+    assert _earliest_stop_match(text, stops) == expected
+    assert _earliest_stop(text, stops) == expected[0]
 
 
 def _replay_stream_cleanup(

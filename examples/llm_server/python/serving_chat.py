@@ -58,14 +58,23 @@ logger = logging.getLogger(__name__)
 _SESSION_ID_MAX_LEN = 128
 
 
+def _earliest_stop_match(
+    text: str, stops: list[str]
+) -> tuple[Optional[int], Optional[str]]:
+    """Return the earliest match, breaking position ties by stop-list order."""
+    best = None
+    matched = None
+    for stop in stops:
+        position = text.find(stop)
+        if position != -1 and (best is None or position < best):
+            best = position
+            matched = stop
+    return best, matched
+
+
 def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
     """Index of the earliest special-token occurrence in `text`, or None."""
-    best = None
-    for s in stops:
-        i = text.find(s)
-        if i != -1 and (best is None or i < best):
-            best = i
-    return best
+    return _earliest_stop_match(text, stops)[0]
 
 
 def _safe_emit_end(text: str, stops: list[str]) -> int:
@@ -416,11 +425,9 @@ class ServingChat:
         boundary is neither parsed nor emitted."""
         visible_cut = _earliest_stop(text, self._visible_stops(req))
         request_stops = self._request_stops(req)
-        request_cut = _earliest_stop(text, request_stops)
+        request_cut, request_stop = _earliest_stop_match(text, request_stops)
         if request_cut is not None:
-            matched_stop = next(
-                stop for stop in request_stops if text.startswith(stop, request_cut)
-            )
+            matched_stop = request_stop
         cuts = [cut for cut in (visible_cut, request_cut) if cut is not None]
         text = text[: min(cuts)] if cuts else text
         return (
@@ -1295,7 +1302,7 @@ class ServingChat:
         visible = True
         async for token in generation:
             buf += token
-            request_cut = _earliest_stop(buf, request_stops)
+            request_cut, matched_stop = _earliest_stop_match(buf, request_stops)
             if not stop_hit[0] and request_cut is not None:
                 stop_hit[0] = True
                 self._cancel_generation(generation)
@@ -1304,11 +1311,6 @@ class ServingChat:
                 if cut is not None:
                     text = buf[:cut]
                     if cut == request_cut:
-                        matched_stop = next(
-                            stop
-                            for stop in request_stops
-                            if buf.startswith(stop, request_cut)
-                        )
                         text = self._trim_stop_fragment(text, req, matched_stop)
                     if text:
                         yield text
