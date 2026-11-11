@@ -20,7 +20,7 @@
 //   M  dyn_sigmoid   N dyn_select (select_copy(0,-1), dynamic S)
 //   O  ONE dyn_conv1d graph reused across live input lengths
 //   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
-//   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim (reused graphs)
+//   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim   S dyn_elu_silu (reused)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -1948,6 +1948,15 @@ TEST(DynamicShape, MeanKeepdimReusedGraph) {
         {1, 1, s, kHidden},
         {{1, 1, s, 1}, {1, 1, 1, kHidden}, {1, 1, s, kHidden}, {1, 1, s}},
         1e-5f);
+  }
+}
+
+// S: elu(x, alpha=0.5) + silu(x) on ONE loaded graph across S.
+TEST(DynamicShape, EluSiluReusedGraph) {
+  Module m(g_dir + "/dyn_elu_silu.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_elu_silu.pte";
+  for (int s : {128, 32, 1, 128}) {
+    check_s(m, "dyn_elu_silu", s);
   }
 }
 
