@@ -52,6 +52,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cpu_count",
         ],
     )
 
