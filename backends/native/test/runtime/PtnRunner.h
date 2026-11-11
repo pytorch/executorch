@@ -12,8 +12,15 @@
 
 namespace ptn::testing {
 
-// Defined once per runner binary; ptn_runner_main.cpp drives the host it
-// returns, so every engine runs a PTN through the same harness.
-std::unique_ptr<EngineHost> make_engine_host();
+// Numerics a driver lets an engine trade away. Drivers then judge the engine as
+// having made the trade, so an engine that never makes it rejects the option.
+struct HostOptions {
+  // Quantize the activations of linears whose weights alone are quantized.
+  bool allow_activation_quant_for_weight_only = false;
+};
+
+// Defined once per binary by an engine's host library; drivers such as
+// ptn_runner_main.cpp run every engine through the host it returns.
+std::unique_ptr<EngineHost> make_engine_host(const HostOptions& options);
 
 } // namespace ptn::testing

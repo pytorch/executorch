@@ -40,6 +40,8 @@ $if WEIGHT_STORAGE == "buffer":
 $if PIXEL_TILES_ON_X:
   #define PIXEL_TILES_ON_X
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_tensor(B, "r", "t_residual", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "r", "t_scale", DTYPE, "texture2d")}
 
 ${layout_declare_ubo(B, "ivec4", "in_sizes")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
@@ -49,14 +51,21 @@ layout(push_constant) uniform restrict Block {
   int stride_w;
   int padding_h;
   int padding_w;
-  float out_min;
-  float out_max;
+  float activation_a;
+  float activation_b;
+  float residual_alpha;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "stride_1_padding_0", "0")}
-${layout_declare_spec_const(C, "int", "activation_type", "0")}
+${layout_declare_spec_const(C, "bool", "has_activation", "false")}
+${layout_declare_spec_const(C, "int", "activation_op", "0")}
+${layout_declare_spec_const(C, "bool", "has_residual", "false")}
+${layout_declare_spec_const(C, "bool", "has_scale", "false")}
+${layout_declare_spec_const(C, "int", "residual_op", "0")}
+
+#include "conv2d_epilogue.glslh"
 
 #include "gemm/tile_utils/linear_fp_input_tile.glslh"
 #include "gemm/tile_utils/linear_fp_packed_weight_tile_load.glslh"
@@ -140,18 +149,22 @@ void store_output_tile_with_checks(
     const InCoords coords,
     const int n4_start,
     const int N4) {
+  vec4 scale[TILE_N4];
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    scale[n4] = has_scale && n4_start + n4 < N4
+        ? texelFetch(t_scale, ivec2(n4_start + n4, 0), 0)
+        : vec4(1);
+  }
   // Reuse the coordinates computed for this invocation rather than dividing by
   // W_out again per output texel.
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       if (coords.in_bounds[m] && n4_start + n4 < N4) {
-        VEC4_T texel = out_tile.data[m][n4];
-        if (activation_type == 1) {
-          texel = max(texel, VEC4_T(0.0));
-        } else if (activation_type == 2) {
-          texel = clamp(texel, VEC4_T(out_min), VEC4_T(out_max));
-        }
-        imageStore(t_out, ivec3(coords.out_pos[m], n4_start + n4), vec4(texel));
+        const ivec3 pos = ivec3(coords.out_pos[m], n4_start + n4);
+        imageStore(
+            t_out,
+            pos,
+            apply_epilogue(vec4(out_tile.data[m][n4]), pos, scale[n4]));
       }
     }
   }

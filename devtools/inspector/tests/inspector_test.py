@@ -1062,6 +1062,33 @@ class TestInspector(unittest.TestCase):
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
+    def test_comparators_get_complex_values_as_pairs(self):
+        """Lowering can store a complex tensor as real pairs, while the
+        reference graph keeps it complex."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            MSEComparator,
+            NumericalComparatorBase,
+        )
+
+        class MaxAbsDiffComparator(NumericalComparatorBase):
+            def element_compare(self, a, b):
+                return torch.max(torch.abs(a - b)).item()
+
+        reference = torch.polar(torch.ones(4), torch.rand(4)).conj()
+        pairs = torch.view_as_real(reference.resolve_conj()).clone()
+        for comparator in (MaxAbsDiffComparator(), MSEComparator()):
+            with self.subTest(comparator=type(comparator).__name__):
+                df = comparator.compare(
+                    {
+                        ((0,), reference): ((0,), pairs),
+                        ((1,), (reference,)): ((1,), (pairs,)),
+                    },
+                    {(0,): ["mul"], (1,): ["mul_1"]},
+                    {(0,): ["mul"], (1,): ["mul_1"]},
+                )
+                self.assertEqual(list(df["gap"]), [[0.0], [0.0]])
+                self.assertIs(df["aot_intermediate_output"][0], reference)
+
     def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
         """Test calculate_numeric_gap with multiple custom comparators sharing the same preprocessing."""
         from executorch.devtools.inspector.numerical_comparator import (
@@ -1815,6 +1842,66 @@ class TestInspector(unittest.TestCase):
                         stack_trace,
                         f"Stack trace for {op_name} doesn't contain file info",
                     )
+
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
+    def test_complex_rotary_embedding_numeric_gap(self):
+        """Lowering stores complex tensors as real pairs, while the default
+        reference graph keeps them complex."""
+        from executorch.runtime import Runtime, Verification
+
+        class Rope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                angles = torch.outer(torch.arange(8.0), torch.rand(4))
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                return torch.view_as_real(pairs * self.freqs).flatten(-2)
+
+        inputs = (torch.randn(2, 8, 8),)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            et_program = to_edge_transform_and_lower(
+                export(Rope(), inputs, strict=True), generate_etrecord=True
+            ).to_executorch()
+            pte_path = os.path.join(temp_dir, "model.pte")
+            et_program.save(pte_path)
+            etrecord = et_program.get_etrecord()
+            etrecord.update_representative_inputs(inputs)
+            etrecord_path = os.path.join(temp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            program = Runtime.get().load_program(
+                pte_path,
+                verification=Verification.Minimal,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024,
+            )
+            program.load_method("forward").execute(inputs)
+            etdump_path = os.path.join(temp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(temp_dir, "debug_buffer.bin")
+            program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
+                )
+
+            df = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            ).calculate_numeric_gap("MSE")
+
+        self.assertTrue(
+            any(
+                isinstance(output, torch.Tensor) and output.is_complex()
+                for output in df["aot_intermediate_output"]
+            )
+        )
+        for gap in df["gap"]:
+            self.assertLess(gap[0], 1e-10)
 
     @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):

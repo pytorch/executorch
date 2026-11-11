@@ -676,6 +676,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_unary(node, ggml_silu);
   } else if (key == "aten.sigmoid.default" || key == "aten.sigmoid_.default") {
     lower_unary(node, ggml_sigmoid);
+  } else if (key == "aten.tanh.default") {
+    lower_unary(node, ggml_tanh);
   } else if (key == "aten.gelu.default" || key == "aten.gelu_.default") {
     lower_gelu(node);
   } else if (key == "aten.native_layer_norm.default") {
@@ -684,6 +686,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_constant_pad(node);
   } else if (key == "aten.log.default") {
     lower_unary(node, ggml_log);
+  } else if (key == "aten.exp.default") {
+    lower_unary(node, ggml_exp);
   } else if (key == "aten.neg.default") {
     lower_unary(node, ggml_neg);
   } else if (key == "aten.relu.default" || key == "aten.relu_.default") {
@@ -691,6 +695,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
     lower_hardtanh(node);
+  } else if (key == "aten.sqrt.default") {
+    lower_sqrt(node);
   } else if (key == "aten.convolution.default") {
     lower_convolution(node);
   } else if (key == "aten._native_batch_norm_legit_no_training.default") {
@@ -701,6 +707,10 @@ void GraphBuilder::lower(const Node& node) {
     lower_max_pool2d(node);
   } else if (key == "aten.mean.dim") {
     lower_mean(node);
+  } else if (key == "aten.sum.dim_IntList") {
+    lower_sum(node);
+  } else if (key == "aten.amax.default") {
+    lower_amax(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

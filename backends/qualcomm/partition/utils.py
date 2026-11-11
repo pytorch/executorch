@@ -199,12 +199,32 @@ def has_data_dependent_shape(node: torch.fx.Node) -> bool:
     )
 
 
+def must_stay_on_cpu(node: torch.fx.Node) -> bool:
+    """
+    Whether the node's data types or shapes keep it off QNN. Both are already
+    known before decomposition.
+    """
+    return (
+        has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node)
+    ) or has_data_dependent_shape(node)
+
+
+def is_quantized(node: torch.fx.Node) -> bool:
+    """
+    Whether the node quantizes, dequantizes, or reads the output of a
+    dequantize op. Decomposing such a node drops its quantization encodings.
+    """
+    return (
+        node.target in _Q_OPS
+        or node.target in _DQ_OPS
+        or any(arg.target in _DQ_OPS for arg in node.all_input_nodes)
+    )
+
+
 # Logic to determine whether to skip decompose and has higher priority than get_skip_decomp_table()
 def filter_fn(node: torch.fx.Node) -> bool:
     # The node will stay on CPU, so it must not be kept from decomposition.
-    if has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node):
-        return False
-    if has_data_dependent_shape(node):
+    if must_stay_on_cpu(node):
         return False
     # QNN does not support int32/int64 IO for the following OPs.
     potential_i32_i64_io_ops = [
@@ -219,6 +239,13 @@ def filter_fn(node: torch.fx.Node) -> bool:
     # HTP Pack takes inputs of rank 1 to 4, so its output has 2 to 5 dims.
     if node.target == torch.ops.aten.stack.default and not (
         2 <= node.meta["val"].dim() <= 5
+    ):
+        return False
+    # HTP FloorDiv and Mod stop at rank 4; a higher-rank floor_divide runs on CPU,
+    # which needs it decomposed.
+    if (
+        node.target == torch.ops.aten.floor_divide.default
+        and node.meta["val"].dim() > 4
     ):
         return False
     # QNN Stft only produces the real-valued spectrum and has no normalization.

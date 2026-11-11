@@ -54,6 +54,7 @@ namespace arm {
 
 struct PlatformState {};
 
+// cppcheck-suppress unusedFunction
 executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
     executorch::runtime::MemoryAllocator* /*allocator*/,
@@ -61,14 +62,18 @@ executorch::runtime::Error platform_init(
   return executorch::runtime::Error::Ok;
 }
 
+// cppcheck-suppress unusedFunction
 void platform_destroy(PlatformState* /*state*/) {}
 
+// cppcheck-suppress unusedFunction
 bool needs_scratch_allocation() {
   return true;
 }
 
+// cppcheck-suppress unusedFunction
 Error platform_execute(
-    BackendExecutionContext& /*context*/,
+    // cppcheck-suppress constParameterReference
+    [[maybe_unused]] BackendExecutionContext& context,
     [[maybe_unused]] const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
@@ -137,6 +142,9 @@ Error platform_execute(
   executorch::backends::arm::EthosUInvocationContext invocation_context{};
   invocation_context.delegate_handle =
       reinterpret_cast<uintptr_t>(execution_handle);
+#if defined(ET_EVENT_TRACER_ENABLED)
+  invocation_context.event_tracer = context.event_tracer();
+#endif
   int result = ethosu_invoke_v3(
       driver.get(),
       static_cast<const void*>(handles.cmd_data),

@@ -17,7 +17,7 @@ Below are the requirements for running a CUDA-delegated ExecuTorch model:
 - **Hardware**: NVIDIA GPU with compute capability 8.0 (Ampere) or newer. This is the floor the
   prebuilt packages are built for.
 - **CUDA**: 13 for the prebuilt packages. On Linux they bring the CUDA runtime with them. On
-  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 12.6.
+  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 13.0.
 - **Operating System**: Linux, or Windows from C++ for programs exported on Linux (see
   [CUDA on Windows](../../using-executorch-cpp.md#cuda-on-windows))
 - **Drivers**: An NVIDIA driver that supports the CUDA version you use: CUDA 13 for the prebuilt
@@ -101,6 +101,13 @@ from executorch.runtime import Runtime
 
 program = Runtime.get().load_program("encoder.pte", data_path="encoder.ptd")
 ```
+
+If an export runs out of GPU memory while AOTInductor compiles its kernels, `CompileSpec("low_memory_mode", b"ON")` can help. It changes several compile steps to use less GPU memory, and not every model compiles with all of them, so turn it on only when you need it. One of those steps moves the weights to a file in the Inductor cache directory during the final autotuning pass, instead of keeping them on the GPU. Good to know:
+
+- The move needs PyTorch 2.15, or a nightly from 2026-09-24 or later. Older PyTorch keeps the weights on the GPU.
+- The cache directory needs free space for the weights. If it fills up, the process stops with a bus error. It defaults to a folder under the system temp directory, which on some systems is in RAM. Set `TORCHINDUCTOR_CACHE_DIR` to a disk with room.
+- The earlier template search for matrix multiplies and convolutions still keeps the weights on the GPU.
+- PyTorch skips the move when the last kernel it generates runs on the CPU.
 
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 

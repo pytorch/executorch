@@ -203,6 +203,7 @@ set(all_test_sources
     "op_diagonal_copy_test.cpp"
     "op_div_test.cpp"
     "op_elu_test.cpp"
+    "op_embedding_bag_test.cpp"
     "op_embedding_test.cpp"
     "op_empty_test.cpp"
     "op_eq_test.cpp"
@@ -367,6 +368,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_native_layer_norm_test.cpp"
       "op_neg_test.cpp"
       "op_sub_test.cpp"
+      "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp

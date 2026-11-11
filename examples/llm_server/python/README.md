@@ -66,9 +66,23 @@ limit; choose a value supported by the export. Capacity defaults are
 `--prefix-cache-entries 0`. With prefix caching enabled, `--prefix-capture-slots 0`
 (the default) automatically allows one pending prompt capture per admitted request,
 bounded by `min(max_sessions, max_inflight_requests)`. A positive value overrides
-this allowance. With checkpoints enabled, automatic sizing uses at most two rows:
+this allowance; with `every`, lower values can leave replacements and retries
+without a row, so they prefill cold. `--prefix-checkpoint-prompt-end initial` (the
+default) captures the prompt end of each request that creates a session, including
+every anonymous request. `every` captures the prompt end of every request and
+requires `--prefix-cache-entries > 0`; each captured turn takes a cache entry.
+Without periodic checkpoints, a prompt end already in the cache is refreshed instead
+of cloned again, and a snapshot becomes reusable and frees its capture slot at the
+source request's first output after the clone completes, or when the request
+finishes. Capture is best effort. See the [batching guide](../spec/batching.md) for
+what `every` reuses in practice and its MLX memory cost. Retained snapshots are
+shared by all clients, and `cached_tokens` reports matches, so enable prefix caching
+only when clients trust each other.
+With periodic checkpoints enabled, automatic sizing uses at most two rows:
 checkpoint collection is serialized, but one replacement can overlap. Explicit
 values above two add unused row capacity in that mode.
+`--prefix-checkpoint-prompt-end every` cannot be combined with a nonzero
+`--prefix-checkpoint-interval`; the launcher and native worker reject that combination.
 Logical sessions, packed decode width, and in-flight request capacity are independent
 limits. Python concurrency follows advertised request capacity, not the single
 native delivery thread. Python reads native async streams directly through bounded
@@ -136,6 +150,60 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
 ```
+
+## Terminal HUD
+
+The batching launchers show a live ASCII dashboard in interactive terminals. Redirected output and
+`TERM=dumb` keep plain logs. State colors distinguish active, completed, failed,
+and cancelled requests; `NO_COLOR=1` keeps the HUD monochrome.
+
+Requests are grouped by session ID, with active requests and the latest three
+completed requests per session. Active sessions appear first; requests without a
+session ID appear under "Ungrouped requests". The display fits the terminal and
+updates in place. Native multiplexed-worker diagnostics appear in the recent
+log lines instead of scrolling the terminal; redirect stderr for full logs.
+All captured native stderr, including crash messages without a severity prefix,
+is replayed after the HUD exits, along with Python warnings, errors, and tracebacks.
+A process-exit fallback restores the terminal if the serving lifespan is skipped.
+A rendering or diagnostics-storage failure restores the terminal and falls back
+to plain logs. HUD initialization failures also fall back without stopping serving.
+Prompt and response text are never displayed.
+
+Session totals include all observed turns, including ones no longer displayed:
+request/error/cancellation counts, generated tokens, average TTFT, prefill/decode
+throughput, and cache reuse. Throughput uses total tokens divided by total phase
+time; cache reuse uses total reused tokens divided by total prompt tokens.
+Context is the latest reported prompt plus output length, not a cumulative sum.
+Reset sets context to zero while retaining history and totals. Close removes
+completed history; unfinished requests remain visible until they settle, and
+queued requests are tracked under the reopened session. Failed close/reset
+operations keep the group with unknown context (`--`) until another request
+reports its state. Invalid session IDs do not create groups. Up to 32 inactive
+groups are retained, plus all active groups.
+Tracked session counts describe these observations, not native cache allocations.
+
+The server header shows the listen address and aggregate prefill/decode tokens
+per second since the model became ready, excluding model load and including idle
+time. These use reported tokens divided by wall-clock uptime. Prefill
+counts only newly processed prompt tokens. Worker counts arrive at turn end, so
+these are averages since readiness, not live rates; incomplete requests contribute
+once their terminal stats arrive. Per-request rates/counts stay `--` until reported.
+TTFT timestamps the first nonempty worker text on receipt in Python, measured
+from entry into the validated HTTP handler. It includes session waiting and
+prompt preparation, but excludes HTTP transmission and response formatting. Text fragments are not used as token counts.
+
+Embedders default to plain logs. The batching launchers enable `build_app(...,
+hud=True, model_path=..., max_context=..., max_concurrent_requests=...)` and use
+`capture_worker_logs()` to pass an explicit `stderr` to the worker. Legacy
+launchers keep plain logs. The implementation lives in `hud/`. Noninteractive
+output installs no collector or refresh task and leaves logging unchanged.
+
+Runtime observers implement `GenerationObserver`: `output(arrived)` receives the
+first nonempty text's monotonic arrival time, and `record_stats(stats)` receives
+terminal worker statistics once. Both callbacks run on the runtime's event loop,
+including when consumption is suspended or cancellation cleanup is pending. No
+statistics callback occurs without a worker report; errors remain on the generation
+iterator. The HTTP adapter separately accepts a HUD `Turn` for request accounting.
 
 ## Sessions
 
@@ -245,7 +313,7 @@ the generic control plane never imports an example. Backend specifics
 
 The dedicated batching launcher supports concurrent text requests on one shared
 runner, ordered persistent-session continuation, targeted in-band cancellation,
-and optional prefix reuse for new sessions and clean prompt replacements. It
+and optional prefix reuse for new sessions, retries, and prompt replacements. It
 does not yet migrate Muse image or DFlash execution. The serialized-worker
 limitations below describe the legacy path, not the new batching worker.
 

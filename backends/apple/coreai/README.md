@@ -26,14 +26,18 @@ python -m pytest backends/apple/coreai
 
 ## Runtime
 
-The delegate manifest describes `.aimodel` source bundles, which require
-`inline` packaging, and AOT-compiled `.aimodelc` bundles, which require
-`aot_compiled_inline`. Both formats require a `function` name, and ordered
+The delegate manifest's `packaging` field names the embedded format: `aimodel`
+for a portable `.aimodel` bundle, located by `path`, or `aimodelc` for
+AOT-compiled per-architecture `.aimodelc` bundles, located by `archs`. Both
+formats require exactly one of a `function` name or `enumerated_functions` (see
+[Enumerated input shapes](#enumerated-input-shapes)), and ordered
 `input_names` and `output_names` matching the converter's bindings. Dictionary
 iteration order is not a binding contract. `export_hash` identifies the exported
 program used to namespace embedded assets. The `files` object maps relative
 filenames to byte sizes; `bundle_digests` maps each bundle basename to its
-export-time SHA-256 digest. Asset paths, including bundle and directory names,
+export-time SHA-256 digest. The optional boolean `multifunction` marks a delegate
+exported as one function of a model shared with other delegates. Asset paths,
+including bundle and directory names,
 must remain distinct under case-insensitive, canonically normalized Unicode
 comparison. Accepted names are preserved, not rewritten.
 
@@ -107,6 +111,88 @@ bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
 to source materialization and persistent specialization, then binds the requested
 function and ordered I/O on that same acquired model.
 
+### Multi-function export
+
+By default each Core AI delegate is its own model with a single `main` function.
+`CoreAIPartitioner(multifunction=True)` instead lowers every Core AI partition of
+every method into one model, with one function per partition named
+`<method>_<partition index>`:
+
+```python
+lowered = to_edge_transform_and_lower(
+    {"forward": forward_ep, "prefill": prefill_ep},
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(multifunction=True)],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Here the delegates bind `forward_0` and `prefill_0`; a graph break adds
+`forward_1`, `prefill_1` and so on. Weights shared between methods are stored
+once. Every partition must carry identical compile specs (AOT config, deployment
+floor), except `input_enumerations`, which each method may set on its own (see
+below).
+
+Each delegate keeps its own manifest naming its function and ordered I/O; all of
+them reference the same embedded bundle. Function bindings are not part of the
+cache key, so the first load specializes the model and the other delegates
+restore it from the same bookmark. Each delegate still loads its own model
+instance unless the `coreai_share_multifunction_model` runtime option is set
+(see [Runtime options](#runtime-options)). Multi-function manifests carry
+`"multifunction": true`.
+
+### Enumerated input shapes
+
+`CoreAIPartitioner(input_enumerations=...)` compiles a dynamic dim to a fixed set
+of sizes instead of leaving it dynamic. Entries align with the ET model inputs and
+map a dim index to its allowed values; the dim must be exported dynamic:
+
+```python
+batch = torch.export.Dim("batch", min=1, max=64)
+ep = torch.export.export(model, (x,), dynamic_shapes={"x": {0: batch}})
+lowered = to_edge_transform_and_lower(
+    ep,
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(input_enumerations=[{0: [4, 16, 32]}])],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Core AI replaces the delegate's dynamic function with one static function per
+combination of enumerated values, so the manifest lists them under
+`enumerated_functions` instead of naming one `function`:
+
+```json
+"enumerated_functions": [
+  {"function": "main_s31_4", "input_shapes": [[4, 8]]},
+  {"function": "main_s31_16", "input_shapes": [[16, 8]]},
+  {"function": "main_s31_32", "input_shapes": [[32, 8]]}
+]
+```
+
+`input_shapes` gives every input's shape in `input_names` order. The delegate
+binds every listed function at load and runs the one whose shapes equal the call's
+inputs; inputs matching none of them fail with `InvalidArgument` without running.
+All functions come from one model, so they share weights, one specialization and
+one cache entry. The function count is the product of the enumerated value counts
+across dims, and specialization and load time grow with it: on an M4 Max, a warm
+load of a two-layer MLP (256 to 1024 to 256 features) took 7 ms with 1 function, 41 ms with 16 and 248 ms
+with 64.
+
+With `multifunction=True`, give each method its own partitioner to enumerate only
+some methods, or different values per method:
+
+```python
+partitioner={
+    "decode": [CoreAIPartitioner(multifunction=True)],
+    "prefill": [CoreAIPartitioner(multifunction=True, input_enumerations=[{0: [64, 128]}])],
+}
+```
+
+Every enumerated partition expands into its own functions (`prefill_0_<key>`, and
+`prefill_1_<key>` past a graph break) inside the one shared model, while `decode_0`
+stays a single function. The other compile specs must still match across methods.
+
 ### Cache directory
 
 Backend initialization reads the string runtime spec `coreai_cache_dir`. If
@@ -128,9 +214,9 @@ even though the new complete contents are already visible. Use a local APFS
 volume; unsupported full-device flushes are reported as errors, not downgraded
 to `fsync`.
 
-Inline bundles are read through `NamedDataMap` and materialized as unchanged
-files under the cache directory. Named data can be supplied externally; inline
-packaging does not require all bytes to reside in one physical PTE. The exporter
+Embedded bundles are read through `NamedDataMap` and materialized as unchanged
+files under the cache directory. Named data can be supplied externally; embedded
+bundles do not require all bytes to reside in one physical PTE.
 computes each bundle digest from all delivered relative filenames and file bytes,
 not just the SDK's bytecode-only `main.hash`. Each AOT architecture has an
 independent digest; only the selected architecture is materialized. NDS key names
@@ -191,7 +277,7 @@ choose the SDK artifact directory. The backend does not inspect SDK-private
 files, alter their backup flags, or use an App Group cache.
 
 Each selected bundle has a `bundle_identity` derived from its bundle digest,
-name, and source/AOT mode. This identifies the delivered bundle independently of
+name, and packaging (`aimodel` or `aimodelc`). This identifies the delivered bundle independently of
 `export_hash`, which namespaces embedded assets. A readable cache key combines
 that bundle identity with
 the platform and Core AI device architecture, plus a hash of a versioned
@@ -337,6 +423,69 @@ source.
 Use separate option maps to choose different cache directories for different models.
 The path names the cache directory, not a bundle. ExecuTorch option strings
 have a 255-byte limit.
+
+`coreai_compute_unit` selects the Core AI specialization options. Each value is
+one configuration the SDK provides:
+
+| Value | Core AI `SpecializationOptions` | Allowed compute units |
+|---|---|---|
+| `default` (or absent) | `.default` | CPU, GPU, Neural Engine |
+| `cpu_only` | `.cpuOnly` | CPU |
+| `prefer_cpu` | `init(preferredComputeUnitKind: .cpu)` | CPU, GPU, Neural Engine |
+| `prefer_gpu` | `init(preferredComputeUnitKind: .gpu)` | CPU, GPU, Neural Engine |
+| `prefer_neural_engine` | `init(preferredComputeUnitKind: .neuralEngine)` | CPU, GPU, Neural Engine |
+
+`cpu_only` is the only restriction: a preference maximizes use of that unit but
+falls back to any allowed unit for operations it cannot run. The SDK has no
+other combinations, such as CPU and Neural Engine only. Unknown values fail
+initialization with `InvalidArgument`. The selection is part of the cache key,
+so each value is specialized and cached separately; clearing a PTE removes every
+variant.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_compute_unit", "cpu_only"));
+```
+
+`coreai_expect_frequent_reshapes` (bool, default `false`) sets the SDK's
+`SpecializationOptions.expectFrequentReshapes` on top of the selected compute
+unit. Set it for models whose input shapes change between calls. It is part of
+the cache key, so each value is specialized and cached separately, and delegates
+only share a model (`coreai_share_multifunction_model`) when they agree on it.
+For AOT exports, the matching export-time setting is
+`AOTCompileConfig(expect_frequent_reshapes=True)`.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_expect_frequent_reshapes", true));
+```
+
+`coreai_share_multifunction_model` (bool, default `false`) makes the delegates of
+a multi-function export (`CoreAIPartitioner(multifunction=True)`) share one
+loaded Core AI model per process instead of each loading its own. Without it,
+every delegate restores a separate model with its own copy of the weights. With
+it, the first delegate loads the model and the others reuse it until the last
+one is destroyed. Delegates that start loading the same model concurrently wait
+for that single load; loads of other models proceed in parallel. Delegates sharing a model run one at a time: concurrent
+execution on one model is serialized by a per-model lock, because the SDK does
+not document it as safe and it produced wrong outputs in testing. Setting the
+option on a delegate that isn't from a multi-function export fails
+initialization with `InvalidArgument`.
+
+Sharing is process-wide, not per program, but scoped to the cache directory.
+Separate `Module`s that load the same PTE with the option set and the same
+`coreai_cache_dir` share one model, so their `execute` calls block each other.
+`Module`s with different cache directories never share: each loads its own model
+and keeps its own bookmark. A symlink to a cache directory counts as that
+directory. Different `coreai_compute_unit` values also load separate models,
+since each is a separate specialization.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_share_multifunction_model", true));
+```
 
 ## SDK Bridge
 
