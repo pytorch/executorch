@@ -72,6 +72,105 @@ TEST(BundledProgramErrorStatsTest, FloatValuesAreCorrect) {
   EXPECT_DOUBLE_EQ(stats.max_relative_error, 0.5);
 }
 
+TEST(BundledProgramErrorStatsTest, DifferentFloatLayoutsAreRejected) {
+  TensorFactory<ScalarType::Float> tensor_factory;
+  const auto expected = tensor_factory.make({2, 2}, {1, 2, 3, 4});
+  const auto actual = tensor_factory.make({2, 2}, {1, 2, 3, 4}, {1, 2});
+
+  const auto stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          actual, expected);
+
+  EXPECT_EQ(stats.status, Error::InvalidArgument);
+}
+
+TEST(BundledProgramErrorStatsTest, DifferentHalfLayoutsAreRejected) {
+  TensorFactory<ScalarType::Half> tensor_factory;
+  const auto expected = tensor_factory.make(
+      {2, 2}, {Half(1.0f), Half(2.0f), Half(3.0f), Half(4.0f)});
+  const auto actual = tensor_factory.make(
+      {2, 2}, {Half(1.0f), Half(2.0f), Half(3.0f), Half(4.0f)}, {1, 2});
+
+  const auto stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          actual, expected);
+
+  EXPECT_EQ(stats.status, Error::InvalidArgument);
+}
+
+TEST(BundledProgramErrorStatsTest, MatchingPermutedLayoutsAreSupported) {
+  TensorFactory<ScalarType::Float> tensor_factory;
+  const auto expected = tensor_factory.make({2, 2}, {1, 2, 3, 4}, {1, 2});
+  const auto actual = tensor_factory.make({2, 2}, {2, 2, 3, 4}, {1, 2});
+
+  const auto stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          actual, expected);
+
+  EXPECT_EQ(stats.status, Error::Ok);
+  EXPECT_DOUBLE_EQ(stats.mean_abs_error, 0.25);
+  EXPECT_DOUBLE_EQ(stats.max_abs_error, 1.0);
+  EXPECT_DOUBLE_EQ(stats.mean_relative_error, 0.125);
+  EXPECT_DOUBLE_EQ(stats.max_relative_error, 0.5);
+}
+
+#ifdef USE_ATEN_LIB
+TEST(BundledProgramErrorStatsTest, NonDenseLayoutsAreRejected) {
+  TensorFactory<ScalarType::Float> tensor_factory;
+  const auto storage = tensor_factory.make({8}, {1, 2, 3, 4, 5, 6, 7, 8});
+  const auto gapped = storage.as_strided({2, 2}, {4, 1});
+  const auto overlapping = storage.as_strided({2, 2}, {0, 1});
+
+  for (const auto& tensor : {gapped, overlapping}) {
+    const auto stats =
+        executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+            tensor, tensor);
+    EXPECT_EQ(stats.status, Error::InvalidArgument);
+  }
+}
+#else
+TEST(BundledProgramErrorStatsTest, NonDenseLayoutsAreRejected) {
+  executorch::aten::SizesType sizes[] = {2, 2};
+  executorch::aten::DimOrderType dim_order[] = {0, 1};
+  executorch::aten::StridesType strides[] = {3, 1};
+  float data[] = {1, 2, 0, 3, 4};
+  executorch::aten::TensorImpl impl(
+      ScalarType::Float, 2, sizes, data, dim_order, strides);
+  const executorch::aten::Tensor tensor(&impl);
+
+  const auto stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          tensor, tensor);
+
+  EXPECT_EQ(stats.status, Error::InvalidArgument);
+}
+
+TEST(BundledProgramErrorStatsTest, BundledLayoutWithoutStridesIsSupported) {
+  executorch::aten::SizesType sizes[] = {2, 2};
+  executorch::aten::DimOrderType dim_order[] = {1, 0};
+  float data[] = {1, 2, 3, 4};
+  executorch::aten::TensorImpl impl(
+      ScalarType::Float, 2, sizes, data, dim_order, nullptr);
+  const executorch::aten::Tensor expected(&impl);
+  TensorFactory<ScalarType::Float> tensor_factory;
+  const auto actual = tensor_factory.make({2, 2}, {2, 2, 3, 4}, {1, 2});
+
+  const auto stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          actual, expected);
+
+  EXPECT_EQ(stats.status, Error::Ok);
+  EXPECT_DOUBLE_EQ(stats.mean_abs_error, 0.25);
+  EXPECT_DOUBLE_EQ(stats.max_abs_error, 1.0);
+
+  const auto contiguous = tensor_factory.make({2, 2}, {1, 2, 3, 4});
+  const auto mismatched_stats =
+      executorch::BUNDLED_PROGRAM_NAMESPACE::compute_tensor_error_stats(
+          contiguous, expected);
+  EXPECT_EQ(mismatched_stats.status, Error::InvalidArgument);
+}
+#endif
+
 TEST(BundledProgramErrorStatsTest, MatchingNonFiniteValuesHaveZeroError) {
   TensorFactory<ScalarType::Float> tensor_factory;
   const float nan = std::numeric_limits<float>::quiet_NaN();

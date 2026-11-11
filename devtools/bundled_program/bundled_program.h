@@ -54,7 +54,8 @@ struct ErrorStats {
  * Compute error statistics between two floating-point tensors.
  *
  * Float and Half tensors are supported. The tensors must have matching sizes
- * and scalar types.
+ * and scalar types, with compatible dense layouts. Incompatible or non-dense
+ * layouts return Error::InvalidArgument.
  */
 ET_NODISCARD ErrorStats compute_tensor_error_stats(
     const Tensor& method_output,

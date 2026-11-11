@@ -42,6 +42,28 @@ namespace {
 
 constexpr size_t kMaxDim = 16;
 
+bool have_compatible_dense_layouts(const Tensor& a, const Tensor& b) {
+#ifdef USE_ATEN_LIB
+  return a.is_non_overlapping_and_dense() && b.is_non_overlapping_and_dense() &&
+      a.strides() == b.strides();
+#else
+  if (a.dim() > kMaxDim || a.dim_order() != b.dim_order()) {
+    return false;
+  }
+  executorch::aten::StridesType strides[kMaxDim] = {0};
+  if (executorch::runtime::dim_order_to_stride(
+          a.sizes().data(), a.dim_order().data(), a.dim(), strides) !=
+      Error::Ok) {
+    return false;
+  }
+  // Bundled tensors omit strides; their dim_order defines a dense layout.
+  const auto dense_strides =
+      ArrayRef<executorch::aten::StridesType>(strides, a.dim());
+  return (a.strides().data() == nullptr || a.strides() == dense_strides) &&
+      (b.strides().data() == nullptr || b.strides() == dense_strides);
+#endif
+}
+
 template <typename T>
 void update_error_stats(
     const T* expected,
@@ -493,6 +515,10 @@ ET_NODISCARD ErrorStats compute_tensor_error_stats(
   }
   if (method_output.scalar_type() != expected_output.scalar_type()) {
     ET_LOG(Error, "Tensor dtype mismatch");
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+  if (!have_compatible_dense_layouts(method_output, expected_output)) {
+    ET_LOG(Error, "Tensor layouts must be dense and compatible");
     return {Error::InvalidArgument, 0, 0, 0, 0};
   }
 
