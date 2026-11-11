@@ -124,11 +124,15 @@ def load_gguf(
     path: str,
     architecture: str | None = None,
     raw_iter: RawIter | None = None,
+    truncated: bool = False,
 ) -> None:
     """Replace every parameter with a GGUF file's weights; quantized ones stay
     ``ExportableGGUFTensor`` so the PTN carries the GGUF blocks. ``architecture``
-    defaults to the file's ``general.architecture``."""
-    key_map, convert = gguf_to_hf(model, architecture or gguf_architecture(path))
+    defaults to the file's ``general.architecture``. ``truncated`` loads a model
+    built with fewer layers from the file's first blocks."""
+    key_map, convert = gguf_to_hf(
+        model, architecture or gguf_architecture(path), truncated
+    )
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
     loaded = set()
@@ -419,7 +423,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use only the model's config, with random weights.",
     )
-    parser.add_argument("--layers", type=int, default=0)
+    parser.add_argument(
+        "--layers",
+        type=int,
+        default=0,
+        help="Keep only the first N layers; with --gguf, load their weights.",
+    )
     parser.add_argument("--max_seq_length", type=int, default=128)
     parser.add_argument("--max_context_length", type=int, default=0)
     parser.add_argument("--output", default="")
@@ -450,10 +459,9 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if not 0 <= args.samples <= len(_PROMPTS) or (args.samples and not args.output):
         parser.error(f"--samples takes 0 to {len(_PROMPTS)} and needs --output")
-    if args.gguf and (args.layers or args.random_weights or args.quantize != "none"):
+    if args.gguf and (args.random_weights or args.quantize != "none"):
         parser.error(
-            "--gguf loads every weight; it excludes --layers, --random_weights "
-            "and --quantize"
+            "--gguf loads every weight; it excludes --random_weights and --quantize"
         )
     if args.offgraph_cache and (
         args.max_context_length or args.kv_cache_dtype != "fp32"
@@ -491,7 +499,7 @@ def main() -> None:
         offgraph_cache=args.offgraph_cache,
     )
     if args.gguf:
-        load_gguf(model, args.gguf)
+        load_gguf(model, args.gguf, truncated=bool(args.layers))
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
     if args.offgraph_cache:
