@@ -2095,7 +2095,8 @@ jobs:
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
         # Cooperative-matrix family kernels. SwiftShader matches no family and has no
-        # timestamp queries, so only the outputs and the absence of a family are checked.
+        # timestamp queries: every case must run and validate, but the dispatched
+        # kernels are not checked.
         ETVK_WMMA_EXPECTED_FAMILY=software \
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
           --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
