@@ -1095,6 +1095,9 @@ name prefix of the kernel the step must dispatch on a device of that family;
 a family without an entry, and a device that matches no family, must dispatch
 no `_wmma` kernel. Without timestamp queries (e.g. SwiftShader) the kernels
 are not checked and the result reports `route_asserted: false`.
+`wmma_family_shared_memory` checks, without GPU work, that the shared memory
+each family row declares for kernel selection equals the Workgroup variables
+of its variants' SPIR-V.
 
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:

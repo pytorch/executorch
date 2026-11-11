@@ -1,4 +1,5 @@
 [
+  {"name": "wmma family rows shared memory", "check": "wmma_family_shared_memory", "parameters": {}},
   {
     "name": "wmma q4gsw M256 K256 N384 g128 texture3d",
     "check": "wmma_family_route",

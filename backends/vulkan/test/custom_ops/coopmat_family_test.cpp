@@ -500,20 +500,78 @@ TEST(CoopmatFamilyTest, Int8Layout) {
   EXPECT_FALSE(select_wmma_kernel(xe2_key(), x).has_value());
 }
 
+// A row needs its whole declared shared memory (A/B staging, parameter
+// arrays, C staging) within maxComputeSharedMemorySize, for the IO storage of
+// the shape. At the limit it fits; one byte less and the next row (or the
+// existing kernels) takes the shape.
 TEST(CoopmatFamilyTest, SharedMemoryLimit) {
-  // The texture3d drain of the Xe2 4w tile needs 2 * 8 * 128 * 2 = 4 KiB of
-  // shared memory on top of the A/B tiles.
-  CoopmatDeviceKey d = xe2_key();
-  d.max_shared_bytes = 4096;
+  const WmmaShape q4_tex =
+      prefill(WmmaOp::kQ4gsw, 256, 2048, 2048, WmmaStorage::kTexture3D);
+  const WmmaShape q4_buf =
+      prefill(WmmaOp::kQ4gsw, 256, 2048, 2048, WmmaStorage::kBuffer);
+  const WmmaShape dq_tex =
+      prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 2048, WmmaStorage::kTexture3D);
+  const WmmaShape dq_buf =
+      prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 2048, WmmaStorage::kBuffer);
+  auto with_limit = [](CoopmatDeviceKey d, const uint32_t bytes) {
+    d.max_shared_bytes = bytes;
+    return d;
+  };
+
+  // NVIDIA, texture IO, M = 256, K = N = 2048: the 256-row 4w tile declares
+  // 45056 bytes (Ash 24576, BshT 12288, Csh 8192), the 128-row one 29184,
+  // the row-major 8da4w tile 35328.
+  const CoopmatDeviceKey nv = nvidia_key();
   EXPECT_EQ(
-      selected(
-          d,
-          prefill(WmmaOp::kQ4gsw, 2048, 4096, 4096, WmmaStorage::kTexture3D)),
-      "");
+      selected(with_limit(nv, 45056), q4_tex), kQ + "t256x128k16g42s32bt");
+  EXPECT_EQ(selected(with_limit(nv, 45055), q4_tex), kQ + "t128x128k16g22s32");
+  EXPECT_EQ(selected(with_limit(nv, 32768), q4_tex), kQ + "t128x128k16g22s32");
+  EXPECT_EQ(selected(with_limit(nv, 29183), q4_tex), "");
   EXPECT_EQ(
-      selected(
-          d, prefill(WmmaOp::kQ4gsw, 2048, 4096, 4096, WmmaStorage::kBuffer)),
-      kQ + "t128x128k16g44s16m8fli");
+      selected(with_limit(nv, 35328), dq_tex),
+      kD + "rowmajor_t128x128k64g24s32mk32");
+  EXPECT_EQ(selected(with_limit(nv, 35327), dq_tex), "");
+  // K > 8192: the fp32-accumulating tile declares 37888 bytes and is the
+  // only row for that K.
+  const WmmaShape q4_long_k =
+      prefill(WmmaOp::kQ4gsw, 256, 14336, 4096, WmmaStorage::kTexture3D);
+  EXPECT_EQ(
+      selected(with_limit(nv, 37888), q4_long_k),
+      kQ + "bx_t128x128k32g42s32f32c");
+  EXPECT_EQ(selected(with_limit(nv, 37887), q4_long_k), "");
+
+  // Xe2: the 8da4w tile declares 43520 bytes with texture IO (8192 of them
+  // C staging) and 35328 with buffer IO; the 4w tiles 18432 and 16384.
+  const CoopmatDeviceKey xe2 = xe2_key();
+  EXPECT_EQ(
+      selected(with_limit(xe2, 43520), dq_tex), kD + "t128x128k64g84s16m8i");
+  EXPECT_EQ(selected(with_limit(xe2, 43519), dq_tex), "");
+  EXPECT_EQ(
+      selected(with_limit(xe2, 43519), dq_buf), kD + "t128x128k64g84s16m8i");
+  EXPECT_EQ(selected(with_limit(xe2, 35327), dq_buf), "");
+  EXPECT_EQ(
+      selected(with_limit(xe2, 18432), q4_tex), kQ + "t128x128k16g82s16m8flib");
+  EXPECT_EQ(selected(with_limit(xe2, 18431), q4_tex), "");
+  EXPECT_EQ(
+      selected(with_limit(xe2, 18431), q4_buf), kQ + "t128x128k16g44s16m8fli");
+  EXPECT_EQ(selected(with_limit(xe2, 16383), q4_buf), "");
+
+  // The measured devices (Arc B580, Arc Pro B70, RTX 4070 Ti SUPER, Jetson
+  // Orin) report 48 KiB, which every row fits: their selection is that of an
+  // unlimited device.
+  for (const CoopmatDeviceKey& d : {xe2, nv}) {
+    for (const WmmaRow& row : coopmat_family_rows(coopmat_family(d))) {
+      EXPECT_LE(row.shared_bytes.texture3d, 49152u) << row.kernel_base;
+      EXPECT_LE(row.shared_bytes.buffer, 49152u) << row.kernel_base;
+      EXPECT_NE(
+          (row.storages & kWmmaTex3dTex2d) != 0,
+          row.shared_bytes.texture3d == 0)
+          << row.kernel_base;
+      EXPECT_NE(
+          (row.storages & kWmmaBufTex2d) != 0, row.shared_bytes.buffer == 0)
+          << row.kernel_base;
+    }
+  }
 }
 
 TEST(CoopmatFamilyTest, TileForKernel) {
@@ -550,13 +608,15 @@ std::string read_file(const std::string& path) {
 TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
   const std::string dir =
       std::string(COOPMAT_FAMILY_TEST_GLSL_DIR) + "/gemm/linear/qw/";
-  const std::string yamls =
-      read_file(dir + "q4gsw/wmma/linear_q4gsw_wmma.yaml") +
-      read_file(dir + "q4gsw/wmma/linear_q4gsw_wmma_bx.yaml") +
-      read_file(dir + "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma.yaml") +
-      read_file(dir + "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma_rowmajor.yaml");
-  if (yamls.empty()) {
-    GTEST_SKIP() << "shader sources not found under " << dir;
+  std::string yamls;
+  for (const char* yaml :
+       {"q4gsw/wmma/linear_q4gsw_wmma.yaml",
+        "q4gsw/wmma/linear_q4gsw_wmma_bx.yaml",
+        "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma.yaml",
+        "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma_rowmajor.yaml"}) {
+    const std::string contents = read_file(dir + yaml);
+    ASSERT_FALSE(contents.empty()) << "cannot read " << dir << yaml;
+    yamls += contents;
   }
   const std::pair<uint8_t, const char*> combos[] = {
       {kWmmaTex3dTex2d, "_texture3d_texture2d_half"},

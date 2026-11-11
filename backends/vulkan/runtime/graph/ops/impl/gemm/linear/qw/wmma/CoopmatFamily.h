@@ -139,7 +139,6 @@ struct WmmaTile {
   uint32_t sg_grid_y;
   uint32_t subgroup_size;
   uint32_t mma_m;
-  bool csh_in_ash; // texture3d drain staged in the A tile (no extra Csh)
   uint32_t wg_size() const {
     return sg_grid_x * sg_grid_y * subgroup_size;
   }
@@ -152,11 +151,19 @@ enum WmmaStorageSet : uint8_t {
   kWmmaBufTex2d = 1u << 1, // buffer input/output, texture2d weight
 };
 
+// Shared memory a kernel declares (A/B staging, parameter arrays and C
+// staging), per IO storage: the Workgroup variables of its SPIR-V.
+struct WmmaSharedBytes {
+  uint32_t texture3d = 0;
+  uint32_t buffer = 0;
+};
+
 struct WmmaRow {
   WmmaOp op;
   const char* kernel_base; // shader name without _<io>_<weight>_<dtype>
   WmmaTile tile;
   uint8_t storages; // WmmaStorageSet bits
+  WmmaSharedBytes shared_bytes;
   // Extra shape requirement (beyond tile alignment), or null. Rows are tried
   // in order, so a later row can serve the shapes an earlier one rejects.
   bool (*shape_ok)(const WmmaShape&);

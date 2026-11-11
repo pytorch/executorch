@@ -310,7 +310,7 @@ def define_common_targets(is_fbcode = False):
         name = "case_checks",
         srcs = [
             "operators/convolution/q8ta/Q8taValidationChecks.cpp",
-            "operators/gemm/linear/qw/wmma/WmmaFamilyRouteCheck.cpp",
+            "operators/gemm/linear/qw/wmma/WmmaFamilyChecks.cpp",
         ],
         exported_headers = ["operators/convolution/q8ta/Q8taValidationChecks.h"],
         platforms = get_platforms(),
