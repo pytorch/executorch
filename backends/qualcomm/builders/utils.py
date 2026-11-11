@@ -104,15 +104,15 @@ def is_graph_input(
 
 
 def is_mutable_buffer_input(
-    tensor: torch.fx.Node, edge_program: torch.export.ExportedProgram
+    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> bool:
     """
     Check if the given tensor is a mutable buffer input
     Args:
-        tensor: EdgeIR Tensor that is being checked for mutable buffer input
+        node: EdgeIR node that is being checked for mutable buffer input
     """
-    if tensor.op == "placeholder" and is_buffer(edge_program, tensor):
-        fqn = edge_program.graph_signature.inputs_to_buffers[tensor.target]
+    if node.op == "placeholder" and is_buffer(edge_program, node):
+        fqn = edge_program.graph_signature.inputs_to_buffers[node.target]
         # if the buffer is mutated then record that
         return fqn in edge_program.graph_signature.buffers_to_mutate.values()
 
