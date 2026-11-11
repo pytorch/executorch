@@ -34,9 +34,6 @@
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-// A is bound as a scalar int8_t array so that a coopMatLoad from it has a
-// matching component type.
-#extension GL_EXT_shader_8bit_storage : require
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_control_flow_attributes : enable
 
@@ -58,15 +55,9 @@ ${layout_declare_tensor(B, "w", "t_output",              "half", IO_STORAGE, is_
 // t_packed_int8_input -- but stays declared so the binding layout matches the
 // dispatch site.
 ${layout_declare_tensor(B, "r", "t_input",               "half", IO_STORAGE, is_scalar_array=False)}
-// Row-major packed activations (row stride = K int8).
-${layout_declare_tensor(B, "r", "t_packed_int8_input",   "int8", "buffer", is_scalar_array=True)}
-// uvec4 view of binding 2 (t_packed_int8_input) for 16-byte A staging.
-// Spelled layout(std430, set...) on purpose: gen_vulkan_spv.py collects the
-// descriptor list from every line matching ^layout\(set, so the usual spelling
-// would add a descriptor.
-layout(std430, set = 0, binding = 2) buffer restrict readonly t_packed_int8_input_v4Buffer {
-  uvec4 t_packed_int8_input_v4[];
-};
+// Row-major packed activations (row stride = K int8), read as 16-byte vectors
+// for A staging.
+${layout_declare_tensor(B, "r", "t_packed_int8_input",   "uint", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_sums",     "int",  "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_int8_input_scales",   "half", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_int8_input_zps",      "int8" if ZP_DTYPE_MODE == "zpint8" else "half", "texture3d")}

@@ -236,7 +236,7 @@ void main() {
   // Prefetch chunk 0 into temp registers, then store to slice 0 (no barrier
   // here -- the main loop's first iteration barriers before reading slice 0).
   [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
-    temp_Av[v] = t_packed_int8_input_v4[a_gv4[v]];
+    temp_Av[v] = t_packed_int8_input[a_gv4[v]];
   }
   [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
     if (b_on[si]) {
@@ -297,7 +297,7 @@ void main() {
       if (has_next) {
         const uint chunkK_nxt = (chunk + 1u) * WG_TILE_K;
         [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
-          temp_Av[v] = t_packed_int8_input_v4[a_gv4[v] + chunkK_nxt / 16u];
+          temp_Av[v] = t_packed_int8_input[a_gv4[v] + chunkK_nxt / 16u];
         }
         [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
           const uint k4_blk = (chunkK_nxt >> 2u) + b_k4off[si];
