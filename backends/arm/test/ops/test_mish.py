@@ -29,7 +29,10 @@ class _MishOpSupportModule(torch.nn.Module):
             200.0 * torch.linspace(0.001, 1.0, 64).reshape(1, 2, 4, 8)
         ),
         "rank4_large_negative": lambda: (
-            -200.0 * torch.linspace(0.001, 1.0, 64).reshape(1, 2, 4, 8)
+            # Preserve a large negative range without losing the
+            # significant Mish outputs to INT8 input quantization.
+            -40.0
+            * torch.linspace(0.001, 1.0, 64).reshape(1, 2, 4, 8)
         ),
         "rank4_large_mixed": lambda: (
             torch.linspace(-200.0, 200.0, 64).reshape(1, 2, 4, 8)
