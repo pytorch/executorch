@@ -6,9 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/llm/batching/util/sequence_batch_control.h>
 #include <executorch/extension/llm/batching/util/session_table.h>
 
 #include <executorch/extension/llm/cache/cell_cache.h>
+#include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -250,4 +252,64 @@ TEST(SelectRowsTest, KeepsOnlyTheSlicesWantedRows) {
   rows = util::select_rows(step, 10, 3);
   EXPECT_EQ(rows.selector, std::vector<std::int64_t>({2}));
   EXPECT_TRUE(rows.inputs.empty());
+}
+
+// One session over a single-sequence cache, through the same table.
+TEST(SequenceBatchControlTest, ServesOneSessionAtATime) {
+  ::executorch::runtime::runtime_init();
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 1, 1}};
+  cache::SequenceCache sequence(geometry, cache::CacheConfig{16, 6});
+  util::SequenceBatchControl control(sequence);
+  util::SessionTable table(control, /*max_sessions=*/2, 16, kVocab);
+  // Commits a step as the cache's own byte layer would.
+  const auto commit = [&](const util::PackedStep& step) {
+    ASSERT_TRUE(control.declare_step(step.seq_ids));
+    const auto plan = sequence.plan(
+        0,
+        static_cast<int>(step.positions.front()),
+        static_cast<int>(step.positions.size()));
+    ASSERT_TRUE(plan.has_value());
+    sequence.commit(*plan);
+  };
+  const auto input = [](batching::SessionId sid,
+                        std::vector<batching::Token> tokens,
+                        batching::Position position) {
+    batching::Input in;
+    in.sid = sid;
+    in.size = tokens.size();
+    in.offset = 0;
+    in.payload = batching::TokenInputPtr(
+        std::make_shared<std::vector<batching::Token>>(std::move(tokens)));
+    in.position = position;
+    in.produce_output = true;
+    return in;
+  };
+
+  const auto session = table.open();
+  ASSERT_TRUE(session.has_value());
+  EXPECT_FALSE(table.open().has_value());
+  EXPECT_FALSE(table.clone(*session, 1).has_value());
+
+  auto step = table.pack({{input(*session, {1, 2, 3}, 0)}});
+  ASSERT_TRUE(step.ok());
+  EXPECT_EQ(step->seq_ids, (std::vector<int32_t>{0, 0, 0}));
+  EXPECT_EQ(step->positions, (std::vector<int64_t>{0, 1, 2}));
+  commit(*step);
+  EXPECT_EQ(control.pos(0), 3);
+
+  // A step starting inside the committed history rewinds to its start.
+  const auto rewound = table.pack({{input(*session, {7}, 1)}});
+  ASSERT_TRUE(rewound.ok());
+  EXPECT_EQ(control.pos(0), 1);
+  commit(*rewound);
+  EXPECT_EQ(control.pos(0), 2);
+  EXPECT_FALSE(table.pack({{input(*session, {8}, 4)}}).ok());
+
+  table.close(*session);
+  EXPECT_EQ(sequence.length(), 0);
+  const auto reopened = table.open();
+  ASSERT_TRUE(reopened.has_value());
+  EXPECT_NE(*reopened, *session);
+  EXPECT_EQ(control.pos(0), 0);
 }

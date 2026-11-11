@@ -51,6 +51,7 @@ def define_common_targets():
             "util/session_table.cpp",
         ],
         exported_headers = [
+            "util/sequence_batch_control.h",
             "util/session_table.h",
         ],
         visibility = ["PUBLIC"],
