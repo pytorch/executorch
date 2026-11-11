@@ -1292,7 +1292,9 @@ class Modality(Component):
     def _tag_ios(self, node, fixed_point_type):
         quant_io_type = None
 
-        # tag sharding io
+        # tag sharding io: for quantized models, where adjacent partitions are directly
+        # connected (partition1 -> llama_fallback -> partition2) without redundant explicit Q/DQ nodes in between
+        # (partition1 -> Q -> llama_fallback  -> DQ -> partition2).
         if exir_ops.edge.llama.fallback.default in [
             u.target for u in list(node.users.keys())
         ] + [node.target]:
@@ -1337,7 +1339,16 @@ class Modality(Component):
             self.dep_table[TagQuantIO] = [SplitGraph]
 
             if not request_data.skip_quantize:
-                fixed_point_type = {"io_type": torch.float32}
+                fixed_point_type = {}
+
+                # Tag sharding I/O as uint16 for A16 quantization.
+                # TODO: Add uint8 dtype handling for A8 quantization when a use case arises.
+                if self.quant_recipe.get_act_bit_width() == 16:
+                    fixed_point_type["io_type"] = torch.uint16
+                else:
+                    raise RuntimeError(
+                        f"unknown io bit width: {self.quant_recipe.get_act_bit_width()}"
+                    )
 
                 # setup quantized IO
                 self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True

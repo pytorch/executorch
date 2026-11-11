@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <stdexcept>
@@ -292,6 +293,32 @@ void GraphBuilder::lower_expand(const Node& node) {
   ggml_tensor* result =
       ggml_repeat(instance_.context.get(), input.tensor, shape);
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+void GraphBuilder::lower_repeat(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  if (input.tensor == nullptr) {
+    throw std::runtime_error("ggml: repeat input has no tensor");
+  }
+  std::vector<int64_t> sizes = int_list(require_arg(node, "repeats", 1).arg);
+  if (sizes.size() < input.sizes.size() || sizes.size() > 4) {
+    throw std::runtime_error(
+        "ggml: repeat needs input rank <= repeats rank <= 4");
+  }
+  const size_t offset = sizes.size() - input.sizes.size();
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    const int64_t extent = i < offset ? 1 : input.sizes[i - offset];
+    if (extent <= 0 || sizes[i] <= 0 ||
+        sizes[i] > std::numeric_limits<int64_t>::max() / extent) {
+      throw std::runtime_error("ggml: repeat requires positive, bounded sizes");
+    }
+    sizes[i] *= extent;
+  }
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* shape = new_tensor(ctx, input.tensor->type, sizes);
+  ggml_tensor* result = ggml_repeat(ctx, input.tensor, shape);
+  // A no-op repeat must still snapshot storage that can be written later.
+  set_single_output(node, TensorRef{snapshot(result), std::move(sizes)});
 }
 
 void GraphBuilder::lower_cat(const Node& node) {

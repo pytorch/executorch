@@ -470,6 +470,45 @@ TEST_F(OpVarCorrectionOutTest, SmokeTest) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpVarOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // 100, 102, 100, 102, ... has mean 101 and variance 1. A BFloat16 running
+  // sum would stop growing long before the last of the 2058 terms. BFloat16
+  // also rounds 2058 and 2057 to 2064, and dividing by 2064 would give a mean
+  // of about 100.7 and a variance of about 1.09 or 0.997.
+  constexpr int N = 2058;
+  std::vector<executorch::aten::BFloat16> data(N);
+  for (int i = 0; i < N; ++i) {
+    data[i] = i % 2 == 0 ? 100.0f : 102.0f;
+  }
+  Tensor out = tf.zeros({1});
+  op_var_out(
+      tf.make({1, N}, data),
+      ArrayRef<int64_t>{1},
+      /*unbiased=*/false,
+      /*keepdim=*/false,
+      out);
+  EXPECT_TENSOR_EQ(out, tf.full({1}, 1));
+}
+
+TEST_F(OpVarOutTest, MixedDtypesConvertInputsFirst) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::BFloat16> tf_out;
+  // BFloat16 holds 1000, 1001, 1002, 1003 as 1000, 1000, 1000, 1004, whose
+  // unbiased variance is 4. The variance of the float values is about 1.67.
+  Tensor out = tf_out.zeros({1});
+  op_var_out(
+      tf.make({1, 4}, {1000, 1001, 1002, 1003}),
+      ArrayRef<int64_t>{1},
+      /*unbiased=*/true,
+      /*keepdim=*/false,
+      out);
+  EXPECT_TENSOR_EQ(out, tf_out.full({1}, 4));
+}
+
 TEST_F(OpVarOutTest, EmptyInput) {
   TensorFactory<ScalarType::Float> tf;
 

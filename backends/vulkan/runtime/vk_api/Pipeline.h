@@ -38,7 +38,7 @@ struct SpecVar final {
     int32_t as_int32;
     uint32_t as_uint32;
     float as_float;
-    bool as_bool;
+    VkBool32 as_bool;
   };
 
   Value value;
@@ -99,6 +99,13 @@ struct PipelineBarrier final {
     VkPipelineStageFlags src;
     VkPipelineStageFlags dst;
   } stage;
+
+  // Access masks of a global memory barrier, recorded if either is set. Covers
+  // memory whose accesses are not tracked per buffer or image.
+  struct Access final {
+    VkAccessFlags src;
+    VkAccessFlags dst;
+  } global_access;
 
   std::vector<BufferMemoryBarrier> buffers;
   std::vector<ImageMemoryBarrier> images;

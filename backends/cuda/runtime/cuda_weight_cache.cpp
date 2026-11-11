@@ -124,6 +124,7 @@ bool is_supported_dtype(int32_t dtype) {
     case 4: // Long
     case 5: // Half
     case 6: // Float
+    case 7: // Double
     case 11: // Bool
     case 15: // BFloat16
       return true;
@@ -138,6 +139,59 @@ bool is_supported_device_type(int32_t device_type) {
 
 bool is_offgraph_kv_fqn(const std::string& fqn) {
   return fqn.rfind(kOffGraphKVFqnPrefix, 0) == 0;
+}
+
+// torch::aot_inductor::ConstantType.
+constexpr int32_t kAotiParameter = 1;
+constexpr int32_t kAotiBuffer = 2;
+constexpr int32_t kAotiTensorConstant = 3;
+
+bool can_check_constants_bound(const CudaDelegateHandle& handle) {
+  return handle.get_constant_type && handle.get_constant_from_folded &&
+      handle.get_constant_data_size;
+}
+
+// The same rule as AOTI's validate_full_update, without its warning for each
+// absent buffer: folded constants, buffers, tensor constants and empty
+// parameters may be absent, every other constant must be bound.
+Error check_constants_bound(
+    const CudaDelegateHandle& handle,
+    size_t num_constants,
+    const std::unordered_set<std::string>& bound) {
+  for (size_t index = 0; index < num_constants; ++index) {
+    bool from_folded = false;
+    int32_t type = 0;
+    size_t data_size = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_from_folded(
+            handle.container_handle, index, &from_folded),
+        "Failed to read CUDA AOTI constant folding at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_type(handle.container_handle, index, &type),
+        "Failed to read CUDA AOTI constant type at index %zu",
+        index);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_data_size(
+            handle.container_handle, index, &data_size),
+        "Failed to read CUDA AOTI constant size at index %zu",
+        index);
+    if (from_folded || type == kAotiBuffer || type == kAotiTensorConstant ||
+        (type == kAotiParameter && data_size == 0)) {
+      continue;
+    }
+    const char* name = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_name(handle.container_handle, index, &name),
+        "Failed to read CUDA AOTI constant name at index %zu",
+        index);
+    ET_CHECK_OR_RETURN_ERROR(
+        name != nullptr && bound.count(name) != 0,
+        InvalidProgram,
+        "CUDA AOTI constant '%s' has no bound FQN weight",
+        name == nullptr ? "<unnamed>" : name);
+  }
+  return Error::Ok;
 }
 
 } // namespace
@@ -305,6 +359,7 @@ Error CudaWeightCache::validate_view(const Entry& entry) {
       item_size = 4;
       break;
     case aoti::slim::c10::ScalarType::Long:
+    case aoti::slim::c10::ScalarType::Double:
       item_size = 8;
       break;
     default:
@@ -650,16 +705,25 @@ Error CudaWeightCache::load(
   }
 
   if (!pairs.empty()) {
-    // Full validation stays on with off-graph KV present: those constants are
-    // AOTI buffers, which the check permits to be absent, while every weight
-    // must still be supplied.
+    // Off-graph KV constants are AOTI buffers bound later by the KV pool, so
+    // they are allowed to be absent here, while every weight must be supplied.
+    const bool check_here = can_check_constants_bound(*handle);
+    if (check_here) {
+      std::unordered_set<std::string> bound_names;
+      for (const auto& pair : pairs) {
+        bound_names.emplace(pair.name);
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          check_constants_bound(*handle, num_constants, bound_names),
+          "CUDA FQN weights do not cover the AOTI library");
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle->update_user_managed_constant_buffer_pairs(
             handle->container_handle,
             pairs.data(),
             pairs.size(),
             /*use_inactive=*/false,
-            /*validate_full_update=*/true),
+            /*validate_full_update=*/!check_here),
         "Failed to bind CUDA FQN weights");
   }
   ET_LOG(

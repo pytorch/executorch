@@ -142,6 +142,17 @@ TEST(FuseQuantizedEmbeddingTest, RewritesSupportedEmbedding) {
   EXPECT_FALSE(node.inputs[4].arg.as_bool().value);
 }
 
+TEST(FuseQuantizedEmbeddingTest, ReadsUnnamedInputsByPosition) {
+  Method method = make_method();
+  for (Node& node : method.graph.nodes) {
+    for (NamedArgument& input : node.inputs) {
+      input.name.clear();
+    }
+  }
+
+  EXPECT_EQ(fuse_quantized_embeddings(method), 1);
+}
+
 TEST(FuseQuantizedEmbeddingTest, RejectsUnsupportedQuantization) {
   Method method = make_method(-7, 7);
 

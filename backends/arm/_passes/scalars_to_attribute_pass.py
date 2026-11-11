@@ -8,7 +8,10 @@ from typing import cast, Set, Type, Union
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_first_fake_tensor,
+)
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.exir.graph_module import get_cond_while_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -113,11 +116,15 @@ class ScalarsToAttributePass(ArmPass):
             if n.target == torch.ops.aten.rsub.Scalar:
                 with graph_module.graph.inserting_after(n):
                     reversed_args = (n.args[1], n.args[0])
-                    sub = graph_module.graph.create_node(
-                        "call_function", torch.ops.aten.sub.Tensor, reversed_args, {}
+                    # Preserve rsub provenance and transform metadata.
+                    # create_node also clears stale input/output qparams.
+                    sub = create_node(
+                        graph=graph_module.graph,
+                        op_target=torch.ops.aten.sub.Tensor,
+                        args=reversed_args,
+                        from_node=n,
                     )
                     n.replace_all_uses_with(sub)
-                    sub.meta["val"] = n.meta["val"]
                 graph_module.graph.erase_node(n)
             modified = True
         return modified

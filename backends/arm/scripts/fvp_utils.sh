@@ -63,9 +63,7 @@ function install_fvp() {
         return 0
     fi
 
-    # Download and install Corstone FVP simulator platforms.
-    fvps=("corstone300" "corstone320" "corstone1000")
-
+    # Download and install the Corstone FVP simulator platforms selected in setup.sh.
     for fvp in "${fvps[@]}"; do
         cd "${root_dir}"
         if [[ ! -e "FVP_${fvp}.tgz" ]]; then
@@ -140,16 +138,14 @@ function setup_path_fvp() {
         return 0
     fi
 
-    fvps=("corstone300" "corstone320" "corstone1000")
     for fvp in "${fvps[@]}"; do
         model_dir_variable=${fvp}_model_dir
         fvp_model_dir=${!model_dir_variable}
         fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
         append_env_in_setup_path PATH ${fvp_bin_path}
+        # The models link against the libpython shipped with each FVP
+        append_env_in_setup_path LD_LIBRARY_PATH "${root_dir}/FVP-${fvp}/python/lib/"
     done
-
-    # Fixup for Corstone-320 python dependency
-    append_env_in_setup_path LD_LIBRARY_PATH "${root_dir}/FVP-corstone320/python/lib/"
 
     local fvp_command
     for fvp_command in \

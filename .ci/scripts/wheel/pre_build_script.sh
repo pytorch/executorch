@@ -11,6 +11,10 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
+# The reusable smoke installer selects PyTorch's index; ET also needs PyPI packages.
+export PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:+${PIP_EXTRA_INDEX_URL} }https://pypi.org/simple"
+echo "PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}" >> "${GITHUB_ENV}"
+
 # Initialize submodules here instead of during checkout so we can use OpenSSL
 # on Windows (schannel fails with SEC_E_ILLEGAL_MESSAGE on some gitlab hosts).
 UNAME_S=$(uname -s)
@@ -160,15 +164,33 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
-# Enable VGF in pybind wheel builds when the platform-specific build input is
-# available from pip.
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  PYTHON_BIN=$(command -v python || command -v python3)
+  if "${PYTHON_BIN}" -c 'import sys; sys.exit(sys.version_info < (3, 15))'; then
+    # No cp315 tokenizer wheel is published. Build the pinned source with the
+    # existing build dependencies and Visual Studio environment before smoke install.
+    # MSBuild's file tracker needs a short path even during CMake compiler checks.
+    tokenizer_source_dir=$(mktemp -d /c/et-tok.XXXXXX)
+    # Dereference submodule symlinks because MSYS cannot recreate them on every runner.
+    cp -RL extension/llm/tokenizers/. "${tokenizer_source_dir}"
+    cmd //c '.ci\scripts\wheel\vc_env_helper.bat' python -m pip install \
+      --no-build-isolation "$(cygpath -w "${tokenizer_source_dir}")"
+    rm -rf "${tokenizer_source_dir}"
+  fi
+fi
+
+# Enable VGF in Linux pybind wheel builds when the platform-specific build input
+# is available from pip. Not on macOS: the VGF library's macOS wheels need macOS 15,
+# newer than the oldest macOS this wheel supports.
 if [[ "$UNAME_S" == "Linux" || "$UNAME_S" == "Darwin" ]]; then
   # The wheel rewrites recorded runtime paths after linking, which needs patchelf. It is declared
   # under build-system requires, but that is honoured only by a frontend with build isolation and
   # this path deliberately installs requirements itself, so without this the rewrite silently
   # does nothing and a CUDA wheel loses its route to the NVIDIA libraries beside it.
   python3 -m pip install patchelf || true
-  if python3 -m pip install -r \
+  if [[ "$UNAME_S" == "Darwin" ]]; then
+    echo "VGF needs a newer macOS than this wheel supports; building without VGF"
+  elif python3 -m pip install -r \
     "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/arm/requirements-arm-vgf-runtime.txt"; then
     export EXECUTORCH_PYBIND_ENABLE_VGF=ON
     echo "EXECUTORCH_PYBIND_ENABLE_VGF=ON" >> "${GITHUB_ENV}"
