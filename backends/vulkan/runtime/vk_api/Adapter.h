@@ -588,6 +588,14 @@ class Adapter final {
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
 };
 
+// Decides whether a logical device this runtime creates for `physical_device`
+// enables VK_KHR_vulkan_memory_model (when the device advertises it). Without
+// a policy, as on a build without the code that needs it, the memory model
+// stays off and shaders that declare the VulkanMemoryModel capability are
+// rejected. Set before the first Adapter is created.
+using VulkanMemoryModelPolicy = bool (*)(const PhysicalDevice& physical_device);
+void set_vulkan_memory_model_policy(VulkanMemoryModelPolicy policy);
+
 // Resolve the shader-declared required subgroup size into a concrete value
 // (or 0 = no requirement) given the adapter capabilities. Throws
 // ShaderNotSupportedError when the shader declares a required subgroup size

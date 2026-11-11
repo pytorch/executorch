@@ -86,6 +86,9 @@ void populate_queue_info(
   }
 }
 
+// Constant-initialized, so it is valid before any dynamic initializer runs.
+VulkanMemoryModelPolicy vulkan_memory_model_policy = nullptr;
+
 VkDevice create_logical_device(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
@@ -142,7 +145,9 @@ VkDevice create_logical_device(
   };
 
 #ifdef VK_KHR_vulkan_memory_model
-  if (physical_device.vulkan_memory_model_features.vulkanMemoryModel) {
+  if (physical_device.vulkan_memory_model_features.vulkanMemoryModel &&
+      vulkan_memory_model_policy != nullptr &&
+      vulkan_memory_model_policy(physical_device)) {
     requested_device_extensions.push_back(
         VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
   }
@@ -936,6 +941,10 @@ std::string Adapter::stringize() const {
 std::ostream& operator<<(std::ostream& os, const Adapter& adapter) {
   os << adapter.stringize() << std::endl;
   return os;
+}
+
+void set_vulkan_memory_model_policy(const VulkanMemoryModelPolicy policy) {
+  vulkan_memory_model_policy = policy;
 }
 
 uint32_t resolve_required_subgroup_size(

@@ -1111,6 +1111,9 @@ ETVK_WMMA_EXPECTED_FAMILY=nvidia etvk_ops_bench --validation_only \
 `wmma_family_shared_memory` checks, without GPU work, that the shared memory
 each family row declares for kernel selection equals the Workgroup variables
 of its variants' SPIR-V.
+`wmma_memory_model_gate` checks that only a device matching a family enables
+the Vulkan memory model: elsewhere every listed upstream shader that declares
+`VulkanMemoryModel` must still be rejected by the capability gate.
 
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:
