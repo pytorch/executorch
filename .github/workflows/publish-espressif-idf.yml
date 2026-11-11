@@ -1,0 +1,410 @@
+name: Publish ESP-IDF component
+
+# Publishes pytorch/executorch to the ESP Component Registry: RC tags to the
+# staging registry, release and respin tags to staging and then production,
+# and a manual run on the nightly branch a dev version of its commit for early
+# adopters; manual runs validate without uploading unless dry_run is cleared.
+# The archive is built and tested on the ESP-IDF releases the component
+# supports before any upload, and each upload is followed by a consumer build
+# that resolves the version from that registry. See the release runbook in
+# examples/espressif/README.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: 'Registry to publish to; production uploads to staging first'
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      dry_run:
+        description: 'Only validate: pack, test and dry-run the uploads, uploading nothing. Run on the release, RC or respin tag, or on the nightly branch for its dev version'
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/workflows/publish-espressif-idf.yml
+      - .ci/scripts/upload_espressif_idf_component.sh
+      - .ci/scripts/espressif_idf_upload_requirements.txt
+
+# Runs for one tag or branch go one at a time; runs for different ones, such as
+# an RC awaiting approval and its release, do not hold each other up. A run
+# waiting for an approval holds its ref's group, in which GitHub keeps one
+# later run pending and cancels that for a newer one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan the release
+    runs-on: ubuntu-22.04
+    outputs:
+      package: ${{ steps.plan.outputs.package }}
+      rehearsal: ${{ steps.plan.outputs.rehearsal }}
+      suffix: ${{ steps.plan.outputs.suffix }}
+      version: ${{ steps.plan.outputs.version }}
+      staging: ${{ steps.plan.outputs.staging }}
+      production: ${{ steps.plan.outputs.production }}
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          REGISTRY: ${{ inputs.registry }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          package=true rehearsal=false suffix='' version='' staging=false production=false
+          case "${EVENT}" in
+            push | workflow_dispatch)
+              # A dev version's users install the nightly wheels of its commit,
+              # so only the nightly branch publishes dev versions, and it
+              # publishes nothing else. This runs from the dispatched ref's copy
+              # of the workflow, so the environment's reviewers check what that
+              # copy does.
+              if [[ "${EVENT}" == workflow_dispatch && "${REF}" == refs/heads/nightly ]]; then
+                suffix=-dev staging=true production=true
+              # A tag names the version, which the generator stamps only at that
+              # tag. A respin X.Y.Z~N has the tag vX.Y.Z-esp-idf.N, since git
+              # refs cannot hold ~.
+              elif [[ "${REF}" != refs/tags/* \
+                || ! "${REF_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc([1-9][0-9]*)|-esp-idf\.([1-9][0-9]*))?$ ]]; then
+                if [[ "${EVENT}" == workflow_dispatch ]]; then
+                  echo "::error::run this workflow on a release, RC or respin tag, or on the nightly branch for its dev version, not ${REF}."
+                  exit 1
+                fi
+                echo "::notice::${REF_NAME} is not a release, RC or respin tag; nothing to publish."
+                package=false
+              elif [[ -n "${BASH_REMATCH[3]}" ]]; then
+                suffix="-rc.${BASH_REMATCH[3]}" version="${BASH_REMATCH[1]}-rc.${BASH_REMATCH[3]}"
+                staging=true
+              elif [[ -n "${BASH_REMATCH[4]}" ]]; then
+                suffix="~${BASH_REMATCH[4]}" version="${BASH_REMATCH[1]}~${BASH_REMATCH[4]}"
+                staging=true production=true
+              else
+                version="${BASH_REMATCH[1]}" staging=true production=true
+              fi
+              # A manual run uploads only with dry_run cleared, and to
+              # production only when asked.
+              if [[ "${EVENT}" == workflow_dispatch ]]; then
+                if [[ "${suffix}" == -rc.* && "${REGISTRY}" == production ]]; then
+                  echo "::error::release candidates go to the staging registry only."
+                  exit 1
+                fi
+                [[ "${REGISTRY}" == production ]] || production=false
+                [[ "${DRY_RUN}" != true ]] || staging=false production=false
+              fi
+              ;;
+            *)
+              rehearsal=true
+              ;;
+          esac
+          {
+            echo "package=${package}"
+            echo "rehearsal=${rehearsal}"
+            echo "suffix=${suffix}"
+            echo "version=${version}"
+            echo "staging=${staging}"
+            echo "production=${production}"
+          } | tee -a "${GITHUB_OUTPUT}"
+
+  docker-image:
+    name: Resolve CI docker image
+    needs: plan
+    if: needs.plan.outputs.package == 'true'
+    uses: ./.github/workflows/_docker-image.yml
+
+  package:
+    name: Generate and pack the component
+    needs: [plan, docker-image]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      # The version stamp checks tags and, for a respin, release/X.Y's history.
+      fetch-depth: 0
+      single-branch: false
+      timeout: 60
+      upload-artifact: esp-idf-release
+      script: |
+        set -euo pipefail
+        # The published archive's generated headers and its example's model
+        # come from what this job builds, so none of it may come from the
+        # compiler cache every job writes.
+        unset SCCACHE_BUCKET SCCACHE_S3_KEY_PREFIX
+        CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
+        conda activate "${CONDA_ENV}"
+        suffix="${{ needs.plan.outputs.suffix }}"
+        # A tag names its version, and a rehearsal stamps version.txt's. A dev
+        # version takes the generator's, which adds the commit's date, so for
+        # it the comparison below checks only that prepare stamped the same.
+        expected="${{ needs.plan.outputs.version }}"
+        expected="${expected:-$(cat version.txt)}"
+        # Before the build: a dev version's users install the nightly wheels of
+        # its commit.
+        if [[ "${suffix}" == -dev ]]; then
+          expected=$(bash examples/espressif/build_idf_component.sh --version --version-suffix -dev)
+          bash .ci/scripts/test_espressif_idf_nightly.sh wheel "${RUNNER_ARTIFACT_DIR}" \
+            "${expected}" "$(git rev-parse HEAD)"
+        fi
+        source .ci/scripts/utils.sh
+        install_executorch --use-pt-pinned-commit --minimal
+        if [[ "${{ needs.plan.outputs.rehearsal }}" == true ]]; then
+          # A pull request rehearses the release stamp at a throwaway local tag.
+          git tag -f "v$(cat version.txt)"
+        fi
+        bash .ci/scripts/test_espressif_idf_nightly.sh prepare "${RUNNER_ARTIFACT_DIR}" \
+          --version-suffix "${suffix}"
+        version=$(cat "${RUNNER_ARTIFACT_DIR}/version")
+        if [[ "${version}" != "${expected}" ]]; then
+          echo "FAIL: generated version ${version}, expected ${expected}" >&2
+          exit 1
+        fi
+        bash .ci/scripts/test_espressif_idf_nightly.sh torch "${RUNNER_ARTIFACT_DIR}"
+        echo "Packed pytorch/executorch ${version}"
+        # Every later job reads the tested files from one tar, which
+        # keep-archive keeps longer than this artifact.
+        tar -cf "${RUNNER_TEMP}/release.tar" -C "${RUNNER_ARTIFACT_DIR}" version dist models
+        rm -r "${RUNNER_ARTIFACT_DIR}"/{version,dist,models}
+        mv "${RUNNER_TEMP}/release.tar" "${RUNNER_ARTIFACT_DIR}/"
+
+  # This artifact lasts 2 days, less than the approvals can take, so keep-archive
+  # copies the tested files to the run's S3 prefix, where they last 14, under a
+  # name with their hash, which this job records before any approval because
+  # other jobs can write to that bucket.
+  record-archive:
+    name: Record the tested archive
+    needs: package
+    runs-on: ubuntu-22.04
+    outputs:
+      sha256: ${{ steps.record.outputs.sha256 }}
+      url: ${{ steps.record.outputs.url }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: esp-idf-release
+          path: ${{ runner.temp }}/esp-idf-release
+      - id: record
+        run: |
+          set -euo pipefail
+          sha256=$(sha256sum "${RUNNER_TEMP}/esp-idf-release/release.tar" | cut -d' ' -f1)
+          {
+            echo "sha256=${sha256}"
+            echo "url=https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/esp-idf-release-${sha256}.tar"
+          } | tee -a "${GITHUB_OUTPUT}"
+
+  keep-archive:
+    name: Keep the tested archive for the approvals
+    needs: [docker-image, record-archive]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 15
+      download-artifact: esp-idf-release
+      upload-artifact: esp-idf-release-archive
+      upload-artifact-to-s3: true
+      script: |
+        set -euo pipefail
+        url="${{ needs.record-archive.outputs.url }}"
+        mkdir "${RUNNER_TEMP}/esp-idf-release"
+        mv "${RUNNER_ARTIFACT_DIR}"/* "${RUNNER_TEMP}/esp-idf-release/"
+        # The upload fails on a name already taken, as by an earlier attempt.
+        # The bucket answers 403 for a missing name, since it does not let
+        # anyone list it.
+        status=$(curl -sS -o /dev/null -w '%{http_code}' -I --retry 3 "${url}")
+        case "${status}" in
+          200) echo "An earlier attempt kept ${url##*/}." ;;
+          403|404) mv "${RUNNER_TEMP}/esp-idf-release/release.tar" "${RUNNER_ARTIFACT_DIR}/${url##*/}" ;;
+          *) echo "FAIL: ${url} answered ${status}" >&2; exit 1 ;;
+        esac
+
+  dry-run:
+    name: Registry validation on ${{ matrix.registry }} (upload --dry-run)
+    needs: [docker-image, package]
+    strategy:
+      fail-fast: false
+      matrix:
+        registry: [https://components-staging.espressif.com, https://components.espressif.com]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 20
+      download-artifact: esp-idf-release
+      script: |
+        set -euo pipefail
+        CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
+        conda activate "${CONDA_ENV}"
+        release="${RUNNER_TEMP}/esp-idf-release"
+        mkdir -p "${release}"
+        tar -xf "${RUNNER_ARTIFACT_DIR}/release.tar" -C "${release}"
+        bash .ci/scripts/upload_espressif_idf_component.sh "${release}" \
+          "${{ matrix.registry }}" --dry-run
+
+  build:
+    name: ESP-IDF ${{ matrix.idf-version }} (${{ matrix.shard }}/4)
+    needs: [docker-image, package]
+    strategy:
+      fail-fast: false
+      matrix:
+        idf-version: [v6.0.1, v6.1]
+        shard: [1, 2, 3, 4]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      download-artifact: esp-idf-release
+      upload-artifact: esp-idf-release-logs-${{ matrix.idf-version }}-${{ matrix.shard }}
+      upload-artifact-to-s3: true
+      script: |
+        set -euo pipefail
+        CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
+        conda activate "${CONDA_ENV}"
+        # The artifact directory holds the inputs on the way in and the logs,
+        # named as in nightly-espressif-idf.yml, on the way out.
+        inputs="${RUNNER_TEMP}/esp-idf-release" work="${RUNNER_TEMP}/esp-idf-build"
+        mkdir -p "${inputs}"
+        tar -xf "${RUNNER_ARTIFACT_DIR}/release.tar" -C "${inputs}"
+        rm -r "${RUNNER_ARTIFACT_DIR:?}"/*
+        entry="${{ matrix.idf-version }}-${{ matrix.shard }}-attempt${{ github.run_attempt }}"
+        trap 'for log in "${work}"/*.log; do cp "${log}" "${RUNNER_ARTIFACT_DIR}/${entry}-${log##*/}"; done 2> /dev/null || true' EXIT
+        ESPRESSIF_IDF_VERSION="${{ matrix.idf-version }}" ESPRESSIF_BUILD_DIR="${work}" \
+          bash .ci/scripts/test_espressif_idf_nightly.sh build "${inputs}" "${{ matrix.shard }}" 4
+
+  # Any run that packs but publishes nothing rehearses this job with
+  # --dry-run, outside the environment, so its runner, actions and archive
+  # fetch run before a real upload needs them.
+  upload-staging:
+    name: ${{ needs.plan.outputs.staging == 'true' && 'Upload to the staging registry' || 'Rehearse the staging upload (--dry-run)' }}
+    needs: [plan, record-archive, keep-archive, dry-run, build]
+    runs-on: ubuntu-22.04
+    environment: ${{ needs.plan.outputs.staging == 'true' && 'esp-component-registry' || '' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      - run: |
+          set -euo pipefail
+          release="${RUNNER_TEMP}/esp-idf-release"
+          bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${release}" \
+            "${{ needs.record-archive.outputs.url }}" "${{ needs.record-archive.outputs.sha256 }}"
+          dry_run=()
+          [[ "${{ needs.plan.outputs.staging }}" == true ]] || dry_run=(--dry-run)
+          bash .ci/scripts/upload_espressif_idf_component.sh "${release}" \
+            https://components-staging.espressif.com "${dry_run[@]}"
+
+  verify-staging:
+    name: Build the consumer from the staging registry
+    needs: [plan, docker-image, record-archive, upload-staging]
+    if: needs.plan.outputs.staging == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      upload-artifact: esp-idf-registry-logs-staging
+      upload-artifact-to-s3: true
+      script: |
+        set -euo pipefail
+        CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
+        conda activate "${CONDA_ENV}"
+        release="${RUNNER_TEMP}/esp-idf-release" work="${RUNNER_TEMP}/esp-idf-registry"
+        bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${release}" \
+          "${{ needs.record-archive.outputs.url }}" "${{ needs.record-archive.outputs.sha256 }}"
+        entry="staging-attempt${{ github.run_attempt }}"
+        trap 'for log in "${work}"/*.log; do cp "${log}" "${RUNNER_ARTIFACT_DIR}/${entry}-${log##*/}"; done 2> /dev/null || true' EXIT
+        ESPRESSIF_BUILD_DIR="${work}" bash .ci/scripts/test_espressif_idf_nightly.sh registry \
+          "${release}" https://components-staging.espressif.com
+
+  upload-production:
+    name: Upload to the production registry
+    needs: [plan, record-archive, verify-staging]
+    if: needs.plan.outputs.production == 'true'
+    runs-on: ubuntu-22.04
+    environment: esp-component-registry
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      - run: |
+          set -euo pipefail
+          release="${RUNNER_TEMP}/esp-idf-release"
+          bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${release}" \
+            "${{ needs.record-archive.outputs.url }}" "${{ needs.record-archive.outputs.sha256 }}"
+          bash .ci/scripts/upload_espressif_idf_component.sh "${release}" \
+            https://components.espressif.com
+
+  verify-production:
+    name: Build the consumer from the production registry
+    needs: [plan, docker-image, record-archive, upload-production]
+    if: needs.plan.outputs.production == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      upload-artifact: esp-idf-registry-logs-production
+      upload-artifact-to-s3: true
+      script: |
+        set -euo pipefail
+        CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
+        conda activate "${CONDA_ENV}"
+        release="${RUNNER_TEMP}/esp-idf-release" work="${RUNNER_TEMP}/esp-idf-registry"
+        bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${release}" \
+          "${{ needs.record-archive.outputs.url }}" "${{ needs.record-archive.outputs.sha256 }}"
+        entry="production-attempt${{ github.run_attempt }}"
+        trap 'for log in "${work}"/*.log; do cp "${log}" "${RUNNER_ARTIFACT_DIR}/${entry}-${log##*/}"; done 2> /dev/null || true' EXIT
+        ESPRESSIF_BUILD_DIR="${work}" bash .ci/scripts/test_espressif_idf_nightly.sh registry \
+          "${release}" https://components.espressif.com

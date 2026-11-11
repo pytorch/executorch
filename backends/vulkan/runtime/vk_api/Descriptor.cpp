@@ -95,7 +95,8 @@ DescriptorSet& DescriptorSet::bind(
     const uint32_t idx,
     const VulkanBuffer& buffer) {
   VK_CHECK_COND(
-      buffer.has_memory(),
+      buffer.has_memory() ||
+          (buffer && buffer.vma_allocator() == VK_NULL_HANDLE),
       "Buffer must be bound to memory for it to be usable");
 
   DescriptorSet::ResourceBinding binder{};

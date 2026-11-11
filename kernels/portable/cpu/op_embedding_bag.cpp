@@ -1,0 +1,368 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <c10/util/irange.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+#include <cstring>
+#include <tuple>
+#include <type_traits>
+
+namespace torch {
+namespace executor {
+namespace native {
+
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
+
+namespace {
+
+// aten::_embedding_bag's `mode` argument.
+constexpr int64_t kModeSum = 0;
+constexpr int64_t kModeMean = 1;
+constexpr int64_t kModeMax = 2;
+
+bool is_index_dtype(ScalarType dtype) {
+  return dtype == ScalarType::Long || dtype == ScalarType::Int;
+}
+
+// Index tensors may be Int or Long; read and write them as int64_t.
+int64_t index_at(const Tensor& t, size_t i) {
+  return t.scalar_type() == ScalarType::Long
+      ? t.const_data_ptr<int64_t>()[i]
+      : static_cast<int64_t>(t.const_data_ptr<int32_t>()[i]);
+}
+
+void set_index(Tensor& t, size_t i, int64_t value) {
+  if (t.scalar_type() == ScalarType::Long) {
+    t.mutable_data_ptr<int64_t>()[i] = value;
+  } else {
+    t.mutable_data_ptr<int32_t>()[i] = static_cast<int32_t>(value);
+  }
+}
+
+bool check_embedding_bag_args(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& offsets,
+    int64_t mode,
+    const std::optional<Tensor>& per_sample_weights,
+    bool include_last_offset,
+    const Tensor& out,
+    const Tensor& offset2bag,
+    const Tensor& bag_size,
+    const Tensor& max_indices) {
+  ET_CHECK_OR_RETURN_FALSE(
+      weight.dim() == 2,
+      "weight must be 2-D; weight.dim() = %" ET_PRI_TENSOR_DIM,
+      weight.dim());
+  ET_CHECK_OR_RETURN_FALSE(
+      indices.dim() == 1,
+      "indices must be 1-D; indices.dim() = %" ET_PRI_TENSOR_DIM,
+      indices.dim());
+  ET_CHECK_OR_RETURN_FALSE(
+      offsets.dim() == 1,
+      "offsets must be 1-D; offsets.dim() = %" ET_PRI_TENSOR_DIM,
+      offsets.dim());
+  ET_CHECK_OR_RETURN_FALSE(
+      is_index_dtype(indices.scalar_type()),
+      "indices must be Long or Int; indices.scalar_type() = %s",
+      toString(indices.scalar_type()));
+  ET_CHECK_OR_RETURN_FALSE(
+      is_index_dtype(offsets.scalar_type()),
+      "offsets must be Long or Int; offsets.scalar_type() = %s",
+      toString(offsets.scalar_type()));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(weight));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, out));
+
+  // Eager ATen gives these the promoted indices/offsets dtype, but export
+  // plans them with meta_embedding_bag, which uses the offsets dtype.
+  for (const Tensor* t : {&offset2bag, &bag_size, &max_indices}) {
+    ET_CHECK_OR_RETURN_FALSE(
+        is_index_dtype(t->scalar_type()),
+        "index outputs must be Long or Int; got %s",
+        toString(t->scalar_type()));
+  }
+
+  ET_CHECK_OR_RETURN_FALSE(
+      mode == kModeSum || mode == kModeMean || mode == kModeMax,
+      "mode must be 0 (sum), 1 (mean) or 2 (max); mode = %" PRId64,
+      mode);
+
+  if (include_last_offset) {
+    ET_CHECK_OR_RETURN_FALSE(
+        offsets.numel() >= 1,
+        "offsets must hold at least the final offset when include_last_offset is set");
+  }
+
+  if (per_sample_weights.has_value()) {
+    const Tensor& psw = per_sample_weights.value();
+    ET_CHECK_OR_RETURN_FALSE(psw.dim() == 1, "per_sample_weights must be 1-D");
+    ET_CHECK_OR_RETURN_FALSE(
+        mode == kModeSum,
+        "per_sample_weights is only supported for mode 0 (sum); mode = %" PRId64,
+        mode);
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, psw));
+    ET_CHECK_OR_RETURN_FALSE(
+        psw.numel() == indices.numel(),
+        "per_sample_weights must have one entry per index; got %zd for %zd indices",
+        psw.numel(),
+        indices.numel());
+  }
+
+  return true;
+}
+
+// Runs before any weight read or output write, so every later loop can index
+// weight and outputs without bounds checks.
+bool check_offsets_and_indices(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& offsets) {
+  const int64_t num_indices = indices.numel();
+  int64_t prev_offset = 0;
+  for (const auto i : c10::irange(offsets.numel())) {
+    const int64_t offset = index_at(offsets, i);
+    ET_CHECK_OR_RETURN_FALSE(
+        (i > 0 || offset == 0) && offset >= prev_offset &&
+            offset <= num_indices,
+        "offsets must start at 0 and be nondecreasing up to %" PRId64
+        "; offsets[%zu] = %" PRId64,
+        num_indices,
+        static_cast<size_t>(i),
+        offset);
+    prev_offset = offset;
+  }
+
+  // Validate every index, including those past a partial final offset.
+  const int64_t num_rows = weight.size(0);
+  for (const auto i : c10::irange(num_indices)) {
+    const int64_t row = index_at(indices, i);
+    ET_CHECK_OR_RETURN_FALSE(
+        row >= 0 && row < num_rows,
+        "index %" PRId64 " is outside weight rows [0, %" PRId64 ")",
+        row,
+        num_rows);
+  }
+  return true;
+}
+
+// Mirrors ATen's is_fast_path in EmbeddingBag.cpp.
+bool is_aten_fast_path(
+    const Tensor& weight,
+    const std::optional<Tensor>& per_sample_weights,
+    const Tensor& out,
+    int64_t padding_idx) {
+  const auto dtype = weight.scalar_type();
+  return (dtype == ScalarType::Float || dtype == ScalarType::Half ||
+          dtype == ScalarType::BFloat16) &&
+      weight.strides()[1] == 1 && out.strides()[1] == 1 && padding_idx < 0 &&
+      (!per_sample_weights.has_value() ||
+       per_sample_weights->strides()[0] == 1);
+}
+
+} // namespace
+
+std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _embedding_bag_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& offsets,
+    bool scale_grad_by_freq,
+    int64_t mode,
+    bool sparse,
+    const std::optional<Tensor>& per_sample_weights,
+    bool include_last_offset,
+    int64_t padding_idx,
+    Tensor& out,
+    Tensor& offset2bag,
+    Tensor& bag_size,
+    Tensor& max_indices) {
+  // Both only matter to the backward pass.
+  (void)scale_grad_by_freq;
+  (void)sparse;
+
+  std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> ret_val(
+      out, offset2bag, bag_size, max_indices);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      check_embedding_bag_args(
+          weight,
+          indices,
+          offsets,
+          mode,
+          per_sample_weights,
+          include_last_offset,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices),
+      InvalidArgument,
+      ret_val);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_offsets_and_indices(weight, indices, offsets),
+      InvalidArgument,
+      ret_val);
+
+  const int64_t num_indices = indices.numel();
+  const int64_t num_bags =
+      include_last_offset ? offsets.numel() - 1 : offsets.numel();
+  const int64_t dim = weight.size(1);
+
+  const SizesType out_sizes[2] = {
+      static_cast<SizesType>(num_bags), static_cast<SizesType>(dim)};
+  // out must be resized first: the fast-path check reads its strides.
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {out_sizes, 2}) == Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  // This kernel uses one reduction loop for both ATen paths, but follows
+  // ATen's path choice so the auxiliary outputs and the partial final bag
+  // match, including statically allocated export outputs.
+  const bool fast_path =
+      is_aten_fast_path(weight, per_sample_weights, out, padding_idx);
+  // ATen skips offset2bag only for sum on its fast path, but export sizes it
+  // with meta_embedding_bag, whose fast path differs (e.g. for BFloat16). Sum
+  // never reads it, so keep a caller-allocated num_indices layout and fill it.
+  const bool fills_offset2bag =
+      mode != kModeSum || !fast_path || offset2bag.numel() == num_indices;
+  // With include_last_offset, ATen's fast path stops the last sum/mean bag at
+  // the final offset; every other path gives it all remaining indices.
+  const bool truncate_last_bag =
+      include_last_offset && fast_path && mode != kModeMax;
+
+  // The auxiliary outputs exist for the backward pass, and the ATen CPU kernel
+  // only fills the ones each mode needs; match it so shapes agree.
+  // bag_size and the non-max max_indices are {num_bags}, a prefix of
+  // out_sizes.
+  const SizesType offset2bag_size =
+      static_cast<SizesType>(fills_offset2bag ? num_indices : 0);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(offset2bag, {&offset2bag_size, 1}) == Error::Ok &&
+          resize_tensor(bag_size, {out_sizes, 1}) == Error::Ok &&
+          resize_tensor(max_indices, {out_sizes, mode == kModeMax ? 2u : 1u}) ==
+              Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  for (Tensor* t : {&bag_size, &max_indices}) {
+    if (t->nbytes() > 0) {
+      std::memset(t->mutable_data_ptr(), 0, t->nbytes());
+    }
+  }
+
+  const auto bag_end = [&](int64_t bag) {
+    return bag + 1 < num_bags ? index_at(offsets, bag + 1) : num_indices;
+  };
+  const auto reduction_end = [&](int64_t bag) {
+    return truncate_last_bag ? index_at(offsets, bag + 1) : bag_end(bag);
+  };
+
+  // The ATen CPU kernel leaves bag_size at zero for the sum mode, and mirrors
+  // it into the 1-D max_indices for the mean mode, where that output carries
+  // nothing else.
+  if (fills_offset2bag) {
+    // With no bags, ATen puts every index before the first bag, in bag -1.
+    if (num_bags == 0) {
+      for (const auto i : c10::irange(num_indices)) {
+        set_index(offset2bag, i, -1);
+      }
+    }
+    for (const auto bag : c10::irange(num_bags)) {
+      const int64_t end = bag_end(bag);
+      int64_t count = 0;
+      for (int64_t i = index_at(offsets, bag); i < end; ++i) {
+        set_index(offset2bag, i, bag);
+        if (index_at(indices, i) != padding_idx) {
+          ++count;
+        }
+      }
+      if (mode != kModeSum) {
+        set_index(bag_size, bag, count);
+      }
+      if (mode == kModeMean) {
+        set_index(max_indices, bag, count);
+      }
+    }
+  }
+
+  if (out.numel() == 0) {
+    return ret_val;
+  }
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  ET_DEFINE_OPERATOR_NAME(name, "_embedding_bag.out");
+
+  ET_SWITCH_FLOATHBF16_TYPES(weight.scalar_type(), ctx, name, CTYPE, [&]() {
+    // Accumulate Half/BFloat16 in float, as ATen does.
+    using AccType = std::
+        conditional_t<c10::is_reduced_floating_point_v<CTYPE>, float, CTYPE>;
+    const CTYPE* const weight_data = weight.const_data_ptr<CTYPE>();
+    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+    const CTYPE* const psw_data = per_sample_weights.has_value()
+        ? per_sample_weights.value().const_data_ptr<CTYPE>()
+        : nullptr;
+
+    const auto weight_strides = weight.strides();
+    const auto out_strides = out.strides();
+    const auto max_indices_strides = max_indices.strides();
+
+    for (const auto bag : c10::irange(num_bags)) {
+      const int64_t start = index_at(offsets, bag);
+      const int64_t end = reduction_end(bag);
+      // ATen divides by the full bag size even when the fast path truncates
+      // the last bag.
+      const int64_t mean_divisor =
+          mode == kModeMean ? index_at(bag_size, bag) : 0;
+      for (const auto d : c10::irange(dim)) {
+        AccType acc = 0;
+        bool seen = false;
+        for (int64_t i = start; i < end; ++i) {
+          const int64_t row = index_at(indices, i);
+          if (row == padding_idx) {
+            continue;
+          }
+          const AccType value = static_cast<AccType>(
+              weight_data[row * weight_strides[0] + d * weight_strides[1]]);
+          if (mode == kModeMax) {
+            if (!seen || value > acc) {
+              acc = value;
+              set_index(
+                  max_indices,
+                  bag * max_indices_strides[0] + d * max_indices_strides[1],
+                  row);
+            }
+          } else if (psw_data != nullptr) {
+            acc += value * static_cast<AccType>(psw_data[i]);
+          } else {
+            acc += value;
+          }
+          seen = true;
+        }
+        if (mean_divisor > 0) {
+          acc /= static_cast<AccType>(mean_divisor);
+        }
+        out_data[bag * out_strides[0] + d * out_strides[1]] =
+            static_cast<CTYPE>(acc);
+      }
+    }
+  });
+
+  return ret_val;
+}
+
+} // namespace native
+} // namespace executor
+} // namespace torch

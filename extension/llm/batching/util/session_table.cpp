@@ -195,8 +195,14 @@ Result<PackedStep> SessionTable::pack(const BatchInput& batch) {
     const std::int32_t seq_id = seq_it->second.seq_id;
     const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
     const auto* token_input = tokens && *tokens ? tokens->get() : nullptr;
-    if (input.size == 0 || !token_input || input.offset > token_input->size() ||
-        input.size > token_input->size() - input.offset) {
+    const auto* prepared = std::get_if<PreparedInputPtr>(&input.payload);
+    const auto* prepared_input =
+        prepared && *prepared ? prepared->get() : nullptr;
+    const std::size_t available = token_input ? token_input->size()
+        : prepared_input                      ? prepared_input->size()
+                                              : 0;
+    if (input.size == 0 || (!token_input && !prepared_input) ||
+        input.offset > available || input.size > available - input.offset) {
       ET_LOG(
           Error,
           "pack: session %" PRId64 " gave a slice its tokens do not hold",
@@ -254,9 +260,11 @@ Result<PackedStep> SessionTable::pack(const BatchInput& batch) {
       return Error::OutOfResources;
     }
 
-    const Token* slice = token_input->data() + input.offset;
+    const Token* slice =
+        token_input ? token_input->data() + input.offset : nullptr;
+    step.prepared = step.prepared || prepared_input != nullptr;
     for (std::size_t k = 0; k < input.size; ++k) {
-      step.tokens.push_back(static_cast<std::int64_t>(slice[k]));
+      step.tokens.push_back(slice ? static_cast<std::int64_t>(slice[k]) : 0);
       step.positions.push_back(start + static_cast<std::int64_t>(k));
     }
     step.seq_ids.insert(step.seq_ids.end(), input.size, seq_id);

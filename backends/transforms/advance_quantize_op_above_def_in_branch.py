@@ -107,7 +107,8 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
 
         return descendent_quant_ops
 
-    def advance_quantize_op(self, graph_module: torch.fx.GraphModule):
+    def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
+        modified = False
         graph = graph_module.graph
         for node in graph.nodes:
             # We are only interested in call functions and placeholders
@@ -150,6 +151,7 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
                     node.replace_all_uses_with(dom_quant_node)
                     dom_quant_node.args = dom_quant_args
                 graph.erase_node(quant_node)
+                modified = True
                 continue
 
             # Otherwise we have multiple quant descendents. Requantizing them from
@@ -185,12 +187,16 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
                     )
                     dequant_node.args = (quant_node.args[0],) + rep_args
                     quant_node.args = (dequant_node,) + quant_node.args[1:]
+            modified = True
 
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
+        return modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         self.graph_module = graph_module
-        self.advance_quantize_op(graph_module)
-        result = super().call(graph_module)
-        return result
+        modified = self.advance_quantize_op(graph_module)
+        if modified:
+            graph_module.recompile()
+            graph_module.graph.eliminate_dead_code()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)

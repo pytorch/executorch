@@ -29,11 +29,14 @@ $if INPUT_STORAGE == "buffer":
 layout(std430) buffer;
 
 #include "convolution/conv2d/conv2d_common.glslh"
+#include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_fp_output", DTYPE, OUTPUT_STORAGE)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_output", "int", INPUT_STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
+$if OUTPUT_STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 
 layout(push_constant) uniform restrict Block {
   float scale;
@@ -86,13 +89,14 @@ void store_fp_output_texel(
     const VEC4_T out_texel) {
 #ifdef OUTPUT_BUFFER
   const int c_idx = mul_4(tidx.data.z);
-  const int c_stride = output_sizes.y * output_sizes.x;
-
-  const int base_buf_i = c_idx * c_stride + tidx.data.y * output_sizes.x + tidx.data.x;
+  const uint c_stride = stride_at(outp, 2);
+  const uint base_buf_i = uint(c_idx) * c_stride +
+      uint(tidx.data.y) * stride_at(outp, 1) +
+      uint(tidx.data.x) * stride_at(outp, 0);
   const int limit = min(output_sizes.z - c_idx, 4);
 
   for (int i = 0; i < limit; ++i) {
-    t_fp_output[base_buf_i + i * c_stride] = out_texel[i];
+    t_fp_output[base_buf_i + uint(i) * c_stride] = out_texel[i];
   }
 #else
   imageStore(t_fp_output, tidx.data, out_texel);

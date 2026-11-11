@@ -261,6 +261,17 @@ TEST(FuseQuantizedLinearTest, RewritesPortablePatternAtRuntime) {
   EXPECT_EQ(transform_of(sums).kind, Q4ConstantTransformKind::WeightSums);
 }
 
+TEST(FuseQuantizedLinearTest, ReadsUnnamedInputsByPosition) {
+  Method method = make_q4_linear();
+  for (Node& node : method.graph.nodes) {
+    for (NamedArgument& input : node.inputs) {
+      input.name.clear();
+    }
+  }
+
+  EXPECT_EQ(fuse_quantized_linears(method), 1);
+}
+
 TEST(FuseQuantizedLinearTest, RejectsNonQ4WeightRange) {
   Method method = make_q4_linear();
   Node& weight_dequant = method.graph.node(7);
