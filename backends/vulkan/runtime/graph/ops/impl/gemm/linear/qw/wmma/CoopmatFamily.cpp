@@ -55,28 +55,32 @@ const std::vector<WmmaRow>& xe2_rows() {
       // 4w, texture3d: banded drain, 8 x 2 subgroups.
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t128x128k16g82s16m8flib",
-       {128, 128, 16, 8, 2, 16, 8, false},
+       {128, 128, 16, 8, 2, 16, 8},
        kWmmaTex3dTex2d,
+       {18432, 0},
        nullptr,
        /*rowmajor_a=*/false,
        /*image_a=*/true},
       // 4w, buffer IO: 4 x 4 subgroups.
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t128x128k16g44s16m8fli",
-       {128, 128, 16, 4, 4, 16, 8, false},
+       {128, 128, 16, 4, 4, 16, 8},
        kWmmaBufTex2d,
+       {0, 16384},
        nullptr},
       // 8da4w: texel-wise B staging and a full A thread map; blocked
       // workgroup order on weight-heavy projections, dispatch order elsewhere.
       {WmmaOp::kDq8caQ4gsw,
        "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13",
-       {128, 128, 64, 8, 4, 16, 8, false},
+       {128, 128, 64, 8, 4, 16, 8},
        kWmmaTex3dTex2d | kWmmaBufTex2d,
+       {43520, 35328},
        xe2_weight_heavy},
       {WmmaOp::kDq8caQ4gsw,
        "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i",
-       {128, 128, 64, 8, 4, 16, 8, false},
+       {128, 128, 64, 8, 4, 16, 8},
        kWmmaTex3dTex2d | kWmmaBufTex2d,
+       {43520, 35328},
        nullptr},
   };
   return rows;
@@ -104,27 +108,31 @@ const std::vector<WmmaRow>& nvidia_rows() {
       // A tile.
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c",
-       {128, 128, 32, 4, 2, 32, 16, true},
+       {128, 128, 32, 4, 2, 32, 16},
        kWmmaTex3dTex2d,
+       {37888, 0},
        nv_large_k},
       // 4w, K <= 8192: N-major B in shared memory.
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t256x128k16g42s32bt",
-       {256, 128, 16, 4, 2, 32, 16, false},
+       {256, 128, 16, 4, 2, 32, 16},
        kWmmaTex3dTex2d,
+       {45056, 0},
        nv_256},
       // 4w, K <= 8192, the remaining shapes (M not a multiple of 256, and
       // M = 256 at N % 2048 != 0).
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t128x128k16g22s32",
-       {128, 128, 16, 2, 2, 32, 16, false},
+       {128, 128, 16, 2, 2, 32, 16},
        kWmmaTex3dTex2d,
+       {29184, 0},
        nv_default},
       // 8da4w: row-major int8 activations, 2 x 4 subgroups.
       {WmmaOp::kDq8caQ4gsw,
        "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32",
-       {128, 128, 64, 2, 4, 32, 16, true},
+       {128, 128, 64, 2, 4, 32, 16},
        kWmmaTex3dTex2d,
+       {35328, 0},
        nullptr,
        /*rowmajor_a=*/true},
   };
@@ -223,18 +231,14 @@ bool wmma_row_fits(
       shape.input == WmmaStorage::kTexture3D && shape.io_width_packed &&
       shape.weight == WmmaStorage::kTexture2D) {
     combo = kWmmaTex3dTex2d;
-    // The texture epilogue stages SG_GRID_Y * MMA_M rows x WG_TILE_N fp16 on
-    // top of the A/B tiles unless it reuses the A tile. A tile over the
-    // shared-memory limit must not reach pipeline creation.
-    if (!tile.csh_in_ash) {
-      const uint64_t csh_bytes =
-          uint64_t(tile.sg_grid_y) * tile.mma_m * tile.n * 2u;
-      if (csh_bytes >= device.max_shared_bytes) {
-        return false;
-      }
-    }
   }
   if ((combo & row.storages) == 0) {
+    return false;
+  }
+  // A kernel over the shared-memory limit must not reach pipeline creation.
+  if ((combo == kWmmaTex3dTex2d
+           ? row.shared_bytes.texture3d
+           : row.shared_bytes.buffer) > device.max_shared_bytes) {
     return false;
   }
   WmmaShape sel = shape;
