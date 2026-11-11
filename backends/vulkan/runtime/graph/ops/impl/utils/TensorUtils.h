@@ -31,20 +31,6 @@ bool check_same_packed_dim(
     const ValueRef out);
 
 //
-// Broadcast flag functions
-//
-
-bool is_packed_dim_broadcasted(
-    ComputeGraph& graph,
-    const ValueRef sndr,
-    const ValueRef rcvr);
-
-utils::ivec2 create_broadcast_params(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2);
-
-//
 // Work group size calculation functions
 //
 

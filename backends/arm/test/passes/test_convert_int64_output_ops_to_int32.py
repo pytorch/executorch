@@ -699,7 +699,10 @@ def test_topk_mixed_dtype_cat_stays_int64(use_edge_ops: bool):
 
     result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
 
-    assert not result.modified
+    # to_edge casts y to int64 for the cat, and the pass removes that cast again.
+    # The mixed-dtype cat left behind is not valid edge IR. Arm flows that run this
+    # pass after to_edge, through transform_passes, lower with _check_ir_validity=False.
+    assert result.modified == use_edge_ops
     assert not _cast_nodes(result.graph_module)
     actual = exported_program.module()(x, y)
     assert actual.dtype == torch.int64
@@ -1462,10 +1465,12 @@ def test_topk_reuses_existing_int32_cast(edge, tosa_spec):
 def test_topk_target_preparation_retains_generic_conversion(edge, case):
     class Model(torch.nn.Module):
         def forward(self, scores):
-            indices = torch.topk(scores, 5 if case == "large_k" else 3).indices
+            # K=9 is outside the supported static TopK range (1..8).
+            indices = torch.topk(scores, 9 if case == "large_k" else 3).indices
             return indices, indices.unsqueeze(-1)
 
-    scores = torch.randn(2, 8)
+    # TopK requires K <= E; keep other test inputs unchanged.
+    scores = torch.randn(2, 10 if case == "large_k" else 8)
     shapes = (
         ({1: torch.export.Dim("experts", min=5, max=16)},)
         if case == "symbolic"

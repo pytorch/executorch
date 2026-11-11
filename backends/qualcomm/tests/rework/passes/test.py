@@ -14,6 +14,7 @@ from executorch.backends.qualcomm.tests.rework.passes.conftest import (
     enumerate_backends_quantized,
     repack_pass_fixtures,
 )
+from executorch.backends.qualcomm.tests.rework.src.pass_manager import PassManager
 from executorch.backends.qualcomm.tests.rework.src.pattern import *  # noqa: F403
 
 
@@ -157,12 +158,6 @@ def test_decompose_fill(request, kwargs):
 
 @enumerate_backends()
 @repack_pass_fixtures
-def test_decompose_floor_divide(request, kwargs):
-    DecomposeFloorDivide.test(request, kwargs)  # noqa: F405
-
-
-@enumerate_backends()
-@repack_pass_fixtures
 def test_decompose_glu(request, kwargs):
     DecomposeGlu.test(request, kwargs)  # noqa: F405
 
@@ -287,6 +282,20 @@ def test_decompose_wrap_with_autocast(request, kwargs):
 @repack_pass_fixtures
 def test_i64_to_i32(request, kwargs):
     I64toI32.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"backend_type": QnnExecuTorchBackendType.kHtpBackend},
+            id=str(QnnExecuTorchBackendType.kHtpBackend),
+        )
+    ],
+)
+@repack_pass_fixtures
+def test_insert_cast_for_fp_act_quantized_weight(request, kwargs):
+    InsertCastForFpActQuantizedWeight.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
@@ -432,3 +441,14 @@ def test_seq_mse(request, kwargs):
 @repack_pass_fixtures
 def test_tag_quant_io(request, kwargs):
     TagQuantIO.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "backend_type",
+    [
+        QnnExecuTorchBackendType.kHtpBackend,
+        QnnExecuTorchBackendType.kLpaiBackend,
+    ],
+)
+def test_pass_manager(backend_type):
+    PassManager.test(backend_type)

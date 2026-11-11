@@ -108,6 +108,7 @@ class QnnBackend(BackendDetails):
             edge_program,
             enable_tensor_dump=enable_tensor_dump,
             op_package_infos=op_package_infos,
+            backend_type=backend_type,
         )
         py_op_wrapper_list = []
         for node in graph_module.graph.nodes:

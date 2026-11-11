@@ -61,25 +61,6 @@ constexpr const char* kDynamicQ4Linear =
 constexpr const char* kWeightOnlyQ4Linear =
     "torch.ops.et_vk.linear_q4gsw.default";
 
-const Argument*
-get_arg(const Node& node, std::string_view name, size_t position) {
-  const auto found = std::ranges::find_if(
-      node.inputs,
-      [name](const NamedArgument& input) { return input.name == name; });
-  if (found != node.inputs.end()) {
-    return &found->arg;
-  }
-  return position < node.inputs.size() ? &node.inputs[position].arg : nullptr;
-}
-
-std::optional<ValueId> tensor_id(const Argument* arg) {
-  if (arg == nullptr || arg->kind() != ArgKind::Tensor ||
-      !valid(arg->as_tensor().id)) {
-    return std::nullopt;
-  }
-  return arg->as_tensor().id;
-}
-
 const Node* producer(const Graph& graph, ValueId id) {
   const NodeId producer_id = graph.value(id).producer_id;
   return valid(producer_id) ? &graph.node(producer_id) : nullptr;
@@ -182,18 +163,18 @@ std::optional<WeightMatch> match_dequantized_weight(
     return std::nullopt;
   }
   const std::optional<ValueId> weight_id =
-      tensor_id(get_arg(*dequantize, "input", 0));
+      tensor_id(find_arg(*dequantize, "input", 0));
   const std::optional<ValueId> scale_id =
-      tensor_id(get_arg(*dequantize, "scale", 2));
+      tensor_id(find_arg(*dequantize, "scale", 2));
   const std::optional<ValueId> zero_id =
-      tensor_id(get_arg(*dequantize, "zero_point", 3));
+      tensor_id(find_arg(*dequantize, "zero_point", 3));
   const IntListArg* block =
-      literal_int_list(get_arg(*dequantize, "block_size", 1));
+      literal_int_list(find_arg(*dequantize, "block_size", 1));
   if (!weight_id.has_value() || !scale_id.has_value() || !zero_id.has_value() ||
       block == nullptr || block->values.size() != 2 || block->values[0] != 1 ||
-      !is_dtype(get_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
-      !is_literal_int(get_arg(*dequantize, "quant_min", 5), -8) ||
-      !is_literal_int(get_arg(*dequantize, "quant_max", 6), 7) ||
+      !is_dtype(find_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
+      !is_literal_int(find_arg(*dequantize, "quant_min", 5), -8) ||
+      !is_literal_int(find_arg(*dequantize, "quant_max", 6), 7) ||
       !is_constant(graph.value(*weight_id)) ||
       !is_constant(graph.value(*zero_id))) {
     return std::nullopt;
@@ -282,7 +263,7 @@ std::optional<DynamicActivation> match_dynamic_activation(
     return std::nullopt;
   }
   const std::optional<ValueId> quantized_id =
-      tensor_id(get_arg(*dequantize, "input", 0));
+      tensor_id(find_arg(*dequantize, "input", 0));
   if (!quantized_id.has_value()) {
     return std::nullopt;
   }
@@ -294,17 +275,17 @@ std::optional<DynamicActivation> match_dynamic_activation(
   }
 
   const std::optional<ValueId> input_id =
-      tensor_id(get_arg(*quantize, "input", 0));
+      tensor_id(find_arg(*quantize, "input", 0));
   const std::optional<ValueId> scale_id =
-      tensor_id(get_arg(*quantize, "scale", 2));
+      tensor_id(find_arg(*quantize, "scale", 2));
   const std::optional<ValueId> zero_id =
-      tensor_id(get_arg(*quantize, "zero_point", 3));
+      tensor_id(find_arg(*quantize, "zero_point", 3));
   if (!input_id.has_value() || !scale_id.has_value() || !zero_id.has_value() ||
       !same_tensor(
-          get_arg(*dequantize, "scale", 2), get_arg(*quantize, "scale", 2)) ||
+          find_arg(*dequantize, "scale", 2), find_arg(*quantize, "scale", 2)) ||
       !same_tensor(
-          get_arg(*dequantize, "zero_point", 3),
-          get_arg(*quantize, "zero_point", 3))) {
+          find_arg(*dequantize, "zero_point", 3),
+          find_arg(*quantize, "zero_point", 3))) {
     return std::nullopt;
   }
 
@@ -312,26 +293,26 @@ std::optional<DynamicActivation> match_dynamic_activation(
   if (choose == nullptr || choose != producer(graph, *zero_id) ||
       choose->target != kChooseQParams ||
       !same_tensor(
-          get_arg(*choose, "input", 0), get_arg(*quantize, "input", 0))) {
+          find_arg(*choose, "input", 0), find_arg(*quantize, "input", 0))) {
     return std::nullopt;
   }
 
   const IntListArg* block =
-      literal_int_list(get_arg(*quantize, "block_size", 1));
+      literal_int_list(find_arg(*quantize, "block_size", 1));
   const IntListArg* dequantize_block =
-      literal_int_list(get_arg(*dequantize, "block_size", 1));
+      literal_int_list(find_arg(*dequantize, "block_size", 1));
   const IntListArg* choose_block =
-      literal_int_list(get_arg(*choose, "block_size", 2));
+      literal_int_list(find_arg(*choose, "block_size", 2));
   if (block == nullptr || dequantize_block == nullptr ||
       choose_block == nullptr || block->values != dequantize_block->values ||
       block->values != choose_block->values || block->values.empty() ||
       block->values.back() != in_channels ||
-      !is_dtype(get_arg(*quantize, "output_dtype", 4), ScalarType::Char) ||
-      !is_dtype(get_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
-      !is_literal_int(get_arg(*quantize, "quant_min", 5), -128) ||
-      !is_literal_int(get_arg(*quantize, "quant_max", 6), 127) ||
-      !is_literal_int(get_arg(*dequantize, "quant_min", 5), -128) ||
-      !is_literal_int(get_arg(*dequantize, "quant_max", 6), 127)) {
+      !is_dtype(find_arg(*quantize, "output_dtype", 4), ScalarType::Char) ||
+      !is_dtype(find_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
+      !is_literal_int(find_arg(*quantize, "quant_min", 5), -128) ||
+      !is_literal_int(find_arg(*quantize, "quant_max", 6), 127) ||
+      !is_literal_int(find_arg(*dequantize, "quant_min", 5), -128) ||
+      !is_literal_int(find_arg(*dequantize, "quant_max", 6), 127)) {
     return std::nullopt;
   }
   return DynamicActivation{
@@ -350,9 +331,9 @@ std::optional<Match> match_q4_linear(const Method& method, NodeId linear_id) {
     return std::nullopt;
   }
   const std::optional<ValueId> input_id =
-      tensor_id(get_arg(linear, "input", 0));
+      tensor_id(find_arg(linear, "input", 0));
   const std::optional<ValueId> weight_id =
-      tensor_id(get_arg(linear, "weight", 1));
+      tensor_id(find_arg(linear, "weight", 1));
   if (!input_id.has_value() || !weight_id.has_value()) {
     return std::nullopt;
   }
@@ -369,7 +350,7 @@ std::optional<Match> match_q4_linear(const Method& method, NodeId linear_id) {
        weight->out_channels % 4 != 0)) {
     return std::nullopt;
   }
-  const Argument* bias = get_arg(linear, "bias", 2);
+  const Argument* bias = find_arg(linear, "bias", 2);
   return Match{
       .linear_id = linear_id,
       .weight = *weight,

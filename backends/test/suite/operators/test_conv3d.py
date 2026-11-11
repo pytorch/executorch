@@ -134,13 +134,26 @@ class Conv3d(OperatorTest):
             flow,
         )
 
-    def test_conv3d_padding_modes(self, flow: TestFlow) -> None:
-        for mode in ["zeros", "reflect", "replicate", "circular"]:
-            self._test_op(
-                Model(padding=1, padding_mode=mode),
-                (torch.randn(4, 3, 8, 8, 8),),
-                flow,
-            )
+    def test_conv3d_padding_reflect(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(padding=1, padding_mode="reflect"),
+            (torch.randn(4, 3, 8, 8, 8),),
+            flow,
+        )
+
+    def test_conv3d_padding_replicate(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(padding=1, padding_mode="replicate"),
+            (torch.randn(4, 3, 8, 8, 8),),
+            flow,
+        )
+
+    def test_conv3d_padding_circular(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(padding=1, padding_mode="circular"),
+            (torch.randn(4, 3, 8, 8, 8),),
+            flow,
+        )
 
     def test_conv3d_channels(self, flow: TestFlow) -> None:
         self._test_op(

@@ -66,6 +66,9 @@ ENV AWS_REGION us-east-1
 ENV AWS_DEFAULT_REGION us-east-1
 
 ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG TORCHAUDIO_VERSION
+ARG TORCHCI_REPORTS
 ARG SKIP_PYTORCH
 ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
@@ -102,6 +105,16 @@ COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
 RUN rm install_zephyr.sh zephyr_sdk_release_proxy.py utils.sh
+
+# Cache the developer.arm.com downloads of examples/arm/setup.sh, which the
+# Arm and Zephyr jobs run.
+ENV ARM_SETUP_DOWNLOAD_CACHE=/opt/arm-download-cache
+COPY ./common/install_arm_downloads.sh install_arm_downloads.sh
+COPY ./arm-setup arm-setup
+RUN if [ -n "${ARM_SDK}${ZEPHYR_SDK}" ]; then \
+    bash ./install_arm_downloads.sh || echo "Arm download cache not populated"; \
+    fi
+RUN rm -r install_arm_downloads.sh arm-setup
 
 ARG QNN_SDK
 

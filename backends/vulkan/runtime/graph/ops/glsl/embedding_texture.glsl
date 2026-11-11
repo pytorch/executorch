@@ -51,13 +51,13 @@ int load_embedding_idx(const TensorIndex4D out_tidx) {
 }
 
 T load_weight_element(const int embedding_idx, const int dim_idx) {
-  return T(t_weight[embedding_idx * int(width(weight)) + dim_idx]);
+  return T(t_weight[embedding_idx * int(stride_at(weight, 1)) + dim_idx]);
 }
 
 // Loads 4 consecutive elements of the embedding dim from a single weight row.
 // Only valid when the output texel packs along the embedding (width) dim.
 VEC4_T load_weight_texel(const int embedding_idx, const int dim_idx) {
-  int buf_i = embedding_idx * int(width(weight)) + dim_idx;
+  int buf_i = embedding_idx * int(stride_at(weight, 1)) + dim_idx;
   VEC4_T weight_texel;
   [[unroll]] for (int i = 0; i < 4; ++i) {
     weight_texel[i] = T(t_weight[buf_i++]);
