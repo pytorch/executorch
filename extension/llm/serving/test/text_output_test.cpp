@@ -122,7 +122,7 @@ TEST(TextOutputTest, Utf8StopMatchesAcrossEveryByteSplit) {
   }
 }
 
-TEST(TextOutputTest, HoldsUtf8AcrossUpdatesAndFlushesStopLookbehind) {
+TEST(TextOutputTest, AssemblesUtf8AcrossUpdates) {
   PieceTokenizer tokenizer;
   tokenizer.pieces = {{1, "a\xE4"}, {2, "\xB8"}, {3, "\x96"}};
   std::string text;
@@ -141,17 +141,42 @@ TEST(TextOutputTest, HoldsUtf8AcrossUpdatesAndFlushesStopLookbehind) {
   EXPECT_EQ(output.append({1}), Error::InvalidState);
 }
 
-TEST(TextOutputTest, EosStillFlushesOrdinaryHeldText) {
+TEST(TextOutputTest, EosFlushesHeldStopPrefix) {
   PieceTokenizer tokenizer;
-  tokenizer.pieces = {{1, "last"}};
+  tokenizer.pieces = {{1, "last"}, {2, "EN"}};
   std::string text;
   TextOutput output(
       tokenizer, 0, {9}, {"END"}, [&](const auto& s) { text += s; });
-  EXPECT_EQ(output.append({1, 9}), Error::Ok);
-  output.finish();
+  EXPECT_EQ(output.append({1, 2}), Error::Ok);
   EXPECT_EQ(text, "last");
-  EXPECT_EQ(output.completion_tokens(), 1u);
-  EXPECT_TRUE(output.generated_token_ids().has_value());
+  EXPECT_FALSE(output.stopped());
+  EXPECT_EQ(output.append({9}), Error::Ok);
+  EXPECT_TRUE(output.stopped());
+  EXPECT_EQ(text, "last");
+  output.finish();
+  output.finish();
+  EXPECT_EQ(text, "lastEN");
+  EXPECT_EQ(output.completion_tokens(), 2u);
+  ASSERT_TRUE(output.generated_token_ids().has_value());
+  EXPECT_EQ(*output.generated_token_ids(), (std::vector<uint64_t>{1, 2}));
+}
+
+TEST(TextOutputTest, LengthCompletionFlushesHeldStopPrefix) {
+  PieceTokenizer tokenizer;
+  tokenizer.pieces = {{1, "last"}, {2, "EN"}};
+  std::string text;
+  TextOutput output(
+      tokenizer, 0, {9}, {"END"}, [&](const auto& s) { text += s; });
+  EXPECT_EQ(output.append({1, 2}), Error::Ok);
+  EXPECT_EQ(text, "last");
+  EXPECT_FALSE(output.stopped());
+  output.finish();
+  output.finish();
+  EXPECT_EQ(text, "lastEN");
+  EXPECT_FALSE(output.stopped());
+  EXPECT_EQ(output.completion_tokens(), 2u);
+  ASSERT_TRUE(output.generated_token_ids().has_value());
+  EXPECT_EQ(*output.generated_token_ids(), (std::vector<uint64_t>{1, 2}));
 }
 
 TEST(TextOutputTest, DecodeFailureIsStickyAndInvalidatesReplay) {
