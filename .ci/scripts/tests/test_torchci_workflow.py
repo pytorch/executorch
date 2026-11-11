@@ -16,7 +16,7 @@ REUSABLE = "./.github/workflows/_unittest.yml"
 
 
 def load_workflow(name):
-    return yaml.safe_load((WORKFLOWS / name).read_text())
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
 class TorchciWorkflowTest(unittest.TestCase):
