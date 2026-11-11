@@ -5,14 +5,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# The ExecuTorch ESP-IDF component's nightly matrix.
+# The ExecuTorch ESP-IDF component's nightly matrix and release checks.
 #
-#   test_espressif_idf_nightly.sh prepare <dir>
+#   test_espressif_idf_nightly.sh prepare <dir> [stamp options]
 #     In the ExecuTorch environment: exports the test models (smoke, the
 #     esp_nn:: mul, an ESP-NN delegate program and the Cadence-quantized wake
-#     word), generates and packs the component into <dir>/dist, and makes each
-#     model's kernel bundle, one for smoke and mul, and one for all four, all
-#     under <dir>/models. all_ops is the smoke model with a bundle that
+#     word), generates the component with build_idf_component.sh's stamp
+#     options (default --allow-dev-stamp), packs it into <dir>/dist, and makes
+#     each model's kernel bundle, one for smoke and mul, and one for all four,
+#     all under <dir>/models. all_ops is the smoke model with a bundle that
 #     registers every op of every kernel library.
 #   test_espressif_idf_nightly.sh build <dir> <shard> <shards>
 #     Needs only <dir> from prepare: installs ESPRESSIF_IDF_VERSION's ESP-IDF
@@ -21,14 +22,25 @@
 #     idf-build-apps (sdkconfig.ci.* times every target, filtered by
 #     .build-test-rules.yml), builds shard <shard> of <shards> with ESP-IDF's
 #     own Python environment, checks that each configuration's settings took
-#     effect, and runs each build on its emulator unless the rules disable its
-#     test. Reports every failure, then fails.
+#     effect, runs each build on its emulator unless the rules disable its
+#     test, and checks that the mirror served the packed archive's files.
+#     Reports every failure, then fails.
+#   test_espressif_idf_nightly.sh fetch <dir> <URL> <sha256>
+#     Extracts into <dir> the tar of prepare's version, dist and models that
+#     the publish workflow keeps at <URL>, if its hash is <sha256>.
+#   test_espressif_idf_nightly.sh registry <dir> <registry URL>
+#     Needs only <dir> from prepare: installs ESP-IDF 6.1, waits up to 15
+#     minutes for the given component registry to list <dir>'s version of
+#     pytorch/executorch, builds the smoke consumer for ESP32-S3 with it, fails
+#     if the registry serves files other than <dir>'s archive, and runs the
+#     build on the emulator.
 
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-mode=${1:?usage: $0 prepare <dir> | build <dir> <shard> <shards>}
-dir=${2:?usage: $0 prepare <dir> | build <dir> <shard> <shards>}
+usage="usage: $0 prepare <dir> [stamp options] | build <dir> <shard> <shards> | fetch <dir> <URL> <sha256> | registry <dir> <URL>"
+mode=${1:?${usage}}
+dir=${2:?${usage}}
 mkdir -p "${dir}"
 dir=$(cd "${dir}" && pwd)
 cd "${et_root}"
@@ -46,6 +58,12 @@ logged() {
 }
 
 prepare() {
+    local stamp=("${@:3}")
+    if (( ${#stamp[@]} == 0 )); then
+        stamp=(--allow-dev-stamp)
+    fi
+    # Checks the stamp against git before the model exports.
+    bash examples/espressif/build_idf_component.sh --version "${stamp[@]}" > /dev/null
     export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
     local logs="${dir}/logs" models="${dir}/models"
     mkdir -p "${logs}" "${models}"
@@ -76,11 +94,13 @@ print(entry["atol"], entry["rtol"])
     rm -r "${models}"/*.bpte "${dir}/espnn"
 
     local component_dir="${dir}/component/executorch"
-    logged "${logs}/generate.log" bash examples/espressif/build_idf_component.sh \
-        --allow-dev-stamp --out "${component_dir}"
+    logged "${logs}/generate.log" bash examples/espressif/build_idf_component.sh "${stamp[@]}" \
+        --out "${component_dir}"
     local version
     version=$(sed -n 's/^version: "\(.*\)"$/\1/p' "${component_dir}/idf_component.yml")
-    (cd "${component_dir}" && compote component pack --name executorch --dest-dir "${dir}/dist")
+    # The registry links each version to its commit and to the generator.
+    (cd "${component_dir}" && compote component pack --name executorch --dest-dir "${dir}/dist" \
+        --commit-sha "$(git -C "${et_root}" rev-parse HEAD)" --repository-path examples/espressif)
     local model
     for model in smoke mul delegate wakeword; do
         python "${component_dir}/tools/gen_kernels.py" --pte "${models}/${model}.pte" \
@@ -114,34 +134,9 @@ build() {
     mkdir -p "${work}"
     work=$(cd "${work}" && pwd)
 
-    # ESP-IDF's QEMU needs these libraries, and setup.sh fails its install check
-    # without them.
-    if ! python -c '
-import ctypes
-ctypes.CDLL("libSDL2-2.0.so.0")
-ctypes.CDLL("libslirp.so.0")' 2> /dev/null; then
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 libslirp0
-    fi
-    logged "${work}/setup.log" bash examples/espressif/setup.sh --minimal \
-        --idf-version="${idf_version}" --targets="$(IFS=,; echo "${targets[*]}")"
-    # shellcheck source=/dev/null
-    source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
-    # A branch such as master moves, so record the commit a failure is against.
-    echo "ESP-IDF ${idf_version} at $(git -C "${IDF_PATH}" log -1 --format='%H (%cs)')" \
-        | tee "${work}/idf_commit.log"
-
-    # A fresh ESP-IDF Python environment, which cannot import executorch, no
-    # EXECUTORCH_PYTHON to bring one back, and idf-build-apps in a venv of its
-    # own, so it changes nothing ESP-IDF runs.
-    export IDF_PYTHON_ENV_PATH="${work}/idf_python_env"
-    mkdir -p "${IDF_PYTHON_ENV_PATH}"
-    logged "${work}/idf_python_env.log" python "${IDF_PATH}/tools/idf_tools.py" install-python-env
-    if "${IDF_PYTHON_ENV_PATH}/bin/python" -c "import executorch" 2> /dev/null; then
-        echo "FAIL: ESP-IDF's Python environment can import executorch" >&2
-        exit 1
-    fi
-    unset EXECUTORCH_PYTHON
+    install_idf "${idf_version}" "$(IFS=,; echo "${targets[*]}")" "${work}"
+    # Runs idf-build-apps from a venv of its own, so it changes nothing ESP-IDF
+    # runs.
     "${IDF_PYTHON_ENV_PATH}/bin/python" -m venv "${work}/idf_build_apps"
     "${work}/idf_build_apps/bin/python" -m pip install --quiet "idf-build-apps>=3.1,<4"
     local version
@@ -151,13 +146,8 @@ ctypes.CDLL("libslirp.so.0")' 2> /dev/null; then
         "${dir}/dist/executorch_${version}.tgz" "${work}/mirror" --namespace pytorch --name executorch
     export IDF_COMPONENT_STORAGE_URL="file://${work}/mirror;default"
 
-    # Built from a copy, so the component manager's state and the consumer's
-    # generated manifest stay out of the source tree.
     local sources="${work}/sources"
-    rm -rf "${sources}"
-    mkdir -p "${sources}/examples/espressif/idf_component_smoke"
-    cp -r examples/espressif/idf_component_consumer "${sources}/examples/espressif/"
-    cp -r examples/espressif/idf_component_smoke/main "${sources}/examples/espressif/idf_component_smoke/"
+    copy_consumer "${sources}"
     local app=examples/espressif/idf_component_consumer
     (cd "${sources}" && "${work}/idf_build_apps/bin/idf-build-apps" find -p "${app}" --target all \
         --default-build-targets "${targets[@]}" --config-rules 'sdkconfig.ci.*=' \
@@ -181,7 +171,7 @@ PY
     fi
 
     local project="${sources}/${app}" builds="${work}/builds" failures=()
-    local target config test_disabled name log models model passed idf_args
+    local target config test_disabled name log idf_args
     # On fd 3, so the emulators cannot read the list from stdin.
     while read -r target config test_disabled <&3; do
         name="${target}-${config}"
@@ -204,37 +194,203 @@ PY
             echo "OK: ${name} built (its test is disabled)"
             continue
         fi
-        IFS=';' read -ra models < <(sed -n 's/^CONFIG_ET_CONSUMER_MODEL="\(.*\)"$/\1/p' \
-            "${builds}/${name}/sdkconfig") || true
-        if (( ${#models[@]} == 0 )); then
-            echo "FAIL: ${name}'s sdkconfig names no CONFIG_ET_CONSUMER_MODEL" >&2
-            failures+=("${name} (models)")
-            continue
-        fi
         log="${work}/emulator-${name}.log"
         run_firmware "${builds}/${name}" "${target}" "${log}" "${idf_args[@]}"
-        passed=true
-        for model in "${models[@]}"; do
-            # A model passes only on at least one test case.
-            if ! grep -qE "${model}: PASS, [1-9][0-9]*/" "${log}"; then
-                echo "FAIL: ${name} did not print '${model}: PASS' for its cases; see ${log}" >&2
-                passed=false
-            fi
-        done
-        grep -qF "ET_COMPONENT_SMOKE: PASS" "${log}" || passed=false
-        if [[ "${passed}" == true ]]; then
+        if run_passed "${builds}/${name}/sdkconfig" "${log}"; then
             echo "OK: ${name} passed on the ${target} emulator"
         else
             tail -n 30 "${log}" >&2
             failures+=("${name} (run)")
         fi
     done 3< "${work}/shard.txt"
+    # Exercises the check that registry mode runs after an upload.
+    if ! served_matches "${dir}/dist/executorch_${version}.tgz" \
+        "${project}/managed_components/pytorch__executorch" "the mirror"; then
+        failures+=("served files")
+    fi
 
     if (( ${#failures[@]} )); then
         printf 'FAIL: %s\n' "${failures[@]}" >&2
         exit 1
     fi
     echo "PASS: shard ${shard}/${shards} of the ESP-IDF ${idf_version} matrix built and ran."
+}
+
+# Installs ESP-IDF for the targets and makes a fresh ESP-IDF Python
+# environment, which cannot import executorch, with no EXECUTORCH_PYTHON to
+# bring one back: ESP-IDF version, comma-separated targets, work dir.
+install_idf() {
+    local idf_version=$1 targets_csv=$2 work=$3
+    # ESP-IDF's QEMU needs these libraries, and setup.sh fails its install check
+    # without them.
+    if [[ ",${targets_csv}," == *,esp32,* ]] && ! python -c '
+import ctypes
+ctypes.CDLL("libSDL2-2.0.so.0")
+ctypes.CDLL("libslirp.so.0")' 2> /dev/null; then
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 libslirp0
+    fi
+    logged "${work}/setup.log" bash examples/espressif/setup.sh --minimal \
+        --idf-version="${idf_version}" --targets="${targets_csv}"
+    # shellcheck source=/dev/null
+    source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
+    # A branch such as master moves, so record the commit a failure is against.
+    echo "ESP-IDF ${idf_version} at $(git -C "${IDF_PATH}" log -1 --format='%H (%cs)')" \
+        | tee "${work}/idf_commit.log"
+    export IDF_PYTHON_ENV_PATH="${work}/idf_python_env"
+    mkdir -p "${IDF_PYTHON_ENV_PATH}"
+    logged "${work}/idf_python_env.log" python "${IDF_PATH}/tools/idf_tools.py" install-python-env
+    if "${IDF_PYTHON_ENV_PATH}/bin/python" -c "import executorch" 2> /dev/null; then
+        echo "FAIL: ESP-IDF's Python environment can import executorch" >&2
+        exit 1
+    fi
+    unset EXECUTORCH_PYTHON
+}
+
+# Checks that a run passed the app and every model its sdkconfig names, each on
+# at least one test case: the build's sdkconfig, then the emulator log.
+run_passed() {
+    local sdkconfig=$1 log=$2 models model passed=true
+    IFS=';' read -ra models < <(sed -n 's/^CONFIG_ET_CONSUMER_MODEL="\(.*\)"$/\1/p' \
+        "${sdkconfig}") || true
+    if (( ${#models[@]} == 0 )); then
+        echo "FAIL: ${sdkconfig} names no CONFIG_ET_CONSUMER_MODEL" >&2
+        return 1
+    fi
+    for model in "${models[@]}"; do
+        if ! grep -qE "${model}: PASS, [1-9][0-9]*/" "${log}"; then
+            echo "FAIL: ${log} has no '${model}: PASS' for its cases" >&2
+            passed=false
+        fi
+    done
+    grep -qF "ET_COMPONENT_SMOKE: PASS" "${log}" || passed=false
+    [[ "${passed}" == true ]]
+}
+
+# Copies the consumer project to a directory, so the component manager's state
+# and the consumer's generated manifest stay out of the source tree.
+copy_consumer() {
+    local sources=$1
+    rm -rf "${sources}"
+    mkdir -p "${sources}/examples/espressif/idf_component_smoke"
+    cp -r examples/espressif/idf_component_consumer "${sources}/examples/espressif/"
+    cp -r examples/espressif/idf_component_smoke/main "${sources}/examples/espressif/idf_component_smoke/"
+}
+
+fetch() {
+    local url=${3:?${usage}} sha256=${4:?${usage}} tar="${dir}/release.tar"
+    curl -sSf --retry 3 -o "${tar}" "${url}"
+    if ! echo "${sha256}  ${tar}" | sha256sum --check --quiet; then
+        echo "FAIL: ${url} is not the tested archive, whose sha256 is ${sha256}" >&2
+        exit 1
+    fi
+    tar -xf "${tar}" -C "${dir}"
+    rm "${tar}"
+}
+
+registry() {
+    local registry_url=${3:?${usage}}
+    local work="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-idf-registry}"
+    export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
+    mkdir -p "${work}"
+    work=$(cd "${work}" && pwd)
+    install_idf v6.1 esp32s3 "${work}"
+    local version
+    version=$(cat "${dir}/version")
+    local storage
+    if ! storage=$(curl -sSf --retry 3 "${registry_url%/}/api/" | python -c '
+import json, sys
+print(json.load(sys.stdin)["components_base_url"].rstrip("/"))'); then
+        echo "FAIL: ${registry_url}/api/ did not name the registry's storage" >&2
+        exit 1
+    fi
+    # The registry's storage is behind a CDN that caches for five minutes.
+    local tries=0
+    until curl -sSf "${storage}/components/pytorch/executorch.json" 2> /dev/null | python -c '
+import json, sys
+try:
+    versions = [v["version"] for v in json.load(sys.stdin)["versions"]]
+except (ValueError, KeyError):
+    versions = []
+sys.exit(sys.argv[1] not in versions)' "${version}"; do
+        if (( ++tries == 30 )); then
+            echo "FAIL: ${registry_url} did not list pytorch/executorch ${version}" >&2
+            exit 1
+        fi
+        echo "Waiting for ${registry_url} to list pytorch/executorch ${version}..."
+        sleep 30
+    done
+    copy_consumer "${work}/sources"
+    local project="${work}/sources/examples/espressif/idf_component_consumer"
+    local build="${work}/builds/esp32s3-default" log="${work}/emulator.log"
+    local idf_args=(-C "${project}" -B "${build}" -DSDKCONFIG="${build}/sdkconfig"
+        "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ci.default"
+        -DET_COMPONENT_VERSION="${version}" -DET_CONSUMER_MODELS_DIR="${dir}/models"
+        -DET_COMPONENT_REGISTRY_URL="${registry_url}")
+    IDF_TARGET=esp32s3 logged "${work}/build.log" "${IDF_PYTHON_ENV_PATH}/bin/python" \
+        "${IDF_PATH}/tools/idf.py" "${idf_args[@]}" build
+    # Checks that the registry serves the tested files: an --allow-existing
+    # upload leaves in place a version the registry already had.
+    served_matches "${dir}/dist/executorch_${version}.tgz" \
+        "${project}/managed_components/pytorch__executorch" "${registry_url}"
+    run_firmware "${build}" esp32s3 "${log}" "${idf_args[@]}"
+    if ! run_passed "${build}/sdkconfig" "${log}"; then
+        tail -n 30 "${log}" >&2
+        echo "FAIL: the consumer from ${registry_url} did not pass on the emulator" >&2
+        exit 1
+    fi
+    echo "PASS: pytorch/executorch ${version} from ${registry_url} built and ran."
+}
+
+# Checks that a project got the files of the tested archive from a registry or
+# mirror. The component manager adds .component_hash and CHECKSUMS.json to what
+# it downloads, and the registry rewrites every idf_component.yml, the
+# component's and each example's, with sorted keys and no comments, and drops
+# the examples' override_path, so manifests are compared as YAML without
+# override_path.
+# Arguments: the archive, the project's managed_components/pytorch__executorch,
+# then the registry or mirror's name.
+served_matches() {
+    python - "$@" <<'PY'
+import hashlib
+import sys
+import tarfile
+from pathlib import Path
+
+import yaml
+
+
+def fingerprint(path, data):
+    if path == "idf_component.yml" or path.endswith("/idf_component.yml"):
+        manifest = yaml.safe_load(data)
+        for dependency in (manifest.get("dependencies") or {}).values():
+            if isinstance(dependency, dict):
+                dependency.pop("override_path", None)
+        return manifest
+    return hashlib.sha256(data).hexdigest()
+
+
+tested = {}
+with tarfile.open(sys.argv[1]) as archive:
+    for member in archive:
+        if member.isfile():
+            path = Path(member.name).as_posix()
+            tested[path] = fingerprint(path, archive.extractfile(member).read())
+served_dir = Path(sys.argv[2])
+served = {}
+for file in served_dir.rglob("*"):
+    if file.is_file():
+        path = file.relative_to(served_dir).as_posix()
+        served[path] = fingerprint(path, file.read_bytes())
+differ = sorted(
+    p
+    for p in tested.keys() | served.keys()
+    if p not in (".component_hash", "CHECKSUMS.json") and tested.get(p) != served.get(p)
+)
+if differ:
+    sys.exit(f"FAIL: {sys.argv[3]} served files unlike the tested archive's: {differ[:10]}")
+print(f"OK: {sys.argv[3]} served the tested archive's files")
+PY
 }
 
 # Checks that every setting of a sdkconfig.ci.* file reached the build's
@@ -288,7 +444,9 @@ run_firmware() {
 }
 
 case "${mode}" in
-    prepare) prepare ;;
+    prepare) prepare "$@" ;;
     build) build "$@" ;;
-    *) echo "unknown mode ${mode}; use prepare or build" >&2; exit 1 ;;
+    fetch) fetch "$@" ;;
+    registry) registry "$@" ;;
+    *) echo "unknown mode ${mode}; ${usage}" >&2; exit 1 ;;
 esac
