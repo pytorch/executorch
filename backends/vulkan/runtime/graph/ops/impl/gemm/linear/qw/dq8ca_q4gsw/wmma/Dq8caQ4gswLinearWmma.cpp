@@ -128,40 +128,6 @@ vkapi::ShaderInfo pick_dq8ca_q4gsw_linear_wmma_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-// Row-major (utils::kPackedInt8_4W) counterpart of
-// add_quantize_and_pack_4h4w_with_group_sums_node: same quantization, group
-// sums and workgroup shape.
-void add_quantize_and_pack_4w_with_group_sums_node(
-    ComputeGraph& graph,
-    const ValueRef fp_input,
-    const ValueRef int_input_sums,
-    const ValueRef packed_input_scales,
-    const ValueRef packed_input_zps,
-    const ValueRef packed_int_input,
-    const ValueRef group_size) {
-  const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
-  const int32_t blocks_per_group = utils::div_up(group_size_val, int32_t(4));
-
-  std::string shader_name = "quantize_and_pack_4w_with_group_sums";
-  shader_name += group_size_val >= 128 ? "_o2w32" : "_o4w16";
-  add_storage_type_suffix(shader_name, graph.storage_type_of(packed_int_input));
-  add_storage_type_suffix(shader_name, graph.storage_type_of(fp_input));
-  add_dtype_suffix(shader_name, graph.dtype_of(fp_input));
-  add_zp_dtype_mode_suffix(shader_name, graph.dtype_of(packed_input_zps));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(shader_name),
-      pick_quantize_and_pack_4h4w_with_group_sums_gwg,
-      pick_required_lwg,
-      {{{packed_int_input, int_input_sums}, vkapi::kWrite},
-       {{fp_input, packed_input_scales, packed_input_zps}, vkapi::kRead}},
-      {graph.sizes_ubo(fp_input)},
-      {},
-      {blocks_per_group},
-      {group_size}));
-}
-
 } // namespace
 
 bool try_add_dq8ca_q4gsw_linear_wmma_node(
@@ -246,26 +212,15 @@ bool try_add_dq8ca_q4gsw_linear_wmma_node(
       utils::kBuffer,
       utils::kWidthPacked);
 
-  if (rowmajor) {
-    add_quantize_and_pack_4w_with_group_sums_node(
-        graph,
-        fp_input,
-        int_input_sums,
-        packed_input_scale,
-        packed_input_zp,
-        packed_int_input,
-        group_size);
-  } else {
-    add_quantize_and_pack_4h4w_with_group_sums_node(
-        graph,
-        input_quant_config,
-        fp_input,
-        int_input_sums,
-        packed_input_scale,
-        packed_input_zp,
-        packed_int_input,
-        group_size);
-  }
+  add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      fp_input,
+      int_input_sums,
+      packed_input_scale,
+      packed_input_zp,
+      packed_int_input,
+      group_size);
 
   const int32_t K4_per_group =
       utils::div_up(static_cast<int32_t>(group_size_val), int32_t(4));
