@@ -96,6 +96,42 @@ def pooling_remainder(
     return (input_size + 2 * pad - kernel_size) % stride
 
 
+def _get_pooling_ceil_mode(pooling_node: torch.fx.Node) -> bool:
+    ceil_mode_index = (
+        5
+        if pooling_node.target
+        in (
+            max_pooling_op,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        )
+        else 4
+    )
+    return bool(
+        pooling_node.args[ceil_mode_index]
+        if len(pooling_node.args) > ceil_mode_index
+        else False
+    )
+
+
+def _ceil_mode_adds_output(
+    input_size: int, pad: int, kernel_size: int, stride: int
+) -> bool:
+    """Return whether ceil_mode gives one more output element than floor mode.
+
+    PyTorch drops a last ceil_mode window that would start in the right
+    padding. Ceil mode then pools over the same windows as floor mode, and the
+    input has to be truncated in the same way.
+
+    """
+    ceil_post_pad = adjust_pooling_pad_if_needed(
+        input_size, kernel_size, stride, pad, True
+    )
+    floor_post_pad = adjust_pooling_pad_if_needed(
+        input_size, kernel_size, stride, pad, False
+    )
+    return ceil_post_pad != floor_post_pad
+
+
 def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
     """Return whether rewriting a pool requires symbolic padding.
 
@@ -114,20 +150,7 @@ def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
         else kernel_size
     )
     padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
-    ceil_mode_index = (
-        5
-        if pooling_node.target
-        in (
-            max_pooling_op,
-            exir_ops.edge.aten.max_pool2d_with_indices.default,
-        )
-        else 4
-    )
-    ceil_mode = (
-        pooling_node.args[ceil_mode_index]
-        if len(pooling_node.args) > ceil_mode_index
-        else False
-    )
+    ceil_mode = _get_pooling_ceil_mode(pooling_node)
     input_shape = input_node.meta["val"].shape
     kernel_sizes = expand_around_channel(cast(Sequence[int] | int, kernel_size), 2)
     strides = expand_around_channel(cast(Sequence[int] | int, stride), 2)
@@ -243,6 +266,7 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
         else kernel_size
     )
     padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
+    ceil_mode = _get_pooling_ceil_mode(pooling_node)
 
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
 
@@ -253,6 +277,16 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
     for dim, (kernel_length, stride_length, pad_size) in enumerate(
         zip(kernel_sizes, strides, pads), start=2
     ):
+        # When ceil_mode adds an output element, its window reaches the end of
+        # the input, so there is nothing to truncate in this dimension.
+        if (
+            ceil_mode
+            and not isinstance(input_shape[dim], torch.SymInt)
+            and _ceil_mode_adds_output(
+                input_shape[dim], pad_size, kernel_length, stride_length
+            )
+        ):
+            continue
         remainder = pooling_remainder(
             input_shape[dim], pad_size, kernel_length, stride_length
         )
@@ -272,6 +306,11 @@ def get_slices(node: torch.fx.Node) -> Slices:
         return get_slices_pooling(node)
     else:
         raise ValueError(f"Unsupported node target, was expecting {valid_operators}")
+
+
+def _has_static_spatial_shape(node: torch.fx.Node) -> bool:
+    input_shape = cast(torch.fx.Node, node.args[0]).meta["val"].shape
+    return not any(isinstance(dim, torch.SymInt) for dim in input_shape[2:])
 
 
 def is_valid_operator(node: torch.fx.Node) -> bool:
@@ -294,14 +333,20 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
                     "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2dPass been run?"
                 )
 
-        # If using ceil mode for rounding, the input does not need adjusting
-        return not ceil_mode
+        # Ceil mode needs the same input adjustment as floor mode where it does
+        # not add an output element, see get_slices_pooling. This is only
+        # handled for static spatial shapes.
+        return not ceil_mode or _has_static_spatial_shape(node)
     elif node.target == avg_pooling_op:
         ceil_mode = node.args[4] if len(node.args) >= 5 else False
         count_include_pad = node.args[5] if len(node.args) >= 6 else True
         divisor_override = node.args[6] if len(node.args) >= 7 else None
 
-        return not ceil_mode and not count_include_pad and divisor_override is None
+        return (
+            (not ceil_mode or _has_static_spatial_shape(node))
+            and not count_include_pad
+            and divisor_override is None
+        )
 
     return False
 
