@@ -589,8 +589,9 @@ def test_ignore_eos_parser_stops_at_all_plain_chat_boundaries(make_client, marke
         ["answer<|im_"],  # Native string-stop filtering removed the marker's end.
     ],
 )
+@pytest.mark.parametrize("matched_stop", ["end", None])
 def test_ignore_eos_request_stop_inside_terminator_never_leaks_fragment(
-    make_client, mode, tokens
+    make_client, mode, tokens, matched_stop
 ):
     from executorch.examples.llm_server.python.protocol import DeltaMessage
 
@@ -607,7 +608,7 @@ def test_ignore_eos_request_stop_inside_terminator_never_leaks_fragment(
     client, _ = make_client(
         tokens=tokens,
         finish_reason="stop",
-        matched_stop="end",
+        matched_stop=matched_stop,
         streaming_parser_factory=Parser if mode == "parser" else None,
         content_filter=(lambda text: text) if mode == "filter" else None,
         reasoning_extractor=(

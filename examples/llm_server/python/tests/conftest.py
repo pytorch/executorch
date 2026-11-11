@@ -125,6 +125,7 @@ class FakeRunner:
         gen_ids=None,
         reuse=0,
         matched_stop="",
+        reports_matched_stop=True,
     ):
         self._tokens = list(tokens)
         self._fail = fail
@@ -132,6 +133,7 @@ class FakeRunner:
         self._gen_ids = list(gen_ids) if gen_ids is not None else None
         self._reuse = reuse  # reused_prompt_tokens reported in done stats
         self._matched_stop = matched_stop
+        self._reports_matched_stop = reports_matched_stop
         self.captured_config = None
         self.stopped = False
         self.reset_count = 0
@@ -174,7 +176,8 @@ class FakeRunner:
             stats = _FakeStats()
             stats.num_generated_tokens = len(self._tokens)
             stats.finish_reason = self._finish_reason
-            stats.matched_stop = self._matched_stop
+            if self._reports_matched_stop:
+                stats.matched_stop = self._matched_stop
             stats.generated_token_ids = (
                 list(self._gen_ids) if self._gen_ids is not None else None
             )
@@ -219,6 +222,7 @@ def make_client():
         api_dialect="openai",
         evict_idle_sessions=False,
         matched_stop="",
+        reports_matched_stop=True,
     ):
         fake = FakeRunner(
             tokens,
@@ -228,6 +232,7 @@ def make_client():
             gen_ids=gen_ids,
             reuse=reuse,
             matched_stop=matched_stop,
+            reports_matched_stop=reports_matched_stop,
         )
         fake.supports_ignore_eos = supports_ignore_eos
         fake.default_stop_strings = (

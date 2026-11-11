@@ -402,15 +402,16 @@ class ServingChat:
     def _trim_stop_fragment(
         self, text: str, req: ChatCompletionRequest, matched_stop: Optional[str]
     ) -> str:
-        # A native string stop inside a special token can remove its remainder.
-        # Hide only suffixes completed by the stop that actually matched.
-        if not matched_stop:
+        # Legacy workers omit the match; retain their request-stop fallback.
+        if matched_stop == "":
             return text
+        stops = self._request_stops(req) if matched_stop is None else [matched_stop]
         cut = len(text)
         for marker in self._visible_stops(req):
-            at = marker.find(matched_stop)
-            if at > 0 and text.endswith(marker[:at]):
-                cut = min(cut, len(text) - at)
+            for stop in stops:
+                at = marker.find(stop)
+                if at > 0 and text.endswith(marker[:at]):
+                    cut = min(cut, len(text) - at)
         return text[:cut]
 
     def _truncate_raw(

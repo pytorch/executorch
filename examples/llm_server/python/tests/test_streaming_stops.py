@@ -432,6 +432,7 @@ def test_stream_cleanup_releases_fragment_when_it_is_not_a_stop(ignore_eos):
         ("Hi<|im_end|>STOPignored", "<|im_end|>STOP", "length", "", "Hi", True),
         ("Hi <|im_", None, "length", "", "Hi <|im_", False),
         ("Hi <|im_", "end|>", "stop", "end|>", "Hi ", False),
+        ("Hi <|im_", "end|>", "stop", None, "Hi ", False),
         ("Hi <|im_XY", ["end|>", "XY"], "length", "", "Hi <|im_", True),
         ("Hi <|im_XY", ["XY", "end|>"], "length", "", "Hi <|im_", True),
     ],
@@ -487,11 +488,51 @@ def test_ignored_eos_multiple_stops_preserve_unrelated_marker_fragment(
     assert finish == "stop"
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "matched_stop,reports_matched_stop,expected",
+    [
+        ("end", True, "Hi "),
+        (None, True, "Hi "),
+        (None, False, "Hi "),
+        ("", True, "Hi <|im_"),
+    ],
+)
+def test_native_stop_fragment_metadata_reaches_serving_cleanup(
+    stream, matched_stop, reports_matched_stop, expected, make_client
+):
+    client, _ = make_client(
+        tokens=["Hi ", "<|im_"],
+        finish_reason="stop",
+        matched_stop=matched_stop,
+        reports_matched_stop=reports_matched_stop,
+        special_tokens=_SpecialTok.all_special_tokens,
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "ignore_eos": True,
+            "stop": "end",
+            "stream": stream,
+        },
+    )
+    assert response.status_code == 200
+    if stream:
+        content, finish = _sse_content(response.text)
+    else:
+        choice = response.json()["choices"][0]
+        content, finish = choice["message"]["content"], choice["finish_reason"]
+    assert content == expected
+    assert finish == "stop"
+
+
 @pytest.mark.parametrize(
     "matched_stop,expected",
-    [("end|>", "Hi "), ("XY", "Hi <|im_"), ("", "Hi <|im_")],
+    [("end|>", "Hi "), ("XY", "Hi <|im_"), ("", "Hi <|im_"), (None, "Hi ")],
 )
-def test_native_stop_fragment_uses_only_reported_match(matched_stop, expected):
+def test_native_stop_fragment_respects_match_metadata(matched_stop, expected):
     stops = ["end|>", "XY"]
     emitted, _, _ = _replay_stream_cleanup(
         ["Hi ", "<|im_"],
