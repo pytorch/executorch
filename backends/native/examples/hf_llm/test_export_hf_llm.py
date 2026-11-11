@@ -200,6 +200,23 @@ class ExportHfLlmTest(unittest.TestCase):
                     got, want = loaded(ids).logits, reference(ids).logits
                 self.assertTrue(torch.equal(got, want))
 
+    def test_gguf_loads_the_first_layers_into_a_truncated_model(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        torch.manual_seed(1)
+        reference = _tiny("llama")
+        pairs = _as_gguf_tensors(reference, "llama")
+        with tempfile.TemporaryDirectory() as path:
+            reference.config.save_pretrained(path)
+            loaded = _load(path, 1, False, empty_weights=True)
+
+        load_gguf(loaded, "model.gguf", "llama", lambda _: iter(pairs), truncated=True)
+
+        reference.model.layers = reference.model.layers[:1]
+        reference.config.num_hidden_layers = 1
+        with torch.no_grad():
+            got, want = loaded(ids).logits, reference(ids).logits
+        self.assertTrue(torch.equal(got, want))
+
     def test_gguf_derives_head_dim_when_config_has_none(self) -> None:
         torch.manual_seed(1)
         reference = _tiny()
