@@ -20,6 +20,7 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
 from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
 from executorch.exir import to_edge_transform_and_lower
@@ -125,6 +126,13 @@ class MeanKeepdimModule(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         m = x.mean(dim=-1, keepdim=True)
         return m, x.mean(dim=2, keepdim=True), x - m, x.mean(dim=-1)
+
+
+class EluSiluModule(torch.nn.Module):
+    """elu(x, alpha=0.5) + silu(x) — both unary resize hooks on a dynamic S."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.elu(x, alpha=0.5) + torch.nn.functional.silu(x)
 
 
 class SwiGluModule(torch.nn.Module):
@@ -238,10 +246,11 @@ def _lower_fully_delegated(
     compile_options=None,
     *,
     expect_q4_decode_route: bool = False,
+    partitioner_cls=VulkanPartitioner,
 ):
     edge = to_edge_transform_and_lower(
         ep,
-        partitioner=[VulkanPartitioner(compile_options=compile_options)],
+        partitioner=[partitioner_cls(compile_options=compile_options)],
     )
     graph = edge.exported_program().graph_module.graph
     delegates = get_delegates(graph)
@@ -274,9 +283,13 @@ def _lower_fully_delegated(
     return et
 
 
-def _export(model, example_inputs, dynamic_shapes, path: str) -> None:
+def _export(
+    model, example_inputs, dynamic_shapes, path: str, partitioner_cls=None
+) -> None:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    et = _lower_fully_delegated(ep, path)
+    et = _lower_fully_delegated(
+        ep, path, partitioner_cls=partitioner_cls or VulkanPartitioner
+    )
     with open(path, "wb") as f:
         f.write(et.buffer)
     print(f"Exported {path}")
@@ -530,6 +543,17 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
 
     # 2h.2) mean.dim(keepdim=True/False) over the hidden dim and the DYNAMIC S.
     export_dynamic_mean_keepdim_cases(out_dir, s_dim)
+
+    # 2h.3) elu + silu with a DYNAMIC seq-len S.
+    elu_silu = EluSiluModule()
+    _export(
+        elu_silu,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_elu_silu.pte"),
+        partitioner_cls=WebGPUPartitioner,
+    )
+    _write_goldens(elu_silu, "dyn_elu_silu", out_dir, [MAXS, 32, 1])
 
     # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
     # fused dispatch at M=512; compact variants isolate commutative matching and
@@ -1742,6 +1766,9 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_mean_keepdim.S125.golden0.bin",
                 "dyn_mean_keepdim.S125.golden3.bin",
                 "dyn_mean_keepdim.S7.golden2.bin",
+                "dyn_elu_silu.pte",
+                "dyn_elu_silu.S32.input.bin",
+                "dyn_elu_silu.S32.golden.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",
