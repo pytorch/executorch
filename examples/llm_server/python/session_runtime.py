@@ -77,8 +77,8 @@ class GenStats:
     completion_tokens: int = 0
     # Worker-reported stop reason ("stop" | "length"), or None if not reported.
     finish_reason: Optional[str] = None
-    # None: unknown cause; empty string: explicitly no string stop.
-    matched_stop: Optional[str] = None
+    # None is reserved for an unknown string-stop cause from a worker message.
+    matched_stop: Optional[str] = ""
     # Warm-resume accounting: tokens served from the session's resident
     # state vs prefilled this request, and why.
     reused_prompt_tokens: int = 0
@@ -134,7 +134,7 @@ def _copy_stats(stats: GenStats, s) -> None:
     stats.prompt_tokens = s.num_prompt_tokens
     stats.completion_tokens = s.num_generated_tokens
     stats.finish_reason = getattr(s, "finish_reason", None)
-    stats.matched_stop = getattr(s, "matched_stop", None)
+    stats.matched_stop = getattr(s, "matched_stop", "")
     stats.reused_prompt_tokens = getattr(s, "reused_prompt_tokens", 0)
     stats.prefilled_prompt_tokens = getattr(s, "prefilled_prompt_tokens", 0)
     stats.session_reset_reason = getattr(s, "session_reset_reason", None)

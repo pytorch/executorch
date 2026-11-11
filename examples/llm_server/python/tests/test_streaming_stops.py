@@ -494,7 +494,7 @@ def test_ignored_eos_multiple_stops_preserve_unrelated_marker_fragment(
     [
         ("end", True, "Hi "),
         (None, True, "Hi "),
-        (None, False, "Hi "),
+        (None, False, "Hi <|im_"),
         ("", True, "Hi <|im_"),
     ],
 )

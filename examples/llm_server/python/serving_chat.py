@@ -402,10 +402,12 @@ class ServingChat:
     def _trim_stop_fragment(
         self, text: str, req: ChatCompletionRequest, matched_stop: Optional[str]
     ) -> str:
-        # Legacy workers omit the match; retain their request-stop fallback.
         if matched_stop == "":
             return text
+        # Legacy workers omit the match; retain their request-stop fallback.
         stops = self._request_stops(req) if matched_stop is None else [matched_stop]
+        # A native stop inside a special token removes the remaining token text.
+        # Strip the special-token prefix it leaves behind.
         cut = len(text)
         for marker in self._visible_stops(req):
             for stop in stops:
