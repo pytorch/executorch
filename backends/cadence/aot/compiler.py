@@ -284,6 +284,7 @@ def _lower_ep_to_edge(
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
     core_aten_exceptions: Optional[list[torch._ops.OpOverload]] = None,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
@@ -303,6 +304,7 @@ def _lower_ep_to_edge(
             preserve_ops=TO_EDGE_PRESERVE_OPS,
         ),
         constant_methods=constant_methods,
+        generate_etrecord=generate_etrecord,
     )
 
     if dump_graphs:
@@ -396,11 +398,14 @@ def _lower_ep_to_cadence(
     dump_graphs: bool = False,
     mode: CompileMode = CompileMode.DEFAULT,
     edge_passes_config: Optional[EdgePassesConfig] = None,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     """
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
-    edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
+    edge_prog_manager = _lower_ep_to_edge(
+        program, dump_graphs=dump_graphs, generate_etrecord=generate_etrecord
+    )
     cadence_prog_manager = apply_exir_ops_passes(
         mode, edge_prog_manager, edge_passes_config
     )
@@ -469,6 +474,32 @@ def export_to_executorch_gen_etrecord(
     )
 
 
+def get_cadence_executorch_backend_config(
+    memory_config: MemoryConfig,
+    mode: CompileMode = CompileMode.DEFAULT,
+    mem_algo: int = 0,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+) -> ExecutorchBackendConfig:
+    """
+    Return the to_executorch config for a Cadence program: Cadence memory
+    planning, out-variant kernels, and no delegate segments.
+    """
+    return ExecutorchBackendConfig(
+        memory_planning_pass=CadenceMemoryPlanning(
+            memory_config,
+            mode=mode,
+            mem_algo=mem_algo,
+            alloc_graph_input=alloc_graph_input,
+            alloc_graph_output=alloc_graph_output,
+        ),
+        emit_stacktrace=False,
+        to_out_var_pass=ToOutVarPass(),
+        extract_delegate_segments=False,
+        sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+    )
+
+
 # Export the model and lower it to an EdgeProgramManager (in edge IR), and
 # apply passes specific to Cadence DSP execution. Return both to print the
 # differences.
@@ -494,22 +525,14 @@ def _lower_ep_to_cadence_gen_etrecord(
     if memory_config is None:
         memory_config = get_default_memory_config()
 
-    memory_planning_pass = CadenceMemoryPlanning(
-        memory_config,
-        mode=mode,
-        mem_algo=mem_algo,
-        alloc_graph_input=alloc_graph_input,
-        alloc_graph_output=alloc_graph_output,
-    )
-
     # Get executorch program after Cadence specific passes
     exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch(
-        ExecutorchBackendConfig(
-            memory_planning_pass=memory_planning_pass,
-            emit_stacktrace=False,
-            to_out_var_pass=ToOutVarPass(),
-            extract_delegate_segments=False,
-            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+        get_cadence_executorch_backend_config(
+            memory_config,
+            mode=mode,
+            mem_algo=mem_algo,
+            alloc_graph_input=alloc_graph_input,
+            alloc_graph_output=alloc_graph_output,
         ),
     )
 

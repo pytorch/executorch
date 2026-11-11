@@ -7,6 +7,7 @@
 # pyre-strict
 
 
+import codecs
 import logging
 import os
 import selectors
@@ -29,6 +30,10 @@ from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
 # If quiet is true, suppress the printing of stdout and stderr output.
 quiet = False
 
+# The x86 runner from backends/cadence/build_cadence_runner.sh, relative to the
+# repository root.
+RUNNER_PATH = "./cmake-out/backends/cadence/cadence_runner"
+
 
 def _execute_subprocess(cmd: List[str], cwd: Optional[str] = None) -> Tuple[str, str]:
     """
@@ -41,24 +46,28 @@ def _execute_subprocess(cmd: List[str], cwd: Optional[str] = None) -> Tuple[str,
     stderr = ""
 
     PIPE = subprocess.PIPE
-    with subprocess.Popen(cmd, stdout=PIPE, stderr=PIPE, cwd=cwd) as p:
-        sel = selectors.DefaultSelector()
-        # pyre-fixme[6]: For 1st argument expected `Union[HasFileno, int]` but got
-        #  `Optional[IO[bytes]]`.
-        sel.register(p.stdout, selectors.EVENT_READ)
-        # pyre-fixme[6]: For 1st argument expected `Union[HasFileno, int]` but got
-        #  `Optional[IO[bytes]]`.
-        sel.register(p.stderr, selectors.EVENT_READ)
+    with subprocess.Popen(
+        cmd, stdout=PIPE, stderr=PIPE, cwd=cwd
+    ) as p, selectors.DefaultSelector() as sel:
+        # Each stream gets its own decoder, because a read can end in the middle
+        # of a multi-byte character.
+        for stream in (p.stdout, p.stderr):
+            # pyre-fixme[6]: For 1st argument expected `Union[HasFileno, int]` but
+            #  got `Optional[IO[bytes]]`.
+            sel.register(
+                stream,
+                selectors.EVENT_READ,
+                codecs.getincrementaldecoder("utf-8")(errors="replace"),
+            )
 
-        done = False
-        while not done:
+        while sel.get_map():
             for key, _ in sel.select():
                 # pyre-fixme[16]: Item `HasFileno` of `Union[HasFileno, int]` has no
                 #  attribute `read1`.
-                data = key.fileobj.read1().decode()
-                if not data:
-                    done = True
-                    break
+                chunk = key.fileobj.read1()
+                if not chunk:
+                    sel.unregister(key.fileobj)
+                data = key.data.decode(chunk, final=not chunk)
 
                 if key.fileobj is p.stdout:
                     if not quiet:
@@ -93,10 +102,16 @@ def execute(args: List[str]) -> Tuple[str, str]:
     try:
         return _execute_subprocess(args)
     except subprocess.CalledProcessError as e:
-        fdb_cmd = f"fdb {' '.join(e.cmd)}"
-        raise RuntimeError(
-            f"Failed to execute. Use the following to debug:\n{fdb_cmd}"
-        ) from e
+        # Leave out ExecuTorch info and debug logs so the message leads with
+        # the errors, such as the operators the runner is missing.
+        lines = [
+            line for line in e.stderr.splitlines() if not line.startswith(("I ", "D "))
+        ]
+        if e.returncode < 0:
+            lines.append(f"{e.cmd[0]} was killed by signal {-e.returncode}.")
+        else:
+            lines.append(f"{e.cmd[0]} failed with exit code {e.returncode}.")
+        raise RuntimeError("\n".join(lines)) from e
 
 
 class Executor:
@@ -106,12 +121,15 @@ class Executor:
         working_dir: str = "",
         file_name: str = "CadenceDemoModel",
         force_rebuild: bool = False,
+        *,
+        debug_buffer_size: int,
     ):
         self.working_dir = working_dir
         self.executor_builder = "./backends/cadence/build_cadence_runner.sh"
-        self.execute_runner = "./cmake-out/backends/cadence/cadence_runner"
+        self.execute_runner = RUNNER_PATH
         self.bundled_program_path: str = f"{file_name}.bpte"
         self.force_rebuild = force_rebuild
+        self.debug_buffer_size = debug_buffer_size
 
     def __call__(self) -> None:
         # build executor if not already built or force rebuild requested
@@ -130,6 +148,7 @@ class Executor:
             "etdump_path": os.path.join(self.working_dir, "etdump.etdp"),
             "debug_output_path": os.path.join(self.working_dir, "debug_output.bin"),
             "dump_outputs": "true",
+            "debug_buffer_size": str(self.debug_buffer_size),
         }
         args = self.get_bash_command(self.execute_runner, cmd_args)
         logging.info(f"\33[33m{' '.join(args)}\33[0m")

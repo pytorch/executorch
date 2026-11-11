@@ -208,6 +208,27 @@ def _load_cortex_m() -> list[TestFlow]:
     return [CORTEX_M_TEST_FLOW]
 
 
+def _load_cadence() -> list[TestFlow]:
+    from executorch.backends.cadence.runtime.executor import RUNNER_PATH
+
+    # Every case runs on cadence_runner, so without it the whole flow fails the same way.
+    if not os.path.isfile(RUNNER_PATH):
+        logger.info("Skipping Cadence flow registration: cadence_runner is not built")
+        return []
+
+    from executorch.backends.test.suite.flows.cadence import (
+        CADENCE_GENERIC_INT8_SIZE_TEST_FLOW,
+        CADENCE_GENERIC_INT8_TEST_FLOW,
+        CADENCE_GENERIC_TEST_FLOW,
+    )
+
+    return [
+        CADENCE_GENERIC_TEST_FLOW,
+        CADENCE_GENERIC_INT8_TEST_FLOW,
+        CADENCE_GENERIC_INT8_SIZE_TEST_FLOW,
+    ]
+
+
 def all_flows() -> dict[str, TestFlow]:
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
@@ -223,6 +244,7 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_arm, "ARM")
         + _register_flow(_load_cortex_m, "Cortex-M")
         + _register_flow(_load_nxp, "NXP")
+        + _register_flow(_load_cadence, "Cadence")
     )
 
     try:
