@@ -200,7 +200,8 @@ class WhisperDecoder(nn.Module):
         cache_position: torch.Tensor,
         *cross_kv: torch.Tensor,
     ) -> torch.Tensor:
-        # transformers 5 takes positions from the cache's length, not cache_position.
+        # transformers 5 takes positions from the cache's length, not
+        # cache_position, both for cache writes and position embeddings.
         for layer in self.self_cache.layers:
             layer.cumulative_length = cache_position[:1].clone()
             layer.positions = cache_position
@@ -219,6 +220,7 @@ class WhisperDecoder(nn.Module):
             past_key_values=self.cache,
             use_cache=True,
             cache_position=cache_position,
+            position_ids=cache_position.unsqueeze(0),
         ).last_hidden_state
         return self.proj_out(hidden)
 

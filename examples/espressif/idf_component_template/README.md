@@ -10,16 +10,31 @@ LICENSE file in the root directory of this source tree.
 
 **This tree is generated. Do not edit it by hand.** It is produced by
 `examples/espressif/build_idf_component.sh` in the
-[ExecuTorch](https://github.com/pytorch/executorch) repository:
+[ExecuTorch](https://github.com/pytorch/executorch) repository.
 
-```sh
-executorch/examples/espressif/build_idf_component.sh --out <this directory>
-```
-
-`VERSION` in this directory records the ExecuTorch commit and the
-kernel libraries the component ships.
+`VERSION` in this directory records the ExecuTorch commit, the generator's
+options, and the kernel libraries the component ships.
+`examples/hello_executorch` is a complete project that runs a small model
+with its kernel bundle; its README says how they were made.
 
 ## Using it
+
+Depend on one exact version and commit `dependencies.lock`:
+
+```yaml
+dependencies:
+  pytorch/executorch: "==@ET_COMPONENT_VERSION@"
+```
+
+A development copy, versioned `X.Y.Z-dev.YYYYMMDD`, is not on the
+registry; use it from your project's `components/` or through
+`override_path`.
+
+A kernel bundle is made for one component version, a `~N` respin
+included, and the build refuses a bundle made for another version, or
+for the same version from another commit. With a range, the build
+breaks once the lock is re-solved to a newer version (for example by
+`idf.py update-dependencies`), until the bundle is regenerated.
 
 The component carries the runtime, every kernel of its kernel
 libraries (portable, quantized, the Cadence backend's generic kernels
@@ -112,10 +127,11 @@ errors under the `et_model` tag.
 
 ## Updating
 
-Re-run the generator against a newer ExecuTorch checkout and replace
-this whole directory, then regenerate your kernel bundle with the
-matching `executorch` Python package. Review the `VERSION` diff
-(commit, kernel library hashes); do not line-review vendored sources.
+Bump the `==` pin, or, for a vendored copy, re-run the generator
+against a newer ExecuTorch checkout and replace this whole directory.
+Then regenerate your kernel bundle with the matching `executorch`
+Python package. Review the `VERSION` diff (commit, kernel library
+hashes); do not line-review vendored sources.
 
 Projects moving from the op profiles of earlier versions remove
 `CONFIG_ET_ENABLE` and `CONFIG_ET_OP_PROFILE_*` from their sdkconfig,
