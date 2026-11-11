@@ -399,7 +399,7 @@ class ExportHfLlmTest(unittest.TestCase):
                 with torch.no_grad():
                     want = reference(torch.tensor([sequence])).logits[:, -1:]
                 torch.testing.assert_close(call.outputs[0], want, atol=1e-5, rtol=1e-5)
-        self.assertEqual(offgraph.cache_metadata()["get_windows"], [3, 3, 3, 0])
+        self.assertEqual(offgraph.metadata()["get_windows"], [3, 3, 3, 0])
         seq = torch.export.Dim("seq", min=1, max=31)
         with torch.no_grad():
             ep = torch.export.export(
@@ -549,7 +549,7 @@ class ExportHfLlmTest(unittest.TestCase):
                             call.outputs[0], want, atol=1e-5, rtol=1e-5
                         )
 
-    def test_offgraph_cache_metadata_gives_each_layer_its_window(self) -> None:
+    def test_offgraph_metadata_gives_each_layer_its_window(self) -> None:
         for model, windows in (
             (_tiny(), [0, 0]),
             (_tiny("mistral", sliding_window=8), [8, 8]),
@@ -567,12 +567,13 @@ class ExportHfLlmTest(unittest.TestCase):
             with self.subTest(arch=model.config.model_type):
                 wrapper = OffGraphLastTokenLM(model, 32)
                 self.assertEqual(
-                    wrapper.cache_metadata(),
+                    wrapper.metadata(),
                     {
                         "get_n_caches": 2,
                         "get_kv_heads": [2, 2],
                         "get_head_dims": [16, 16],
                         "get_windows": windows,
+                        "get_max_context_len": 64,
                     },
                 )
                 self.assertEqual(
