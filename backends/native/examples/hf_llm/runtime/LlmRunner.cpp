@@ -343,13 +343,13 @@ struct Generation {
 
 // Prefills `prompt_tokens` from `start_position` in calls of at most
 // `max_chunk` tokens, then decodes one token per call until `limit` tokens or
-// an EOS, streaming the text to stdout.
+// an EOS, streaming the text to stdout unless `tokenizer` is null.
 Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
     bool per_token_positions,
     size_t max_chunk,
-    ::tokenizers::Tiktoken& tokenizer,
+    const ::tokenizers::Tiktoken* tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
     int64_t start_position,
     size_t limit,
@@ -475,19 +475,21 @@ Generation generate(
   size_t generated = 0;
   std::vector<uint64_t> generated_ids;
   uint64_t previous_token = prompt_tokens.back();
-  if (!FLAGS_interactive) {
+  if (tokenizer != nullptr && !FLAGS_interactive) {
     std::printf("text:      ");
   }
   std::fflush(stdout);
   while (generated < limit && !eos_ids.contains(next_token)) {
-    auto decoded = tokenizer.decode(previous_token, next_token);
-    if (!decoded.ok()) {
-      throw std::runtime_error(
-          "failed to decode token: tokenizer error " +
-          std::to_string(static_cast<uint32_t>(decoded.error())));
+    if (tokenizer != nullptr) {
+      auto decoded = tokenizer->decode(previous_token, next_token);
+      if (!decoded.ok()) {
+        throw std::runtime_error(
+            "failed to decode token: tokenizer error " +
+            std::to_string(static_cast<uint32_t>(decoded.error())));
+      }
+      std::printf("%s", decoded.get().c_str());
+      std::fflush(stdout);
     }
-    std::printf("%s", decoded.get().c_str());
-    std::fflush(stdout);
     previous_token = next_token;
     if (FLAGS_print_token_ids) {
       generated_ids.push_back(next_token);
@@ -504,7 +506,9 @@ Generation generate(
       ++generation.decode_steps;
     }
   }
-  std::printf("\n");
+  if (tokenizer != nullptr) {
+    std::printf("\n");
+  }
   generation.unfed_token = next_token;
   generation.ended_on_eos = eos_ids.contains(next_token);
   if (FLAGS_print_token_ids) {
@@ -792,7 +796,8 @@ int run_llm(
             logits_output,
             per_token_positions,
             static_cast<size_t>(token_shape[1]),
-            *tokenizer,
+            // The sample's tokens need not be in --tokenizer's vocabulary.
+            nullptr,
             prompt,
             0,
             calls.size(),
@@ -878,7 +883,7 @@ int run_llm(
             logits_output,
             per_token_positions,
             static_cast<size_t>(token_shape[1]),
-            *tokenizer,
+            tokenizer.get(),
             tokens,
             position,
             limit,
@@ -903,7 +908,7 @@ int run_llm(
         logits_output,
         per_token_positions,
         static_cast<size_t>(token_shape[1]),
-        *tokenizer,
+        tokenizer.get(),
         prompt_tokens,
         0,
         limit,
