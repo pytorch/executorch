@@ -1758,12 +1758,12 @@ struct ServingRuntime::Impl {
         }
       }
       if (capture) {
-        if (uses_checkpoint_observer(config_)) {
+        if (capture->text->capture_lane) {
+          finish_capture(capture);
+        } else {
           collect_capture(capture);
           capture_lanes_used_.fetch_sub(1);
           checkpoint_lane_busy_.store(false);
-        } else {
-          finish_capture(capture);
         }
         continue;
       }
