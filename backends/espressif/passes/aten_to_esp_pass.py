@@ -11,7 +11,11 @@ from dataclasses import dataclass
 import executorch.backends.espressif.ops.operators  # noqa: F401
 import torch
 from executorch.backends.espressif.utils.quantization import quantize_multiplier
+from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes.constant_prop_pass import get_constant_placeholder_dict
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
@@ -177,7 +181,7 @@ def _binary_args(node: Node, quantize: Node, rescale_fn) -> tuple | None:
     )
 
 
-def _lower_binary(node: Node, target, rescale_fn) -> bool:
+def _quantized_output(node: Node) -> tuple[Node, str | None] | None:
     quantizers = [
         (user, None)
         for user in node.users
@@ -192,23 +196,223 @@ def _lower_binary(node: Node, target, rescale_fn) -> bool:
                 if quantize.target == _QUANTIZE and quantize.args[0] is user
             )
     if len(quantizers) != 1:
-        return False
-    quantize, activation = quantizers[0]
-    args = _binary_args(node, quantize, rescale_fn)
-    if args is None:
-        return False
-    activation_min = quantize.args[2] if activation is not None else -128
-    activation_max = (
+        return None
+    return quantizers[0]
+
+
+def _activation_bounds(quantize: Node, activation: str | None) -> tuple[int, int]:
+    minimum = quantize.args[2] if activation is not None else -128
+    maximum = (
         int(_QUANTIZE(torch.tensor(6.0, dtype=torch.float32), *quantize.args[1:]))
         if activation == "relu6"
         else 127
     )
+    return minimum, maximum
+
+
+def _lower_binary(node: Node, target, rescale_fn) -> bool:
+    output = _quantized_output(node)
+    if output is None:
+        return False
+    quantize, activation = output
+    args = _binary_args(node, quantize, rescale_fn)
+    if args is None:
+        return False
     with node.graph.inserting_before(quantize):
         replacement = node.graph.call_function(
-            target, (*args, activation_min, activation_max)
+            target, (*args, *_activation_bounds(quantize, activation))
         )
     replacement.meta = quantize.meta.copy()
     # Replace the quantized branch; direct float consumers still need the ATen op.
+    quantize.replace_all_uses_with(replacement)
+    node.graph.erase_node(quantize)
+    return True
+
+
+def _linear_parameters(
+    input_params: _QParams,
+    output_params: _QParams,
+    weight: torch.Tensor,
+    scales: torch.Tensor,
+    bias: torch.Tensor | None,
+) -> tuple | None:
+    weight = weight.detach().cpu()
+    scales = scales.detach().cpu().to(torch.float64)
+    bias = bias.detach().cpu().to(torch.float64) if bias is not None else None
+    bias_q = (
+        torch.round(bias / (input_params.scale * scales)) if bias is not None else None
+    )
+    if bias_q is not None and (
+        not torch.all(torch.isfinite(bias_q))
+        or torch.any(bias_q < -(1 << 31))
+        or torch.any(bias_q > (1 << 31) - 1)
+    ):
+        return None
+    try:
+        rescales = [
+            quantize_multiplier(input_params.scale * scale / output_params.scale)
+            for scale in scales.tolist()
+        ]
+    except ValueError:
+        return None
+    if any(shift < -30 for _, shift in rescales):
+        return None
+    max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
+    weight_sums = weight.to(torch.int64).abs().sum(dim=1)
+    limits = max_input * weight_sums
+    if bias_q is not None:
+        limits += bias_q.to(torch.int64).abs()
+    if any(
+        int(limit) << max(shift, 0)
+        > torch.iinfo(torch.int32).max - abs(output_params.zp)
+        for limit, (_, shift) in zip(limits, rescales)
+    ):
+        return None
+    max_float_input = c_float(max_input * c_float(input_params.scale).value).value
+    float_weights = weight.to(torch.float32) * scales.to(torch.float32).unsqueeze(1)
+    max_float_outputs = max_float_input * float_weights.abs().to(torch.float64).sum(
+        dim=1
+    )
+    if bias is not None:
+        max_float_outputs += bias.abs()
+    # Bound float32 accumulation rounding, including the bias addition.
+    max_float_outputs /= 1 - (weight.shape[1] + 1) * torch.finfo(torch.float32).eps
+    if (
+        not math.isfinite(c_float(1.0 / output_params.scale).value)
+        or not torch.all(torch.isfinite(max_float_outputs))
+        or torch.any(max_float_outputs > torch.finfo(torch.float32).max)
+    ):
+        return None
+    multipliers, shifts = zip(*rescales)
+    return (
+        bias_q.to(torch.int32) if bias_q is not None else None,
+        torch.tensor(multipliers, dtype=torch.int32),
+        torch.tensor(shifts, dtype=torch.int32),
+    )
+
+
+def _linear_args(node: Node, quantize: Node, constants: dict) -> tuple | None:
+    if any(node.kwargs.get(key, 1) != 1 for key in ("alpha", "beta")):
+        return None
+    if node.target == exir_ops.edge.aten.addmm.default:
+        bias_node, input_node, transpose = node.args
+        bias = constants.get(bias_node)
+        if bias is None or bias.dtype != torch.float32:
+            return None
+    else:
+        input_node, transpose = node.args
+        bias = None
+    if (
+        input_node.target != _DEQUANTIZE
+        or transpose.target != exir_ops.edge.aten.permute_copy.default
+        or tuple(transpose.args[1]) != (1, 0)
+    ):
+        return None
+    weight_dq = transpose.args[0]
+    if (
+        weight_dq.target
+        != exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
+        or weight_dq.args[3] != 0
+        or weight_dq.args[6] != torch.int8
+    ):
+        return None
+    weight_node, scale_node, zp_node = weight_dq.args[:3]
+    weight, scales, zero_points = (
+        constants.get(arg) for arg in (weight_node, scale_node, zp_node)
+    )
+    if (
+        weight is None
+        or weight.dtype != torch.int8
+        or weight.dim() != 2
+        or not weight.is_contiguous()
+        or weight.numel() > torch.iinfo(torch.int32).max
+        or any(not 0 < dim <= 65535 for dim in weight.shape)
+        or scales is None
+        or scales.dtype != torch.float32
+        or scales.shape != (weight.shape[0],)
+        or zero_points is None
+        or zero_points.shape != scales.shape
+        or torch.any(zero_points != 0)
+        or not torch.all(torch.isfinite(scales) & (scales > 0))
+        or (bias is not None and bias.shape != scales.shape)
+    ):
+        return None
+    input_params, output_params = _qparams(input_node), _qparams(quantize)
+    if input_params is None or output_params is None:
+        return None
+    input_value = input_node.args[0].meta.get("val")
+    output_value = quantize.meta.get("val")
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dtype == torch.int8
+        and value.dim() == 2
+        and all(type(dim) is int for dim in value.shape)
+        and 0 < value.numel() <= torch.iinfo(torch.int32).max
+        and value.is_contiguous()
+        for value in (input_value, output_value)
+    ):
+        return None
+    if input_value.shape[1] != weight.shape[1] or output_value.shape != (
+        input_value.shape[0],
+        weight.shape[0],
+    ):
+        return None
+    if not all(
+        isinstance(arg.meta.get("val"), torch.Tensor)
+        and arg.meta["val"].dtype == torch.float32
+        for arg in (input_node, weight_dq, node, quantize.args[0])
+    ):
+        return None
+    parameters = _linear_parameters(input_params, output_params, weight, scales, bias)
+    if parameters is None:
+        return None
+    return (
+        input_node.args[0],
+        weight_node,
+        *parameters,
+        -input_params.zp,
+        output_params.zp,
+    )
+
+
+def _lower_linear(node: Node, program: ExportedProgram, constants: dict) -> bool:
+    output = _quantized_output(node)
+    if output is None:
+        return False
+    quantize, activation = output
+    args = _linear_args(node, quantize, constants)
+    if args is None:
+        return False
+    input_node, weight_node, *parameters, input_offset, output_offset = args
+    first_input = next(n for n in node.graph.nodes if n.op == "placeholder")
+    with node.graph.inserting_before(first_input):
+        parameter_nodes = [
+            (
+                create_constant_placeholder(
+                    program,
+                    node.graph,
+                    f"_esp_{node.name}_{name}",
+                    InputKind.CONSTANT_TENSOR,
+                    value,
+                )
+                if value is not None
+                else None
+            )
+            for name, value in zip(("bias", "multiplier", "shift"), parameters)
+        ]
+    with node.graph.inserting_before(quantize):
+        replacement = node.graph.call_function(
+            exir_ops.edge.esp_nn.quantized_linear_int8.default,
+            (
+                input_node,
+                weight_node,
+                *parameter_nodes,
+                input_offset,
+                output_offset,
+                *_activation_bounds(quantize, activation),
+            ),
+        )
+    replacement.meta = quantize.meta.copy()
     quantize.replace_all_uses_with(replacement)
     node.graph.erase_node(quantize)
     return True
@@ -229,6 +433,14 @@ _LOWERINGS = {
 class AtenToEspPass(PassBase):
     """Fold supported Q/DQ patterns directly into ESP-NN operator calls."""
 
+    def __init__(self, exported_program: ExportedProgram | None = None):
+        self.exported_program = exported_program
+        self.constants = (
+            get_constant_placeholder_dict(exported_program)
+            if exported_program is not None
+            else {}
+        )
+
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         for node in list(graph_module.graph.nodes):
@@ -237,6 +449,11 @@ class AtenToEspPass(PassBase):
             lowering = _LOWERINGS.get(node.target)
             if lowering is not None:
                 modified |= _lower_binary(node, *lowering)
+            elif self.exported_program is not None and node.target in (
+                exir_ops.edge.aten.addmm.default,
+                exir_ops.edge.aten.mm.default,
+            ):
+                modified |= _lower_linear(node, self.exported_program, self.constants)
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.graph.lint()

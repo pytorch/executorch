@@ -15,3 +15,9 @@
   kernels:
     - arg_meta: null
       kernel_name: espressif::quantized_add_int8_out
+
+- func: esp_nn::quantized_linear_int8.out(Tensor input, Tensor weight, Tensor? bias, Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, int activation_min, int activation_max, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_linear_int8_out

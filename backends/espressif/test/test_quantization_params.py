@@ -20,6 +20,7 @@ from executorch.backends.espressif.utils.quantization import (
     requantize,
 )
 from executorch.backends.test.suite.operators.test_add import Model as Add
+from executorch.backends.transforms.utils import get_param_tensor
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -588,3 +589,155 @@ def test_add_matches_existing_integer_reference(offsets):
         input1, input2, *offsets, 1 << 30, 0, 1 << 30, -2, 20, 1 << 30, -18, -128, 127
     )
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+
+
+@pytest.fixture(scope="module")
+def linear_program():
+    torch.manual_seed(17)
+    return (
+        EspTester(torch.nn.Linear(17, 5), (torch.linspace(-3, 5, 34).reshape(2, 17),))
+        .quantize()
+        .export()
+        .to_edge()
+        .get_artifact()
+        .exported_program()
+    )
+
+
+def test_linear_parameters_are_precomputed(linear_program):
+    original = copy.deepcopy(linear_program)
+    graph = original.graph
+    linear = next(
+        n for n in graph.nodes if n.target == exir_ops.edge.aten.addmm.default
+    )
+    bias, input_dq, transpose = linear.args
+    weight_dq = transpose.args[0]
+    scales = get_param_tensor(original, weight_dq.args[1]).to(torch.float64)
+    output_q = next(n for n in linear.users if n.target == _QUANTIZE)
+    expected_bias = torch.round(
+        get_param_tensor(original, bias).to(torch.float64) / (input_dq.args[1] * scales)
+    ).to(torch.int32)
+    rescales = [
+        quantize_multiplier(input_dq.args[1] * scale / output_q.args[1])
+        for scale in scales.tolist()
+    ]
+    result = EspPassManager()(original).exported_program
+    lowered = next(
+        n
+        for n in result.graph.nodes
+        if n.target == exir_ops.edge.esp_nn.quantized_linear_int8.default
+    )
+    torch.testing.assert_close(get_param_tensor(result, lowered.args[2]), expected_bias)
+    for index, values in enumerate(zip(*rescales), 3):
+        torch.testing.assert_close(
+            get_param_tensor(result, lowered.args[index]),
+            torch.tensor(values, dtype=torch.int32),
+        )
+    assert all(value.dtype != torch.float32 for value in result.state_dict.values())
+    assert all(value.dtype == torch.int32 for value in result.constants.values())
+    assert not EspPassManager()(result).modified
+
+
+@pytest.mark.parametrize(
+    "unsupported",
+    [
+        "alpha",
+        "beta",
+        "weight_zero_point",
+        "bias_overflow",
+        "positive_shift_overflow",
+        "negative_shift",
+        "float_input_overflow",
+        "float_weight_overflow",
+        "float_accumulator_overflow",
+    ],
+)
+def test_linear_unsupported_parameters_stay_portable(linear_program, unsupported):
+    program = copy.deepcopy(linear_program)
+    linear = next(
+        n for n in program.graph.nodes if n.target == exir_ops.edge.aten.addmm.default
+    )
+    bias, input_dq, transpose = linear.args
+    weight_dq = transpose.args[0]
+    if unsupported in ("alpha", "beta"):
+        linear.kwargs = {unsupported: 2}
+    elif unsupported == "weight_zero_point":
+        get_param_tensor(program, weight_dq.args[2]).fill_(1)
+    elif unsupported == "bias_overflow":
+        get_param_tensor(program, bias).data.fill_(1e20)
+    elif unsupported.startswith("float_"):
+        input_scale, weight_scale, output_scale = {
+            "float_input_overflow": (1e38, 1e-38, 1.0),
+            "float_weight_overflow": (1e-38, 1e38, 1.0),
+            "float_accumulator_overflow": (1e17, 1e17, 1e34),
+        }[unsupported]
+        input_dq.args = (input_dq.args[0], input_scale, 0, -128, 127, torch.int8)
+        get_param_tensor(program, weight_dq.args[1]).fill_(weight_scale)
+        quantize = next(n for n in linear.users if n.target == _QUANTIZE)
+        quantize.args = (quantize.args[0], output_scale, 0, -128, 127, torch.int8)
+    else:
+        get_param_tensor(program, weight_dq.args[1]).fill_(1.0)
+        get_param_tensor(program, bias).data.zero_()
+        input_dq.args = (input_dq.args[0], 1.0, 0, -128, 127, torch.int8)
+        quantize = next(n for n in linear.users if n.target == _QUANTIZE)
+        scale = 2.0**32 if unsupported == "negative_shift" else 2.0**-20
+        quantize.args = (quantize.args[0], scale, 0, -128, 127, torch.int8)
+    program.graph_module.recompile()
+    result = EspPassManager()(program)
+    assert not result.modified
+    assert not any(
+        n.target == exir_ops.edge.esp_nn.quantized_linear_int8.default
+        for n in result.exported_program.graph.nodes
+    )
+
+
+def test_linear_preserves_direct_float_users():
+    class BranchedLinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(17, 5)
+
+        def forward(self, x):
+            result = self.linear(x)
+            return result, torch.sin(result)
+
+    torch.manual_seed(17)
+    inputs = (torch.linspace(-3, 5, 34).reshape(2, 17),)
+    tester = EspTester(BranchedLinear(), inputs).quantize().export().to_edge()
+    program = tester.get_artifact().exported_program()
+    linear = next(
+        n for n in program.graph.nodes if n.target == exir_ops.edge.aten.addmm.default
+    )
+    sine = next(
+        n for n in program.graph.nodes if n.target == exir_ops.edge.aten.sin.default
+    )
+    sine.args = (linear,)
+    program.graph_module.recompile()
+    expected = program.module()(*inputs)
+    tester.run_passes()
+    result = tester.get_artifact().exported_program()
+    actual = result.module()(*inputs)
+    torch.testing.assert_close(actual[1], expected[1], atol=0, rtol=0)
+    assert any(n.target == exir_ops.edge.aten.addmm.default for n in result.graph.nodes)
+    assert any(
+        n.target == exir_ops.edge.esp_nn.quantized_linear_int8.default
+        for n in result.graph.nodes
+    )
+    assert not EspPassManager()(result).modified
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize("features", [(65536, 1), (1, 65536)])
+def test_linear_vendor_dimension_limits(features):
+    in_features, out_features = features
+    program = (
+        EspTester(
+            torch.nn.Linear(in_features, out_features), (torch.ones(1, in_features),)
+        )
+        .quantize()
+        .export()
+        .to_edge()
+        .get_artifact()
+        .exported_program()
+    )
+    assert not EspPassManager()(program).modified
