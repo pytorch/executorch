@@ -41,9 +41,11 @@ struct Registry {
   std::map<std::string, ExternalIOSet> sets;
 };
 
+// Never destroyed, so that delegates destroyed during static destruction can
+// still release their sets.
 Registry& registry() {
-  static Registry r;
-  return r;
+  static Registry* const r = new Registry();
+  return *r;
 }
 
 #ifdef VK_ANDROID_external_memory_android_hardware_buffer
