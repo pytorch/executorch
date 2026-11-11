@@ -90,6 +90,9 @@ class ET_EXPERIMENTAL SequenceControl : public CacheControl {
 
   // Room for n more tokens within capacity.
   virtual bool can_extend(int n = 1) const = 0;
+  // Where the sequence stands: one past its newest position, and so where it
+  // continues. Positions are dense from 0, so this is also how many it holds.
+  virtual int length() const = 0;
   // Keep [0, position), dropping the rest. False = a target it has not
   // reached, or one older than an evicting layer still retains.
   virtual bool rewind(int position) = 0;

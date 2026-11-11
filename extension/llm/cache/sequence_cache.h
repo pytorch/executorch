@@ -189,9 +189,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     length_ = 0;
     written_ = 0;
   }
-  // Positions are dense from 0, so this is both what the sequence holds and
-  // where its next token goes.
-  int length() const {
+  int length() const override {
     return length_;
   }
   // Whether rewind(position) would be accepted, without moving the length.

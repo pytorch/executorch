@@ -875,7 +875,7 @@ class MLXSequenceCache final : public cache::Cache,
   int capacity() const override {
     return capacity_;
   }
-  int length() const {
+  int length() const override {
     return length_;
   }
   // Includes persistent growth in a partially constructed forward.

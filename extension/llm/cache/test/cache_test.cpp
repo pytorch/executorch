@@ -244,6 +244,21 @@ TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   EXPECT_EQ(plan->read[0].len, 1);
 }
 
+TEST_F(CacheTest, ControlFaceReportsTheLength) {
+  SequenceCache cache(CacheGeometry{{flat_layer()}}, config(8));
+  SequenceControl* control = static_cast<Cache&>(cache).as<SequenceControl>();
+  ASSERT_NE(control, nullptr);
+  EXPECT_EQ(control->length(), 0);
+  auto plan = cache.plan(0, 0, 3);
+  ASSERT_TRUE(plan.has_value());
+  cache.commit(*plan);
+  EXPECT_EQ(control->length(), 3);
+  ASSERT_TRUE(control->rewind(1));
+  EXPECT_EQ(control->length(), 1);
+  control->clear();
+  EXPECT_EQ(control->length(), 0);
+}
+
 TEST_F(CacheTest, NullFaceIdsNeverMatch) {
   using executorch::extension::llm::cache::same_face;
   EXPECT_FALSE(same_face(nullptr, nullptr));
