@@ -194,8 +194,8 @@ TEST(BenchmarkReferenceRegistry, BuiltinRegistrationsAreLinkedFromFamilyFiles) {
       "q4gsw_linear");
   EXPECT_EQ(registry.shader_reference("buffer_to_buffer_float"), "copy");
   EXPECT_EQ(registry.shader_reference("buffer_to_buffer_half"), "copy");
-  EXPECT_EQ(registry.shader_reference("binary_add_texture3d_float"), "add");
-  EXPECT_EQ(registry.shader_reference("binary_add_texture3d_half"), "add");
+  EXPECT_EQ(registry.shader_reference("binary_op_texture3d_float"), "add");
+  EXPECT_EQ(registry.shader_reference("binary_op_texture3d_half"), "add");
 }
 
 } // namespace

@@ -22,6 +22,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
+from executorch.exir.tensor import dim_order_from_stride
 from openvino import compile_model, opset13, opset16  # type: ignore[import-untyped]
 from openvino.frontend import FrontEndManager  # type: ignore[import-untyped]
 from openvino.frontend.pytorch.fx_decoder import (  # type: ignore[import-untyped]
@@ -31,11 +32,21 @@ from openvino.frontend.pytorch.utils import (  # type: ignore[import-untyped]
     pt_to_ov_type_map,
 )
 from openvino.preprocess import PrePostProcessor  # type: ignore[import-untyped]
+from torch.export.graph_signature import OutputKind
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 # The values of the inference_precision compile spec. The runtime
 # (OpenvinoBackend.cpp) accepts the same ones.
 _PRECISIONS = ("f32", "f16", "bf16")
+
+# The runtime passes the tensors of a blob with this header with their sizes in
+# memory order, and those of an older blob, without it, as before. The header
+# holds the magic and its own length, padded to 16 bytes.
+_HEADER_MAGIC = b"ETOVHDR1"
+_HEADER_LENGTH = 16
+_HEADER = (_HEADER_MAGIC + _HEADER_LENGTH.to_bytes(4, "little")).ljust(
+    _HEADER_LENGTH, b"\0"
+)
 
 
 def _match_partition_inputs(
@@ -75,8 +86,9 @@ def _copy_returned_inputs(model, device: str) -> None:
     is the input itself. The CPU plugin does not write it, and can overwrite
     the input with the output buffer's old contents. OpenVINO keeps an
     Identity between an input and an output, and the CPU plugin runs it as a
-    copy, while it can remove a Convert to the same type. On an ARM CPU at
-    f16, it rounds this copy of a float input, like its other float outputs.
+    copy, while it can remove a Convert to the same type. On an ARM CPU with
+    float16 support, at f16 or bf16, it rounds this copy of a float32 input,
+    like its other float32 outputs.
     Other devices are left as they are, since neither the problem nor Identity
     was checked there.
     """
@@ -86,6 +98,65 @@ def _copy_returned_inputs(model, device: str) -> None:
         source = result.input_value(0)
         if source.get_node().get_type_name() == "Parameter":
             result.input(0).replace_source_output(opset16.identity(source).output(0))
+
+
+def _non_default_dim_order(val) -> Optional[tuple]:
+    """The tensor's dim order as ExecuTorch stores it, if it is not the
+    default."""
+    if not isinstance(val, torch.Tensor):
+        return None
+    order = dim_order_from_stride(val.stride(), tuple(val.shape))
+    return order if order != tuple(range(val.dim())) else None
+
+
+def _partition_inputs(edge_program: ExportedProgram):
+    """The type and shape of each partition input, in the order the runtime
+    passes them, the positions of the int inputs, and the dim order of each
+    tensor input that is not in the default one, by position."""
+    input_names = edge_program.graph_signature.user_inputs
+    input_types: list[torch.dtype] = []
+    input_shapes = []
+    int_inputs = []
+    input_dim_orders: dict[int, tuple] = {}
+    for node in edge_program.graph.nodes:
+        if node.target not in input_names:
+            continue
+        val = node.meta["val"]
+        if isinstance(val, torch.Tensor):
+            if order := _non_default_dim_order(val):
+                input_dim_orders[len(input_types)] = order
+            input_types.append(val.dtype)
+            input_shapes.append([d if isinstance(d, int) else -1 for d in val.shape])
+        elif isinstance(val, (int, torch.SymInt)) and not isinstance(val, bool):
+            int_inputs.append(len(input_types))
+            input_types.append(torch.int64)
+            input_shapes.append([])
+        else:
+            raise RuntimeError(
+                f"OpenVINO backend: partition input {node.target} is a "
+                f"{type(val).__name__}; only tensors and ints are supported"
+            )
+    return input_types, input_shapes, int_inputs, input_dim_orders
+
+
+def _output_dim_orders(edge_program: ExportedProgram) -> dict[int, tuple]:
+    """The dim order of each partition output that is not in the default one,
+    by its position among the outputs of edge_program.module(), which returns
+    only the user outputs."""
+    outputs = [
+        node
+        for node, spec in zip(
+            edge_program.graph.output_node().args[0],
+            edge_program.graph_signature.output_specs,
+        )
+        if spec.kind == OutputKind.USER_OUTPUT
+    ]
+    return {
+        i: order
+        for i, node in enumerate(outputs)
+        if isinstance(node, torch.fx.Node)
+        and (order := _non_default_dim_order(node.meta.get("val")))
+    }
 
 
 @final
@@ -128,27 +199,10 @@ class OpenvinoBackend(BackendDetails):
             if result and result.graph_module:
                 edge_program._graph_module = result.graph_module
 
-        input_names = edge_program.graph_signature.user_inputs
-        input_types = []
-        input_shapes = []
-        int_inputs = []
-        for node in edge_program.graph.nodes:
-            if node.target in input_names:
-                val = node.meta["val"]
-                if isinstance(val, torch.Tensor):
-                    input_types.append(val.dtype)
-                    input_shapes.append(
-                        [d if isinstance(d, int) else -1 for d in val.shape]
-                    )
-                elif isinstance(val, (int, torch.SymInt)) and not isinstance(val, bool):
-                    int_inputs.append(len(input_types))
-                    input_types.append(torch.int64)
-                    input_shapes.append([])
-                else:
-                    raise RuntimeError(
-                        f"OpenVINO backend: partition input {node.target} is a "
-                        f"{type(val).__name__}; only tensors and ints are supported"
-                    )
+        input_types, input_shapes, int_inputs, input_dim_orders = _partition_inputs(
+            edge_program
+        )
+        output_dim_orders = _output_dim_orders(edge_program)
 
         module = edge_program.module()
         FoldConstantCumsumPass()(module)
@@ -174,6 +228,14 @@ class OpenvinoBackend(BackendDetails):
         for i in int_inputs:
             ppp.input(i).tensor().set_shape([1])
             ppp.input(i).preprocess().custom(lambda x: opset13.squeeze(x, 0).output(0))
+        # OpenVINO computes in the default dim order, so a partition input or
+        # output in another one gets a transpose, and the runtime passes its
+        # bytes with the sizes in memory order.
+        for i, dim_order in input_dim_orders.items():
+            inverse = [dim_order.index(d) for d in range(len(dim_order))]
+            ppp.input(i).preprocess().convert_layout(inverse)
+        for i, dim_order in output_dim_orders.items():
+            ppp.output(i).postprocess().convert_layout(list(dim_order))
         # On ARM CPUs OpenVINO fixes the precision here, not when the runtime
         # imports the model, so this must follow the same rule as the runtime.
         precision = _inference_precision(device, requested_precision)
@@ -181,4 +243,4 @@ class OpenvinoBackend(BackendDetails):
         compiled = compile_model(ppp.build(), device, config)
         model_bytes = compiled.export_model()
 
-        return PreprocessResult(processed_bytes=model_bytes.getvalue())
+        return PreprocessResult(processed_bytes=_HEADER + model_bytes.getvalue())

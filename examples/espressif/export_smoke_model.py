@@ -26,9 +26,6 @@ class SmokeModel(torch.nn.Module):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument(
-        "--pte-output", type=Path, help="Also write the plain (unbundled) .pte"
-    )
     args = parser.parse_args()
 
     model = SmokeModel().eval()
@@ -46,10 +43,6 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(serialize_from_bundled_program_to_flatbuffer(bundle))
     print(f"Exported {args.output}")
-    if args.pte_output:
-        args.pte_output.parent.mkdir(parents=True, exist_ok=True)
-        args.pte_output.write_bytes(program.buffer)
-        print(f"Exported {args.pte_output}")
 
 
 if __name__ == "__main__":

@@ -1422,6 +1422,11 @@ VkResult vkml_allocate_basics(
     return result;
   }
 
+  // VGF_FUSED_GRAPHICS_QUEUE_BEGIN: optional strict queue selection.
+  const char* graphics_env =
+      std::getenv("EXECUTORCH_VGF_FUSED_REQUIRE_GRAPHICS_QUEUE");
+  const bool require_graphics_queue = graphics_env != nullptr &&
+      graphics_env[0] == '1' && graphics_env[1] == '\0';
   // Find suitable queue family
   uint32_t qf_count;
   vkGetPhysicalDeviceQueueFamilyProperties(
@@ -1431,14 +1436,24 @@ VkResult vkml_allocate_basics(
       *physical_device, &qf_count, qps.data());
   uint32_t qf = UINT32_MAX;
   for (uint32_t i = 0; i < qf_count; ++i) {
-    if (qps[i].queueFlags &
-        (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM)) {
+    const VkQueueFlags flags = qps[i].queueFlags;
+    const VkQueueFlags fused_required = VK_QUEUE_GRAPHICS_BIT |
+        VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+    if (require_graphics_queue
+            ? (flags & fused_required) == fused_required
+            : (flags & (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM)) !=
+                0) {
       qf = i;
       break;
     }
   }
   if (qf == UINT32_MAX) {
-    ET_LOG(Error, "Failed to find suitable queue");
+    ET_LOG(
+        Error,
+        "%s",
+        require_graphics_queue
+            ? "No queue family supports graphics + compute + data graph"
+            : "Failed to find suitable queue");
     return VK_ERROR_UNKNOWN;
   }
   if (queue_family_index != nullptr) {

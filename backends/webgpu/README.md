@@ -110,10 +110,12 @@ Key design choices:
   storage annotations and allocates tensors as buffers.
 - **Built-in WGSL shaders.** Shader source is embedded as C++ string constants,
   with build-time code generation and drift validation.
-- **Thin Python AOT frontend.** `WebGPUPartitioner` delegates unchanged to
+- **Thin Python AOT frontend.** `WebGPUPartitioner` delegates to
   `VulkanPartitioner`, preserving Vulkan serialization and the `VulkanBackend`
-  delegate id. It does not independently validate the narrower WebGPU runtime
-  capability set; WebGPU integrations apply that policy separately.
+  delegate id. It skips the Vulkan fusion patterns whose fused ops the WebGPU
+  runtime does not implement. It does not independently validate the narrower
+  WebGPU runtime capability set; WebGPU integrations apply that policy
+  separately.
 - **Dynamic shapes.** Tensors allocate at their maximum shape, with SymInt
   arithmetic and per-operator resize hooks for runtime dimensions.
 - **Shape-routed dispatch.** Runtime tensor dimensions select specialized

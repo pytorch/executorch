@@ -90,7 +90,7 @@ def get_labels(no_volk):
 def get_platforms():
     return [ANDROID, APPLE, CXX]
 
-def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = False):
+def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = False, shader_allowlist_args = ""):
     gen_vulkan_spv_target = "//xplat/executorch/backends/vulkan:gen_vulkan_spv_bin"
     glslc_path = "//xplat/caffe2/fb/vulkan/dotslash:glslc"
 
@@ -122,7 +122,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
             "ovr_config//os:android": "--optimize",
             "ovr_config//os:linux": "--replace-u16vecn",
             "ovr_config//os:windows": "--optimize --spv_debug",
-        })
+        }) + shader_allowlist_args
     )
 
     genrule_name = "gen_{}_cpp".format(name)
@@ -159,6 +159,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
 def define_common_targets(is_fbcode = False):
     debug_mode = read_config("etvk", "debug", "0") == "1"
     vma_dep = read_config("etvk", "vma_dep", "xplat")
+    shader_allowlist = read_config("etvk", "shader_allowlist", "")
+    shader_allowlist_args = " --shader-allowlist=$(location {})".format(shader_allowlist) if shader_allowlist else ""
 
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
@@ -269,7 +271,9 @@ def define_common_targets(is_fbcode = False):
                 ],
             }),
             exported_preprocessor_flags = get_vulkan_preprocessor_flags(no_volk, is_fbcode),
-            exported_deps = VK_API_DEPS,
+            exported_deps = VK_API_DEPS + [
+                "//executorch/backends/vulkan_shared:device",
+            ],
         )
 
         runtime.cxx_library(
@@ -304,6 +308,7 @@ def define_common_targets(is_fbcode = False):
             },
             is_fbcode = is_fbcode,
             no_volk = no_volk,
+            shader_allowlist_args = shader_allowlist_args,
         )
 
         runtime.cxx_library(
@@ -321,6 +326,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
+                "//executorch/backends/vulkan_shared:runtime",
                 "//executorch/runtime/core:event_tracer",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
                 "//executorch/runtime/core:named_data_map",
@@ -330,6 +336,27 @@ def define_common_targets(is_fbcode = False):
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,
         )
+
+    # Only the volk variant: the no_volk variants link libvulkan, which the
+    # test hosts do not have.
+    runtime.cxx_test(
+        name = "vulkan_shared_device_test",
+        srcs = [
+            "test/shared_device/SharedDevicePolicyTest.cpp",
+            "test/shared_device/SharedDeviceAdapterTest.cpp",
+        ],
+        headers = ["runtime/ResolveSharedDevice.h"],
+        compiler_flags = get_vulkan_compiler_flags(),
+        platforms = get_platforms(),
+        deps = [
+            ":vulkan_backend_lib",
+            ":vulkan_graph_runtime",
+            "//executorch/backends/vulkan_shared:runtime",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
 
     ##
     ## AOT targets

@@ -6,15 +6,25 @@
 
 from dataclasses import dataclass
 
+import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CortexMQuantizationConfig,
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_PER_CHANNEL_CONFIG,
+    INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
+)
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
-from executorch.backends.test.harness.stages import StageType
+from executorch.backends.cortex_m.utils import requantize_cmsis
+from executorch.backends.test.harness.stages import Quantize, StageType
+from executorch.backends.transforms.utils import get_param_tensor
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -293,3 +303,123 @@ def test_implementation_linear_small_magnitude(cortex_m_target):
         case.model, case.get_example_inputs(), target_config=cortex_m_target
     )
     tester.test_implementation(qtol=1, calibration_samples=_small_magnitude_calibration)
+
+
+class CortexMLinearPerChannel(torch.nn.Module):
+    def __init__(self, in_features, out_features, bias):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
+        # Spread the row magnitudes so a per-tensor scale would not fit them.
+        self.linear.weight.data *= torch.linspace(0.1, 2.0, out_features)[:, None]
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+per_channel_linear_test_cases = {
+    "linear_bias": McuTestCase(
+        model=CortexMLinearPerChannel(48, 150, bias=True),
+        example_inputs=(ramp_tensor(-3, 3, (3, 48)),),
+    ),
+    "linear_no_bias": McuTestCase(
+        model=CortexMLinearPerChannel(32, 20, bias=False),
+        example_inputs=(ramp_tensor(-2, 2, (2, 32)),),
+    ),
+}
+
+
+def _lower_linear_per_channel(test_case, target_config, config=INT8_PER_CHANNEL_CONFIG):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=target_config
+    )
+    quantizer = CortexMQuantizer().set_node_target(
+        torch.ops.aten.linear.default, config
+    )
+    tester.quantize(Quantize(quantizer))
+    tester.export().to_edge().run_passes()
+    return tester
+
+
+def _linear_nodes(tester):
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    return [n for n in program.graph.nodes if "quantized_linear" in str(n.target)]
+
+
+@parametrize("test_case", per_channel_linear_test_cases)
+@pytest.mark.parametrize("cpu", [CortexM.M55, CortexM.M4, CortexM.M0PLUS])
+def test_dialect_linear_per_channel(test_case, cpu):
+    tester = _lower_linear_per_channel(test_case, CortexMTargetConfig(cpu=cpu))
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    [linear] = _linear_nodes(tester)
+    assert linear.target == exir_ops.edge.cortex_m.quantized_linear_per_channel.default
+    out_features = test_case.model.linear.out_features
+    for requantize_arg in linear.args[7:9]:
+        requantize_tensor = get_param_tensor(program, requantize_arg)
+        assert requantize_tensor.shape == (out_features,)
+        assert requantize_tensor.dtype == torch.int32
+    # Per-channel scales make every weight row reach the end of the int8 range.
+    weights = get_param_tensor(program, linear.args[1]).to(torch.int32)
+    assert set(weights.abs().amax(dim=1).tolist()) <= {127, 128}
+
+
+@parametrize("test_case", per_channel_linear_test_cases)
+def test_implementation_linear_per_channel(test_case, cortex_m_target):
+    tester = _lower_linear_per_channel(test_case, cortex_m_target)
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+
+
+def test_requantize_cmsis_per_channel():
+    # Channel 0 scales by 0.5 (shift 0), channel 1 by 0.25 (shift -1).
+    acc = torch.tensor([[4, 5], [5, -5], [-5, -7]], dtype=torch.int32)
+    multipliers = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+    shifts = torch.tensor([0, -1], dtype=torch.int32)
+    expected = torch.tensor([[2, 2], [3, -1], [-2, -2]], dtype=torch.int32)
+    assert torch.equal(requantize_cmsis(acc, multipliers, shifts), expected)
+
+
+def test_dialect_linear_per_channel_single_output_feature(cortex_m_target):
+    # One output feature has one scale, which the per-tensor op serves.
+    case = McuTestCase(
+        model=CortexMLinearPerChannel(16, 1, bias=True),
+        example_inputs=(ramp_tensor(-1, 1, (2, 16)),),
+    )
+    tester = _lower_linear_per_channel(case, cortex_m_target)
+    tester.run_method_and_compare_outputs(inputs=case.example_inputs, qtol=1)
+    [linear] = _linear_nodes(tester)
+    assert linear.target == exir_ops.edge.cortex_m.quantized_linear.default
+
+
+def test_dialect_linear_rejects_per_channel_weights_off_axis_0(cortex_m_target):
+    # Per-input-feature scales cannot requantize per output feature, so the
+    # linear falls through to the default per-tensor config.
+    axis_1_config = CortexMQuantizationConfig(
+        INT8_ACTIVATION_PER_TENSOR_QSPEC,
+        INT8_ACTIVATION_PER_TENSOR_QSPEC,
+        INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
+        None,
+    )
+    case = per_channel_linear_test_cases["linear_no_bias"]
+    tester = _lower_linear_per_channel(case, cortex_m_target, axis_1_config)
+    tester.run_method_and_compare_outputs(inputs=case.example_inputs, qtol=1)
+    [linear] = _linear_nodes(tester)
+    assert linear.target == exir_ops.edge.cortex_m.quantized_linear.default
+
+
+def test_dialect_linear_per_channel_keeps_fused_relu(cortex_m_target):
+    # set_node_target selects the linear; the relu after it must still match
+    # as part of the linear + relu pattern and fold into the linear.
+    case = McuTestCase(
+        model=torch.nn.Sequential(
+            CortexMLinearPerChannel(24, 12, bias=True), torch.nn.ReLU()
+        ),
+        example_inputs=(ramp_tensor(-2, 2, (2, 24)),),
+    )
+    tester = _lower_linear_per_channel(case, cortex_m_target)
+    tester.run_method_and_compare_outputs(inputs=case.example_inputs, qtol=1)
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    targets = [str(n.target) for n in program.graph.nodes if n.op == "call_function"]
+    assert any("quantized_linear_per_channel" in t for t in targets)
+    assert not any("relu" in t for t in targets)

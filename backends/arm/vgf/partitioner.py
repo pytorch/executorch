@@ -7,16 +7,19 @@ from typing import final, Optional, Sequence
 
 import torch
 
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
+)
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
 from executorch.backends.arm.vgf.backend import MUTABLE_BUFFER_OWNERSHIP_KEY
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec, PartitionResult
-from executorch.exir.backend.utils import tag_mutated_buffer
+from executorch.exir.backend.utils import tag_mutated_buffer, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import chain, OperatorSupportBase
 
 
 @final
@@ -47,6 +50,23 @@ class VgfPartitioner(TOSAPartitioner):
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
         self._requires_resolved_tensor_shapes = False
+
+    def _create_operator_support(
+        self,
+        containing_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+    ) -> OperatorSupportBase:
+        return chain(
+            CheckResolvedTensorShapes(
+                reporter,
+                targets=(
+                    exir_ops.edge.aten.view_copy.default,
+                    exir_ops.edge.aten.permute_copy.default,
+                ),
+                reject_symbolic_scalars=True,
+            ),
+            super()._create_operator_support(containing_program, reporter),
+        )
 
     def _validate_mutable_buffers(self, exported_program: ExportedProgram) -> None:
         signature = exported_program.graph_signature

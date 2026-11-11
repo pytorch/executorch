@@ -5,7 +5,7 @@
 
 add_executable(
   shared_vulkan_runtime_test
-  ${CMAKE_CURRENT_SOURCE_DIR}/SharedVulkanContextRegistryTest.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/SharedVulkanDeviceRegistryTest.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/SharedVulkanRuntimeConfigTest.cpp
 )
 
