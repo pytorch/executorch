@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/QuantizedLinear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/q4gsw/Q4gswLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/WmmaLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -204,8 +205,10 @@ bool try_add_dq8ca_q4gsw_linear_wmma_node(
 
   const ValueRef packed_weight =
       prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
-  const ValueRef packed_weight_scales = prepack_standard(
-      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+  // The kernels read the scales in the output dtype; fp32 scales of an fp16
+  // model are converted here, as on the existing path.
+  const ValueRef packed_weight_scales =
+      prepack_q4_scales(graph, weight_scales_data, graph.dtype_of(output));
   const ValueRef packed_weight_sums = prepack_standard(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
 
