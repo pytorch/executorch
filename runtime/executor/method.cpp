@@ -374,6 +374,144 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
   return true;
 }
 
+bool tensor_has_missing_data(const executorch::aten::Tensor& tensor) {
+  return tensor.const_data_ptr() == nullptr && tensor.nbytes() > 0;
+}
+
+bool is_et_view_output_arg(
+    const executorch_flatbuffer::ExecutionPlan* plan,
+    const executorch_flatbuffer::KernelCall* kernel_call,
+    InstructionArgs args,
+    size_t arg_idx) {
+  if (arg_idx != 2 || args.size() != 3 || !args[2]->isTensor()) {
+    return false;
+  }
+  const auto* ops = plan->operators();
+  const int32_t op_index = kernel_call->op_index();
+  if (ops == nullptr || op_index < 0 ||
+      static_cast<flatbuffers::uoffset_t>(op_index) >= ops->size()) {
+    return false;
+  }
+  const auto* op = ops->Get(static_cast<flatbuffers::uoffset_t>(op_index));
+  return op != nullptr && op->name() != nullptr &&
+      std::strcmp(op->name()->c_str(), "executorch_prim::et_view") == 0 &&
+      op->overload() != nullptr &&
+      std::strcmp(op->overload()->c_str(), "default") == 0;
+}
+
+Error validate_evalue_tensors(const EValue& value) {
+  if (value.isTensor()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        !tensor_has_missing_data(value.toTensor()),
+        InvalidState,
+        "Tensor data is null with nbytes %" ET_PRIsize_t,
+        static_cast<size_t>(value.toTensor().nbytes()));
+  } else if (value.isTensorList()) {
+    auto tensor_list = value.tryToTensorList();
+    if (!tensor_list.ok()) {
+      return tensor_list.error();
+    }
+    for (size_t i = 0; i < tensor_list->size(); ++i) {
+      ET_CHECK_OR_RETURN_ERROR(
+          !tensor_has_missing_data((*tensor_list)[i]),
+          InvalidState,
+          "TensorList element %" ET_PRIsize_t
+          " has null data with nbytes %" ET_PRIsize_t,
+          i,
+          static_cast<size_t>((*tensor_list)[i].nbytes()));
+    }
+  } else if (value.isListOptionalTensor()) {
+    auto opt_tensor_list = value.tryToListOptionalTensor();
+    if (!opt_tensor_list.ok()) {
+      return opt_tensor_list.error();
+    }
+    for (size_t i = 0; i < opt_tensor_list->size(); ++i) {
+      if ((*opt_tensor_list)[i].has_value()) {
+        const auto& tensor = (*opt_tensor_list)[i].value();
+        ET_CHECK_OR_RETURN_ERROR(
+            !tensor_has_missing_data(tensor),
+            InvalidState,
+            "OptionalTensorList element %" ET_PRIsize_t
+            " has null data with nbytes %" ET_PRIsize_t,
+            i,
+            static_cast<size_t>(tensor.nbytes()));
+      }
+    }
+  }
+  return Error::Ok;
+}
+
+Error validate_kernel_call_tensor_args(
+    const executorch_flatbuffer::ExecutionPlan* plan,
+    const executorch_flatbuffer::KernelCall* kernel_call,
+    InstructionArgs args,
+    ET_UNUSED size_t chain_idx,
+    ET_UNUSED size_t instr_idx) {
+  for (size_t i = 0; i < args.size(); ++i) {
+    const EValue* arg = args[i];
+    if (arg->isTensor()) {
+      if (tensor_has_missing_data(arg->toTensor()) &&
+          !is_et_view_output_arg(plan, kernel_call, args, i)) {
+        ET_LOG(
+            Error,
+            "KernelCall at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
+            " arg %" ET_PRIsize_t
+            " is a Tensor with null data and nbytes %" ET_PRIsize_t,
+            chain_idx,
+            instr_idx,
+            i,
+            static_cast<size_t>(arg->toTensor().nbytes()));
+        return Error::InvalidState;
+      }
+    } else if (arg->isTensorList() || arg->isListOptionalTensor()) {
+      Error err = validate_evalue_tensors(*arg);
+      if (err != Error::Ok) {
+        ET_LOG(
+            Error,
+            "KernelCall at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
+            " arg %" ET_PRIsize_t " contains a Tensor with null data",
+            chain_idx,
+            instr_idx,
+            i);
+        return err;
+      }
+    }
+  }
+  return Error::Ok;
+}
+
+Error validate_method_outputs(
+    const executorch_flatbuffer::ExecutionPlan* plan,
+    const EValue* values,
+    size_t n_value) {
+  const auto* outputs = plan->outputs();
+  if (outputs == nullptr) {
+    return Error::Ok;
+  }
+  for (size_t i = 0; i < outputs->size(); ++i) {
+    const int32_t output_idx =
+        outputs->Get(static_cast<flatbuffers::uoffset_t>(i));
+    ET_CHECK_OR_RETURN_ERROR(
+        output_idx >= 0 && static_cast<size_t>(output_idx) < n_value,
+        InvalidProgram,
+        "Output %" ET_PRIsize_t " index %" PRId32
+        " out of range %" ET_PRIsize_t,
+        i,
+        output_idx,
+        n_value);
+    Error err =
+        validate_evalue_tensors(values[static_cast<size_t>(output_idx)]);
+    if (err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Method output %" ET_PRIsize_t " contains a Tensor with null data",
+          i);
+      return err;
+    }
+  }
+  return Error::Ok;
+}
+
 } // namespace
 
 Result<size_t> Method::get_num_external_constants() {
@@ -1724,6 +1862,15 @@ Error Method::execute_instruction() {
       // TODO(T147221312): Also expose tensor resizer via the context.
       KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
+      err = validate_kernel_call_tensor_args(
+          serialization_plan_,
+          instruction->instr_args_as_KernelCall(),
+          args,
+          step_state_.chain_idx,
+          step_state_.instr_idx);
+      if (err != Error::Ok) {
+        break;
+      }
       chain.kernels_[step_state_.instr_idx](context, args);
       // We reset the temp_allocator after the switch statement
       err = context.failure_state();
@@ -1920,6 +2067,9 @@ Error Method::step() {
   // model that just returns the input/a constant.
   if (num_instructions == 0) {
     step_state_.chain_idx += 1;
+    if (step_state_.chain_idx == n_chains_) {
+      return validate_method_outputs(serialization_plan_, values_, n_value_);
+    }
     return Error::Ok;
   }
 
@@ -1933,6 +2083,13 @@ Error Method::step() {
   if (step_state_.instr_idx == num_instructions) {
     step_state_.instr_idx = 0;
     step_state_.chain_idx += 1;
+    if (step_state_.chain_idx == n_chains_) {
+      Error out_status =
+          validate_method_outputs(serialization_plan_, values_, n_value_);
+      if (out_status != Error::Ok) {
+        return out_status;
+      }
+    }
     log_outputs();
   }
   return Error::Ok;
@@ -2019,6 +2176,12 @@ Error Method::execute() {
     }
   }
   internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
+  Error out_status =
+      validate_method_outputs(serialization_plan_, values_, n_value_);
+  if (out_status != Error::Ok) {
+    step_state_ = StepState{0, 0};
+    return out_status;
+  }
   log_outputs();
 
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without
