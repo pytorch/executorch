@@ -45,6 +45,7 @@ def define_common_targets():
         srcs = ["decompose_fused_quant.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             ":pass_base",
@@ -160,6 +161,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_last.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//executorch/exir/dialects/fused_quant:ops_utils",
@@ -175,6 +177,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_first.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
