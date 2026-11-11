@@ -53,19 +53,30 @@ struct RngState {
   unsigned long long base_scratch;
 };
 
-static RngState* d_rng = nullptr;
+// One state per device, since a kernel cannot read another device's memory.
+// DeviceIndex is int8_t, so its non-negative values index this table.
+constexpr size_t kMaxRngDevices = 128;
+static RngState* d_rng_by_device[kMaxRngDevices] = {};
 // std::call_once guarantees one-shot initialization even when shims are
 // invoked from multiple host threads (e.g. concurrent models / streams).
-static std::once_flag g_rng_init_flag;
+static std::once_flag g_rng_init_flags[kMaxRngDevices];
 
-// Initialize RNG state on the given stream.
+// Initialize the RNG state of the current device on the given stream, and
+// return it, or nullptr on failure.
 // Must be called during warmup (before graph capture). Subsequent calls
 // from any thread are no-ops thanks to std::call_once. A failure throws out
 // of the call_once, which leaves it not done, so the next call tries again
 // rather than every later launch using a null state.
-bool ensure_rng_init(cudaStream_t stream) {
+RngState* ensure_rng_init(cudaStream_t stream) {
+  int device = -1;
+  if (cudaGetDevice(&device) != cudaSuccess || device < 0 ||
+      static_cast<size_t>(device) >= kMaxRngDevices) {
+    (void)cudaGetLastError();
+    ET_LOG(Error, "rand: cannot find the current CUDA device");
+    return nullptr;
+  }
   try {
-    std::call_once(g_rng_init_flag, [&]() {
+    std::call_once(g_rng_init_flags[device], [&]() {
       RngState h;
       // From std::random_device: a seed from the clock repeats for every
       // process started in the same second. Drawn before allocating, so a
@@ -95,14 +106,14 @@ bool ensure_rng_init(cudaStream_t stream) {
         (void)CudaAllocator::deallocate_stream_ordered(rng.get(), -1, stream);
         throw std::runtime_error(cudaGetErrorString(err));
       }
-      d_rng = static_cast<RngState*>(rng.get());
+      d_rng_by_device[device] = static_cast<RngState*>(rng.get());
     });
   } catch (const std::exception& e) {
     // std::random_device throws an implementation-defined std::exception.
     ET_LOG(Error, "rand: initializing the RNG state failed: %s", e.what());
-    return false;
+    return nullptr;
   }
-  return true;
+  return d_rng_by_device[device];
 }
 
 // Philox-based randint kernel. Reads its base offset from `rng->base_scratch`
@@ -202,12 +213,21 @@ AOTITorchError aoti_torch_cuda_rand(
     SlimTensor** ret0) {
   (void)layout;
   (void)device;
+  // The delegate makes its own device current, while device_index_ may name
+  // the device the program was traced on. The output, the stream and the RNG
+  // state all follow the current device so that they agree.
+  (void)device_index_;
   (void)pin_memory;
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_rand: ret0 is null");
+  int current_device = -1;
+  ET_CHECK_OR_RETURN_ERROR(
+      cudaGetDevice(&current_device) == cudaSuccess,
+      Internal,
+      "aoti_torch_cuda_rand: cannot find the current CUDA device");
 
   // Default to float32 if dtype not specified.
   ScalarType scalar_type = ScalarType::Float;
@@ -229,22 +249,24 @@ AOTITorchError aoti_torch_cuda_rand(
       sizes_ref,
       makeArrayRef(strides),
       scalar_type,
-      Device(DeviceType::CUDA, static_cast<DeviceIndex>(device_index_))));
+      Device(DeviceType::CUDA, static_cast<DeviceIndex>(current_device))));
 
   if (numel == 0) {
     return Error::Ok;
   }
 
   // Get the current CUDA stream.
-  auto stream_result = getCurrentCUDAStream(0);
+  auto stream_result =
+      getCurrentCUDAStream(static_cast<DeviceIndex>(current_device));
   ET_CHECK_OR_RETURN_ERROR(
       stream_result.ok(),
       Internal,
       "aoti_torch_cuda_rand: failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
 
+  RngState* d_rng = ensure_rng_init(stream);
   ET_CHECK_OR_RETURN_ERROR(
-      ensure_rng_init(stream),
+      d_rng != nullptr,
       MemoryAllocationFailed,
       "aoti_torch_cuda_rand: failed to set up the RNG state");
 
@@ -298,16 +320,30 @@ AOTITorchError aoti_torch_cuda_randint_low_out(
     return Error::Ok;
   }
 
-  // Get the current CUDA stream.
-  auto stream_result = getCurrentCUDAStream(0);
+  // The kernel writes `out`, so it, its stream and the RNG state all run on
+  // the device of `out`.
+  int current_device = -1;
+  ET_CHECK_OR_RETURN_ERROR(
+      cudaGetDevice(&current_device) == cudaSuccess,
+      Internal,
+      "aoti_torch_cuda_randint_low_out: cannot find the current CUDA device");
+  ET_CHECK_OR_RETURN_ERROR(
+      current_device == out->device_index(),
+      InvalidArgument,
+      "aoti_torch_cuda_randint_low_out: out is on cuda:%d, but cuda:%d is "
+      "current",
+      static_cast<int>(out->device_index()),
+      current_device);
+  auto stream_result = getCurrentCUDAStream(out->device_index());
   ET_CHECK_OR_RETURN_ERROR(
       stream_result.ok(),
       Internal,
       "aoti_torch_cuda_randint_low_out: failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
 
+  RngState* d_rng = ensure_rng_init(stream);
   ET_CHECK_OR_RETURN_ERROR(
-      ensure_rng_init(stream),
+      d_rng != nullptr,
       MemoryAllocationFailed,
       "aoti_torch_cuda_randint_low_out: failed to set up the RNG state");
 

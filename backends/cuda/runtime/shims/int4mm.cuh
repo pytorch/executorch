@@ -1216,12 +1216,12 @@ Tensor* _weight_int4pack_mm_cuda(
     stride.data(),
     static_cast<int32_t>(c10::ScalarType::BFloat16),
     static_cast<int32_t>(c10::DeviceType::CUDA),
-    0,
+    A.device_index(),
     &C_final
   );
 
 #if (defined(USE_ROCM) && ROCM_VERSION >= 50700) || ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
-  auto stream_result = getCurrentCUDAStream(0);
+  auto stream_result = getCurrentCUDAStream(A.device_index());
   ET_CHECK_MSG(stream_result.ok(), "Failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
 #define RUN_GEMM(WARPS, K_TILES_PER_WARP, Q_GROUP_SIZE, REDUCE_TYPE) \

@@ -70,6 +70,9 @@ class CudaKVPool final {
   // none. A program carrying some layers but not all, or layers without every
   // side buffer, is rejected as disagreeing with the pool's geometry.
   runtime::Result<bool> note_handle(CudaDelegateHandle* handle);
+  // Refuses a program with KV storage on another device than the one the pool
+  // serves. Leaves the pool unchanged either way.
+  runtime::Error check_device(CudaDelegateHandle* handle) const;
   void forget_handle(CudaDelegateHandle* handle);
   bool serves(CudaDelegateHandle* handle) const;
 

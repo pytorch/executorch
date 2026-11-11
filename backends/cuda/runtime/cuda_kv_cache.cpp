@@ -133,6 +133,9 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   // CudaKVCache.
   runtime::Result<bool> note_handle(CudaDelegateHandle* handle) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    // Refused before the pool looks at the program, so the methods the cache
+    // already serves keep running.
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.check_device(handle));
     auto serves = pool_.note_handle(handle);
     if (!serves.ok()) {
       error_ = serves.error();
@@ -401,6 +404,9 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 
   runtime::Result<bool> note_handle(CudaDelegateHandle* handle) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    // Refused before the pool looks at the program, so the methods the cache
+    // already serves keep running.
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.check_device(handle));
     auto serves = pool_.note_handle(handle);
     if (!serves.ok()) {
       error_ = serves.error();
@@ -988,6 +994,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   runtime::Result<bool> note_handle(CudaDelegateHandle* handle) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    // Refused before the pool looks at the program, so the methods the cache
+    // already serves keep running.
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.check_device(handle));
     auto serves = pool_.note_handle(handle);
     if (!serves.ok()) {
       error_ = serves.error();
@@ -1460,7 +1469,14 @@ runtime::Error attach_offgraph_kv_cache(
       "init: cache under key '%s' is not a CUDA cache",
       cache_key);
   auto serves = handle.kv_cache->note_handle(&handle);
-  ET_CHECK_OK_OR_RETURN_ERROR(serves.error());
+  if (!serves.ok()) {
+    // A failed init never reaches destroy(), so drop the claim here rather
+    // than keep the cache and its device memory alive after the runner
+    // releases it.
+    handle.kv_cache = nullptr;
+    handle.kv_cache_shared.reset();
+    return serves.error();
+  }
   if (!serves.get()) {
     // An embedding or vision pass: it carries no KV storage, so it has no use
     // for the cache and must not be asked to step it.
@@ -1468,11 +1484,18 @@ runtime::Error attach_offgraph_kv_cache(
     handle.kv_cache_shared.reset();
     return runtime::Error::Ok;
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      step_width.has_value(),
-      InvalidArgument,
-      "off-graph KV cache needs an %s compile spec",
-      kOffGraphKVStepWidthSpec);
+  if (!step_width.has_value()) {
+    // Registered above, so unregister before dropping the claim, as destroy()
+    // would for a handle that loaded.
+    handle.kv_cache->forget_handle(&handle);
+    handle.kv_cache = nullptr;
+    handle.kv_cache_shared.reset();
+    ET_LOG(
+        Error,
+        "off-graph KV cache needs an %s compile spec",
+        kOffGraphKVStepWidthSpec);
+    return runtime::Error::InvalidArgument;
+  }
   handle.kv_step_width = *step_width;
   return runtime::Error::Ok;
 }
