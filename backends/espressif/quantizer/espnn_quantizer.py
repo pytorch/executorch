@@ -18,6 +18,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    _is_input_large_scalar,
+    _is_input_non_float_tensor,
     _is_share_obs_or_fq_op,
 )
 from torch.fx import Node
@@ -38,6 +40,7 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 CONV_TARGETS = (torch.ops.aten.conv2d.default,)
 LINEAR_TARGETS = (torch.ops.aten.linear.default,)
 ADD_TARGETS = (torch.ops.aten.add.Tensor, torch.ops.aten.add_.Tensor)
+MUL_TARGETS = (torch.ops.aten.mul.Tensor, torch.ops.aten.mul_.Tensor)
 RELU_TARGETS = (torch.ops.aten.relu.default, torch.ops.aten.relu_.default)
 HARDTANH_TARGETS = (torch.ops.aten.hardtanh.default, torch.ops.aten.hardtanh_.default)
 RELU6_TARGETS = (torch.ops.aten.relu6.default,)
@@ -131,18 +134,23 @@ def _annotate_weighted_activation(
     return True
 
 
-def _annotate_add_activation(
-    add: Node,
+def _annotate_binary_activation(
+    model: torch.fx.GraphModule,
+    binary: Node,
     activation: Node,
     config: QuantizationConfig,
 ) -> bool:
-    lhs = add.args[0]
-    rhs = add.args[1]
+    lhs = binary.args[0]
+    rhs = binary.args[1]
     if not isinstance(lhs, Node) or not isinstance(rhs, Node):
         return False
-    if _is_annotated(add) or _is_annotated(activation):
+    if any(_is_input_non_float_tensor(arg) for arg in (binary, lhs, rhs)) or any(
+        _is_input_large_scalar(arg, model) for arg in (lhs, rhs)
+    ):
         return False
-    add.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+    if _is_annotated(binary) or _is_annotated(activation):
+        return False
+    binary.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map={
             lhs: get_input_act_qspec(config),
             rhs: get_input_act_qspec(config),
@@ -172,9 +180,10 @@ def _config_lookup(
 def annotate_fused_activations(
     model: torch.fx.GraphModule,
     config: ConfigSource,
+    filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> int:
     """
-    Annotate conv/linear/add followed by ReLU or ReLU6 as one fused unit.
+    Annotate conv/linear/add/mul followed by ReLU or ReLU6 as one fused unit.
     `config` is a QuantizationConfig or a per-node lookup returning one, or
     None for nodes that must stay in float.
     """
@@ -188,13 +197,15 @@ def annotate_fused_activations(
             continue
         if len(producer.users) != 1:
             continue
+        if filter_fn is not None and not filter_fn(producer):
+            continue
         config = config_for(node)
         if config is None or config_for(producer) is not config:
             continue
         if producer.target in CONV_TARGETS or producer.target in LINEAR_TARGETS:
             fused += int(_annotate_weighted_activation(producer, node, config))
-        elif producer.target in ADD_TARGETS:
-            fused += int(_annotate_add_activation(producer, node, config))
+        elif producer.target in (*ADD_TARGETS, *MUL_TARGETS):
+            fused += int(_annotate_binary_activation(model, producer, node, config))
     return fused
 
 
@@ -204,7 +215,7 @@ class EspNNQuantizer(XNNPACKQuantizer):
 
     Activations: int8 per-tensor affine.
     Weights: int8 per-output-channel symmetric.
-    ReLU and ReLU6 that directly follow conv2d, linear, or add are fused
+    ReLU and ReLU6 that directly follow conv2d, linear, add, or mul are fused
     into the producer so that the clamp happens on the producer's
     requantized output, exactly as the ESP-NN activation_min/max arguments
     implement it. Without this fusion ReLU6 would inherit the producer's
@@ -222,7 +233,7 @@ class EspNNQuantizer(XNNPACKQuantizer):
     def node_config(self, node: Node) -> Optional[QuantizationConfig]:
         """
         The config that governs `node`, with the same precedence as
-        XNNPACKQuantizer: module name, then module type, then global.
+        XNNPACKQuantizer: module name, module type, operator type, then global.
         None means the node stays in float.
         """
         for name, config in self.module_name_config.items():
@@ -231,7 +242,11 @@ class EspNNQuantizer(XNNPACKQuantizer):
         for module_type, config in self.module_type_config.items():
             if _get_module_type_filter(module_type)(node):
                 return config
-        return self.global_config
+        operator = {
+            torch.ops.aten.add_.Tensor: torch.ops.aten.add.Tensor,
+            torch.ops.aten.mul_.Tensor: torch.ops.aten.mul.Tensor,
+        }.get(node.target, node.target)
+        return self.operator_type_config.get(operator, self.global_config)
 
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
@@ -242,7 +257,7 @@ class EspNNQuantizer(XNNPACKQuantizer):
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         self.fused_activation_count = annotate_fused_activations(
-            model, self.node_config
+            model, self.node_config, self.filter_fn
         )
         model = self._annotate_for_quantization_config(model)
         annotate_unary_and_softmax(model, self.node_config)
