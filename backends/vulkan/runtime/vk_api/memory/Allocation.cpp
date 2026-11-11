@@ -50,13 +50,19 @@ Allocation::Allocation(Allocation&& other) noexcept
 }
 
 Allocation& Allocation::operator=(Allocation&& other) noexcept {
+  VmaAllocator tmp_allocator = allocator;
   VmaAllocation tmp_allocation = allocation;
+  bool tmp_is_copy = is_copy_;
 
   allocator = other.allocator;
   allocation = other.allocation;
   is_copy_ = other.is_copy_;
 
+  // `other` takes this instance's previous allocation and frees it, so it must
+  // also take the allocator that made it and whether it was a copy.
+  other.allocator = tmp_allocator;
   other.allocation = tmp_allocation;
+  other.is_copy_ = tmp_is_copy;
 
   return *this;
 }
