@@ -10,11 +10,41 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 
+#include <algorithm>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
 
 using executorch::runtime::Error;
+
+void QnnBackendCache::EnableGraphs(
+    const std::vector<std::string>& graph_names) {
+  // Best effort: restrict only when the binary holds several graphs and all
+  // requested graphs are among them. Single-graph binaries (e.g. preprocess
+  // names its only graph "forward" regardless of method) and online-prepare
+  // DLCs keep loading everything.
+  if (state_ != DESERIALIZE) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Selective graph loading requires a QNN context binary; "
+        "loading all graphs.");
+    return;
+  }
+  if (graph_names.empty() || graph_names_.size() <= 1) {
+    return;
+  }
+  for (const std::string& graph_name : graph_names) {
+    if (std::find(graph_names_.begin(), graph_names_.end(), graph_name) ==
+        graph_names_.end()) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Graph %s is not in the QNN context binary; loading all graphs.",
+          graph_name.c_str());
+      return;
+    }
+  }
+  graph_names_ = graph_names;
+  enabled_graph_names_ = graph_names;
+}
 
 Error QnnBackendCache::GetQnnGraphInfoFromBinary(
     const void* buffer,

@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -25,8 +26,10 @@ class QnnExecuTorchBackendTest : public ::testing::Test {
   using SpillFillKey = QnnExecuTorchBackend::SpillFillKey;
   using SpillFillGroup = QnnExecuTorchBackend::SpillFillGroup;
 
-  std::optional<void*> acquire(const DelegateKey& key) {
-    return backend_.get_cached_delegate(key);
+  std::optional<void*> acquire(
+      const DelegateKey& key,
+      const std::string& fallback_graph_name = "") {
+    return backend_.get_cached_delegate(key, fallback_graph_name);
   }
 
   void* publish(
@@ -140,6 +143,30 @@ TEST_F(QnnExecuTorchBackendTest, IsolatesAllocatorsWithIdenticalSignatures) {
   EXPECT_FALSE(contains(&storage[0]));
   EXPECT_TRUE(contains(&storage[1]));
   EXPECT_EQ(acquire(second_key), &storage[1]);
+  EXPECT_FALSE(release(&storage[1]));
+  EXPECT_TRUE(release(&storage[1]));
+}
+
+TEST_F(QnnExecuTorchBackendTest, FullContextServesEveryMethod) {
+  int storage;
+  ASSERT_EQ(publish({42, nullptr}, &storage), &storage);
+  EXPECT_EQ(acquire({42, nullptr}, "graph_a"), &storage);
+  EXPECT_EQ(acquire({42, nullptr}, "graph_b"), &storage);
+  EXPECT_FALSE(release(&storage));
+  EXPECT_FALSE(release(&storage));
+  EXPECT_TRUE(release(&storage));
+}
+
+TEST_F(QnnExecuTorchBackendTest, MethodOnlyContextServesOnlyItsMethod) {
+  std::array<int, 2> storage{};
+  ASSERT_EQ(publish({42, nullptr, "graph_a"}, &storage[0]), &storage[0]);
+  EXPECT_EQ(acquire({42, nullptr}), std::nullopt);
+  EXPECT_EQ(acquire({42, nullptr}, "graph_b"), std::nullopt);
+  EXPECT_EQ(acquire({42, nullptr}, "graph_a"), &storage[0]);
+  ASSERT_EQ(publish({42, nullptr, "graph_b"}, &storage[1]), &storage[1]);
+  EXPECT_EQ(acquire({42, nullptr}, "graph_b"), &storage[1]);
+  EXPECT_FALSE(release(&storage[0]));
+  EXPECT_TRUE(release(&storage[0]));
   EXPECT_FALSE(release(&storage[1]));
   EXPECT_TRUE(release(&storage[1]));
 }

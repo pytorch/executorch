@@ -322,8 +322,8 @@ def update_spill_fill_size(
             max_sf_size = max(max_sf_size, max_sf_buf_size)
             modules_map.update(module_map)
     else:
-        max_sf_size, module_map = get_program_info(exported_program)
-    update_program(max_sf_size, module_map)
+        max_sf_size, modules_map = get_program_info(exported_program)
+    update_program(max_sf_size, modules_map)
 
     return max_sf_size
 

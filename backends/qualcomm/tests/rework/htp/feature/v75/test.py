@@ -48,6 +48,16 @@ def test_multi_graph_inference(request, kwargs):
         pytest.param({"expected": Tolerance()}, id="e2e"),
     ],
 )
+def test_load_method_graph_only(request, kwargs):
+    LoadMethodGraphOnly.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"expected": Tolerance()}, id="e2e"),
+    ],
+)
 def test_online_prepare(request, kwargs):
     OnlinePrepare.test(request, kwargs)  # noqa: F405
 

@@ -16,6 +16,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -59,9 +61,18 @@ class QnnExecuTorchBackend final
 
   // A context binary signature plus the runtime allocator that the methods of
   // one Module share. Other Modules can be destroyed independently, so they
-  // must never receive this Module's QnnManager.
-  using DelegateKey =
-      std::pair<std::int64_t, const executorch::runtime::MemoryAllocator*>;
+  // must never receive this Module's QnnManager. graph_name is empty when the
+  // context holds every graph of its binary.
+  struct DelegateKey {
+    std::int64_t signature;
+    const executorch::runtime::MemoryAllocator* allocator;
+    std::string graph_name;
+
+    bool operator<(const DelegateKey& other) const {
+      return std::tie(signature, allocator, graph_name) <
+          std::tie(other.signature, other.allocator, other.graph_name);
+    }
+  };
 
   struct SpillFillGroup {
     std::mutex mutex;
@@ -81,14 +92,19 @@ class QnnExecuTorchBackend final
 
   std::shared_ptr<SpillFillGroup> get_spill_fill_group(
       const SpillFillKey& key) const;
+  // Looks up the context that holds every graph of key's binary, so
+  // key.graph_name must be empty. On a miss, falls back to the context that
+  // holds only fallback_graph_name's graph, if given.
   std::optional<executorch::runtime::DelegateHandle*> get_cached_delegate(
-      const DelegateKey& key) const;
+      const DelegateKey& key,
+      const std::string& fallback_graph_name = "") const;
   executorch::runtime::DelegateHandle* add_cached_delegate(
       const DelegateKey& key,
       executorch::runtime::DelegateHandle* handle,
       std::shared_ptr<executorch::runtime::DelegateHandle> manager = nullptr,
       std::shared_ptr<SpillFillGroup> group = nullptr) const;
   bool is_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
+  bool get_load_method_graph_only() const;
   std::optional<DelegateEntry> erase_cached_delegate(
       executorch::runtime::DelegateHandle* handle) const;
 
@@ -109,6 +125,7 @@ class QnnExecuTorchBackend final
   RuntimeOption qnn_runtime_lpai_affinity_{false, 0};
   RuntimeOption qnn_runtime_lpai_core_selection_{false, 0};
   RuntimeOption qnn_runtime_heap_profiling_path_{false, {}};
+  RuntimeOption qnn_runtime_load_method_graph_only_{false, false};
 };
 
 } // namespace qnn

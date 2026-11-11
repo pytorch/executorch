@@ -37,6 +37,7 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <optional>
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 DEFINE_string(
@@ -151,6 +152,29 @@ DEFINE_string(
     "Empty disables heap profiling. "
     "This is a runtime option and will override the path set during AOT.");
 
+DEFINE_bool(
+    load_method_graph_only,
+    false,
+    "Deserialize only the selected method's graph from a multi-graph "
+    "QNN context binary (QNN_CONTEXT_CONFIG_ENABLE_GRAPHS). Falls back to "
+    "loading all graphs if the binary has a single graph or lacks the "
+    "method's graph. With weight sharing, each resident method holds its own "
+    "copy of the shared weights.");
+
+DEFINE_int32(
+    preload_method_index,
+    -1,
+    "(testing only) If >= 0, load this method with the main method's "
+    "allocator, so the QNN backend can share its delegate with the main "
+    "method. Destroys it before loading --method_index, or after it with "
+    "--destroy_preload_after_load.");
+
+DEFINE_bool(
+    destroy_preload_after_load,
+    false,
+    "(testing only) Keep the method loaded by --preload_method_index alive "
+    "until --method_index is loaded, then destroy it before execution.");
+
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::etdump::ETDumpGen;
@@ -169,6 +193,47 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
+
+namespace {
+// Loads a method with its own planned memory, so it can stay alive while the
+// main method is loaded. It shares the main method's allocator, as methods of
+// one Module do, so the QNN backend can share delegates between them.
+class PreloadedMethod {
+ public:
+  PreloadedMethod(
+      Program& program,
+      const char* method_name,
+      MemoryAllocator& method_allocator) {
+    Result<MethodMeta> method_meta = program.method_meta(method_name);
+    ET_CHECK_MSG(method_meta.ok(), "Failed to get method_meta");
+    for (size_t id = 0; id < method_meta->num_memory_planned_buffers(); ++id) {
+      size_t size = static_cast<size_t>(
+          method_meta->memory_planned_buffer_size(id).get());
+      planned_buffers_.push_back(std::make_unique<uint8_t[]>(size));
+      planned_spans_.push_back({planned_buffers_.back().get(), size});
+    }
+    planned_memory_ = std::make_unique<HierarchicalAllocator>(
+        Span<Span<uint8_t>>(planned_spans_.data(), planned_spans_.size()));
+    memory_manager_ = std::make_unique<MemoryManager>(
+        &method_allocator, planned_memory_.get());
+    Result<Method> method =
+        program.load_method(method_name, memory_manager_.get());
+    ET_CHECK_MSG(
+        method.ok(),
+        "Preloading of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (int)method.error());
+    method_.emplace(std::move(method.get()));
+  }
+
+ private:
+  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers_;
+  std::vector<Span<uint8_t>> planned_spans_;
+  std::unique_ptr<HierarchicalAllocator> planned_memory_;
+  std::unique_ptr<MemoryManager> memory_manager_;
+  std::optional<Method> method_;
+};
+} // namespace
 
 class CustomMemory {
  public:
@@ -222,7 +287,7 @@ int main(int argc, char** argv) {
   }
 
   // Set runtime options
-  executorch::runtime::BackendOptions<9> backend_options;
+  executorch::runtime::BackendOptions<10> backend_options;
   if (!gflags::GetCommandLineFlagInfoOrDie("log_level").is_default) {
     ET_LOG(Info, "Setting runtime log level: %d", FLAGS_log_level);
     ET_CHECK_MSG(
@@ -312,6 +377,14 @@ int main(int argc, char** argv) {
         "Failed to set backend options: %s",
         QNN_RUNTIME_HEAP_PROFILING_PATH);
   }
+  if (FLAGS_load_method_graph_only) {
+    ET_LOG(Info, "Setting runtime load_method_graph_only");
+    ET_CHECK_MSG(
+        backend_options.set_option(QNN_RUNTIME_LOAD_METHOD_GRAPH_ONLY, true) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LOAD_METHOD_GRAPH_ONLY);
+  }
   ET_CHECK_MSG(
       set_option(QNN_BACKEND, backend_options.view()) == Error::Ok,
       "Failed to set runtime options.");
@@ -375,6 +448,22 @@ int main(int argc, char** argv) {
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
 
+  std::unique_ptr<PreloadedMethod> preloaded_method;
+  const char* preload_name = nullptr;
+  if (FLAGS_preload_method_index >= 0) {
+    const auto preload_name_result = program->get_method_name(
+        static_cast<size_t>(FLAGS_preload_method_index));
+    ET_CHECK_MSG(preload_name_result.ok(), "Invalid --preload_method_index");
+    preload_name = *preload_name_result;
+    preloaded_method = std::make_unique<PreloadedMethod>(
+        *program, preload_name, method_allocator);
+    ET_LOG(Info, "Preloaded method %s.", preload_name);
+    if (!FLAGS_destroy_preload_after_load) {
+      preloaded_method.reset();
+      ET_LOG(Info, "Destroyed preloaded method %s.", preload_name);
+    }
+  }
+
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
   // memory-planning pasees.
@@ -415,6 +504,10 @@ int main(int argc, char** argv) {
       method_name,
       (int)method.error());
   ET_LOG(Info, "Method loaded.");
+  if (preloaded_method != nullptr) {
+    preloaded_method.reset();
+    ET_LOG(Info, "Destroyed preloaded method %s.", preload_name);
+  }
 
   void* debug_buffer;
   if (FLAGS_dump_intermediate_outputs) {
