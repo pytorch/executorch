@@ -1093,8 +1093,20 @@ dispatches, read from the shader profiling records. A step's
 `expected_kernels` maps a cooperative-matrix family (`xe2`, `nvidia`) to the
 name prefix of the kernel the step must dispatch on a device of that family;
 a family without an entry, and a device that matches no family, must dispatch
-no `_wmma` kernel. Without timestamp queries (e.g. SwiftShader) the kernels
-are not checked and the result reports `route_asserted: false`.
+no `_wmma` kernel. `ETVK_WMMA_EXPECTED_FAMILY` states the device's family
+independently of the selector under test: with `xe2`, `nvidia` or `none` the
+device must match that family, every step must have profiling records, and a
+case whose shader or route is unsupported fails instead of reporting `SKIP`.
+`software` is for devices without timestamp queries, such as SwiftShader: no
+family, and kernels are checked only where records exist
+(`route_asserted: false` otherwise). Unset, the selector's family is used and
+profiling records are still required. GitHub CI runs the collection with
+`nvidia` on the NVIDIA job and `software` on SwiftShader.
+
+```sh
+ETVK_WMMA_EXPECTED_FAMILY=nvidia etvk_ops_bench --validation_only \
+  --config=operators/gemm/linear/qw/wmma/cases/correctness.json
+```
 `wmma_family_shared_memory` checks, without GPU work, that the shared memory
 each family row declares for kernel selection equals the Workgroup variables
 of its variants' SPIR-V.

@@ -2089,11 +2089,16 @@ jobs:
         # Custom operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
         for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
-                  gemm/linear/qw/wmma quantization/choose_qparams_per_row quantize/q8ta \
-                  clone/q8ta binary/q8ta warp; do
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
+        # Cooperative-matrix family kernels. SwiftShader matches no family and has no
+        # timestamp queries, so only the outputs and the absence of a family are checked.
+        ETVK_WMMA_EXPECTED_FAMILY=software \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
 
         # Host-only test of the cooperative-matrix family key and kernel rows
         cmake backends/vulkan/test/custom_ops -Bcmake-out/backends/vulkan/test/custom_ops
