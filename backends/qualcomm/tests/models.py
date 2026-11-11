@@ -392,6 +392,14 @@ class Cast(torch.nn.Module):
         return x.type(torch.IntTensor)
 
 
+class CastToLong(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.to(torch.long)
+
+
 class CastMultiUsers(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -400,6 +408,15 @@ class CastMultiUsers(torch.nn.Module):
         index = x.to(torch.long)
         res = torch.gather(y, dim=1, index=index)
         return res + index.to(torch.int32)
+
+
+class CastToFloat(torch.nn.Module):
+    def __init__(self, dtype=torch.float32):
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x):
+        return x.to(self.dtype) / 255
 
 
 class Cat2(torch.nn.Module):
@@ -959,6 +976,67 @@ class Conv3dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
+class ConvBackward(torch.nn.Module):
+    def __init__(
+        self,
+        flatten_grad_input=False,
+        duplicate_backward=False,
+        return_grad_weight=False,
+    ):
+        super().__init__()
+        self.flatten_grad_input = flatten_grad_input
+        self.duplicate_backward = duplicate_backward
+        self.return_grad_weight = return_grad_weight
+        self.weight = torch.nn.Parameter(torch.randn(4, 3, 3, 3), requires_grad=False)
+
+    def forward(self, grad_output, x):
+        forward_output = torch.ops.aten.convolution.default(
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+        )
+        backward_outputs = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, self.return_grad_weight, False],
+        )
+        grad_input = backward_outputs[0]
+        if self.flatten_grad_input:
+            grad_input = torch.flatten(grad_input, 1)
+        if self.return_grad_weight:
+            return forward_output, grad_input, torch.flatten(backward_outputs[1], 1)
+        if not self.duplicate_backward:
+            return forward_output, grad_input
+        second_grad_input = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, False, False],
+        )[0]
+        return forward_output, grad_input, second_grad_input
+
+
 class ConvFull(torch.nn.Module):
     def __init__(self, fill, full_shape):
         super().__init__()
@@ -1323,6 +1401,15 @@ class FloorDivConstantFloat(torch.nn.Module):
 
     def forward(self, x):
         return torch.floor(x / self.constant)
+
+
+class FloorDivConstantInt(torch.nn.Module):
+    def __init__(self, constant=80):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x // self.constant
 
 
 class Fold(torch.nn.Module):
@@ -2288,6 +2375,14 @@ class RemainderScalar(torch.nn.Module):
         return torch.remainder(x, 3.0)
 
 
+class RemainderScalarTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.remainder(1000, x)
+
+
 class RemainderTensor(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2862,6 +2957,42 @@ class Stack(torch.nn.Module):
 
     def forward(self, x, y, z):
         return torch.stack((x, y, z))
+
+
+class Stft(torch.nn.Module):
+    def __init__(
+        self,
+        n_fft,
+        hop_length=None,
+        win_length=None,
+        use_window=True,
+        onesided=True,
+        output="power",
+    ):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.onesided = onesided
+        self.output = output
+        self.window = torch.hann_window(win_length or n_fft) if use_window else None
+
+    def forward(self, x):
+        spectrum = torch.stft(
+            x,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=self.window,
+            center=False,
+            onesided=self.onesided,
+            return_complex=True,
+        )
+        if self.output == "power":
+            return spectrum.abs().pow(2)
+        if self.output == "magnitude":
+            return spectrum.abs()
+        return torch.view_as_real(spectrum)
 
 
 class Sub(torch.nn.Module):

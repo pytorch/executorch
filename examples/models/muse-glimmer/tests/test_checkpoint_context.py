@@ -129,9 +129,10 @@ class CheckpointContextTest(unittest.TestCase):
                 if value_type is None
                 else [("muse-glimmer.context_length", value, value_type)]
             )
-            with self.subTest(value=value), patch.object(
-                loaders, "_atomic_sd_from_gguf"
-            ) as weights:
+            with (
+                self.subTest(value=value),
+                patch.object(loaders, "_atomic_sd_from_gguf") as weights,
+            ):
                 with self.assertRaisesRegex(ValueError, "Native context"):
                     loaders.load_gguf_model(self.write_gguf(fields), max_seq_len=None)
                 weights.assert_not_called()
@@ -233,9 +234,10 @@ class BatchingExportContextTest(unittest.TestCase):
 
     def test_offgraph_default_context_is_silent(self):
         for limit in (None, 131072):
-            with self.subTest(limit=limit), patch.object(
-                export_solo.warnings, "warn"
-            ) as warn:
+            with (
+                self.subTest(limit=limit),
+                patch.object(export_solo.warnings, "warn") as warn,
+            ):
                 self.run_cli("--gguf", max_seq_len=limit)
                 warn.assert_not_called()
                 self.assertIsNone(
@@ -304,20 +306,46 @@ class BatchingExportContextTest(unittest.TestCase):
 
 
 class CUDAExportContextTest(unittest.TestCase):
-    def test_offgraph_cli_dispatch(self):
+    def run_cli(self, *flags):
         config = MuseGlimmerConfig(max_seq_len=32)
-        argv = "export_solo --gguf unused --backend cuda --max-seq-len 32 --use-offgraph-kv-cache".split()
+        argv = [
+            "export_solo",
+            "--gguf",
+            "unused",
+            "--backend",
+            "cuda",
+            "--max-seq-len",
+            "32",
+            *flags,
+        ]
         with (
             patch.object(sys, "argv", argv),
             patch.object(export_solo.torch.cuda, "is_available", return_value=True),
             patch.object(
                 loaders, "load_gguf_model", return_value=(sentinel.model, config)
             ) as loader,
-            patch.object(export_solo, "_export_cuda") as export,
+            patch.object(export_solo, "_export_cuda") as solo,
+            patch.object(export_solo, "export_cuda_batching") as batching,
         ):
             export_solo.main()
         self.assertEqual(loader.call_args.kwargs["max_seq_len"], 32)
         self.assertNotIn("defer_runtime_buffers", loader.call_args.kwargs)
-        export.assert_called_once()
-        self.assertEqual(export.call_args.args[:2], (sentinel.model, config))
-        self.assertTrue(export.call_args.kwargs["use_offgraph_kv_cache"])
+        return config, solo, batching
+
+    def test_offgraph_cli_exports_the_batching_methods(self):
+        config, solo, batching = self.run_cli(
+            "--use-offgraph-kv-cache", "--forward-sizes", "1,2,4", "--max-cells", "512"
+        )
+        solo.assert_not_called()
+        batching.assert_called_once()
+        self.assertEqual(batching.call_args.args[:2], (sentinel.model, config))
+        self.assertEqual(batching.call_args.kwargs["forward_sizes"], [1, 2, 4])
+        self.assertEqual(batching.call_args.kwargs["max_cells"], 512)
+        self.assertTrue(batching.call_args.kwargs["device_sampling"])
+
+    def test_in_graph_cli_keeps_prefill_and_decode(self):
+        config, solo, batching = self.run_cli()
+        batching.assert_not_called()
+        solo.assert_called_once()
+        self.assertEqual(solo.call_args.args[:2], (sentinel.model, config))
+        self.assertNotIn("use_offgraph_kv_cache", solo.call_args.kwargs)

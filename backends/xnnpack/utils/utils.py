@@ -20,6 +20,7 @@ from torch._export.utils import (
     is_lifted_tensor_constant,
     is_param,
 )
+from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
 
 
@@ -58,20 +59,50 @@ def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
     return cast(torch.fx.Node, node.args[input_index])
 
 
+def is_dtype_cast(node: torch.fx.Node) -> bool:
+    """A _to_copy that changes dtype keeps the layout of its input and is
+    serialized as a convert node, not a transpose."""
+    src = node.args[0]
+    return (
+        isinstance(src, torch.fx.Node)
+        and "val" in src.meta
+        and "val" in node.meta
+        and node.meta["val"].dtype != src.meta["val"].dtype
+    )
+
+
 def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
     """Return mean dims as non-negative indices for the given rank."""
     if rank <= 0:
         raise ValueError(f"Expected rank > 0, got {rank}")
-    if mean_dims is None:
-        return list(range(rank))
     if isinstance(mean_dims, int):
         mean_dims = [mean_dims]
+    # None and an empty list both average over every dim.
+    if not mean_dims:
+        return list(range(rank))
     normalized_dims = []
     for dim in mean_dims:
         if dim < -rank or dim >= rank:
             raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
         normalized_dims.append(dim % rank)
     return normalized_dims
+
+
+def is_global_avg_pool_mean(node: torch.fx.Node) -> bool:
+    """
+    Whether a mean.dim node averages a 4D tensor across dims [2, 3] with
+    keepdim=True, which lowers to Global Average Pooling on an NHWC input.
+    XNNPACK has no bf16 Global Average Pooling, so this is False for bf16.
+    """
+    if not (len(node.args) >= 3 and bool(node.args[2])):
+        return False
+    if node.meta["val"].dtype == torch.bfloat16:
+        return False
+    # With keepdim the output has the input's rank. Reading it from the mean
+    # itself keeps this valid inside ChannelsLastTaggedReshapePass, which can
+    # replace the mean's input with a node that has no "val" yet.
+    rank = node.meta["val"].dim()
+    return rank == 4 and sorted(normalize_mean_dims(node.args[1], rank)) == [2, 3]
 
 
 def normalize_pool2d_args(
@@ -99,6 +130,31 @@ def normalize_pool2d_args(
     padding = pair(3, [0, 0])
     dilation = pair(4, [1, 1]) if has_dilation else [1, 1]
     return kernel, stride, padding, dilation
+
+
+def why_not_x2_nearest_upsample(node: torch.fx.Node) -> Optional[str]:
+    """
+    XNNPACK lowers upsample_nearest2d as concatenate4 + depth_to_space_2d,
+    which only expresses exact x2 scaling of a static 4D tensor. Returns the
+    reason a node cannot take that path, or None if it can. Shared by the
+    partitioner and the quantizer so they agree on which nodes are lowered.
+    """
+    in_shape = get_input_node(node, 0).meta["val"].shape
+    out_shape = node.meta["val"].shape
+    if has_free_symbols(in_shape) or has_free_symbols(out_shape):
+        return "dynamic output sizes are not supported"
+    if len(in_shape) != 4:
+        return "only 4D inputs are supported"
+    if out_shape[-2] != 2 * in_shape[-2] or out_shape[-1] != 2 * in_shape[-1]:
+        return "only x2 nearest upsampling is supported"
+    # PyTorch indexes with an explicit scale as given, so e.g. 2.004 doubles
+    # the size but picks different source pixels than x2.
+    scale_factors = (
+        node.args[2] if len(node.args) > 2 else node.kwargs.get("scale_factors")
+    )
+    if scale_factors is not None and any(s != 2.0 for s in scale_factors):
+        return "only an exact x2 scale factor is supported"
+    return None
 
 
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:
@@ -129,6 +185,29 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
         or is_param(exp_prog, node)
         or is_buffer(exp_prog, node)
         or is_lifted_tensor_constant(exp_prog, node)
+    )
+
+
+def is_foldable_broadcast_operand(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> bool:
+    """
+    A rank < 4 constant operand of a broadcasting op that ChannelsLastTaggedReshapePass
+    can reshape to 4D and lay out as NHWC ahead of time. A mutated buffer is
+    not constant, and a symbolic shape cannot be expressed in XNNStaticReshape.
+    """
+    if node.op != "placeholder" or not is_param_node(exp_prog, node):
+        return False
+    signature = exp_prog.graph_signature
+    buffer = signature.inputs_to_buffers.get(node.name)
+    if buffer in signature.buffers_to_mutate.values():
+        return False
+    val = node.meta.get("val", None)
+    return (
+        isinstance(val, torch.Tensor)
+        and not has_free_symbols(val.shape)
+        and 0 < val.dim() < 4
+        and val.numel() > 1
     )
 
 

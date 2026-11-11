@@ -35,10 +35,10 @@ using namespace vkcompute;
 //
 // The im2col + GEMM conv path (conv2d_gemm_impl) materializes its im2col matrix
 // in tiles of output-height rows bounded to a byte budget. The static op-test
-// suite (test/ops/benchmark/cases/conv2d/test_conv2d.cpp) only validates a
-// single shape per graph. This test exercises the path under an actual
-// trigger_resize: it builds the graph at an upper-bound input shape that forces
-// MULTIPLE tiles, then resizes the input across tile boundaries (so trailing
+// cases only validate a single shape per graph. This test exercises the path
+// under an actual trigger_resize: it builds the graph at an upper-bound input
+// shape that forces MULTIPLE tiles, then resizes the input across tile
+// boundaries (so trailing
 // tiles must no-op via the shader's `oh < H_out` guard and the scratch must
 // track the smaller shape) and verifies the output against a reference at every
 // shape.
@@ -404,9 +404,7 @@ ConvGraph build_graph(const Conv2dTestConfig& cfg) {
       r_padding,
       r_dilation,
       r_out,
-      /*clamp_out=*/false,
-      /*out_min_val=*/0.0f,
-      /*out_max_val=*/0.0f,
+      Conv2dEpilogue{},
       cfg.im2col_storage);
 
   cg.staging_out = graph.set_output_tensor(r_out);

@@ -40,7 +40,7 @@ The main configuration point for the lowering is the `EthosUCompileSpec` consume
 The full user-facing API is documented below.
 
 ```python
-class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None)
+class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None, plan_delegate_scratch: bool = False)
 ```
 Normalise Ethos-U compile configuration and compiler flags.
 
@@ -60,6 +60,8 @@ Args:
 - **max_scratch_size (int | None)**: Maximum delegate scratch arena size in
         bytes for the deployment platform. Checked against Vela's output;
         independent of Vela's arena cache size. None disables the check.
+- **plan_delegate_scratch (bool)**: Declare delegate scratch for AOT
+        memory planning. Defaults to False.
 
 ```python
 def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):

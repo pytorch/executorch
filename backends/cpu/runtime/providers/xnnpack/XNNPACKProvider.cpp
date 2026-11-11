@@ -6,7 +6,12 @@
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
+#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <xnnpack.h>
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+#include "src/xnnpack/subgraph.h" // @manual
+#endif
 
 #include <algorithm>
 #include <array>
@@ -14,12 +19,16 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
+using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -38,6 +47,17 @@ Error check(xnn_status status, const char* operation) {
       return cpu_xnn_error;                                      \
     }                                                            \
   } while (false)
+
+bool check_profiling(Error error, const char* operation) {
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "CPU XNNPACK profiling %s failed: %u",
+        operation,
+        static_cast<unsigned int>(error));
+  }
+  return error == Error::Ok;
+}
 
 bool constant(const ptn::Value& value) {
   return value.role == ptn::ValueRole::Parameter ||
@@ -64,6 +84,134 @@ bool fp32(const Kernel& node, const ptn::Graph& graph) {
   return std::all_of(values.begin(), values.end(), [&graph](auto id) {
     return graph.value(id).tensor_meta().dtype == ptn::ScalarType::Float;
   });
+}
+
+struct MaxPool2d {
+  ptn::ValueId input;
+  ptn::ValueId output;
+  int64_t kh, kw, sh, sw, ph, pw, dh, dw;
+  bool ceil_mode;
+};
+
+const std::vector<int64_t>* static_pool_list(const ptn::Argument& argument) {
+  if (argument.kind() != ptn::ArgKind::IntList) {
+    return nullptr;
+  }
+  const auto& list = argument.as_int_list();
+  return std::all_of(
+             list.ids.begin(),
+             list.ids.end(),
+             [](auto id) { return id == ptn::kInvalid; })
+      ? &list.values
+      : nullptr;
+}
+
+// Broadcasts an aten int[2] argument: empty uses the fallback, one element
+// broadcasts, two elements pass through; anything else is malformed.
+bool pool_pair(
+    const std::vector<int64_t>& list,
+    int64_t fallback,
+    int64_t& first,
+    int64_t& second) {
+  if (list.empty()) {
+    first = fallback;
+    second = fallback;
+    return true;
+  }
+  if (list.size() == 1) {
+    first = list[0];
+    second = list[0];
+    return true;
+  }
+  if (list.size() == 2) {
+    first = list[0];
+    second = list[1];
+    return true;
+  }
+  return false;
+}
+
+int64_t pooling_output_size(
+    int64_t in,
+    int64_t k,
+    int64_t s,
+    int64_t p,
+    int64_t d,
+    bool ceil_mode) {
+  const int64_t numerator = in + 2 * p - d * (k - 1) - 1;
+  int64_t out = ceil_mode ? (numerator + s - 1) / s + 1 : numerator / s + 1;
+  if (ceil_mode && (out - 1) * s >= in + p) {
+    out -= 1;
+  }
+  return out;
+}
+
+// Extra trailing padding so floor-only pooling produces aten ceil-mode output
+// sizes. Ports the ceil handling of the main XNNPACK backend: pad just enough
+// for the final partial window, unless aten's adjustment drops that window.
+int64_t ceil_pad_amount(
+    int64_t in_size,
+    int64_t kernel_size,
+    int64_t stride,
+    int64_t padding,
+    int64_t dilation) {
+  const int64_t no_ceil =
+      in_size + 2 * padding - dilation * (kernel_size - 1) - 1;
+  const int64_t output_size = (no_ceil + stride - 1) / stride + 1;
+  const bool needs_adjust = (output_size - 1) * stride >= in_size + padding;
+  const int64_t partial_stride = no_ceil % stride;
+  return (partial_stride > 0 && !needs_adjust) ? stride - partial_stride : 0;
+}
+
+std::optional<MaxPool2d> parse_max_pool2d(const Kernel& node) {
+  if (node.target != "torch.ops.aten.max_pool2d_with_indices.default" ||
+      node.inputs.size() != 6 || node.outputs.size() != 2 ||
+      node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+      node.outputs[1].kind != ptn::OutputValueKind::Tensor ||
+      std::any_of(node.inputs.begin(), node.inputs.end(), [](const auto& in) {
+        return in.mutated;
+      })) {
+    return std::nullopt;
+  }
+  const auto& input = node.inputs[0].arg;
+  const auto* kernel = static_pool_list(node.inputs[1].arg);
+  const auto* stride = static_pool_list(node.inputs[2].arg);
+  const auto* padding = static_pool_list(node.inputs[3].arg);
+  const auto* dilation = static_pool_list(node.inputs[4].arg);
+  const auto& ceil = node.inputs[5].arg;
+  if (input.kind() != ptn::ArgKind::Tensor || !kernel || !stride || !padding ||
+      !dilation || ceil.kind() != ptn::ArgKind::Bool ||
+      ceil.as_bool().id != ptn::kInvalid) {
+    return std::nullopt;
+  }
+  MaxPool2d parsed;
+  parsed.input = input.as_tensor().id;
+  parsed.output = node.outputs[0].value_id;
+  if (!pool_pair(*kernel, 0, parsed.kh, parsed.kw) || parsed.kh < 1 ||
+      parsed.kw < 1) {
+    return std::nullopt;
+  }
+  if (stride->empty()) {
+    parsed.sh = parsed.kh;
+    parsed.sw = parsed.kw;
+  } else if (
+      !pool_pair(*stride, 0, parsed.sh, parsed.sw) || parsed.sh < 1 ||
+      parsed.sw < 1) {
+    return std::nullopt;
+  }
+  if (!pool_pair(*padding, 0, parsed.ph, parsed.pw) || parsed.ph < 0 ||
+      parsed.pw < 0) {
+    return std::nullopt;
+  }
+  if (!pool_pair(*dilation, 1, parsed.dh, parsed.dw) || parsed.dh < 1 ||
+      parsed.dw < 1) {
+    return std::nullopt;
+  }
+  if (parsed.ph > parsed.kh / 2 || parsed.pw > parsed.kw / 2) {
+    return std::nullopt;
+  }
+  parsed.ceil_mode = ceil.as_bool().value;
+  return parsed;
 }
 
 class XNNExecutable;
@@ -100,9 +248,28 @@ class XNNState {
     CPU_XNN_CHECK(xnn_create_workspace(&workspace));
     return Error::Ok;
   }
+  // Runtime creation packs these copies and never reads them again.
+  Result<Buffer> allocate_packing_source(size_t bytes) {
+    auto storage = allocate_buffer(packing_sources_, bytes);
+    if (storage.ok()) {
+      packing_source_bytes_ += storage->readable_bytes;
+    }
+    return storage;
+  }
+  size_t release_packing_sources() {
+    converted_weights.clear();
+    packing_sources_.reset();
+    return std::exchange(packing_source_bytes_, 0);
+  }
   std::map<std::pair<ptn::ValueId, bool>, Buffer> converted_weights;
+  /// Numbers ETDump operator names uniquely across the provider's regions.
+  std::unordered_map<std::string, uint32_t> operator_counts;
   xnn_workspace_t workspace = nullptr;
   xnn_weights_cache_t cache = nullptr;
+
+ private:
+  extension::MallocMemoryAllocator packing_sources_;
+  size_t packing_source_bytes_ = 0;
 };
 
 class XNNExecutable final : public Executable {
@@ -131,11 +298,14 @@ class XNNExecutable final : public Executable {
         region.outputs.begin(), region.outputs.end());
     std::unordered_set<ptn::ValueId> used;
     for (auto id : region.nodes) {
-      for (auto value : context_.graph.node(id).input_value_ids()) {
+      const auto& node = context_.graph.node(id);
+      for (auto value : node.input_value_ids()) {
         used.insert(value);
       }
-      for (const auto& output : context_.graph.node(id).outputs) {
-        used.insert(output.value_id);
+      const auto output_count =
+          parse_max_pool2d(node) ? 1 : node.outputs.size();
+      for (size_t i = 0; i < output_count; ++i) {
+        used.insert(node.outputs[i].value_id);
       }
     }
     bindings_.reserve(inputs.size() + outputs.size());
@@ -184,13 +354,27 @@ class XNNExecutable final : public Executable {
         return error;
       }
     }
+    uint32_t runtime_flags = 0;
+#ifdef ET_EVENT_TRACER_ENABLED
+    auto* tracer = context_.execution.event_tracer;
+    if (tracer &&
+        tracer->event_tracer_profiling_level() >
+            EventTracerProfilingLevel::kProfileMethodOnly) {
+      runtime_flags |= XNN_FLAG_BASIC_PROFILING;
+    }
+#endif
     CPU_XNN_CHECK(xnn_create_runtime_v4(
         subgraph_,
         state_.cache,
         state_.workspace,
         context_.execution.threadpool,
-        0,
+        runtime_flags,
         &runtime_));
+    if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
+      profiling_ = check_profiling(
+          profiler_.initialize(runtime_, &state_.operator_counts),
+          "initialization");
+    }
     return Error::Ok;
   }
 
@@ -209,6 +393,11 @@ class XNNExecutable final : public Executable {
           "XNNPACK inferred a different semantic shape for %s",
           context_.graph.value(binding.id).name.c_str());
     }
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+    if (profiling_) {
+      check_profiling(describe_operators(), "metadata");
+    }
+#endif
     return Error::Ok;
   }
 
@@ -231,18 +420,66 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  Error run(const ExecutionContext&) override {
+  Error run(const ExecutionContext& context) override {
+    // Closes a session left open by a caller that skipped submit_trace.
+    submit_trace();
     ET_CHECK_OR_RETURN_ERROR(
         bound_, InvalidState, "XNNPACK requires a successful bind");
     // Shared workspace growth can relocate another region's internal values.
     CPU_XNN_CHECK(
         xnn_setup_runtime_v2(runtime_, external_.size(), external_.data()));
+    tracing_ = profiling_ &&
+        check_profiling(profiler_.start(context.event_tracer), "start");
     CPU_XNN_CHECK(xnn_invoke_runtime(runtime_));
     return Error::Ok;
   }
 
+  void submit_trace() override {
+    if (tracing_) {
+      tracing_ = false;
+      check_profiling(profiler_.end(), "end");
+    }
+  }
+
  private:
   friend const XNNOp* find_op(std::string_view target);
+
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  // Reads XNNPACK's internal runtime, which the public API does not expose.
+  // xnn_get_runtime_profiling_info reports names and timings for opdata with a
+  // primary operator, in opdata order; this must apply the same filter.
+  Error describe_operators() {
+    std::vector<std::string> shapes;
+    for (size_t index = 0; index < runtime_->num_ops; ++index) {
+      const auto& op = runtime_->opdata[index];
+      if (op.operator_objects[0] != nullptr) {
+        shapes.push_back(
+            "{\"inputs\":" + value_shapes(op.inputs, op.num_inputs) +
+            ",\"outputs\":" + value_shapes(op.outputs, op.num_outputs) + "}");
+      }
+    }
+    return profiler_.set_operator_metadata(std::move(shapes));
+  }
+
+  std::string value_shapes(const uint32_t* ids, uint32_t count) const {
+    std::string text = "[";
+    for (uint32_t index = 0; index < count; ++index) {
+      text += index ? "," : "";
+      if (ids[index] == XNN_INVALID_VALUE_ID ||
+          ids[index] >= runtime_->num_values) {
+        text += "null";
+        continue;
+      }
+      const auto& shape = runtime_->values[ids[index]].shape;
+      text += "[";
+      for (size_t dim = 0; dim < shape.num_dims; ++dim) {
+        text += (dim ? "," : "") + std::to_string(shape.dim[dim]);
+      }
+      text += "]";
+    }
+    return text + "]";
+  }
+#endif
 
   std::vector<size_t> dimensions(ptn::ValueId id) const {
     const auto& sizes = context_.graph.value(id).tensor_meta().sizes;
@@ -339,8 +576,7 @@ class XNNExecutable final : public Executable {
       if (cached != state_.converted_weights.end()) {
         packed = static_cast<const float*>(cached->second.data);
       } else {
-        auto storage = allocate_buffer(
-            context_.allocator,
+        auto storage = state_.allocate_packing_source(
             tensor_bytes(context_.graph.value(weight)).get());
         if (!storage.ok()) {
           return storage.error();
@@ -610,6 +846,130 @@ class XNNExecutable final : public Executable {
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
   }
 
+  static bool supports_max_pool(const Kernel& node, const ptn::Graph& graph) {
+    const auto parsed = parse_max_pool2d(node);
+    if (!parsed) {
+      return false;
+    }
+    const auto& input = graph.value(parsed->input).tensor_meta();
+    const auto& output = graph.value(parsed->output).tensor_meta();
+    const auto indices_id = node.outputs[1].value_id;
+    const auto& indices = graph.value(indices_id);
+    if (!indices.consumer_ids.empty() ||
+        std::find(
+            graph.output_ids.begin(), graph.output_ids.end(), indices_id) !=
+            graph.output_ids.end() ||
+        indices.tensor_meta().dtype != ptn::ScalarType::Long ||
+        indices.tensor_meta().sizes != output.sizes ||
+        input.dtype != ptn::ScalarType::Float ||
+        output.dtype != ptn::ScalarType::Float || input.sizes.size() != 4 ||
+        output.sizes.size() != 4 || input.quant || output.quant ||
+        input.sizes[0] != output.sizes[0] ||
+        input.sizes[1] != output.sizes[1]) {
+      return false;
+    }
+    return output.sizes[2] ==
+        pooling_output_size(
+               input.sizes[2],
+               parsed->kh,
+               parsed->sh,
+               parsed->ph,
+               parsed->dh,
+               parsed->ceil_mode) &&
+        output.sizes[3] ==
+        pooling_output_size(
+            input.sizes[3],
+            parsed->kw,
+            parsed->sw,
+            parsed->pw,
+            parsed->dw,
+            parsed->ceil_mode);
+  }
+
+  Error max_pool(const Kernel& node) {
+    const auto parsed = parse_max_pool2d(node);
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed, InvalidProgram, "XNNPACK max_pool2d schema mismatch");
+    const auto input = parsed->input;
+    const auto output = parsed->output;
+    const auto in = dimensions(input);
+    const auto out = dimensions(output);
+    int64_t pad_top = parsed->ph, pad_left = parsed->pw;
+    int64_t pad_bottom = parsed->ph, pad_right = parsed->pw;
+    if (parsed->ceil_mode) {
+      pad_bottom += ceil_pad_amount(
+          in[2], parsed->kh, parsed->sh, parsed->ph, parsed->dh);
+      pad_right += ceil_pad_amount(
+          in[3], parsed->kw, parsed->sw, parsed->pw, parsed->dw);
+    }
+    uint32_t nhwc_in, nhwc_out;
+    auto error = tensor({in[0], in[2], in[3], in[1]}, nhwc_in);
+    if (error != Error::Ok) {
+      return error;
+    }
+    error = tensor({out[0], out[2], out[3], out[1]}, nhwc_out);
+    if (error != Error::Ok) {
+      return error;
+    }
+    const size_t to_nhwc[] = {0, 2, 3, 1};
+    const size_t to_nchw[] = {0, 3, 1, 2};
+    CPU_XNN_CHECK(
+        xnn_define_static_transpose(subgraph_, 4, to_nhwc, input, nhwc_in, 0));
+    const auto infinity = std::numeric_limits<float>::infinity();
+    // XNNPACK's implicit padding assumes every window samples the input.
+    if (in[2] < static_cast<size_t>(parsed->dh) ||
+        in[3] < static_cast<size_t>(parsed->dw)) {
+      pad_bottom = std::max<int64_t>(
+          pad_bottom,
+          (static_cast<int64_t>(out[2]) - 1) * parsed->sh +
+              (parsed->kh - 1) * parsed->dh + 1 - static_cast<int64_t>(in[2]) -
+              pad_top);
+      pad_right = std::max<int64_t>(
+          pad_right,
+          (static_cast<int64_t>(out[3]) - 1) * parsed->sw +
+              (parsed->kw - 1) * parsed->dw + 1 - static_cast<int64_t>(in[3]) -
+              pad_left);
+      const size_t pre[] = {
+          0, static_cast<size_t>(pad_top), static_cast<size_t>(pad_left), 0};
+      const size_t post[] = {
+          0,
+          static_cast<size_t>(pad_bottom),
+          static_cast<size_t>(pad_right),
+          0};
+      uint32_t padded_input;
+      error = tensor(
+          {in[0], in[2] + pre[1] + post[1], in[3] + pre[2] + post[2], in[1]},
+          padded_input);
+      if (error != Error::Ok) {
+        return error;
+      }
+      CPU_XNN_CHECK(xnn_define_static_constant_pad_v2(
+          subgraph_, 4, pre, post, -infinity, nhwc_in, padded_input, 0));
+      nhwc_in = padded_input;
+      pad_top = pad_left = pad_bottom = pad_right = 0;
+    }
+    CPU_XNN_CHECK(xnn_define_max_pooling_2d(
+        subgraph_,
+        static_cast<uint32_t>(pad_top),
+        static_cast<uint32_t>(pad_right),
+        static_cast<uint32_t>(pad_bottom),
+        static_cast<uint32_t>(pad_left),
+        static_cast<uint32_t>(parsed->kh),
+        static_cast<uint32_t>(parsed->kw),
+        static_cast<uint32_t>(parsed->sh),
+        static_cast<uint32_t>(parsed->sw),
+        static_cast<uint32_t>(parsed->dh),
+        static_cast<uint32_t>(parsed->dw),
+        -infinity,
+        infinity,
+        nhwc_in,
+        nhwc_out,
+        0));
+    CPU_XNN_CHECK(xnn_define_static_transpose(
+        subgraph_, 4, to_nchw, nhwc_out, output, 0));
+    return Error::Ok;
+  }
+
   static bool supports_bmm(const Kernel& node, const ptn::Graph& graph) {
     if (!fp32(node, graph) || node.inputs.size() != 2 ||
         node.outputs.size() != 1 ||
@@ -676,8 +1036,7 @@ class XNNExecutable final : public Executable {
         : arg(node, 2).as_tensor().id;
     if (bias != XNN_INVALID_VALUE_ID &&
         dimensions(bias) != std::vector<size_t>{channels}) {
-      auto broadcast =
-          allocate_buffer(context_.allocator, channels * sizeof(float));
+      auto broadcast = state_.allocate_packing_source(channels * sizeof(float));
       if (!broadcast.ok()) {
         return broadcast.error();
       }
@@ -849,6 +1208,9 @@ class XNNExecutable final : public Executable {
   bool bound_ = false;
   std::vector<Binding> bindings_;
   std::vector<xnn_external_value> external_;
+  XNNProfiler profiler_;
+  bool profiling_ = false;
+  bool tracing_ = false;
 };
 
 const XNNOp* find_op(std::string_view target) {
@@ -869,6 +1231,9 @@ const XNNOp* find_op(std::string_view target) {
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
       {"torch.ops.aten.linear.default", &E::supports_linear, &E::linear},
+      {"torch.ops.aten.max_pool2d_with_indices.default",
+       &E::supports_max_pool,
+       &E::max_pool},
       {"torch.ops.aten.mean.dim", &E::supports_mean, &E::mean},
       {"torch.ops.aten.mul.Tensor",
        &E::supports_mul,
@@ -892,6 +1257,24 @@ const XNNOp* find_op(std::string_view target) {
         return candidate.target == target;
       });
   return found == kOps.end() ? nullptr : &*found;
+}
+
+// XNNPACK packs constants in these positions while creating the runtime and
+// reads every other operand on each run.
+bool packed_operand(const Kernel& node, ptn::ValueId id) {
+  if (node.target == "torch.ops.aten.linear.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        (arg(node, 1).as_tensor().id == id ||
+         (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
+          arg(node, 2).as_tensor().id == id));
+  }
+  if (node.target == "torch.ops.aten.bmm.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        arg(node, 1).as_tensor().id == id;
+  }
+  const auto convolution = parse_convolution(node);
+  return convolution && convolution->input != id &&
+      (convolution->weight == id || convolution->bias == id);
 }
 
 class XNNImplementation final : public KernelImplementation {
@@ -944,6 +1327,36 @@ class XNNImplementation final : public KernelImplementation {
         op->supports(node, graph);
   }
 
+  Result<StorageRequirements> requirements(
+      const KernelRegion& region,
+      const ptn::Graph& graph,
+      const ExecutionContext& context) const override {
+    auto storage = KernelImplementation::requirements(region, graph, context);
+    if (!storage.ok()) {
+      return storage.error();
+    }
+    for (auto& value : storage->values) {
+      if (!constant(graph.value(value.id))) {
+        continue;
+      }
+      bool packed = false;
+      bool retained = false;
+      for (auto id : region.nodes) {
+        const auto& node = graph.node(id);
+        const auto inputs = node.input_value_ids();
+        if (std::find(inputs.begin(), inputs.end(), value.id) == inputs.end()) {
+          continue;
+        }
+        // A constant can also feed an unpacked operation in this region.
+        const bool packed_use = packed_operand(node, value.id);
+        packed |= packed_use;
+        retained |= !packed_use;
+      }
+      value.preparation_only = packed && !retained;
+    }
+    return storage;
+  }
+
   Result<std::unique_ptr<Executable>> compile(
       const KernelRegion& region,
       PreparationContext& context) override {
@@ -977,12 +1390,17 @@ class XNNProvider final : public KernelProvider {
       CPU_XNN_CHECK(xnn_finalize_weights_cache(
           state_.cache, xnn_weights_cache_finalization_kind_hard));
     }
+    released_private_constant_bytes_ += state_.release_packing_sources();
     return Error::Ok;
+  }
+  size_t released_private_constant_bytes() const override {
+    return released_private_constant_bytes_;
   }
 
  private:
   XNNState state_;
   XNNImplementation implementation_;
+  size_t released_private_constant_bytes_ = 0;
 };
 } // namespace
 // Referenced by generated provider registries and provider tests.

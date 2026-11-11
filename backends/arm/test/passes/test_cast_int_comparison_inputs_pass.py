@@ -118,12 +118,46 @@ def test_cast_int_comparison_inputs_keeps_int32() -> None:
     pipeline = PassPipeline(
         Comparison(operator.eq),
         inputs,
+        tosa_extensions=["INT"],
         ops_not_after_pass=[
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
         ],
         pass_list=[CastIntComparisonInputsPass],
     )
     pipeline.run()
+
+
+@pytest.mark.parametrize(
+    ("dtypes", "casts"),
+    (
+        ((torch.int64, torch.int64), 0),
+        ((torch.int64, torch.int32), 1),
+        ((torch.bool, torch.int64), 1),
+    ),
+)
+def test_cast_int_comparison_inputs_int64(dtypes, casts) -> None:
+    inputs = (
+        torch.tensor([2**40, -(2**38), 1, 0]).to(dtypes[0]),
+        torch.tensor([2**39, 2**30, 1, 0]).to(dtypes[1]),
+    )
+    pipeline = PassPipeline(
+        Comparison(operator.gt),
+        inputs,
+        tosa_version="1.1",
+        tosa_extensions=["INT", "int64"],
+        pass_list=[CastIntComparisonInputsPass],
+    )
+    pipeline.run()
+
+    graph_module = (
+        pipeline.tester.get_artifact(StageType.RUN_PASSES)
+        .exported_program()
+        .graph_module
+    )
+    cast_op = edge_ops.edge.dim_order_ops._to_dim_order_copy.default
+    cast_nodes = [node for node in graph_module.graph.nodes if node.target == cast_op]
+    assert len(cast_nodes) == casts
+    assert all(node.kwargs["dtype"] == torch.int64 for node in cast_nodes)
 
 
 @pytest.mark.parametrize("name", comparison_ops)

@@ -15,6 +15,7 @@ import { appIcon } from './app-icons.js';
 import { hfBadge } from './hf-badge.js';
 import { icon } from './icons.js';
 import { onDeviceNote } from './on-device.js';
+import { confirmModelMemory } from './memory-guard.js';
 
 const MAX_REC_SECONDS = 300;
 const MIN_CLIP_SECONDS = 0.4;
@@ -221,6 +222,7 @@ export function mountStt(root, demo) {
 
   async function load() {
     if (state.phase === 'loading') return;
+    if (!(await confirmModelMemory(model))) return;
     loadAbort = new AbortController();
     Object.assign(state, { phase: 'loading', loadError: null, load: { stage: 'runtime', fractions: {}, loaded: 0, total: 0, detail: '' } });
     renderStage();

@@ -1,2 +1,2 @@
 def get_qnn_library_version():
-    return "2.50"
+    return read_config("executorch", "qnn_version", "2.51")

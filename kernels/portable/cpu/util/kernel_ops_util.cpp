@@ -207,8 +207,8 @@ int64_t _kernel_output_size_helper(
     bool transposed,
     int64_t output_padding) {
   if (transposed) {
-    return (inputSize - 1) * stride - 2 * pad + dilation * (kernelSize - 1) +
-        output_padding + 1;
+    return (static_cast<int64_t>(inputSize) - 1) * stride - 2 * pad +
+        dilation * (kernelSize - 1) + output_padding + 1;
   }
   int64_t numerator = inputSize + 2 * pad - dilation * (kernelSize - 1) - 1 +
       (ceil_mode ? stride - 1 : 0);
@@ -311,6 +311,64 @@ void get_adaptive_avg_pool2d_out_target_size(
   out_sizes[*out_ndim - 1] = output_size[1];
 }
 
+bool check_avg_pool1d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(in));
+
+  ET_CHECK_OR_RETURN_FALSE(
+      (in.dim() == 2 && in.size(0) > 0 && in.size(1) > 0) ||
+          (in.dim() == 3 && in.size(1) > 0 && in.size(2) > 0),
+      "Expected 2D or 3D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid(kernel_size, /*kernel_ndim=*/1));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(stride, /*kernel_ndim=*/1, /*allow_empty=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+      padding, kernel_size, /*kernel_ndim=*/1, /*enforce_half_kernel=*/true));
+
+  // Guarantees a non-negative numerator in _kernel_output_size_helper, whose
+  // truncating division would otherwise round up instead of down.
+  const int64_t padded_len = in.size(in.dim() - 1) + 2 * padding[0];
+  const int64_t effective_stride =
+      val_at(stride, 0, /*default_value=*/kernel_size[0]);
+  ET_CHECK_OR_RETURN_FALSE(
+      padded_len - kernel_size[0] + (ceil_mode ? effective_stride - 1 : 0) >= 0,
+      "Pooling parameters produce a non-positive output length");
+
+  return true;
+}
+
+void get_avg_pool1d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+
+  // Batch dim is optional, so in can be either 2 or 3 dim.
+  if (in.dim() == 3) {
+    out_sizes[0] = in.size(0);
+    out_sizes[1] = in.size(1);
+  } else {
+    out_sizes[0] = in.size(0);
+  }
+
+  calculate_kernel_output_sizes(
+      in, 1, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+}
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,
@@ -394,42 +452,83 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
   ET_CHECK_OR_RETURN_FALSE(
-      in.dim() == 3 || in.dim() == 4,
-      "Expect input tensor to be 3-D or 4-D, but got, %zu.",
+      in.dim() >= 3 && in.dim() <= 5,
+      "Expect input tensor to be 3-D, 4-D or 5-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, in.dim()));
 
-  if (bias.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_CHECK_OR_RETURN_FALSE(
-        bias.value().size(0) == transposed ? groups * weight.size(1)
-                                           : weight.size(0),
-        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
-        "; expected %" PRId64,
-        bias.value().size(0),
-        transposed ? groups * weight.size(1) : weight.size(0));
+  int64_t kernel_size[kTensorDimensionLimit];
+  const size_t kernel_ndim = weight.dim() - 2;
+  for (const auto i : c10::irange(kernel_ndim)) {
+    kernel_size[i] = weight.size(i + 2);
   }
-
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
-  }
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid({kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(
       stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
+  // Larger values would overflow int64_t in the size math below.
+  for (const IntArrayRef param : {stride, padding, dilation}) {
+    for (const int64_t value : param) {
+      ET_CHECK_OR_RETURN_FALSE(
+          value <= std::numeric_limits<int32_t>::max(),
+          "Expected stride, padding and dilation to fit in 32 bits, but got %" PRId64,
+          value);
+    }
+  }
   if (transposed) {
     ET_LOG_AND_RETURN_IF_FALSE(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
   }
+  for (const auto i : c10::irange(kernel_ndim)) {
+    const int64_t input_size = in.size(i + 2);
+    const int64_t pad = val_at(padding, i, /*default_value=*/0);
+    const int64_t dil = val_at(dilation, i, /*default_value=*/1);
+    // Like PyTorch, a spatial dim may only be empty when the batch or channel
+    // dim is empty too.
+    ET_CHECK_OR_RETURN_FALSE(
+        input_size > 0 || in.size(0) == 0 || in.size(1) == 0,
+        "Input spatial dim %zu is empty, but the batch and channel dims are not",
+        i);
+    if (!transposed) {
+      // Like PyTorch, reject a dilated kernel larger than the padded input. The
+      // output size math can otherwise round such a size up to 1 for strides
+      // above 1.
+      const int64_t padded_input_size = input_size + 2 * pad;
+      const int64_t dilated_kernel_size = dil * (kernel_size[i] - 1) + 1;
+      ET_CHECK_OR_RETURN_FALSE(
+          padded_input_size >= dilated_kernel_size,
+          "Padded input size %" PRId64
+          " is smaller than the dilated kernel size %" PRId64
+          " in spatial dim %zu",
+          padded_input_size,
+          dilated_kernel_size,
+          i);
+    }
+    // calculate_kernel_output_sizes narrows the output sizes to SizesType.
+    const int64_t output_size = _kernel_output_size_helper(
+        input_size,
+        kernel_size[i],
+        pad,
+        val_at(stride, i),
+        dil,
+        /*ceil_mode=*/false,
+        transposed,
+        transposed ? val_at(output_padding, i, /*default_value=*/0) : 0);
+    ET_CHECK_OR_RETURN_FALSE(
+        output_size > 0 &&
+            output_size <=
+                std::numeric_limits<executorch::aten::SizesType>::max(),
+        "Output size %" PRId64 " in spatial dim %zu is out of range",
+        output_size,
+        i);
+  }
 
+  ET_CHECK_OR_RETURN_FALSE(
+      groups > 0, "groups must be positive, but got %" PRId64, groups);
   ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) >= groups,
       "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
@@ -444,6 +543,20 @@ bool check_convolution_args(
       groups,
       groups,
       weight.size(0));
+
+  // The groups checks above keep groups * weight.size(1) from overflowing.
+  if (bias.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        executorch::runtime::tensor_is_realhbf16_type(bias.value()));
+    ET_CHECK_OR_RETURN_FALSE(
+        bias.value().size(0) ==
+            (transposed ? groups * weight.size(1) : weight.size(0)),
+        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
+        "; expected %" PRId64,
+        bias.value().size(0),
+        transposed ? groups * weight.size(1) : weight.size(0));
+  }
 
   if (!transposed) {
     ET_CHECK_OR_RETURN_FALSE(
@@ -489,14 +602,10 @@ void get_convolution_out_target_size(
     out_sizes[1] = in.size(1) == 0 ? 0 : groups * weight.size(1);
   }
 
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
+  int64_t kernel_size[kTensorDimensionLimit];
+  const size_t kernel_ndim = weight.dim() - 2;
+  for (const auto i : c10::irange(kernel_ndim)) {
+    kernel_size[i] = weight.size(i + 2);
   }
   calculate_kernel_output_sizes(
       in,

@@ -9,6 +9,8 @@
 """CUDA DLPack integration tests, run in both output modes by cuda.yml."""
 
 import array
+import contextlib
+import copy
 import ctypes
 import functools
 import gc
@@ -16,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -74,10 +77,15 @@ class CudaDLPackTest(unittest.TestCase):
             ctypes.c_uint64,
         ]
         cls.driver.cuPointerGetAttribute.restype = ctypes.c_int
-        cls._export_delegate()
+        cls.program_path, cls.data_path = cls._export_delegate("cuda_dlpack")
+        cls.host_input_program = cls._export_delegate(
+            "host_inputs", inputs_on_device=False
+        )
 
     @classmethod
-    def _export_delegate(cls):
+    def _export_delegate(
+        cls, name, inputs_on_device=True, outputs_on_device=True, plan_outputs=False
+    ):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
         from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -103,11 +111,12 @@ class CudaDLPackTest(unittest.TestCase):
         program = edge.to_executorch(
             config=ExecutorchBackendConfig(
                 propagate_device_config=PropagateDeviceConfig(
-                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                    skip_h2d_for_method_inputs=inputs_on_device,
+                    skip_d2h_for_method_outputs=outputs_on_device,
                 ),
                 enable_non_cpu_memory_planning=True,
                 memory_planning_pass=MemoryPlanningPass(
-                    alloc_graph_input=False, alloc_graph_output=False
+                    alloc_graph_input=False, alloc_graph_output=plan_outputs
                 ),
             )
         )
@@ -116,31 +125,49 @@ class CudaDLPackTest(unittest.TestCase):
             raise AssertionError("test model must execute a CUDA delegate")
         for index in (*plan.inputs, *plan.outputs):
             tensor = plan.values[index].val
-            if tensor.allocation_info is not None:
-                raise AssertionError(
-                    "test must cover borrowed inputs and unplanned outputs"
-                )
-            if tensor.extra_tensor_info.device_type != DeviceType.CUDA:
-                raise AssertionError("test must retain CUDA inputs and outputs")
+            is_output = index in plan.outputs
+            on_device = outputs_on_device if is_output else inputs_on_device
+            info = tensor.extra_tensor_info
+            if on_device != (info is not None and info.device_type == DeviceType.CUDA):
+                raise AssertionError("test program has a wrong device")
+            planned = tensor.allocation_info is not None
+            if planned != (plan_outputs and is_output):
+                raise AssertionError("test program is planned differently")
 
-        cls.program_path = Path(cls.directory.name) / "cuda_dlpack.pte"
-        with cls.program_path.open("wb") as source:
+        directory = Path(cls.directory.name) / name
+        directory.mkdir()
+        program_path = directory / f"{name}.pte"
+        with program_path.open("wb") as source:
             program.write_to_file(source)
         data_names = sorted(program._tensor_data or {})
-        program.write_tensor_data_to_file(cls.directory.name)
-        cls.data_path = (
-            Path(cls.directory.name) / (data_names[0] + ".ptd") if data_names else None
+        program.write_tensor_data_to_file(str(directory))
+        return program_path, (
+            directory / (data_names[0] + ".ptd") if data_names else None
         )
 
-    def _load_method(self):
+    def _load_method(self, program=None):
         from executorch.runtime import Runtime
 
+        program_path, data_path = program or (self.program_path, self.data_path)
         return (
             Runtime.get()
-            .load_program(self.program_path, data_path=self.data_path)
+            .load_program(program_path, data_path=data_path)
             .load_method("forward")
             ._method
         )
+
+    def _assert_no_stream_selected(self):
+        from executorch.runtime import Runtime
+
+        # A delegate that would replay a CUDA graph refuses a caller stream, so
+        # this call fails while this thread still has a stream selected.
+        registry = Runtime.get().backend_registry
+        registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": "forward"})
+        try:
+            method = self._load_method(self.host_input_program)
+        finally:
+            registry.set_option("CudaBackend", {"enable_cuda_graph_for_method": ""})
+        method(torch.ones(self.shape))
 
     def _consumer_stream(self, device_index):
         if device_index not in self.consumer_streams:
@@ -180,9 +207,427 @@ class CudaDLPackTest(unittest.TestCase):
             ready.record()
         # Only wait for the consumer. A global wait before the read would hide
         # missing ordering between the producer, delegate, and consumer streams.
+        # An ExecuTorchResult waits for the device in __dlpack__ already, so in
+        # that output mode this catches a wrong value, not a missing wait.
         ready.synchronize()
         torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, expected))
         return tensor
+
+    def _export_to_directory(self, name, module, example):
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        directory = os.path.join(self.directory.name, name)
+        os.makedirs(directory, exist_ok=True)
+        program = to_edge_transform_and_lower(
+            torch.export.export(module, example, strict=True),
+            partitioner=[CudaPartitioner([CompileSpec("method_name", b"forward")])],
+        ).to_executorch()
+        plan = program.executorch_program.execution_plan[0]
+        if not any(delegate.id == "CudaBackend" for delegate in plan.delegates):
+            raise AssertionError("test model must execute a CUDA delegate")
+        path = os.path.join(directory, "model.pte")
+        with open(path, "wb") as file:
+            file.write(program.buffer)
+        program.write_tensor_data_to_file(directory)
+        data = [f for f in os.listdir(directory) if f.endswith(".ptd")]
+        return path, os.path.join(directory, data[0]) if data else None
+
+    def test_delegate_runs_on_the_caller_stream(self):
+        from executorch.runtime import cuda, Runtime
+
+        class MatmulChain(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(1024, 1024) / 32)
+
+            def forward(self, value):
+                value = value.repeat(64, 64)
+                for _ in range(16):
+                    value = torch.tanh(value @ self.weight)
+                return value.sum()
+
+        path, data = self._export_to_directory(
+            "matmul_chain", MatmulChain().eval(), (torch.randn(16, 16),)
+        )
+        method = Runtime.get().load_program(path, data_path=data).load_method("forward")
+        value = torch.randn(16, 16)
+        stream = cuda.Stream()
+        caller = torch.cuda.ExternalStream(stream.cuda_stream, device=self.device)
+
+        def work_on_stream_ms(use_stream):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            with torch.cuda.stream(caller):
+                # Keeps the stream busy while the call is queued, so the two
+                # events bracket only work queued on the stream in between.
+                torch.cuda._sleep(100_000_000)
+                start.record()
+            if use_stream:
+                with cuda.stream(stream):
+                    method.execute([value])
+            else:
+                method.execute([value])
+            with torch.cuda.stream(caller):
+                end.record()
+            end.synchronize()
+            return start.elapsed_time(end)
+
+        work_on_stream_ms(False)
+        outside = work_on_stream_ms(False)
+        inside = work_on_stream_ms(True)
+        self.assertGreater(inside, 4 * outside + 0.5)
+
+        foreign = torch.cuda.Stream(device=self.device)
+        with cuda.stream(foreign):
+            method.execute([value])
+        # The legacy default stream, as 0 or cudaStreamLegacy, is refused.
+        for default in (
+            cuda.ExternalStream(0),
+            cuda.ExternalStream(1),
+            torch.cuda.default_stream(self.device),
+        ):
+            with self.assertRaises(ValueError):
+                with cuda.stream(default):
+                    pass
+        with self.assertRaises(TypeError):
+            with cuda.stream(stream.cuda_stream):
+                pass
+        for device in (1, "cuda:1"):
+            with self.assertRaises(RuntimeError):
+                with cuda.stream(cuda.ExternalStream(foreign.cuda_stream, device)):
+                    pass
+
+        class Protocol:  # a cuda.core-style stream: device.device_id
+            def __init__(self, version, device_id):
+                self.version = version
+                self.device = types.SimpleNamespace(device_id=device_id)
+
+            def __cuda_stream__(self):
+                return (self.version, foreign.cuda_stream)
+
+        with cuda.stream(Protocol(0, 0)):
+            pass
+        with self.assertRaises(RuntimeError):
+            with cuda.stream(Protocol(0, 1)):
+                pass
+        with self.assertRaises(ValueError):
+            with cuda.stream(Protocol(1, 0)):
+                pass
+        cupy_style = types.SimpleNamespace(
+            device_id=1, __cuda_stream__=lambda: (0, foreign.cuda_stream)
+        )
+        with self.assertRaises(RuntimeError):
+            with cuda.stream(cupy_style):
+                pass
+        # A Stream's handle selected through any wrapper keeps it open.
+        for selected in (stream, cuda.ExternalStream(stream.cuda_stream)):
+            with cuda.stream(selected), self.assertRaises(RuntimeError):
+                stream.close()
+        second = cuda.Stream()
+        outer, inner = cuda.stream(stream), cuda.stream(second)
+
+        def exit_if_active(scope):
+            with contextlib.suppress(RuntimeError):
+                scope.__exit__(None, None, None)
+
+        outer.__enter__()
+        self.addCleanup(exit_if_active, outer)
+        inner.__enter__()
+        self.addCleanup(exit_if_active, inner)
+        with self.assertRaises(RuntimeError):
+            outer.__exit__(None, None, None)
+        with self.assertRaises(RuntimeError):
+            stream.close()
+        inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
+        # The refused scope ended with the inner one, so it can be used again.
+        with outer:
+            pass
+        stream.close()
+        second.close()
+        stream = cuda.Stream()
+        with self.assertRaises(TypeError):
+            copy.copy(stream)
+        made_before_close = cuda.stream(stream)
+        stream.close()
+        with self.assertRaises(RuntimeError):
+            with made_before_close:
+                pass
+
+    def test_stream_on_another_device_is_refused(self):
+        from executorch.runtime import cuda
+
+        can_check_device = cuda._bindings()._CallerStreamScope.can_check_device
+        # CI builds with the CUDA version of its torch, and runs on one GPU, so
+        # this is where CI notices a CUDA 13 build that cannot check the device.
+        if (
+            os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1"
+            and int(torch.version.cuda.split(".")[0]) >= 13
+        ):
+            self.assertIs(
+                can_check_device,
+                True,
+                "CI expects a CUDA 13 build to check a stream's device",
+            )
+        if torch.cuda.device_count() < 2:
+            self.skipTest("needs two CUDA devices")
+
+        owned = cuda.Stream(device=1)
+        self.addCleanup(owned.close)
+        refused = [owned, cuda.ExternalStream(owned.cuda_stream)]
+        # These wrappers report no device or the current one, so only CUDA can
+        # tell that the stream is on device 1.
+        if can_check_device:
+            foreign = torch.cuda.Stream(device=1)
+            refused += [
+                cuda.ExternalStream(foreign.cuda_stream),
+                torch.cuda.ExternalStream(foreign.cuda_stream),
+            ]
+        for selected in refused:
+            with self.assertRaisesRegex(RuntimeError, "on CUDA device 0"):
+                with cuda.stream(selected):
+                    pass
+
+    def test_stream_block_leaves_a_graph_capture_intact(self):
+        from executorch.runtime import cuda
+
+        x = torch.ones(4, device="cuda")
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            y = x * 2
+            with cuda.stream(torch.cuda.current_stream()):
+                pass
+        x.fill_(3)
+        graph.replay()
+        torch.cuda.synchronize()
+        self.assertEqual(y.tolist(), [6.0] * 4)
+
+    @staticmethod
+    def _close_after_teardown(stream):
+        import threading
+
+        # Native selections of ended threads end at their teardown.
+        for _ in range(100):
+            try:
+                stream.close()
+                return
+            except RuntimeError:
+                threading.Event().wait(0.05)
+        stream.close()
+
+    def test_stream_scopes_across_threads(self):
+        import threading
+
+        from executorch.runtime import cuda
+
+        stream = cuda.Stream()
+        shared = cuda.stream(stream)
+        errors = []
+
+        def enter_and_exit():
+            try:
+                for _ in range(200):
+                    with shared:
+                        pass
+            except Exception as error:
+                errors.append(error)
+
+        # Switch threads often, so a race in the shared object shows up.
+        interval = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            workers = [threading.Thread(target=enter_and_exit) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
+        finally:
+            sys.setswitchinterval(interval)
+        self.assertEqual(errors, [])
+
+        # A thread that ends inside a block does not block later threads.
+        ended = threading.Thread(target=shared.__enter__)
+        ended.start()
+        ended.join()
+        later = threading.Thread(target=enter_and_exit)
+        later.start()
+        later.join()
+        self.assertEqual(errors, [])
+        # An exit from a thread that is not inside the block is refused.
+        with self.assertRaises(RuntimeError):
+            shared.__exit__(None, None, None)
+        with shared:
+            pass
+        self._close_after_teardown(stream)
+
+    def test_stream_scopes_on_threads_outside_threading(self):
+        import _thread
+        import threading
+
+        from executorch.runtime import cuda
+
+        # Threads started outside the threading module reuse ids, and their
+        # slots must still be freed when they end inside a block.
+        stream = cuda.Stream()
+        shared = cuda.stream(stream)
+        errors = []
+
+        def enter_and_end(done):
+            try:
+                shared.__enter__()
+            except Exception as error:
+                errors.append(error)
+            done.set()
+
+        for _ in range(2):
+            done = threading.Event()
+            _thread.start_new_thread(enter_and_end, (done,))
+            done.wait()
+        self.assertEqual(errors, [])
+        with shared:
+            pass
+        self._close_after_teardown(stream)
+
+    def test_stream_scope_ends_on_its_own_thread(self):
+        import threading
+
+        from executorch.runtime import cuda
+
+        stream = cuda.Stream()
+        entered = threading.Event()
+        leave = threading.Event()
+        scope = cuda.stream(stream)
+
+        def hold():
+            with scope:
+                entered.set()
+                leave.wait()
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        entered.wait()
+        try:
+            with self.assertRaises(RuntimeError):
+                scope.__exit__(None, None, None)
+            with self.assertRaises(RuntimeError):
+                stream.close()
+        finally:
+            leave.set()
+            holder.join()
+        # A scope object dropped without an exit ends its block.
+        dropped = cuda.stream(stream)
+        dropped.__enter__()
+        del dropped
+        gc.collect()
+        self._assert_no_stream_selected()
+        # The native scope keeps these rules for callers that use it directly.
+        for handle in (0, 1):
+            with self.assertRaisesRegex(ValueError, "legacy default CUDA stream"):
+                cuda._bindings()._CallerStreamScope(handle)
+        with self.assertRaises(TypeError):
+            cuda._bindings()._CallerStreamScope(None)
+        native = cuda._bindings()._CallerStreamScope(stream._native)
+        native.__enter__()
+        try:
+            with self.assertRaises(RuntimeError):
+                native.__enter__()
+            refused = []
+
+            def exit_elsewhere():
+                try:
+                    native.__exit__(None, None, None)
+                except RuntimeError:
+                    refused.append(True)
+
+            exiter = threading.Thread(target=exit_elsewhere)
+            exiter.start()
+            exiter.join()
+            self.assertEqual(refused, [True])
+        finally:
+            native.__exit__(None, None, None)
+        # A scope refused for ending out of order can be entered again once
+        # the block above it has ended.
+        outer = cuda._bindings()._CallerStreamScope(stream._native)
+        inner = cuda._bindings()._CallerStreamScope(stream._native)
+        outer.__enter__()
+        inner.__enter__()
+        with self.assertRaisesRegex(RuntimeError, "innermost first"):
+            outer.__exit__(None, None, None)
+        inner.__exit__(None, None, None)
+        self._assert_no_stream_selected()
+        outer.__enter__()
+        outer.__exit__(None, None, None)
+        self._close_after_teardown(stream)
+
+    def test_torch_free_caller_shares_one_stream_across_programs(self):
+        self._require_linux()
+        programs = [
+            self._export_to_directory(
+                f"torch_free_{index}", module, (torch.ones(4, 8),)
+            )
+            for index, module in enumerate((torch.nn.ReLU(), torch.nn.Tanh()))
+        ]
+        child = """
+import importlib.abc
+import re
+import sys
+from pathlib import Path
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ImportError("torch is unavailable")
+
+sys.meta_path.insert(0, BlockTorch())
+import numpy as np
+from executorch.runtime import Runtime, cuda
+
+def load(path, data):
+    program = Runtime.get().load_program(path, data_path=data or None)
+    return program.load_method("forward")
+
+programs = list(zip(sys.argv[1::2], sys.argv[2::2]))
+value = np.linspace(-2, 2, 32, dtype=np.float32).reshape(4, 8)
+stream = cuda.Stream()
+with cuda.stream(stream):
+    outputs = [np.asarray(load(*program).execute([value])[0]) for program in programs]
+# A delegate that would replay a CUDA graph refuses a caller stream, so the
+# refusal shows that the selection reached both programs. Each runs outside
+# the block first, so that no other failure can pass for the refusal.
+Runtime.get().backend_registry.set_option(
+    "CudaBackend", {"enable_cuda_graph_for_method": "forward"}
+)
+graphed = [load(*program) for program in programs]
+for method in graphed:
+    method.execute([value])
+with cuda.stream(stream):
+    for method in graphed:
+        try:
+            method.execute([value])
+        except RuntimeError as error:
+            if "caller-provided CUDA stream" in str(error):
+                continue
+            raise
+        raise AssertionError("A delegate did not see the selected stream")
+stream.close()
+np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
+np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
+assert "torch" not in sys.modules
+# libgomp as well, since these programs never call OpenMP.
+maps = Path("/proc/self/maps").read_text().lower()
+assert re.search(r"/lib(?:torch|aten|c10|gomp)[^/]*$", maps, re.M) is None
+"""
+        arguments = [item or "" for program in programs for item in program]
+        result = subprocess.run(
+            [sys.executable, "-c", child, *arguments],
+            env=dict(os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_delegate_cross_stream_input_and_output(self):
         method = self._load_method()
@@ -236,6 +681,46 @@ class CudaDLPackTest(unittest.TestCase):
             shared.fill_(41.0)
         method.execute()
         self._assert_ready_value(method.get_outputs()[0], 84.0)
+
+    def test_borrowed_result_written_by_another_library_is_waited_for(self):
+        # Two clone_outputs=False reads share the same memory. Another library
+        # writes it through one of them, so passing the other back in must
+        # wait for that write.
+        method = self._load_method()
+        stream = torch.cuda.current_stream(self.device)
+        # The reader's outputs are on the host, so only the wait for its input
+        # can order the read. Its first run sets it up, allocates its outputs,
+        # and waits for the whole device, so it runs once before the write.
+        reader = self._load_method(
+            self._export_delegate(
+                "host_outputs", outputs_on_device=False, plan_outputs=True
+            )
+        )
+        reader(torch.zeros(self.shape, device=self.device))
+        value = torch.full(self.shape, 1.0, device=self.device)
+        written = method(CudaDLPackOnly(value, stream), clone_outputs=False)[0]
+        passed = method.get_outputs(clone_outputs=False)[0]
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            shared = torch.from_dlpack(written)
+            torch.cuda._sleep(1_000_000_000)
+            shared.fill_(41.0)
+        output = reader(passed)[0]
+        writer.synchronize()
+        torch.testing.assert_close(
+            torch.from_dlpack(output), torch.full(self.shape, 84.0)
+        )
+
+    def test_device_inputs_with_unplanned_host_outputs(self):
+        # The delegate writes a device tensor that the method then copies into
+        # the caller's host output, so that device tensor must still be planned.
+        method = self._load_method(
+            self._export_delegate("unplanned_host_outputs", outputs_on_device=False)
+        )
+        output = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        torch.testing.assert_close(
+            torch.from_dlpack(output), torch.full(self.shape, 4.0)
+        )
 
     def test_clone_roundtrip_and_borrowed_output_lifetime(self):
         method = self._load_method()
@@ -301,7 +786,7 @@ class CudaDLPackTest(unittest.TestCase):
         self.assertEqual(handed_copies, borrowed_copies)
         self._assert_ready_value(first, 8.0)
         self.assertIs(method.get_outputs()[0], first)
-        self.assertIs(method.get_outputs(clone_outputs=False)[0], first)
+        self.assertIsNot(method.get_outputs(clone_outputs=False)[0], first)
 
         # Feeding the result back must not write the next output into it.
         second = method(first)[0]
@@ -520,29 +1005,66 @@ print("Input on a non-current device was read")
                 self._assert_ready_value(third, 9.0)
 
     def test_reused_output_memory_waits_for_pending_readers(self):
-        method = self._load_method()
+        # Once the result is dropped, the next run writes into its memory, so it
+        # must wait for a read another library still has queued there, whether
+        # its own input is on the device or on the host.
         count = torch.Size(self.shape).numel()
-        host = memoryview(array.array("f", [1.0]) * count).cast("B")
-        # Inputs from these bindings need no wait of their own, so only the
-        # reuse wait can keep the next run from overwriting a pending read.
-        first = self.bindings.ExecuTorchResult.from_host(
-            host.cast("f", self.shape), self.device.index
+
+        def on_device(value):
+            host = memoryview(array.array("f", [value]) * count).cast("B")
+            return self.bindings.ExecuTorchResult.from_host(
+                host.cast("f", self.shape), self.device.index
+            )
+
+        def on_host(value):
+            return torch.full(self.shape, value)
+
+        for host_inputs, make_input in ((False, on_device), (True, on_host)):
+            with self.subTest(host_inputs=host_inputs):
+                method = self._load_method(
+                    self.host_input_program if host_inputs else None
+                )
+                first, second = make_input(1.0), make_input(5.0)
+                torch.cuda.synchronize(self.device)
+                result = method(first)[0]
+                # Imported before the read is queued: an ExecuTorchResult waits
+                # for the device in __dlpack__, which would finish the read.
+                view = self._tensor(result)
+                reader = torch.cuda.Stream(self.device)
+                with torch.cuda.stream(reader):
+                    torch.cuda._sleep(1_000_000_000)
+                    snapshot = view.clone()
+                del result, view
+                gc.collect()
+                method(second)
+                reader.synchronize()
+                torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+
+    def test_planned_output_memory_waits_for_pending_readers(self):
+        # Each run writes a memory-planned output again, so it must wait for a
+        # read another library still has queued there. The inputs are on the
+        # host, so only the wait for the output's device can order it.
+        program_path, data_path = self._export_delegate(
+            "planned_outputs", inputs_on_device=False, plan_outputs=True
         )
-        second = self.bindings.ExecuTorchResult.from_host(
-            memoryview(array.array("f", [5.0]) * count).cast("B").cast("f", self.shape),
-            self.device.index,
+        module = self.bindings._load_for_executorch_from_buffer(
+            program_path.read_bytes(), data_path.read_bytes() if data_path else None
         )
-        torch.cuda.synchronize(self.device)
-        result = method(first)[0]
-        reader = torch.cuda.Stream(self.device)
-        with torch.cuda.stream(reader):
-            torch.cuda._sleep(1_000_000_000)
-            snapshot = self._tensor(result).clone()
-        del result
-        gc.collect()
-        method(second)
-        reader.synchronize()
-        torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+        method = self._load_method((program_path, data_path))
+        for name, run in (("method", method), ("module", module.forward)):
+            with self.subTest(executor=name):
+                result = run(torch.full(self.shape, 1.0), clone_outputs=False)[0]
+                # Imported before the read is queued: an ExecuTorchResult waits
+                # for the device in __dlpack__, which would finish the read.
+                view = self._tensor(result)
+                snapshot = torch.empty_like(view)
+                reader = torch.cuda.Stream(self.device)
+                with torch.cuda.stream(reader):
+                    torch.cuda._sleep(1_000_000_000)
+                    snapshot.copy_(view)
+                run(torch.full(self.shape, 5.0), clone_outputs=False)
+                reader.synchronize()
+                torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
 
     def test_method_outputs_take_turns_between_two_buffers(self):
         method = self._load_method()
@@ -656,22 +1178,54 @@ print("Input on a non-current device was read")
         method = self.bindings._load_program_from_buffer(data).load_method("forward")
         on_device = method(value)[0]
         host = on_device.to_host()
-        self.assertEqual(host.dtype_name, "bfloat16")
-        # The host export of bfloat16 is raw bytes, so passing the result itself
-        # is what keeps its dtype and shape.
+        self.assertEqual(host.dtype, "bfloat16")
+        # The host export of bfloat16 is unsigned integers, so passing the
+        # result itself is what keeps its dtype.
         back = self.bindings.ExecuTorchResult.from_host(host, self.device.index)
-        self.assertEqual(back.dtype_name, "bfloat16")
+        self.assertEqual(back.dtype, "bfloat16")
         self.assertEqual(back.shape, (2, 3))
         torch.testing.assert_close(torch.from_dlpack(back), value)
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
-    def test_device_chain_waits_for_the_device_once_per_call(self):
-        # Feeding each output into the next call, with a host upload per call,
-        # needs one device wait per call. Waiting per tensor made a chain of
-        # small programs measurably slower.
+    def _device_waits(self, body):
+        from torch.profiler import profile, ProfilerActivity
+
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as trace:
+            body()
+        return sum(
+            event.count
+            for event in trace.key_averages()
+            if event.key == "cudaDeviceSynchronize"
+        )
+
+    def test_dlpack_export_keywords(self):
         if not self.executorch_output:
-            self.skipTest("chains ExecuTorchResult outputs")
+            self.skipTest("__dlpack__ keywords are an ExecuTorchResult feature")
+        method = self._load_method()
+        result = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        # The profiler waits for the device itself when it stops.
+        idle = self._device_waits(lambda: None)
+        # A consumer that passes stream=-1 orders the work itself.
+        self.assertEqual(self._device_waits(lambda: result.__dlpack__(stream=-1)), idle)
+        self.assertEqual(
+            self._device_waits(lambda: result.__dlpack__(stream=1)), idle + 1
+        )
+        copied = torch.from_dlpack(result.__dlpack__(max_version=(1, 0), copy=True))
+        self.assertNotEqual(copied.data_ptr(), torch.from_dlpack(result).data_ptr())
+        torch.testing.assert_close(copied.cpu(), torch.full(self.shape, 4.0))
+        host = torch.from_dlpack(
+            result.__dlpack__(max_version=(1, 0), dl_device=(1, 0), copy=True)
+        )
+        self.assertEqual(host.device, torch.device("cpu"))
+        torch.testing.assert_close(host, torch.full(self.shape, 4.0))
+
+    def test_device_chain_waits_for_the_device_twice_per_call(self):
+        # Feeding each output into the next call, with a host upload per call.
+        # Each call waits for the device twice: once before it runs, in case
+        # another library still uses its input or output memory, and once after,
+        # so its output is ready on any stream. The count is fixed per call, not
+        # per tensor.
         from torch.profiler import profile, ProfilerActivity
 
         method = self._load_method()
@@ -700,37 +1254,26 @@ print("Input on a non-current device was read")
                 self.bindings.ExecuTorchResult.from_host(host, self.device.index)
                 value = method(value, clone_outputs=True)[0]
 
-        # The profiler waits for the device itself when it stops. Each call
-        # waits exactly once: none would return outputs still being written.
-        self.assertEqual(waits(chain) - waits(lambda: None), calls)
+        # The profiler waits for the device itself when it stops.
+        self.assertEqual(waits(chain) - waits(lambda: None), 2 * calls)
         expected = 8.0
         for _ in range(calls):
             expected = (expected + 1.0) * 2.0
+        final = value.to_host() if self.executorch_output else value.cpu()
         torch.testing.assert_close(
-            torch.from_dlpack(value.to_host()), torch.full(self.shape, expected)
+            torch.from_dlpack(final), torch.full(self.shape, expected)
         )
 
-    def _require_libgomp_without_torch(self):
+    def _require_linux(self):
         # The torch-free chain checks loaded libraries through /proc.
         if not sys.platform.startswith("linux"):
             self.skipTest("needs Linux")
-        # The CUDA delegate's compiled kernels link libgomp, which a host may
-        # provide only inside the torch package.
-        probe = subprocess.run(
-            [sys.executable, "-c", "import ctypes; ctypes.CDLL('libgomp.so.1')"],
-            capture_output=True,
-        )
-        if probe.returncode != 0:
-            message = "libgomp.so.1 is not loadable without torch"
-            if os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1":
-                raise AssertionError(message)
-            self.skipTest(message)
 
     def test_device_chain_runs_with_torch_blocked(self):
         # The device-resident chain path, in a process where `import torch`
         # fails: upload host data, run, feed the output straight into a second
         # run on the GPU, then read the result back.
-        self._require_libgomp_without_torch()
+        self._require_linux()
         script = """
 import importlib.abc
 import re
@@ -764,9 +1307,9 @@ for executor in (module, method):
         np.asarray(second.to_host()), np.full(shape, 18.0, dtype=np.float32)
     )
 assert "torch" not in sys.modules
-assert re.search(
-    r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
-) is None
+# libgomp as well, since these programs never call OpenMP.
+maps = Path("/proc/self/maps").read_text().lower()
+assert re.search(r"/lib(?:torch|aten|c10|gomp)[^/]*$", maps, re.M) is None
 print("Device chain ran without torch")
 """
         environment = os.environ.copy()
@@ -795,7 +1338,6 @@ print("Device chain ran without torch")
     def test_device_input_works_beside_a_torch_without_cuda(self):
         # A torch built without CUDA cannot select a CUDA device. Inputs from
         # other producers must not depend on it.
-        self._require_libgomp_without_torch()
         script = """
 import sys
 import types

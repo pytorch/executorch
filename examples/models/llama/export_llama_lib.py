@@ -124,6 +124,8 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_5_1_2b",  # hybrid
     "spark_x2_5_1_7b",  # hybrid
     "spark_x2_5_4b",  # hybrid
+    "spark_x2_6_1_7b",  # hybrid
+    "spark_x2_6_4b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -146,6 +148,8 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
     "spark_x2_5_1_7b": "XHToken/Spark-X2.5-1.7B",
     "spark_x2_5_4b": "XHToken/Spark-X2.5-4B",
+    "spark_x2_6_1_7b": "XHToken/Spark-X2.6-1.7B",
+    "spark_x2_6_4b": "XHToken/Spark-X2.6-4B",
 }
 
 
@@ -739,7 +743,7 @@ def export_llama(  # noqa: C901
             from executorch.examples.models.smollm2 import convert_weights
         elif model_name.startswith("lfm2"):
             from executorch.examples.models.lfm2 import convert_weights
-        elif model_name.startswith("spark_x2_5"):
+        elif model_name.startswith("spark_x2_"):
             from executorch.examples.models.spark_x2_5 import convert_weights
         else:
             raise ValueError(
@@ -1322,6 +1326,26 @@ def _to_edge_and_lower_llama_openvino(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _reset_vgf_static_kv_buffers(builder: LLMEdgeManager) -> None:
+    assert builder.pre_autograd_graph_module is not None
+    exported_program = builder._export(builder.pre_autograd_graph_module)
+    signature = exported_program.graph_signature
+    mutated_buffers = set(signature.buffers_to_mutate.values())
+    for name in mutated_buffers:
+        buffer = (
+            exported_program.constants[name]
+            if name in signature.non_persistent_buffers
+            else exported_program.state_dict[name]
+        )
+        if buffer.dtype != torch.int8:
+            raise ValueError(
+                f"VGF mutable buffer {name!r} must use torch.int8, "
+                f"got {buffer.dtype}."
+            )
+        buffer.zero_()
+    builder.pre_autograd_graph_module = exported_program.module()
+
+
 def _to_edge_and_lower_llama_arm(
     builder_exported,
     modelname,
@@ -1377,6 +1401,7 @@ def _to_edge_and_lower_llama_arm(
             get_vgf_partitioner(
                 llm_config.backend.vgf.compile_spec,
                 llm_config.backend.vgf.compiler_flags,
+                llm_config.backend.vgf.alias_buffer_mutations,
             )
         )
         modelname = f"vgf_{modelname}"
@@ -1384,9 +1409,14 @@ def _to_edge_and_lower_llama_arm(
         partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
         modelname = f"tosa_{modelname}"
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
-    )
+    builder = builder_exported.pt2e_quantize(quantizers)
+    if (
+        llm_config.backend.vgf.enabled
+        and llm_config.backend.vgf.alias_buffer_mutations
+        and llm_config.model.static_quantize_kv_cache
+    ):
+        _reset_vgf_static_kv_buffers(builder)
+    builder = builder.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
