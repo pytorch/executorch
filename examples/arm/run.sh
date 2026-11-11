@@ -80,7 +80,7 @@ function help() {
     echo "  --build-dir=<DIR>                      Optional: reuse an existing arm_executor_runner build directory (configured via 'cmake -S examples/arm/executor_runner/standalone -B <DIR> ...'). If omitted, run.sh auto-configures one under ${et_build_root} for bare-metal targets."
     echo "  --build_only                           Only build, don't run"
     echo "  --extra_build_flags=\"<FLAGS>\"         Extra -D style flags to pass to cmake when run.sh auto-configures the build"
-    echo "  --toolchain=<arm-none-eabi-gcc|arm-zephyr-eabi-gcc>  Toolchain preset to use when run.sh auto-configures the build. Default: ${toolchain}"
+    echo "  --toolchain=<arm-none-eabi-gcc|arm-none-eabi-clang|arm-zephyr-eabi-gcc>  Toolchain preset to use when run.sh auto-configures the build. Default: ${toolchain}"
     echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U65_High_End for EthosU65 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
@@ -191,15 +191,22 @@ setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
 toolchain_cmake=""
+toolchain_compiler=""
 case "${toolchain}" in
   arm-none-eabi-gcc)
     toolchain_cmake="${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake"
+    toolchain_compiler="arm-none-eabi-gcc"
+    ;;
+  arm-none-eabi-clang)
+    toolchain_cmake="${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake"
+    toolchain_compiler="clang"
     ;;
   arm-zephyr-eabi-gcc)
     toolchain_cmake="${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
+    toolchain_compiler="arm-zephyr-eabi-gcc"
     ;;
   *)
-    echo "Error: Invalid toolchain selection '${toolchain}'. Valid options: arm-none-eabi-gcc, arm-zephyr-eabi-gcc" >&2
+    echo "Error: Invalid toolchain selection '${toolchain}'. Valid options: arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc" >&2
     exit 1
     ;;
 esac
@@ -261,8 +268,8 @@ function check_setup () {
         || { echo "Could not find ${preset_file} file, ${_setup_msg}"; return 1; }
 
     if [[ "${auto_configure}" == true && ${target} != *"TOSA"* ]]; then
-        if ! command -v "${toolchain}" >/dev/null 2>&1; then
-            echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"
+        if ! command -v "${toolchain_compiler}" >/dev/null 2>&1; then
+            echo "Could not find ${toolchain_compiler} on PATH for ${toolchain}, ${_setup_msg}"
             return 1
         fi
 
@@ -272,8 +279,8 @@ function check_setup () {
 
     if [[ ${target} == cortex-m* ]]; then
         # build_test_runner.sh handles toolchain setup; just validate it's on PATH.
-        hash arm-none-eabi-gcc \
-            || { echo "Could not find arm-none-eabi-gcc on PATH, ${_setup_msg}"; return 1; }
+        hash "${toolchain_compiler}" \
+            || { echo "Could not find ${toolchain_compiler} on PATH, ${_setup_msg}"; return 1; }
     elif [[ ${target} =~ "vgf" ]]; then
         if ! python3 -m executorch.backends.arm.vgf.check_env --aot; then
             return 1
@@ -858,7 +865,7 @@ for i in "${!test_model[@]}"; do
             exit 1
         fi
         set -x
-        backends/cortex_m/test/build_test_runner.sh --target="${target}"
+        backends/cortex_m/test/build_test_runner.sh --target="${target}" --toolchain="${toolchain}"
         cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300_${target}/arm_executor_runner"
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_fvp.sh --elf="${cortex_m_elf}" --target="${target}" --bundle="${pte_file}"

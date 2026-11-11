@@ -12,12 +12,7 @@
 
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-
-#ifndef DISABLE_ALWAYS_INLINE
-#define ALWAYS_INLINE __attribute__((always_inline))
-#else
-#define ALWAYS_INLINE inline
-#endif
+#include <executorch/runtime/platform/compiler.h>
 
 namespace impl {
 namespace generic {
@@ -29,7 +24,7 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
-ALWAYS_INLINE void transposed_im2row_(
+ET_INLINE void transposed_im2row_(
     const T* __restrict__ data_im,
     const int32_t in_zero_point,
     /* input parameters*/

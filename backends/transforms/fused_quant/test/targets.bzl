@@ -32,6 +32,7 @@ def define_common_targets():
         name = "test_decompose_fused_quant",
         srcs = ["test_decompose_fused_quant.py"],
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
@@ -100,6 +101,17 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_replace_clamp_with_hardtanh",
+        srcs = ["test_replace_clamp_with_hardtanh.py"],
+        deps = [
+            ":test_helpers",
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            "//executorch/backends/transforms/fused_quant:replace_clamp_with_hardtanh",
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_replace_sub_constant_with_add",
         srcs = ["test_replace_sub_constant_with_add.py"],
         deps = [
@@ -133,6 +145,7 @@ def define_common_targets():
             "fbsource//third-party/pypi/parameterized:parameterized",
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:to_channels_last",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
@@ -147,6 +160,7 @@ def define_common_targets():
         deps = [
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:to_channels_first",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",

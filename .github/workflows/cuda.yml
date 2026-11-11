@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0, 13.4) using the command:
+# across different CUDA versions (13.0, 13.4) using the command:
 #   ./install_executorch.sh
 #
 # It also runs model accuracy (e2e EXPECTED_OUTPUT checks) and, for the perf
@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0", "13.4"]
+        cuda-version: ["13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -159,8 +159,8 @@ jobs:
       script: |
         set -eux
 
-        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
-        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        # AOTI model libraries need a newer C++ runtime than the image's system
+        # library; the 13.4 image also needs the thread-local cleanup fix.
         conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
         export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"

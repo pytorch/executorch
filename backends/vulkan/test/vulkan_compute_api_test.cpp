@@ -20,7 +20,9 @@
 #include <vector>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/runtime.h>
 
+#include <executorch/backends/vulkan/runtime/ExternalIO.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -46,7 +48,9 @@
 #include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 using namespace vkcompute;
+namespace etvk = executorch::backends::vulkan;
 using namespace vkcompute::api;
+using executorch::runtime::Error;
 
 std::vector<float>
 transpose_matrix(std::vector<float>& mat, const int H, const int W) {
@@ -2005,6 +2009,411 @@ TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_does_not_own_it) {
   context()->flush();
   EXPECT_TRUE(owner.buffer());
   EXPECT_FALSE(owner.buffer().is_copy());
+}
+
+TEST_F(VulkanComputeAPITest, test_external_io_registry_binds_one_owner) {
+  // The registry logs its errors.
+  executorch::runtime::runtime_init();
+  vkapi::VulkanBuffer buffer =
+      context()->adapter_ptr()->vma().create_storage_buffer(64);
+  const etvk::ExternalIOBinding binding{
+      etvk::SlotType::Input,
+      0,
+      etvk::ExternalIOTarget::Staging,
+      etvk::ExternalVkBuffer{buffer.handle(), 64}};
+  const int owner_a = 0;
+  const int owner_b = 0;
+
+  ASSERT_EQ(etvk::register_external_io("registry_test", {binding}), Error::Ok);
+  EXPECT_EQ(
+      etvk::register_external_io("registry_test", {binding}),
+      Error::InvalidState);
+
+  auto claimed = etvk::claim_external_io("registry_test", &owner_a);
+  ASSERT_TRUE(claimed.ok());
+  EXPECT_EQ(claimed->size(), 1u);
+  EXPECT_EQ(
+      etvk::claim_external_io("registry_test", &owner_b).error(),
+      Error::InvalidState);
+  EXPECT_EQ(etvk::unregister_external_io("registry_test"), Error::InvalidState);
+
+  etvk::release_external_io(&owner_a);
+  EXPECT_TRUE(etvk::claim_external_io("registry_test", &owner_b).ok());
+  etvk::release_external_io(&owner_b);
+
+  EXPECT_EQ(etvk::unregister_external_io("registry_test"), Error::Ok);
+  EXPECT_EQ(
+      etvk::claim_external_io("registry_test", &owner_a).error(),
+      Error::NotFound);
+}
+
+TEST_F(VulkanComputeAPITest, test_external_io_registry_rejects_bad_sets) {
+  executorch::runtime::runtime_init();
+  vkapi::VulkanBuffer buffer =
+      context()->adapter_ptr()->vma().create_storage_buffer(64);
+  const etvk::ExternalIOBinding input{
+      etvk::SlotType::Input,
+      0,
+      etvk::ExternalIOTarget::Staging,
+      etvk::ExternalVkBuffer{buffer.handle(), 64}};
+
+  EXPECT_EQ(etvk::register_external_io("", {input}), Error::InvalidArgument);
+  EXPECT_EQ(etvk::register_external_io("bad", {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      etvk::register_external_io("bad", {input, input}),
+      Error::InvalidArgument);
+
+  // A staging resource may serve an input and an output; a tensor resource
+  // may back only one tensor.
+  etvk::ExternalIOBinding output = input;
+  output.slot = etvk::SlotType::Output;
+  EXPECT_EQ(etvk::register_external_io("shared", {input, output}), Error::Ok);
+  EXPECT_EQ(etvk::unregister_external_io("shared"), Error::Ok);
+  etvk::ExternalIOBinding tensor_input = input;
+  etvk::ExternalIOBinding tensor_output = output;
+  tensor_input.target = etvk::ExternalIOTarget::Tensor;
+  tensor_output.target = etvk::ExternalIOTarget::Tensor;
+  EXPECT_EQ(
+      etvk::register_external_io("bad", {tensor_input, tensor_output}),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input,
+            0,
+            etvk::ExternalIOTarget::Staging,
+            etvk::ExternalVkBuffer{VK_NULL_HANDLE, 64}}}),
+      Error::InvalidArgument);
+
+  vTensor image_owner(context(), {1, 4, 8}, vkapi::kFloat, utils::kTexture3D);
+  const etvk::ExternalVkImage image{
+      image_owner.image().handle(),
+      image_owner.image().image_view(),
+      image_owner.image().format(),
+      image_owner.image().extents()};
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input, 0, etvk::ExternalIOTarget::Staging, image}}),
+      Error::InvalidArgument);
+#ifndef VK_ANDROID_external_memory_android_hardware_buffer
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input,
+            0,
+            etvk::ExternalIOTarget::Staging,
+            etvk::ExternalAHardwareBuffer{nullptr}}}),
+      Error::NotSupported);
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
+  EXPECT_EQ(etvk::claim_external_io("bad", this).error(), Error::NotFound);
+}
+
+TEST(VulkanComputeGraphTest, test_external_staging_buffers) {
+  // Buffer storage pads the width of 6 to 8; the staging data stays unpadded.
+  for (const utils::StorageType storage : {utils::kTexture3D, utils::kBuffer}) {
+    GraphConfig config;
+    config.set_storage_type_override(storage);
+    ComputeGraph graph(config);
+    const std::vector<int64_t> sizes = {1, 4, 6};
+    const size_t numel = utils::multiply_integers(sizes);
+
+    // Host-visible buffers stand in for an app's VkBuffers.
+    api::StagingBuffer app_in(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    api::StagingBuffer app_out(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
+    api::StagingBuffer too_small(
+        graph.context(),
+        vkapi::kFloat,
+        numel - 1,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+
+    const ValueRef in = graph.add_tensor(sizes, vkapi::kFloat);
+    EXPECT_THROW(
+        graph.set_input_tensor(
+            in,
+            vkapi::kFloat,
+            vkapi::VulkanBuffer::alias(
+                too_small.buffer().handle(), too_small.nbytes())),
+        vkapi::Error);
+    const ValueRef in_staging = graph.set_input_tensor(
+        in,
+        vkapi::kFloat,
+        vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+    const ValueRef out = graph.add_tensor(sizes, vkapi::kFloat);
+    VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+    graph.set_output_tensor(
+        out,
+        vkapi::kFloat,
+        vkapi::VulkanBuffer::alias(
+            app_out.buffer().handle(), app_out.nbytes()));
+    EXPECT_TRUE(graph.get_staging(in_staging)->is_external());
+    EXPECT_THROW(graph.get_staging(in_staging)->data(), vkapi::Error);
+    graph.prepare();
+    graph.prepack();
+
+    std::vector<float> data_in(numel);
+    std::iota(data_in.begin(), data_in.end(), 0.0f);
+    app_in.copy_from(data_in.data(), numel * sizeof(float));
+    graph.execute();
+
+    std::vector<float> data_out(numel);
+    app_out.copy_to(data_out.data(), numel * sizeof(float));
+    for (size_t i = 0; i < numel; ++i) {
+      CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensors_backed_by_external_buffers) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> sizes = {1, 64, 256};
+  const size_t numel = utils::multiply_integers(sizes);
+  const size_t nbytes = numel * sizeof(float);
+
+  api::StagingBuffer app_in(
+      graph.context(),
+      vkapi::kFloat,
+      numel,
+      vkapi::CopyDirection::HOST_TO_DEVICE);
+  api::StagingBuffer app_out(
+      graph.context(),
+      vkapi::kFloat,
+      numel,
+      vkapi::CopyDirection::DEVICE_TO_HOST);
+  const ValueRef in = graph.add_external_vkbuffer_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kWidthPacked,
+      vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+  graph.set_input_tensor(in, /*use_staging=*/false);
+  const ValueRef out = graph.add_external_vkbuffer_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kWidthPacked,
+      vkapi::VulkanBuffer::alias(app_out.buffer().handle(), app_out.nbytes()));
+  VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+  graph.set_output_tensor(out, /*use_staging=*/false);
+  EXPECT_TRUE(graph.val_has_external_storage(in));
+
+  // External tensors must not get memory of their own.
+  vkapi::Allocator& vma = graph.context()->adapter_ptr()->vma();
+  const VkDeviceSize allocated_before =
+      vma.get_memory_statistics().total.statistics.allocationBytes;
+  graph.prepare();
+  graph.prepack();
+  EXPECT_LT(
+      vma.get_memory_statistics().total.statistics.allocationBytes -
+          allocated_before,
+      nbytes);
+
+  std::vector<float> data_in(numel);
+  std::iota(data_in.begin(), data_in.end(), 1.0f);
+  app_in.copy_from(data_in.data(), nbytes);
+  graph.execute();
+
+  std::vector<float> data_out(numel);
+  app_out.copy_to(data_out.data(), nbytes);
+  for (size_t i = 0; i < numel; ++i) {
+    CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensors_backed_by_padded_external_buffers) {
+  // A buffer holds the tensor's physical layout, with the packed dim padded to
+  // four: here the width, and a packed dim beyond the rank, which pads every
+  // element.
+  const std::vector<std::pair<std::vector<int64_t>, utils::GPUMemoryLayout>>
+      cases = {
+          {{1, 3, 255}, utils::kWidthPacked},
+          {{5, 7}, utils::kChannelsPacked},
+      };
+  for (const auto& [sizes, layout] : cases) {
+    GraphConfig config;
+    config.set_storage_type_override(utils::kBuffer);
+    ComputeGraph graph(config);
+    const size_t numel = utils::multiply_integers(sizes);
+    const api::vTensor probe(
+        graph.context(),
+        sizes,
+        vkapi::kFloat,
+        utils::kBuffer,
+        layout,
+        /*allocate_memory=*/false);
+    const size_t physical_numel = probe.physical_numel();
+    EXPECT_GT(physical_numel, numel);
+
+    api::StagingBuffer unpadded(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    EXPECT_THROW(
+        graph.add_external_vkbuffer_backed_tensor(
+            sizes,
+            vkapi::kFloat,
+            layout,
+            vkapi::VulkanBuffer::alias(
+                unpadded.buffer().handle(), unpadded.nbytes())),
+        vkapi::Error);
+
+    api::StagingBuffer app_in(
+        graph.context(),
+        vkapi::kFloat,
+        physical_numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    api::StagingBuffer app_out(
+        graph.context(),
+        vkapi::kFloat,
+        physical_numel,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
+    const ValueRef in = graph.add_external_vkbuffer_backed_tensor(
+        sizes,
+        vkapi::kFloat,
+        layout,
+        vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+    graph.set_input_tensor(in, /*use_staging=*/false);
+    const ValueRef out = graph.add_external_vkbuffer_backed_tensor(
+        sizes,
+        vkapi::kFloat,
+        layout,
+        vkapi::VulkanBuffer::alias(
+            app_out.buffer().handle(), app_out.nbytes()));
+    VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+    graph.set_output_tensor(out, /*use_staging=*/false);
+    graph.prepare();
+    graph.prepack();
+
+    // Elements sit at their strided offsets; the padding is zero.
+    const std::vector<int64_t> strides = graph.strides_of(in);
+    std::vector<float> data_in(physical_numel, 0.0f);
+    for (size_t i = 0; i < numel; ++i) {
+      size_t rem = i;
+      size_t offset = 0;
+      for (size_t d = sizes.size(); d-- > 0;) {
+        offset += (rem % sizes[d]) * strides[d];
+        rem /= sizes[d];
+      }
+      ASSERT_LT(offset, physical_numel);
+      data_in[offset] = i + 1.0f;
+    }
+    app_in.copy_from(data_in.data(), app_in.nbytes());
+    const std::vector<float> poison(physical_numel, NAN);
+    app_out.copy_from(poison.data(), app_out.nbytes());
+    graph.execute();
+
+    std::vector<float> data_out(physical_numel);
+    app_out.copy_to(data_out.data(), app_out.nbytes());
+    for (size_t i = 0; i < physical_numel; ++i) {
+      CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensor_backed_by_external_image) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> sizes = {1, 4, 8};
+
+  vTensor app_image(graph.context(), sizes, vkapi::kFloat, utils::kTexture3D);
+  // An app writes its image before binding it, which leaves it in
+  // VK_IMAGE_LAYOUT_GENERAL.
+  fill_vtensor(app_image, 0.0f);
+  submit_to_gpu();
+  api::context()->flush();
+  const vkapi::VulkanImage& owned = app_image.image();
+  ASSERT_EQ(owned.layout(), VK_IMAGE_LAYOUT_GENERAL);
+  EXPECT_THROW(
+      graph.add_external_vkimage_backed_tensor(
+          sizes,
+          vkapi::kFloat,
+          utils::kChannelsPacked,
+          owned.handle(),
+          owned.image_view(),
+          VK_FORMAT_R16G16B16A16_SFLOAT,
+          owned.extents()),
+      vkapi::Error);
+
+  IOValueRef in =
+      graph.add_input_tensor(sizes, vkapi::kFloat, utils::kChannelsPacked);
+  const ValueRef mid = graph.add_external_vkimage_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kChannelsPacked,
+      owned.handle(),
+      owned.image_view(),
+      owned.format(),
+      owned.extents());
+  IOValueRef out = {};
+  out.value = graph.add_tensor(sizes, vkapi::kFloat, utils::kChannelsPacked);
+  auto add_fn = VK_GET_OP_FN("aten.add.Tensor");
+  add_fn(graph, {in.value, in.value, kDummyValueRef, mid});
+  add_fn(graph, {mid, mid, kDummyValueRef, out.value});
+  out.staging = graph.set_output_tensor(out.value);
+  graph.prepare();
+  graph.prepack();
+  EXPECT_TRUE(graph.val_has_external_storage(mid));
+
+  for (int i = 0; i < 2; ++i) {
+    fill_vtensor(graph, in, 1.5f + i);
+    graph.execute();
+    EXTRACT_TENSOR(out);
+    for (size_t j = 0; j < graph.numel_of(out.value); ++j) {
+      CHECK_VALUE(data_out, j, 4.0f * (1.5f + i));
+    }
+  }
+}
+
+TEST_F(VulkanComputeAPITest, test_external_image_stays_in_general_layout) {
+  vTensor owner = make_image_owner();
+  const vkapi::VulkanImage& owned = owner.image();
+  const vkapi::VulkanImage alias = vkapi::VulkanImage::alias(
+      context()->device(),
+      {VK_IMAGE_TYPE_3D,
+       owned.format(),
+       owned.extents(),
+       VK_IMAGE_TILING_OPTIMAL,
+       VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT},
+      owned.handle(),
+      owned.image_view(),
+      owned.sampler(),
+      VK_IMAGE_LAYOUT_GENERAL);
+  vTensor external(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      &alias);
+  vTensor internal = make_image_owner();
+
+  // A shader read moves an internal image to a read-only layout; an external
+  // one stays in the layout its owner relies on.
+  for (vTensor* tensor : {&external, &internal}) {
+    vkapi::PipelineBarrier barrier{};
+    tensor->image(
+        barrier, vkapi::PipelineStage::COMPUTE, vkapi::MemoryAccessType::WRITE);
+    tensor->image(
+        barrier, vkapi::PipelineStage::COMPUTE, vkapi::MemoryAccessType::READ);
+  }
+  EXPECT_EQ(external.image().layout(), VK_IMAGE_LAYOUT_GENERAL);
+  EXPECT_EQ(
+      internal.image().layout(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  EXPECT_TRUE(external.memory_is_bound());
+  EXPECT_TRUE(external.has_external_storage());
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {

@@ -23,4 +23,8 @@ Report benchmark_operator(
     const TensorData& host_data,
     bool validation_only = false);
 
+// Case check that builds `parameters.operator_case` once, then resizes its
+// staged inputs per `validation_steps` entry and validates the output.
+Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph);
+
 } // namespace vkcompute::shader_profiling

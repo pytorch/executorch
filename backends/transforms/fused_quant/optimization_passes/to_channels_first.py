@@ -17,6 +17,7 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import compute_meta_val
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.frontends.fused_quant.colorer import is_colored
 from torch import fx
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
@@ -179,7 +180,12 @@ def _convert_max_pool2d_with_indices_to_channels_first(node: fx.Node) -> None:
 
 
 class ToChannelsFirst(PassBase):
-    """Canonicalize channels-last fused ops to channels-first fused ops."""
+    """Canonicalize channels-last fused ops to channels-first fused ops.
+
+    Colored nodes are left alone: a backend that claimed a channels-last op
+    wants it in that layout, and relayouting would take it away. See
+    :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
+    """
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -201,6 +207,8 @@ class ToChannelsFirst(PassBase):
         modified = False
         for target, convert in conversions:
             for node in list(graph.find_nodes(op="call_function", target=target)):
+                if is_colored(node):
+                    continue
                 convert(node)
                 modified = True
 
