@@ -217,4 +217,23 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);
 
+// Segments of a batched-sequence step: runs of one sequence's query rows. The
+// program declares its seq_info buffer [segments, 4] from the same rule.
+inline int batched_sequence_max_segments(int max_seqs) {
+  return 2 * max_seqs;
+}
+
+// Builder for cache::kind::kBatchedSequence: many sequences, each with a
+// private history in its own column, for a program lowered in the
+// batched-sequence layout.
+//
+// cfg.capacity is one sequence's capacity (the program's maximum_capacity),
+// cfg.max_seqs its sequence columns and cfg.max_write its widest step; all
+// fix shapes the program declared, so they must match the export exactly.
+// Flat layers start at cfg.initial_capacity rows and grow geometrically to
+// cfg.capacity; ring layers hold min(capacity, window + max_write - 1).
+std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg);
+
 } // namespace executorch::backends::cuda

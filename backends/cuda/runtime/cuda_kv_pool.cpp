@@ -199,6 +199,13 @@ Error CudaKVPool::synchronize(bool all_streams) {
   return Error::Ok;
 }
 
+void* CudaKVPool::layer_data(size_t index, bool value) const {
+  if (index >= allocations_.size()) {
+    return nullptr;
+  }
+  return value ? allocations_[index].v : allocations_[index].k;
+}
+
 void* CudaKVPool::side_buffer(size_t index) const {
   return index < side_buffers_.size() ? side_buffers_[index] : nullptr;
 }
@@ -259,7 +266,11 @@ void CudaKVPool::discard(
 // and its kernels may still be writing the storage this step reads, or that a
 // growth below copies and frees. Order this stream behind it.
 Error CudaKVPool::follow_previous_step(cudaStream_t stream) {
-  if (last_step_done_ == nullptr || stream == stream_) {
+  // cudaStreamPerThread names a different stream on each host thread. Its
+  // handle equality therefore cannot establish that the previous work is
+  // ordered on this caller's stream.
+  if (last_step_done_ == nullptr ||
+      (stream == stream_ && stream != cudaStreamPerThread)) {
     return Error::Ok;
   }
   const cudaError_t error = cudaStreamWaitEvent(stream, last_step_done_, 0);
