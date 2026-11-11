@@ -1279,6 +1279,15 @@ void ComputeGraph::execute() {
       }
     }
 
+    // A fence wait alone does not make the GPU's writes visible to the host,
+    // which reads output staging once execute() returns.
+    vkapi::PipelineBarrier host_barrier{};
+    host_barrier.stage = {
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_HOST_BIT};
+    host_barrier.global_access = {
+        VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+    context_->register_barrier(host_barrier);
+
     vkapi::VulkanFence fence = context_->fences().get_fence();
     context_->submit_cmd_to_gpu(fence.get_submit_handle(), false);
     fence.wait();
