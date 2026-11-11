@@ -37,6 +37,7 @@ struct ManifestEntry {
   float rtol = 1e-3f;
   bool required = true; // a missing .pte is a FAIL, not a silent skip
   bool heavy = false; // export-gated behind WEBGPU_TEST_HEAVY (never required)
+  bool equal_nan = false; // NaN in both output and golden counts as a match
 };
 
 /// Parse manifest.json; resolve every relative path against the manifest's dir.
@@ -52,8 +53,10 @@ std::vector<int8_t> load_int8_bin(const std::string& path, size_t numel);
 /// Load raw little-endian int64 (8B/elem); empty on size/IO mismatch.
 std::vector<int64_t> load_int64_bin(const std::string& path, size_t numel);
 
-/// Element OK if abs_err <= atol OR rel_err <= rtol (rel floored at
-/// |golden|=1e-6). Sets the reported maxima; true iff all elements pass.
+/// Element OK if it equals the golden exactly (e.g. the same infinity), or
+/// abs_err <= atol OR rel_err <= rtol (rel floored at |golden|=1e-6). NaN fails
+/// unless `equal_nan` and both are NaN. Sets the reported maxima; true iff all
+/// elements pass.
 bool within_tol(
     const float* out,
     const float* golden,
@@ -61,7 +64,8 @@ bool within_tol(
     float atol,
     float rtol,
     float* max_abs,
-    float* max_rel);
+    float* max_rel,
+    bool equal_nan = false);
 
 size_t numel(const std::vector<int>& shape);
 
