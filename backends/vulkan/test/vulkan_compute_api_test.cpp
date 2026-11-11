@@ -1219,6 +1219,9 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
 }
 
 TEST_F(VulkanComputeAPITest, half_texture_store_rounds_to_nearest_even) {
+  if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
+    GTEST_SKIP() << "kHalf tensors are stored as float32 on this device";
+  }
   // Ties, their neighbors, f16 subnormals and values at and past the largest
   // f16, where rounding toward zero differs from rounding to nearest even.
   const std::vector<float> values = {
@@ -1277,8 +1280,14 @@ TEST_F(VulkanComputeAPITest, half_texture_store_rounds_to_nearest_even) {
 
     const std::vector<float> out = extract_vtensor(a);
     for (size_t j = 0; j < 4; ++j) {
-      EXPECT_EQ(out[j], float(executorch::aten::Half(values[i + j])))
-          << "input " << values[i + j];
+      const float expected = float(executorch::aten::Half(values[i + j]));
+      // Some devices (Adreno 740 and 750) flush f16 subnormals to zero in the
+      // image store's format conversion, after the shader has rounded.
+      const bool flushed = expected != 0.0f && std::abs(expected) < 0x1p-14f &&
+          out[j] == 0.0f && std::signbit(out[j]) == std::signbit(expected);
+      if (!flushed) {
+        EXPECT_EQ(out[j], expected) << "input " << values[i + j];
+      }
     }
   }
 }
