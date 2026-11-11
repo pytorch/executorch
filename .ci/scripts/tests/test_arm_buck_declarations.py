@@ -6,7 +6,9 @@
 import contextlib
 import importlib.util
 import io
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -66,6 +68,31 @@ def fixture():
 
 def regressions(before, after):
     return compare(Snapshot(before), Snapshot(after))[0]
+
+
+def generated_test_fixture():
+    files = fixture()
+    files[TARGETS] = (
+        "def define_arm_tests():\n"
+        '    test_files = ["misc/test_schema.py", "misc/test_diff.py"]\n'
+        "    for test_file in test_files:\n"
+        "        test_file_name = paths.basename(test_file)\n"
+        '        test_name = test_file_name.replace("test_", "").replace(".py", "")\n'
+        "        python_pytest(\n"
+        "            name=test_name, srcs=[test_file],\n"
+        '            deps=(["//executorch/exir:umbrella"]\n'
+        '                  if test_file == "misc/test_schema.py" else\n'
+        '                  ["//executorch/devtools/pte_tool:diff_pte_lib"]),\n'
+        "        )\n"
+    )
+    files[SCOPE + "/misc/test_schema.py"] = (
+        "from executorch.exir.schema import Tensor\n" "def test_schema():\n    pass\n"
+    )
+    files[SCOPE + "/misc/test_diff.py"] = (
+        "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+        "def test_diff():\n    pass\n"
+    )
+    return files
 
 
 # Each test covers an independent declaration regression.
@@ -205,6 +232,70 @@ class DeclarationTests(unittest.TestCase):
                 for i in issues
             )
         )
+
+    def test_unknown_conditional_assignments_invalidate_sources_and_dependencies(self):
+        for attribute, value in (
+            ("srcs", '["tester/runner.py"]'),
+            ("deps", '["//executorch/exir:umbrella"]'),
+        ):
+            for assignment in ("= []", "+= []"):
+                with self.subTest(attribute=attribute, assignment=assignment):
+                    files = fixture()
+                    declaration = library(
+                        "arm_tester_lib",
+                        attribute if attribute == "srcs" else '["tester/runner.py"]',
+                        (
+                            attribute
+                            if attribute == "deps"
+                            else '["//executorch/exir:umbrella"]'
+                        ),
+                    )
+                    files[BUCK] = (
+                        f"{attribute} = {value}\n"
+                        'if native.read_config("x", "y") == "1":\n'
+                        f"    {attribute} {assignment}\n"
+                        + declaration
+                        + ARM_TEST_REGISTRATION
+                    )
+                    declarations = Declarations(Snapshot(files))
+                    rule = declarations.get("//executorch/" + SCOPE + ":arm_tester_lib")
+                    self.assertEqual(
+                        set(), rule.sources if attribute == "srcs" else rule.deps
+                    )
+                    issues = analyze(Snapshot(files))
+                    self.assertTrue(
+                        any(
+                            "conditional declaration" in issue.detail
+                            for issue in issues
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            issue.detail.startswith(attribute + ":") for issue in issues
+                        )
+                    )
+                    self.assertFalse(
+                        any(issue.kind == "missing dependency" for issue in issues)
+                    )
+
+    def test_unknown_conditional_assignments_in_both_branches_are_invalidated(self):
+        files = fixture()
+        files[BUCK] = (
+            'srcs = ["tester/runner.py"]\n'
+            'deps = ["//executorch/exir:umbrella"]\n'
+            "if configured():\n"
+            '    srcs = ["extra.py"]\n'
+            "else:\n"
+            "    deps += []\n"
+            + library("arm_tester_lib", "srcs", "deps")
+            + ARM_TEST_REGISTRATION
+        )
+        declarations = Declarations(Snapshot(files))
+        rule = declarations.get("//executorch/" + SCOPE + ":arm_tester_lib")
+        self.assertEqual(set(), rule.sources)
+        self.assertEqual(set(), rule.deps)
+        self.assertTrue(any("srcs:" in error for error in rule.errors))
+        self.assertTrue(any("deps:" in error for error in rule.errors))
 
     def test_helpers_are_not_registered_by_filename_alone(self):
         before = fixture()
@@ -645,6 +736,80 @@ class DeclarationTests(unittest.TestCase):
         ] += "    for test_file in test_files:\n        python_pytest(name=test_file, srcs=[test_file])\n"
         self.assertEqual(set(), analyze(Snapshot(files)))
 
+    def test_generated_pytest_dependencies_are_checked_per_target(self):
+        before = generated_test_fixture()
+        self.assertEqual(set(), analyze(Snapshot(before)))
+        after = dict(before)
+        after[TARGETS] = after[TARGETS].replace(
+            '["//executorch/devtools/pte_tool:diff_pte_lib"]', "[]"
+        )
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual("missing dependency", issue.kind)
+        self.assertEqual("//executorch/" + SCOPE + ":diff", issue.owner)
+        self.assertEqual(SCOPE + "/misc/test_diff.py", issue.source)
+        self.assertIn("diff_pte_lib", issue.detail)
+
+    def test_generated_pytest_new_import_needs_its_own_dependency(self):
+        before = generated_test_fixture()
+        after = dict(before)
+        source = SCOPE + "/misc/test_schema.py"
+        after[
+            source
+        ] += "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual("missing dependency", issue.kind)
+        self.assertEqual("//executorch/" + SCOPE + ":schema", issue.owner)
+        self.assertEqual(source, issue.source)
+        after[TARGETS] = after[TARGETS].replace(
+            '["//executorch/exir:umbrella"]',
+            '["//executorch/exir:umbrella", "//executorch/devtools/pte_tool:diff_pte_lib"]',
+        )
+        self.assertEqual(set(), regressions(before, after))
+
+    def test_generated_pytest_unknown_dependencies_report_the_expression(self):
+        files = generated_test_fixture()
+        files[TARGETS] = files[TARGETS].replace(
+            '["//executorch/devtools/pte_tool:diff_pte_lib"]', "select_deps()"
+        )
+        issues = analyze(Snapshot(files))
+        self.assertTrue(
+            any(
+                issue.owner == "//executorch/" + SCOPE + ":diff"
+                and "select_deps()" in issue.detail
+                and issue.kind == "cannot validate"
+                for issue in issues
+            )
+        )
+        self.assertFalse(any(issue.owner.endswith(":schema") for issue in issues))
+
+    def test_explicit_python_test_dependencies_are_checked(self):
+        for kind in ("python_test", "python_pytest", "python_unittest"):
+            with self.subTest(kind=kind):
+                before = fixture()
+                before[SCOPE + "/misc/test_schema.py"] = (
+                    "from executorch.exir.schema import Tensor\n"
+                    "def test_schema():\n    pass\n"
+                )
+                before[BUCK] += (
+                    f'runtime.{kind}(name="test_schema", srcs=["misc/test_schema.py"], '
+                    'deps=["//executorch/exir:umbrella"])\n'
+                )
+                self.assertEqual(set(), analyze(Snapshot(before)))
+                after = dict(before)
+                after[BUCK] = after[BUCK].replace(
+                    'srcs=["misc/test_schema.py"], deps=["//executorch/exir:umbrella"]',
+                    'srcs=["misc/test_schema.py"], deps=[]',
+                )
+                issues = regressions(before, after)
+                self.assertEqual(1, len(issues))
+                issue = next(iter(issues))
+                self.assertEqual("missing dependency", issue.kind)
+                self.assertEqual("//executorch/" + SCOPE + ":test_schema", issue.owner)
+
     def test_oss_only_test_registration_is_valid(self):
         before = fixture()
         after = dict(before)
@@ -843,6 +1008,7 @@ class DeclarationTests(unittest.TestCase):
 
     def test_cli_reports_warnings_without_failing_and_still_fails_errors(self):
         before = fixture()
+        before[SCOPE + "/passes/test_registered.py"] = "def test_registered(): pass\n"
         for add_arm_error in (False, True):
             with self.subTest(add_arm_error=add_arm_error):
                 after = dict(before)
@@ -850,7 +1016,9 @@ class DeclarationTests(unittest.TestCase):
                     "umbrella", "[]", "choose_deps()"
                 ) + library("schema", '["schema.py"]')
                 if add_arm_error:
-                    after[SCOPE + "/misc/test_new.py"] = "def test_new(): pass\n"
+                    after[BUCK] = after[BUCK].replace(
+                        "fbcode_target(_kind=define_arm_tests)\n", ""
+                    )
                 output = io.StringIO()
                 with mock.patch.object(
                     checker,
@@ -1132,6 +1300,196 @@ class DeclarationTests(unittest.TestCase):
         after = dict(before)
         after[BUCK] = after[BUCK].replace("arm_tester_lib", "renamed_lib")
         self.assertEqual(set(), regressions(before, after))
+
+    def test_new_or_renamed_unregistered_test_is_only_a_warning(self):
+        old_test = SCOPE + "/ops/test_old.py"
+        new_test = SCOPE + "/ops/test_new.py"
+        for renamed in (False, True):
+            with self.subTest(renamed=renamed):
+                before = fixture()
+                if renamed:
+                    before[old_test] = "def test_operation(): pass\n"
+                after = dict(before)
+                after[new_test] = after.pop(old_test, "def test_operation(): pass\n")
+                issues = regressions(before, after)
+                self.assertEqual(1, len(issues))
+                issue = next(iter(issues))
+                self.assertEqual("unregistered test", issue.kind)
+                self.assertEqual(new_test, issue.source)
+                self.assertEqual("warning", issue.severity)
+
+    def test_existing_unregistered_test_remains_baselined(self):
+        files = fixture()
+        files[SCOPE + "/ops/test_existing.py"] = "def test_operation(): pass\n"
+        self.assertEqual((set(), 1), compare(Snapshot(files), Snapshot(files)))
+
+    def test_deleting_explicit_test_registration_fails(self):
+        for kind in ("python_test", "python_pytest", "python_unittest"):
+            with self.subTest(kind=kind):
+                before = fixture()
+                test = SCOPE + "/unit/test_existing.py"
+                build_file = SCOPE + "/unit/BUCK"
+                before[test] = "def test_operation(): pass\n"
+                before[build_file] = (
+                    f'runtime.{kind}(name="test_existing", srcs=["test_existing.py"])\n'
+                )
+                after = dict(before)
+                after[build_file] = ""
+                issues = regressions(before, after)
+                self.assertEqual(1, len(issues))
+                issue = next(iter(issues))
+                self.assertEqual("unregistered test", issue.kind)
+                self.assertEqual("error", issue.severity)
+                self.assertIn("previously registered test", issue.detail)
+
+    def test_deleting_registered_test_and_registration_is_valid(self):
+        before = fixture()
+        test = SCOPE + "/passes/test_registered.py"
+        before[test] = "def test_registered(): pass\n"
+        after = dict(before)
+        del after[test]
+        after[BUCK] = after[BUCK].replace("fbcode_target(_kind=define_arm_tests)\n", "")
+        self.assertEqual(set(), regressions(before, after))
+
+    def test_new_test_in_previously_registered_helper_is_only_a_warning(self):
+        before = fixture()
+        test = SCOPE + "/passes/test_helper.py"
+        before[test] = "def helper(): pass\n"
+        after = dict(before)
+        after[test] += "def test_operation(): pass\n"
+        after[BUCK] = after[BUCK].replace("fbcode_target(_kind=define_arm_tests)\n", "")
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        self.assertEqual("warning", next(iter(issues)).severity)
+
+    def test_different_unsupported_rule_expressions_are_not_baselined(self):
+        for attribute in ("srcs", "deps"):
+            with self.subTest(attribute=attribute):
+                before = fixture()
+                values = {"srcs": '["tester/runner.py"]', "deps": "[]"}
+                values[attribute] = "choose_old()"
+                before[BUCK] = library("arm_tester_lib", values["srcs"], values["deps"])
+                after = dict(before)
+                after[BUCK] = after[BUCK].replace("choose_old()", "choose_new()")
+                issues = regressions(before, after)
+                declarations = [
+                    issue for issue in issues if issue.category == "declaration"
+                ]
+                self.assertEqual(1, len(declarations))
+                issue = declarations[0]
+                self.assertEqual("cannot validate", issue.kind)
+                self.assertEqual("error", issue.severity)
+                self.assertEqual(attribute + ": choose_new()", issue.subject)
+
+    def test_unsupported_expression_identity_ignores_lines_and_spacing(self):
+        before = fixture()
+        before[BUCK] = library("arm_tester_lib", "[]", 'choose_deps("value")')
+        after = dict(before)
+        after[BUCK] = "\n\n" + after[BUCK].replace(
+            'choose_deps("value")', 'choose_deps( "value" )'
+        )
+        self.assertEqual(set(), regressions(before, after))
+
+    def test_changed_unknown_conditional_body_is_not_baselined(self):
+        for attribute, old_value, new_value in (
+            ("deps", "choose_old()", "choose_new()"),
+            ("srcs", '["tester/a.py"]', '["tester/b.py"]'),
+        ):
+            for operator in ("=", "+="):
+                with self.subTest(attribute=attribute, operator=operator):
+                    before = fixture()
+                    before[BUCK] = (
+                        f"{attribute} = []\n"
+                        'if native.read_config("x", "y") == "1":\n'
+                        f"    {attribute} {operator} {old_value}\n"
+                        + library(
+                            "arm_tester_lib",
+                            "srcs" if attribute == "srcs" else '["tester/runner.py"]',
+                            "deps" if attribute == "deps" else "[]",
+                        )
+                    )
+                    after = dict(before)
+                    after[BUCK] = after[BUCK].replace(old_value, new_value)
+                    issues = regressions(before, after)
+                    self.assertEqual(1, len(issues))
+                    issue = next(iter(issues))
+                    self.assertEqual("cannot validate", issue.kind)
+                    self.assertEqual("error", issue.severity)
+                    self.assertIn("conditional declaration", issue.detail)
+                    self.assertIn(
+                        f"{attribute} {operator} "
+                        + checker.ast.unparse(
+                            checker.ast.parse(new_value, mode="eval")
+                        ),
+                        issue.subject,
+                    )
+                    self.assertIn(
+                        "cannot evaluate native.read_config('x', 'y')", issue.detail
+                    )
+
+    def test_unknown_conditional_identity_ignores_lines_spacing_and_comments(self):
+        before = fixture()
+        before[BUCK] = (
+            "deps = []\n"
+            "if configured():\n"
+            "    deps += choose_deps()\n"
+            + library("arm_tester_lib", '["tester/runner.py"]', "deps")
+        )
+        after = dict(before)
+        after[BUCK] = "\n\n" + after[BUCK].replace(
+            "if configured():\n    deps += choose_deps()",
+            "if configured( ) :\n        deps += choose_deps( ) # explanation",
+        )
+        self.assertEqual(set(), regressions(before, after))
+
+
+class GitSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        self.repo = Path(temporary_directory.name)
+        subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
+        self.before = fixture()
+        for filename, source in self.before.items():
+            self.write(filename, source)
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+
+    def write(self, filename, source):
+        path = self.repo / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    def test_local_snapshot_ignores_untracked_files(self):
+        scratch = SCOPE + "/ops/test_scratch.py"
+        helper = SCOPE + "/tester/scratch.py"
+        self.write(scratch, "def test_scratch(): pass\n")
+        self.write(
+            helper, "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+        )
+        snapshot = checker.GitSnapshot(self.repo, None)
+        self.assertNotIn(scratch, snapshot.paths)
+        self.assertNotIn(helper, snapshot.paths)
+        self.assertEqual(set(), compare(Snapshot(self.before), snapshot)[0])
+
+    def test_local_snapshot_includes_staged_additions_and_unstaged_edits(self):
+        staged_test = SCOPE + "/ops/test_staged.py"
+        self.write(staged_test, "def test_staged(): pass\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", staged_test], check=True)
+        self.write(
+            TESTER,
+            "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n",
+        )
+        snapshot = checker.GitSnapshot(self.repo, None)
+        self.assertIn(staged_test, snapshot.paths)
+        self.assertIn("PTEDiffResult", snapshot.read(TESTER))
+        issues = compare(Snapshot(self.before), snapshot)[0]
+        self.assertEqual(
+            {
+                ("unregistered test", staged_test, "warning"),
+                ("missing dependency", TESTER, "error"),
+            },
+            {(issue.kind, issue.source, issue.severity) for issue in issues},
+        )
 
 
 if __name__ == "__main__":

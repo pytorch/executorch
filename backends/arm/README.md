@@ -482,44 +482,52 @@ procedures.
 
 ### Buck2 CI coverage
 
-The GitHub Buck2 job runs the Vela parser C++ tests together and then runs each
-case in a separate process, so a test cannot depend on runtime initialization by
-an earlier case. With the revision-pinned Buck2 on your `PATH`, run this check from
-the repository root:
+The GitHub Buck2 job builds the Vela parser C++ tests once and runs each case in a
+separate process, so a test cannot depend on runtime initialization by an earlier
+case. It attempts every case and reports all failures before exiting. With the
+revision-pinned Buck2 on your `PATH`, run this check from the repository root:
 
 ```bash
 bash .ci/scripts/unittest-arm-buck2.sh
 ```
 
 The separate **test-arm-backend-buck-declarations** job checks for new dependency
-and test-registration gaps in the Arm test package. It uses the same entrypoint as
-local runs and requires only Git and Python 3, without Arm tool setup or third-party
-Python packages:
+and test-registration gaps in the Arm test package. It runs on every PR because
+changes outside Arm can affect providers and dependencies used by Arm tests. It
+uses the same entrypoint as local runs and requires only Git and Python 3, without
+Arm tool setup or third-party Python packages:
 
 ```bash
 backends/arm/test/test_arm_backend.sh test_buck_declarations
 ```
 
-By default, local runs compare the working tree against `HEAD^`. To check a change
-spanning several commits, set `BASE_REVISION` to the commit before your change:
+By default, local runs compare tracked working-tree files against `HEAD^`, including
+staged additions and unstaged edits. Untracked scratch files are ignored; stage new
+files with `git add` to include them. To check a change spanning several commits,
+set `BASE_REVISION` to the commit before your change:
 
 ```bash
 BASE_REVISION=<base-commit> backends/arm/test/test_arm_backend.sh test_buck_declarations
 ```
 
 GitHub pull requests compare against the merge base with the PR's target branch;
-pushes use the previous commit from the event. Manual runs and new branches use
-`HEAD^`. Declaration checks are excluded from the `all` suite because they need a
-change-specific baseline.
+pushes use the previous commit from the event. The job starts with a shallow
+checkout and fetches more history only when needed to resolve the base. Manual
+runs and new branches use `HEAD^`. Declaration checks are excluded from the `all`
+suite because they need a change-specific baseline.
 
-This static check follows supported in-repository Python library declarations,
-including transitive dependencies, and compares findings against the base revision.
-Existing findings do not fail the job. New confirmed missing dependencies,
-unregistered Arm tests, and unsupported declarations under `backends/arm/` fail
-the check. Unsupported declarations outside Arm are reported as warnings with
-their declaration file and unsupported construct; dependency gaps that cannot be
-proven because of those declarations are also warnings. A warning becoming an
-error is treated as a new regression.
+This static check follows supported in-repository Python library and test
+declarations, including per-test conditional dependencies in `define_arm_tests`
+and transitive dependencies. It compares findings against the base revision.
+Existing findings do not fail the job. New confirmed missing dependencies and
+unsupported declarations under `backends/arm/` fail the check, as does removing
+registration from a previously registered test file that is still present.
+New or renamed tests without a known prior registration produce warnings, so
+adding an OSS test does not require registering it in Meta's internal test list.
+Unsupported declarations outside Arm are also warnings, with their declaration
+file and unsupported construct; dependency gaps that cannot be proven because of
+those declarations are warnings too. Different unsupported expressions are
+tracked separately, and a warning becoming an error is a new regression.
 
 Arm backend contributors maintain this checker alongside the Arm Buck declarations
 and its regression tests in `.ci/scripts/tests/test_arm_buck_declarations.py`.

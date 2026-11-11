@@ -20,11 +20,12 @@ import functools
 import subprocess
 import sys
 import textwrap
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 SCOPE = "backends/arm/test"
 TEST_MACRO = SCOPE + "/targets.bzl"
+PYTHON_TEST_KINDS = {"python_test", "python_pytest", "python_unittest"}
 
 
 class Unsupported(ValueError):
@@ -47,7 +48,7 @@ class GitSnapshot(Snapshot):
         self.revision = revision
         self._files: dict[str, str] = {}
         if revision is None:
-            command = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+            command = ["ls-files", "--cached", "-z"]
         else:
             revision = self.git("rev-parse", "--verify", revision + "^{commit}").strip()
             self.revision = revision
@@ -213,6 +214,26 @@ class Declarations:
             return self.value(node.left, env, package) + self.value(
                 node.right, env, package
             )
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            if isinstance(node.ops[0], (ast.Eq, ast.NotEq)):
+                equal = self.value(node.left, env, package) == self.value(
+                    node.comparators[0], env, package
+                )
+                return equal if isinstance(node.ops[0], ast.Eq) else not equal
+        if isinstance(node, ast.Call) and not node.keywords:
+            if dotted(node.func) == "paths.basename" and len(node.args) == 1:
+                path = self.value(node.args[0], env, package)
+                if isinstance(path, str):
+                    return path.rsplit("/", 1)[-1]
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "replace"
+                and len(node.args) == 2
+            ):
+                value = self.value(node.func.value, env, package)
+                args = [self.value(arg, env, package) for arg in node.args]
+                if isinstance(value, str) and all(isinstance(arg, str) for arg in args):
+                    return value.replace(*args)
         if isinstance(node, ast.Call) and dotted(node.func) in {"glob", "native.glob"}:
             patterns = self.value(node.args[0], env, package)
             kwargs = {k.arg: self.value(k.value, env, package) for k in node.keywords}
@@ -275,7 +296,7 @@ class Declarations:
                 if attribute == "srcs":
                     for source in values:
                         if source.startswith((":", "//", "@")):
-                            if kind == "python_library":
+                            if kind in {"python_library", *PYTHON_TEST_KINDS}:
                                 raise Unsupported("source target reference " + source)
                         elif source.endswith(".py"):
                             rule.sources.add(package + "/" + source)
@@ -434,18 +455,40 @@ class Declarations:
                         )
                         visit(branch, local_env)
                     except Unsupported as error:
-                        if any(
+                        assignments = [
+                            child
+                            for child in ast.walk(node)
+                            if isinstance(child, (ast.Assign, ast.AugAssign))
+                        ]
+                        for assignment in assignments:
+                            targets = (
+                                list(assignment.targets)
+                                if isinstance(assignment, ast.Assign)
+                                else [assignment.target]
+                            )
+                            while targets:
+                                target = targets.pop()
+                                if isinstance(target, ast.Name):
+                                    local_env.pop(target.id, None)
+                                elif isinstance(target, (ast.Tuple, ast.List)):
+                                    targets.extend(target.elts)
+                                elif isinstance(target, (ast.Attribute, ast.Subscript)):
+                                    targets.append(target.value)
+                        if assignments or any(
                             isinstance(x, ast.Call)
                             and dotted(x.func) != "non_fbcode_target"
                             and (
                                 call_name(x) in functions
                                 or call_name(x) in imports
-                                or call_name(x).split(".")[-1] == "python_library"
+                                or call_name(x).split(".")[-1]
+                                in {"python_library", *PYTHON_TEST_KINDS}
                             )
                             for x in ast.walk(node)
                         ):
                             self.package_error(
-                                package, filename, f"conditional declaration: {error}"
+                                package,
+                                filename,
+                                f"conditional declaration: {ast.unparse(node)}; cannot evaluate {error}",
                             )
                 elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
                     call = node.value
@@ -493,6 +536,18 @@ class Declarations:
                             + " in "
                             + ast.unparse(node.iter),
                         )
+                    else:
+                        try:
+                            test_files = self.strings(node.iter, local_env, package)
+                        except Unsupported as error:
+                            self.package_error(
+                                package, filename, f"test declaration loop: {error}"
+                            )
+                            continue
+                        for test_file in test_files:
+                            local_env[node.target.id] = test_file
+                            visit(node.body, local_env)
+                        visit(node.orelse, local_env)
 
         visit(tree.body, env)
         for name in sorted(selected or set()):
@@ -552,7 +607,7 @@ class Declarations:
                     )
                 )
                 continue
-            if rule.kind != "python_library":
+            if rule.kind not in {"python_library", *PYTHON_TEST_KINDS}:
                 continue
             errors.update(
                 Issue(
@@ -560,7 +615,7 @@ class Declarations:
                     label,
                     rule.declaration_file,
                     error,
-                    error.split(":", 1)[0],
+                    error,
                     severity=validation_severity(rule.declaration_file),
                 )
                 for error in rule.errors
@@ -726,7 +781,8 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
     libraries = [
         rule
         for rule in declarations.rules.values()
-        if rule.kind == "python_library" and is_scoped_label(rule.label)
+        if rule.kind in {"python_library", *PYTHON_TEST_KINDS}
+        and is_scoped_label(rule.label)
     ]
     for library in libraries:
         reachable, incomplete = declarations.reachable(library)
@@ -836,6 +892,7 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                             "not in define_arm_tests test_files or a supported explicit Python test target",
                             "",
                             "registration",
+                            "warning",
                         )
                     )
     # Dependency traversal and owner discovery load packages lazily.
@@ -857,11 +914,11 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
             rule.label,
             rule.declaration_file,
             error,
-            error.split(":", 1)[0],
+            error,
             severity=validation_severity(rule.declaration_file),
         )
         for rule in declarations.rules.values()
-        if rule.kind == "python_library"
+        if rule.kind in {"python_library", *PYTHON_TEST_KINDS}
         for error in rule.errors
     )
     return issues
@@ -871,6 +928,33 @@ def compare(base: Snapshot, head: Snapshot) -> tuple[set[Issue], int]:
     baseline, current = analyze(base), analyze(head)
     previous = Declarations(base)
     previous.load_scope()
+    previous_registrations, _ = registered_tests(previous)
+    previous_registrations.update(
+        source
+        for rule in previous.rules.values()
+        if rule.kind in PYTHON_TEST_KINDS
+        for source in rule.sources
+    )
+    for issue in tuple(current):
+        if (
+            issue.kind != "unregistered test"
+            or issue.source not in base.paths
+            or issue.source not in previous_registrations
+        ):
+            continue
+        try:
+            if not is_test_file(base.read(issue.source), issue.source):
+                continue
+        except SyntaxError:
+            continue
+        current.remove(issue)
+        current.add(
+            replace(
+                issue,
+                detail="previously registered test is " + issue.detail,
+                severity="error",
+            )
+        )
     present = Declarations(head)
     present.load_scope()
     for rule in previous.rules.values():

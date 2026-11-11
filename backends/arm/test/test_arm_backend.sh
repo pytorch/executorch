@@ -197,10 +197,48 @@ test_buck_declarations() { # Check changed Arm Python Buck declarations without 
         # Local/manual runs and new branches compare the latest commit.
         base_revision=$(git rev-parse HEAD^)
     elif ! git cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
-        git fetch --no-tags origin "${base_revision}"
+        local fetch_args=(--no-tags)
+        if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+            fetch_args+=(--depth=64)
+        fi
+        git fetch "${fetch_args[@]}" origin "${base_revision}"
     fi
     if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
-        base_revision=$(git merge-base HEAD "${base_revision}")
+        local merge_base shallow_file shallow_boundary history_complete
+        local deepen_by=64
+        while true; do
+            if merge_base=$(git merge-base HEAD "${base_revision}"); then
+                history_complete=true
+                shallow_file=$(git rev-parse --git-path shallow)
+                if [[ -f "${shallow_file}" ]]; then
+                    # A short merge-parent path can expose an older common ancestor
+                    # before a longer path reveals the true merge base.
+                    while IFS= read -r shallow_boundary; do
+                        if ! git merge-base --is-ancestor "${shallow_boundary}" "${merge_base}" &&
+                            { git merge-base --is-ancestor "${shallow_boundary}" HEAD ||
+                                git merge-base --is-ancestor "${shallow_boundary}" "${base_revision}"; }; then
+                            history_complete=false
+                            break
+                        fi
+                    done < "${shallow_file}"
+                fi
+                if [[ "${history_complete}" == true ]]; then
+                    break
+                fi
+            fi
+            if [[ "$(git rev-parse --is-shallow-repository)" != true ]]; then
+                echo "No common ancestor between HEAD and ${base_revision}" >&2
+                return 1
+            fi
+            if (( deepen_by > 1024 )); then
+                git fetch --no-tags --unshallow origin "$(git rev-parse HEAD)" "${base_revision}"
+                merge_base=$(git merge-base HEAD "${base_revision}")
+                break
+            fi
+            git fetch --no-tags --deepen="${deepen_by}" origin "$(git rev-parse HEAD)" "${base_revision}"
+            deepen_by=$((deepen_by * 4))
+        done
+        base_revision="${merge_base}"
     fi
 
     "${python_executable}" .ci/scripts/check_arm_buck_declarations.py --repo . --base "${base_revision}"

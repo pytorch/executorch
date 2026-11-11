@@ -1007,6 +1007,7 @@ jobs:
         fi
 
   test-arm-backend-buck-declarations:
+    # Changes outside Arm can remove providers or dependencies used by Arm tests.
     name: test-arm-backend-buck-declarations
     runs-on: ubuntu-latest
     permissions:
@@ -1015,12 +1016,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Test declaration entrypoint
-        run: python -m unittest discover -s .ci/scripts/tests -p test_arm_buck_entrypoint.py
+      - name: Test Buck CI scripts
+        run: python -m unittest discover -s .ci/scripts/tests -p 'test_arm_buck_*.py'
       - name: Check changed Arm Python declarations
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}

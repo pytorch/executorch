@@ -152,6 +152,88 @@ class ArmBuckEntrypointTest(unittest.TestCase):
         )
         self.git("cat-file", "-e", target)
 
+    def shallow_clone(self, branch):
+        source = self.repo
+        self.repo = self.root / "shallow repo"
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--depth=2",
+                "--branch",
+                branch,
+                source.as_uri(),
+                str(self.repo),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.script = self.repo / "backends/arm/test/test_arm_backend.sh"
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository"), "true")
+
+    def test_pull_request_deepens_shallow_history_to_find_merge_base(self):
+        self.git("checkout", "-qb", "target", self.base)
+        target = self.commit("target-only")
+        self.git("checkout", "-qb", "pr-head", self.head)
+        for index in range(4):
+            self.commit(f"pr-{index}")
+        head = self.git("rev-parse", "HEAD")
+        self.shallow_clone("pr-head")
+        self.assert_base(
+            self.base, GITHUB_EVENT_NAME="pull_request", BASE_REVISION=target
+        )
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
+    def test_push_fetches_previous_revision_from_shallow_checkout(self):
+        self.git("branch", "push-head", self.head)
+        self.shallow_clone("push-head")
+        self.assert_base(
+            self.initial, GITHUB_EVENT_NAME="push", BASE_REVISION=self.initial
+        )
+
+    def test_shallow_merge_does_not_accept_older_visible_common_ancestor(self):
+        tree = self.git("rev-parse", "HEAD^{tree}")
+        target = self.git("commit-tree", tree, "-p", self.base, "-m", "target-only")
+        self.git("branch", "target", target)
+        long_side = self.head
+        for index in range(80):
+            long_side = self.git(
+                "commit-tree", tree, "-p", long_side, "-m", f"long-side-{index}"
+            )
+        short_side = self.git(
+            "commit-tree", tree, "-p", self.initial, "-m", "old-side-branch"
+        )
+        head = self.git(
+            "commit-tree", tree, "-p", long_side, "-p", short_side, "-m", "merge"
+        )
+        self.git("branch", "pr-head", head)
+        self.assertEqual(self.git("merge-base", head, target), self.base)
+        self.shallow_clone("pr-head")
+        self.assert_base(
+            self.base, GITHUB_EVENT_NAME="pull_request", BASE_REVISION=target
+        )
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
+    def test_shallow_manual_checkout_has_previous_commit(self):
+        self.git("branch", "manual-head", self.head)
+        self.shallow_clone("manual-head")
+        self.assert_base(self.base, GITHUB_EVENT_NAME="workflow_dispatch")
+
+    def test_unrelated_pull_request_base_stops_checker(self):
+        self.git("checkout", "--orphan", "unrelated")
+        unrelated = self.commit("unrelated")
+        self.git("checkout", "-q", self.head)
+        result = self.run_suite(
+            "test_buck_declarations",
+            GITHUB_EVENT_NAME="pull_request",
+            BASE_REVISION=unrelated,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("No common ancestor", result.stdout)
+        self.assertFalse(self.result_file.exists())
+
     def test_declaration_suite_skips_arm_and_pytest_setup(self):
         setup = self.repo / "examples/arm/arm-scratch/setup_path.sh"
         setup.parent.mkdir(parents=True)
