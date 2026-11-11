@@ -41,8 +41,8 @@ from typing import Callable, Optional, Sequence
 
 import torch
 import triton
-from executorch.backends.cuda._cpu_count import available_cpu_count
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import splitk_reduce
+from executorch.backends.cuda.utils.cpu_count import available_cpu_count
 from torch.library import triton_op, wrap_triton
 
 try:

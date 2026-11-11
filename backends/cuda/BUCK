@@ -7,7 +7,8 @@ fbcode_target(
     _kind = runtime.python_library,
     name = "cpu_count",
     srcs = [
-        "_cpu_count.py",
+        "utils/__init__.py",
+        "utils/cpu_count.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
