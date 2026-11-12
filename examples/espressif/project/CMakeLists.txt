@@ -31,5 +31,10 @@ if(ET_ESPNN_BACKEND)
   )
 endif()
 
+option(ET_ESPRESSIF_OPS "Build the Espressif operator library" OFF)
+if(ET_ESPRESSIF_OPS)
+  list(APPEND EXTRA_COMPONENT_DIRS "${EXECUTORCH_ROOT}/backends/espressif")
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(executorch_esp_runner)

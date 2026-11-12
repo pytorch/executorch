@@ -1214,3 +1214,12 @@ def define_xnnpack():
             "ovr_config//cpu:arm64": ARM_XNNPACK_DEPS,
         }),
     )
+
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
+    native.cxx_library(
+        name = "XNNPACK_internal_headers",
+        exported_headers = get_xnnpack_headers(),
+        header_namespace = "",
+        visibility = ["PUBLIC"],
+        exported_deps = [":pthreadpool"],
+    )

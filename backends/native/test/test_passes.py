@@ -18,6 +18,9 @@ from executorch.backends.native.passes.reinplace import NativeReinplacePass
 from executorch.backends.native.passes.remove_runtime_asserts import (
     RemoveRuntimeAssertsPass,
 )
+from executorch.backends.native.passes.replace_copy_with_alias import (
+    ReplaceCopyWithAliasPass,
+)
 from executorch.backends.native.serialization import deserialize_graph
 from executorch.backends.native.serialization.schema import BoolArg, FloatArg, TensorArg
 from executorch.backends.native.test.utils import (
@@ -205,6 +208,93 @@ class NativeReinplacePassTest(unittest.TestCase):
 
 
 class ReplaceCopyWithAliasPassTest(unittest.TestCase):
+    def test_broadcast_expand_remains_materialized(self):
+        class ExpandModel(nn.Module):
+            def forward(self, x):
+                return x.expand(2, 3, 4).reshape(6, 4) + 1.0
+
+        inputs = (torch.randn(1, 3, 4),)
+        model = ExpandModel()
+        edge_program = to_edge(
+            torch.export.export(model, inputs),
+            compile_config=get_default_compile_config(),
+        ).exported_program()
+        graph_module = edge_program.graph_module
+        expand = next(
+            n for n in graph_module.graph.nodes if "expand_copy" in str(n.target)
+        )
+        original_val = expand.meta["val"]
+
+        ReplaceCopyWithAliasPass()(graph_module)
+        graph_module.recompile()
+
+        self.assertIn("expand_copy", str(expand.target))
+        self.assertIs(expand.meta["val"], original_val)
+        self.assertTrue(expand.meta["val"].is_contiguous())
+        torch.testing.assert_close(edge_program.module()(*inputs), model(*inputs))
+        graph = deserialize_graph(_get_delegate_blob(_lower(model, inputs)))
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.expand_copy.default", targets)
+        self.assertNotIn("torch.ops.aten.expand.default", targets)
+
+    def test_dynamic_broadcast_expand_remains_copy(self):
+        class ExpandModel(nn.Module):
+            def forward(self, x, y):
+                return x.expand(y.shape[0], -1) + y
+
+        inputs = (torch.randn(1, 4), torch.randn(3, 4))
+        ep = torch.export.export(
+            ExpandModel(),
+            inputs,
+            dynamic_shapes={"x": {}, "y": {0: torch.export.Dim("b", max=16)}},
+        )
+        edge = to_edge_transform_and_lower(
+            ep,
+            transform_passes=get_default_passes(),
+            partitioner=[NativePartitioner()],
+            compile_config=get_default_compile_config(),
+        )
+        graph = deserialize_graph(_get_delegate_blob(edge))
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.expand_copy.default", targets)
+        self.assertNotIn("torch.ops.aten.expand.default", targets)
+
+    def test_symbolic_nonzero_stride_converts_to_alias(self):
+        class TransposeModel(nn.Module):
+            def forward(self, x):
+                return x.transpose(0, 1) + 1.0
+
+        inputs = (torch.randn(2, 8),)
+        ep = torch.export.export(
+            TransposeModel(),
+            inputs,
+            dynamic_shapes={"x": {1: torch.export.Dim("b", max=16)}},
+        )
+        placeholder = next(n for n in ep.graph.nodes if n.op == "placeholder")
+        self.assertIsInstance(placeholder.meta["val"].stride()[0], torch.SymInt)
+        edge = to_edge_transform_and_lower(
+            ep,
+            transform_passes=get_default_passes(),
+            partitioner=[NativePartitioner()],
+            compile_config=get_default_compile_config(),
+        )
+        graph = deserialize_graph(_get_delegate_blob(edge))
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.permute.default", targets)
+        self.assertNotIn("torch.ops.aten.permute_copy.default", targets)
+
+    def test_nonbroadcast_expand_converts_to_alias(self):
+        class ExpandModel(nn.Module):
+            def forward(self, x):
+                return x.expand(2, 3, 4) + 1.0
+
+        graph = deserialize_graph(
+            _get_delegate_blob(_lower(ExpandModel(), (torch.randn(2, 3, 4),)))
+        )
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.expand.default", targets)
+        self.assertNotIn("torch.ops.aten.expand_copy.default", targets)
+
     def test_alias_ops_serialize_valid_targets(self):
         # ReplaceCopyWithAliasPass rewrites *_copy view ops to plain aten
         # OpOverloads (e.g. transpose_copy -> transpose). Those must serialize to

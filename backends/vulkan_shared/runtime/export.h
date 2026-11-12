@@ -14,7 +14,9 @@
 #if defined(EXECUTORCH_VULKAN_SHARED_BUILDING)
 #define EXECUTORCH_VULKAN_SHARED_API __declspec(dllexport)
 #else
-#define EXECUTORCH_VULKAN_SHARED_API __declspec(dllimport)
+// No dllimport: a plain declaration links against both the import library and
+// a static build of this library.
+#define EXECUTORCH_VULKAN_SHARED_API
 #endif
 #else
 #define EXECUTORCH_VULKAN_SHARED_API __attribute__((visibility("default")))

@@ -20,7 +20,7 @@ On Linux and Windows, the OpenVINO backend is included in the ExecuTorch pip whe
 pip install executorch[openvino]
 ```
 
-For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python 3.14 need glibc 2.35 or newer.
+For now the extra installs no runtime on Python 3.15, where OpenVINO publishes no build. On Linux aarch64, OpenVINO needs glibc 2.35 or newer, as on Ubuntu 22.04 or Raspberry Pi OS Bookworm and later. On an older aarch64 system, `pip install executorch[openvino]` does not fail: pip finds no OpenVINO 2025.4 or newer for that system, so it installs an older ExecuTorch release instead. On such a system, install `executorch` without the extra, then build OpenVINO from source as described below.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed package, so no library search path setup is needed.
 
@@ -70,7 +70,8 @@ float16, as measured on an Orin Nano.
 
 The value is OpenVINO's `INFERENCE_PRECISION_HINT`: `f32`, `f16` or `bf16`. An
 empty value means the default, and any other value fails at lowering. A CPU
-without float16 support computes an `f16` program in float32. OpenVINO has no
+without float16 support computes an `f16` program in bfloat16 if it has bfloat16
+units, as some x86 CPUs do, and in float32 otherwise. OpenVINO has no
 bfloat16 on ARM CPUs, so there `bf16` keeps the ARM default, float16 where the
 CPU supports it. Which x86 CPUs compute in bfloat16 is up to OpenVINO; see its
 [Precision Control](https://docs.openvino.ai/2026/openvino-workflow/running-inference/optimize-inference/precision-control.html)
@@ -104,6 +105,68 @@ that holds 16,777,217.
 In OpenVINO 2026.4.1, the CPU plugin's `min(dim)` and `max(dim)` can return a
 later index on ties than PyTorch, which returns the first one. This happens with
 float32 as well as integer dtypes such as int32 and uint8.
+
+## Dim order
+
+OpenVINO computes every tensor in the default dim order. When a partition input
+or output is in another dim order, such as `channels_last`, the lowering adds a
+transpose to it, and the runtime passes OpenVINO its sizes in memory order.
+
+The lowering marks the blob with a header for this. A `.pte` lowered by an
+older ExecuTorch has no header and no transposes, so the runtime runs it as
+before, with the sizes in logical order. An input or output in another dim
+order then comes back right only when its partition does nothing but
+elementwise ops, or when it is in the default dim order apart from size-1
+dimensions. Otherwise its values are wrong, without an error, so export such a
+`.pte` again.
+
+## Copies
+
+OpenVINO turns a copy, such as `x.clone()`, into nothing, so a partition that returns
+a copy would return its input. The backend handles only these returned copies: a
+`clone()` or a full slice such as `x[:, :]` of a partition input or a constant.
+
+- A copy of a partition input (a real input, a buffer copied before the program
+  changes it, or a value computed outside OpenVINO) runs on the CPU, outside
+  OpenVINO.
+- A copy of a constant (a parameter, a buffer the program does not change, or a
+  tensor attribute) stays in the partition, so the program stores the constant
+  once. It stays only when:
+  - nothing outside the partition reads the constant,
+  - no other output of the partition is a copy of the same constant,
+  - its type is bool, uint8, int8, int16, int32, float16, bfloat16 or float32,
+  - for a float copy, the precision is `f32`, the CPU default. On a GPU this
+    needs `inference_precision` set to `f32`. The NPU does not accept `f32`, so
+    float copies do not stay there. On an ARM CPU with float16 support, at `f16`
+    or `bf16`, OpenVINO would round a float32 copy.
+
+Any other clone or full slice of a constant runs on the CPU. If the partition
+also reads the constant, the program then stores it twice, and a constant marked
+`no_copy` fails to export. With dim order off
+(`EdgeCompileConfig(_skip_dim_order=True)`, the default for LLM exports), a
+clone that runs on the CPU works only without a `memory_format` or with
+`torch.contiguous_format`. With `torch.preserve_format` it fails at run time,
+and with `torch.channels_last` it fails at export.
+
+Any other returned copy in the default dim order is not handled. It can come
+back with wrong values, or make ops in the partition that read it return wrong
+values, without an error. Examples are a copy made with `.to()` and a copy of a
+value computed inside the partition. A copy into another dim order gets a
+transpose like any other output, so it is handled. A copy of
+a value that the partition also returns, such as `self.buf.clone()` after the
+program changes `self.buf`, fails to lower.
+
+When a float32 constant holds a subnormal value, the CPU plugin turns its
+subnormal values and its negative zeros into zero. So a float32 copy that stays
+in the partition returns `[1e-40, -0.0, 1.0]` as `[0.0, 0.0, 1.0]`, and `x * b`
+reads such a constant `b` the same way.
+
+A whole program lowered with `to_backend` has no CPU part, so it gets none of
+the handling above. When it returns an input unchanged, in the default dim
+order, the backend copies it with OpenVINO's `Identity` on the CPU device. On an
+ARM CPU with float16 support, at `f16` or `bf16`, that copy of a float32 input
+is rounded, like the other float32 outputs. On every CPU, the copy of an int64
+input is computed in 32 bits, like every int64 tensor.
 
 ## Directory Structure
 
@@ -139,7 +202,7 @@ executorch
 
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system.
+Before you begin, ensure you have OpenVINO 2025.4 or newer installed and configured on your system.
 
 ### Use OpenVINO from Release Packages
 
@@ -157,7 +220,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino
+cd openvino && git checkout releases/2026/4
 git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build

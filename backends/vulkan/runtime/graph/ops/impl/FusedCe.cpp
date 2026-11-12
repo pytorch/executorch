@@ -88,6 +88,11 @@ void fused_ce(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       graph.is_buffer_storage(logits) && graph.is_buffer_storage(dlogits),
       "fused_ce: logits and dlogits must use buffer storage");
   VK_CHECK_COND(
+      graph.is_contiguous(logits) && graph.is_contiguous(dlogits) &&
+          graph.packed_dim_of(logits) == WHCN::kWidthDim &&
+          graph.packed_dim_of(dlogits) == WHCN::kWidthDim,
+      "fused_ce: logits and dlogits must be contiguous and width-packed");
+  VK_CHECK_COND(
       graph.dim_of(logits) == 2, "fused_ce: logits must be 2D [n_rows, vocab]");
   VK_CHECK_COND(
       graph.sizes_of(dlogits) == graph.sizes_of(logits),

@@ -6,8 +6,9 @@ with one implementation, `XNNPACK/subgraph`. Each supported target is one `kOps`
 entry that pairs its support check with its subgraph lowering.
 
 The provider shares a workspace and weights cache across its regions. Compatible
-convolution-weight conversions are reused within a plan; weights whose physical
-order already matches are borrowed. Region boundaries use buffers managed by
+convolution-weight conversions are reused within a plan. They and broadcast
+linear biases are freed once the weights cache is finalized; weights whose
+physical order already matches are borrowed. Region boundaries use buffers managed by
 [`CPUPlan`](../../CPUPlan.h).
 
 The `cpu_xnnpack` target in [`targets.bzl`](../../../targets.bzl) exports

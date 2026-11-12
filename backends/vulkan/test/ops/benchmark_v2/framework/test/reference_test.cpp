@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -168,6 +169,36 @@ TEST(BenchmarkReference, GroupedConvolutionHonorsStridePaddingAndDilation) {
   EXPECT_EQ(result.at("y"), (std::vector<double>{5, 11, 5, 19, 19, -41}));
 }
 
+TEST(BenchmarkReference, ConvWithClampClampsConvolutionOutput) {
+  const Json spec = {
+      {"operator", "et_vk.conv_with_clamp.default"},
+      {"args",
+       {{{"tensor", "x"}},
+        {{"tensor", "w"}},
+        {{"tensor", "b"}},
+        {{"int_list", {1, 1}}},
+        {{"int_list", {0, 0}}},
+        {{"int_list", {1, 1}}},
+        {{"bool", false}},
+        {{"int_list", {0, 0}}},
+        {{"int", 1}},
+        {{"float", -0.25}},
+        {{"float", 0.5}},
+        {{"tensor", "y"}}}},
+      {"tensors",
+       {{"x", tensor({1, 1, 1, 3})},
+        {"w", tensor({1, 1, 1, 1})},
+        {"b", tensor({1})},
+        {"y", tensor({1, 1, 1, 3})}}}};
+  const auto result = reference_outputs(
+      spec,
+      {},
+      {{"x", bytes<float>({-1, 0.25, 2})},
+       {"w", bytes<float>({1})},
+       {"b", bytes<float>({0})}});
+  EXPECT_EQ(result.at("y"), (std::vector<double>{-0.25, 0.25, 0.5}));
+}
+
 TEST(BenchmarkReference, Q4LinearUnpacksNibblesAndUsesPerGroupScales) {
   const Json spec = {
       {"operator", "et_vk.q4gsw_linear.default"},
@@ -246,7 +277,7 @@ TEST(BenchmarkReference, Q8ConvolutionAppliesZeroPointsScalesBiasAndClamping) {
 }
 TEST(BenchmarkReference, RawAdditionBroadcastsAndAppliesAlpha) {
   const Json spec = {
-      {"shader", "binary_add_texture3d_float"},
+      {"shader", "binary_op_texture3d_float"},
       {"bindings",
        {{{"tensor", "out"}, {"access", "write"}},
         {{"tensor", "a"}},
@@ -290,6 +321,15 @@ TEST(BenchmarkReference, ComparisonReportsBoundedMismatchSummary) {
   EXPECT_EQ(result.at("status"), "FAIL");
   EXPECT_EQ(result.at("outputs").at("y").at("mismatch_count"), 2);
   EXPECT_DOUBLE_EQ(result.at("outputs").at("y").at("max_abs_error"), 0.5);
+  EXPECT_DOUBLE_EQ(result.at("outputs").at("y").at("mean_abs_error"), 0.2625);
+  EXPECT_NEAR(
+      result.at("outputs").at("y").at("rms_error"),
+      std::sqrt((0.05 * 0.05 + 0.5 * 0.5 + 0.5 * 0.5) / 4),
+      1e-12);
+  EXPECT_NEAR(
+      result.at("outputs").at("y").at("reference_rms"),
+      std::sqrt((1 + 4 + 9 + 16) / 4.0),
+      1e-12);
   EXPECT_FALSE(result.at("outputs").at("y").contains("values"));
   EXPECT_EQ(
       compare_outputs(spec, {{"y", {1, 2, 3, 4}}}, {{"y", {1.05, 2, 3, 4}}}, {})
@@ -339,6 +379,33 @@ TEST(BenchmarkReference, ComparisonRejectsNonfiniteValues) {
           spec, {{"y", {nan, 2, 3, 4}}}, {{"y", {nan, 2, 3, 4}}}, {})
           .at("status"),
       "FAIL");
+  const Report partial = compare_outputs(
+      spec, {{"y", {1, 2, 3, 4}}}, {{"y", {1, nan, 3, 4.5}}}, {});
+  const Report& y = partial.at("outputs").at("y");
+  EXPECT_EQ(y.at("nonfinite_count"), 1);
+  EXPECT_DOUBLE_EQ(y.at("mean_abs_error"), 0.5 / 3);
+  EXPECT_DOUBLE_EQ(y.at("rms_error"), std::sqrt(0.25 / 3));
+  EXPECT_DOUBLE_EQ(y.at("reference_rms"), std::sqrt((1 + 9 + 16) / 3.0));
+  const Report none_finite = compare_outputs(
+      spec, {{"y", {1, 2, 3, 4}}}, {{"y", {nan, nan, inf, inf}}}, {});
+  for (const char* key : {"mean_abs_error", "rms_error", "reference_rms"}) {
+    EXPECT_TRUE(none_finite.at("outputs").at("y").at(key).is_null()) << key;
+  }
+}
+
+TEST(BenchmarkReference, FaultScalesActualOutputsAndIsReported) {
+  Json spec = linear_spec();
+  spec["validation_method"] = {
+      {"function", "is_close"}, {"atol", 0.1}, {"rtol", 0.01}};
+  const ReferenceOutputs values = {{"y", {1, 2, 3, 4}}};
+  const Report clean = compare_outputs(spec, values, values, {});
+  EXPECT_EQ(clean.at("status"), "PASS");
+  EXPECT_FALSE(clean.contains("fault_rel"));
+  const Report faulted = compare_outputs(spec, values, values, {}, 0.05);
+  EXPECT_EQ(faulted.at("status"), "FAIL");
+  EXPECT_DOUBLE_EQ(faulted.at("fault_rel"), 0.05);
+  EXPECT_EQ(faulted.at("outputs").at("y").at("mismatch_count"), 2);
+  EXPECT_NEAR(faulted.at("outputs").at("y").at("max_abs_error"), 0.2, 1e-12);
 }
 
 TEST(BenchmarkReference, ComparisonDefaultsDependOnActualDtype) {

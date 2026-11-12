@@ -39,11 +39,15 @@ DEFINE_int32(
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
-    "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
+    "Periodic checkpoint interval in tokens; 0 disables periodic capture.");
 DEFINE_int32(
     prefix_capture_slots,
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
+DEFINE_string(
+    prefix_checkpoint_prompt_end,
+    "initial",
+    "Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
@@ -63,6 +67,21 @@ DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 namespace executorch::extension::llm {
 std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
+  const bool every_prompt_end = FLAGS_prefix_checkpoint_prompt_end == "every";
+  if (!every_prompt_end && FLAGS_prefix_checkpoint_prompt_end != "initial") {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end must be initial or every");
+  }
+  if (every_prompt_end && FLAGS_prefix_checkpoint_interval) {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end=every cannot be combined with "
+        "--prefix_checkpoint_interval");
+  }
+  if (every_prompt_end && FLAGS_prefix_cache_entries <= 0) {
+    throw std::invalid_argument(
+        "--prefix_checkpoint_prompt_end=every requires "
+        "--prefix_cache_entries > 0");
+  }
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
@@ -84,6 +103,9 @@ create_muse_glimmer_batching_runtime() {
   serving.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   serving.max_prefix_captures = FLAGS_prefix_capture_slots;
   serving.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
+  serving.prefix_checkpoint_prompt_end = every_prompt_end
+      ? serving::PromptEndCapture::Every
+      : serving::PromptEndCapture::Initial;
   const int64_t physical = static_cast<int64_t>(FLAGS_max_sessions) +
       FLAGS_prefix_cache_entries +
       static_cast<int64_t>(serving.resolved_prefix_captures());

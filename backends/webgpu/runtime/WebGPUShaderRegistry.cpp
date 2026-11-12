@@ -135,12 +135,14 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/rsqrt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/silu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/sin_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
@@ -157,7 +159,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 141> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -465,6 +467,13 @@ constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
         kDequantizePerTensorWorkgroupSizeX,
         kDequantizePerTensorWorkgroupSizeY,
         kDequantizePerTensorWorkgroupSizeZ,
+    },
+    {
+        "elu",
+        kEluWGSL,
+        kEluWorkgroupSizeX,
+        kEluWorkgroupSizeY,
+        kEluWorkgroupSizeZ,
     },
     {
         "embedding",
@@ -1011,6 +1020,13 @@ constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
         kSigmoidWorkgroupSizeX,
         kSigmoidWorkgroupSizeY,
         kSigmoidWorkgroupSizeZ,
+    },
+    {
+        "silu",
+        kSiluWGSL,
+        kSiluWorkgroupSizeX,
+        kSiluWorkgroupSizeY,
+        kSiluWorkgroupSizeZ,
     },
     {
         "silu_mul_fused",

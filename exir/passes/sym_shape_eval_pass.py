@@ -14,7 +14,12 @@ import torch.utils._pytree as pytree
 from executorch.exir._warnings import deprecated
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
-from executorch.exir.sym_util import eval_expr, eval_shape, eval_upper_bound
+from executorch.exir.sym_util import (
+    EnumerationBudget,
+    eval_expr,
+    eval_shape,
+    eval_upper_bound,
+)
 from executorch.exir.tensor import TensorSpec
 from torch.fx import GraphModule
 
@@ -262,9 +267,22 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
 
     Not inherited from ExportPass since we simply need a way to iterate through
     every node's output. PassBase is easier for that purpose.
+
+    Args:
+        enumeration_budget: How many symbol value combinations one run may evaluate
+            to tighten the upper bounds of sizes that use // or %. 0 keeps the
+            interval bounds. A size with no interval bound is enumerated without
+            using the budget.
     """
 
+    # The budget caps how much time tightening finite bounds can add to an export.
+    # Spending all of it takes a few seconds, while swin_v2_t uses about 2,000.
+    def __init__(self, enumeration_budget: int = 64 * 1024) -> None:
+        super().__init__()
+        self.enumeration_budget = enumeration_budget
+
     def call(self, graph_module: GraphModule):
+        budget = EnumerationBudget(self.enumeration_budget)
         for subgm in graph_module.modules():
             if not isinstance(subgm, GraphModule):
                 continue
@@ -272,7 +290,12 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
                 for spec in pytree.tree_flatten(node.meta.get("spec", []))[0]:
                     # Node for function like aten.sym_size does not have spec
                     if isinstance(spec, TensorSpec):
-                        concrete_shape = [eval_upper_bound(s) for s in spec.shape]
+                        concrete_shape = [
+                            eval_upper_bound(s, budget=budget) for s in spec.shape
+                        ]
+                        # Only shapes feed memory planning and serialization, and
+                        # strides would take most of the enumeration time, so strides
+                        # get no budget and are never enumerated.
                         concrete_stride = [eval_upper_bound(s) for s in spec.stride]
                         if any(not isinstance(s, int) for s in concrete_shape) or any(
                             not isinstance(s, int) for s in concrete_stride
