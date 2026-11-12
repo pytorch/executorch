@@ -102,9 +102,10 @@ class Torchao(Scheme):
 
 
 # Families of fp16 super-block scales by byte offset in each block: powers of
-# two, where q4_k's dmin of 8 d centers random weights near zero, then negative,
-# rounded and subnormal ones. A model's i-th nn.Linear takes the i-th family, so
-# one nn.Linear per family isolates each in its own output.
+# two, where a dmin of 8 d (q4_k) or 16 d (q5_k) centers random weights near
+# zero, then negative, rounded and subnormal ones. A model's i-th nn.Linear
+# takes the i-th family, so one nn.Linear per family isolates each in its own
+# output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
@@ -113,6 +114,12 @@ GGUF_SUPER_SCALES = {
         {0: -(2**-12), 2: -(2**-9)},
         {0: 3.1e-4, 2: 2.3e-3},
         {0: 3 * 2**-21, 2: 3 * 2**-18},
+    ],
+    "q5_k": [
+        {0: 2**-12, 2: 2**-8},
+        {0: -(2**-12), 2: -(2**-8)},
+        {0: 3.1e-4, 2: 4.8e-3},
+        {0: 3 * 2**-21, 2: 3 * 2**-17},
     ],
     "q6_k": [
         {208: 2**-12},
@@ -170,8 +177,8 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
 
 @dataclass(frozen=True)
 class Gguf(Scheme):
-    """Weight-only GGUF k-quant blocks (`q4_k` or `q6_k`) for every nn.Linear,
-    loaded from a .gguf file."""
+    """Weight-only GGUF k-quant blocks (`q4_k`, `q5_k` or `q6_k`) for every
+    nn.Linear, loaded from a .gguf file."""
 
     ggml_type: str
 
@@ -230,5 +237,6 @@ def schemes() -> dict[str, Scheme]:
             )
         ),
         "gguf_q4_k": Gguf("q4_k"),
+        "gguf_q5_k": Gguf("q5_k"),
         "gguf_q6_k": Gguf("q6_k"),
     }
