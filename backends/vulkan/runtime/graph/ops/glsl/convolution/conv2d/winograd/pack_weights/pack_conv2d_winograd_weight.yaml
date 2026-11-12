@@ -1,0 +1,27 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+pack_conv2d_winograd_weight:
+  parameter_names_with_default_values:
+    DTYPE: half
+    BUF_DTYPE: half
+    PACKED_STORAGE: texture2d
+    OUT_TILE: 4
+    KERNEL_SIZE: 3
+  generate_variant_forall:
+    combination:
+      parameter_names: [OUT_TILE, KERNEL_SIZE]
+      combos:
+        - parameter_values: [4, 3]
+          suffix: f4x4_3x3
+    combination2:
+      parameter_names: [PACKED_STORAGE, DTYPE, BUF_DTYPE]
+      combos:
+        - parameter_values: [texture2d, half, half]
+        - parameter_values: [texture2d, half, float]
+        - parameter_values: [buffer, half, half]
+  shader_variants:
+    - NAME: pack_conv2d_winograd_weight

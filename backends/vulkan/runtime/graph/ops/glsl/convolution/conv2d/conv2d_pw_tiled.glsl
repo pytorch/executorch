@@ -184,29 +184,6 @@ void store_output_tile_with_checks(
   }
 }
 
-// Sums each output texel's four products in a temporary before adding it to
-// the accumulator. The Adreno compiler places temporaries in consecutive
-// registers, so their multiply-adds fold into (rpt3) instructions;
-// loop-carried accumulators get descending registers per lane and do not fold.
-// The accumulator lanes are kept reversed (wzyx) so that the accumulating adds
-// fold too.
-void accumulate_folded(
-    inout FPOutTile accum,
-    const FPInputTile in_tile,
-    const FPWeightTile w_tile) {
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
-        VEC4_T t = VEC4_T(in_tile.data[m][k4][0]) * w_tile.data[mul_4(k4)][n4];
-        [[unroll]] for (int k = 1; k < 4; ++k) {
-          t += VEC4_T(in_tile.data[m][k4][k]) * w_tile.data[mul_4(k4) + k][n4];
-        }
-        accum.data[m][n4] += t.wzyx;
-      }
-    }
-  }
-}
-
 void main() {
 #ifdef PIXEL_TILES_ON_X
   const int tile_idx_m = int(gl_GlobalInvocationID.x);
@@ -258,7 +235,7 @@ void main() {
     load_input_tile_with_checks(in_tile, in_coords, k4, K4);
     load_packed_weight_tile_clamped(w_tile, n4_start, k4, 0, N4, K4);
     if (folded_accumulation) {
-      accumulate_folded(out_tile, in_tile, w_tile);
+      fp_accumulate_with_fp_weight_folded(out_tile, in_tile, w_tile);
     } else {
       fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
     }
