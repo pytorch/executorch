@@ -629,8 +629,9 @@ static AOTITorchError sdpa_mps_impl(
           auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
           kernel_func->setArg(9, *mask_tensor);
         } else {
-          // Dummy buffer if no mask (won't be accessed)
-          kernel_func->setArg(9, *query_tensor);
+          // Dummy buffer if no mask (won't be accessed): the output, which
+          // is never a strided view, so nothing is packed for it.
+          kernel_func->setArg(9, *out_tensor);
         }
 
         // Set uint3 for mask_strides (buffer 10)
