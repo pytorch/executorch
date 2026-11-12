@@ -852,6 +852,7 @@ def _export_dflash_cuda(
     max_target_prefill = min(
         target_config.max_seq_len - 1, target_model._sliding_window * 2
     )
+    target_model.set_max_prefill_chunk(max_target_prefill)
 
     # See _export_dflash_mlx: normalize params/buffers/scales to one dtype
     # before export so no mixed-precision promotion leaks into the graph.
