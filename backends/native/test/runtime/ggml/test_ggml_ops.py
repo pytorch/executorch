@@ -879,6 +879,12 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x.sum(dim=[2, 3])), (torch.randn(2, 3, 4, 5),))
 
+    def test_amax_trailing_dims(self):
+        self._check(
+            Lambda(lambda x: x.amax(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
+        )
+        self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
+
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
 

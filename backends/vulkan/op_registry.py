@@ -1016,6 +1016,33 @@ def register_convolution_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.conv2d.with_epilogue)
+def register_conv2d_with_epilogue():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.CHANNELS_PACKED_TEXTURE,  # residual
+            utils.NO_STORAGE,  # residual_scale (prepacked)
+            utils.NO_STORAGE,  # residual_op (non tensor)
+            utils.NO_STORAGE,  # alpha (non tensor)
+            utils.NO_STORAGE,  # activation (non tensor)
+            utils.NO_STORAGE,  # activation_a (non tensor)
+            utils.NO_STORAGE,  # activation_b (non tensor)
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
 # =============================================================================
 # convolution/conv2d/q8ta/**/Q8taConv2d*.cpp
 # =============================================================================
@@ -1206,10 +1233,25 @@ def register_sdpa_cpp_ops():
 
 @update_features("et_vk::sdpa")
 def register_general_sdpa():
+    def pick_sdpa_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        # Buffer shaders read attn_mask in the query's dtype; texture shaders
+        # sample it as floats.
+        mask = node.args[3] if len(node.args) > 3 else node.kwargs.get("attn_mask")
+        query = node.args[0]
+        if (
+            utils.is_tensor_node(mask)
+            and mask.meta["val"].dtype != query.meta["val"].dtype  # type: ignore[union-attr]
+        ):
+            return utils.WIDTH_PACKED_TEXTURE, utils.WIDTH_PACKED_TEXTURE
+        return utils.CONTIGUOUS_ANY, utils.CONTIGUOUS_ANY
+
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        pick_io_storage_fn=pick_sdpa_storage,
     )
 
 
@@ -2277,4 +2319,6 @@ def get_op_features(target: Any) -> OpFeatures:
 
 
 def handles_own_prepacking(target: OpKey) -> bool:
-    return get_op_features(target).supports_prepacking
+    # Ops without a Vulkan registration (e.g. ones only a backend's
+    # op_features_overrides delegates) read constants through prepack nodes.
+    return has_impl(target) and get_op_features(target).supports_prepacking

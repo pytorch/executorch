@@ -114,6 +114,9 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <stdio.h>
+#if defined(__PICOLIBC__)
+#include <sys/stat.h>
+#endif
 #include <unistd.h>
 #include <memory>
 #include <type_traits>
@@ -571,9 +574,23 @@ std::pair<char*, size_t> read_binary_file(
     return std::make_pair(nullptr, 0);
   }
 
+#if defined(__PICOLIBC__)
+  struct stat file_stat {};
+  if (fstat(fileno(fp), &file_stat) != 0 || file_stat.st_size < 0) {
+    ET_LOG(
+        Fatal,
+        "Could not get size of file %s (errno: %d), exiting!",
+        filename,
+        errno);
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
+  }
+  auto file_size = static_cast<size_t>(file_stat.st_size);
+#else
   fseek(fp, 0, SEEK_END);
   auto file_size = ftell(fp);
   fseek(fp, 0, SEEK_SET);
+#endif
 
   char* buffer = static_cast<char*>(allocator.allocate(file_size));
   if (buffer == nullptr) {

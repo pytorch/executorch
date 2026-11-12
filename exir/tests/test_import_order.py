@@ -28,6 +28,7 @@ class TestImportOrder(unittest.TestCase):
             "executorch.exir.verification.verifier",
             "executorch.exir.program",
             "executorch.exir._serialize._serialize",
+            "executorch.exir.backend.backend_api",
         ):
             with self.subTest(module=module):
                 completed = subprocess.run(
