@@ -16,6 +16,10 @@
 name: Test CUDA Builds
 
 on:
+  schedule:
+    # Nightly: the only automatic main-branch run of the A100 muse-glimmer e2e
+    # matrix (see test-muse-glimmer-cuda-e2e).
+    - cron: 0 6 * * *
   push:
     branches:
       - main
@@ -1196,7 +1200,11 @@ jobs:
 
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
-    needs: [changed-files, run-decision]
+    needs: changed-files
+    # Five variants, ~520 A100 minutes per run (the longest is ~200 min). Gate
+    # them on muse-glimmer's own files only, and run the full matrix nightly
+    # instead of on generic backends/cuda + aoti changes and the 25% push
+    # sample. ciflow/cuda tags and workflow_dispatch still force a run.
     if: |
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
@@ -1204,15 +1212,11 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
-      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
-      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
-      needs.run-decision.outputs.is-full-run == 'true'
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/ciflow/')
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
