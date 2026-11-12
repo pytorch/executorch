@@ -52,6 +52,51 @@ def define_common_targets(is_fbcode = False):
         ),
     )
 
+    python_unittest_remote_gpu(
+        name = "test_conv_binding",
+        srcs = [
+            "test_conv_binding.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir/dialects:lib",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_routing",
+        srcs = [
+            "test_conv_routing.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
     runtime.python_library(
         name = "autotune_test_utils",
         srcs = [
