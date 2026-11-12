@@ -94,6 +94,10 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_DIFFUSERS_RUNNER
+  "Build the Diffusers runner extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension" BOOL
   ON # Required by executor_runner
 )
@@ -120,6 +124,9 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
   "Build the Named Data Map extension" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_RANDOM "Build the Random extension" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
@@ -466,6 +473,11 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_DIFFUSERS_RUNNER REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM
 )
 
