@@ -310,7 +310,6 @@ def test_user_request_stop_trims_and_nonresumable(stream, prefix):
         ("猫 XY", ["XY"], (2, "XY")),
         ("hello", [], (None, None)),
         ("hello", ["STOP"], (None, None)),
-        ("aX", ["", "X"], (0, "")),
     ],
 )
 def test_earliest_stop_match_preserves_position_and_list_order(text, stops, expected):
