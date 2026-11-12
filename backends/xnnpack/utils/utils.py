@@ -92,8 +92,11 @@ def is_global_avg_pool_mean(node: torch.fx.Node) -> bool:
     """
     Whether a mean.dim node averages a 4D tensor across dims [2, 3] with
     keepdim=True, which lowers to Global Average Pooling on an NHWC input.
+    XNNPACK has no bf16 Global Average Pooling, so this is False for bf16.
     """
     if not (len(node.args) >= 3 and bool(node.args[2])):
+        return False
+    if node.meta["val"].dtype == torch.bfloat16:
         return False
     # With keepdim the output has the input's rank. Reading it from the mean
     # itself keeps this valid inside ChannelsLastTaggedReshapePass, which can

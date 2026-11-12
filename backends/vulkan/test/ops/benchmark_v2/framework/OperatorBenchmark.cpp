@@ -14,6 +14,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace vkcompute::shader_profiling {
@@ -110,6 +111,10 @@ Report benchmark_operator(
   if (first == end) {
     throw std::invalid_argument("Operator produced no execute nodes");
   }
+  Report execute_nodes = Report::array();
+  for (size_t i = first; i < end; ++i) {
+    execute_nodes.push_back(graph.execute_nodes()[i]->name());
+  }
   const Json accesses =
       tensor_accesses(graph, first, end, tensors, args.back());
   std::map<std::string, ValueRef> outputs;
@@ -126,6 +131,7 @@ Report benchmark_operator(
         operator_report(spec, actual_tensor_dtypes(graph, tensors), accesses);
     if (spec.contains("route"))
       result["route"] = route;
+    result["execute_nodes"] = std::move(execute_nodes);
     result["validation"] =
         validate_outputs(spec, graph, tensors, outputs, host_data);
     return result;
@@ -150,10 +156,7 @@ Report benchmark_operator(
     result["route"] = route;
   }
   result["execute_nodes_per_invocation"] = end - first;
-  result["execute_nodes"] = Report::array();
-  for (size_t i = first; i < end; ++i) {
-    result["execute_nodes"].push_back(graph.execute_nodes()[i]->name());
-  }
+  result["execute_nodes"] = std::move(execute_nodes);
   result.update(measure(spec, graph, encode_batch, Json(result)));
   return result;
 }

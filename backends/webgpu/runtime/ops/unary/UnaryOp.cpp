@@ -20,13 +20,15 @@ namespace executorch::backends::webgpu {
 namespace {
 
 // Canonical unary uniform layout; min/max mirror Vulkan min_max (used by the
-// clamp-family shaders; ignored by no-param activations).
+// clamp-family shaders; ignored by no-param activations). aux is a third
+// scalar (elu's input_scale).
 struct UnaryParams {
   uint32_t num_elements;
   float min;
   float max;
-  uint32_t _pad;
+  float aux;
 };
+static_assert(sizeof(UnaryParams) == 16, "UnaryParams must be 16 bytes");
 
 } // namespace
 
@@ -38,7 +40,8 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min,
-    float max) {
+    float max,
+    float aux) {
   WGPUDevice device = graph.device();
 
   const auto& in_tensor = graph.get_tensor(in_id);
@@ -66,6 +69,7 @@ void add_unary_op(
   params.num_elements = num_elements;
   params.min = min;
   params.max = max;
+  params.aux = aux;
 
   WGPUBuffer uniform_buffer =
       utils::make_uniform(device, &params, sizeof(UnaryParams));
@@ -99,7 +103,7 @@ void add_unary_op(
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
-      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max](
+      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max, aux](
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
@@ -108,6 +112,7 @@ void add_unary_op(
         p.num_elements = static_cast<uint32_t>(numel);
         p.min = min;
         p.max = max;
+        p.aux = aux;
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
             g.device(), static_cast<uint32_t>(numel), wg_size, "unary(resize)");

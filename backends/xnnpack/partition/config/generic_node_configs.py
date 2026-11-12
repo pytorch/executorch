@@ -20,6 +20,7 @@ from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_dtype_cast,
     is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
@@ -705,19 +706,50 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
         return True
 
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        # A cast is serialized as a convert without quantization parameters, so
+        # a dq before it and a q after it stay explicit nodes.
+        if is_dtype_cast(node):
+            return [node]
+        return super().get_node_and_deps(node, ep)
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
+class ToCopyConfig(ToDimOrderCopyConfig):
+    """
+    Programs exported with skip_dim_order keep aten._to_copy for every copy.
+    Only dtype casts are partitioned, under the same dtype rules as
+    ToDimOrderCopyConfig: inside the delegate, ChannelsLastTaggedReshapePass,
+    RemoveRedundantCopyPass and ToCopyVisitor read any other _to_copy as an
+    NCHW <-> NHWC layout copy.
+    """
+
+    target_name = "_to_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not is_dtype_cast(node):
+            why(node, reason="only dtype casts are supported")
+            return False
+        return super().check_constraints(node, ep)
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        # A cast never folds the q/dq around it (see get_node_and_deps), so
+        # static quantization adds nothing.
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
         Mean Dim lowers to Global Average Pooling when it averages a 4D tensor
-        across the innermost dimensions with keepdim=True, and to a static mean
-        reduction otherwise.
+        that is not bf16 across the innermost dimensions with keepdim=True, and
+        to a static mean reduction otherwise, computed in fp32 for bf16.
         """
         if not self.check_common_constraints(node, ep):
             return False
