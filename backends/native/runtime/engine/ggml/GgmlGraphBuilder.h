@@ -43,6 +43,10 @@ require_arg(const Node& node, std::string_view name, size_t positional);
 
 std::vector<ValueId> output_ids(const Node& node);
 
+std::vector<int64_t> broadcast_shape(
+    const std::vector<int64_t>& a,
+    const std::vector<int64_t>& b);
+
 int64_t normalize_dim(int64_t dim, size_t rank);
 
 struct TensorRef {
@@ -260,6 +264,7 @@ class GraphBuilder {
   TensorRef active_cache(const TensorRef& cache, int64_t length);
   TensorRef causal_mask(int64_t tokens, int64_t keys, int64_t start);
   void lower_custom_sdpa(const Node& node);
+  void lower_where(const Node& node);
   void lower_compare(const Node& node, bool strict);
   void lower_arange(const Node& node);
   DynamicQuant dynamic_quant_arg(

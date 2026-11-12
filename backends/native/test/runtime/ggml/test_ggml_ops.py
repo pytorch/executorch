@@ -476,6 +476,40 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(torch.div), (torch.randn(2, 3, 4), torch.rand(2, 3, 4) + 0.5)
         )
 
+    def test_where(self):
+        self._check(
+            Lambda(lambda selector, x, y: torch.where(selector.lt(0), x, y)),
+            (
+                torch.tensor([[1.0], [2.0]]),
+                torch.tensor([float("nan"), float("inf"), -float("inf")]),
+                torch.tensor([4.0, -0.0, 5.0]),
+            ),
+            atol=0,
+            rtol=0,
+        )
+        self._check(
+            Lambda(lambda selector, x, y: torch.where(selector.lt(0), x, y)),
+            (
+                torch.tensor([[-1.0], [1.0]]),
+                torch.tensor([16777217, -16777217]),
+                torch.tensor(2147483647),
+            ),
+            atol=0,
+            rtol=0,
+        )
+        # More picks than CUDA's 65535-block grid dimension.
+        x = torch.randn(300, 300)
+        self._check(
+            Lambda(lambda x, y: torch.where(x.lt(0), x, y)), (x, -x), atol=0, rtol=0
+        )
+
+    def test_where_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32 and I32"):
+            self._check(
+                Lambda(lambda selector, x: torch.where(selector.lt(0), x, x)),
+                (torch.randn(2), torch.ones(2, dtype=torch.float16)),
+            )
+
     def test_multiple_outputs(self):
         self._binary(lambda x, y: (x + y, x - y))
 
