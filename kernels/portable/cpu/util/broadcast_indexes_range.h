@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iterator>
 #include <tuple>
+#include <utility>
 
 #include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -255,11 +256,12 @@ class BroadcastIndexesIterator {
     return result;
   }
 
+  // Same as the overload above, for an output given by its sizes. The body is
+  // repeated rather than shared so the tensor overload generates the same code
+  // whether or not this one is used.
   ShapeType effective_input_broadcast_stride(
       ssize_t output_dim,
       const Tensor& t) const {
-    // Kept separate from the overload above so that code using an output
-    // tensor compiles as it did before this overload was added.
     ShapeType result = {0};
     ET_CHECK_MSG(
         t.dim() <= output_dim,
@@ -448,7 +450,9 @@ class BroadcastIndexesRange {
 /**
  * Like BroadcastIndexesRange, but takes the output's sizes instead of an
  * output tensor. The sizes' storage must stay alive and unchanged while the
- * range or its iterators are in use.
+ * range or its iterators are in use. With one input and
+ * support_noncontiguous_input_tensors=false, the input is assumed to have
+ * the output's shape and is not broadcast.
  */
 template <
     std::size_t kNumInputs,
@@ -467,23 +471,25 @@ class BroadcastIndexesShapeRange {
         inputs_{(&args)...} {}
 
   iterator begin() const {
-    return std::apply(
-        [this](const auto&... args) {
-          return iterator(output_sizes_, (*args)...);
-        },
-        inputs_);
+    return begin_impl(std::make_index_sequence<kNumInputs>());
   }
 
   iterator end() const {
-    return std::apply(
-        [this](const auto&... args) {
-          return iterator(
-              typename iterator::make_end_t(), output_numel_, (*args)...);
-        },
-        inputs_);
+    return end_impl(std::make_index_sequence<kNumInputs>());
   }
 
  private:
+  template <std::size_t... I>
+  iterator begin_impl(std::index_sequence<I...>) const {
+    return iterator(output_sizes_, (*inputs_[I])...);
+  }
+
+  template <std::size_t... I>
+  iterator end_impl(std::index_sequence<I...>) const {
+    return iterator(
+        typename iterator::make_end_t(), output_numel_, (*inputs_[I])...);
+  }
+
   ArrayRef<Tensor::SizesType> output_sizes_;
   ssize_t output_numel_;
   std::array<const Tensor*, kNumInputs> inputs_;

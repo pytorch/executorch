@@ -295,4 +295,50 @@ TEST(BroadcastIndexesRangeTest, OutputSizesMatchOutputTensor) {
   EXPECT_TRUE(
       range_to_vec(BroadcastIndexesShapeRange<2>(empty.sizes(), empty, empty))
           .empty());
+
+  // Inputs with the output's shape.
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<2>(out.sizes(), in_c, in_c)),
+      range_to_vec(BroadcastIndexesRange<2>(out, in_c, in_c)));
+
+  // support_noncontiguous_input_tensors=true.
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<1, true>(out.sizes(), in_b)),
+      range_to_vec(BroadcastIndexesRange<1, true>(out, in_b)));
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>(out.sizes(), in_a, in_b)),
+      range_to_vec(BroadcastIndexesRange<2, true>(out, in_a, in_b)));
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>(out.sizes(), in_c, in_c)),
+      range_to_vec(BroadcastIndexesRange<2, true>(out, in_c, in_c)));
+}
+
+TEST(BroadcastIndexesRangeTest, OutputSizesExpectedIndexes) {
+  TensorFactory<ScalarType::Int> tf;
+
+  // The output shape comes from a raw array rather than a tensor.
+  const Tensor::SizesType out_sizes[] = {2, 3};
+  Tensor in_a = tf.zeros({3});
+  Tensor in_b = tf.zeros({2, 1});
+
+  using Indexes2 = std::array<ssize_t, 3>;
+  const std::vector<Indexes2> expected = {
+      {0, 0, 0}, {1, 1, 0}, {2, 2, 0}, {3, 0, 1}, {4, 1, 1}, {5, 2, 1}};
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<2>({out_sizes, 2}, in_a, in_b)),
+      expected);
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>({out_sizes, 2}, in_a, in_b)),
+      expected);
+
+  // One input is only broadcast with support_noncontiguous_input_tensors.
+  using Indexes1 = std::array<ssize_t, 2>;
+  const std::vector<Indexes1> expected_one = {
+      {0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}};
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<1, true>({out_sizes, 2}, in_b)),
+      expected_one);
 }
