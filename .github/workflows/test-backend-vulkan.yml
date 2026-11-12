@@ -26,10 +26,9 @@ jobs:
       contents: read
     with:
       backend: vulkan
-      flows: >-
-        ${{ github.event_name == 'pull_request'
-            && '["vulkan"]'
-            || '["vulkan", "vulkan_static_int8_per_channel"]' }}
+      flows: '["vulkan","vulkan_static_int8_per_channel"]'
+      reduced-flows: '["vulkan"]'
+      backend-paths: '["backends/vulkan/**","examples/vulkan/**",".github/workflows/test-backend-vulkan.yml"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
