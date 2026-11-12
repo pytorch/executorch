@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from typing import List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -15,6 +15,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
 )
 from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.partitioner.partitioner import (
+    _FP32_ONLY_OPS,
     _WEBGPU_SKIP_FUSION_PATTERNS,
 )
 from executorch.backends.webgpu.test.ops.test_elu_silu import (
@@ -62,6 +63,49 @@ class ArangeModule(torch.nn.Module):
 class DynamicArangeModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + torch.arange(0, x.shape[0], 1, dtype=torch.float32)
+
+
+class ElementwiseModule(torch.nn.Module):
+    def __init__(self, fn: Callable[[torch.Tensor], torch.Tensor]) -> None:
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fn(x)
+
+
+# One call per elementwise op whose WebGPU kernel is fp32-only. hardswish is left
+# out: Vulkan keeps it whole before partitioning, so a declined node cannot fall
+# back to CPU until that filter checks the partitioner's support.
+# Modules whose ops have WebGPU kernels that read and write array<f32>, with an
+# input shape. hardswish, upsample_nearest2d and pixel_shuffle are also kept
+# whole by the Vulkan partitioner.
+_FP32_ONLY_MODULES: Dict[
+    str, Tuple[Callable[[torch.Tensor], torch.Tensor], Tuple[int, ...]]
+] = {
+    "abs": (torch.abs, (4, 8)),
+    "clamp": (lambda x: torch.clamp(x, -1.0, 1.0), (4, 8)),
+    "cos": (torch.cos, (4, 8)),
+    "exp": (torch.exp, (4, 8)),
+    "gelu": (torch.nn.functional.gelu, (4, 8)),
+    "hardswish": (torch.nn.functional.hardswish, (4, 8)),
+    "hardtanh": (torch.nn.functional.hardtanh, (4, 8)),
+    "leaky_relu": (torch.nn.functional.leaky_relu, (4, 8)),
+    "neg": (torch.neg, (4, 8)),
+    "pow": (lambda x: torch.pow(x, 2.0), (4, 8)),
+    "relu": (torch.relu, (4, 8)),
+    "round": (torch.round, (4, 8)),
+    "rsqrt": (torch.rsqrt, (4, 8)),
+    "sigmoid": (torch.sigmoid, (4, 8)),
+    "sin": (torch.sin, (4, 8)),
+    "sqrt": (torch.sqrt, (4, 8)),
+    "tanh": (torch.tanh, (4, 8)),
+    "upsample_nearest2d": (
+        lambda x: torch.nn.functional.interpolate(x, scale_factor=2.0, mode="nearest"),
+        (1, 4, 4, 4),
+    ),
+    "pixel_shuffle": (lambda x: torch.nn.functional.pixel_shuffle(x, 2), (1, 4, 4, 4)),
+}
 
 
 class TestWebGPUPartitioner(unittest.TestCase):
@@ -253,6 +297,110 @@ class TestWebGPUPartitioner(unittest.TestCase):
                         WebGPUPartitioner(), ArangeModule(dtype), torch.zeros(8)
                     )
                 )
+
+    def test_fp16_forms_of_fp32_only_ops_stay_on_cpu(self) -> None:
+        # These WebGPU kernels read and write array<f32>: fp16 tensors would be
+        # misread, so WebGPU never takes these ops with fp16 inputs, while
+        # Vulkan does. Ops the Vulkan partitioner keeps whole decompose instead
+        # (hardswish into fp32 math), and what WebGPU takes of the result must
+        # be within its kernels too.
+        for name, (fn, shape) in _FP32_ONLY_MODULES.items():
+            with self.subTest(op=name):
+                module = ElementwiseModule(fn)
+                fp32 = torch.linspace(0.5, 4.0, torch.Size(shape).numel()).reshape(
+                    shape
+                )
+                fp16 = fp32.to(torch.float16)
+                self.assertTrue(
+                    any(
+                        node.target in _FP32_ONLY_OPS
+                        for node in self._delegated_nodes(
+                            WebGPUPartitioner(), module, fp32
+                        )
+                    )
+                )
+                self.assertEqual(
+                    self._refused_by_webgpu_kernels(
+                        self._delegated_nodes(WebGPUPartitioner(), module, fp16)
+                    ),
+                    [],
+                )
+                self.assertNotEqual(
+                    self._refused_by_webgpu_kernels(
+                        self._delegated_nodes(VulkanPartitioner(), module, fp16)
+                    ),
+                    [],
+                )
+
+    def test_copies_and_permutes_the_webgpu_kernels_lack_stay_on_cpu(self) -> None:
+        # Vulkan converts fp16 <-> fp32 and permutes any dtype; the WebGPU
+        # kernels convert only between int32 or bool and fp32, and permute
+        # 4-byte elements.
+        cases = {
+            "fp16_to_fp32": (lambda x: x.to(torch.float32), torch.float16, False),
+            "fp32_to_fp16": (lambda x: x.to(torch.float16), torch.float32, False),
+            "permute_fp16": (lambda x: x.permute(1, 0), torch.float16, False),
+            "int32_to_fp32": (lambda x: x.to(torch.float32), torch.int32, True),
+            "permute_fp32": (lambda x: x.permute(1, 0), torch.float32, True),
+        }
+        for name, (fn, dtype, webgpu_takes_it) in cases.items():
+            with self.subTest(case=name):
+                module = ElementwiseModule(fn)
+                x = torch.arange(32).reshape(4, 8).to(dtype)
+                self.assertEqual(
+                    bool(self._delegated_nodes(WebGPUPartitioner(), module, x)),
+                    webgpu_takes_it,
+                )
+                self.assertTrue(self._delegated_nodes(VulkanPartitioner(), module, x))
+
+    def _delegated_nodes(
+        self, partitioner: Partitioner, module: torch.nn.Module, x: torch.Tensor
+    ) -> List[torch.fx.Node]:
+        exported_program = torch.export.export(module, (x,))
+        edge = to_edge_transform_and_lower(exported_program, partitioner=[partitioner])
+        return [
+            node
+            for _, lowered, _ in get_lowered_submodules(
+                edge.exported_program().graph_module
+            )
+            for node in lowered.original_module.graph.nodes
+            if node.op == "call_function"
+        ]
+
+    def _refused_by_webgpu_kernels(self, nodes: List[torch.fx.Node]) -> List[str]:
+        """The nodes the WebGPU kernels would misread or refuse at delegate
+        init: an fp32-only op with other inputs, a conversion other than between
+        int32 or bool and fp32, or a permute of elements that are not 4 bytes."""
+        device = {torch.int64: torch.int32}
+        conversions = {
+            (torch.int32, torch.float32),
+            (torch.bool, torch.float32),
+            (torch.float32, torch.int32),
+        }
+        refused = []
+        for node in nodes:
+            src = node.args[0]
+            if not isinstance(src, torch.fx.Node):
+                continue
+            src_dtype = device.get(src.meta["val"].dtype, src.meta["val"].dtype)
+            dst_dtype = device.get(node.meta["val"].dtype, node.meta["val"].dtype)
+            if node.target in _FP32_ONLY_OPS:
+                ok = src_dtype == torch.float32
+            elif node.target in (
+                exir_ops.edge.aten._to_copy.default,
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            ):
+                ok = src_dtype == dst_dtype or (src_dtype, dst_dtype) in conversions
+            elif node.target in (
+                exir_ops.edge.aten.permute.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ):
+                ok = src_dtype in (torch.float32, torch.int32)
+            else:
+                ok = True
+            if not ok:
+                refused.append(f"{node.target}({src_dtype} -> {dst_dtype})")
+        return refused
 
     def test_arange_unsupported_forms_stay_on_cpu(self) -> None:
         # Vulkan implements fp16 and SymInt-bounded arange; the WebGPU kernel does

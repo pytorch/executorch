@@ -12,6 +12,7 @@ import executorch.backends.vulkan.utils as vk_utils
 import torch
 from executorch.backends.vulkan.op_registry import (
     allow_node,
+    get_op_features,
     OpFeatures,
     OpKey,
     vulkan_supported_ops,
@@ -55,6 +56,45 @@ def _layer_norm_check(
     return all(d == 1 for d in normalized_shape[:-1]) and vulkan_check(node)
 
 
+# int64 tensors run as int32 on device.
+_DEVICE_DTYPE = {torch.int64: torch.int32}
+
+# Conversions the WebGPU copy kernels implement besides a copy within one dtype.
+_WEBGPU_CONVERSIONS = {
+    (torch.int32, torch.float32),
+    (torch.bool, torch.float32),
+    (torch.float32, torch.int32),
+}
+
+
+def _copy_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # A copy within one dtype, or a conversion between int32 or bool and fp32.
+    # Vulkan also converts fp16 <-> fp32, which the WebGPU kernels refuse.
+    src = node.args[0]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_dtype = src.meta["val"].dtype
+    dst_dtype = node.meta["val"].dtype
+    src_dtype = _DEVICE_DTYPE.get(src_dtype, src_dtype)
+    dst_dtype = _DEVICE_DTYPE.get(dst_dtype, dst_dtype)
+    supported = src_dtype == dst_dtype or (src_dtype, dst_dtype) in _WEBGPU_CONVERSIONS
+    return supported and vulkan_check(node)
+
+
+def _permute_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # The WebGPU kernel moves 4-byte elements only.
+    src = node.args[0]
+    return (
+        isinstance(src, torch.fx.Node)
+        and src.meta["val"].dtype in (torch.float32, torch.int32, torch.int64)
+        and vulkan_check(node)
+    )
+
+
 def _fp32_unary_features() -> OpFeatures:
     return OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
@@ -63,10 +103,44 @@ def _fp32_unary_features() -> OpFeatures:
     )
 
 
+def _fp32_only(op: OpKey) -> OpFeatures:
+    # The registry's features for the op, limited to fp32 inputs and outputs.
+    features = copy.copy(get_op_features(op))
+    features.inputs_dtypes = vk_utils.DtypeSetList({torch.float32})
+    features.outputs_dtypes = vk_utils.DtypeSetList({torch.float32})
+    return features
+
+
+# Ops whose WebGPU kernels read and write array<f32>. The Vulkan registry also
+# advertises fp16 (and, for clamp, int32) for them, which these kernels would
+# misread or refuse.
+_FP32_ONLY_OPS: List[OpKey] = [
+    exir_ops.edge.aten.abs.default,
+    exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten.cos.default,
+    exir_ops.edge.aten.exp.default,
+    exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.hardswish.default,
+    exir_ops.edge.aten.hardtanh.default,
+    exir_ops.edge.aten.leaky_relu.default,
+    exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.pixel_shuffle.default,
+    exir_ops.edge.aten.pow.Tensor_Scalar,
+    exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.round.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.sigmoid.default,
+    exir_ops.edge.aten.sin.default,
+    exir_ops.edge.aten.sqrt.default,
+    exir_ops.edge.aten.tanh.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
+]
+
 # Ops whose WebGPU kernels cover less (or more) than the Vulkan registry
 # advertises, so unsupported forms stay on CPU instead of failing at delegate
 # init, and WebGPU-only kernels are delegated.
 _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
+    **{op: _fp32_only(op) for op in _FP32_ONLY_OPS},
     # fp32 and int32 kernels only; int64 is downcast to int32 on device.
     exir_ops.edge.aten.arange.start_step: OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
@@ -76,9 +150,31 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
     exir_ops.edge.aten.native_layer_norm.default: _webgpu_features(
         exir_ops.edge.aten.native_layer_norm.default, _layer_norm_check
     ),
+    exir_ops.edge.aten._to_copy.default: _webgpu_features(
+        exir_ops.edge.aten._to_copy.default, _copy_check
+    ),
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default: _webgpu_features(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default, _copy_check
+    ),
+    exir_ops.edge.aten.permute.default: _webgpu_features(
+        exir_ops.edge.aten.permute.default, _permute_check
+    ),
+    exir_ops.edge.aten.permute_copy.default: _webgpu_features(
+        exir_ops.edge.aten.permute_copy.default, _permute_check
+    ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),
 }
+
+
+def _edge_op(op: torch._ops.OpOverload) -> Optional[OpKey]:
+    """The edge dialect form of the aten op `op`, or None for another op."""
+    if op.namespace != "aten":
+        return None
+    try:
+        return getattr(getattr(exir_ops.edge.aten, op._opname), op._overloadname)
+    except AttributeError:
+        return None
 
 
 # Vulkan fusion patterns whose fused ops the WebGPU runtime does not implement.
@@ -117,58 +213,87 @@ class WebGPUPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         ops, vulkan_filter = self._vulkan_partitioner.ops_to_not_decompose(ep)
-        silu_support = self._silu_support()
+        ops = ops + [torch.ops.aten.silu.default]
+        # Kept ops whose WebGPU support differs from Vulkan's, by their aten op.
+        overridden = {
+            op: edge_op
+            for op in ops
+            if (edge_op := _edge_op(op)) in _WEBGPU_OP_FEATURES
+        }
+        support = self._kept_op_support(overridden)
+        # filter_fn sees the aten form, and the edge form when lowering checks
+        # what was left undelegated.
+        overridden_targets = set(overridden) | set(overridden.values())
 
         def filter_fn(node: torch.fx.Node) -> bool:
             if node.target in (
                 torch.ops.aten.silu.default,
                 exir_ops.edge.aten.silu.default,
             ):
-                return self._keeps_silu(node, ep, silu_support)
+                return self._keeps_silu(node, ep, support)
+            if node.target in overridden_targets:
+                return self._is_delegated_where_kept(node, ep, support)
             return vulkan_filter is None or vulkan_filter(node)
 
-        return ops + [torch.ops.aten.silu.default], filter_fn
+        return ops, filter_fn
 
-    def _silu_support(self) -> VulkanSupportedOperators:
+    def _kept_op_support(
+        self, overridden: Dict[torch._ops.OpOverload, OpKey]
+    ) -> VulkanSupportedOperators:
         """The partitioner's own node support check, also accepting the aten
-        silu that ops_to_not_decompose sees before the edge conversion."""
+        forms of the kept ops in `overridden` that ops_to_not_decompose sees
+        before the edge conversion."""
         vulkan = self._vulkan_partitioner
-        aten_silu = torch.ops.aten.silu.default
-        edge_silu = exir_ops.edge.aten.silu.default
         allowlist = vulkan.operator_allowlist
-        if allowlist is not None and edge_silu in allowlist:
-            allowlist = allowlist | {aten_silu}
+        if allowlist is not None:
+            allowlist = allowlist | {
+                op for op, edge_op in overridden.items() if edge_op in allowlist
+            }
         blocklist = vulkan.operator_blocklist
-        if edge_silu in blocklist:
-            blocklist = blocklist | {aten_silu}
+        blocked = {op for op, edge_op in overridden.items() if edge_op in blocklist}
+        if blocked:
+            blocklist = blocklist | blocked
         return vulkan.make_supported_operators(
             op_features_overrides={
                 **_WEBGPU_OP_FEATURES,
-                aten_silu: _WEBGPU_OP_FEATURES[edge_silu],
+                **{
+                    op: _WEBGPU_OP_FEATURES[edge_op]
+                    for op, edge_op in overridden.items()
+                },
             },
             operator_allowlist=allowlist,
             operator_blocklist=blocklist,
+        )
+
+    def _is_delegated_where_kept(
+        self,
+        node: torch.fx.Node,
+        ep: ExportedProgram,
+        support: VulkanSupportedOperators,
+    ) -> bool:
+        """Whether the partitioner will delegate `node` if it is kept whole. A
+        kept op that is not delegated fails lowering, so keep it only in the
+        top-level graph (control-flow submodules are not partitioned) and where
+        it passes the partitioner's support check, e.g. fp32 for a kernel that
+        reads fp32. Elsewhere it decomposes as usual."""
+        return node.graph is ep.graph_module.graph and support.is_node_supported(
+            {}, node
         )
 
     def _keeps_silu(
         self,
         node: torch.fx.Node,
         ep: ExportedProgram,
-        silu_support: VulkanSupportedOperators,
+        support: VulkanSupportedOperators,
     ) -> bool:
-        """Whether `node` stays an aten.silu for the WebGPU silu kernel.
-
-        A kept op that is not delegated fails lowering, so keep it only where
-        the partitioner will delegate it: in the top-level graph (control-flow
-        submodules are not partitioned) and passing the partitioner's support
-        check. Where it feeds a mul it decomposes to x * sigmoid(x), as before,
-        so the SwiGLU fusion still matches.
+        """Whether `node` stays an aten.silu for the WebGPU silu kernel: only
+        where it will be delegated (_is_delegated_where_kept). Where it feeds a
+        mul it decomposes to x * sigmoid(x), as before, so the SwiGLU fusion
+        still matches.
         """
-        return (
-            node.graph is ep.graph_module.graph
-            and not any(user.target in _MUL_TARGETS for user in node.users)
-            and silu_support.is_node_supported({}, node)
-        )
+        return not any(
+            user.target in _MUL_TARGETS for user in node.users
+        ) and self._is_delegated_where_kept(node, ep, support)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         return self._vulkan_partitioner.partition(exported_program)
