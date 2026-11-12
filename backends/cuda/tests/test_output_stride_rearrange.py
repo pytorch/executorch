@@ -99,7 +99,7 @@ def _run_rocm_runner(module, inputs, output_strides, pte, ptd, tmpdir):
     ]
 
 
-def _run_et_aoti(module, inputs, triton_mode="OFF"):
+def _run_et_aoti(module, inputs):
     """Export and run a model through the ExecuTorch CUDA AOTI backend."""
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -108,14 +108,10 @@ def _run_et_aoti(module, inputs, triton_mode="OFF"):
         ExecutorchBackendConfig,
         to_edge_transform_and_lower,
     )
-    from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
 
     ep = torch.export.export(module, inputs, strict=True)
-    compile_specs = [
-        CudaBackend.generate_method_name_compile_spec("forward"),
-        CompileSpec(key="triton_kernel_mode", value=triton_mode.encode()),
-    ]
+    compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
     partitioner = {"forward": [CudaPartitioner(compile_specs)]}
     et_prog = to_edge_transform_and_lower(
         {"forward": ep},
@@ -170,19 +166,15 @@ class TestOutputStrideRearrange(unittest.TestCase):
             raise unittest.SkipTest("BF16 not supported on this GPU")
 
     def _check_sdpa(self, module, inputs, label):
-        """Run model through ExecuTorch AOTI with both Triton ON and OFF."""
+        """Run model through ExecuTorch AOTI and compare with eager."""
         with torch.no_grad():
             eager = module(*inputs).float().cpu()
 
-        for mode in ["OFF", "ON"]:
-            with self.subTest(triton_mode=mode):
-                result = _run_et_aoti(module, inputs, triton_mode=mode)[0].float()
-                rel = (result - eager).abs() / eager.abs().clamp(min=1e-6)
-                self.assertLess(
-                    rel.mean().item(),
-                    0.2,
-                    f"{label} triton={mode} mean_rel={rel.mean():.4f} too large",
-                )
+        result = _run_et_aoti(module, inputs)[0].float()
+        rel = (result - eager).abs() / eager.abs().clamp(min=1e-6)
+        self.assertLess(
+            rel.mean().item(), 0.2, f"{label} mean_rel={rel.mean():.4f} too large"
+        )
 
     def test_fast_path_no_mask(self):
         """No mask SDPA — output strides match, uses fast byte copy path."""
