@@ -398,8 +398,8 @@ void GraphBuilder::lower_sdpa(const Node& node) {
 }
 
 // Writes this step's K/V into the cache rows the executor uploads, then
-// attends the layer's rows under the uploaded mask: a flat layer's prefix, or
-// all of a ring layer. Q/K/V are [B,H,T,D].
+// attends the layer's rows under the uploaded mask: a prefix, or all of a
+// ring layer. Q/K/V are [B,H,T,D].
 void GraphBuilder::lower_update_and_attend(const Node& node) {
   if (offgraph_cache_ == nullptr) {
     throw std::runtime_error(
@@ -417,7 +417,7 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer_id " + std::to_string(layer) +
         " is outside the cache's " + std::to_string(num_layers) + " layers");
   }
-  const auto [k_cache, v_cache, window] =
+  const auto [k_cache, v_cache, window, ring] =
       offgraph_cache_->layers[static_cast<size_t>(layer)];
   if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
       val.sizes.size() != 4 || query.sizes[0] != 1 || key.sizes[0] != 1 ||
@@ -437,7 +437,7 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer " + std::to_string(layer) +
         " K/V shape disagrees with the cache geometry");
   }
-  const int64_t keys = window > 0 ? k_cache->ne[1] : offgraph_cache_->keys;
+  const int64_t keys = ring ? k_cache->ne[1] : offgraph_cache_->keys;
   ggml_context* ctx = instance_.context.get();
   if (!instance_.offgraph) {
     instance_.offgraph = OffGraphUploads{.tokens = tokens};

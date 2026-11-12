@@ -12,6 +12,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
@@ -70,16 +71,30 @@ std::vector<int> ring_rows(
 
 } // namespace
 
+GgmlKvPool::GgmlKvPool(
+    const cache::CacheGeometry& geometry,
+    int kv_dtype,
+    int initial_rows,
+    int capacity,
+    std::vector<int> ring_rows)
+    : geometry_(geometry),
+      ring_rows_(std::move(ring_rows)),
+      type_(kv_type(kv_dtype)),
+      initial_rows_(std::clamp(initial_rows, 1, capacity)),
+      capacity_(capacity) {}
+
 GgmlSequenceCache::GgmlSequenceCache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg)
     : SequenceCache(checked(geometry, cfg), cfg),
-      geometry_(geometry),
-      ring_rows_(ring_rows(geometry, cfg)),
-      type_(kv_type(cfg.kv_dtype)),
-      initial_rows_(std::clamp(cfg.initial_capacity, 1, cfg.capacity)) {}
+      pool_(
+          geometry,
+          cfg.kv_dtype,
+          cfg.initial_capacity,
+          cfg.capacity,
+          ring_rows(geometry, cfg)) {}
 
-void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
+void GgmlKvPool::reserve(ggml_backend_t backend, int rows) {
   ggml_backend_buffer_type_t buffer_type =
       ggml_backend_get_default_buffer_type(backend);
   if (storage_ && buffer_type != buffer_type_) {
@@ -88,10 +103,10 @@ void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
         ggml_backend_buft_name(buffer_type_) + ", not " +
         ggml_backend_buft_name(buffer_type));
   }
-  if (rows > capacity()) {
+  if (rows > capacity_) {
     throw std::out_of_range(
         "ggml cache: " + std::to_string(rows) +
-        " rows exceed the capacity of " + std::to_string(capacity()));
+        " rows exceed the capacity of " + std::to_string(capacity_));
   }
   if (storage_ && rows <= storage_->rows) {
     return;
@@ -101,7 +116,7 @@ void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
     target *= 2;
   }
   auto next = std::make_shared<Storage>();
-  next->rows = static_cast<int>(std::min<int64_t>(target, capacity()));
+  next->rows = static_cast<int>(std::min<int64_t>(target, capacity_));
 
   ggml_init_params params{
       .mem_size = ggml_tensor_overhead() * (2 * geometry_.layers.size() + 1),
@@ -114,7 +129,7 @@ void GgmlSequenceCache::reserve(ggml_backend_t backend, int rows) {
   }
   for (size_t i = 0; i < geometry_.layers.size(); ++i) {
     const cache::LayerGeometry& layer = geometry_.layers[i];
-    Layer out{.window = layer.policy.window};
+    Layer out{.window = layer.policy.window, .ring = ring_rows_[i] > 0};
     for (ggml_tensor** t : {&out.k, &out.v}) {
       *t = ggml_new_tensor_3d(
           next->context.get(),
