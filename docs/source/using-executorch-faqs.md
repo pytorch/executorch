@@ -43,13 +43,12 @@ Ensure the model is delegated. If not targeting a specific accelerator, use the 
 
 Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch uses one thread per performance core where it can tell core types apart, and one per logical core otherwise. On Linux other than Android, it also uses no more threads than the CPUs the process may run on, for example under `taskset` or in a container with a CPU set, and currently at most 63. It reads that limit once, from the thread that first uses the thread pool. CPU quotas, such as `docker --cpus`, are not detected. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
 
-Thread count can be set with the following function. Ensure this is done prior to loading or running a model.
+Thread count can be set with the following function. Call it before loading a model. Methods loaded earlier keep their XNNPACK work on the old thread count, and their `CpuBackend` work fails to run. To load such a method again, call `Module::unload_method()` before `load_method()`, or create a new `Module`. Changing the thread count while a method that uses `CpuBackend` is loading or running is not safe.
 ```
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
-This needs `extension/threadpool/threadpool.h`, which a source build provides. The pip
-package does not publish it, because the header holds a `pthreadpool` member by value and
-the wheel vendors no pthreadpool headers to compile it against.
+It is declared in `executorch/extension/threadpool/threadpool.h`. The pip package ships
+this header, so a C++ application built against the package can call it.
 
 For a deeper investigation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for more information.
 

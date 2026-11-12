@@ -137,20 +137,9 @@ Tensor& opt_div_out(
     // Reason for using alpha is becasuse handle_broadcast_elementwise
     // is used for add and sub as well:
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
-      if (selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-          selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-          selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-        auto div_lambda = [](auto x, auto y) { return y / x; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, div_lambda, a, b, out, selected_optimized_path);
-      } else {
-        auto div_lambda = [](auto x, auto y) { return x / y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, div_lambda, a, b, out, selected_optimized_path);
-      }
+      auto div_lambda = [](auto x, auto y) { return x / y; };
+      torch::executor::handle_broadcast_elementwise<CTYPE>(
+          ctx, div_lambda, a, b, out, selected_optimized_path);
     });
   } else {
     ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());

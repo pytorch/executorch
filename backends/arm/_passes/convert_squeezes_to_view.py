@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch import SymInt
 
 
 class ConvertSqueezesToViewPass(ArmOpTargetedPass):
@@ -35,6 +36,23 @@ class ConvertSqueezesToViewPass(ArmOpTargetedPass):
 
         x = args[0]
         shape = meta["val"].size()
+        if any(isinstance(dim, SymInt) for dim in shape):
+            if op == exir_ops.edge.aten.squeeze_copy.dims:
+                input_shape = x.data.shape
+                dims = {dim % len(input_shape) for dim in args[1]}
+                input_shape_proxy = super().call_size_operator_all(x, meta)
+                shape = [
+                    dim
+                    for idx, dim in enumerate(input_shape_proxy)
+                    if idx not in dims
+                    or isinstance(input_shape[idx], SymInt)
+                    or input_shape[idx] != 1
+                ]
+            if op == exir_ops.edge.aten.unsqueeze_copy.default:
+                dim = args[1] % (len(x.data.shape) + 1)
+                shape = super().call_size_operator_all(x, meta)
+                shape = shape[:dim] + [1] + shape[dim:]
+
         view_args = (x, list(shape))
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta

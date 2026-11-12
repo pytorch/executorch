@@ -32,6 +32,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
+            "//executorch/extension/threadpool:threadpool",
         ],
     )
 

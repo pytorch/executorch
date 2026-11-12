@@ -894,9 +894,11 @@ jobs:
   unittest:
     uses: ./.github/workflows/_unittest.yml
     permissions:
+      actions: read
       id-token: write
       contents: read
     with:
+      upload-test-run-reports: true
       build-mode: Debug
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
@@ -985,6 +987,9 @@ jobs:
 
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
+
+        # Run the host allocator regressions without a device or RPC library.
+        buck2 test //backends/qualcomm/runtime/tests:shared_buffer_test
 
   test-arm-backend-docgen:
     needs: [docker-image, changed-files]

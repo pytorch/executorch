@@ -71,6 +71,32 @@ set(ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES
     "16"
     CACHE STRING "Maximum delegates tracked by per-delegate profiling"
 )
+set(ET_ARM_ETHOSU55_65_PMU_EVENTS
+    ""
+    CACHE
+      STRING
+      "Comma-separated ETHOSU_PMU_* events for U55/U65 (up to 4); empty uses backend defaults; requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON"
+)
+set(ET_ARM_ETHOSU85_PMU_EVENTS
+    ""
+    CACHE
+      STRING
+      "Comma-separated ETHOSU_PMU_* events for U85 (up to 8); empty uses backend defaults; requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON"
+)
+
+foreach(_pmu_events_option IN ITEMS ET_ARM_ETHOSU55_65_PMU_EVENTS
+                                    ET_ARM_ETHOSU85_PMU_EVENTS
+)
+  if(NOT "${${_pmu_events_option}}" STREQUAL ""
+     AND NOT EXECUTORCH_ARM_ETHOSU_PMU_STATS
+  )
+    message(
+      FATAL_ERROR
+        "${_pmu_events_option} requires EXECUTORCH_ARM_ETHOSU_PMU_STATS=ON."
+    )
+  endif()
+endforeach()
+
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 set(BUNDLED_PROGRAM_LIBRARY_DIR
     ""
@@ -168,6 +194,17 @@ target_sources(
   arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
                               ../common/arm_memory_allocator.cpp
 )
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  target_sources(arm_executor_runner PRIVATE picolibc_startup.c)
+  target_compile_options(
+    arm_executor_runner
+    PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/picolibc_startup.h"
+  )
+  if(NOT SEMIHOSTING)
+    target_sources(arm_executor_runner PRIVATE picolibc_uart.c)
+  endif()
+endif()
 
 arm_runner_configure_linker_script(
   TARGET arm_executor_runner SYSTEM_CONFIG "${SYSTEM_CONFIG}"
@@ -398,6 +435,19 @@ if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
   target_link_libraries(arm_executor_runner PRIVATE ethosu_execution_stats)
   target_compile_definitions(
     arm_executor_runner PRIVATE ET_ARM_ETHOSU_PMU_STATS
+  )
+endif()
+
+if(NOT ET_ARM_ETHOSU55_65_PMU_EVENTS STREQUAL "")
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE "ET_ARM_ETHOSU55_65_PMU_EVENTS=${ET_ARM_ETHOSU55_65_PMU_EVENTS}"
+  )
+endif()
+if(NOT ET_ARM_ETHOSU85_PMU_EVENTS STREQUAL "")
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE "ET_ARM_ETHOSU85_PMU_EVENTS=${ET_ARM_ETHOSU85_PMU_EVENTS}"
   )
 endif()
 
