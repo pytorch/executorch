@@ -1034,9 +1034,8 @@ shapes, it includes the smallest performance-collection cases that dispatch a
 shader no correctness shape reaches. Performance collections exist to measure
 latency and are not run in CI. Correctness cases that fail because of known
 operator bugs live in separate collections named after the bug, such as
-`convolution/q8ta/cases/legacy_4w4c_padding.json` and
-`embedding/qw/q4gsw/cases/texture3d_multirow_indices.json`, so CI stays green
-while the cases remain available for a fix.
+`convolution/q8ta/cases/legacy_4w4c_padding.json`, so CI stays green while the
+cases remain available for a fix.
 
 ## Schema audits and validation-only runs
 
