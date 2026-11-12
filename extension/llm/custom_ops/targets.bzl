@@ -170,6 +170,7 @@ def define_common_targets():
         srcs = [
             "op_sdpa_test.cpp",
         ],
+        env = {"OMP_NUM_THREADS": "1"},
         visibility = ["//executorch/..."],
         deps = [
             "//executorch/runtime/core/exec_aten:lib",
