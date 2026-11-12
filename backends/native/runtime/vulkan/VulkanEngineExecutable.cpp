@@ -242,11 +242,28 @@ bool is_activation_input(std::string_view key, std::string_view input) {
 
 // Ops whose ET-VK kernels bind every tensor input, constants and state
 // included, in the output's storage, so dispatch converts any input whose
-// storage differs. InsertPrepack turns constant inputs of these ops, except
-// view_copy, into tensors.
+// storage differs. The binary ops all run through add_binary_op_node, which
+// also prepacks tensor references like its output.
 bool binds_output_storage(std::string_view key) {
-  return key == "aten.view_copy.default" || key == "aten.where.self" ||
-      key == "et_vk.sdpa.default";
+  constexpr std::array<std::string_view, 20> kOps{
+      "aten.add.Tensor",         "aten.bitwise_and.Tensor",
+      "aten.bitwise_or.Tensor",  "aten.div.Tensor",
+      "aten.div.Tensor_mode",    "aten.eq.Tensor",
+      "aten.ge.Tensor",          "aten.gt.Tensor",
+      "aten.le.Tensor",          "aten.logical_and.default",
+      "aten.logical_or.default", "aten.lt.Tensor",
+      "aten.minimum.default",    "aten.mul.Tensor",
+      "aten.pow.Tensor_Tensor",  "aten.sub.Tensor",
+      "aten.view_copy.default",  "aten.where.self",
+      "et_vk.sdpa.default",      "et_vk.swiglu.default"};
+  return std::ranges::find(kOps, key) != kOps.end();
+}
+
+// Ops whose ET-VK kernels read `self` in the output's layout and storage, which
+// later layout steps can leave unlike the input's.
+bool reads_self_as_output(std::string_view key) {
+  return key == "aten.constant_pad_nd.default" ||
+      key == "aten.permute_copy.default" || key == "aten.repeat.default";
 }
 
 // Texture texels address [C * N, H, W] with W or H packed, and
@@ -1040,15 +1057,29 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     } while (changed);
 
-    // A constant that only buffer-output binds_output_storage ops read is
-    // prepacked into a buffer once rather than converted on every execute.
-    const auto binds_buffer_output = [&](NodeId consumer_id) {
+    // A constant whose readers all convert it to one representation at
+    // dispatch is prepacked in it once instead of converted on every execute.
+    using Representation =
+        std::pair<utils::StorageType, utils::GPUMemoryLayout>;
+    const auto wanted =
+        [&](ValueId constant_id,
+            NodeId consumer_id) -> std::optional<Representation> {
       const Node& consumer = g().node(consumer_id);
-      bool buffer = binds_output_storage(registry_key(consumer.target));
-      for_each_output_value(consumer, [&](ValueId output_id) {
-        buffer &= storage_at(output_id) == utils::kBuffer;
-      });
-      return buffer;
+      const std::string key = registry_key(consumer.target);
+      ValueId out_id = kInvalid;
+      for_each_output_value(consumer, [&](ValueId id) { out_id = id; });
+      if (!valid(out_id)) {
+        return std::nullopt;
+      }
+      if (binds_output_storage(key)) {
+        return Representation{storage_at(out_id), layout_at(constant_id)};
+      }
+      const Argument* self = find_input(consumer, "self");
+      if (reads_self_as_output(key) && self != nullptr &&
+          tensor_id(self) == constant_id) {
+        return Representation{storage_at(out_id), layout_at(out_id)};
+      }
+      return std::nullopt;
     };
     for (const NodeId node_id : nodes_) {
       const Node& node = g().node(node_id);
@@ -1059,10 +1090,26 @@ class VulkanEngineExecutable final : public EngineExecutable {
       for_each_output_value(node, [&](ValueId constant_id) {
         const std::vector<NodeId>& consumers =
             g().value(constant_id).consumer_ids;
-        if (!consumers.empty() &&
-            std::ranges::all_of(consumers, binds_buffer_output)) {
-          storage_at(constant_id) = utils::kBuffer;
+        if (consumers.empty()) {
+          return;
         }
+        const std::optional<Representation> representation =
+            wanted(constant_id, consumers.front());
+        if (!representation ||
+            !std::ranges::all_of(
+                consumers,
+                [&](NodeId consumer_id) {
+                  return wanted(constant_id, consumer_id) == representation;
+                }) ||
+            (representation->first == utils::kTexture3D &&
+             exceeds_texture_limit(
+                 meta_of(constant_id),
+                 representation->second,
+                 texture_limit))) {
+          return;
+        }
+        storage_at(constant_id) = representation->first;
+        layout_at(constant_id) = representation->second;
       });
     }
   }
@@ -1952,12 +1999,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
               layout_at(out_id));
         }
       }
-      // ET-VK's pad and permute read `self` in the output's layout and
-      // storage, which later layout steps can leave unlike its input's.
-      if ((key == "aten.constant_pad_nd.default" ||
-           key == "aten.permute_copy.default") &&
-          na.name == "self" && na.arg.kind() == ArgKind::Tensor &&
-          valid(na.arg.as_tensor().id)) {
+      if (reads_self_as_output(key) && na.name == "self" &&
+          na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id)) {
         const ValueId in_id = na.arg.as_tensor().id;
         ValueId out_id = kInvalid;
         for_each_output_value(n, [&](ValueId id) { out_id = id; });
@@ -1969,7 +2012,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         }
       }
       if (!width && output_storage.has_value() && binds_output &&
-          na.arg.kind() == ArgKind::Tensor) {
+          na.arg.kind() == ArgKind::Tensor && !graph_->val_is_tref(a)) {
         const ValueId in_id = na.arg.as_tensor().id;
         if (valid(in_id) && storage_at(in_id) != *output_storage) {
           a = repack(a, g().value(in_id), *output_storage, layout_at(in_id));
