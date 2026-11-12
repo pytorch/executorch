@@ -171,13 +171,12 @@ std::vector<uint8_t> CreateTestProgram(
             builder,
             executorch_flatbuffer::InstructionArguments::KernelCall,
             kernel_call.Union())};
-    chains.push_back(
-        executorch_flatbuffer::CreateChain(
-            builder,
-            /*inputs=*/builder.CreateVector(std::vector<int32_t>{}),
-            /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
-            builder.CreateVector(instructions),
-            /*stacktrace=*/0));
+    chains.push_back(executorch_flatbuffer::CreateChain(
+        builder,
+        /*inputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        builder.CreateVector(instructions),
+        /*stacktrace=*/0));
   }
   auto chain_vec = builder.CreateVector(chains);
   std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>> operators;
@@ -185,11 +184,10 @@ std::vector<uint8_t> CreateTestProgram(
     operators.push_back(executorch_flatbuffer::CreateOperator(
         builder, builder.CreateString("test::noop"), builder.CreateString("")));
   } else if (with_failing_kernel_no_overload) {
-    operators.push_back(
-        executorch_flatbuffer::CreateOperator(
-            builder,
-            builder.CreateString("test::failing_no_overload"),
-            /*overload=*/0));
+    operators.push_back(executorch_flatbuffer::CreateOperator(
+        builder,
+        builder.CreateString("test::failing_no_overload"),
+        /*overload=*/0));
   }
   auto operators_vec = builder.CreateVector(operators);
   auto empty_delegates_vec = builder.CreateVector(

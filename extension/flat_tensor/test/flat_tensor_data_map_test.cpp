@@ -224,16 +224,14 @@ std::vector<uint8_t> CreateDataWithVersion(
         executorch_flatbuffer::ScalarType::FLOAT,
         builder.CreateVector(sizes),
         builder.CreateVector(dim_order));
-    segments.push_back(
-        flat_tensor_flatbuffer::CreateDataSegment(
-            builder, segment->offset, segment->size));
-    named_data.push_back(
-        flat_tensor_flatbuffer::CreateNamedData(
-            builder,
-            with_null_key ? flatbuffers::Offset<flatbuffers::String>()
-                          : builder.CreateString(kWideTensorKey),
-            /*segment_index=*/0,
-            tensor_layout));
+    segments.push_back(flat_tensor_flatbuffer::CreateDataSegment(
+        builder, segment->offset, segment->size));
+    named_data.push_back(flat_tensor_flatbuffer::CreateNamedData(
+        builder,
+        with_null_key ? flatbuffers::Offset<flatbuffers::String>()
+                      : builder.CreateString(kWideTensorKey),
+        /*segment_index=*/0,
+        tensor_layout));
   }
 
   auto flat_tensor = flat_tensor_flatbuffer::CreateFlatTensor(
