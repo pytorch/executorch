@@ -744,6 +744,15 @@ class SubTensorModule(torch.nn.Module):
         return x - y
 
 
+class AddSubTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x + y, x - y
+
+
 class MaxPoolSubTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -85,7 +85,7 @@ class BaseDatasetCreator(ABC):
                 mkdir(dst_example_dir_path)
 
                 for spec_idx, spec in enumerate(input_spec):
-                    file_name = f"{str(spec_idx).zfill(2)}.bin"
+                    file_name = f"{str(spec_idx).zfill(4)}.bin"
                     src = os.path.join(src_example_dir_path, file_name)
                     dst = os.path.join(dst_example_dir_path, file_name)
 
