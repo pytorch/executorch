@@ -67,8 +67,8 @@ await worker.restore_checkpoint_from_cpu(
     expected_identity=identity,
 )
 
-# Send the complete next prompt using session_id="conversation". The serving
-# runtime reconciles it against the restored token history and prefills its suffix.
+# Send a complete next prompt that extends this token history, using
+# session_id="conversation". The serving runtime prefills only its suffix.
 ```
 
 The identity is an application-supplied contract. It must describe the worker
@@ -85,6 +85,8 @@ formatting. Comparing strings or message lists is insufficient.
 
 ```python
 position = checkpoint.common_prefix_length(next_prompt_token_ids)
+# Leave at least one prompt token to process: checkpoints do not store logits.
+position = min(position, max(0, len(next_prompt_token_ids) - 1))
 checkpoint.validate_restore_position(position)
 await worker.restore_checkpoint_from_cpu(
     checkpoint, "conversation", position=position, expected_identity=identity
@@ -93,10 +95,16 @@ await worker.restore_checkpoint_from_cpu(
 
 A token match does not prove that a restore is possible. A sliding-window layer may
 have overwritten history needed at an earlier position. Both Python preflight and
-the native cache reject such positions. Applications can choose another saved
-checkpoint or run a fresh prefill. No fallback is selected by these operations.
-For an exact prompt retry, the existing serving path may replay the final prompt
-token to obtain logits; a checkpoint does not store logits.
+the native cache reject such positions. Ordinary sliding-window attention needs
+`window - 1` prior rows; a DFlash draft block needs `window` prior rows. Applications
+can choose another saved checkpoint or run a fresh prefill. No fallback is selected
+by these operations.
+
+The next prompt must extend the restored history to reuse it. If it equals the
+restored history, the current serving planner starts a full prefill because the
+checkpoint does not contain logits. For an exact prompt retry, explicitly restore
+one token before its end, as above, and send the complete prompt. That restore
+position must still pass the retained-history checks.
 
 ## Ownership, errors, and cost
 
@@ -105,7 +113,8 @@ token to obtain logits; a checkpoint does not store logits.
 - Restore creates a new session. An existing key is an error. Invalid state or an
   allocation failure does not replace another session or leave a partial session.
 - Export/import execute between model forwards. Device synchronization and CPU
-  copies are real work; they can delay other inference on that executor.
+  copies are real work. The serving control thread also waits for these operations,
+  which delays admission and prompt preparation across sessions.
 - The current JSONL transport exchanges bulk bytes through private temporary local
   files, off its reader/writer threads. These transfers include temporary-file I/O
   and host copies. One checkpoint transfer is admitted at a time. This transport
@@ -113,6 +122,11 @@ token to obtain logits; a checkpoint does not store logits.
 - Cancelling the Python waiter waits for the transfer to settle before releasing
   its buffers. It does not undo a completed restore; close the destination key if
   the application abandons it.
+- Token IDs are signed 32-bit little-endian values stored first in the binary
+  payload, followed by layer K/V buffers and draft features. JSON carries only
+  buffer descriptors, so longer histories do not enlarge control frames or the
+  file header. The file version is `ETCP0002` and the transport manifest version
+  is `2`; earlier draft checkpoints must be regenerated.
 - `save_checkpoint` writes a replacement file and atomically publishes it after
   flushing. `load_checkpoint` checks version, bounds, identity, and a checksum over
   metadata and payload. Errors propagate. Files contain no pickle or executable

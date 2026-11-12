@@ -227,8 +227,8 @@ struct ServingRuntime::Impl {
     Close,
     Reset,
     Generate,
-    ExportCheckpoint,
-    RestoreCheckpoint
+    ExportSessionCheckpoint,
+    RestoreSessionCheckpoint
   };
   enum class Lifecycle { Running, Stopping, Stopped };
   enum class SessionPhase { Opening, Open, Reopening, Unavailable };
@@ -256,7 +256,7 @@ struct ServingRuntime::Impl {
     bool existed = false;
     std::shared_ptr<SessionCheckpoint> exported;
     std::shared_ptr<const SessionCheckpoint> restored;
-    batching::Position checkpoint_position = 0;
+    batching::Position session_checkpoint_position = 0;
   };
 
   Impl(
@@ -361,7 +361,7 @@ struct ServingRuntime::Impl {
         {}};
     command.exported = std::move(exported);
     command.restored = std::move(restored);
-    command.checkpoint_position = position;
+    command.session_checkpoint_position = position;
     LifecycleResult error;
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -401,13 +401,13 @@ struct ServingRuntime::Impl {
       return ServingError{ErrorCode::NotReady, "runtime is stopping"};
     }
     auto it = sessions_.find(command.key);
-    if (command.operation == Operation::ExportCheckpoint) {
+    if (command.operation == Operation::ExportSessionCheckpoint) {
       if (it == sessions_.end() || !it->second.session) {
         return ServingError{
             ErrorCode::SessionNotFound, "checkpoint session not found"};
       }
       auto& slot = it->second;
-      const auto upto = command.checkpoint_position;
+      const auto upto = command.session_checkpoint_position;
       if (slot.active_request) {
         return ServingError{
             ErrorCode::SessionBusy,
@@ -452,7 +452,7 @@ struct ServingRuntime::Impl {
           std::get<batching::Checkpoint>(std::move(result));
       return std::nullopt;
     }
-    if (command.operation == Operation::RestoreCheckpoint) {
+    if (command.operation == Operation::RestoreSessionCheckpoint) {
       if (it != sessions_.end()) {
         return ServingError{
             ErrorCode::InvalidArgument,
@@ -463,7 +463,7 @@ struct ServingRuntime::Impl {
             ErrorCode::SessionCapacityExceeded, "session limit reached"};
       }
       const auto& checkpoint = command.restored;
-      const auto upto = command.checkpoint_position;
+      const auto upto = command.session_checkpoint_position;
       if (!checkpoint || upto <= 0 || upto > checkpoint->state.position ||
           checkpoint->state.position !=
               static_cast<int64_t>(checkpoint->tokens.size()) ||
@@ -2104,7 +2104,7 @@ void ServingRuntime::export_checkpoint_to_cpu_async(
     CheckpointCallback on_complete) {
   auto checkpoint = std::make_shared<SessionCheckpoint>();
   impl_->submit(
-      Impl::Operation::ExportCheckpoint,
+      Impl::Operation::ExportSessionCheckpoint,
       std::move(key),
       [checkpoint, callback = std::move(on_complete)](
           LifecycleResult error, bool) {
@@ -2124,7 +2124,7 @@ void ServingRuntime::restore_checkpoint_from_cpu_async(
     batching::Position upto,
     LifecycleCallback on_complete) {
   impl_->submit(
-      Impl::Operation::RestoreCheckpoint,
+      Impl::Operation::RestoreSessionCheckpoint,
       std::move(key),
       [callback = std::move(on_complete)](LifecycleResult error, bool) {
         callback(std::move(error));

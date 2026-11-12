@@ -41,30 +41,33 @@ mx::array step(MLXBatchedCache& c, int id, int start, int count) {
 }
 
 TEST(MLXCheckpoint, WrappedRingRestoresContinuationAndRejectsMissingHistory) {
-  MLXBatchedCache source(geometry(), config());
-  auto id = source.seq_new().value();
-  for (int p = 0; p < 18; p += 3)
-    step(source, id, p, 3);
-  auto exported = source.export_to_cpu(id, 18);
-  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(exported));
-  auto checkpoint = std::get<cache::SequenceCheckpoint>(std::move(exported));
-  EXPECT_EQ(checkpoint.layers[0].begin, 0);
-  EXPECT_EQ(checkpoint.layers[1].begin, 12);
-  for (int position : {18, 17, 15}) {
-    MLXBatchedCache restored(geometry(), config());
-    auto result = restored.import_from_cpu(checkpoint, position);
-    ASSERT_TRUE(std::holds_alternative<int32_t>(result));
-    auto reference = source.seq_clone(id, position);
-    ASSERT_TRUE(reference);
-    auto expected = step(source, *reference, position, 1);
-    auto actual = step(restored, std::get<int32_t>(result), position, 1);
-    EXPECT_TRUE(mx::allclose(expected, actual, 0, 0).item<bool>());
-    source.seq_rm(*reference);
+  for (int end : {18, 20}) {
+    SCOPED_TRACE(end);
+    MLXBatchedCache source(geometry(), config());
+    auto id = source.seq_new().value();
+    for (int p = 0; p < end; p += 3)
+      step(source, id, p, std::min(3, end - p));
+    auto exported = source.export_to_cpu(id, end);
+    ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(exported));
+    auto checkpoint = std::get<cache::SequenceCheckpoint>(std::move(exported));
+    EXPECT_EQ(checkpoint.layers[0].begin, 0);
+    EXPECT_EQ(checkpoint.layers[1].begin, end - 6);
+    for (int position : {end, end - 1, end - 3}) {
+      MLXBatchedCache restored(geometry(), config());
+      auto result = restored.import_from_cpu(checkpoint, position);
+      ASSERT_TRUE(std::holds_alternative<int32_t>(result));
+      auto reference = source.seq_clone(id, position);
+      ASSERT_TRUE(reference);
+      auto expected = step(source, *reference, position, 1);
+      auto actual = step(restored, std::get<int32_t>(result), position, 1);
+      EXPECT_TRUE(mx::allclose(expected, actual, 0, 0).item<bool>());
+      source.seq_rm(*reference);
+    }
+    MLXBatchedCache rejected(geometry(), config());
+    EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+        rejected.import_from_cpu(checkpoint, end - 4)));
+    EXPECT_EQ(rejected.seq_new().value(), 0);
   }
-  MLXBatchedCache rejected(geometry(), config());
-  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
-      rejected.import_from_cpu(checkpoint, 14)));
-  EXPECT_EQ(rejected.seq_new().value(), 0);
 }
 
 TEST(MLXCheckpoint, ReexportPreservesRetentionAndOwnsBytes) {
@@ -85,6 +88,43 @@ TEST(MLXCheckpoint, ReexportPreservesRetentionAndOwnsBytes) {
   EXPECT_EQ(again.layers[1].begin, 12);
   EXPECT_EQ(again.layers[1].key, original);
   EXPECT_FALSE(restored.rewind(target, 14));
+}
+
+TEST(MLXCheckpoint, DFlashRequiresTheFullWindowBeforeTheNextBlock) {
+  auto g = geometry();
+  g.dflash_block_size = 2;
+  MLXBatchedCache source(g, config());
+  const auto id = source.seq_new().value();
+  auto forward = [](MLXBatchedCache& c, int seq, int start, int count) {
+    const auto kv = mx::reshape(
+        mx::arange(2 * (count + 2) * 8, mx::float32), {1, 2, count + 2, 8});
+    const auto query = mx::ones({1, 2, 2, 8}, mx::float32);
+    std::vector<int32_t> positions(count + 2);
+    std::iota(positions.begin(), positions.end(), start);
+    EXPECT_TRUE(c.declare_step(std::vector<int32_t>(count + 2, seq)));
+    auto output = query;
+    for (int layer = 0; layer < 2; ++layer)
+      output = c.attend(layer, positions, query, kv, kv, 0.35f, {});
+    output.eval();
+    return output;
+  };
+  for (int p = 0; p < 20; p += 3)
+    forward(source, id, p, std::min(3, 20 - p));
+  const auto checkpoint =
+      std::get<cache::SequenceCheckpoint>(source.export_to_cpu(id, 20));
+  const int boundary = checkpoint.layers[1].begin + 4;
+  executorch::backends::mlx::MLXSequenceCache direct(g, config());
+  EXPECT_FALSE(direct.import_from_cpu(checkpoint.layers, boundary - 1));
+  MLXBatchedCache restored(g, config());
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+      restored.import_from_cpu(checkpoint, boundary - 1)));
+  const auto result = restored.import_from_cpu(checkpoint, boundary);
+  ASSERT_TRUE(std::holds_alternative<int32_t>(result));
+  const auto reference = source.seq_clone(id, boundary);
+  ASSERT_TRUE(reference);
+  const auto expected = forward(source, *reference, boundary, 1);
+  const auto actual = forward(restored, std::get<int32_t>(result), boundary, 1);
+  EXPECT_TRUE(mx::allclose(expected, actual, 0, 0).item<bool>());
 }
 
 TEST(MLXCheckpoint, InvalidGeometryAndPartialForwardLeaveNoSession) {

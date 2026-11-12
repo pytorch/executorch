@@ -2373,6 +2373,43 @@ TEST_F(
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaBatchedSequenceCacheTest, DFlashCheckpointNeedsFullWindowHistory) {
+  auto owner = make(kCapacity, 2);
+  auto* control = owner->as<cache::BatchControl>();
+  auto* kv = owner->as<cu::CudaKVCache>();
+  auto* transfer = owner->as<cache::CheckpointControl>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = control->seq_new().value();
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  ASSERT_EQ(control->pos(a), 12);
+  for (const char* name : {"f_k", "f_v", "r_k", "r_v"}) {
+    const auto& binding = fake.bound.at(name);
+    size_t bytes = 2;
+    for (auto extent : binding.sizes)
+      bytes *= extent;
+    ASSERT_EQ(cudaMemset(binding.data, 0, bytes), cudaSuccess);
+  }
+  auto result = transfer->export_to_cpu(a, 12);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(result));
+  const auto& checkpoint = std::get<cache::SequenceCheckpoint>(result);
+  ASSERT_EQ(checkpoint.layers[1].begin, 5);
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+      transfer->export_to_cpu(a, 6)));
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+      transfer->import_from_cpu(checkpoint, 6)));
+  auto restored = transfer->import_from_cpu(checkpoint, 7);
+  ASSERT_TRUE(std::holds_alternative<int32_t>(restored));
+  const auto id = std::get<int32_t>(restored);
+  EXPECT_EQ(control->pos(id), 7);
+  EXPECT_FALSE(control->rewind(id, 6));
+  EXPECT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(
+      transfer->export_to_cpu(id, 7)));
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaBatchedSequenceCacheTest, EachSequenceWritesItsOwnColumn) {
   auto cache_ptr = make();
   ASSERT_NE(cache_ptr, nullptr);

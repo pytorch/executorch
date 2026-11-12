@@ -17,35 +17,40 @@ from executorch.examples.llm_server.python.checkpoint import (
 )
 
 
-def sample():
+def sample(tokens=(11, 12, 13), *, begin=0, window=0, dflash=None):
+    position = len(tokens)
+    token_data = struct.pack(f"<{position}i", *tokens)
+    size = (position - begin) * 2
+    offset = len(token_data)
     return CPUCheckpoint(
         "model-a",
         {
+            "version": 2,
             "format": "test-v1",
-            "position": 3,
-            "tokens": [11, 12, 13],
-            "data_bytes": 12,
+            "position": position,
+            "tokens": [0, offset],
+            "data_bytes": offset + 2 * size,
             "hidden_row_bytes": 0,
-            "hidden": [12, 0],
+            "hidden": [offset + 2 * size, 0],
             "caches": [
                 {
-                    "position": 3,
+                    "position": position,
                     "dtype": 5,
-                    "dflash_block_size": None,
+                    "dflash_block_size": dflash,
                     "layers": [
                         {
-                            "begin": 0,
+                            "begin": begin,
                             "heads": 1,
                             "head_dim": 1,
-                            "window": 0,
-                            "key": [0, 6],
-                            "value": [6, 6],
+                            "window": window,
+                            "key": [offset, size],
+                            "value": [offset + size, size],
                         }
                     ],
                 }
             ],
         },
-        bytes(range(12)),
+        token_data + b"\x01\x02" * size,
     )
 
 
@@ -74,10 +79,7 @@ def test_corruption_rejected(tmp_path, kind):
         data[-1] ^= 1
     elif kind == "tokens":
         size = struct.unpack("<Q", data[8:16])[0]
-        header = json.loads(data[16 : 16 + size])
-        header["metadata"]["manifest"]["tokens"][0] = 19
-        encoded = json.dumps(header, separators=(",", ":")).encode()
-        data = data[:8] + struct.pack("<Q", len(encoded)) + encoded + data[16 + size :]
+        data[16 + size] ^= 1
     elif kind == "truncate":
         data = data[:-1]
     elif kind == "header_limit":
@@ -101,10 +103,7 @@ def test_failed_save_preserves_previous_file(tmp_path):
 
 
 def test_layer_retention_controls_partial_restore():
-    checkpoint = sample()
-    checkpoint.manifest.update(position=10, tokens=list(range(10)))
-    checkpoint.manifest["caches"][0].update(position=10)
-    checkpoint.manifest["caches"][0]["layers"][0].update(begin=7, window=3)
+    checkpoint = sample(tuple(range(10)), begin=7, window=3)
     checkpoint.validate_restore_position(10)
     checkpoint.validate_restore_position(9)
     with pytest.raises(ValueError, match="no longer retains"):
@@ -168,3 +167,38 @@ def test_repeated_cancellation_waits_for_native_transfer(restore):
             assert not path.exists() and not client._requests
 
     asyncio.run(asyncio.wait_for(run(), 10))
+
+
+@pytest.mark.parametrize("block", [0, 2])
+def test_dflash_requires_the_full_window_before_the_next_block(block):
+    checkpoint = sample(tuple(range(10)), begin=7, window=3, dflash=block)
+    with pytest.raises(ValueError, match="no longer retains"):
+        checkpoint.validate_restore_position(9)
+    checkpoint.validate_restore_position(10)
+
+
+def test_long_history_uses_binary_payload_and_bounded_metadata(tmp_path):
+    checkpoint = sample((123456,) * 300000, begin=299997, window=3)
+    assert checkpoint.tokens == (123456,) * 300000
+    assert len(json.dumps(checkpoint.manifest)) < 1024
+    path = tmp_path / "long.etcp"
+    save_checkpoint(checkpoint, path)
+    assert load_checkpoint(path, expected_identity="model-a") == checkpoint
+    checkpoint.validate_restore_position(300000)
+
+
+@pytest.mark.parametrize("kind", ["version", "extent", "negative_token"])
+def test_binary_token_metadata_rejects_invalid_state(kind):
+    checkpoint = sample()
+    if kind == "version":
+        checkpoint.manifest["version"] = 1
+    elif kind == "extent":
+        checkpoint.manifest["tokens"][1] -= 4
+    else:
+        checkpoint = CPUCheckpoint(
+            checkpoint.identity,
+            checkpoint.manifest,
+            struct.pack("<i", -1) + checkpoint.data[4:],
+        )
+    with pytest.raises(ValueError):
+        checkpoint.validate("model-a")

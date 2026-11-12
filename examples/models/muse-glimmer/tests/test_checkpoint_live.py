@@ -26,6 +26,7 @@ from executorch.examples.llm_server.python.checkpoint import (
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
+from executorch.examples.llm_server.python.worker_client import WorkerError
 
 
 @pytest.mark.parametrize("prefix_length", [512, 4096])
@@ -82,6 +83,11 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
                 position=position,
                 expected_identity="same-worker-test",
             )
+            restored_state = await worker.export_checkpoint_to_cpu(
+                "restored", position=position, identity="same-worker-test"
+            )
+            assert restored_state == checkpoint
+            del restored_state
             prompt = list(checkpoint.tokens) + suffix
             actual = await generate(worker, "restored", prompt, 16)
             expected = await generate(worker, "cold", prompt, 16)
@@ -91,27 +97,64 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
             await worker.close_session("restored")
             await worker.close_session("cold")
 
-            retained = any(
-                layer["begin"] > 0
+            await worker.restore_checkpoint_from_cpu(
+                checkpoint,
+                "retry",
+                position=position - 1,
+                expected_identity="same-worker-test",
+            )
+            prompt = list(checkpoint.tokens)
+            actual = await generate(worker, "retry", prompt, 16)
+            expected = await generate(worker, "retry-cold", prompt, 16)
+            assert actual.generated_token_ids == expected.generated_token_ids
+            assert actual.reused_prompt_tokens == position - 1
+            assert actual.prefilled_prompt_tokens == 1
+            await worker.close_session("retry")
+            await worker.close_session("retry-cold")
+
+            boundaries = [
+                layer["begin"] + layer["window"] - (cache["dflash_block_size"] is None)
                 for cache in checkpoint.manifest["caches"]
                 for layer in cache["layers"]
-            )
-            if retained:
+                if layer["begin"] > 0
+            ]
+            partial = max(boundaries) if boundaries else position // 2
+            if boundaries:
                 with pytest.raises(ValueError, match="no longer retains"):
-                    checkpoint.validate_restore_position(1)
-            else:
-                partial = position // 2
-                await worker.restore_checkpoint_from_cpu(
-                    checkpoint,
-                    "partial",
-                    position=partial,
-                    expected_identity="same-worker-test",
+                    checkpoint.validate_restore_position(partial - 1)
+                # Bypass Python preflight to verify the native cache rejects it
+                # without reserving the destination session key.
+                staging = tmp_path / "native-restore"
+                staging.write_bytes(checkpoint.data)
+                request = worker._submit(
+                    {
+                        "op": "restore_checkpoint",
+                        "session_id": "partial",
+                        "position": partial - 1,
+                        "path": str(staging),
+                        "data_offset": 0,
+                        "manifest": checkpoint.manifest,
+                    },
+                    op="restore_checkpoint",
+                    ack="restored",
                 )
-                prompt = list(checkpoint.tokens[:partial]) + suffix
-                actual = await generate(worker, "partial", prompt, 16)
-                expected = await generate(worker, "partial-cold", prompt, 16)
-                assert actual.generated_token_ids == expected.generated_token_ids
-                assert actual.reused_prompt_tokens == partial
+                try:
+                    result = await request.completion
+                    assert isinstance(result, WorkerError)
+                    assert result.code == "invalid_argument"
+                finally:
+                    worker._abandon(request)
+            await worker.restore_checkpoint_from_cpu(
+                checkpoint,
+                "partial",
+                position=partial,
+                expected_identity="same-worker-test",
+            )
+            prompt = list(checkpoint.tokens[:partial]) + suffix
+            actual = await generate(worker, "partial", prompt, 16)
+            expected = await generate(worker, "partial-cold", prompt, 16)
+            assert actual.generated_token_ids == expected.generated_token_ids
+            assert actual.reused_prompt_tokens == partial
         finally:
             await worker.close()
 

@@ -9,6 +9,7 @@
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 
 #include <memory>
@@ -100,6 +101,25 @@ TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
   const CacheGeometry geometry{{flat_layer()}, -1};
   EXPECT_FALSE(valid(geometry));
   EXPECT_FALSE(valid(geometry, config(8)));
+}
+
+TEST_F(CacheTest, CheckpointRetentionRespectsTheAttentionPolicy) {
+  namespace cache = executorch::extension::llm::cache;
+  auto cfg = config(32);
+  cfg.kv_dtype = 5;
+  for (auto block :
+       {std::optional<int>{}, std::optional<int>{0}, std::optional<int>{2}}) {
+    const CacheGeometry geometry{{ring_layer(4)}, block};
+    cache::SequenceCheckpoint state{
+        20,
+        5,
+        block,
+        {{14, 2, 8, 4, std::vector<uint8_t>(192), std::vector<uint8_t>(192)}}};
+    const int boundary = block ? 18 : 17;
+    EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, boundary - 1));
+    EXPECT_TRUE(cache::valid_checkpoint(state, geometry, cfg, boundary));
+    EXPECT_TRUE(cache::valid_checkpoint(state, geometry, cfg, 20));
+  }
 }
 
 TEST_F(

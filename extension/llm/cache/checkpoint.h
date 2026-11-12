@@ -70,8 +70,9 @@ inline bool valid_checkpoint(
         (layer.window == 0 && layer.begin != 0)) {
       return false;
     }
-    const int required =
-        layer.window ? std::max(0, upto - layer.window + 1) : 0;
+    const int required = layer.window
+        ? std::max(0, upto - layer.window + (state.dflash_block_size ? 0 : 1))
+        : 0;
     if (upto && (layer.begin > required || layer.begin > upto)) {
       return false;
     }

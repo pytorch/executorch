@@ -821,6 +821,9 @@ class KVAttentionLayer final : public AttentionLayer {
     return storage_.export_to_cpu(upto);
   }
   bool import_from_cpu(const cache::LayerCheckpoint& state, int upto) override {
+    if (upto && state.begin > policy_->required_history_begin(upto)) {
+      return false;
+    }
     storage_.import_from_cpu(state, upto);
     return true;
   }

@@ -11,6 +11,7 @@
 
 // cppcheck-suppress-file syntaxError
 
+#include <executorch/examples/llm_server/cpp/checkpoint_transfer.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker_test.h>
 
@@ -44,6 +45,46 @@ using executorch::examples::llm_server::testing::run_multiplexed_worker;
 using executorch::examples::llm_server::testing::WorkerTestHooks;
 using Json = nlohmann::json;
 using namespace std::chrono_literals;
+
+TEST(SessionCheckpointTransfer, LongTokenHistoryStaysOutOfJsonFrames) {
+  namespace transfer = executorch::examples::llm_server::checkpoint_transfer;
+  struct TemporaryBuffer {
+    char path[40] = "/tmp/et-checkpoint-XXXXXX";
+    int fd = mkstemp(path);
+    ~TemporaryBuffer() {
+      if (fd >= 0)
+        close(fd);
+      unlink(path);
+    }
+  } file;
+  ASSERT_GE(file.fd, 0);
+  serving::SessionCheckpoint source;
+  source.tokens.assign(300000, 123456);
+  source.state.format = "test";
+  source.state.position = source.tokens.size();
+  source.state.caches.push_back(
+      {300000,
+       5,
+       std::nullopt,
+       {{299997, 1, 1, 3, {1, 2, 3, 4, 5, 6}, {6, 5, 4, 3, 2, 1}}}});
+  const auto manifest = transfer::export_buffers(source, file.path);
+  EXPECT_LT(manifest.dump().size(), 1024);
+  EXPECT_EQ(manifest.at("tokens"), Json::array({0, 1200000}));
+  const auto restored = transfer::import_buffers(manifest, file.path, 0);
+  EXPECT_EQ(restored->tokens, source.tokens);
+  EXPECT_EQ(
+      restored->state.caches[0].layers[0].key,
+      source.state.caches[0].layers[0].key);
+  auto old_manifest = manifest;
+  old_manifest.erase("version");
+  EXPECT_THROW(
+      transfer::import_buffers(old_manifest, file.path, 0),
+      std::invalid_argument);
+  const uint8_t invalid_token[] = {0, 0, 0, 128};
+  ASSERT_EQ(pwrite(file.fd, invalid_token, sizeof(invalid_token), 0), 4);
+  EXPECT_THROW(
+      transfer::import_buffers(manifest, file.path, 0), std::invalid_argument);
+}
 
 class Tokenizer : public tokenizers::Tokenizer {
  public:
@@ -247,6 +288,27 @@ class ProtocolTest : public ::testing::Test {
   std::future<int> result_;
   int input_[2]{-1, -1}, output_[2]{-1, -1};
 };
+
+TEST_F(ProtocolTest, FailedCheckpointHandoffReleasesAdmission) {
+  hooks_.checkpoint = [](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::SessionCheckpointAdmitted && id == 1)
+      throw std::bad_alloc();
+  };
+  start();
+  for (uint64_t id : {1, 2}) {
+    send(
+        {{"op", "export_checkpoint"},
+         {"request_id", id},
+         {"session_id", "missing"},
+         {"position", 0},
+         {"path", "/unused-checkpoint-transfer"}});
+    const auto result = receive();
+    EXPECT_EQ(result.at("request_id"), id);
+    EXPECT_EQ(
+        result.at("code"), id == 1 ? "invalid_argument" : "checkpoint_error");
+  }
+  EXPECT_EQ(finish(), 0);
+}
 
 TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
   auto preparing = gate();

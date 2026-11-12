@@ -74,6 +74,13 @@ def test_restart_partial_restore_and_source_preservation(worker_path, tmp_path):
             assert (
                 stats.reused_prompt_tokens == 3 and stats.prefilled_prompt_tokens == 3
             )
+            await worker.restore_checkpoint_from_cpu(
+                checkpoint, "retry", position=5, expected_identity="test"
+            )
+            _, stats = await generate(worker, "retry", "abcdef")
+            assert (
+                stats.reused_prompt_tokens == 5 and stats.prefilled_prompt_tokens == 1
+            )
         finally:
             await worker.close()
 

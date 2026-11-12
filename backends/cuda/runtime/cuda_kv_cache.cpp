@@ -18,6 +18,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
@@ -41,41 +42,44 @@ using ::executorch::runtime::Error;
 
 // Copies contiguous runs, preserving logical order independently of the
 // cache's cell/column layout. The host buffer is safe to release on return.
-template <typename Index>
+template <bool Upload, typename Index>
 bool checkpoint_rows(
     CudaKVPool& pool,
     size_t layer,
     bool value,
-    std::vector<uint8_t>& host,
+    std::conditional_t<Upload, const uint8_t, uint8_t>* host,
     const std::vector<Index>& rows,
     size_t row_bytes,
-    int stride,
-    bool upload) {
+    int stride) {
   auto* device = static_cast<uint8_t*>(pool.layer_data(layer, value));
   for (size_t at = 0; at < rows.size();) {
     size_t end = at + 1;
     while (end < rows.size() && rows[end] == rows[end - 1] + stride)
       ++end;
-    auto* cpu = host.data() + at * row_bytes;
+    auto* cpu = host + at * row_bytes;
     auto* gpu = device + static_cast<size_t>(rows[at]) * row_bytes;
-    const auto status = upload ? cudaMemcpy2DAsync(
-                                     gpu,
-                                     row_bytes * stride,
-                                     cpu,
-                                     row_bytes,
-                                     row_bytes,
-                                     end - at,
-                                     cudaMemcpyHostToDevice,
-                                     pool.stream())
-                               : cudaMemcpy2DAsync(
-                                     cpu,
-                                     row_bytes,
-                                     gpu,
-                                     row_bytes * stride,
-                                     row_bytes,
-                                     end - at,
-                                     cudaMemcpyDeviceToHost,
-                                     pool.stream());
+    cudaError_t status;
+    if constexpr (Upload) {
+      status = cudaMemcpy2DAsync(
+          gpu,
+          row_bytes * stride,
+          cpu,
+          row_bytes,
+          row_bytes,
+          end - at,
+          cudaMemcpyHostToDevice,
+          pool.stream());
+    } else {
+      status = cudaMemcpy2DAsync(
+          cpu,
+          row_bytes,
+          gpu,
+          row_bytes * stride,
+          row_bytes,
+          end - at,
+          cudaMemcpyDeviceToHost,
+          pool.stream());
+    }
     if (status != cudaSuccess) {
       (void)pool.synchronize();
       return false;
@@ -476,10 +480,10 @@ class CudaCellCache final : public cache::CellCache,
       layer.key.resize(static_cast<size_t>(upto) * row);
       layer.value.resize(layer.key.size());
       if (upto &&
-          (!checkpoint_rows(
-               pool_, i, false, layer.key, *cells, row, 1, false) ||
-           !checkpoint_rows(
-               pool_, i, true, layer.value, *cells, row, 1, false))) {
+          (!checkpoint_rows<false>(
+               pool_, i, false, layer.key.data(), *cells, row, 1) ||
+           !checkpoint_rows<false>(
+               pool_, i, true, layer.value.data(), *cells, row, 1))) {
         return cache::CheckpointError{"checkpoint device read failed"};
       }
       result.layers.push_back(std::move(layer));
@@ -527,9 +531,8 @@ class CudaCellCache final : public cache::CellCache,
           cache::checkpoint_itemsize(state.dtype);
       for (bool value : {false, true}) {
         const auto& bytes = value ? layer.value : layer.key;
-        std::vector<uint8_t> copy(
-            bytes.begin(), bytes.begin() + static_cast<size_t>(upto) * row);
-        if (!checkpoint_rows(pool_, i, value, copy, *cells, row, 1, true))
+        if (!checkpoint_rows<true>(
+                pool_, i, value, bytes.data(), *cells, row, 1))
           return cache::CheckpointError{"checkpoint device write failed"};
       }
     }
@@ -1172,13 +1175,17 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       layer.key.resize(rows.size() * row);
       layer.value.resize(layer.key.size());
       if (upto &&
-          (!checkpoint_rows(
-               pool_, i, false, layer.key, rows, row, columns_, false) ||
-           !checkpoint_rows(
-               pool_, i, true, layer.value, rows, row, columns_, false))) {
+          (!checkpoint_rows<false>(
+               pool_, i, false, layer.key.data(), rows, row, columns_) ||
+           !checkpoint_rows<false>(
+               pool_, i, true, layer.value.data(), rows, row, columns_))) {
         return cache::CheckpointError{"checkpoint device read failed"};
       }
       result.layers.push_back(std::move(layer));
+    }
+    if (!cache::valid_checkpoint(result, geometry_, cfg_, upto)) {
+      return cache::CheckpointError{
+          "checkpoint position is outside retained history"};
     }
     return result;
   }
@@ -1212,7 +1219,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           upto ? std::max<int64_t>(layer.begin, upto - layer_rows_[i]) : 0;
       retained_begins.push_back(begin);
       if (begin)
-        floor = std::max(floor, begin + layer.window - 1);
+        floor = std::max(
+            floor, begin + layer.window - (state.dflash_block_size ? 0 : 1));
       const size_t row = static_cast<size_t>(layer.heads) * layer.head_dim *
           cache::checkpoint_itemsize(state.dtype);
       std::vector<int64_t> rows;
@@ -1220,12 +1228,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         rows.push_back((p % layer_rows_[i]) * columns_ + *column);
       for (bool value : {false, true}) {
         const auto& bytes = value ? layer.value : layer.key;
-        std::vector<uint8_t> copy;
+        const auto* data = bytes.data();
         if (upto)
-          copy.assign(
-              bytes.begin() + static_cast<size_t>(begin - layer.begin) * row,
-              bytes.begin() + static_cast<size_t>(upto - layer.begin) * row);
-        if (!checkpoint_rows(pool_, i, value, copy, rows, row, columns_, true))
+          data += static_cast<size_t>(begin - layer.begin) * row;
+        if (!checkpoint_rows<true>(pool_, i, value, data, rows, row, columns_))
           return cache::CheckpointError{"checkpoint device write failed"};
       }
     }

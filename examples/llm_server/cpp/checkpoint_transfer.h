@@ -112,11 +112,21 @@ inline Json export_buffers(
     const std::string& path) {
   BufferFile file(path, true);
   const auto& state = checkpoint.state;
+  std::vector<uint8_t> tokens(checkpoint.tokens.size() * sizeof(int32_t));
+  for (size_t i = 0; i < checkpoint.tokens.size(); ++i) {
+    const auto token = checkpoint.tokens[i];
+    if (token > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+      throw std::invalid_argument("invalid checkpoint token");
+    }
+    for (int byte = 0; byte < 4; ++byte)
+      tokens[4 * i + byte] = static_cast<uint8_t>(token >> (8 * byte));
+  }
   Json manifest = {
+      {"version", 2},
       {"format", state.format},
       {"position", state.position},
       {"hidden_row_bytes", state.hidden_row_bytes},
-      {"tokens", checkpoint.tokens},
+      {"tokens", file.put(tokens)},
       {"caches", Json::array()}};
   for (const auto& cache : state.caches) {
     Json record = {
@@ -152,19 +162,31 @@ inline int integer(const Json& value) {
 
 inline std::shared_ptr<serving::SessionCheckpoint>
 import_buffers(const Json& manifest, const std::string& path, uint64_t offset) {
+  if (!manifest.contains("version") ||
+      !manifest.at("version").is_number_integer() ||
+      manifest.at("version") != 2) {
+    throw std::invalid_argument("unsupported checkpoint manifest version");
+  }
   BufferFile file(path, false, offset);
   auto checkpoint = std::make_shared<serving::SessionCheckpoint>();
   auto& state = checkpoint->state;
   state.format = manifest.at("format").get<std::string>();
   state.position = integer(manifest.at("position"));
   state.hidden_row_bytes = integer(manifest.at("hidden_row_bytes"));
-  const auto& tokens = manifest.at("tokens");
-  if (!tokens.is_array() ||
-      tokens.size() != static_cast<size_t>(state.position)) {
+  const auto tokens = file.get(manifest.at("tokens"), offset);
+  if (tokens.size() != static_cast<size_t>(state.position) * sizeof(int32_t)) {
     throw std::invalid_argument("invalid checkpoint token history");
   }
-  for (const auto& token : tokens)
-    checkpoint->tokens.push_back(integer(token));
+  checkpoint->tokens.reserve(state.position);
+  for (size_t i = 0; i < tokens.size(); i += 4) {
+    uint32_t token = 0;
+    for (int byte = 0; byte < 4; ++byte)
+      token |= static_cast<uint32_t>(tokens[i + byte]) << (8 * byte);
+    if (token > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+      throw std::invalid_argument("invalid checkpoint token");
+    }
+    checkpoint->tokens.push_back(token);
+  }
   const auto& caches = manifest.at("caches");
   if (!caches.is_array() || caches.empty() || caches.size() > 2) {
     throw std::invalid_argument("invalid checkpoint cache count");

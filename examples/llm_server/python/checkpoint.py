@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-_MAGIC = b"ETCP0001"
+_MAGIC = b"ETCP0002"
 _MAX_HEADER = 1024 * 1024
 _DEFAULT_MAX_BYTES = 16 * 1024**3
 
@@ -81,15 +81,13 @@ def _validate_cache(cache, position, is_target, buffer):
         buffer(layer.get("value"), size)
 
 
-def _validate_manifest(manifest, data_bytes):
+def _validate_manifest(manifest, data):
+    data_bytes = len(data)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("format"), str):
         raise ValueError("invalid checkpoint manifest")
+    if _integer(manifest.get("version"), "manifest version") != 2:
+        raise ValueError("unsupported checkpoint manifest version")
     position = _integer(manifest.get("position"), "position")
-    tokens = manifest.get("tokens")
-    if not isinstance(tokens, list) or len(tokens) != position:
-        raise ValueError("checkpoint tokens do not match committed position")
-    for token in tokens:
-        _integer(token, "token")
     if manifest.get("data_bytes") != data_bytes:
         raise ValueError("checkpoint payload size mismatch")
     caches = manifest.get("caches")
@@ -109,6 +107,10 @@ def _validate_manifest(manifest, data_bytes):
             raise ValueError("invalid checkpoint buffer extent")
         offset += expected
 
+    buffer(manifest.get("tokens"), position * 4)
+    token_data = memoryview(data)[: position * 4]
+    if any(token < 0 for (token,) in struct.iter_unpack("<i", token_data)):
+        raise ValueError("invalid checkpoint token")
     for i, cache in enumerate(caches):
         _validate_cache(cache, position, i == 0, buffer)
     row = _integer(manifest.get("hidden_row_bytes"), "hidden row bytes")
@@ -137,11 +139,17 @@ class CPUCheckpoint:
             raise ValueError("checkpoint model/configuration identity mismatch")
         if not isinstance(self.data, bytes):
             raise TypeError("checkpoint data must be owned CPU bytes")
-        _validate_manifest(self.manifest, len(self.data))
+        _validate_manifest(self.manifest, self.data)
 
     @property
     def tokens(self) -> tuple[int, ...]:
-        return tuple(self.manifest["tokens"])
+        offset, size = self.manifest["tokens"]
+        return tuple(
+            token
+            for (token,) in struct.iter_unpack(
+                "<i", memoryview(self.data)[offset : offset + size]
+            )
+        )
 
     def common_prefix_length(self, tokens: Sequence[int]) -> int:
         """Token match only; this does not assert that the state can rewind there."""
@@ -158,7 +166,11 @@ class CPUCheckpoint:
         for cache in self.manifest["caches"]:
             end = min(position, cache["position"])
             for layer in cache["layers"]:
-                required = max(0, end - layer["window"] + 1) if layer["window"] else 0
+                required = (
+                    max(0, end - layer["window"] + (cache["dflash_block_size"] is None))
+                    if layer["window"]
+                    else 0
+                )
                 if end and layer["begin"] > required:
                     raise ValueError(
                         "restore position requires history this checkpoint no longer retains"

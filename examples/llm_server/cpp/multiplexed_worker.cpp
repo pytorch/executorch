@@ -307,7 +307,8 @@ class Worker {
                "\n",
            false});
       writer_ = std::thread([this] { write_loop(); });
-      checkpoint_io_ = std::thread([this] { checkpoint_io_loop(); });
+      session_checkpoint_io_ =
+          std::thread([this] { session_checkpoint_io_loop(); });
       read_loop();
     } catch (...) {
       failed_ = true;
@@ -316,11 +317,11 @@ class Worker {
     runtime_.shutdown();
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      checkpoint_io_stopping_ = true;
+      session_checkpoint_io_stopping_ = true;
     }
     changed_.notify_all();
-    if (checkpoint_io_.joinable())
-      checkpoint_io_.join();
+    if (session_checkpoint_io_.joinable())
+      session_checkpoint_io_.join();
     {
       std::lock_guard<std::mutex> lock(mutex_);
       drained_ = true;
@@ -333,25 +334,35 @@ class Worker {
   }
 
  private:
-  void checkpoint_io_loop() {
+  void session_checkpoint_io_loop() {
     for (;;) {
       std::function<void()> task;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         changed_.wait(lock, [this] {
-          return checkpoint_io_stopping_ || !checkpoint_tasks_.empty();
+          return session_checkpoint_io_stopping_ ||
+              !session_checkpoint_tasks_.empty();
         });
-        if (checkpoint_tasks_.empty())
+        if (session_checkpoint_tasks_.empty())
           return;
-        task = std::move(checkpoint_tasks_.front());
-        checkpoint_tasks_.pop_front();
+        task = std::move(session_checkpoint_tasks_.front());
+        session_checkpoint_tasks_.pop_front();
       }
-      task();
+      try {
+        task();
+      } catch (...) {
+        failed_ = true;
+        changed_.notify_all();
+        return;
+      }
     }
   }
-  void finish_checkpoint(const std::shared_ptr<Operation>& op, Json result) {
+  void finish_session_checkpoint(
+      const std::shared_ptr<Operation>& op,
+      Json result) {
     std::lock_guard<std::mutex> lock(mutex_);
-    checkpoint_busy_ = false;
+    if (session_checkpoint_operation_ == op)
+      session_checkpoint_operation_.reset();
     complete(op, std::move(result));
   }
 
@@ -554,7 +565,7 @@ class Worker {
         const auto path = message.at("path").get<std::string>();
         {
           std::lock_guard<std::mutex> lock(mutex_);
-          if (checkpoint_busy_) {
+          if (session_checkpoint_operation_) {
             complete(
                 op,
                 failure(
@@ -562,41 +573,46 @@ class Worker {
                     "another checkpoint transfer is in progress"));
             return;
           }
-          checkpoint_busy_ = true;
+          session_checkpoint_operation_ = op;
         }
+        checkpoint(Checkpoint::SessionCheckpointAdmitted, id);
         if (name == "export_checkpoint") {
           runtime_.export_checkpoint_to_cpu_async(
               std::move(key), position, [this, op, path](auto result) {
-                if (auto* error =
-                        std::get_if<extension::llm::batching::CheckpointError>(
-                            &result)) {
-                  finish_checkpoint(
-                      op, failure("checkpoint_error", error->message));
-                  return;
+                try {
+                  if (auto* error = std::get_if<
+                          extension::llm::batching::CheckpointError>(&result)) {
+                    finish_session_checkpoint(
+                        op, failure("checkpoint_error", error->message));
+                    return;
+                  }
+                  auto state =
+                      std::get<std::shared_ptr<serving::SessionCheckpoint>>(
+                          std::move(result));
+                  std::lock_guard<std::mutex> lock(mutex_);
+                  session_checkpoint_tasks_.push_back(
+                      [this, op, path, state = std::move(state)] {
+                        try {
+                          auto manifest =
+                              checkpoint_transfer::export_buffers(*state, path);
+                          finish_session_checkpoint(
+                              op,
+                              {{"exported", true},
+                               {"manifest", std::move(manifest)}});
+                        } catch (const std::exception& error) {
+                          finish_session_checkpoint(
+                              op, failure("checkpoint_error", error.what()));
+                        }
+                      });
+                  changed_.notify_all();
+                } catch (...) {
+                  failed_ = true;
+                  changed_.notify_all();
                 }
-                auto state =
-                    std::get<std::shared_ptr<serving::SessionCheckpoint>>(
-                        std::move(result));
-                std::lock_guard<std::mutex> lock(mutex_);
-                checkpoint_tasks_.push_back(
-                    [this, op, path, state = std::move(state)] {
-                      try {
-                        auto manifest =
-                            checkpoint_transfer::export_buffers(*state, path);
-                        finish_checkpoint(
-                            op,
-                            {{"exported", true},
-                             {"manifest", std::move(manifest)}});
-                      } catch (const std::exception& error) {
-                        finish_checkpoint(
-                            op, failure("checkpoint_error", error.what()));
-                      }
-                    });
-                changed_.notify_all();
               });
         } else {
           std::lock_guard<std::mutex> lock(mutex_);
-          checkpoint_tasks_.push_back(
+          session_checkpoint_tasks_.push_back(
               [this, op, path, key = std::move(key), position, message] {
                 try {
                   auto state = checkpoint_transfer::import_buffers(
@@ -608,12 +624,18 @@ class Worker {
                       std::move(state),
                       position,
                       [this, op](serving::LifecycleResult error) {
-                        finish_checkpoint(
-                            op,
-                            error ? failure(*error) : Json{{"restored", true}});
+                        try {
+                          finish_session_checkpoint(
+                              op,
+                              error ? failure(*error)
+                                    : Json{{"restored", true}});
+                        } catch (...) {
+                          failed_ = true;
+                          changed_.notify_all();
+                        }
                       });
                 } catch (const std::exception& error) {
-                  finish_checkpoint(
+                  finish_session_checkpoint(
                       op, failure("checkpoint_error", error.what()));
                 }
               });
@@ -683,6 +705,8 @@ class Worker {
       }
     } catch (const std::exception& error) {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (session_checkpoint_operation_ == op)
+        session_checkpoint_operation_.reset();
       complete(op, failure("invalid_argument", error.what()));
     }
   }
@@ -804,10 +828,10 @@ class Worker {
   std::atomic<bool> failed_{false};
   bool drained_ = false;
   std::thread writer_;
-  std::thread checkpoint_io_;
-  std::deque<std::function<void()>> checkpoint_tasks_;
-  bool checkpoint_io_stopping_ = false;
-  bool checkpoint_busy_ = false;
+  std::thread session_checkpoint_io_;
+  std::deque<std::function<void()>> session_checkpoint_tasks_;
+  bool session_checkpoint_io_stopping_ = false;
+  std::shared_ptr<Operation> session_checkpoint_operation_;
 };
 } // namespace
 

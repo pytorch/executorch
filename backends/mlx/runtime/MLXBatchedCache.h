@@ -208,7 +208,7 @@ class MLXBatchedCache : public cache::Cache,
       if (!row->second.import_from_cpu(state.layers, upto)) {
         rows_.erase(row);
         return cache::CheckpointError{
-            "cache layer does not support checkpoint restore"};
+            "checkpoint layer history is unavailable at this position"};
       }
     } catch (...) {
       rows_.erase(row);
