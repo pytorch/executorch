@@ -13,15 +13,68 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/profiler.h>
 
+#include <algorithm>
+#include <cstring>
 #include <memory>
+#include <mutex>
+#include <new>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
 namespace torch {
 namespace executor {
+
+using executorch::runtime::NamedDataMap;
+
+const char ennWeightBufferKey[] = "enn_weight_buffer_hash_id";
+
+namespace {
+// Methods sharing weights (e.g. prefill and decode) reference the same buffer,
+// so it is refcounted and released when the last delegate using it is
+// destroyed.
+struct SharedWeight {
+  FreeableBuffer buffer;
+  int32_t refs = 0;
+};
+
+std::mutex g_weight_cache_mutex;
+std::unordered_map<std::string, SharedWeight> g_weight_cache;
+
+Result<const FreeableBuffer*> acquire_weight(
+    const NamedDataMap* named_data_map,
+    const std::string& key) {
+  std::lock_guard<std::mutex> lock(g_weight_cache_mutex);
+  auto it = g_weight_cache.find(key);
+  if (it == g_weight_cache.end()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        named_data_map != nullptr,
+        InvalidArgument,
+        "Weight-sharing delegate needs a NamedDataMap (.ptd) for key %s",
+        key.c_str());
+    Result<FreeableBuffer> loaded = named_data_map->get_data(key.c_str());
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        loaded.error(), "Failed to load shared weight %s", key.c_str());
+    it = g_weight_cache.emplace(key, SharedWeight{std::move(loaded.get()), 0})
+             .first;
+  }
+  it->second.refs++;
+  return &it->second.buffer;
+}
+
+void release_weight(const std::string& key) {
+  std::lock_guard<std::mutex> lock(g_weight_cache_mutex);
+  auto it = g_weight_cache.find(key);
+  if (it != g_weight_cache.end() && --it->second.refs == 0) {
+    g_weight_cache.erase(it);
+  }
+}
+} // namespace
 
 class EnnBackend final : public PyTorchBackendInterface {
  public:
@@ -31,6 +84,11 @@ class EnnBackend final : public PyTorchBackendInterface {
     return true;
   }
 
+  std::string decode_spec_value(const CompileSpec& spec) const {
+    const char* char_ptr = static_cast<const char*>(spec.value.buffer);
+    return std::string(char_ptr, spec.value.nbytes);
+  }
+
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
@@ -38,15 +96,53 @@ class EnnBackend final : public PyTorchBackendInterface {
     EXYNOS_ATRACE_NAME_LINE("backend_init");
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto executor = runtime_allocator->allocateInstance<enn::EnnExecutor>();
+    ET_CHECK_OR_RETURN_ERROR(
+        executor != nullptr,
+        MemoryAllocationFailed,
+        "Failed to allocate EnnExecutor");
+    new (executor) enn::EnnExecutor();
     const char* binary_buf_addr =
         reinterpret_cast<const char*>(processed->data());
     size_t buf_size = processed->size();
-    Error err = executor->initialize(binary_buf_addr, buf_size);
+
+    auto it = std::find_if(
+        compile_specs.begin(),
+        compile_specs.end(),
+        [](const CompileSpec& spec) {
+          return std::strcmp(spec.key, ennWeightBufferKey) == 0;
+        });
+
+    Error err = Error::Ok;
+    if (it != compile_specs.end()) {
+      std::string weight_key = decode_spec_value(*it);
+      auto weight = acquire_weight(context.get_named_data_map(), weight_key);
+      if (!weight.ok()) {
+        executor->~EnnExecutor();
+        return weight.error();
+      }
+      executor->set_weight_key(weight_key);
+      ET_LOG(
+          Info,
+          "EnnBackend, [%s] shared weight %s size(%zu), addr(%p)",
+          context.get_method_name(),
+          weight_key.c_str(),
+          weight.get()->size(),
+          weight.get()->data());
+      err = executor->initialize(
+          binary_buf_addr,
+          buf_size,
+          reinterpret_cast<const char*>(weight.get()->data()),
+          weight.get()->size(),
+          true);
+    } else {
+      err = executor->initialize(binary_buf_addr, buf_size);
+    }
     if (err != Error::Ok) {
       ENN_LOG_ERROR("Exynos backend initialize failed.");
-      executor->~EnnExecutor();
+      destroy(executor);
       return err;
     }
+
     return executor;
   }
 
@@ -85,7 +181,11 @@ class EnnBackend final : public PyTorchBackendInterface {
     EXYNOS_ATRACE_NAME_LINE("backend_destroy");
     if (handle != nullptr) {
       auto executor = static_cast<enn::EnnExecutor*>(handle);
+      std::string weight_key = executor->get_weight_key();
       executor->~EnnExecutor();
+      if (!weight_key.empty()) {
+        release_weight(weight_key);
+      }
     }
   }
 }; // namespace executor
