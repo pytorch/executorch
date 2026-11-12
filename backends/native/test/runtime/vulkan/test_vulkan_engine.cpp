@@ -3985,6 +3985,48 @@ TEST(VulkanEngineTest, ExecutesLinearOnGgufQ4KWeight) {
   EXPECT_EQ(output, expected);
 }
 
+// One Q5_K block per row: d = 1, dmin = 0, every sub-block scale 1 and min 0,
+// so each weight is its 5-bit value, low four bits in a nibble and the fifth
+// in qh. Rows and 32-weight sub-blocks hold different values.
+TEST(VulkanEngineTest, ExecutesLinearOnGgufQ5KWeight) {
+  constexpr size_t kQ5KBlockBytes = 176;
+  const std::string header =
+      R"({"weight":{"dtype":"U8","shape":[352],"data_offsets":[0,352]}})";
+  std::vector<uint8_t> tensors =
+      testing::make_safetensors(header, kQ4KOut * kQ5KBlockBytes);
+  uint8_t* data = tensors.data() + sizeof(uint64_t) + header.size();
+  std::vector<float> input(kQ4KIn);
+  for (int64_t k = 0; k < kQ4KIn; ++k) {
+    input[k] = static_cast<float>(k % 3) - 1.0f;
+  }
+  std::vector<float> expected(kQ4KOut, 0.0f);
+  for (int n = 0; n < kQ4KOut; ++n) {
+    uint8_t* block = data + n * kQ5KBlockBytes;
+    block[1] = 0x3C;
+    std::fill_n(block + 4, 4, 1);
+    std::fill_n(block + 12, 4, 1);
+    for (int e = 0; e < kQ4KIn; ++e) {
+      const int pair = e / 32;
+      const int l = e % 32;
+      const int u = (7 * l + 5 * pair + 3 * n) % 32;
+      block[48 + 32 * (pair / 2) + l] |=
+          static_cast<uint8_t>((u & 0xF) << (4 * (pair % 2)));
+      block[16 + l] |= static_cast<uint8_t>((u >> 4) << pair);
+      expected[n] += input[e] * static_cast<float>(u);
+    }
+  }
+  CompiledProgram compiled =
+      compile_program(make_gguf_q4_k_linear_program("gguf:q5_k"), tensors);
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(kQ4KOut);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, expected);
+}
+
 TEST(VulkanEngineTest, RejectsGgufQ4KWeightOfWrongSize) {
   const std::string header =
       R"({"weight":{"dtype":"U8","shape":[287],"data_offsets":[0,287]}})";
