@@ -32,6 +32,12 @@ class ToDimOrderCopyVisitor(NodeVisitor):
 
     target = "dim_order_ops._to_dim_order_copy.default"
 
+    # TOSA casts between int64 and int8 or int16 through int32.
+    _via_int32 = (
+        {ts.DType.INT8, ts.DType.INT64},
+        {ts.DType.INT16, ts.DType.INT64},
+    )
+
     def define_node(
         self,
         node: torch.fx.Node,
@@ -40,8 +46,16 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
+        source = inputs[0].name
+        if {inputs[0].dtype, output.dtype} in self._via_int32:
+            intermediate = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
+            self._serialize_cast(node, tosa_graph, source, intermediate.name)
+            source = intermediate.name
+        self._serialize_cast(node, tosa_graph, source, output.name)
+
+    def _serialize_cast(
+        self, node: torch.fx.Node, tosa_graph: Any, source: str, target: str
+    ) -> None:
         attr = ts.TosaSerializerAttribute()
         attr.CastAttribute()
-        self._serialize_operator(
-            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr
-        )
+        self._serialize_operator(node, tosa_graph, ts.Op.CAST, [source], [target], attr)

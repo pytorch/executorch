@@ -19,6 +19,7 @@ from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
+from .cast_zero_dim_int64_operands_pass import CastZeroDimInt64OperandsPass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
 from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa

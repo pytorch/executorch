@@ -346,8 +346,8 @@ def test_int64_operand_check_skips_symbolic_inputs() -> None:
         ((torch.int64, torch.int64), True),
         ((torch.int64, torch.int32), True),
         ((torch.int64, torch.bool), True),
-        ((torch.int64, torch.int16), False),
-        ((torch.int64, torch.int8), False),
+        ((torch.int64, torch.int16), True),
+        ((torch.int64, torch.int8), True),
         ((torch.int64, torch.uint8), False),
         ((torch.int8, torch.int32), True),
     ),
@@ -358,6 +358,24 @@ def test_int64_operand_check_widths(dtypes, agree) -> None:
     y = _placeholder(graph, "y", (4,), dtypes[1])
     node = graph.call_function(exir_ops.edge.aten.bitwise_or.Tensor, (x, y))
     node.meta["val"] = _fake_tensor((4,), torch.promote_types(*dtypes))
+
+    assert _int64_operands_agree(node) == agree
+
+
+@pytest.mark.parametrize(
+    ("target", "dtype", "agree"),
+    (
+        (exir_ops.edge.aten.bitwise_or.Tensor, torch.int8, True),
+        (exir_ops.edge.aten.add.Tensor, torch.int8, False),
+        (exir_ops.edge.aten.add.Tensor, torch.int32, True),
+    ),
+)
+def test_int64_operand_check_zero_dim(target, dtype, agree) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (4,), dtype)
+    y = _placeholder(graph, "y", (), torch.int64)
+    node = graph.call_function(target, (x, y))
+    node.meta["val"] = _fake_tensor((4,), dtype)
 
     assert _int64_operands_agree(node) == agree
 

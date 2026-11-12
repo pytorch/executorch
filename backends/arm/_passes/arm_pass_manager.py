@@ -19,6 +19,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     CastInt64BuffersToInt32Pass,
     CastIntComparisonInputsPass,
     CastToInt32Pass,
+    CastZeroDimInt64OperandsPass,
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
@@ -661,6 +662,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(),
                 CastIntComparisonInputsPass(),
+                CastZeroDimInt64OperandsPass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
