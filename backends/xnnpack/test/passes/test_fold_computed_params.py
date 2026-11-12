@@ -170,6 +170,110 @@ class TestFoldComputedParams(unittest.TestCase):
             self.weight.copy_(x.mean() * torch.ones(4, 4, 3))
             return y
 
+    class PackedLinears(torch.nn.Module):
+        # Each linear takes one part of a packed weight and bias.
+        def __init__(self, weight, bias, unpack):
+            super().__init__()
+            self.weight = torch.nn.Parameter(weight)
+            self.bias = torch.nn.Parameter(bias)
+            self.unpack = unpack
+
+        def forward(self, *inputs):
+            parts = zip(inputs, self.unpack(self.weight), self.unpack(self.bias))
+            return tuple(F.linear(x, w, b) for x, w, b in parts)
+
+    class PackedBiasLinears(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weights = torch.nn.ParameterList(
+                torch.nn.Parameter(torch.randn(4, 8)) for _ in range(3)
+            )
+            self.bias = torch.nn.Parameter(torch.randn(12))
+
+        def forward(self, x):
+            biases = self.bias.chunk(3)
+            return tuple(F.linear(x, w, b) for w, b in zip(self.weights, biases))
+
+    class PackedBiasAddmms(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 4))
+            self.bias = torch.nn.Parameter(torch.randn(3, 4))
+
+        def forward(self, x):
+            return tuple(torch.addmm(b, x, self.weight) for b in self.bias.split(1))
+
+    class ConcatenatedBiasLinears(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linears = torch.nn.ModuleList(torch.nn.Linear(8, 4) for _ in range(3))
+
+        def forward(self, x):
+            biases = torch.cat([linear.bias for linear in self.linears]).chunk(3)
+            return tuple(
+                F.linear(x, linear.weight, bias)
+                for linear, bias in zip(self.linears, biases)
+            )
+
+    class Attention(torch.nn.Module):
+        def __init__(self, **kwargs):
+            super().__init__()
+            self.mha = torch.nn.MultiheadAttention(8, 2, batch_first=True, **kwargs)
+
+        def forward(self, query, key, value=None):
+            value = key if value is None else value
+            return self.mha(query, key, value, need_weights=False)[0]
+
+    class PackedWeightPartUsedElsewhere(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 8))
+
+        def forward(self, x, y):
+            w1, w2 = self.weight.split([4, 4])
+            return F.linear(x, w1), F.linear(y, w2), w2.sum()
+
+    class PackedWeightGemmFeedsOther(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(16, 8))
+
+        def forward(self, x):
+            w1, w2 = self.weight.split([8, 8])
+            # cumsum stays on portable, so one partition would have a cycle.
+            return F.linear(F.linear(x, w1).cumsum(1), w2)
+
+    class PackedWeightLargerThanSource(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(4, 8))
+
+        def forward(self, x):
+            # Folding would give three constants, each the size of the param.
+            return tuple(F.linear(x, w) for w in self.weight.repeat(3, 1).chunk(3))
+
+    class PackedWeightHighRankBias(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 8))
+            self.bias1 = torch.nn.Parameter(torch.randn(4))
+            self.bias2 = torch.nn.Parameter(torch.randn(4))
+
+        def forward(self, x):
+            w1, w2 = self.weight.split([4, 4])
+            # The second bias is computed with 7 dims, more than XNNPACK supports.
+            bias2 = (self.bias2.view(1, 1, 1, 1, 1, 1, 4) * 2).view(4)
+            return F.linear(x, w1, self.bias1), F.linear(x, w2, bias2)
+
+    class PackedWeightConv1ds(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(6, 3, 1))
+
+        def forward(self, x, y):
+            w1, w2 = self.weight.split([3, 3])
+            return F.conv1d(x, w1), F.conv1d(y, w2)
+
     def _test_fully_delegated(self, module, inputs, folded=()):
         tester = (
             Tester(module.eval(), inputs)
@@ -197,6 +301,88 @@ class TestFoldComputedParams(unittest.TestCase):
         self._test_fully_delegated(
             module, (torch.randn(2, 8),), folded=(module.weight * 2, module.bias + 1)
         )
+
+    def test_fp32_packed_gemm_params(self):
+        for name, unpack in (
+            ("split", lambda t: t.split([4, 8])),
+            ("chunk", lambda t: t.chunk(3)),
+        ):
+            with self.subTest(name):
+                module = self.PackedLinears(torch.randn(12, 8), torch.randn(12), unpack)
+                self._test_fully_delegated(
+                    module,
+                    tuple(torch.randn(2, 8) for _ in unpack(module.bias)),
+                    folded=(*unpack(module.weight), *unpack(module.bias)),
+                )
+        with self.subTest("packed_bias"):
+            module = self.PackedBiasLinears()
+            self._test_fully_delegated(
+                module,
+                (torch.randn(2, 8),),
+                folded=(*module.weights, *module.bias.chunk(3)),
+            )
+        with self.subTest("packed_addmm_bias"):
+            module = self.PackedBiasAddmms()
+            self._test_fully_delegated(
+                module,
+                (torch.randn(2, 8),),
+                folded=(module.weight, *module.bias.split(1)),
+            )
+        with self.subTest("concatenated_bias"):
+            module = self.ConcatenatedBiasLinears()
+            self._test_fully_delegated(
+                module,
+                (torch.randn(2, 8),),
+                folded=[p for linear in module.linears for p in linear.parameters()],
+            )
+
+    def test_fp32_multihead_attention_in_projection(self):
+        query, memory = torch.randn(1, 5, 8), torch.randn(1, 7, 8)
+        dynamic_shapes = {
+            "dynamic_lengths": (
+                {1: torch.export.Dim("length", min=2, max=16)},
+                {1: torch.export.Dim("memory_length", min=2, max=16)},
+            )
+        }
+        for name, module, inputs in (
+            ("cross_attention", self.Attention(), (query, memory)),
+            ("dynamic_lengths", self.Attention(), (query, memory)),
+            ("separate_key_and_value", self.Attention(), (query, memory, memory * 2)),
+            (
+                "kdim_and_vdim",
+                self.Attention(kdim=6, vdim=4),
+                (query, torch.randn(1, 7, 6), torch.randn(1, 7, 4)),
+            ),
+            (
+                "decoder_layer",
+                torch.nn.TransformerDecoderLayer(
+                    8, 2, dim_feedforward=16, dropout=0.0, batch_first=True
+                ),
+                (query, memory),
+            ),
+        ):
+            with self.subTest(name):
+                # in_proj_bias starts at zero, which would hide a part given to
+                # the wrong linear.
+                for param_name, param in module.named_parameters():
+                    if param_name.endswith("in_proj_bias"):
+                        torch.nn.init.normal_(param)
+                (
+                    Tester(module.eval(), inputs, dynamic_shapes.get(name))
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_not(
+                        [
+                            "executorch_exir_dialects_edge__ops_aten_linear_default",
+                            "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                            "executorch_exir_dialects_edge__ops_aten_mm_default",
+                            "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default",
+                        ]
+                    )
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs()
+                )
 
     def test_fp32_folded_name_does_not_replace_param(self):
         module = self.FoldedNameCollision()
@@ -231,6 +417,67 @@ class TestFoldComputedParams(unittest.TestCase):
                     .serialize()
                     .run_method_and_compare_outputs(atol=atol)
                 )
+
+    def test_quantized_packed_linear_params(self):
+        for is_dynamic, atol in ((False, 1e-3), (True, 5e-2)):
+            for module, inputs in (
+                (self.PackedBiasLinears(), (torch.randn(2, 8),)),
+                (
+                    self.PackedLinears(
+                        torch.randn(12, 8), torch.randn(12), lambda t: t.split([4, 8])
+                    ),
+                    (torch.randn(2, 8), torch.randn(2, 8)),
+                ),
+            ):
+                with self.subTest(module=type(module).__name__, is_dynamic=is_dynamic):
+                    (
+                        Tester(module.eval(), inputs)
+                        .quantize(
+                            Quantize(
+                                quantization_config=get_symmetric_quantization_config(
+                                    is_per_channel=True, is_dynamic=is_dynamic
+                                )
+                            )
+                        )
+                        .export()
+                        .to_edge_transform_and_lower()
+                        .check_count(
+                            {"torch.ops.higher_order.executorch_call_delegate": 1}
+                        )
+                        .check_not(
+                            [
+                                "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default",
+                                "executorch_exir_dialects_edge__ops_aten_linear_default",
+                                "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                            ]
+                        )
+                        .to_executorch()
+                        .serialize()
+                        .run_method_and_compare_outputs(atol=atol)
+                    )
+
+    def test_fp32_packed_weight_of_rejected_gemm_not_folded(self):
+        # The first conv1d is rejected for its two dynamic dims, so the second
+        # one, which takes the other part of the weight, is rejected with it.
+        dims = {
+            0: torch.export.Dim("batch", min=1, max=4),
+            2: torch.export.Dim("length", min=4, max=16),
+        }
+        (
+            Tester(
+                self.PackedWeightConv1ds().eval(),
+                (torch.randn(2, 3, 8), torch.randn(1, 3, 8)),
+                dynamic_shapes=(dims, None),
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count(
+                {"executorch_exir_dialects_edge__ops_aten_convolution_default": 2}
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_fp32_computed_weight_of_rejected_gemm_not_folded(self):
         # Conv1d with two dynamic dims is rejected after its weight was checked,
@@ -330,6 +577,26 @@ class TestFoldComputedParams(unittest.TestCase):
                 self.WeightComputationFeedsActivation(),
                 (torch.randn(16, 16),),
                 "aten_mm_default",
+            ),
+            (
+                self.PackedWeightPartUsedElsewhere(),
+                (torch.randn(2, 8), torch.randn(2, 8)),
+                "aten_mm_default",
+            ),
+            (
+                self.PackedWeightGemmFeedsOther(),
+                (torch.randn(2, 8),),
+                "aten_mm_default",
+            ),
+            (
+                self.PackedWeightLargerThanSource(),
+                (torch.randn(2, 8),),
+                "aten_mm_default",
+            ),
+            (
+                self.PackedWeightHighRankBias(),
+                (torch.randn(2, 8),),
+                "aten_addmm_default",
             ),
         ):
             with self.subTest(module=type(module).__name__):
