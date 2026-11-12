@@ -853,6 +853,93 @@ TEST(GgmlEngineTest, RejectsUnsupportedPow) {
       program.finish("y"), "supports Float tensors only, not Long");
 }
 
+TEST(
+    GgmlEngineTest,
+    WhereCopiesSelectedBranchIncludingNonFiniteValuesOnReplay) {
+  for (const size_t cached : {size_t{0}, size_t{1}}) {
+    for (const bool integer : {false, true}) {
+      TestProgram program;
+      const auto dtype =
+          integer ? fbs::ScalarType::LONG : fbs::ScalarType::FLOAT;
+      program.input("selector", fbs::ScalarType::FLOAT, {2, 1});
+      program.input("x", dtype, {3});
+      program.input("other", dtype, {3});
+      program.call(
+          "mask",
+          "torch.ops.aten.lt.Scalar",
+          {{"self", std::string("selector")}, {"other", 0.0}},
+          fbs::ScalarType::BOOL,
+          {2, 1});
+      program.call(
+          "y",
+          "torch.ops.aten.where.self",
+          {{"condition", std::string("mask")},
+           {"self", std::string("x")},
+           {"other", std::string("other")}},
+          dtype,
+          {2, 3});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      const float inf = std::numeric_limits<float>::infinity();
+      const float nan = std::numeric_limits<float>::quiet_NaN();
+      const std::vector<float> lhs{nan, inf, -0.0f}, rhs{4, nan, -inf};
+      const std::vector<int64_t> lhs_int{16777217, -16777217, 2147483647},
+          rhs_int{-2147483648, 4, 0};
+      for (const float sign : {1.0f, -1.0f}) {
+        const std::vector<float> selector{-sign, sign};
+        executable->set_input(0, selector.data(), 2, ScalarType::Float);
+        if (integer) {
+          executable->set_input(1, lhs_int.data(), 3, ScalarType::Long);
+          executable->set_input(2, rhs_int.data(), 3, ScalarType::Long);
+        } else {
+          executable->set_input(1, lhs.data(), 3, ScalarType::Float);
+          executable->set_input(2, rhs.data(), 3, ScalarType::Float);
+        }
+        executable->execute();
+        if (integer) {
+          std::vector<int64_t> result(6), expected;
+          const auto& first = sign > 0 ? lhs_int : rhs_int;
+          const auto& second = sign > 0 ? rhs_int : lhs_int;
+          expected.insert(expected.end(), first.begin(), first.end());
+          expected.insert(expected.end(), second.begin(), second.end());
+          executable->get_output(
+              0, result.data(), result.size(), ScalarType::Long);
+          EXPECT_EQ(result, expected);
+        } else {
+          std::vector<float> result(6);
+          executable->get_output(
+              0, result.data(), result.size(), ScalarType::Float);
+          for (size_t i = 0; i < result.size(); ++i) {
+            const float expected = ((i < 3) == (sign > 0) ? lhs : rhs)[i % 3];
+            if (std::isnan(expected)) {
+              EXPECT_TRUE(std::isnan(result[i]));
+            } else {
+              EXPECT_EQ(result[i], expected);
+              EXPECT_EQ(std::signbit(result[i]), std::signbit(expected));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, WhereRejectsNonBoolCondition) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2});
+  program.call(
+      "y",
+      "torch.ops.aten.where.self",
+      {{"condition", std::string("x")},
+       {"self", std::string("x")},
+       {"other", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {2});
+  expect_compile_error(program.finish("y"), "Bool condition");
+}
+
 // tanh of x [4, 3], or of its transpose.
 std::vector<uint8_t> make_tanh_program(
     bool transposed,
