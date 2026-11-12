@@ -23,6 +23,7 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
     get_16a16w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_8a8w_qnn_qat_config,
+    get_weight_qspec,
     QuantizationConfig,
 )
 from executorch.backends.qualcomm.quantizer.rules import (
@@ -968,12 +969,6 @@ class Linear(GeneralOpDef):
         if _is_annotated([node]):
             return
 
-        # block quantization
-        if quantization_config.block_size is not None:
-            quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
-                {QCOM_BLOCK_SIZE: quantization_config.block_size}
-            )
-
         input_qspec_map = {}
         act_node = node.args[0]
         assert isinstance(act_node, Node)
@@ -983,7 +978,7 @@ class Linear(GeneralOpDef):
 
         weight_node = node.args[1]
         assert isinstance(weight_node, Node)
-        input_qspec_map[weight_node] = quantization_config.weight
+        input_qspec_map[weight_node] = get_weight_qspec(quantization_config)
 
         if len(node.args) > 2:
             bias_node = node.args[2]
