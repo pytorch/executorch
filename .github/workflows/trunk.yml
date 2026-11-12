@@ -1104,7 +1104,6 @@ jobs:
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
 
-        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
         source .ci/scripts/setup-samsung-linux-deps.sh --skip-device-connect
 
         # Test quant models
@@ -1142,7 +1141,6 @@ jobs:
 
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
-        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
         source .ci/scripts/setup-samsung-linux-deps.sh
 
         # Graph-level pass unit tests (no device needed)
