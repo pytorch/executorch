@@ -992,9 +992,11 @@ jobs:
   unittest-release:
     uses: ./.github/workflows/_unittest.yml
     permissions:
+      actions: read
       id-token: write
       contents: read
     with:
+      upload-test-run-reports: true
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12

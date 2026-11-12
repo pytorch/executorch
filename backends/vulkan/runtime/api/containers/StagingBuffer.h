@@ -19,15 +19,25 @@
 namespace vkcompute {
 namespace api {
 
+// IEEE half-precision conversions; float_to_half rounds to the nearest f16,
+// ties to even.
+float half_to_float(uint16_t h);
+uint16_t float_to_half(float f);
+
 vkapi::ScalarType get_staging_dtype(
     Context* context_p,
     vkapi::ScalarType dtype);
+
+// Bytes a staging buffer needs for `numel` elements of staging dtype `dtype`.
+size_t get_staging_nbytes(vkapi::ScalarType dtype, size_t numel);
 
 class StagingBuffer final {
  private:
   Context* context_p_;
   vkapi::ScalarType dtype_;
   vkapi::VulkanBuffer vulkan_buffer_;
+  // Memory another API reads or writes on the GPU; it has no host mapping.
+  bool external_;
 
   void* mapped_data_;
 
@@ -37,6 +47,14 @@ class StagingBuffer final {
       const vkapi::ScalarType dtype,
       const size_t numel,
       const vkapi::CopyDirection direction);
+
+  // Staging over external memory, e.g. a buffer that an app reads or writes,
+  // which must hold `numel` elements.
+  StagingBuffer(
+      Context* context_p,
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      vkapi::VulkanBuffer&& external_buffer);
 
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
@@ -56,8 +74,14 @@ class StagingBuffer final {
     return vulkan_buffer_;
   }
 
+  inline bool is_external() const {
+    return external_;
+  }
+
   inline void* data() {
     if (!mapped_data_) {
+      VK_CHECK_COND(
+          !external_, "an external staging buffer has no host mapping");
       mapped_data_ = vulkan_buffer_.allocation_info().pMappedData;
     }
     return mapped_data_;

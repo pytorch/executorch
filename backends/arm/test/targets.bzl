@@ -55,6 +55,7 @@ def define_arm_tests():
         "ops/test_flip.py",
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
+        "ops/test_mish.py",
         "ops/test_var.py",
         "ops/test_conv1d.py",
         "ops/test_gelu.py",
@@ -89,6 +90,7 @@ def define_arm_tests():
     test_files += [
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
+        "misc/test_conv1d_activation_partitioning.py",
         "misc/test_diff_pte.py",
         "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
