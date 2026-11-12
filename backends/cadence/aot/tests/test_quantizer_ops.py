@@ -39,6 +39,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceWithLayerNormQuantizer,
     CadenceWithSoftmaxQuantizer,
     qconfig_A16,
+    qconfig_A32W8sym_127,
     qconfig_A8W8,
     qconfig_A8W8sym,
 )
@@ -46,6 +47,7 @@ from executorch.backends.test.graph_builder import GraphBuilder, single_op_build
 from executorch.exir.pass_base import NodeMetadata
 from parameterized import parameterized
 from torch._ops import OpOverload
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 from torchao.quantization.pt2e import PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
@@ -73,7 +75,6 @@ GraphBuilderFn = Callable[
 # These should be explicitly justified when added.
 EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
-    CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
 }
 
@@ -269,10 +270,51 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
     ),
 ]
 
+# W8A32 test cases, checked by test_w8a32_annotation: inputs whose expected qspec
+# is None must stay unannotated (fp32), unlike in QUANTIZER_ANNOTATION_TEST_CASES.
+# expected_input_qspecs follows the node's all_input_nodes order.
+# Format: (name, graph_builder_fn, quantizer_instance, expected_input_qspecs)
+W8A32_ANNOTATION_TEST_CASES: list[
+    tuple[
+        str,
+        GraphBuilderFn,
+        CadenceQuantizer,
+        list[QuantizationSpec | type[SharedQuantizationSpec] | None],
+    ]
+] = [
+    (
+        "w8a32_linear",
+        lambda self: self._build_w8a32_linear_graph(),
+        CadenceW8A32MixedQuantizer(),
+        [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
+    ),
+    (
+        "w8a32_conv1d",
+        lambda self: self._build_w8a32_conv1d_graph(),
+        CadenceW8A32MixedQuantizer(),
+        [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
+    ),
+    (
+        "w8a32_gru",
+        lambda self: self._build_w8a32_gru_graph(),
+        CadenceW8A32MixedQuantizer(),
+        # [input, hx, w_ih, w_hh, b_ih, b_hh]; b_hh shares b_ih's observer
+        [
+            None,
+            None,
+            qconfig_A32W8sym_127.weight,
+            qconfig_A32W8sym_127.weight,
+            qconfig_A32W8sym_127.bias,
+            SharedQuantizationSpec,
+        ],
+    ),
+]
+
 # Derive the set of tested quantizer classes from the test cases.
 # This ensures TESTED_QUANTIZER_CLASSES stays in sync with actual tests.
 TESTED_QUANTIZER_CLASSES: set[type[CadenceQuantizer]] = {
-    type(case[2]) for case in QUANTIZER_ANNOTATION_TEST_CASES
+    type(case[2])
+    for case in [*QUANTIZER_ANNOTATION_TEST_CASES, *W8A32_ANNOTATION_TEST_CASES]
 }
 
 
@@ -643,6 +685,97 @@ class QuantizerAnnotationTest(unittest.TestCase):
 
         return gm, relu_nodes[0], conv2d_nodes[0]
 
+    def _build_w8a32_conv1d_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with conv1d(input, weight, bias) for the W8A32 pattern.
+
+        The MixedW8A32ConvPattern requires exactly 3 args (input, weight, bias),
+        no kwargs, weight shape with channels multiple of 4 and kernel_size==3,
+        and input length equal to the kernel size (3).
+        """
+        builder = GraphBuilder()
+        # Input shape: (batch, in_channels, length) = (1, 4, 3) — channels and length match constraints.
+        x = builder.placeholder("x", torch.randn(1, 4, 3))
+        # Weight shape: (out_channels, in_channels, kernel_size) = (8, 4, 3).
+        weight = builder.placeholder("weight", torch.randn(8, 4, 3))
+        bias = builder.placeholder("bias", torch.randn(8))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        builder.output([conv1d])
+        gm = builder.get_graph_module()
+
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv1d.default,
+        )
+        self.assertEqual(len(conv1d_nodes), 1, "Should find exactly one conv1d node")
+        return gm, conv1d_nodes[0]
+
+    def _build_w8a32_linear_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with linear(input, weight, bias) for the W8A32 pattern."""
+        builder = GraphBuilder()
+        # MixedW8A32LinearPattern needs a single-row input with features % 4 == 0.
+        x = builder.placeholder("x", torch.randn(1, 8))
+        weight = builder.placeholder("weight", torch.randn(4, 8))
+        bias = builder.placeholder("bias", torch.randn(4))
+        linear = builder.call_operator(
+            op=torch.ops.aten.linear.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("linear", torch.ops.aten.linear.default)]}
+            ),
+        )
+        builder.output([linear])
+        gm = builder.get_graph_module()
+
+        linear_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.linear.default,
+        )
+        self.assertEqual(len(linear_nodes), 1, "Should find exactly one linear node")
+        return gm, linear_nodes[0]
+
+    def _build_w8a32_gru_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with a single-layer, batch-first gru for the W8A32 pattern."""
+        builder = GraphBuilder()
+        # MixedW8A32GruPattern needs input and hidden sizes % 4 == 0.
+        input_size, hidden_size = 8, 4
+        x = builder.placeholder("x", torch.randn(1, 1, input_size))
+        hx = builder.placeholder("hx", torch.randn(1, 1, hidden_size))
+        params = [
+            builder.placeholder("w_ih", torch.randn(3 * hidden_size, input_size)),
+            builder.placeholder("w_hh", torch.randn(3 * hidden_size, hidden_size)),
+            builder.placeholder("b_ih", torch.randn(3 * hidden_size)),
+            builder.placeholder("b_hh", torch.randn(3 * hidden_size)),
+        ]
+        gru = builder.call_operator(
+            op=torch.ops.aten.gru.input,
+            # (input, hx, params, has_biases, num_layers, dropout, train,
+            #  bidirectional, batch_first)
+            args=(x, hx, params, True, 1, 0.0, False, False, True),
+            meta=NodeMetadata({"source_fn_stack": [("gru", torch.ops.aten.gru.input)]}),
+        )
+        output = builder.call_operator(op=operator.getitem, args=(gru, 0))
+        builder.output([output])
+        gm = builder.get_graph_module()
+
+        gru_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.gru.input,
+        )
+        self.assertEqual(len(gru_nodes), 1, "Should find exactly one gru node")
+        return gm, gru_nodes[0]
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -835,6 +968,63 @@ class QuantizerAnnotationTest(unittest.TestCase):
                 f"test_quantizer_annotation and not in EXCLUDED_FROM_ANNOTATION_TESTING: "
                 f"{untested_names}. Please add test cases or explicitly exclude them."
             )
+
+    @parameterized.expand(W8A32_ANNOTATION_TEST_CASES)
+    def test_w8a32_annotation(
+        self,
+        name: str,
+        graph_builder_fn: GraphBuilderFn,
+        quantizer: CadenceQuantizer,
+        expected_input_qspecs: list[
+            QuantizationSpec | type[SharedQuantizationSpec] | None
+        ],
+    ) -> None:
+        """W8A32 annotates only weights and biases; activations stay fp32."""
+        gm, node = graph_builder_fn(self)[:2]
+        # The W8A32 patterns check shapes in tensor_meta, which GraphBuilder
+        # does not set.
+        for n in gm.graph.nodes:
+            if isinstance(n.meta.get("val"), torch.Tensor):
+                n.meta["tensor_meta"] = _extract_tensor_metadata(n.meta["val"])
+        quantizer.annotate(gm)
+
+        annotation: QuantizationAnnotation = node.meta[Q_ANNOTATION_KEY]
+        self.assertIsNone(annotation.output_qspec)
+        expected = {
+            arg: qspec
+            for arg, qspec in zip(node.all_input_nodes, expected_input_qspecs)
+            if qspec is not None
+        }
+        self.assertEqual(annotation.input_qspec_map.keys(), expected.keys())
+        for arg, qspec in expected.items():
+            if isinstance(qspec, type):
+                self.assertIsInstance(annotation.input_qspec_map[arg], qspec)
+            else:
+                self.assertEqual(annotation.input_qspec_map[arg], qspec)
+
+    def test_w8a32_weight_range_is_symmetric(self) -> None:
+        qspec = qconfig_A32W8sym_127.weight
+        assert qspec is not None
+        observer = qspec.observer_or_fake_quant_ctr(
+            dtype=qspec.dtype,
+            qscheme=qspec.qscheme,
+            quant_min=qspec.quant_min,
+            quant_max=qspec.quant_max,
+        )
+        weight = torch.tensor([-1.0, 1.0])
+        observer(weight)
+        scale, zero_point = observer.calculate_qparams()
+        # The [-127, 127] scale, max / 127, represents both extremes exactly.
+        torch.testing.assert_close(
+            torch.fake_quantize_per_tensor_affine(
+                weight,
+                scale.item(),
+                int(zero_point.item()),
+                qspec.quant_min,
+                qspec.quant_max,
+            ),
+            weight,
+        )
 
 
 class QuantizerOpsPreserveTest(unittest.TestCase):
