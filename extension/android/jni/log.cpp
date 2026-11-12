@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "log.h"
+#include <executorch/extension/android/jni/log.h>
 
 #ifdef __ANDROID__
 
