@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 using namespace executorch::backends::webgpu;
@@ -35,6 +36,22 @@ TEST(DriverUtil, WithinTolAbsOrRel) {
   const float out3[1] = {1e-5f};
   const float gold3[1] = {0.0f};
   EXPECT_TRUE(within_tol(out3, gold3, 1, 1e-4f, 1e-3f, &ma, &mr));
+}
+
+TEST(DriverUtil, WithinTolSpecialValues) {
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  float ma = 0, mr = 0;
+  const float out[3] = {nan, inf, -inf};
+  const float gold[3] = {nan, inf, -inf};
+  EXPECT_FALSE(within_tol(out, gold, 3, 1e-4f, 1e-3f, &ma, &mr));
+  EXPECT_TRUE(within_tol(out, gold, 3, 1e-4f, 1e-3f, &ma, &mr, true));
+  // NaN never matches a number, and infinities must match exactly.
+  const float out2[2] = {nan, inf};
+  const float gold2[2] = {1.0f, -inf};
+  EXPECT_FALSE(within_tol(out2, gold2, 1, 1e-4f, 1e-3f, &ma, &mr, true));
+  EXPECT_FALSE(
+      within_tol(out2 + 1, gold2 + 1, 1, 1e-4f, 1e-3f, &ma, &mr, true));
 }
 
 TEST(DriverUtil, ParseManifestResolvesRelativePaths) {

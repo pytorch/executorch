@@ -100,6 +100,9 @@ def define_common_targets():
     # TODO(gasoonjia): Replace common_shims with this one after metal migration
     runtime.cxx_library(
         name = "common_shims_slim",
+        # @lint-ignore BUCKLINT: The dynamic loader binds a compiled AOTI library's aoti_torch_* calls to this library, but nothing in the host calls most of them.
+        link_whole = True,
+        supports_python_dlopen = True,
         srcs = [
             "common_shims_slim.cpp",
         ],

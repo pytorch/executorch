@@ -23,6 +23,7 @@
 #include <executorch/backends/native/runtime/graph/Node.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
+#include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 
 namespace ptn::vulkan {
 namespace {
@@ -63,54 +64,19 @@ bool is_any(
   return std::ranges::find(names, target) != names.end();
 }
 
-const NamedArgument*
-get_arg(const Node& node, std::string_view name, size_t position) {
-  const auto input = std::ranges::find_if(
-      node.inputs, [&](const NamedArgument& arg) { return arg.name == name; });
-  if (input != node.inputs.end()) {
-    return &*input;
-  }
-  return position < node.inputs.size() ? &node.inputs[position] : nullptr;
+bool is_int(const Argument* arg, int64_t value) {
+  return arg != nullptr && arg->kind() == ArgKind::Int &&
+      !valid(arg->as_int().id) && arg->as_int().value == value;
 }
 
-std::optional<ValueId> tensor_id(const NamedArgument* arg) {
-  if (arg == nullptr || arg->arg.kind() != ArgKind::Tensor ||
-      !valid(arg->arg.as_tensor().id)) {
-    return std::nullopt;
-  }
-  return arg->arg.as_tensor().id;
-}
-
-bool is_int(const NamedArgument* arg, int64_t value) {
-  return arg != nullptr && arg->arg.kind() == ArgKind::Int &&
-      !valid(arg->arg.as_int().id) && arg->arg.as_int().value == value;
-}
-
-bool is_int_list(const NamedArgument* arg, const std::vector<int64_t>& values) {
-  return arg != nullptr && arg->arg.kind() == ArgKind::IntList &&
-      arg->arg.as_int_list().ids.empty() &&
-      arg->arg.as_int_list().values == values;
+bool is_int_list(const Argument* arg, const std::vector<int64_t>& values) {
+  return arg != nullptr && arg->kind() == ArgKind::IntList &&
+      arg->as_int_list().ids.empty() && arg->as_int_list().values == values;
 }
 
 // Absent optional arguments take their schema default.
-bool is_int_or_absent(const NamedArgument* arg, int64_t value) {
+bool is_int_or_absent(const Argument* arg, int64_t value) {
   return arg == nullptr || is_int(arg, value);
-}
-
-bool is_bool_or_absent(const NamedArgument* arg, bool value) {
-  return arg == nullptr ||
-      (arg->arg.kind() == ArgKind::Bool && !valid(arg->arg.as_bool().id) &&
-       arg->arg.as_bool().value == value);
-}
-
-std::optional<double> float_or_absent(const NamedArgument* arg, double value) {
-  if (arg == nullptr) {
-    return value;
-  }
-  if (arg->arg.kind() != ArgKind::Float || valid(arg->arg.as_float().id)) {
-    return std::nullopt;
-  }
-  return arg->arg.as_float().value;
 }
 
 bool is_graph_input(const Graph& graph, ValueId id) {
@@ -149,10 +115,10 @@ const std::vector<int64_t>& sizes_of(const Graph& graph, ValueId id) {
 std::optional<ValueId> unpermuted(const Graph& graph, ValueId id) {
   const Node* node = producer(graph, id);
   if (node == nullptr || !is_any(node->target, kPermutes) ||
-      !is_int_list(get_arg(*node, "dims", 1), {0, 2, 1, 3})) {
+      !is_int_list(find_arg(*node, "dims", 1), {0, 2, 1, 3})) {
     return std::nullopt;
   }
-  return tensor_id(get_arg(*node, "self", 0));
+  return tensor_id(find_arg(*node, "self", 0));
 }
 
 struct Rope {
@@ -166,16 +132,16 @@ struct Rope {
 std::optional<Rope> match_rope(const Graph& graph, ValueId id) {
   const Node* node = producer(graph, id);
   if (node == nullptr || node->target != kRope ||
-      !is_bool_or_absent(get_arg(*node, "interleaved", 3), false)) {
+      !is_bool_or_absent(find_arg(*node, "interleaved", 3), false)) {
     return std::nullopt;
   }
-  const std::optional<ValueId> input = tensor_id(get_arg(*node, "input", 0));
+  const std::optional<ValueId> input = tensor_id(find_arg(*node, "input", 0));
   const std::optional<ValueId> position_ids =
-      tensor_id(get_arg(*node, "position_ids", 1));
+      tensor_id(find_arg(*node, "position_ids", 1));
   const std::optional<ValueId> inv_freq =
-      tensor_id(get_arg(*node, "inv_freq", 2));
+      tensor_id(find_arg(*node, "inv_freq", 2));
   const std::optional<double> scale =
-      float_or_absent(get_arg(*node, "attention_scale", 4), 1.0);
+      float_or_absent(find_arg(*node, "attention_scale", 4), 1.0);
   if (!input || !position_ids || !inv_freq || !scale) {
     return std::nullopt;
   }
@@ -203,18 +169,18 @@ struct CacheWrite {
 std::optional<CacheWrite> match_cache_write(const Graph& graph, ValueId id) {
   const Node* node = producer(graph, id);
   if (node == nullptr || node->target != kIndexPut ||
-      !is_bool_or_absent(get_arg(*node, "accumulate", 3), false)) {
+      !is_bool_or_absent(find_arg(*node, "accumulate", 3), false)) {
     return std::nullopt;
   }
-  const std::optional<ValueId> cache = tensor_id(get_arg(*node, "self", 0));
-  const NamedArgument* indices = get_arg(*node, "indices", 1);
-  const std::optional<ValueId> values = tensor_id(get_arg(*node, "values", 2));
+  const std::optional<ValueId> cache = tensor_id(find_arg(*node, "self", 0));
+  const Argument* indices = find_arg(*node, "indices", 1);
+  const std::optional<ValueId> values = tensor_id(find_arg(*node, "values", 2));
   if (!cache || !values || indices == nullptr ||
-      indices->arg.kind() != ArgKind::OptionalTensorList ||
+      indices->kind() != ArgKind::OptionalTensorList ||
       graph.value(*cache).role != ValueRole::Buffer) {
     return std::nullopt;
   }
-  const std::vector<ValueId>& ids = indices->arg.as_optional_tensor_list().ids;
+  const std::vector<ValueId>& ids = indices->as_optional_tensor_list().ids;
   if (ids.size() != 3 || valid(ids[0]) || valid(ids[1]) || !valid(ids[2])) {
     return std::nullopt;
   }
@@ -228,8 +194,8 @@ bool is_unsqueezed(
     int64_t dim) {
   const Node* node = producer(graph, id);
   return node != nullptr && is_any(node->target, kUnsqueezes) &&
-      tensor_id(get_arg(*node, "self", 0)) == source &&
-      is_int(get_arg(*node, "dim", 1), dim);
+      tensor_id(find_arg(*node, "self", 0)) == source &&
+      is_int(find_arg(*node, "dim", 1), dim);
 }
 
 // Returns x for op(x, ...) when op is one of names.
@@ -242,7 +208,7 @@ std::optional<ValueId> operand_of(
   if (node == nullptr || !is_any(node->target, names)) {
     return std::nullopt;
   }
-  return tensor_id(get_arg(*node, "self", 0));
+  return tensor_id(find_arg(*node, "self", 0));
 }
 
 // arange(0, cache_len), optionally plus HF's kv_offset, a one-element constant
@@ -255,9 +221,9 @@ bool is_kv_index(
     std::optional<ValueId>& offset) {
   const Node* node = producer(graph, id);
   if (node != nullptr && node->target == kAdd) {
-    const std::optional<ValueId> self = tensor_id(get_arg(*node, "self", 0));
-    offset = tensor_id(get_arg(*node, "other", 1));
-    if (!self || !offset || !is_int_or_absent(get_arg(*node, "alpha", 2), 1) ||
+    const std::optional<ValueId> self = tensor_id(find_arg(*node, "self", 0));
+    offset = tensor_id(find_arg(*node, "other", 1));
+    if (!self || !offset || !is_int_or_absent(find_arg(*node, "alpha", 2), 1) ||
         is_graph_input(graph, *offset) || producer(graph, *offset) != nullptr ||
         graph.value(*offset).tensor_meta().numel() != 1) {
       return false;
@@ -265,9 +231,9 @@ bool is_kv_index(
     node = producer(graph, *self);
   }
   return node != nullptr && node->target == kArange &&
-      is_int(get_arg(*node, "start", 0), 0) &&
-      is_int(get_arg(*node, "end", 1), cache_len) &&
-      is_int_or_absent(get_arg(*node, "step", 2), 1);
+      is_int(find_arg(*node, "start", 0), 0) &&
+      is_int(find_arg(*node, "end", 1), cache_len) &&
+      is_int_or_absent(find_arg(*node, "step", 2), 1);
 }
 
 // HF's static-cache causal mask:
@@ -287,11 +253,11 @@ bool is_causal_mask(
   }
   const Node* expand = producer(graph, mask);
   if (expand == nullptr || !is_any(expand->target, kExpands) ||
-      !is_int_list(get_arg(*expand, "size", 1), {1, -1, -1, -1})) {
+      !is_int_list(find_arg(*expand, "size", 1), {1, -1, -1, -1})) {
     return false;
   }
   const std::optional<ValueId> unsqueezed_1 =
-      tensor_id(get_arg(*expand, "self", 0));
+      tensor_id(find_arg(*expand, "self", 0));
   const std::optional<ValueId> unsqueezed_0 = unsqueezed_1
       ? operand_of(graph, *unsqueezed_1, kUnsqueezes)
       : std::nullopt;
@@ -307,13 +273,13 @@ bool is_causal_mask(
     return false;
   }
   const std::optional<ValueId> kv_index =
-      tensor_id(get_arg(*compare, "self", 0));
+      tensor_id(find_arg(*compare, "self", 0));
   const std::optional<ValueId> query_index =
-      tensor_id(get_arg(*compare, "other", 1));
+      tensor_id(find_arg(*compare, "other", 1));
   const Node* view = query_index ? producer(graph, *query_index) : nullptr;
   return kv_index && view != nullptr && is_any(view->target, kViews) &&
-      tensor_id(get_arg(*view, "self", 0)) == cache_position &&
-      is_int_list(get_arg(*view, "size", 1), {-1, 1}) &&
+      tensor_id(find_arg(*view, "self", 0)) == cache_position &&
+      is_int_list(find_arg(*view, "size", 1), {-1, 1}) &&
       is_kv_index(graph, *kv_index, cache_len, kv_offset);
 }
 
@@ -356,7 +322,7 @@ bool compatible_shapes(const Graph& graph, const Match& m) {
 
 bool supported_sdpa_args(const Graph& graph, const Node& sdpa, Match& m) {
   const int64_t head_dim = sizes_of(graph, m.q_rope.input)[3];
-  const std::optional<ValueId> mask = tensor_id(get_arg(sdpa, "attn_mask", 3));
+  const std::optional<ValueId> mask = tensor_id(find_arg(sdpa, "attn_mask", 3));
   const bool causal_mask = mask &&
       is_causal_mask(graph,
                      *mask,
@@ -364,27 +330,29 @@ bool supported_sdpa_args(const Graph& graph, const Node& sdpa, Match& m) {
                      sizes_of(graph, m.k_write.cache)[2],
                      m.kv_offset);
   const std::optional<double> dropout =
-      float_or_absent(get_arg(sdpa, "dropout_p", 4), 0.0);
-  const NamedArgument* scale = get_arg(sdpa, "scale", 6);
+      float_or_absent(find_arg(sdpa, "dropout_p", 4), 0.0);
+  const Argument* scale = find_arg(sdpa, "scale", 6);
   const bool default_scale = scale == nullptr ||
-      scale->arg.kind() == ArgKind::None ||
-      (scale->arg.kind() == ArgKind::Float &&
-       !valid(scale->arg.as_float().id) &&
+      scale->kind() == ArgKind::None ||
+      (scale->kind() == ArgKind::Float && !valid(scale->as_float().id) &&
        std::abs(
-           scale->arg.as_float().value -
+           scale->as_float().value -
            1.0 / std::sqrt(static_cast<double>(head_dim))) < 1e-6);
   return causal_mask && dropout == 0.0 && default_scale &&
-      is_bool_or_absent(get_arg(sdpa, "is_causal", 5), false);
+      is_bool_or_absent(find_arg(sdpa, "is_causal", 5), false);
 }
 
 std::optional<Match> match(const Graph& graph, NodeId sdpa_id) {
   const Node& sdpa = graph.node(sdpa_id);
-  if (!sdpa.is_call() || sdpa.target != kSDPA || sdpa.outputs.size() != 1) {
+  // An input of an unknown name would read as absent, dropping a flag that
+  // changes the result.
+  if (!sdpa.is_call() || sdpa.target != kSDPA || sdpa.outputs.size() != 1 ||
+      !inputs_fit_schema(sdpa, kSDPAParams)) {
     return std::nullopt;
   }
-  const std::optional<ValueId> query = tensor_id(get_arg(sdpa, "query", 0));
-  const std::optional<ValueId> key = tensor_id(get_arg(sdpa, "key", 1));
-  const std::optional<ValueId> value = tensor_id(get_arg(sdpa, "value", 2));
+  const std::optional<ValueId> query = tensor_id(find_arg(sdpa, "query", 0));
+  const std::optional<ValueId> key = tensor_id(find_arg(sdpa, "key", 1));
+  const std::optional<ValueId> value = tensor_id(find_arg(sdpa, "value", 2));
   const ValueId sdpa_out = sdpa.outputs[0].value_id;
   if (!query || !key || !value || !valid(sdpa_out) ||
       graph.value(sdpa_out).consumer_ids.size() != 1) {
