@@ -522,6 +522,30 @@ class GgmlOpsTest(unittest.TestCase):
     def test_div_broadcast_both(self):
         self._check(Lambda(torch.div), (torch.randn(2, 1, 4), torch.rand(3, 1) + 0.5))
 
+    def test_logical_not_float_and_bool(self):
+        tiny = torch.finfo(torch.float32).tiny
+        x = torch.tensor(
+            [
+                [0.0, -0.0, float("nan"), float("inf"), tiny],
+                [-float("inf"), -1.0, 1.0, 2.0, 1e-30],
+            ]
+        )
+        self._check(
+            Lambda(lambda x: torch.logical_not(x.transpose(0, 1)).float()),
+            (x,),
+            atol=0,
+            rtol=0,
+        )
+        self._check(
+            Lambda(lambda x: torch.logical_not(x.lt(0)).float()), (x,), atol=0, rtol=0
+        )
+
+    def test_logical_not_rejects_integer(self):
+        with self.assertRaisesRegex(AssertionError, "Bool and F32"):
+            self._check(
+                Lambda(lambda x: torch.logical_not(x).float()), (torch.arange(4),)
+            )
+
     def test_add_bool_is_logical_or(self):
         self._check(
             Lambda(lambda x, y, z: (x.le(y) + x.le(z)).to(x.dtype)),

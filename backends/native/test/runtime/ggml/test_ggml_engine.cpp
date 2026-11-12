@@ -2313,7 +2313,95 @@ TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
   expect_compile_error(
       program.finish("y"), "amax supports trailing dimensions only");
 }
+TEST(GgmlEngineTest, LogicalNotUsesDirectFloatTruthinessAndBoolMasksOnReplay) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const std::vector<float> values{
+      0.0f,
+      -0.0f,
+      std::numeric_limits<float>::quiet_NaN(),
+      inf,
+      -inf,
+      -1,
+      1,
+      std::numeric_limits<float>::min(),
+      1e-30f,
+      std::numeric_limits<float>::denorm_min()};
+  for (const bool generated_bool : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, {1, 1, 14, 14});
+      program.call(
+          "p",
+          "torch.ops.aten.permute_copy.default",
+          {{"self", std::string("x")},
+           {"dims", std::vector<int64_t>{0, 1, 3, 2}}},
+          fbs::ScalarType::FLOAT,
+          {1, 1, 14, 14});
+      std::string input = "p";
+      if (generated_bool) {
+        program.call(
+            "mask",
+            "torch.ops.aten.lt.Scalar",
+            {{"self", input}, {"other", 0.0}},
+            fbs::ScalarType::BOOL,
+            {1, 1, 14, 14});
+        input = "mask";
+      }
+      program.call(
+          "inverse",
+          "torch.ops.aten.logical_not.default",
+          {{"self", input}},
+          fbs::ScalarType::BOOL,
+          {1, 1, 14, 14});
+      program.call(
+          "out",
+          "torch.ops.aten._to_copy.default",
+          {{"self", std::string("inverse")}},
+          fbs::ScalarType::FLOAT,
+          {1, 1, 14, 14});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("out"));
+      auto executable = context->compile("forward");
+      for (const bool reverse : {false, true}) {
+        std::vector<float> x(196), expected(196), out(196);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = values
+              [reverse ? values.size() - 1 - i % values.size()
+                       : i % values.size()];
+        }
+        for (size_t i = 0; i < expected.size(); ++i) {
+          const float value = x[(i % 14) * 14 + i / 14];
+          expected[i] = generated_bool ? !(value < 0) : value == 0;
+        }
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        executable->get_output(0, out.data(), out.size(), ScalarType::Float);
+        EXPECT_EQ(out, expected);
+      }
+    }
+  }
+}
 
+TEST(GgmlEngineTest, LogicalNotRejectsUnsupportedTypedInputs) {
+  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
+    TestProgram program;
+    program.input("x", dtype, {2});
+    program.call(
+        "mask",
+        "torch.ops.aten.logical_not.default",
+        {{"self", std::string("x")}},
+        fbs::ScalarType::BOOL,
+        {2});
+    program.call(
+        "out",
+        "torch.ops.aten._to_copy.default",
+        {{"self", std::string("mask")}},
+        fbs::ScalarType::FLOAT,
+        {2});
+    expect_compile_error(program.finish("out"), "Bool and F32");
+  }
+}
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;

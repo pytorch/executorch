@@ -739,6 +739,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_custom_sdpa(node);
   } else if (key == "aten.where.self") {
     lower_where(node);
+  } else if (key == "aten.logical_not.default") {
+    lower_logical_not(node);
   } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
     lower_compare(node, /*strict=*/false);
   } else if (key == "aten.lt.Tensor" || key == "aten.lt.Scalar") {

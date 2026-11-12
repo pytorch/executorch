@@ -390,6 +390,32 @@ void GraphBuilder::lower_where(const Node& node) {
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
+// logical_not is x == 0. Bools are 0/1 floats, so that is 1 - x. For floats
+// it is false for NaN: 1 - step(|x|) is 1 at zero and at NaN, and
+// step(x + 1) clears NaN.
+void GraphBuilder::lower_logical_not(const Node& node) {
+  const ValueId input_id = tensor_arg_id(node, "self", 0);
+  const ScalarType dtype = method_.graph.value(input_id).tensor_meta().dtype;
+  if (dtype != ScalarType::Bool && dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        "ggml: logical_not supports Bool and F32 tensors only");
+  }
+  const TensorRef input = tensor(input_id);
+  require_f32(node, input.tensor);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(input.tensor);
+  if (dtype == ScalarType::Bool) {
+    set_single_output(
+        node, TensorRef{ggml_scale_bias(ctx, x, -1.0f, 1.0f), input.sizes});
+    return;
+  }
+  ggml_tensor* zero_or_nan =
+      ggml_scale_bias(ctx, ggml_step(ctx, ggml_abs(ctx, x)), -1.0f, 1.0f);
+  ggml_tensor* not_nan = ggml_step(ctx, ggml_scale_bias(ctx, x, 1.0f, 1.0f));
+  set_single_output(
+      node, TensorRef{ggml_mul(ctx, zero_or_nan, not_nan), input.sizes});
+}
+
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
 // step(b - a).
 void GraphBuilder::lower_compare(const Node& node, bool strict) {
