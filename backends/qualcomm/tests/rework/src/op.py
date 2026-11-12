@@ -6,6 +6,7 @@
 
 import inspect
 import itertools
+import logging
 import math
 import random
 from functools import partial, reduce
@@ -15,6 +16,11 @@ import torch
 
 # Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
 from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
+from executorch.backends.qualcomm.export_utils import (
+    make_quantizer,
+    prepare_pt2e,
+    QuantDtype,
+)
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
@@ -1369,6 +1375,50 @@ class Conv(torch.nn.Module):
             variant=2,
             transpose=True,
         )
+
+    @staticmethod
+    def test_2d_16a16w_default(subtests, caplog):
+        # use_16a16w defaults to per-tensor conv weights, since per-channel int16
+        # weights make the derived int32 bias inaccurate (pytorch/executorch#23108).
+        # An explicit per_channel_conv=True is respected, with a warning.
+        def weight_qscheme(**make_quantizer_kwargs):
+            module = __class__(
+                in_channels=4,
+                out_channels=8,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                dilation=1,
+                groups=1,
+                bias=True,
+                variant=2,
+                transpose=False,
+            ).eval()
+            inputs = (torch.randn(1, 4, 8, 8),)
+            quantizer = make_quantizer(
+                quant_dtype=QuantDtype.use_16a16w,
+                **make_quantizer_kwargs,
+            )
+            exported = torch.export.export(module, inputs, strict=True).module()
+            prepared = prepare_pt2e(exported, quantizer)
+            [conv] = [
+                n
+                for n in prepared.graph.nodes
+                if n.target == torch.ops.aten.conv2d.default
+            ]
+            # prepare_pt2e inserts the weight observer between weight and conv.
+            return prepared.get_submodule(conv.args[1].target).qscheme
+
+        with subtests.test(msg="default_is_per_tensor"):
+            qscheme = weight_qscheme()
+            assert qscheme == torch.per_tensor_symmetric, qscheme
+
+        with subtests.test(msg="explicit_per_channel_is_respected_and_warns"):
+            with caplog.at_level(logging.WARNING):
+                caplog.clear()
+                qscheme = weight_qscheme(per_channel_conv=True)
+            assert qscheme == torch.per_channel_symmetric, qscheme
+            assert "use_16a16w with per-channel conv weights" in caplog.text
 
     @staticmethod
     @unpack_fixtures
