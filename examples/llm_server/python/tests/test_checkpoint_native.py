@@ -17,6 +17,12 @@ from executorch.examples.llm_server.python.checkpoint import (
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
+from executorch.examples.llm_server.python.session_runtime import (
+    GenerationOptions,
+    PromptInput,
+    SessionRuntime,
+)
+from executorch.examples.llm_server.python.session_store import SessionStore
 from executorch.examples.llm_server.python.worker_client import WorkerError
 
 pytestmark = pytest.mark.native_worker
@@ -114,5 +120,63 @@ def test_failed_restore_preserves_existing_session_and_worker(worker_path):
             assert unchanged == checkpoint and worker.healthy
         finally:
             await worker.close()
+
+    asyncio.run(asyncio.wait_for(run(), 20))
+
+
+def test_save_close_restart_and_resume_without_checkpoint_details(
+    worker_path, tmp_path
+):
+    async def run():
+        store = await SessionStore.create(
+            tmp_path / "sessions",
+            model_files=[worker_path],
+            configuration={"backend": "test"},
+        )
+        worker = await spawn_multiplexed_worker([worker_path], session_store=store)
+        runtime = SessionRuntime(worker)
+        try:
+            stream = runtime.generate_stream(
+                "chat", PromptInput(text="abcdef"), GenerationOptions(max_new_tokens=3)
+            )
+            async for _ in stream:
+                pass
+            await runtime.save_session("chat")
+            saved = store.load("chat")
+            assert saved.tokens == tuple(b"abcdef") + tuple(
+                stream.stats.generated_token_ids[:-1]
+            )
+            await runtime.close("chat")
+        finally:
+            await runtime.aclose_worker()
+        worker = await spawn_multiplexed_worker([worker_path], session_store=store)
+        runtime = SessionRuntime(worker)
+        try:
+            session = await runtime.resume_session("chat")
+            with pytest.raises(WorkerError, match="unused session key"):
+                await runtime.resume_session("chat")
+            tokens = list(b"abcdef") + stream.stats.generated_token_ids + list(b"next")
+            prompt = PromptInput(segments=[{"ids": tokens}])
+            restored = runtime.generate_stream(
+                session, prompt, GenerationOptions(max_new_tokens=3)
+            )
+            cold = runtime.generate_stream(
+                "cold", prompt, GenerationOptions(max_new_tokens=3)
+            )
+            async for _ in restored:
+                pass
+            async for _ in cold:
+                pass
+            assert cold.stats.reused_prompt_tokens == 0
+            assert cold.stats.prefilled_prompt_tokens == len(tokens)
+            assert restored.stats.reused_prompt_tokens == len(saved.tokens)
+            assert restored.stats.prefilled_prompt_tokens == 5
+            await runtime.save_session("chat")
+            assert len(store.load("chat").tokens) > len(saved.tokens)
+            with pytest.raises(FileNotFoundError):
+                await runtime.resume_session("missing")
+            assert runtime.healthy
+        finally:
+            await runtime.aclose_worker()
 
     asyncio.run(asyncio.wait_for(run(), 20))

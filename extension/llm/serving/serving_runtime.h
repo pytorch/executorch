@@ -169,9 +169,10 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Explicit checkpoint operations, serialized with this key's lifecycle.
   // Export rejects active/dirty sessions. Restore requires an unused key;
   // failure leaves the registry unchanged. Only token histories are supported.
+  // Export with no position snapshots the current committed history.
   void export_checkpoint_to_cpu_async(
       std::string key,
-      batching::Position upto,
+      std::optional<batching::Position> upto,
       CheckpointCallback on_complete);
   void restore_checkpoint_from_cpu_async(
       std::string key,

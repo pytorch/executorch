@@ -6,6 +6,69 @@ session. Applications choose the prefix, file, compatibility identity, restore
 position, and error recovery. Starting the server does not discover or load files;
 finishing a request does not save one.
 
+## Save and resume a session
+
+Configure a `SessionStore` once at application startup with the worker's model
+artifacts and execution settings. It computes the compatibility fingerprint; chat
+and agent code only needs the session ID. Include all external weights and
+adapters in `model_files`, and backend, RoPE, and draft settings in
+`configuration`. Recreate this configuration when starting a new process.
+
+```python
+from executorch.examples.llm_server.python.session_store import SessionStore
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
+
+store = await SessionStore.create(
+    "./saved-sessions",
+    model_files=[model_path, tokenizer_path, *external_weight_paths],
+    configuration=worker_configuration,
+)
+worker = await spawn_multiplexed_worker(worker_command, session_store=store)
+```
+
+After a conversation turn finishes, explicitly save before closing:
+
+```python
+await worker.save_session("chat-42")
+await worker.close()  # The saved session remains on disk.
+```
+
+After reopening the application and starting a matching worker with its store:
+
+```python
+session_id = await worker.resume_session("chat-42")
+# Continue with worker.generate(full_next_prompt, options), using this session_id.
+```
+
+The native runtime chooses the current committed checkpoint boundary. Resume
+loads that saved state into a new session with the same ID and returns the ID.
+The application sends its complete next prompt, including prior history; serving
+matches the tokens and prefills only the suffix. No token positions, checkpoint
+objects, or per-call fingerprints are required for these operations.
+
+`SessionRuntime` exposes the same `save_session(id)` and `resume_session(id)`
+methods. They retain its per-session lease through native and file I/O, so saves
+wait for earlier same-session work. When using the worker client directly, wait
+for generation to finish before saving. Closing a session or worker never saves
+implicitly and does not delete its saved checkpoint. Saving again atomically
+replaces that session's previous file. A client serializes save/resume operations
+through file I/O, bounding loaded checkpoint memory and preserving save order.
+
+Persist messages, tool results, and UI state in the application independently of
+this model state. Resume requires an unused live session ID. A missing or corrupt
+file, incompatible model/configuration, or unsupported checkpoint raises an
+error; the application explicitly chooses whether to rebuild from its history.
+Queued saves and resumes can be cancelled without starting. Once a transfer has
+started, cancellation waits for settlement and may leave a saved file or restored
+session, which the application can close if it abandons the operation.
+Model loading and checkpoint transfer still take time; this avoids recomputing
+saved tokens, not starting the model itself. There are no HTTP persistence
+endpoints or automatic save-on-exit hooks in this API.
+
+## Advanced checkpoint API
+
 The CPU object is independent of the source session and worker. It contains token
 IDs, logical cache positions, retained layer ranges, dtype and geometry, and owned
 bytes. An executor using speculative decoding must also export its draft cache and
@@ -13,7 +76,7 @@ any committed target features that the draft has not consumed. Generated tokens
 that have not been fed back into the target, sampling policy, and request options
 are excluded.
 
-## Python flow
+### Export and restore a chosen position
 
 The native worker must implement the checkpoint executor interface. Use the same
 `MultiplexedWorkerClient` that owns the session. This example assumes `worker` was

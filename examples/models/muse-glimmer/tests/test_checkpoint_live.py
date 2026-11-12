@@ -26,6 +26,7 @@ from executorch.examples.llm_server.python.checkpoint import (
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
+from executorch.examples.llm_server.python.session_store import SessionStore
 from executorch.examples.llm_server.python.worker_client import WorkerError
 
 
@@ -61,30 +62,43 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
         return await stream.wait()
 
     async def run(log):
-        worker = await spawn_multiplexed_worker(json.loads(command), stderr=log)
+        argv = json.loads(command)
+        model = next(
+            arg.removeprefix("--pte=") for arg in argv if arg.startswith("--pte=")
+        )
+        store = await SessionStore.create(
+            tmp_path / "sessions",
+            model_files=[model, Path(hf_dir) / "tokenizer.json"],
+            configuration={"worker_command": argv},
+        )
+        worker = await spawn_multiplexed_worker(argv, stderr=log, session_store=store)
         try:
-            stats = await generate(worker, "seed", prefix, 24)
-            position = stats.num_prompt_tokens + stats.num_generated_tokens - 1
-            checkpoint = await worker.export_checkpoint_to_cpu(
-                "seed", position=position, identity="same-worker-test"
+            stats = await generate(worker, "restored", prefix, 24)
+            await worker.save_session("restored")
+            checkpoint = await asyncio.to_thread(store.load, "restored")
+            position = checkpoint.manifest["position"]
+            committed = position - stats.num_prompt_tokens
+            assert (
+                stats.num_generated_tokens - 1
+                <= committed
+                <= stats.num_generated_tokens
+            )
+            assert (
+                list(checkpoint.tokens[stats.num_prompt_tokens :])
+                == stats.generated_token_ids[:committed]
             )
             save_checkpoint(checkpoint, tmp_path / "state.etcp")
         finally:
             await worker.close()
 
         checkpoint = load_checkpoint(
-            tmp_path / "state.etcp", expected_identity="same-worker-test"
+            tmp_path / "state.etcp", expected_identity=store.identity
         )
-        worker = await spawn_multiplexed_worker(json.loads(command), stderr=log)
+        worker = await spawn_multiplexed_worker(argv, stderr=log, session_store=store)
         try:
-            await worker.restore_checkpoint_from_cpu(
-                checkpoint,
-                "restored",
-                position=position,
-                expected_identity="same-worker-test",
-            )
+            assert await worker.resume_session("restored") == "restored"
             restored_state = await worker.export_checkpoint_to_cpu(
-                "restored", position=position, identity="same-worker-test"
+                "restored", position=position, identity=store.identity
             )
             assert restored_state == checkpoint
             del restored_state
@@ -101,7 +115,7 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
                 checkpoint,
                 "retry",
                 position=position - 1,
-                expected_identity="same-worker-test",
+                expected_identity=store.identity,
             )
             prompt = list(checkpoint.tokens)
             actual = await generate(worker, "retry", prompt, 16)
@@ -148,7 +162,7 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
                 checkpoint,
                 "partial",
                 position=partial,
-                expected_identity="same-worker-test",
+                expected_identity=store.identity,
             )
             prompt = list(checkpoint.tokens[:partial]) + suffix
             actual = await generate(worker, "partial", prompt, 16)

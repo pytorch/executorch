@@ -147,7 +147,10 @@ include all generated tokens.
 
 ### Explicit session checkpoints
 
-Applications can explicitly export committed session state to CPU, save and load
-checkpoint files in Python, and restore a new named session at a retained token
-position. See [the checkpoint API and application flow](CHECKPOINTS.md). These
-operations do not enable automatic disk caching.
+Configure a `SessionStore` at worker startup, then call `save_session(id)` before
+closing and `resume_session(id)` after restarting. Serving chooses the committed
+checkpoint boundary and validates compatibility. Applications keep conversation
+history independently and send the complete next prompt after resume. Advanced
+CPU export and partial-restore APIs remain available. See
+[the checkpoint API and application flow](CHECKPOINTS.md). Saving and resuming
+are explicit operations; closing does not automatically save.

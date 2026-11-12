@@ -560,8 +560,12 @@ class Worker {
              "manifest",
              "data_offset"});
         auto key = session_key(message);
-        const auto position =
-            checkpoint_transfer::integer(message.at("position"));
+        const auto position = message.contains("position")
+            ? std::make_optional(
+                  checkpoint_transfer::integer(message.at("position")))
+            : std::nullopt;
+        if (name == "restore_checkpoint" && !position)
+          throw std::invalid_argument("checkpoint restore requires position");
         const auto path = message.at("path").get<std::string>();
         {
           std::lock_guard<std::mutex> lock(mutex_);
@@ -622,7 +626,7 @@ class Worker {
                   runtime_.restore_checkpoint_from_cpu_async(
                       key,
                       std::move(state),
-                      position,
+                      *position,
                       [this, op](serving::LifecycleResult error) {
                         try {
                           finish_session_checkpoint(
