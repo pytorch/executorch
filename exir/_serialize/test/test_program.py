@@ -1362,7 +1362,8 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertIsNotNone(eh)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(
-            len(from_bytes.call_args.args[0]), _ExtendedHeader.EXPECTED_LENGTH
+            {len(c.args[0]) for c in from_bytes.call_args_list},
+            {_ExtendedHeader.EXPECTED_LENGTH},
         )
 
     def test_from_bytes_larger_than_needed_header_size_field(self) -> None:

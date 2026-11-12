@@ -309,7 +309,7 @@ class TestSerialize(unittest.TestCase):
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
 
-    def test_reads_only_header_bytes(self) -> None:
+    def test_deserialize_reads_only_header_bytes(self) -> None:
         # Passing data[8:] to from_bytes() would copy the whole file.
         serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
         serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
@@ -320,8 +320,17 @@ class TestSerialize(unittest.TestCase):
             serializer.deserialize(Cord(serialized_data))
 
         self.assertEqual(
-            len(from_bytes.call_args.args[0]), FlatTensorHeader.EXPECTED_LENGTH
+            {len(c.args[0]) for c in from_bytes.call_args_list},
+            {FlatTensorHeader.EXPECTED_LENGTH},
         )
+
+    def test_deserialize_rejects_truncated_header(self) -> None:
+        # Input shorter than the header raises RuntimeError, not ValueError.
+        serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+
+        with self.assertRaises(RuntimeError):
+            serializer.deserialize(Cord(serialized_data[:47]))
 
     def test_deserialize_refuses_newer_version(self) -> None:
         # A file whose version is newer than this reader understands must be
