@@ -1587,6 +1587,25 @@ TEST_F(MetalGraphViewTest, ConstantsOnlyGoIntoAConstantsBuffer) {
   EXPECT_EQ(copy(constants, 8, 8), Error::Ok);
 }
 
+// A source range that wraps around the address space is refused, rather than
+// copied from wherever it wraps to.
+TEST_F(MetalGraphViewTest, ConstantSourceThatWrapsIsRefused) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 4 * sizeof(float)), Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  auto* source = reinterpret_cast<uint8_t*>(data.data());
+  const size_t size = 4 * sizeof(float);
+  EXPECT_NE(
+      aoti_torch_mps_memcpy(constants, 0, SIZE_MAX - 1, size, source),
+      Error::Ok);
+  const auto past_source = static_cast<size_t>(
+      UINTPTR_MAX - reinterpret_cast<uintptr_t>(source) - 1);
+  EXPECT_NE(
+      aoti_torch_mps_memcpy(constants, 0, past_source, size, source),
+      Error::Ok);
+  EXPECT_EQ(aoti_torch_mps_memcpy(constants, 0, 0, size, source), Error::Ok);
+}
+
 // An empty tensor copies as nothing, rather than failing.
 TEST_F(MetalGraphViewTest, EmptyTensorsCanBeCopied) {
   const int64_t size = 0;

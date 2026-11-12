@@ -23,7 +23,7 @@ class APIError(Exception):
         self.err_type = err_type
         self.code = code
 
-    def body(self) -> dict:
+    def body(self, *, openrouter: bool = False) -> dict:
         return {
             "error": {"message": self.message, "type": self.err_type, "code": self.code}
         }
@@ -31,10 +31,13 @@ class APIError(Exception):
 
 class ContextLengthExceeded(APIError):
     def __init__(self, num_tokens: int, max_context: int, completion_tokens: int = 0):
-        # completion_tokens > 0: the prompt fits but prompt + requested
-        # max_tokens would run past the window — reject up front rather than
+        self.num_tokens = num_tokens
+        self.max_context = max_context
+        self.completion_tokens = max(0, completion_tokens)
+        # completion_tokens > 0: prompt + requested max_tokens would run
+        # past the window — reject up front rather than
         # fail (or truncate) mid-generation.
-        if completion_tokens > 0:
+        if completion_tokens > 0 and num_tokens < max_context:
             message = (
                 f"This model's maximum context length is {max_context} tokens. "
                 f"However, you requested {num_tokens + completion_tokens} tokens "
@@ -53,6 +56,30 @@ class ContextLengthExceeded(APIError):
             err_type="invalid_request_error",
             code="context_length_exceeded",
         )
+
+    def body(self, *, openrouter: bool = False) -> dict:
+        body = super().body()
+        if openrouter:
+            # Muse's OpenRouter recovery consumes the message's prompt budget.
+            # Reserve output space without counting it as input to be compacted.
+            reserved = max(1, self.completion_tokens)
+            budget = self.max_context - reserved
+            body["error"]["metadata"] = {
+                "error_type": self.code,
+                "provider_code": self.code,
+                "context_length": self.max_context,
+                "prompt_tokens": self.num_tokens,
+                "completion_tokens": reserved,
+            }
+            if budget > 0:
+                body["error"]["message"] = (
+                    f"This model's maximum context length is {budget} tokens. "
+                    f"However, your messages resulted in {self.num_tokens} tokens "
+                    f"(the prompt budget reserves {reserved} completion tokens "
+                    f"from the {self.max_context}-token model window). "
+                    "Please reduce the length of the messages or completion."
+                )
+        return body
 
 
 class GenerationError(APIError):
@@ -88,6 +115,7 @@ class SessionCapacity(APIError):
     (capacity_exhausted -> 429)."""
 
     def __init__(self, code: str):
+        self.session_slots_exhausted = code == "session_capacity_exhausted"
         if code == "unsupported_session":
             super().__init__(
                 status=400,
@@ -98,8 +126,11 @@ class SessionCapacity(APIError):
         else:
             super().__init__(
                 status=429,
-                message="Session capacity exhausted; reuse an existing session_id "
-                "or retry later.",
+                message=(
+                    "Session capacity exhausted; reuse an existing session_id or retry later."
+                    if self.session_slots_exhausted
+                    else "Request capacity exhausted; retry later."
+                ),
                 err_type="capacity_error",
                 code="capacity_exhausted",
             )

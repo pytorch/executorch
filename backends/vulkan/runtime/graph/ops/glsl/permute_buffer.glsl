@@ -35,31 +35,45 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "dispatch.glslh"
 
-TensorIndex permute(TensorIndex tidx) {
-  TensorIndex new_tidx = tidx;
+int inverse_permute_dim(const int inp_dim) {
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    if (extract_4b(permute_order, d) == inp_dim) {
+      return d;
+    }
+  }
+  return inp_dim;
+}
 
-  new_tidx.data[0][0] = idx_at(tidx, extract_4b(permute_order, 0));
-  new_tidx.data[0][1] = idx_at(tidx, extract_4b(permute_order, 1));
-  new_tidx.data[0][2] = idx_at(tidx, extract_4b(permute_order, 2));
-  new_tidx.data[0][3] = idx_at(tidx, extract_4b(permute_order, 3));
-
-  new_tidx.data[1][0] = idx_at(tidx, extract_4b(permute_order, 4));
-  new_tidx.data[1][1] = idx_at(tidx, extract_4b(permute_order, 5));
-  new_tidx.data[1][2] = idx_at(tidx, extract_4b(permute_order, 6));
-  new_tidx.data[1][3] = idx_at(tidx, extract_4b(permute_order, 7));
-
-  return new_tidx;
+TensorIndex unpermute(const TensorIndex outp_tidx) {
+  TensorIndex inp_tidx;
+  inp_tidx.data[0] = uvec4(
+      idx_at(outp_tidx, inverse_permute_dim(0)),
+      idx_at(outp_tidx, inverse_permute_dim(1)),
+      idx_at(outp_tidx, inverse_permute_dim(2)),
+      idx_at(outp_tidx, inverse_permute_dim(3)));
+  inp_tidx.data[1] = uvec4(
+      idx_at(outp_tidx, inverse_permute_dim(4)),
+      idx_at(outp_tidx, inverse_permute_dim(5)),
+      idx_at(outp_tidx, inverse_permute_dim(6)),
+      idx_at(outp_tidx, inverse_permute_dim(7)));
+  return inp_tidx;
 }
 
 void main() {
-  const uint inp_bufi = linear_idx_from_gid();
-  if (inp_bufi >= numel(inp)) {
+  const uint outp_bufi = linear_idx_from_gid();
+  if (outp_bufi >= numel(outp)) {
     return;
   }
 
-  TensorIndex inp_tidx = linear_idx_to_tensor_idx(inp, inp_bufi, inp_layout);
-  TensorIndex outp_tidx = permute(inp_tidx);
-  const uint outp_bufi = tensor_idx_to_linear_idx(outp, outp_tidx);
+  const TensorIndex outp_tidx =
+      linear_idx_to_tensor_idx(outp, outp_bufi, outp_layout);
+  if (out_of_bounds(outp_tidx, outp)) {
+    t_outp[outp_bufi] = T(0);
+    return;
+  }
+
+  const TensorIndex inp_tidx = unpermute(outp_tidx);
+  const uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
 
   // Copy data from input to output
   t_outp[outp_bufi] = t_inp[inp_bufi];

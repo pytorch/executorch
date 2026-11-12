@@ -289,7 +289,17 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_fp8_no_comparing)
+@common.parametrize(
+    "test_module",
+    test_modules_fp8_no_comparing,
+    xfails={
+        "kernel_3x3_stride_1_pad_1_fp8e5m2": common.xfail_if_emulation_layer_version(
+            "<0.11.0",
+            reason="Unsupported FP8E5M2 PAD constant encoding in emulation layer.",
+            raises=RuntimeError,
+        ),
+    },
+)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant_fp8(test_module):
     model, input_tensor, _ = test_module()

@@ -35,6 +35,10 @@ class XNNExecutor {
   // we need to hold onto the buffers to keep them alive.
   std::vector<executorch::runtime::FreeableBuffer> unpacked_buffers_;
 
+  // Keeps runtime_'s threadpool alive across thread count resets. Declared
+  // before runtime_, so it outlives it.
+  std::shared_ptr<pthreadpool> threadpool_;
+
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
       nullptr,
       &xnn_delete_runtime};
@@ -51,6 +55,12 @@ class XNNExecutor {
   std::shared_ptr<XNNWeightsCache> weights_cache_;
   std::atomic<bool> in_use_{false};
   std::atomic<bool> destroyed_{false};
+  // Input shapes, each as its rank followed by its dims, as of the last
+  // xnn_reshape_runtime. They are the whole reshape input: the runtime's
+  // threadpool is fixed at xnn_create_runtime_v4 and cannot change size.
+  std::vector<size_t> input_dims_;
+  std::vector<size_t> reshaped_input_dims_;
+  bool runtime_reshaped_ = false;
 
  public:
   XNNExecutor(std::shared_ptr<XNNWorkspace> workspace)
@@ -140,6 +150,7 @@ class XNNExecutor {
       executorch::runtime::Span<executorch::runtime::EValue*> args) const;
 
   friend class XNNCompiler;
+  friend class XNNPackedLhsTest;
 };
 
 } // namespace delegate

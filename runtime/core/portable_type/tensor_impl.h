@@ -16,6 +16,8 @@
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#include <cinttypes>
+
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
 // executorch/runtime/core/exec_aten/tensor_util.h.
@@ -175,11 +177,17 @@ class TensorImpl {
 
   /// Returns the order the dimensions are laid out in memory.
   const ArrayRef<DimOrderType> dim_order() const {
+    if (dim_order_ == nullptr) {
+      return {};
+    }
     return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
   }
 
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
+    if (strides_ == nullptr) {
+      return {};
+    }
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
   }
 
@@ -328,7 +336,7 @@ ssize_t compute_numel(
 // Appropriate format specifier for elements of sizes() and
 // strides(). Must be used instead of using d directly to support ATen
 // mode.
-#define ET_PRI_SIZES_AND_STRIDES "d"
+#define ET_PRI_SIZES_AND_STRIDES PRId32
 
 } // namespace etensor
 } // namespace runtime

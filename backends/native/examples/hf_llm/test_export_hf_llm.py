@@ -7,16 +7,27 @@
 import collections
 import copy
 import re
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import gguf
 import torch
+from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    _DECODE_STEPS,
+    _FLOAT_TOL,
     _load,
+    _PROMPTS,
+    _quantize_8da4w,
+    _QUANTIZED_TOL,
+    _sample_prompts,
+    golden_samples,
     LastTokenLM,
     load_gguf,
 )
+from executorch.export.utils import is_fbcode
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
@@ -230,6 +241,122 @@ class ExportHfLlmTest(unittest.TestCase):
         self.assertEqual({t.dtype for t in caches.values()}, {torch.float16})
         self.assertEqual(_ops_except_casts(ep), _ops_except_casts(ep32))
 
-    def test_fp16_kv_cache_rejects_sliding_window_layers(self) -> None:
-        with self.assertRaisesRegex(ValueError, "cannot change the KV dtype"):
-            LastTokenLM(_tiny("gemma3"), 32, torch.float16)
+    def test_golden_samples_teacher_force_eager_argmax(self) -> None:
+        torch.manual_seed(7)
+        model = _tiny()
+        prompts = [[3, 4, 5, 6, 7, 8], [9, 10]]
+        wrapper = LastTokenLM(model, 32).eval()
+
+        samples = golden_samples(wrapper, prompts, 2)
+
+        ref = LastTokenLM(copy.deepcopy(model), 32).eval()
+        for ids, sample in zip(prompts, samples.samples, strict=True):
+            ref.cache.reset()
+            want = [
+                (torch.tensor([ids]), torch.arange(len(ids))),
+                (None, torch.tensor([len(ids)])),
+                (None, torch.tensor([len(ids) + 1])),
+            ]
+            self.assertEqual(len(sample.calls), len(want))
+            previous = None
+            for call, (input_ids, positions) in zip(sample.calls, want):
+                if input_ids is None:
+                    input_ids = previous.argmax(dim=-1)
+                self.assertEqual(call.method, "forward")
+                self.assertTrue(torch.equal(call.inputs[0], input_ids))
+                self.assertTrue(torch.equal(call.inputs[1], positions))
+                with torch.no_grad():
+                    previous = ref(input_ids, positions)
+                self.assertTrue(torch.equal(call.outputs[0], previous))
+        self.assertFalse(any(layer.keys.any() for layer in wrapper.cache.layers))
+
+    def test_samples_flag_needs_a_count_in_range_and_an_output(self) -> None:
+        for flags in (
+            ["--samples", str(len(_PROMPTS) + 1), "--output", "m.ptn"],
+            ["--samples", "-1", "--output", "m.ptn"],
+            ["--samples", "1"],
+        ):
+            argv = ["export_hf_llm", "--model", "unused", *flags]
+            with self.subTest(flags=flags), mock.patch.object(sys, "argv", argv):
+                with mock.patch.object(export_hf_llm, "_load") as load:
+                    with self.assertRaises(SystemExit):
+                        export_hf_llm.main()
+                load.assert_not_called()
+
+    def test_sample_prompts_must_fit_with_their_decode_steps(self) -> None:
+        tokenizer = mock.Mock()
+        tokenizer.encode.side_effect = lambda text: list(range(len(text.split())))
+        lengths = [len(p.split()) for p in _PROMPTS[:2]]
+        longest = max(lengths)
+
+        with mock.patch.object(
+            export_hf_llm.AutoTokenizer, "from_pretrained", return_value=tokenizer
+        ):
+            prompts = _sample_prompts("m", 2, longest + 1, longest + _DECODE_STEPS)
+            self.assertEqual(prompts, [list(range(n)) for n in lengths])
+            for max_seq_length, cache_len in (
+                (longest, 64),
+                (64, longest + _DECODE_STEPS - 1),
+            ):
+                with self.assertRaisesRegex(ValueError, "do not fit"):
+                    _sample_prompts("m", 2, max_seq_length, cache_len)
+
+    def test_golden_samples_tolerance_follows_weight_quantization(self) -> None:
+        source = _tiny()
+        gguf_float = _tiny()
+        pairs = _as_gguf_tensors(source, "llama")
+        load_gguf(gguf_float, "model.gguf", "llama", lambda _: iter(pairs))
+        quantized = _tiny()
+        _quantize_8da4w(quantized, group_size=32, embedding_group_size=32)
+
+        for model, tol in (
+            (source, _FLOAT_TOL),
+            (gguf_float, _FLOAT_TOL),
+            (quantized, _QUANTIZED_TOL),
+        ):
+            samples = golden_samples(LastTokenLM(model, 16).eval(), [[3, 4]], 0)
+            self.assertEqual(samples.tol, tol)
+
+    def test_cache_writes_index_the_cache_position_input(self) -> None:
+        seq = torch.export.Dim("seq", min=1, max=31)
+        for arch, kv_dtype in (("llama", torch.float32), ("gemma3", torch.float16)):
+            with self.subTest(arch=arch, kv_dtype=kv_dtype):
+                if arch == "gemma3" and is_fbcode():
+                    self.skipTest("skipping for fbcode")
+                torch.manual_seed(7)
+                model = _tiny(arch)
+                fp32 = LastTokenLM(model, 32).eval()
+                wrapper = LastTokenLM(copy.deepcopy(model), 32, kv_dtype).eval()
+                ids = torch.tensor([[3, 4, 5, 6]])
+                with torch.no_grad():
+                    ep = torch.export.export(
+                        wrapper,
+                        (ids, torch.arange(4)),
+                        dynamic_shapes={
+                            "input_ids": {1: seq},
+                            "cache_position": {0: seq},
+                        },
+                        strict=True,
+                    )
+                    exported = ep.module()
+                    for step_ids, positions in (
+                        (ids, torch.arange(4)),
+                        (torch.tensor([[9]]), torch.tensor([4])),
+                        (ids, torch.arange(4)),
+                    ):
+                        self.assertTrue(
+                            torch.allclose(
+                                fp32(step_ids, positions),
+                                exported(step_ids, positions),
+                                atol=1e-2,
+                                rtol=2e-2,
+                            )
+                        )
+                writes = [
+                    n
+                    for n in ep.graph.nodes
+                    if n.target == torch.ops.aten.index_copy_.default
+                ]
+                self.assertEqual(len(writes), 2 * model.config.num_hidden_layers)
+                for n in writes:
+                    self.assertEqual(n.args[2].name, "cache_position")

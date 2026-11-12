@@ -10,7 +10,9 @@
  * appropriate vulkan structures.
  */
 
+#include <executorch/backends/arm/runtime/VGFCommandStream.h>
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
+#include <executorch/backends/arm/runtime/VGFMutableAlias.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 #include <executorch/backends/arm/runtime/VGFShapeUtils.h>
 
@@ -24,32 +26,22 @@
 #endif
 
 #include <vgf/decoder.hpp>
-#if __has_include(<vgf/version.h>)
-#include <vgf/version.h>
-#endif
 #include <vgf/vulkan_helpers.generated.hpp>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <numeric>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
 using namespace mlsdk;
-
-#if defined(MLSDK_VGF_LIBRARY_API_VERSION_MAJOR) && \
-    defined(MLSDK_VGF_LIBRARY_API_VERSION_MINOR)
-#define EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS \
-  ((MLSDK_VGF_LIBRARY_API_VERSION_MAJOR > 0) || \
-   (MLSDK_VGF_LIBRARY_API_VERSION_MAJOR == 0 && \
-    MLSDK_VGF_LIBRARY_API_VERSION_MINOR >= 10))
-#else
-#define EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS 0
-#endif
 
 namespace executorch {
 namespace backends {
@@ -92,6 +84,24 @@ struct AliasLogicalContract {
   bool image_initialized = false;
   uint32_t image_component_count = 0;
 };
+
+static std::optional<uint32_t> parse_uint32_decimal(std::string_view value) {
+  if (value.empty()) {
+    return std::nullopt;
+  }
+  uint32_t parsed = 0;
+  for (char character : value) {
+    if (character < '0' || character > '9') {
+      return std::nullopt;
+    }
+    const uint32_t digit = static_cast<uint32_t>(character - '0');
+    if (parsed > (std::numeric_limits<uint32_t>::max() - digit) / 10) {
+      return std::nullopt;
+    }
+    parsed = parsed * 10 + digit;
+  }
+  return parsed;
+}
 
 #ifdef ET_EVENT_TRACER_ENABLED
 class ScopedVgfProfileEvent {
@@ -811,6 +821,13 @@ bool VgfRepr::map_persistent_io_memory() {
   unmap_persistent_io_memory();
 
   for (auto& io : IOs) {
+    // Cache maintenance cannot infer coherency from missing metadata.
+    if (!io.memory_properties_known ||
+        (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+      ET_LOG(Error, "VGF IO has unknown or non-host-visible memory properties");
+      unmap_persistent_io_memory();
+      return false;
+    }
     if (io.memory == VK_NULL_HANDLE) {
       ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
       unmap_persistent_io_memory();
@@ -822,7 +839,8 @@ bool VgfRepr::map_persistent_io_memory() {
     // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
     // mapped more than once at the same time, so map each unique memory once
     // and share the returned pointer across aliased IO entries.
-    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    // IO memory is HOST_VISIBLE. Boundary tensors may intentionally use
+    // non-coherent memory; execute() performs explicit cache maintenance.
     bool found_existing_mapping = false;
     auto mapped_memory_it = std::find_if(
         persistent_mapped_memories.begin(),
@@ -874,6 +892,157 @@ void VgfRepr::unmap_persistent_io_memory() {
   }
 }
 
+executorch::runtime::Error VgfRepr::get_owned_mapped_boundary_buffer(
+    bool input,
+    size_t argument_index,
+    VgfMappedBoundaryBuffer* buffer) const {
+  if (buffer == nullptr) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+  *buffer = {};
+
+  const auto& mapping = input ? model_input_io_index : model_output_io_index;
+  const size_t argument_count = input ? model_input_count : model_output_count;
+  if (argument_index >= argument_count || argument_index >= mapping.size()) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+
+  const int mapped_io_index = mapping[argument_index];
+  if (mapped_io_index < 0) {
+    return executorch::runtime::Error::NotFound;
+  }
+  const size_t io_index = static_cast<size_t>(mapped_io_index);
+  if (io_index >= IOs.size()) {
+    return executorch::runtime::Error::Internal;
+  }
+
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr ||
+      io.memory == VK_NULL_HANDLE || !io.memory_properties_known) {
+    return executorch::runtime::Error::NotSupported;
+  }
+  if (io.memory_allocation_size > std::numeric_limits<size_t>::max()) {
+    return executorch::runtime::Error::NotSupported;
+  }
+
+  *buffer = VgfMappedBoundaryBuffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = static_cast<size_t>(io.memory_allocation_size),
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return executorch::runtime::Error::Ok;
+}
+
+bool VgfRepr::is_owned_mapped_io_pointer(
+    size_t io_index,
+    const void* pointer,
+    size_t logical_nbytes) const {
+  if (io_index >= IOs.size()) {
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr) {
+    return false;
+  }
+  const VgfMappedBoundaryBuffer buffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = io.allocation_size,
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return vgf_owned_mapped_buffer_matches(buffer, pointer, logical_nbytes);
+}
+
+bool VgfRepr::flush_io_host_writes(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host flush", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot flush",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(Error, "VGF IO %zu is not flushable host-visible memory", io_index);
+    return false;
+  }
+
+  // Each direct boundary allocation is isolated and mapped from offset zero.
+  // VK_WHOLE_SIZE avoids sub-range/nonCoherentAtomSize alignment hazards.
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkFlushMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to flush non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
+bool VgfRepr::invalidate_io_host_reads(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host invalidate", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot invalidate",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(
+        Error, "VGF IO %zu is not invalidatable host-visible memory", io_index);
+    return false;
+  }
+
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkInvalidateMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to invalidate non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
 VkResult allocate_memory(
     VkPhysicalDevice physical,
     VkDevice device,
@@ -902,6 +1071,74 @@ VkResult allocate_memory(
     *memory_type_index_out = memory_index;
   }
   return result;
+}
+
+static VkMemoryPropertyFlags memory_type_property_flags(
+    VkPhysicalDevice physical,
+    uint32_t memory_type_index) {
+  VkPhysicalDeviceMemoryProperties properties{};
+  vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+  if (memory_type_index >= properties.memoryTypeCount) {
+    return 0;
+  }
+  return properties.memoryTypes[memory_type_index].propertyFlags;
+}
+
+// Boundary tensors are already VGF-owned, so they do not need an external-host
+// compatible memory type. Prefer the historical coherent/device-local choice,
+// but when zero-copy is built allow any tensor-compatible HOST_VISIBLE type and
+// perform explicit flush/invalidate for non-coherent memory.
+static VkResult allocate_boundary_host_visible_memory(
+    VkPhysicalDevice physical,
+    VkDevice device,
+    const VkMemoryRequirements2& memory_requirements,
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out,
+    VkMemoryPropertyFlags* memory_property_flags_out) {
+  constexpr VkMemoryPropertyFlags candidates[] = {
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+  };
+
+  for (const VkMemoryPropertyFlags aims : candidates) {
+    uint32_t memory_index = 0;
+    if (!find_memory_index(
+            physical, memory_requirements, aims, &memory_index)) {
+      continue;
+    }
+
+    const VkMemoryAllocateInfo allocate_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = memory_requirements.memoryRequirements.size,
+        .memoryTypeIndex = memory_index,
+    };
+    const VkResult result =
+        vkAllocateMemory(device, &allocate_info, nullptr, memory);
+    if (result != VK_SUCCESS) {
+      return result;
+    }
+
+    if (memory_type_index_out != nullptr) {
+      *memory_type_index_out = memory_index;
+    }
+    if (memory_property_flags_out != nullptr) {
+      *memory_property_flags_out =
+          memory_type_property_flags(physical, memory_index);
+    }
+    return VK_SUCCESS;
+  }
+
+  ET_LOG(
+      Error,
+      "Failed to find tensor-compatible DEVICE_LOCAL|HOST_VISIBLE memory for "
+      "VGF boundary");
+  return VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
 VkResult create_tensor_unbound(
@@ -1005,8 +1242,37 @@ static void cache_external_tensor_host_allocation_capabilities(
 
   vkGetPhysicalDeviceExternalTensorPropertiesARM(
       physical_device, &external_tensor_info, &external_tensor_properties);
-  vgf_cache_external_tensor_properties(
-      metadata, external_tensor_properties.externalMemoryProperties);
+
+  const auto& external_memory_properties =
+      external_tensor_properties.externalMemoryProperties;
+  const bool external_importable =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
+  const bool host_allocation_compatible =
+      (external_memory_properties.compatibleHandleTypes &
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT) != 0;
+  const bool dedicated_only =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0;
+
+  ET_LOG(
+      Info,
+      "VGF external tensor properties: resource=%u format=%u tiling=%u "
+      "usage=0x%x features=0x%x compatible_handle_types=0x%x "
+      "importable=%d host_allocation_compatible=%d dedicated_only=%d",
+      resource_index,
+      static_cast<unsigned int>(tensor_description.format),
+      static_cast<unsigned int>(tensor_description.tiling),
+      static_cast<unsigned int>(tensor_description.usage),
+      static_cast<unsigned int>(
+          external_memory_properties.externalMemoryFeatures),
+      static_cast<unsigned int>(
+          external_memory_properties.compatibleHandleTypes),
+      static_cast<int>(external_importable),
+      static_cast<int>(host_allocation_compatible),
+      static_cast<int>(dedicated_only));
+
+  vgf_cache_external_tensor_properties(metadata, external_memory_properties);
 
   if (metadata->external_tensor_requires_dedicated_allocation) {
     ET_LOG(
@@ -1172,7 +1438,8 @@ VkResult allocate_buffer(
     VkDeviceSize size,
     VkBufferUsageFlags usage,
     VkBuffer* buffer,
-    VkDeviceMemory* memory) {
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out = nullptr) {
   VkBufferCreateInfo buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = nullptr,
@@ -1226,6 +1493,9 @@ VkResult allocate_buffer(
     return result;
   }
 
+  if (memory_type_index_out != nullptr) {
+    *memory_type_index_out = memory_index;
+  }
   return VK_SUCCESS;
 }
 
@@ -1263,17 +1533,11 @@ VkResult allocate_sampler(
 static std::optional<uint32_t> get_resource_alias_group_id(
     const unique_ptr<vgflib::ModelResourceTableDecoder>& resource_decoder,
     uint32_t resource_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
   auto alias_group = resource_decoder->getAliasGroupId(resource_index);
   if (!alias_group.has_value()) {
     return std::nullopt;
   }
   return static_cast<uint32_t>(*alias_group);
-#else
-  (void)resource_decoder;
-  (void)resource_index;
-  return std::nullopt;
-#endif
 }
 
 static bool allocate_resource_sampler(
@@ -1281,7 +1545,6 @@ static bool allocate_resource_sampler(
     uint32_t resource_index,
     VkDevice device,
     VkSampler* sampler_out) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
   auto sampler_config =
       resource_decoder->getSamplerConfigHandle(resource_index);
   if (sampler_config == nullptr) {
@@ -1305,17 +1568,6 @@ static bool allocate_resource_sampler(
       static_cast<VkBorderColor>(
           resource_decoder->getSamplerConfigBorderColor(sampler_config)),
       sampler_out);
-#else
-  (void)resource_decoder;
-  auto result = allocate_sampler(
-      device,
-      VK_FILTER_LINEAR,
-      VK_FILTER_LINEAR,
-      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-      sampler_out);
-#endif
   if (result != VK_SUCCESS) {
     ET_LOG(
         Error,
@@ -1325,30 +1577,6 @@ static bool allocate_resource_sampler(
     return false;
   }
   return true;
-}
-
-static auto get_module_spirv_code(
-    unique_ptr<vgflib::ModuleTableDecoder>& module_decoder,
-    uint32_t module_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
-  return module_decoder->getSPIRVModuleCode(module_index);
-#else
-  return module_decoder->getModuleCode(module_index);
-#endif
-}
-
-static uint32_t get_segment_descriptor_set_index(
-    const unique_ptr<vgflib::ModelSequenceTableDecoder>& sequence_decoder,
-    uint32_t segment_index,
-    uint32_t descriptor_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
-  return sequence_decoder->getSegmentDescriptorSetIndex(
-      segment_index, descriptor_index);
-#else
-  (void)sequence_decoder;
-  (void)segment_index;
-  return descriptor_index;
-#endif
 }
 
 VkResult transition_image_layout(
@@ -1558,7 +1786,6 @@ bool VgfRepr::process_vgf(
     ArrayRef<CompileSpec> specs,
     executorch::runtime::EventTracer* event_tracer) {
   VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_PROCESS_VGF");
-  (void)specs;
 
   ET_LOG(Info, "Preparing VGF as Vulkan objects");
 
@@ -1727,12 +1954,233 @@ bool VgfRepr::process_vgf(
   unordered_set<uint32_t> output_image_alias_groups;
   int IO_count = resource_decoder->size();
 
+  auto input_handle =
+      sequence_decoder->getModelSequenceInputBindingSlotsHandle();
+  auto output_handle =
+      sequence_decoder->getModelSequenceOutputBindingSlotsHandle();
+  auto input_names_handle =
+      sequence_decoder->getModelSequenceInputNamesHandle();
+  auto output_names_handle =
+      sequence_decoder->getModelSequenceOutputNamesHandle();
+  const size_t serialized_model_input_count =
+      sequence_decoder->getNamesSize(input_names_handle);
+  const size_t serialized_model_output_count =
+      sequence_decoder->getNamesSize(output_names_handle);
+  const size_t input_binding_count =
+      sequence_decoder->getBindingsSize(input_handle);
+  const size_t output_binding_count =
+      sequence_decoder->getBindingsSize(output_handle);
+  vector<bool> mutable_model_inputs(serialized_model_input_count, false);
+  vector<bool> mutable_model_outputs(serialized_model_output_count, false);
+  vector<std::optional<uint32_t>> input_mrt_indices(
+      serialized_model_input_count);
+  vector<std::optional<uint32_t>> output_mrt_indices(
+      serialized_model_output_count);
+
+  if (input_binding_count > serialized_model_input_count ||
+      output_binding_count != serialized_model_output_count) {
+    ET_LOG(Error, "VGF model names and binding slots are inconsistent");
+    return false;
+  }
+  for (size_t binding_pos = 0; binding_pos < input_binding_count;
+       ++binding_pos) {
+    const uint32_t model_input =
+        sequence_decoder->getBindingSlotBinding(input_handle, binding_pos);
+    const uint32_t mrt =
+        sequence_decoder->getBindingSlotMrtIndex(input_handle, binding_pos);
+    if (model_input >= serialized_model_input_count || mrt >= IO_count ||
+        input_mrt_indices[model_input].has_value()) {
+      ET_LOG(Error, "Invalid VGF model input binding slot");
+      return false;
+    }
+    input_mrt_indices[model_input] = mrt;
+  }
+  for (size_t output = 0; output < output_binding_count; ++output) {
+    const uint32_t mrt =
+        sequence_decoder->getBindingSlotMrtIndex(output_handle, output);
+    if (mrt >= IO_count) {
+      ET_LOG(Error, "Invalid VGF model output binding slot");
+      return false;
+    }
+    output_mrt_indices[output] = mrt;
+  }
+
+  struct MutableBufferPair {
+    std::optional<uint32_t> input_mrt;
+    std::optional<uint32_t> output_mrt;
+  };
+  unordered_map<uint32_t, MutableBufferPair> mutable_buffer_pairs;
+  for (const auto& spec : specs) {
+    if (spec.key == nullptr ||
+        std::strcmp(spec.key, "mutable_buffer_pairs") != 0) {
+      continue;
+    }
+    const auto* data = static_cast<const char*>(spec.value.buffer);
+    std::string_view encoded(data, spec.value.nbytes);
+    size_t entry_start = 0;
+    while (entry_start < encoded.size()) {
+      const size_t entry_end = encoded.find(',', entry_start);
+      const std::string_view entry = encoded.substr(
+          entry_start,
+          (entry_end == std::string_view::npos ? encoded.size() : entry_end) -
+              entry_start);
+      const size_t first_colon = entry.find(':');
+      const size_t second_colon = entry.find(':', first_colon + 1);
+      if (first_colon == std::string_view::npos ||
+          second_colon == std::string_view::npos ||
+          entry.find(':', second_colon + 1) != std::string_view::npos) {
+        ET_LOG(Error, "Invalid mutable_buffer_pairs compile spec");
+        return false;
+      }
+      auto id = parse_uint32_decimal(entry.substr(0, first_colon));
+      auto input = parse_uint32_decimal(
+          entry.substr(first_colon + 1, second_colon - first_colon - 1));
+      auto output = parse_uint32_decimal(entry.substr(second_colon + 1));
+      if (!id.has_value() || !input.has_value() || !output.has_value() ||
+          *input >= serialized_model_input_count ||
+          *output >= serialized_model_output_count ||
+          !input_mrt_indices[*input].has_value() ||
+          !output_mrt_indices[*output].has_value() ||
+          mutable_buffer_pairs.count(*id) != 0 ||
+          mutable_model_inputs[*input] || mutable_model_outputs[*output]) {
+        ET_LOG(Error, "Invalid mutable-buffer endpoint ordinal");
+        return false;
+      }
+      mutable_buffer_pairs.emplace(
+          *id,
+          MutableBufferPair{
+              .input_mrt = input_mrt_indices[*input],
+              .output_mrt = output_mrt_indices[*output],
+          });
+      mutable_model_inputs[*input] = true;
+      mutable_model_outputs[*output] = true;
+      if (entry_end == std::string_view::npos) {
+        break;
+      }
+      entry_start = entry_end + 1;
+    }
+  }
+
+  vector<uint32_t> alias_parents(IO_count);
+  std::iota(alias_parents.begin(), alias_parents.end(), 0);
+  auto find_alias_root = [&](uint32_t resource) {
+    uint32_t root = resource;
+    while (alias_parents[root] != root) {
+      root = alias_parents[root];
+    }
+    while (alias_parents[resource] != resource) {
+      const uint32_t parent = alias_parents[resource];
+      alias_parents[resource] = root;
+      resource = parent;
+    }
+    return root;
+  };
+  auto union_alias_resources = [&](uint32_t lhs, uint32_t rhs) {
+    lhs = find_alias_root(lhs);
+    rhs = find_alias_root(rhs);
+    if (lhs != rhs) {
+      alias_parents[rhs] = lhs;
+    }
+  };
+
+  vector<std::optional<uint32_t>> converter_alias_groups(IO_count);
+  unordered_map<uint32_t, uint32_t> first_resource_for_alias_group;
+  uint32_t next_alias_group = 0;
+  for (int i = 0; i < IO_count; ++i) {
+    auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+    converter_alias_groups[i] = alias_group;
+    if (!alias_group.has_value()) {
+      continue;
+    }
+    next_alias_group = std::max(next_alias_group, *alias_group);
+    auto [it, inserted] = first_resource_for_alias_group.emplace(
+        *alias_group, static_cast<uint32_t>(i));
+    if (!inserted) {
+      union_alias_resources(it->second, static_cast<uint32_t>(i));
+    }
+  }
+
+  unordered_set<uint32_t> mutable_alias_roots;
+  for (const auto& [id, pair] : mutable_buffer_pairs) {
+    if (!pair.input_mrt.has_value() || !pair.output_mrt.has_value()) {
+      ET_LOG(Error, "Mutable buffer %u does not have paired VGF endpoints", id);
+      return false;
+    }
+    for (uint32_t mrt : {*pair.input_mrt, *pair.output_mrt}) {
+      const auto descriptor_type =
+          resolve_descriptor_type(resource_decoder, mrt);
+      const auto format =
+          vgflib::ToVkFormat(resource_decoder->getVkFormat(mrt));
+      if (!is_tensor_like_descriptor_type(descriptor_type) ||
+          format != VK_FORMAT_R8_SINT) {
+        ET_LOG(
+            Error,
+            "Mutable buffer %u must use a signed INT8 tensor-like resource",
+            id);
+        return false;
+      }
+    }
+    auto conflict = vgf_find_mutable_alias_group_conflict(
+        converter_alias_groups, *pair.input_mrt, *pair.output_mrt);
+    if (conflict.has_value()) {
+      ET_LOG(
+          Error,
+          "Mutable buffer %u cannot merge converter alias groups containing resource %u",
+          id,
+          *conflict);
+      return false;
+    }
+    union_alias_resources(*pair.input_mrt, *pair.output_mrt);
+  }
+
+  unordered_map<uint32_t, uint32_t> root_to_effective_alias_group;
+  for (int i = 0; i < IO_count; ++i) {
+    auto alias_group = converter_alias_groups[i];
+    if (!alias_group.has_value()) {
+      continue;
+    }
+    const uint32_t root = find_alias_root(static_cast<uint32_t>(i));
+    auto [it, inserted] =
+        root_to_effective_alias_group.emplace(root, *alias_group);
+    if (!inserted) {
+      it->second = std::min(it->second, *alias_group);
+    }
+  }
+  for (const auto& [id, pair] : mutable_buffer_pairs) {
+    (void)id;
+    const uint32_t root = find_alias_root(*pair.input_mrt);
+    if (root_to_effective_alias_group.count(root) == 0) {
+      if (next_alias_group == std::numeric_limits<uint32_t>::max()) {
+        ET_LOG(Error, "No VGF alias group identifier is available");
+        return false;
+      }
+      root_to_effective_alias_group.emplace(root, ++next_alias_group);
+    }
+    mutable_alias_roots.insert(root);
+  }
+
+  vector<std::optional<uint32_t>> effective_alias_groups(IO_count);
+  unordered_set<uint32_t> mutable_state_alias_groups;
+  for (int i = 0; i < IO_count; ++i) {
+    const uint32_t root = find_alias_root(static_cast<uint32_t>(i));
+    auto group = root_to_effective_alias_group.find(root);
+    if (group == root_to_effective_alias_group.end()) {
+      continue;
+    }
+    effective_alias_groups[i] = group->second;
+    if (mutable_alias_roots.count(root) != 0) {
+      mutable_state_alias_groups.insert(group->second);
+    }
+  }
+  auto get_effective_alias_group = [&](uint32_t resource) {
+    return effective_alias_groups.at(resource);
+  };
+
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ANALYZE_ALIAS_RESOURCES");
-
     for (int i = 0; i < IO_count; i++) {
       VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ANALYZE_ALIAS_RESOURCE");
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
       if (!alias_group.has_value()) {
         continue;
       }
@@ -1768,7 +2216,7 @@ bool VgfRepr::process_vgf(
     for (int i = 0; i < IO_count; i++) {
       VGF_PROFILE_SCOPE(
           event_tracer, "VGF_INIT_QUERY_ALIAS_RESOURCE_REQUIREMENTS");
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
       if (!alias_group.has_value()) {
         continue;
       }
@@ -1939,7 +2387,7 @@ bool VgfRepr::process_vgf(
       auto resource_type = resolve_descriptor_type(resource_decoder, i);
       auto resource_format =
           vgflib::ToVkFormat(resource_decoder->getVkFormat(i));
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
 
       // Get tensor shape and strides
       auto shape = resource_decoder->getTensorShape(i);
@@ -2068,6 +2516,11 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory tensor_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t tensor_memory_type_index = UINT32_MAX;
+            VkMemoryPropertyFlags tensor_memory_property_flags = 0;
+            bool tensor_memory_properties_known = false;
+            VkDeviceSize tensor_memory_allocation_size =
+                tensor_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2078,17 +2531,44 @@ bool VgfRepr::process_vgf(
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 return false;
               }
+              // The alias group owns the VkDeviceMemory and selected its type.
+              // The current IO must use that same type for cache maintenance.
+              tensor_memory_type_index = alias_backing->memory_type_index;
+              tensor_memory_allocation_size = alias_backing->allocation_size;
+              tensor_memory_property_flags = memory_type_property_flags(
+                  vk_physical, tensor_memory_type_index);
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             } else {
-              const VkMemoryPropertyFlags aims =
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-              result = allocate_memory(
-                  vk_physical,
-                  vk_device,
-                  tensor_memory_requirements,
-                  aims,
-                  &tensor_memory);
+              if (vgf_zero_copy_io_build_enabled()) {
+                result = allocate_boundary_host_visible_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    &tensor_memory,
+                    &tensor_memory_type_index,
+                    &tensor_memory_property_flags);
+              } else {
+                // Preserve the historical allocation contract when the
+                // optimization is not compiled in.
+                const VkMemoryPropertyFlags aims =
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                result = allocate_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    aims,
+                    &tensor_memory,
+                    &tensor_memory_type_index);
+                if (result == VK_SUCCESS) {
+                  tensor_memory_property_flags = memory_type_property_flags(
+                      vk_physical, tensor_memory_type_index);
+                }
+              }
               if (result != VK_SUCCESS) {
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 ET_LOG(
@@ -2097,6 +2577,20 @@ bool VgfRepr::process_vgf(
                     i);
                 return false;
               }
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+              ET_LOG(
+                  Debug,
+                  "VGF boundary tensor resource=%d memory_type=%u flags=0x%x "
+                  "coherent=%d",
+                  i,
+                  tensor_memory_type_index,
+                  static_cast<unsigned int>(tensor_memory_property_flags),
+                  static_cast<int>(
+                      (tensor_memory_property_flags &
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0));
             }
             result = bind_tensor_memory_and_create_view(
                 vk_device,
@@ -2132,6 +2626,21 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+
+            // Only isolated tensor allocations are exposed for direct
+            // Method-boundary binding. Alias/image-backed resources keep
+            // the existing import/copy behavior.
+            IO& boundary_io = IOs.back();
+            boundary_io.memory_allocation_size = tensor_memory_allocation_size;
+            boundary_io.memory_type_index = tensor_memory_type_index;
+            boundary_io.memory_property_flags = tensor_memory_property_flags;
+            boundary_io.memory_properties_known =
+                tensor_memory_properties_known;
+            boundary_io.owned_mapped_boundary_eligible = owns_memory &&
+                !uses_alias_group && !image_aliasing &&
+                tensor_memory_properties_known &&
+                (tensor_memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
 
             auto zero_copy_metadata = make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
@@ -2183,6 +2692,9 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t buffer_memory_type_index = UINT32_MAX;
+            VkDeviceSize buffer_memory_allocation_size =
+                buffer_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2193,6 +2705,8 @@ bool VgfRepr::process_vgf(
                 destroy_buffer(vk_device, buffer);
                 return false;
               }
+              buffer_memory_type_index = alias_backing->memory_type_index;
+              buffer_memory_allocation_size = alias_backing->allocation_size;
             } else {
               const VkMemoryPropertyFlags aims =
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -2203,7 +2717,8 @@ bool VgfRepr::process_vgf(
                   vk_device,
                   buffer_memory_requirements,
                   aims,
-                  &buffer_memory);
+                  &buffer_memory,
+                  &buffer_memory_type_index);
               if (result != VK_SUCCESS) {
                 destroy_buffer(vk_device, buffer);
                 ET_LOG(
@@ -2243,6 +2758,17 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            IO& boundary_buffer_io = IOs.back();
+            boundary_buffer_io.memory_allocation_size =
+                buffer_memory_allocation_size;
+            boundary_buffer_io.memory_type_index = buffer_memory_type_index;
+            boundary_buffer_io.memory_property_flags =
+                memory_type_property_flags(
+                    vk_physical, buffer_memory_type_index);
+            boundary_buffer_io.memory_properties_known =
+                buffer_memory_type_index != UINT32_MAX &&
+                (boundary_buffer_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
@@ -2428,6 +2954,7 @@ bool VgfRepr::process_vgf(
             }
             VkBuffer staging_buffer = VK_NULL_HANDLE;
             VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+            uint32_t staging_memory_type_index = UINT32_MAX;
             result = allocate_buffer(
                 vk_physical,
                 vk_device,
@@ -2435,7 +2962,8 @@ bool VgfRepr::process_vgf(
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 &staging_buffer,
-                &staging_memory);
+                &staging_memory,
+                &staging_memory_type_index);
             if (result != VK_SUCCESS) {
               ET_LOG(
                   Error,
@@ -2469,6 +2997,14 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            IO& staging_io = IOs.back();
+            staging_io.memory_type_index = staging_memory_type_index;
+            staging_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, staging_memory_type_index);
+            staging_io.memory_properties_known =
+                staging_memory_type_index != UINT32_MAX &&
+                (staging_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
@@ -2985,8 +3521,7 @@ bool VgfRepr::process_vgf(
         ET_LOG(Error, "Module %d does not contain SPIR-V code", segment_module);
         return false;
       }
-      auto segment_m_spirv =
-          get_module_spirv_code(module_decoder, segment_module);
+      auto segment_m_spirv = module_decoder->getSPIRVModuleCode(segment_module);
       ET_LOG(Debug, "SPIR-V code size (words) %zu", segment_m_spirv.size());
 
       VkShaderModuleCreateInfo smci{
@@ -3192,8 +3727,8 @@ bool VgfRepr::process_vgf(
       }
 
       for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-        const auto set_index = get_segment_descriptor_set_index(
-            sequence_decoder, segment_id, d_idx);
+        const auto set_index =
+            sequence_decoder->getSegmentDescriptorSetIndex(segment_id, d_idx);
         if (set_index != d_idx) {
           ET_LOG(
               Error,
@@ -3744,49 +4279,28 @@ bool VgfRepr::process_vgf(
       vk_pipeline_cache != VK_NULL_HANDLE ? "enabled" : "disabled");
 
   // Map model sequence inputs/outputs to IO indices
-  auto input_handle =
-      sequence_decoder->getModelSequenceInputBindingSlotsHandle();
-  auto output_handle =
-      sequence_decoder->getModelSequenceOutputBindingSlotsHandle();
-  auto input_names_handle =
-      sequence_decoder->getModelSequenceInputNamesHandle();
-  auto output_names_handle =
-      sequence_decoder->getModelSequenceOutputNamesHandle();
-
-  const size_t model_input_count =
-      sequence_decoder->getNamesSize(input_names_handle);
-  const size_t model_output_count =
-      sequence_decoder->getNamesSize(output_names_handle);
-
-  this->model_input_count = model_input_count;
-  this->model_output_count = model_output_count;
-
-  model_input_io_index.assign(model_input_count, -1);
-  model_output_io_index.assign(model_output_count, -1);
-
-  const size_t input_binding_count =
-      sequence_decoder->getBindingsSize(input_handle);
-  const size_t output_binding_count =
-      sequence_decoder->getBindingsSize(output_handle);
+  vector<int> serialized_model_input_io_index(serialized_model_input_count, -1);
+  vector<int> serialized_model_output_io_index(
+      serialized_model_output_count, -1);
 
   // Model converter may eliminate dead inputs, so fewer bindings than model
   // input names is valid. More bindings than names is not.
-  if (input_binding_count > model_input_count) {
+  if (input_binding_count > serialized_model_input_count) {
     ET_LOG(
         Error,
         "VGF has %zu model input bindings but only %zu model input names",
         input_binding_count,
-        model_input_count);
+        serialized_model_input_count);
     return false;
   }
 
   // Every externally visible model output must have a resource binding.
-  if (output_binding_count != model_output_count) {
+  if (output_binding_count != serialized_model_output_count) {
     ET_LOG(
         Error,
         "VGF has %zu model output bindings for %zu model output names",
         output_binding_count,
-        model_output_count);
+        serialized_model_output_count);
     return false;
   }
 
@@ -3801,14 +4315,14 @@ bool VgfRepr::process_vgf(
     // converter may omit dead inputs from the binding-slot list, so binding_pos
     // is not necessarily the model input index.
     const size_t model_input_idx = static_cast<size_t>(binding);
-    if (model_input_idx >= model_input_count) {
+    if (model_input_idx >= serialized_model_input_count) {
       ET_LOG(
           Error,
           "VGF input binding slot %zu refers to model input %u, "
           "but the model has only %zu inputs",
           binding_pos,
           binding,
-          model_input_count);
+          serialized_model_input_count);
       return false;
     }
 
@@ -3835,7 +4349,7 @@ bool VgfRepr::process_vgf(
       return false;
     }
 
-    if (model_input_io_index[model_input_idx] != -1) {
+    if (serialized_model_input_io_index[model_input_idx] != -1) {
       ET_LOG(
           Error,
           "VGF model input %zu is referenced by multiple input binding slots",
@@ -3843,13 +4357,7 @@ bool VgfRepr::process_vgf(
       return false;
     }
 
-    model_input_io_index[model_input_idx] = io_idx;
-    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index =
-          static_cast<int64_t>(model_input_idx);
-    }
+    serialized_model_input_io_index[model_input_idx] = io_idx;
 
     ET_LOG(
         Debug,
@@ -3895,13 +4403,7 @@ bool VgfRepr::process_vgf(
     // IDs and are not model-output indices. The model converter serializes
     // sequence output binding slots in model-output order, matching the output
     // names vector, so map outputs by binding-slot position.
-    model_output_io_index[output_idx] = io_idx;
-    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index =
-          static_cast<int64_t>(model_input_count + output_idx);
-    }
+    serialized_model_output_io_index[output_idx] = io_idx;
 
     ET_LOG(
         Debug,
@@ -3911,6 +4413,17 @@ bool VgfRepr::process_vgf(
         mrt_idx,
         io_idx);
   }
+
+  auto external_io = vgf_resolve_external_io_mapping(
+      serialized_model_input_io_index,
+      serialized_model_output_io_index,
+      mutable_model_inputs,
+      mutable_model_outputs,
+      zero_copy_io_metadata);
+  model_input_io_index = std::move(external_io.inputs);
+  model_output_io_index = std::move(external_io.outputs);
+  this->model_input_count = model_input_io_index.size();
+  this->model_output_count = model_output_io_index.size();
 
   for (size_t io_idx = 0; io_idx < zero_copy_io_metadata.size(); ++io_idx) {
     auto& metadata = zero_copy_io_metadata[io_idx];
@@ -3989,7 +4502,7 @@ bool VgfRepr::process_vgf(
       for (uint32_t i = 0; i < descriptor_count; i++) {
         auto mrt_i =
             sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
-        auto alias_group = get_resource_alias_group_id(resource_decoder, mrt_i);
+        auto alias_group = get_effective_alias_group(mrt_i);
         if (!alias_group.has_value()) {
           continue;
         }
@@ -4090,6 +4603,26 @@ bool VgfRepr::process_vgf(
       ET_LOG(Error, "Failed to persistently map VGF IO memory");
       return false;
     }
+
+    for (uint32_t alias_group : mutable_state_alias_groups) {
+      const auto backing = alias_backings.find(alias_group);
+      if (backing == alias_backings.end() ||
+          backing->second.memory == VK_NULL_HANDLE) {
+        ET_LOG(Error, "Mutable VGF alias group has no backing allocation");
+        return false;
+      }
+      const auto mapping = std::find_if(
+          persistent_mapped_memories.begin(),
+          persistent_mapped_memories.end(),
+          [&](const auto& mapped_memory) {
+            return mapped_memory.memory == backing->second.memory;
+          });
+      if (mapping == persistent_mapped_memories.end()) {
+        ET_LOG(Error, "Mutable VGF alias group is not host visible");
+        return false;
+      }
+      std::memset(mapping->data, 0, backing->second.allocation_size);
+    }
   }
 
   return true;
@@ -4111,12 +4644,11 @@ VgfZeroCopyImportResult VgfRepr::try_import_zero_copy_candidate(
   auto result = zero_copy_import_manager_.try_import_candidate(
       io_index, host_pointer, logical_nbytes, zero_copy_io_metadata[io_index]);
 
-  // TODO:
-  // The VGFBackend::execute() does not have import consumer yet, so the import
-  // wrapper owns the selection policy. Select every accepted import, including
-  // the first import and cache hits. On rejection, restore the owned view
-  // before the next graph dispatch. The actual descriptor write stays deferred
-  // until flush_boundary_bindings().
+  // Accepted imports select the imported view for the current synchronous
+  // execution. Rejections restore the owned view. VGFBackend::execute()
+  // releases all host imports again before returning to the caller; cache hits
+  // therefore never extend the lifetime of caller-owned EValue storage across
+  // executions.
   if (io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].owned_view != VK_NULL_HANDLE) {
     const auto* slot =
@@ -4181,6 +4713,84 @@ bool VgfRepr::activate_owned_binding(size_t io_index) {
 bool VgfRepr::is_import_active(size_t io_index) const {
   return io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].import_active;
+}
+
+bool VgfRepr::release_execution_zero_copy_imports() {
+  bool has_imported_slot = false;
+  for (size_t io_index = 0; io_index < zero_copy_import_manager_.slot_count();
+       ++io_index) {
+    const auto* slot = zero_copy_import_manager_.slot(io_index);
+    if (slot != nullptr && slot->valid()) {
+      has_imported_slot = true;
+      break;
+    }
+  }
+
+  if (!has_imported_slot) {
+    return true;
+  }
+
+  // Never return to the ExecuTorch caller while submitted work might still
+  // reference imported EValue storage. execute_vgf() normally waits on its
+  // fence, but a failed wait can leave a submission outstanding.
+  if (execute_submission_pending_) {
+    const VkResult wait_result = vkQueueWaitIdle(vk_queue);
+
+    // Device loss is terminal for this representation, but Vulkan permits its
+    // child objects to be destroyed. free_vgf() synchronously ends every
+    // imported VkDeviceMemory lifetime before caller-owned storage can expire.
+    if (wait_result == VK_ERROR_DEVICE_LOST) {
+      ET_LOG(
+          Error,
+          "VGF device lost while draining zero-copy execution; tearing down "
+          "the VGF representation before returning to the caller");
+      invalidate_execution_state();
+      return false;
+    }
+
+    // Any other failure leaves completion unknown. There is no safe way to
+    // return control while Vulkan may still reference caller-owned memory, so
+    // use a fail-stop path rather than leaking the lifetime obligation across
+    // BackendInterface::execute().
+    ET_CHECK_MSG(
+        wait_result == VK_SUCCESS,
+        "Cannot establish VGF queue completion while caller-owned zero-copy "
+        "memory is imported (vkQueueWaitIdle=%d)",
+        static_cast<int>(wait_result));
+    execute_submission_pending_ = false;
+  }
+
+  // From this point no submitted work can reference the imported resources.
+  // Prefer restoring the reusable owned binding state. If that cannot be done,
+  // synchronously tear down the whole representation; free_vgf() releases the
+  // imports before this function returns.
+  for (size_t io_index = 0; io_index < zero_copy_binding_states_.size();
+       ++io_index) {
+    if (!zero_copy_binding_states_[io_index].import_active) {
+      continue;
+    }
+    if (!activate_owned_binding(io_index)) {
+      ET_LOG(
+          Error,
+          "Failed to restore owned VGF boundary binding for IO %zu; tearing "
+          "down the VGF representation to end caller-owned import lifetime",
+          io_index);
+      invalidate_execution_state();
+      return false;
+    }
+  }
+
+  if (!flush_boundary_bindings()) {
+    ET_LOG(
+        Error,
+        "Failed to restore owned VGF boundary descriptors; tearing down the "
+        "VGF representation to end caller-owned import lifetime");
+    invalidate_execution_state();
+    return false;
+  }
+
+  zero_copy_import_manager_.release_all();
+  return true;
 }
 
 bool VgfRepr::flush_boundary_bindings(
@@ -4339,8 +4949,9 @@ bool VgfRepr::record_execute_command_buffer(VkCommandBuffer command_buffer) {
   // Sync what will be the data coming in from host
   VkMemoryBarrier2 barrier = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-      .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-      .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+      .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT | vgf_execution_stage_mask(),
+      .srcAccessMask =
+          VK_ACCESS_2_HOST_WRITE_BIT | vgf_execution_write_access_mask(),
       .dstStageMask =
           VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
       .dstAccessMask =
@@ -4631,12 +5242,112 @@ bool VgfRepr::record_execute_command_buffer(VkCommandBuffer command_buffer) {
   return true;
 }
 
+// VGF_FUSED_MAIN_BEGIN (opt-in real producer/consumer commands)
+namespace {
+thread_local VgfFusedCommandStreamRequest* active_vgf_fused_stream = nullptr;
+} // namespace
+
+// cppcheck-suppress unusedFunction
+bool vgf_try_register_fused_command_stream(
+    VgfFusedCommandStreamRequest* request) noexcept {
+  if (request == nullptr || active_vgf_fused_stream != nullptr ||
+      request->attempted || request->submitted || request->completed) {
+    return false;
+  }
+  active_vgf_fused_stream = request;
+  return true;
+}
+
+// cppcheck-suppress unusedFunction
+void vgf_unregister_fused_command_stream(
+    const VgfFusedCommandStreamRequest* request) noexcept {
+  if (active_vgf_fused_stream == request) {
+    active_vgf_fused_stream = nullptr;
+  }
+}
+
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
+  if (!execution_valid_) {
+    ET_LOG(
+        Error,
+        "VGF representation is invalid after terminal teardown and cannot be executed");
+    return false;
+  }
+
   ET_LOG(Debug, "Executing vgf");
 
   if (!flush_boundary_bindings(event_tracer)) {
     ET_LOG(Error, "Failed to refresh VGF boundary descriptor bindings");
     return false;
+  }
+
+  // Optional application command stream. The callback sees this VGF
+  // representation's actual VkDevice and family so it can record its own
+  // commands even when the generic shared-Vulkan-context bridge is absent.
+  // It is called under VGFBackend's mutex, and MUST NOT re-enter ExecuTorch.
+  VgfFusedCommandStreamRequest* fused = active_vgf_fused_stream;
+  std::array<VkCommandBuffer, 3> fused_commands{};
+  if (fused != nullptr) {
+    if (fused->attempted || fused->submitted || fused->completed ||
+        (fused->expected_device != VK_NULL_HANDLE &&
+         fused->expected_device != vk_device) ||
+        (fused->expected_queue_family_index != UINT32_MAX &&
+         fused->expected_queue_family_index != vk_queue_family_index) ||
+        (fused->prepare == nullptr &&
+         (fused->expected_device == VK_NULL_HANDLE ||
+          fused->expected_queue_family_index == UINT32_MAX))) {
+      ET_LOG(Error, "Invalid or reused VGF fused command-stream request");
+      return false;
+    }
+    // Fail closed even if the main-branch queue picker has moved into another
+    // translation unit and could not be changed by the installer.
+    // This check is active only when the strict graphics queue mode is set.
+    const char* graphics_required =
+        std::getenv("EXECUTORCH_VGF_FUSED_REQUIRE_GRAPHICS_QUEUE");
+    if (graphics_required != nullptr && graphics_required[0] == '1' &&
+        graphics_required[1] == '\0') {
+      uint32_t family_count = 0;
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, nullptr);
+      if (vk_queue_family_index >= family_count) {
+        ET_LOG(Error, "Invalid VGF fused graphics queue family index");
+        return false;
+      }
+      std::vector<VkQueueFamilyProperties> families(family_count);
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, families.data());
+      constexpr VkQueueFlags required = VK_QUEUE_GRAPHICS_BIT |
+          VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+      if ((families[vk_queue_family_index].queueFlags & required) != required) {
+        ET_LOG(
+            Error,
+            "VGF fused stream needs graphics+compute+data graph queue; "
+            "selected family %u cannot run the requested commands",
+            vk_queue_family_index);
+        return false;
+      }
+    }
+    fused->attempted = true;
+    if (fused->prepare != nullptr) {
+      const VgfFusedDeviceContext context{
+          vk_physical, vk_device, vk_queue_family_index};
+      if (!fused->prepare(
+              fused->user_data, context, &fused->producer, &fused->consumer)) {
+        ET_LOG(Error, "VGF fused command recording callback failed");
+        return false;
+      }
+    }
+    if (fused->producer == VK_NULL_HANDLE ||
+        fused->consumer == VK_NULL_HANDLE ||
+        fused->producer == fused->consumer ||
+        fused->producer == vk_execute_cmd ||
+        fused->consumer == vk_execute_cmd) {
+      ET_LOG(Error, "VGF fused stream requires two distinct primary commands");
+      return false;
+    }
+    // The caller guarantees both commands were recorded on vk_device for
+    // vk_queue_family_index, and supplies Vulkan memory/layout barriers.
+    fused_commands = {fused->producer, vk_execute_cmd, fused->consumer};
   }
 
   VkSubmitInfo submit{
@@ -4645,8 +5356,9 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
       .waitSemaphoreCount = 0,
       .pWaitSemaphores = nullptr,
       .pWaitDstStageMask = nullptr,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &vk_execute_cmd,
+      .commandBufferCount = fused != nullptr ? 3u : 1u,
+      .pCommandBuffers =
+          fused != nullptr ? fused_commands.data() : &vk_execute_cmd,
       .signalSemaphoreCount = 0,
       .pSignalSemaphores = nullptr,
   };
@@ -4670,6 +5382,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
     // Submit + fence wait only; reset is above.
     VGF_STATS_TIME(submit_wait_ns);
     result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    if (fused != nullptr) {
+      fused->submit_result = result;
+      fused->submitted = result == VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
       return false;
@@ -4682,6 +5398,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
         &vk_execute_fence,
         VK_TRUE,
         std::numeric_limits<uint64_t>::max());
+    if (fused != nullptr) {
+      fused->wait_result = result;
+      fused->completed = result == VK_SUCCESS;
+    }
     if (result == VK_SUCCESS) {
       execute_submission_pending_ = false;
     }
@@ -4746,6 +5466,18 @@ std::string VgfRepr::collect_neural_statistics_metadata() const {
 
   return collect_vgf_neural_statistics_metadata(
       vk_device, get_neural_statistics_segment_contexts(), metadata_context);
+}
+
+void VgfRepr::invalidate_execution_state() {
+  if (!execution_valid_) {
+    return;
+  }
+
+  // Mark terminal state before freeing Vulkan resources. The runtime still
+  // owns the DelegateHandle and may later call destroy(), but no subsequent
+  // execute is allowed to observe or reuse this torn-down representation.
+  execution_valid_ = false;
+  free_vgf();
 }
 
 void VgfRepr::free_vgf() {

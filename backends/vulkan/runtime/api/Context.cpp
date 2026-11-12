@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -18,7 +20,7 @@
 #endif
 
 #ifndef VULKAN_QUERY_POOL_SIZE
-#define VULKAN_QUERY_POOL_SIZE 4096u
+#define VULKAN_QUERY_POOL_SIZE 65536u
 #endif
 
 namespace vkcompute {
@@ -76,18 +78,30 @@ void Context::report_shader_dispatch_start(
     const GlobalWorkGrid& gwg,
     const LocalWorkGroup& lwg,
     const uint32_t dispatch_id) {
-  if (querypool_) {
+  // Dispatch encoding and mode changes hold cmd_mutex_, keeping this flag
+  // unchanged until the paired dispatch end.
+  if (querypool_ && shader_profiling_enabled_) {
     querypool_.shader_profile_begin(cmd_, dispatch_id, shader_name, gwg, lwg);
   }
 }
 
 void Context::report_shader_dispatch_end() {
-  if (querypool_) {
+  if (querypool_ && shader_profiling_enabled_) {
     querypool_.shader_profile_end(cmd_);
   }
 }
 
 void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
+  if (!shader.required_capabilities.empty()) {
+    for (const uint32_t capability : shader.required_capabilities) {
+      if (!adapter_p_->supports_spirv_capability(capability)) {
+        throw vkapi::ShaderNotSupportedError(
+            shader.kernel_name,
+            utils::concat_str("SPIR-V capability ", capability));
+      }
+    }
+    return;
+  }
   if (shader.requires_shader_int16) {
     if (!adapter_p_->supports_int16_shader_types()) {
       throw vkapi::ShaderNotSupportedError(
@@ -241,7 +255,9 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
 }
 
 void Context::wait_for_queue() {
-  VK_CHECK(vkQueueWaitIdle(queue().handle));
+  // We ask the Adapter to wait on its queue, because it knows whether the queue
+  // is local or shared.
+  adapter_p_->wait_idle(queue());
 }
 
 void Context::clear_resources() {
