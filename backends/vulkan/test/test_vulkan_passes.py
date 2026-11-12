@@ -1335,6 +1335,36 @@ class TestVulkanPasses(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(emb_x + emb_y, eager_ref, atol=1e-3, rtol=1e-3))
 
+    def test_linear_q4gsw_reference_with_padded_scales_and_bias(self):
+        """make_linear_q4gsw_op pads the weight scales and the bias to a multiple
+        of 4 output channels, but not the packed weights. The reference
+        implementation must still return the unpadded output.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        import torch.nn.functional as F
+        from executorch.backends.vulkan.patterns.weight_packing_utils import (
+            pack_4bit_weight_tensor,
+        )
+
+        torch.manual_seed(0)
+        out_channels, in_channels, group_size = 6, 64, 32
+        weight = torch.randint(-8, 8, (out_channels, in_channels), dtype=torch.int8)
+        scales = torch.rand(out_channels, in_channels // group_size) + 0.5
+        bias = torch.randn(out_channels)
+        x = torch.randn(2, in_channels)
+        dq_weight = weight.float() * scales.repeat_interleave(group_size, dim=1)
+        expected = F.linear(x, dq_weight, bias)
+
+        out = torch.ops.et_vk.linear_q4gsw.default(
+            x,
+            pack_4bit_weight_tensor(weight),
+            F.pad(scales.t(), (0, 2)),
+            group_size,
+            F.pad(bias, (0, 2)),
+        )
+        self.assertEqual(out.shape, expected.shape)
+        self.assertTrue(torch.allclose(out, expected, atol=1e-4, rtol=1e-4))
+
     def test_register_param_mutation(self):
         """utils.register_param_mutation is a storage-keyed idempotency guard:
         the first call for a param returns True (proceed and record the tag), a
