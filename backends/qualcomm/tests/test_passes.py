@@ -1790,6 +1790,37 @@ class TestPasses(unittest.TestCase):
                     ]
                     self.assertEqual(integer_reads, [dtype])
 
+    def test_i64_to_i32_keeps_int64_for_ops_kept_on_cpu(self):
+        # QNN has builders for these ops, but the partitioner leaves them on
+        # CPU, where an int32 cast would wrap the result: a skipped op and an
+        # op that reads float64.
+        class Sum(torch.nn.Module):
+            def forward(self, x):
+                return x.sum(-1)
+
+        class LongOfDouble(torch.nn.Module):
+            def forward(self, x):
+                return (x.double() * x.double()).long()
+
+        big = (torch.tensor([[2**30, 2**30]], dtype=torch.int32),)
+        cases = (
+            ("skipped op", Sum(), big, {"skip_node_op_set": {"aten.sum.dim_IntList"}}),
+            (
+                "skipped node",
+                Sum(),
+                big,
+                {"skip_node_id_set": {"aten_sum_dim_int_list"}},
+            ),
+            ("float64 input", LongOfDouble(), (torch.tensor([1e5]),), {}),
+        )
+        for name, module, sample_input, kwargs in cases:
+            with self.subTest(name):
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True)
+                ).exported_program()
+                gm = I64toI32(ep, **kwargs)(ep.graph_module).graph_module
+                torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+
     def test_i64_to_i32_casts_back_multi_output_results(self):
         # topk of an int64 sum returns int64 values and indices.
         class SumTopk(torch.nn.Module):
