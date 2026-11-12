@@ -13,6 +13,8 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -310,3 +312,46 @@ def test_cast_int64_buffers_narrows_float_comparison_tosa_FP_INT_int64(
         StageType.RUN_PASSES
     ).exported_program()
     assert exported_program.state_dict["limit"].dtype == torch.int32
+
+
+@pytest.mark.parametrize("quantized", (False, True))
+def test_zero_dim_int64_constant_narrows_for_integer_users(quantized):
+    with FakeTensorMode() as mode:
+        constant_val = mode.from_tensor(torch.empty((), dtype=torch.int64))
+        int32_val = mode.from_tensor(torch.empty((), dtype=torch.int32))
+        output_val = mode.from_tensor(torch.empty((4,), dtype=torch.int32))
+    graph = torch.fx.Graph()
+    constant = graph.placeholder("constant")
+    constant.meta["val"] = constant_val
+    x = graph.placeholder("x")
+    x.meta["val"] = output_val
+    cast = graph.call_function(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        (constant,),
+        {"dtype": torch.int32},
+    )
+    cast.meta["val"] = int32_val
+    maximum = graph.call_function(exir_ops.edge.aten.maximum.default, (x, cast))
+    maximum.meta["val"] = output_val
+    maximum.meta["input_qparams"] = {0: object()} if quantized else {}
+
+    assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, cast) != quantized
+
+
+@pytest.mark.parametrize(
+    ("dtype", "narrows"), ((torch.int8, False), (torch.int32, True))
+)
+def test_zero_dim_int64_constant_narrows_for_int32_comparisons(dtype, narrows):
+    with FakeTensorMode() as mode:
+        constant_val = mode.from_tensor(torch.empty((), dtype=torch.int64))
+        x_val = mode.from_tensor(torch.empty((4,), dtype=dtype))
+        output_val = mode.from_tensor(torch.empty((4,), dtype=torch.bool))
+    graph = torch.fx.Graph()
+    constant = graph.placeholder("constant")
+    constant.meta["val"] = constant_val
+    x = graph.placeholder("x")
+    x.meta["val"] = x_val
+    gt = graph.call_function(exir_ops.edge.aten.gt.Tensor, (x, constant))
+    gt.meta["val"] = output_val
+
+    assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, gt) == narrows
