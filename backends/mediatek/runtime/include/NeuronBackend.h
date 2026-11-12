@@ -151,7 +151,9 @@ class NeuronExecuTorchDelegate {
   NeuronExecuTorchDelegate() {}
 
   ~NeuronExecuTorchDelegate() {
-    mPLock->Stop();
+    if (mPLock != nullptr) {
+      mPLock->Stop();
+    }
   }
 
   int LoadCompiledNetwork(

@@ -11,11 +11,12 @@ Any language server must serialize to the same shapes; the conformance suite in
 ``examples/llm_server/conformance`` validates them.
 """
 
+import json
 import time
 import uuid
 from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _new_id(prefix: str) -> str:
@@ -35,7 +36,7 @@ class ToolCall(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str
+    role: Literal["system", "developer", "user", "assistant", "tool"]
     content: Optional[Union[str, list[dict[str, Any]]]] = None
     name: Optional[str] = None
     # Optional prior-turn reasoning (chain-of-thought). Mirrors
@@ -54,19 +55,21 @@ class StreamOptions(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: Optional[str] = None
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False
     stream_options: Optional[StreamOptions] = None
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    max_tokens: Optional[int] = None
-    max_completion_tokens: Optional[int] = None
+    temperature: Optional[float] = Field(default=None, strict=True)
+    top_p: Optional[float] = Field(default=None, strict=True)
+    max_tokens: Optional[int] = Field(default=None, strict=True)
+    max_completion_tokens: Optional[int] = Field(default=None, strict=True)
     stop: Optional[Union[str, list[str]]] = None
-    n: int = 1
-    seed: Optional[int] = None
+    n: int = Field(default=1, strict=True)
+    seed: Optional[int] = Field(default=None, strict=True)
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
-    top_k: Optional[int] = None
+    top_k: Optional[int] = Field(default=None, strict=True)
+    # Disable model/template termination; explicit request stops still apply.
+    ignore_eos: bool = Field(default=False, strict=True)
     logit_bias: Optional[dict[str, float]] = None
     # Output-contract fields: modeled (not dropped) so we reject the ones we
     # can't honor rather than returning an output that violates what was asked.
@@ -85,6 +88,68 @@ class ChatCompletionRequest(BaseModel):
     tools: Optional[list[dict[str, Any]]] = None
     tool_choice: Optional[Union[str, dict[str, Any]]] = None
     reasoning_effort: Optional[str] = None
+    reasoning: Optional[dict[str, Any]] = None
+    include_reasoning: Optional[bool] = Field(default=None, strict=True)
+    # Retain output/cache controls so capability checks can reject them before
+    # generation, including malformed values and empty strings.
+    thinking_token_budget: Any = None
+    grammar: Any = None
+    guided_json: Any = None
+    guided_regex: Any = None
+    guided_choice: Any = None
+    guided_grammar: Any = None
+    structured_outputs: Any = None
+    regex: Any = None
+    ebnf: Any = None
+    stop_regex: Any = None
+    add_generation_prompt: Any = None
+    continue_final_message: Any = None
+    cache_salt: Any = None
+
+    @field_validator("tools")
+    @classmethod
+    def validate_tools(cls, tools):
+        names = set()
+        for tool in tools or []:
+            fn = tool.get("function")
+            if tool.get("type") != "function" or not isinstance(fn, dict):
+                raise ValueError("tools must contain function declarations")
+            name = fn.get("name")
+            if not isinstance(name, str) or not name.strip() or name in names:
+                raise ValueError("tool names must be unique nonempty strings")
+            names.add(name)
+            if fn.get("parameters") is not None and not isinstance(
+                fn["parameters"], dict
+            ):
+                raise ValueError("tool parameters must be a JSON schema object")
+        return tools
+
+    @field_validator("messages")
+    @classmethod
+    def validate_history(cls, messages):
+        for message in messages:
+            calls = set()
+            for call in message.tool_calls or []:
+                if message.role != "assistant" or not call.id or not call.function.name:
+                    raise ValueError(
+                        "historical tool calls require assistant role, id and name"
+                    )
+                if call.id in calls:
+                    raise ValueError("duplicate historical tool call id")
+                calls.add(call.id)
+                try:
+                    arguments = json.loads(call.function.arguments or "{}")
+                except (ValueError, RecursionError) as error:
+                    raise ValueError(
+                        "historical tool arguments must be valid JSON"
+                    ) from error
+                if not isinstance(arguments, dict):
+                    raise ValueError("historical tool arguments must be an object")
+            # Compaction can remove calls/results, and providers can reuse IDs
+            # across turns. Validate each message without requiring a full log.
+            if message.role == "tool" and not message.tool_call_id:
+                raise ValueError("tool result requires a tool_call_id")
+        return messages
 
     def resolved_max_tokens(self) -> int:
         # `is not None` (not `or`): an explicit 0 must not be treated as unset.
@@ -97,9 +162,13 @@ class ChatCompletionRequest(BaseModel):
 
 
 class PromptTokensDetails(BaseModel):
-    # Warm-resume accounting, SGLang-compatible shape: tokens served from the
-    # session's resident state instead of prefetched this request.
+    # Warm-resume accounting, SGLang-compatible shape: tokens reused from the
+    # session's resident state or a shared prefix snapshot instead of prefilled.
     cached_tokens: int = 0
+
+
+class CompletionTokensDetails(BaseModel):
+    reasoning_tokens: int
 
 
 class Usage(BaseModel):
@@ -107,6 +176,7 @@ class Usage(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     prompt_tokens_details: Optional[PromptTokensDetails] = None
+    completion_tokens_details: Optional[CompletionTokensDetails] = None
 
 
 class ResponseMessage(BaseModel):
@@ -158,6 +228,7 @@ class ModelCard(BaseModel):
     object: Literal["model"] = "model"
     created: int = Field(default_factory=lambda: int(time.time()))
     owned_by: str = "executorch"
+    context_length: Optional[int] = None
 
 
 class ModelList(BaseModel):

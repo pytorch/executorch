@@ -7,6 +7,7 @@
 # pyre-strict
 
 import copy
+import heapq
 import operator
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -47,7 +48,6 @@ from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
     fuse_as_graphmodule,
     insert_subgm,
-    legalize_graph,
     NodeList,
     topo_sort,
 )
@@ -866,6 +866,35 @@ def create_exported_program_from_submodule(
     )
 
 
+def _stable_topological_sort_in_place(graph: torch.fx.Graph) -> None:
+    """
+    Orders the nodes like torch's stable_topological_sort, by moving them. That
+    function installs a new graph, and a GraphModule then recompiles itself and
+    every submodule, so sorting once per partition took time quadratic in the
+    number of partitions.
+    """
+    position = {node: i for i, node in enumerate(graph.nodes)}
+    unsorted_inputs = {node: len(node.all_input_nodes) for node in graph.nodes}
+    ready = [(i, node) for node, i in position.items() if unsorted_inputs[node] == 0]
+    previous = None
+    while ready:
+        _, node = heapq.heappop(ready)
+        if previous is None:
+            first = next(iter(graph.nodes))
+            if first is not node:
+                first.prepend(node)
+        elif previous.next is not node:
+            previous.append(node)
+        previous = node
+        del position[node]
+        for user in node.users:
+            unsorted_inputs[user] -= 1
+            if unsorted_inputs[user] == 0:
+                heapq.heappush(ready, (position[user], user))
+    if position:
+        raise AssertionError(f"Input graph has cycles, unable to add {list(position)}")
+
+
 def create_submodule_from_nodes(
     gm: torch.fx.GraphModule,
     node_list: NodeList,
@@ -875,7 +904,8 @@ def create_submodule_from_nodes(
     """
     Modifies the given graph module in-place to separate out the given nodes
     into a submodule. The given node_list should form a fully connected
-    subgraph.
+    subgraph. Unless skip_legalize_graph is set, the nodes of gm are sorted
+    in place. gm is not recompiled, so call gm.recompile() before running it.
 
     Args:
         gm: The graph module that we want to partition
@@ -893,6 +923,7 @@ def create_submodule_from_nodes(
     )
 
     _fixup_output_node(sub_gm)
+    sub_gm.recompile()
 
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     submodule_node = None
@@ -931,10 +962,10 @@ def create_submodule_from_nodes(
     erase_nodes(gm, sorted_nodes)
 
     # Topological sort original gm with newly created sub_gm
-    # TODO : T153794167 Get rid of support for skipping legalize graph in create_submodule_from_nodes
+    # TODO : T153794167 Get rid of support for skipping the sort in create_submodule_from_nodes
     # once we transition to using fuse_by_partitions.
     if not skip_legalize_graph:
-        legalize_graph(gm)
+        _stable_topological_sort_in_place(gm.graph)
 
     # Get the call_module node
     submodule_node = None

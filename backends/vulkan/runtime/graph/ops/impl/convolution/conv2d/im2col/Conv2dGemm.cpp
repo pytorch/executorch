@@ -160,7 +160,7 @@ vkapi::ShaderInfo pick_conv2d_gemm_shader(
 }
 
 // resize_args = { in, weight_data, stride, padding, dilation, oh_tile,
-//                 oh_offset }
+//                 oh_offset, residual }
 // resize_args[5] / [6] carry the raw oh_tile / oh_offset VALUES (not ValueRef
 // handles): both are build-time constants, so packing the ints directly into
 // the slots avoids materializing graph Values for them. Read with static_cast,
@@ -212,7 +212,7 @@ GlobalWorkGrid pick_conv2d_gemm_gwg(
 // tile's dispatch and to zero-size dead trailing tiles after a down-resize.
 //
 // resize_args = { in, weight_data, stride, padding, dilation, oh_tile,
-//                 oh_offset }
+//                 oh_offset, residual }
 void resize_conv2d_gemm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -249,6 +249,7 @@ void resize_conv2d_gemm_node(
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
   graph->virtual_resize(out, new_out_sizes);
+  check_conv2d_residual_on_resize(graph, out, resize_args);
 }
 
 void add_conv2d_gemm_node(
@@ -261,11 +262,10 @@ void add_conv2d_gemm_node(
     const ValueRef im2col_in,
     const ValueRef packed_weight,
     const ValueRef packed_bias,
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args,
     const ValueRef out,
     const int32_t K_total,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val,
     const int32_t oh_offset,
     const int32_t oh_tile) {
   const int32_t K4_total = K_total / 4;
@@ -276,9 +276,14 @@ void add_conv2d_gemm_node(
   // from the refreshed out_sizes UBO (a baked plain-data push constant cannot
   // be updated on resize, but oh_offset / oh_tile never change with shape).
   const utils::ivec4 gemm_dims{K4_total, oh_offset, oh_tile, 0};
-  const utils::vec4 clamp_vals{out_min_val, out_max_val, 0.0f, 0.0f};
+  const Conv2dEpilogueParams epilogue_params = create_conv2d_epilogue_params(
+      epilogue,
+      graph.dtype_of(out) == vkapi::kHalf &&
+          graph.is_buffer_storage(im2col_in));
+  vkapi::SpecVarList spec_vars;
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
-  // The last two resize_args slots carry the raw oh_tile / oh_offset VALUES,
+  // resize_args slots 5 and 6 carry the raw oh_tile / oh_offset VALUES,
   // not ValueRef handles: both are build-time constants, so packing the ints
   // directly avoids materializing graph Values for them. The global-wg picker
   // reads them back with static_cast (never get_int) — oh_tile to size the
@@ -297,16 +302,20 @@ void add_conv2d_gemm_node(
       pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite},
-       {{im2col_in, packed_weight, packed_bias}, vkapi::kRead}},
+       {{im2col_in,
+         packed_weight,
+         packed_bias,
+         epilogue_args.residual,
+         epilogue_args.scale},
+        vkapi::kRead}},
       // Shader params buffers
       {graph.sizes_ubo(out)},
-      // Push constants (2 × 16 bytes)
+      // Push constants (16 + 12 bytes)
       {PushConstantDataInfo(&gemm_dims, sizeof(gemm_dims)),
-       PushConstantDataInfo(&clamp_vals, sizeof(clamp_vals))},
+       PushConstantDataInfo(&epilogue_params, sizeof(epilogue_params))},
       // Specialization constants
-      // activation_type: 0=none, 1=relu, 2=clamp
-      {clamp_out ? 2 : 0},
-      // Resize args (last two slots = raw oh_tile / oh_offset values, see note
+      spec_vars,
+      // Resize args (slots 5 and 6 = raw oh_tile / oh_offset values, see note
       // above)
       {in,
        weight_data,
@@ -314,7 +323,8 @@ void add_conv2d_gemm_node(
        padding,
        dilation,
        static_cast<ValueRef>(oh_tile),
-       static_cast<ValueRef>(oh_offset)},
+       static_cast<ValueRef>(oh_offset),
+       epilogue.residual},
       // Resizing logic
       resize_conv2d_gemm_node));
 }
@@ -334,9 +344,7 @@ void conv2d_gemm_impl(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef out,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val,
+    const Conv2dEpilogue& epilogue,
     const std::optional<utils::StorageType> im2col_storage_override) {
   const std::vector<int64_t> in_sizes = graph.sizes_of(in);
   const std::vector<int64_t> w_sizes = graph.sizes_of(weight_data);
@@ -494,7 +502,13 @@ void conv2d_gemm_impl(
       utils::kTexture2D,
       utils::kWidthPacked);
 
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, /*transposed=*/false);
+
   check_conv_args(graph, in, out);
+
+  const Conv2dEpilogueArgs epilogue_args(
+      epilogue, in, packed_bias, packed_scale);
 
   // Emit one (im2col -> GEMM) dispatch pair per tile, interleaved so each
   // tile's GEMM reads the scratch its im2col just wrote before the next tile
@@ -556,11 +570,10 @@ void conv2d_gemm_impl(
         im2col_tensor,
         packed_weight,
         packed_bias,
+        epilogue,
+        epilogue_args,
         out,
         utils::safe_downcast<int32_t>(K_total),
-        clamp_out,
-        out_min_val,
-        out_max_val,
         oh_offset,
         oh_tile_i32);
   }
@@ -590,18 +603,7 @@ void conv2d_gemm_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.get_bool(transposed) == false);
   VK_CHECK_COND(graph.get_int(groups) == 1);
 
-  conv2d_gemm_impl(
-      graph,
-      in,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      out,
-      /*clamp_out=*/false,
-      /*out_min_val=*/0.0f,
-      /*out_max_val=*/0.0f);
+  conv2d_gemm_impl(graph, in, weight, bias, stride, padding, dilation, out);
 }
 
 REGISTER_OPERATORS {

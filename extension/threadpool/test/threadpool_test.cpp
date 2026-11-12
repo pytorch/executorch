@@ -6,16 +6,29 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <atomic>
 #include <mutex>
 #include <numeric>
 #include <random>
+#include <thread>
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
 
 #include <gtest/gtest.h>
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <sched.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 using namespace ::testing;
 
@@ -69,6 +82,69 @@ void run_lambda_with_size(
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
   threadpool->run(f, range);
 }
+
+// The pool has no more threads than the CPUs this process may run on.
+bool may_use_more_than_one_cpu() {
+#if defined(__linux__) && !defined(__ANDROID__)
+  // Grows the mask as get_num_allowed_cpus() does, for kernels with more
+  // possible CPUs than a cpu_set_t holds.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return CPU_COUNT_S(size, cpus.get()) > 1;
+    }
+    if (errno != EINVAL) {
+      break;
+    }
+  }
+#endif
+  return true;
+}
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// Limits this thread to the CPU it runs on, then prints the default pool size
+// and the performance core count for the test to match. Failing to set the
+// limit aborts instead.
+[[noreturn]] void print_counts_on_one_cpu() {
+  const int cpu = sched_getcpu();
+  if (cpu < 0) {
+    std::abort();
+  }
+  std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+      CPU_ALLOC(cpu + 1), [](cpu_set_t* set) { CPU_FREE(set); });
+  if (!cpus) {
+    std::abort();
+  }
+  const size_t size = CPU_ALLOC_SIZE(cpu + 1);
+  CPU_ZERO_S(size, cpus.get());
+  CPU_SET_S(cpu, size, cpus.get());
+  if (sched_setaffinity(0, size, cpus.get()) != 0) {
+    std::abort();
+  }
+  std::fprintf(
+      stderr,
+      "pool %zu perf %u end\n",
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count(),
+      static_cast<unsigned>(
+          ::executorch::extension::cpuinfo::get_num_performant_cores()));
+  std::exit(EXIT_SUCCESS);
+}
+#endif
+
+// Puts back the thread count a test changed, also when the test fails early.
+struct RestoreThreadCount {
+  ::executorch::extension::threadpool::ThreadPool* threadpool;
+  uint32_t threads;
+  ~RestoreThreadCount() {
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    threadpool->_unsafe_reset_threadpool(threads);
+  }
+};
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
@@ -88,7 +164,9 @@ TEST(ThreadPoolTest, ParallelAdd) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_add_test_inputs(a, b, c_ref, c, vector_size);
   run_lambda_with_size(add_lambda, vector_size, grain_size);
@@ -133,7 +211,9 @@ TEST(ThreadPoolTest, ParallelReduce) {
   };
 
   auto threadpool = ::executorch::extension::threadpool::get_threadpool();
-  EXPECT_GT(threadpool->get_thread_count(), 1);
+  if (may_use_more_than_one_cpu()) {
+    EXPECT_GT(threadpool->get_thread_count(), 1);
+  }
 
   generate_reduce_test_inputs(a, c_ref, vector_size);
   run_lambda_with_size(reduce_lambda, vector_size, grain_size);
@@ -201,3 +281,110 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   }
   ASSERT_EQ(inner, 6);
 }
+
+TEST(ThreadPoolTest, ResetKeepsSharedPthreadpoolUntilReleased) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  auto held = ::executorch::extension::threadpool::get_shared_pthreadpool();
+  ASSERT_EQ(held.get(), ::executorch::extension::threadpool::get_pthreadpool());
+  EXPECT_EQ(held.use_count(), 2);
+  const std::weak_ptr<pthreadpool> released = held;
+
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(3));
+  EXPECT_NE(
+      ::executorch::extension::threadpool::get_shared_pthreadpool().get(),
+      held.get());
+  std::vector<uint8_t> ran(64);
+  pthreadpool_parallelize_1d(
+      held.get(),
+      [](void* context, size_t item) {
+        static_cast<uint8_t*>(context)[item] = 1;
+      },
+      ran.data(),
+      ran.size(),
+      0);
+  EXPECT_EQ(ran, std::vector<uint8_t>(64, 1));
+
+  held.reset();
+  EXPECT_TRUE(released.expired());
+}
+
+TEST(ThreadPoolTest, PthreadpoolGettersDuringReset) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // Reads the pool on other threads, as delegate loads do, during resets.
+  std::atomic<bool> done{false};
+  std::thread shared_loader([&done] {
+    while (!done) {
+      ::executorch::extension::threadpool::get_shared_pthreadpool();
+    }
+  });
+  std::thread raw_loader([&done] {
+    while (!done) {
+      ::executorch::extension::threadpool::get_pthreadpool();
+    }
+  });
+  for (uint32_t i = 0; i < 100; ++i) {
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    EXPECT_TRUE(threadpool->_unsafe_reset_threadpool(2 + i % 2));
+  }
+  done = true;
+  shared_loader.join();
+  raw_loader.join();
+}
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// gtest runs death tests before the other tests, so the forked child creates
+// the pool itself, and the CPU limit it sets does not reach the other tests.
+TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
+  // A later run, as with --gtest_repeat, forks after the other tests created
+  // the pool, and the child keeps that pool's size.
+  static int runs = 0;
+  if (runs++ > 0) {
+    GTEST_SKIP() << "The pool may already exist in this process";
+  }
+  executorch::runtime::runtime_init();
+
+  // A known performance core count drops to 1, and an unknown one stays 0.
+  const char* expected =
+      ::executorch::extension::cpuinfo::get_num_performant_cores() > 0
+      ? "pool 1 perf 1 end"
+      : "pool 1 perf 0 end";
+  EXPECT_EXIT(
+      print_counts_on_one_cpu(), ExitedWithCode(EXIT_SUCCESS), expected);
+}
+
+TEST(ThreadPoolTest, ForkedChildReleasesInheritedSharedPthreadpool) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // Destroying an inherited pool crashes once its thread stacks overflow
+  // glibc's 40 MiB stack cache; 32 threads do with stacks as small as 1 MiB.
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(32));
+  auto held = ::executorch::extension::threadpool::get_shared_pthreadpool();
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  // The child holds the last reference to a threadpool whose threads stayed
+  // in the parent. Not a death test, whose "threadsafe" style would start the
+  // child over with a threadpool of its own.
+  const pid_t child = fork();
+  ASSERT_NE(child, -1);
+  if (child == 0) {
+    held.reset();
+    std::_Exit(EXIT_SUCCESS);
+  }
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
+      << "wait status " << status;
+}
+#endif

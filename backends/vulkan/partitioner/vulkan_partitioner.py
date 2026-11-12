@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import logging
 from typing import (
     Any,
@@ -403,6 +401,18 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
             compile_specs.append(CompileSpec(key, value.to_bytes(8, "little")))
             continue
 
+        if key == "skip_fusion_patterns":
+            if (
+                isinstance(value, str)
+                or not set(value) <= vk_patterns.fusable_patterns.keys()
+            ):
+                raise ValueError(
+                    "skip_fusion_patterns must be a collection of pattern names "
+                    f"from {sorted(vk_patterns.fusable_patterns)}, got {value!r}"
+                )
+            compile_specs.append(CompileSpec(key, ",".join(sorted(value)).encode()))
+            continue
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
@@ -515,7 +525,9 @@ class VulkanPartitioner(Partitioner):
         # instead, so its pieces can run elsewhere; kept whole, it would reach
         # no backend and fail the export.
         preserved = set(ops_not_to_decompose)
-        supported = self._supported_operators(ep, fusable_subgraphs=[])
+        supported = self.make_supported_operators(
+            constant_nodes=utils.get_constant_nodes(ep)
+        )
 
         def filter_fn(node: torch.fx.Node) -> bool:
             # Before decomposition the node holds the ATen op; the checks key on
@@ -535,11 +547,17 @@ class VulkanPartitioner(Partitioner):
 
         return (ops_not_to_decompose, filter_fn)
 
-    def _supported_operators(
+    def make_supported_operators(
         self,
-        exported_program: ExportedProgram,
-        fusable_subgraphs: List[PatternMatch],
+        fusable_subgraphs: Optional[List[PatternMatch]] = None,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
+        operator_allowlist: Optional[Set[OpKey]] = None,
+        operator_blocklist: Optional[Set[OpKey]] = None,
     ) -> VulkanSupportedOperators:
+        """The node support checker partition() uses, built from this
+        partitioner's options. The optional arguments replace the
+        corresponding partitioner settings."""
         # small_texture_limits opts into the conservative 3D texture limit that is
         # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
         # 2048). An explicit texture_limits always takes precedence.
@@ -555,14 +573,26 @@ class VulkanPartitioner(Partitioner):
             buffer_limit,
             require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
             skip_bool_tensors=self.options.get("skip_bool_tensors", False),
-            operator_blocklist=self.operator_blocklist,
-            operator_allowlist=self.operator_allowlist,
+            operator_blocklist=(
+                self.operator_blocklist
+                if operator_blocklist is None
+                else operator_blocklist
+            ),
+            operator_allowlist=(
+                self.operator_allowlist
+                if operator_allowlist is None
+                else operator_allowlist
+            ),
             fusable_subgraphs=fusable_subgraphs,
             nn_module_blocklist=self.nn_module_blocklist,
             nn_module_allowlist=self.nn_module_allowlist,
             downcast_64_bit=self.options.get("downcast_64_bit", True),
-            op_features_overrides=self.op_features_overrides,
-            constant_nodes=utils.get_constant_nodes(exported_program),
+            op_features_overrides=(
+                self.op_features_overrides
+                if op_features_overrides is None
+                else op_features_overrides
+            ),
+            constant_nodes=constant_nodes,
         )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
@@ -572,11 +602,13 @@ class VulkanPartitioner(Partitioner):
 
         # Get all fusable subgraphs from fuse_patterns
         fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
-            exported_program.graph_module
+            exported_program.graph_module,
+            self.options.get("skip_fusion_patterns", ()),
         )
 
-        operator_support = self._supported_operators(
-            exported_program, fusable_subgraphs
+        operator_support = self.make_supported_operators(
+            fusable_subgraphs=fusable_subgraphs,
+            constant_nodes=utils.get_constant_nodes(exported_program),
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

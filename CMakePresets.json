@@ -392,7 +392,7 @@
       "cacheVariables": {
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/mlx.cmake",
         "EXECUTORCH_ENABLE_LOGGING": "ON",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+        "CMAKE_PROJECT_INCLUDE_BEFORE": "${sourceDir}/backends/mlx/default_deployment_target.cmake"
       },
       "condition": {
         "lhs": "${hostSystemName}",

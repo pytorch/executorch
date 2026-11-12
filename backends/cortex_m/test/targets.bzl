@@ -135,14 +135,13 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/exir:lib",
+                "//executorch/exir:memory",
                 "//executorch/exir:pass_base",
                 "//executorch/exir/_serialize:lib",
                 "//executorch/exir/dialects:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
             ],
         )
-
-    
 
         python_pytest(
             name = "test_fuse_conv_padding",

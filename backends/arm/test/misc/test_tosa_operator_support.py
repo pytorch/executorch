@@ -13,15 +13,20 @@ from executorch.backends.arm.operator_support.index_tensor_support import (
 )
 from executorch.backends.arm.operator_support.topk_support import TopKSupported
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    _int64_operands_agree,
     CheckFPComparisonInputs,
     CheckKnownUnsupportedTOSASemantics,
 )
 from executorch.backends.arm.operator_support.where_support import WhereSupported
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.exir import to_edge
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.fx.passes.operator_support import OpSupports
 
 
 def _fake_tensor(shape: tuple[int, ...], dtype: torch.dtype = torch.float32):
@@ -83,7 +88,7 @@ def test_where_bf16_requires_extension(x_dtype, y_dtype, bf16_enabled) -> None:
 )
 @pytest.mark.parametrize(
     "dtype",
-    (torch.bool, torch.uint8, torch.int32, torch.int64),
+    (torch.bool, torch.uint8, torch.int64),
 )
 def test_fp_comparison_input_support(target, dtype) -> None:
     graph = torch.fx.Graph()
@@ -100,7 +105,13 @@ def test_fp_comparison_input_support(target, dtype) -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    (torch.float16, torch.float32, torch.bfloat16, torch.int8, torch.int16),
+    (
+        torch.float16,
+        torch.float32,
+        torch.bfloat16,
+        torch.int8,
+        torch.int16,
+    ),
 )
 def test_fp_comparison_accepts_supported_inputs(dtype) -> None:
     graph = torch.fx.Graph()
@@ -110,6 +121,44 @@ def test_fp_comparison_accepts_supported_inputs(dtype) -> None:
     node.meta["val"] = _fake_tensor((3, 4), torch.bool)
 
     assert _fp_comparison_checker().is_node_supported({}, node)
+
+
+@pytest.mark.parametrize(
+    ("dtypes", "supported"),
+    (
+        ((torch.int32, torch.float32), True),
+        ((torch.float32, torch.int32), True),
+        ((torch.int32, torch.float16), True),
+        ((torch.int32, torch.bfloat16), True),
+        ((torch.int16, torch.float32), True),
+        ((torch.int16, torch.float16), True),
+        ((torch.int16, torch.bfloat16), True),
+        ((torch.int8, torch.float16), True),
+        ((torch.uint8, torch.float32), False),
+    ),
+)
+@pytest.mark.parametrize("int_supported", (False, True))
+def test_fp_comparison_mixed_inputs(dtypes, supported, int_supported) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (3, 4), dtypes[0])
+    y = _placeholder(graph, "y", (3, 4), dtypes[1])
+    node = graph.call_function(exir_ops.edge.aten.eq.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((3, 4), torch.bool)
+
+    checker = CheckFPComparisonInputs(WhyNoPartitionReporter(), int_supported)
+    assert checker.is_node_supported({}, node) == supported
+
+
+@pytest.mark.parametrize("int_supported", (False, True))
+def test_int32_comparison_requires_int_profile(int_supported) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (3, 4), torch.int32)
+    y = _placeholder(graph, "y", (3, 4), torch.int32)
+    node = graph.call_function(exir_ops.edge.aten.eq.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((3, 4), torch.bool)
+
+    checker = CheckFPComparisonInputs(WhyNoPartitionReporter(), int_supported)
+    assert checker.is_node_supported({}, node) == int_supported
 
 
 def test_rejects_argmax_without_int32_cast_user() -> None:
@@ -279,3 +328,68 @@ def test_topk_keyword_arguments(dim) -> None:
     )
     assert config is not None and config.k == 4
     assert reason is None
+
+
+def test_int64_operand_check_skips_symbolic_inputs() -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (8,), torch.int32)
+    size = graph.placeholder("size")
+    size.meta["val"] = ShapeEnv().create_unbacked_symint()
+    node = graph.call_function(exir_ops.edge.aten.view_copy.default, (x, [size, -1]))
+
+    assert _int64_operands_agree(node)
+
+
+@pytest.mark.parametrize(
+    ("dtypes", "agree"),
+    (
+        ((torch.int64, torch.int64), True),
+        ((torch.int64, torch.int32), True),
+        ((torch.int64, torch.bool), True),
+        ((torch.int64, torch.int16), False),
+        ((torch.int64, torch.int8), False),
+        ((torch.int64, torch.uint8), False),
+        ((torch.int8, torch.int32), True),
+    ),
+)
+def test_int64_operand_check_widths(dtypes, agree) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (4,), dtypes[0])
+    y = _placeholder(graph, "y", (4,), dtypes[1])
+    node = graph.call_function(exir_ops.edge.aten.bitwise_or.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((4,), torch.promote_types(*dtypes))
+
+    assert _int64_operands_agree(node) == agree
+
+
+@pytest.mark.parametrize("boundary", ["input", "output", "internal"])
+def test_tosa_symbolic_scalar_boundaries(boundary, caplog) -> None:
+    class Reshape(torch.nn.Module):
+        def forward(self, x):
+            result = x.reshape(x.shape[0], -1).relu()
+            return (result, x.shape[0]) if boundary == "output" else result
+
+    program = to_edge(
+        torch.export.export(
+            Reshape(),
+            (torch.randn(2, 2, 3),),
+            dynamic_shapes=({0: torch.export.Dim("batch", min=1, max=4)},),
+        )
+    ).exported_program()
+    sym_size = program.graph.find_nodes(
+        op="call_function", target=torch.ops.aten.sym_size.int
+    )[0]
+    checks = (
+        [OpSupports.decline_if_node_in_names({sym_size.name})]
+        if boundary == "input"
+        else []
+    )
+    partitioner = TOSAPartitioner(
+        TosaCompileSpec("TOSA-1.1+FP+shape"), additional_checks=checks
+    )
+    with caplog.at_level("INFO"):
+        result = partitioner.partition(program)
+
+    assert bool(result.partition_tags) is (boundary == "internal")
+    if boundary != "internal":
+        assert "Partition has unsupported scalar" in caplog.text

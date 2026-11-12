@@ -87,6 +87,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeMaxPool1dPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
+    DecomposeMvDotPass,
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePowTensorTensorPass,
@@ -143,8 +144,10 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
+    InsertSymSizeIntForInputDimsPass,
     InsertTableOpsPass,
     LowerDynamicW8A8LinearPass,
+    LowerInt16RsqrtPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
     MoveDataMovementOpsToSmallerDtypePass,
@@ -544,6 +547,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 NormalizeDelegateIOLayoutPass(exported_program),
+                InsertSymSizeIntForInputDimsPass(),
                 FuseQuantizedActivationPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 DecomposeTopKPass(self.tosa_spec),
@@ -713,6 +717,12 @@ class ArmPassManager(ExportedProgramPassManager):
             ]
         )
 
+        if self.tosa_spec.support_extension("int16"):
+            self.insert_passes_before(
+                InsertTableOpsPass,
+                [LowerInt16RsqrtPass(exported_program)],
+            )
+
         # Aten -> TOSA transformation passes
         self.add_passes(
             [
@@ -875,6 +885,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     ConvertMinMaxPass(tfa_pass=True),
                     AccumulateIndexPutPass(tfa_pass=True),
                     DecomposeMatmulPass(tfa_pass=True),
+                    DecomposeMvDotPass(tfa_pass=True),
                 ]
             )
 

@@ -16,6 +16,7 @@ from executorch.backends.arm.quantizer.quantization_config import QuantizationCo
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.node_finders import (
     GlobalNoOutputNodeFinder,
+    NodeTargetActivationNodeFinder,
     NodeTargetNodeFinder,
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
@@ -47,6 +48,11 @@ def mark_node_as_annotated(
 
 
 class CortexMQuantizer(ComposableQuantizer):
+    """Convolutions use ``INT8_PER_CHANNEL_CONFIG`` and every other supported op
+    ``per_tensor_config``. ``set_node_target`` overrides the config of an op,
+    and each call overrides those before it.
+    """
+
     def __init__(
         self,
         per_tensor_config: Optional[QuantizationConfig] = None,
@@ -58,7 +64,7 @@ class CortexMQuantizer(ComposableQuantizer):
             per_tensor_config: Per-tensor activation config applied to the
                 non-conv elementwise ops (div/mul/add/...) that
                 ``GlobalNodeFinder`` matches anywhere in the graph. Convolutions
-                are always quantized with the per-channel config. Defaults to
+                default to the per-channel config. Defaults to
                 ``INT8_PER_TENSOR_CONFIG``; pass ``INT16_PER_TENSOR_CONFIG`` to
                 quantize the ops that support it (e.g. ``quantized_div``) with
                 int16 activations.
@@ -85,7 +91,7 @@ class CortexMQuantizer(ComposableQuantizer):
         for key in conv_patterns:
             conv_targets.update(key)
 
-        pattern_matcher = PatternMatcher(
+        self.pattern_matcher = PatternMatcher(
             cast(
                 dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
                 support_dict,
@@ -96,16 +102,47 @@ class CortexMQuantizer(ComposableQuantizer):
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
                 node_finder=NodeTargetNodeFinder(list(conv_targets)),
-                pattern_matcher=pattern_matcher,
+                pattern_matcher=self.pattern_matcher,
             ),
             PatternQuantizer(
                 per_tensor_config,
                 node_finder=GlobalNoOutputNodeFinder(),
-                pattern_matcher=pattern_matcher,
+                pattern_matcher=self.pattern_matcher,
             ),
             SharedQspecQuantizer(),
         ]
         super().__init__(quantizers)
+
+    def set_node_target(
+        self, node_target: OpOverload, quantization_config: Optional[QuantizationConfig]
+    ) -> "CortexMQuantizer":
+        """Quantize every node calling `node_target`, and the activations its
+        patterns fuse after it, with `quantization_config`, e.g.
+        ``torch.ops.aten.conv2d.default`` with ``INT8_PER_TENSOR_CONFIG`` for
+        per-tensor convolution weights. ``None`` leaves them unquantized, and
+        works for any op.
+        """
+        if not isinstance(node_target, OpOverload):
+            raise TypeError(
+                "set_node_target: expected an OpOverload such as "
+                f"torch.ops.aten.conv2d.default, got {node_target}"
+            )
+        patterns = [p for p in self.pattern_matcher.support_dict if p[0] == node_target]
+        if quantization_config is not None and not patterns:
+            raise ValueError(
+                f"Quantization of {node_target} is not supported by the "
+                "cortex-m backend"
+            )
+        activations = list(dict.fromkeys(op for p in patterns for op in p[1:]))
+        self.quantizers.insert(
+            0,
+            PatternQuantizer(
+                quantization_config,
+                node_finder=NodeTargetActivationNodeFinder(node_target, activations),
+                pattern_matcher=self.pattern_matcher,
+            ),
+        )
+        return self
 
     def annotate(self, model):
         reporter = QuantizerReporter(self.quantizers)

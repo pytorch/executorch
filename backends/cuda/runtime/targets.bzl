@@ -35,20 +35,20 @@ def define_common_targets(is_fbcode = False):
         name = "runtime_shims",
         srcs = [
             "shims/cuda_guard.cpp",
+            "shims/index.cu",
             "shims/int4mm.cu",
             "shims/memory.cpp",
             "shims/rand.cu",
             "shims/sort.cu",
-            "shims/tensor_attribute.cpp",
         ],
         headers = [
             "shims/cuda_guard.h",
+            "shims/index.h",
             "shims/int4mm.cuh",
             "shims/int4mm.h",
             "shims/memory.h",
             "shims/rand.h",
             "shims/sort.h",
-            "shims/tensor_attribute.h",
             "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

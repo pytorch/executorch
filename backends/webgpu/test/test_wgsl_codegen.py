@@ -220,14 +220,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 141)
+        self.assertEqual(len(outputs), 143)
         self.assertEqual(
             digest.hexdigest(),
-            "92aa8962e084e2caa1b286d16f6c399120c6a39ea2c240cb5b5632a4bce5857d",
+            "2cf0a9b50c121892ee62e1066dae7659ed3af4058e57045afd7da7ea05fa93b5",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "6d86cf17da5b44103a1e88c14c5ddbbe19f318de91c48b29caca84ca0202fe3e",
+            "fcf8ca8af78eea47594d518a99564f1a202bf7fd77f9dd8a51c4fe7e5ee369c2",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -1131,6 +1131,7 @@ class WgslTemplateEngineTest(unittest.TestCase):
             "neg": "8851b9f42d14153f6f04484fee2f8bf67bda26dea892ff48768e09e6ad49cee1",
             "round": "8f3e0edbeb81aa50f35e691c78554e8057fa8d78fe8a86454f4f42e5e8871452",
             "rsqrt": "108765d5a23b87473f34651875d08abf2a5fa8980bd92fc8cbe3617295097747",
+            "silu": "7059eb8b9e92780c9e9c40a6e0d3ffe70aa1f5d28a340e66387c97997ad7eaa3",
             "sin": "e5762804773659d348fddddcef4935807ae6fe7d92c92eb17a2f44aae8f2c5b9",
             "sqrt": "008534ae365969f5c180b42e8d6d0b131df78f181e5435abbcafc3ffb8be8aac",
             "tanh": "5bd7eb1c6411940d84a9b311884f35b39f15b82103b14bab02902290ed6b0339",

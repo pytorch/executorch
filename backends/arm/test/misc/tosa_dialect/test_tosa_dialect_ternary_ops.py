@@ -147,3 +147,28 @@ def test_tosa_select_rejects_bfloat16_without_bf16_extension() -> None:
             exir_ops.backend.tosa.SELECT.default(
                 *_to_fake(mode, condition, input1, input2)
             )
+
+
+@pytest.mark.parametrize(
+    ("spec", "accepted"), [("TOSA-1.1+INT+int64", True), ("TOSA-1.1+INT", False)]
+)
+def test_select_takes_int64_only_with_the_extension(spec: str, accepted: bool) -> None:
+    condition = torch.randint(0, 2, (2, 1, 3), dtype=torch.bool)
+    input1 = torch.randint(-8, 8, (1, 4, 3), dtype=torch.int64)
+    input2 = torch.randint(-8, 8, (1, 4, 3), dtype=torch.int64)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string(spec)
+    ), FakeTensorMode() as mode:
+        if not accepted:
+            with pytest.raises(TosaValueError):
+                exir_ops.backend.tosa.SELECT.default(
+                    *_to_fake(mode, condition, input1, input2)
+                )
+            return
+        output = exir_ops.backend.tosa.SELECT.default(
+            *_to_fake(mode, condition, input1, input2)
+        )
+
+    assert output.dtype == torch.int64
+    assert tuple(output.shape) == (2, 4, 3)
