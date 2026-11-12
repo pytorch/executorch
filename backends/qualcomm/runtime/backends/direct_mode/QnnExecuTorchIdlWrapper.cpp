@@ -8,6 +8,7 @@
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/backends/direct_mode/QnnExecuTorchIdlWrapper.h>
 #include <fcntl.h>
+#include <flatcc/flatcc_builder.h>
 #include <unistd.h>
 #include <fstream>
 
@@ -334,7 +335,7 @@ Error QnnExecuTorchIdlWrapper::dump_etdp(const char* etdump_path) {
     FILE* f = fopen(etdump_path, "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);
     fclose(f);
-    free(result.buf);
+    flatcc_builder_aligned_free(result.buf);
   } else {
     FARF(RUNTIME_ERROR, "Unable to generate etdump to %s", etdump_path);
     status = Error::Internal;

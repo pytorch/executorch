@@ -17,6 +17,7 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -89,6 +90,26 @@ class XNNWeightsCache {
    * the name of all the packed weights used by this runtime
    */
   Result<std::vector<std::string>> finalize_for_runtime();
+
+  /**
+   * Transfers ownership of the unpacked buffers loaded since `first_index`
+   * out of this cache. finalize_for_runtime() will not free them.
+   *
+   * For values XNNPACK does not pack (PReLU slopes, for example) the subgraph
+   * keeps a pointer into the unpacked memory for the life of the runtime, so
+   * something has to keep those buffers alive past finalize_for_runtime().
+   * Callers pair this with get_num_unpacked_data() taken before the value was
+   * defined, which is how the non-weights-cache path in XNNCompiler decides
+   * what to retain.
+   *
+   * @param[in] first_index Index into the unpacked buffer list, from
+   *     get_num_unpacked_data() before the value was defined.
+   * @param[out] out Receives the buffers. The caller owns them and must keep
+   *     them alive for at least as long as the runtime.
+   */
+  void take_unpacked_data_from(
+      size_t first_index,
+      std::vector<FreeableBuffer>& out);
 
   // Taken from XNN_ALLOCATION_ALIGNMENT in xnnpack/common.h
   static const size_t kPackedAllocationAlignment = 64;
@@ -238,8 +259,11 @@ class XNNWeightsCache {
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
-  // vector holding list of strings which are containers for packed_data_ptrs
-  std::unordered_map<void*, std::string> packed_pointer_to_container_;
+  // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
+  // allocation before packing, so these buffers do not need value
+  // initialization.
+  std::unordered_map<void*, std::unique_ptr<char[]>>
+      packed_pointer_to_container_;
   // Vector hodling list of unpacked freeable buffers
   std::vector<FreeableBuffer> unpacked_data_;
   // xnnpack's weight cache provider

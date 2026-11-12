@@ -25,7 +25,27 @@ from executorch.devtools.inspector.numerical_comparator.snr_numerical_comparator
 )
 
 
+# The metric names Inspector.calculate_numeric_gap accepts as `distance`.
+_COMPARATOR_BY_NAME: dict[str, type[NumericalComparatorBase]] = {
+    "L1": L1Comparator,
+    "MSE": MSEComparator,
+    "SNR": SNRComparator,
+}
+
+
+def comparator_class_for_metric(name: str) -> type[NumericalComparatorBase]:
+    """Resolve a built-in metric name to its comparator class."""
+    comparator_cls = _COMPARATOR_BY_NAME.get(name.strip().upper())
+    if comparator_cls is None:
+        raise ValueError(
+            f"Unsupported metric {name!r}; expected one of "
+            f"{sorted(_COMPARATOR_BY_NAME)}"
+        )
+    return comparator_cls
+
+
 __all__ = [
+    "comparator_class_for_metric",
     "DebugHandle",
     "IntermediateOutputMapping",
     "L1Comparator",

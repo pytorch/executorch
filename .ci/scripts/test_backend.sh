@@ -53,16 +53,13 @@ if [[ "$FLOW" == *qnn* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
 fi
 
+if [[ "$FLOW" == *cpu* ]]; then
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_CPU=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"
+fi
+
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup the Vulkan SDK and select an ICD: use the real system GPU ICD when one
-    # is present (real-GPU runner), otherwise fall back to SwiftShader (CPU
-    # runner). The Vulkan loader searches both standard ICD directories.
-    if ls /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json \
-        >/dev/null 2>&1; then
-        source .ci/scripts/setup-vulkan-linux-deps.sh "real-gpu"
-    else
-        source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
-    fi
+    # CPU runners can have Mesa ICDs installed without a usable hardware GPU.
+    source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
@@ -79,11 +76,13 @@ if [[ "$FLOW" == *arm* ]]; then
         PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
     fi
 
-    # Setup ARM deps.
+    # Setup ARM deps. Only the Ethos-U flows run on an FVP.
     if [[ "$FLOW" == *vgf* ]]; then
-        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
-    else
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+    elif [[ "$FLOW" == *ethos_u* ]]; then
         .ci/scripts/setup-arm-baremetal-tools.sh
+    else
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
     fi
     source examples/arm/arm-scratch/setup_path.sh
 
@@ -101,7 +100,7 @@ fi
 if [[ "$FLOW" == *cortex_m* ]]; then
     # Cortex-M runs on the Corstone-300 FVP, using the same Arm toolchain as the
     # Ethos-U flows but its own semihosting runner.
-    .ci/scripts/setup-arm-baremetal-tools.sh
+    .ci/scripts/setup-arm-baremetal-tools.sh --fvp corstone300
     source examples/arm/arm-scratch/setup_path.sh
 
     backends/cortex_m/test/build_test_runner.sh
@@ -126,7 +125,7 @@ fi
 
 if [[ "$FLOW" == *openvino* ]]; then
     # Setup OpenVINO environment
-    source .ci/scripts/setup-openvino.sh --nightly
+    source .ci/scripts/setup-openvino.sh
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
 fi
 

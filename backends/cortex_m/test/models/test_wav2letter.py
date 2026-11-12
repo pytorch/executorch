@@ -8,8 +8,22 @@ from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 from executorch.examples.models.wav2letter.model import Wav2LetterModel
 
 
-ops_before_transforms: dict[str, int] = {}
-ops_after_transforms: dict[str, int] = {}
+ops_before_transforms: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_aten__log_softmax_default": 1,
+    "executorch_exir_dialects_edge__ops_aten_convolution_default": 12,
+    "executorch_exir_dialects_edge__ops_aten_relu_default": 12,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 24,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 13,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 13,
+}
+ops_after_transforms: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_aten__log_softmax_default": 1,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 12,
+    "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
+}
 
 model = Wav2LetterModel()
 pt_model = model.get_eager_model()
@@ -24,11 +38,11 @@ test_cases = {
 
 @parametrize("test_case", test_cases)
 def test_dialect_wav2letter(test_case):
-    """This model currently does largely not lower to accelerated kernels due to missing conv1d support, this test is to track development progress."""
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
         ops_before_transforms,
         ops_after_transforms,
         qtol=10,
+        use_explicit_layout=True,
     )

@@ -7,5 +7,7 @@ def define_common_targets():
         deps = [
             "//executorch/backends/native/runtime:native_graph_schema",
             "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
         ],
     )

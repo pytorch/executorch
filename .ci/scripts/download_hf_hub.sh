@@ -7,13 +7,15 @@ export HF_HUB_DISABLE_XET=1
 # Arguments:
 # 1. model_id: The Hugging Face repository ID (e.g., "organization/model_name")
 # 2. subdir: The optional subdirectory in the repo to look for files (pass "" if not used)
-# 3. file_names: A space-separated list of filenames to be downloaded
+# 3. revision: The commit hash to download
+# 4. file_names: A space-separated list of filenames to be downloaded
 # Returns:
 # The directory containing the downloaded files
 function download_hf_files() {
   local model_id="$1"
   local subdir="$2"
-  shift 2
+  local revision="$3"
+  shift 3
   local file_names=("$@")  # Capture all remaining arguments as an array
 
   local download_dir
@@ -24,7 +26,8 @@ from huggingface_hub import hf_hub_download
 # Download the first file and get its directory
 path = hf_hub_download(
     repo_id='${model_id}',
-    filename='${subdir:+${subdir}/}${file_names[0]}'
+    filename='${subdir:+${subdir}/}${file_names[0]}',
+    revision='${revision}'
 )
 import os
 print(os.path.dirname(path))")
@@ -41,7 +44,8 @@ from huggingface_hub import hf_hub_download
 # Download the file
 hf_hub_download(
     repo_id='${model_id}',
-    filename='${subdir:+${subdir}/}${file_name}'
+    filename='${subdir:+${subdir}/}${file_name}',
+    revision='${revision}'
 )"
 
     if [ $? -ne 0 ]; then
@@ -67,6 +71,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         SUBDIR="$2"
         shift 2
         ;;
+      --revision)
+        REVISION="$2"
+        shift 2
+        ;;
       --files)
         shift
         FILES_TO_DOWNLOAD=()
@@ -83,13 +91,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   done
 
   # Validate required arguments
-  if [ -z "$MODEL_ID" ] || [ ${#FILES_TO_DOWNLOAD[@]} -eq 0 ]; then
-    echo "Usage: $0 --model_id <model_id> --subdir <subdir> --files <file1> [<file2> ...]" >&2
+  if [ -z "$MODEL_ID" ] || [ -z "$REVISION" ] || [ ${#FILES_TO_DOWNLOAD[@]} -eq 0 ]; then
+    echo "Usage: $0 --model_id <model_id> --revision <commit> --subdir <subdir> --files <file1> [<file2> ...]" >&2
     exit 1
   fi
 
   # Call the function
-  DOWNLOAD_DIR=$(download_hf_files "$MODEL_ID" "$SUBDIR" "${FILES_TO_DOWNLOAD[@]}")
+  DOWNLOAD_DIR=$(download_hf_files "$MODEL_ID" "$SUBDIR" "$REVISION" "${FILES_TO_DOWNLOAD[@]}")
   if [ $? -eq 0 ]; then
     echo "$DOWNLOAD_DIR"
   else

@@ -8,6 +8,9 @@ from typing import cast, Dict, List
 
 import torch
 
+from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
+    FusePadIntoConvPass,
+)
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
@@ -39,6 +42,14 @@ class StaticConstantPadVisitor(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
+        if FusePadIntoConvPass.is_folded_pad(node):
+            # Folded into the consuming convolution's padding: no node, the
+            # pad output is the pad input as far as XNNPACK is concerned.
+            input_node = get_input_node(node, 0)
+            self.define_tensor(input_node, xnn_graph, vals_to_ids)
+            vals_to_ids[node] = vals_to_ids[input_node]
+            return
+
         self.define_nodes_tensor_inputs_outputs(node, xnn_graph, vals_to_ids)
 
         # input

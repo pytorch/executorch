@@ -17,6 +17,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
+logger = logging.getLogger(__name__)
+
+
 class DecomposeLog1pPass(ArmOpTargetedPass):
     """Decompose log1p into a small polynomial with a log fallback for larger
     inputs.
@@ -33,6 +36,17 @@ class DecomposeLog1pPass(ArmOpTargetedPass):
         exir_ops.edge.aten.log1p.default,
     }
     target_ops = _supported_ops
+
+    def call(self, graph_module):
+        self._decomposed = 0
+        result = super().call(graph_module)
+        if self._decomposed:
+            logger.info(
+                "DecomposeLog1pPass: decomposed %d log1p operator(s) via "
+                "polynomial and log branches.",
+                self._decomposed,
+            )
+        return result
 
     def _poly(self, x, meta):
         # 6-term Taylor: x - x^2/2 + x^3/3 - x^4/4 + x^5/5 - x^6/6
@@ -71,7 +85,7 @@ class DecomposeLog1pPass(ArmOpTargetedPass):
             # Quantized log1p should be handled by LUT/table instead of decomposition.
             return super().call_operator(op, args, kwargs, meta)
 
-        logging.info("Decomposing log1p via polynomial + log branch for FP profile.")
+        self._decomposed += 1
 
         x = args[0]
         approx = self._poly(x, meta)

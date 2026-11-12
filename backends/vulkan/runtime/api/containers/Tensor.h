@@ -170,6 +170,9 @@ class vTensorStorage final {
   // GPU Storage
   mutable vkapi::VulkanImage image_;
   mutable vkapi::VulkanBuffer buffer_;
+  // Wraps a resource created and bound elsewhere. Such an image stays in
+  // VK_IMAGE_LAYOUT_GENERAL, so its owner always knows the layout.
+  bool external_ = false;
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
@@ -318,13 +321,15 @@ class vTensor final {
         std::vector<int64_t>& sizes,
         std::vector<int64_t>& dim_order,
         std::vector<int64_t>& strides,
-        size_t numel);
+        size_t numel,
+        const PackedDimInfo& packed_dim_info);
 
     void update(
         std::vector<int64_t>& sizes,
         std::vector<int64_t>& dim_order,
         std::vector<int64_t>& strides,
-        size_t numel);
+        size_t numel,
+        const PackedDimInfo& packed_dim_info);
   };
 
   struct TextureMetadata {
@@ -354,6 +359,8 @@ class vTensor final {
 
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
+  // Requested dtype before device-specific storage emulation.
+  vkapi::ScalarType original_dtype_;
   // Information about packed dimension padding and block packing
   PackedDimInfo packed_dim_info_;
   // sizes of the tensor in NCHW dimension order
@@ -519,6 +526,10 @@ class vTensor final {
     return dtype_;
   }
 
+  inline vkapi::ScalarType original_dtype() const {
+    return original_dtype_;
+  }
+
   /*
    * Provide a "best guess" of a memory layout that can be used to construct a
    * tensor with similar layout metadata (i.e. strides, axis_map, etc.) as this
@@ -632,7 +643,8 @@ class vTensor final {
 
   /*
    * Return true if a buffer backed tensor's dim order matches that of a
-   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }.
+   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }, and no
+   * padding lies between consecutive elements of the innermost dim.
    * Returns false for texture backed tensors.
    */
   bool is_contiguous() const;
@@ -773,6 +785,10 @@ class vTensor final {
    */
   void virtual_transpose(const int64_t dim0, const int64_t dim1);
 
+  inline bool has_external_storage() const {
+    return storage_->external_;
+  }
+
   /*
    * Check if this vTensor instance is a view of another vTensor instance
    */
@@ -859,6 +875,12 @@ utils::ivec4 flip_and_unsqueezed_ivec4(
     const std::vector<int64_t>& tensor_metadata,
     const vTensor::Attribute metadata_type,
     const size_t numel);
+
+/*
+ * Sampler properties of the image of a texture tensor of dtype `dtype`.
+ */
+vkapi::ImageSampler::Properties image_sampler_properties(
+    const vkapi::ScalarType dtype);
 
 } // namespace api
 } // namespace vkcompute

@@ -41,9 +41,10 @@ jobs:
       os: linux-aarch64
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
+      runner-fleet: osdc
       with-cuda: disabled
       with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      python-versions: '["3.11", "3.12", "3.13", "3.14", "3.15"]'
 
   build:
     needs: generate-matrix

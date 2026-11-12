@@ -12,10 +12,9 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/SDPA.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatMul.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 
@@ -437,7 +436,18 @@ LocalWorkGroup pick_sdpa_av_lwg(
   }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+    const LocalWorkGroup lwg =
+        pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+    // On Adreno 830, the tiled buffer shader reads zeros from the V cache in
+    // many workgroups shrunk below the recommended size to fit a small grid.
+    const uint32_t nthreads =
+        graph->context()->adapter_ptr()->recommended_lwg_nthreads();
+    if (graph->device_is_adreno() &&
+        graph->is_buffer_storage(args.at(0).refs.at(0)) &&
+        lwg.nthreads() < nthreads) {
+      return LocalWorkGroup(kSquareLwg, nthreads);
+    }
+    return lwg;
   }
   return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
@@ -664,7 +674,10 @@ void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   add_sdpa_kv_cache_update_node(graph, input_pos_symint, value, cache);
 }
 
-void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void sdpa_impl_with_shader_override(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const ValueRef shader_override) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
   const ValueRef k_cache = args[arg_idx++];
@@ -696,7 +709,6 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       graph.val_is_none(dropout_p) ||
       graph.extract_scalar<double>(dropout_p) == 0);
-  VK_CHECK_COND(graph.val_is_none(scale));
   // is_causal is assumed to be true in the current implementation.
   VK_CHECK_COND(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
@@ -763,7 +775,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kWidthPacked);
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -792,7 +806,12 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*k=*/kDummyValueRef,
       input_pos_symint,
       out,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      shader_override);
+}
+
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  sdpa_impl_with_shader_override(graph, args, kDummyValueRef);
 }
 
 void sdpa_with_kv_cache_impl(
@@ -817,10 +836,18 @@ void sdpa_with_kv_cache_impl(
   (void)sequence_len;
 
   utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -856,7 +883,6 @@ void compute_attn_weight_with_kv_cache_impl(
   const ValueRef is_causal = args[arg_idx++];
   (void)is_causal;
   const ValueRef scale = args[arg_idx++];
-  (void)scale;
 
   // Output tensors
   const ValueRef out = args[arg_idx++];
@@ -864,16 +890,26 @@ void compute_attn_weight_with_kv_cache_impl(
   (void)sequence_len;
 
   const utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -914,6 +950,31 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.packed_dim_of(q) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(k) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v) == WHCN::kWidthDim);
+  // The buffer shaders index every tensor as contiguous rows.
+  for (const ValueRef t : {q, k, v, attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) || !graph.val_is_tensor(t) ||
+            !graph.is_buffer_storage(t) || graph.is_contiguous_buffer_tensor(t),
+        "fused SDPA requires contiguous buffer tensors");
+  }
+  // The QK shader binds the mask and attention weights in the query's storage,
+  // and the attention weights take the output's.
+  for (const ValueRef t : {attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) ||
+            graph.storage_type_of(t) == graph.storage_type_of(q),
+        "fused SDPA requires the attn_mask and output in the query's storage");
+  }
+  // Buffer shaders read the mask in the query's dtype; texture shaders sample
+  // it as floats.
+  VK_CHECK_COND(
+      graph.val_is_none(attn_mask) ||
+          (graph.is_buffer_storage(q)
+               ? graph.dtype_of(attn_mask) == graph.dtype_of(q)
+               : graph.dtype_of(attn_mask) == vkapi::kFloat ||
+                   graph.dtype_of(attn_mask) == vkapi::kHalf),
+      "fused SDPA requires an attn_mask of the query's dtype, or a float one "
+      "in textures");
 
   // Compute scale
   const int32_t head_dim = graph.size_at<int32_t>(-1, q);
@@ -941,6 +1002,16 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // entire fused SDPA pipeline uses a uniform storage type. attn_weights stays
   // in fp32 for numerical stability of the Q@K^T accumulation.
   const utils::StorageType attn_storage = graph.storage_type_of(out);
+  if (attn_storage == utils::kBuffer) {
+    // max_buffer_numel() is maxStorageBufferRange, a byte limit, and buffer
+    // rows are padded to whole texels.
+    VK_CHECK_COND(
+        B * H * S * static_cast<int64_t>(utils::align_up_4(L)) *
+                static_cast<int64_t>(sizeof(float)) <=
+            graph.max_buffer_numel(),
+        "fused SDPA attention weights exceed the device's storage buffer "
+        "range");
+  }
 
   TmpTensor attn_weights(
       &graph,

@@ -7,7 +7,7 @@
 import functools
 import inspect
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, Optional, Set
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
@@ -17,6 +17,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -31,9 +32,9 @@ from executorch.backends.qualcomm._passes import (
     DecomposeDiagonal,
     DecomposeDivMode,
     DecomposeEinsum,
+    DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeLinalgVectorNorm,
@@ -55,7 +56,9 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,
@@ -83,6 +86,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.utils import reserve_node_names
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import (
@@ -96,6 +100,7 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     def _reset(self):
@@ -149,6 +154,8 @@ class QnnPassManager(PassManager):
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
+            (FuseBatchNormWithConv, True),
+            (FuseConsecutiveReshape, True),
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
             (LayoutTransform, True),
@@ -162,10 +169,12 @@ class QnnPassManager(PassManager):
         ]
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
-        return [
+        passes = [
             RemoveRedundancy,
+            # Retraced autocast regions may emit ops that the passes below decompose.
+            DecomposeWrapWithAutocast,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -188,8 +197,8 @@ class QnnPassManager(PassManager):
             DecomposeTriu,
             DecomposeTrunc,
             DecomposeVar,
-            DecomposeWrapWithAutocast,
             DecomposeEinsum,
+            DecomposeEmpty,
             DecomposeExpM1,
             DecomposeFill,
             DecomposeGlu,
@@ -202,10 +211,17 @@ class QnnPassManager(PassManager):
             InsertReshapeForReduceOps,
         ]
 
+        if convert_linear_to_conv2d:
+            passes.append(ConvertLinearToConv2d)
+
+        return passes
+
     @classmethod
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeWrapWithAutocast,
+            ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
             DecomposeCDist,
@@ -217,15 +233,10 @@ class QnnPassManager(PassManager):
             DecomposeThreshold,
             DecomposeTriu,
             DecomposeLinalgVectorNorm,
+            DecomposeEmpty,
             DecomposeExpM1,
             DecomposeFill,
             DecomposeVar,
-            # DecomposeFloorDivide does not apply to the annotation pipeline,
-            # since the CPU QDQ model would reduce accuracy.
-            # We keep div and floor operations in floating-point to maintain precision.
-            # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
-            DecomposeFloorDivide,
-            DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
@@ -287,7 +298,7 @@ class QnnPassManager(PassManager):
             ],
             AnnotateStack: [RemoveRedundancy],
             AnnotateUnbind: [RemoveRedundancy],
-            CanonicalizeConv: [FoldQDQ],
+            CanonicalizeConv: [FoldQDQ, FuseBatchNormWithConv],
             ConvertBmmToMatmul: [RecomposePixelUnshuffle],
             ConvertLinearToConv2d: [FoldQDQ],
             DecomposeAcos: [RemoveRedundancy],
@@ -295,6 +306,8 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
+            FuseBatchNormWithConv: [FoldQDQ],
+            FuseConsecutiveReshape: [FoldQDQ],
             DecomposePDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
             DecomposeDivMode: [RemoveRedundancy],
@@ -316,6 +329,9 @@ class QnnPassManager(PassManager):
             InsertCastForFpActQuantizedWeight: [FoldQDQ, LayoutTransform],
             LayoutTransform: [
                 AnnotateQuantAttrs,
+                # conv1d is rewritten into conv2d, so it has to be canonicalized
+                # before the layout annotation the rewritten node inherits
+                CanonicalizeConv,
                 ExpandBroadcastTensorShape,
                 FixedLinearKeepDim,
             ],
@@ -325,6 +341,17 @@ class QnnPassManager(PassManager):
             TagQuantIO: [LayoutTransform],
             ResolveDebugHandle: [TagQuantIO],
         }
+
+    @classmethod
+    def _get_terminal_passes(cls):
+        return [ResolveDebugHandle]
+
+    @classmethod
+    def _move_terminal_passes_to_end(cls, passes):
+        for p in cls._get_terminal_passes():
+            passes.remove(p)
+            passes.append(p)
+        return passes
 
     @classmethod
     def get_capture_program_passes(cls):
@@ -389,7 +416,7 @@ class QnnPassManager(PassManager):
             self.add_pass(p)
         self.solve_constraints()
 
-        sorted_passes = self.passes
+        sorted_passes = self._move_terminal_passes_to_end(self.passes)
         self._reset()
         for p in sorted_passes:
             if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:
@@ -398,6 +425,9 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            # the shared backends/transforms passes name it `exported_program`
+            if "exported_program" in kwargs:
+                kwargs["exported_program"] = exported_program
             if "compiler_specs" in kwargs:
                 kwargs["compiler_specs"] = compiler_specs
             if "skip_node_id_set" in kwargs:
@@ -424,10 +454,19 @@ class QnnPassManager(PassManager):
     def transform_for_annotation_pipeline(
         self,
         graph_module: GraphModule,
+        convert_linear_to_conv2d: bool = False,
+        linear_node_names: Optional[Set[str]] = None,
     ):
+        # convert_linear_to_conv2d converts every linear; otherwise only the
+        # linears in linear_node_names are converted.
+        selected_linears = None if convert_linear_to_conv2d else linear_node_names
         self._instantiate_passes(
-            self.get_annotation_passes(),
+            self.get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d
+                or bool(selected_linears),
+            ),
             quantization_capture=True,
+            linear_node_names=selected_linears,
         )
         return self._transform(graph_module)
 

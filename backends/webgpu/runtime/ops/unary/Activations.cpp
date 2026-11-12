@@ -6,17 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/rsqrt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/silu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/sin_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
@@ -100,6 +103,32 @@ void hardswish_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       "hardswish");
 }
 
+void silu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_unary_op(
+      graph, args.at(0), args.at(1), kSiluWGSL, kSiluWorkgroupSizeX, "silu");
+}
+
+void elu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // aten.elu.default args: [in, alpha, scale, input_scale, out]; each scalar
+  // defaults to 1.
+  if (args.size() != 5) {
+    throw std::runtime_error("WebGPU elu: expected 5 args");
+  }
+  const float alpha = utils::scalar_or(graph, args.at(1), 1.0f);
+  const float scale = utils::scalar_or(graph, args.at(2), 1.0f);
+  const float input_scale = utils::scalar_or(graph, args.at(3), 1.0f);
+  add_unary_op(
+      graph,
+      args.at(0),
+      args.at(4),
+      kEluWGSL,
+      kEluWorkgroupSizeX,
+      "elu",
+      alpha,
+      scale,
+      input_scale);
+}
+
 void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.clamp.default args: [in, min, max, out]; min/max None -> +/-inf.
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
@@ -156,6 +185,8 @@ WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.round.default, round_impl);
   WEBGPU_REGISTER_OP(aten.neg.default, neg_impl);
   WEBGPU_REGISTER_OP(aten.hardswish.default, hardswish_impl);
+  WEBGPU_REGISTER_OP(aten.silu.default, silu_impl);
+  WEBGPU_REGISTER_OP(aten.elu.default, elu_impl);
   WEBGPU_REGISTER_OP(aten.clamp.default, clamp_impl);
   WEBGPU_REGISTER_OP(aten.hardtanh.default, hardtanh_impl);
   WEBGPU_REGISTER_OP(aten.pow.Tensor_Scalar, pow_scalar_impl);

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
-from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
 
 def _serializer(path_prefix=""):

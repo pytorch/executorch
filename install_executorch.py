@@ -18,8 +18,8 @@ from contextlib import contextmanager
 from install_requirements import (
     install_optional_example_requirements,
     install_requirements,
-    python_is_compatible,
 )
+from install_utils import ensure_pip, python_is_compatible
 
 # Set up logging
 logging.basicConfig(
@@ -213,6 +213,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main(args):
+    ensure_pip()
     if not python_is_compatible():
         sys.exit(1)
 

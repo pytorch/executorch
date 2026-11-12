@@ -25,6 +25,9 @@
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+
+class MethodMeta;
+
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
  * delegate.
@@ -36,7 +39,8 @@ class BackendInitContext final {
       EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr,
-      Span<const BackendOption> runtime_specs = {})
+      Span<const BackendOption> runtime_specs = {},
+      const MethodMeta* method_meta = nullptr)
       : runtime_allocator_(runtime_allocator),
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_(event_tracer),
@@ -45,7 +49,8 @@ class BackendInitContext final {
 #endif
         method_name_(method_name),
         named_data_map_(named_data_map),
-        runtime_specs_(runtime_specs) {
+        runtime_specs_(runtime_specs),
+        method_meta_(method_meta) {
   }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
@@ -95,6 +100,16 @@ class BackendInitContext final {
   }
 
   /**
+   * Returns metadata for the enclosing method, or nullptr if not supplied.
+   * The runtime provides a borrowed view valid during backend initialization.
+   * Other callers must keep the view and its backing program alive for the
+   * lifetime of this context.
+   */
+  const MethodMeta* method_meta() const {
+    return method_meta_;
+  }
+
+  /**
    * Get a runtime spec value by key and type.
    *
    * @tparam T The expected type (bool, int, or const char*)
@@ -135,6 +150,7 @@ class BackendInitContext final {
   const char* method_name_ = nullptr;
   const NamedDataMap* named_data_map_ = nullptr;
   Span<const BackendOption> runtime_specs_;
+  const MethodMeta* method_meta_ = nullptr;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

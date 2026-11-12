@@ -35,20 +35,21 @@ class InferenceResult:
 class DeviceRunnerAdapter(Protocol):
     """Protocol for on-device inference operations.
 
-    Wraps external device runner APIs (SimpleADB) behind an injectable
+    Wraps external device runner APIs (Device) behind an injectable
     interface for testability.
     """
 
     def push_artifacts(
         self,
-        artifact_paths: List[Path],
+        artifact_paths: Dict[str, Path],
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
     ) -> None:
         """Push compiled artifacts and inputs to the device.
 
         Args:
-            artifact_paths: Paths to compiled .pte artifacts.
+            artifact_paths: Compiled .pte artifacts keyed by artifact name (see
+                ``artifact_keys``), as produced by the compilation stage.
             input_data: Optional pre-encoded input data to push to device. For
                 adapters that prepare inputs themselves -- turning a prompt into
                 model inputs needs the tokenizer's chat template, BOS handling,

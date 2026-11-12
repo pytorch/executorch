@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+import logging
 import operator
 import os
 import tempfile
@@ -22,15 +24,25 @@ from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_
 from executorch.backends.qualcomm.debugger.utils import DrawGraph as _DrawGraphTool
 from executorch.backends.qualcomm.export_utils import (
     convert_pt2e,
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
     make_quantizer,
     prepare_pt2e,
     prepare_qat_pt2e,
+    QcomChipset,
     QuantDtype,
     to_edge_transform_and_lower_to_qnn,
+)
+from executorch.backends.qualcomm.partition.utils import (
+    warn_if_dilated_conv_may_not_fit_vtcm,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.tests.rework.conftest import (
     calibrate,
     check_exception,
+    default_property,
     EXCEPTION_FROM_PREPROCESS,
 )
 from executorch.backends.qualcomm.tests.utils import validate_context_binary
@@ -41,6 +53,7 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
@@ -167,6 +180,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "input_1_y@0" [label=<
                     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                     <TR><TD BGCOLOR="lightgreen">name: input_1_y@0</TD></TR>
@@ -181,6 +202,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
                     <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
                     <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_1@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_1@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "b__frozen_param0@0" [label=<
@@ -213,6 +242,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
                     <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
                     <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_3@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_3@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "output_quantized_decomposed_dequantize_per_tensor_default@0" [label=<
@@ -287,6 +324,14 @@ class DrawGraph:
                     <TR><TD BGCOLOR="white">dims: [1, 8, 8, 4]</TD></TR>
                     <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+        "aten_permute_copy_default_2@0" [label=<
+                    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD BGCOLOR="white">name: aten_permute_copy_default_2@0</TD></TR>
+                    <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                    <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                    <TR><TD BGCOLOR="white">dims: [1, 4, 8, 8]</TD></TR>
+                    <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "output_quantized_decomposed_dequantize_per_tensor_default_1@0" [label=<
                     <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                     <TR><TD BGCOLOR="lightgreen">name: output_quantized_decomposed_dequantize_per_tensor_default_1@0</TD></TR>
@@ -296,13 +341,16 @@ class DrawGraph:
                     <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                 </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
         "input_0_x@0" -> "quantized_decomposed_quantize_per_tensor_default@0"
+        "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_permute_copy_default@0"
         "input_1_y@0" -> "quantized_decomposed_quantize_per_tensor_default_1@0"
-        "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default@0"
+        "quantized_decomposed_quantize_per_tensor_default_1@0" -> "aten_permute_copy_default_1@0"
+        "aten_permute_copy_default@0" -> "aten_convolution_default@0"
         "b__frozen_param0@0" -> "aten_convolution_default@0"
         "b__frozen_param1@0" -> "aten_convolution_default@0"
         "aten_convolution_default@0" -> "aten_relu_default@0"
-        "aten_relu_default@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
-        "quantized_decomposed_quantize_per_tensor_default_1@0" -> "aten_convolution_default_1@0"
+        "aten_relu_default@0" -> "aten_permute_copy_default_3@0"
+        "aten_permute_copy_default_3@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
+        "aten_permute_copy_default_1@0" -> "aten_convolution_default_1@0"
         "b__frozen_param2@0" -> "aten_convolution_default_1@0"
         "b__frozen_param3@0" -> "aten_convolution_default_1@0"
         "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
@@ -311,7 +359,8 @@ class DrawGraph:
         "aten_add_tensor@0" -> "aten_convolution_default_2@0"
         "b__frozen_param4@0" -> "aten_convolution_default_2@0"
         "b__frozen_param5@0" -> "aten_convolution_default_2@0"
-        "aten_convolution_default_2@0" -> "output_quantized_decomposed_dequantize_per_tensor_default_1@0"
+        "aten_convolution_default_2@0" -> "aten_permute_copy_default_2@0"
+        "aten_permute_copy_default_2@0" -> "output_quantized_decomposed_dequantize_per_tensor_default_1@0"
     }
     """
 
@@ -323,7 +372,9 @@ class DrawGraph:
         )
         nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
-            delegated_program.exported_program, enable_tensor_dump=False
+            delegated_program.exported_program,
+            enable_tensor_dump=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
         )
         py_op_wrapper_list = []
         for node in graph_module.graph.nodes:
@@ -352,6 +403,180 @@ class DrawGraph:
             assert sorted(__class__._golden.split()) == sorted(
                 result.split()
             ), "Generated .dot file does not match the golden file."
+
+
+class DilatedConvVtcmWarning:
+    """The partitioner's advisory warning for dilated convs that may not tile.
+
+    fp16 HTP does not reject a dilated convolution it failed to tile into VTCM;
+    it emits a context binary that stops the DSP at execute. The partitioner
+    therefore logs a warning naming the operator, without changing whether it is
+    delegated. See https://github.com/pytorch/executorch/issues/23096.
+    """
+
+    _VTCM_8MB = 8
+
+    @staticmethod
+    def _conv_node(cin, cout, kernel, dilation, hw, groups=1, padding=None):
+        """One `aten.convolution` node with the metadata the check reads.
+
+        Traced rather than hand-built so the argument order and `val` metadata
+        come from the real decomposition. Meta device: only shapes are needed,
+        and these convs reach several MB of weights.
+        """
+        if padding is None:
+            padding = dilation * (kernel - 1) // 2
+
+        class _Conv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    cin,
+                    cout,
+                    kernel_size=kernel,
+                    padding=padding,
+                    dilation=dilation,
+                    groups=groups,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        with torch.device("meta"):
+            module = _Conv().eval()
+            inputs = (torch.randn(1, cin, hw, hw),)
+
+        edge = torch.export.export(module, inputs, strict=True).run_decompositions()
+        for node in edge.graph_module.graph.nodes:
+            if node.target is torch.ops.aten.convolution.default:
+                # The partitioner sees the edge dialect's overload.
+                node.target = exir_ops.edge.aten.convolution.default
+                return node
+        raise AssertionError("no convolution node in the exported graph")
+
+    @staticmethod
+    def test(subtests, caplog):
+        vtcm = __class__._VTCM_8MB
+        # The reported convolution: 960 -> 256, 3x3, dilation 36, 65x65 input.
+        reported = {"cin": 960, "cout": 256, "kernel": 3, "dilation": 36, "hw": 65}
+
+        with subtests.test(msg="warns_and_names_the_operator"):
+            node = __class__._conv_node(**reported)
+            with caplog.at_level(logging.WARNING):
+                caplog.clear()
+                estimate = warn_if_dilated_conv_may_not_fit_vtcm(node, vtcm)
+            assert estimate is not None
+            # Must be actionable: the node, both byte counts, and the issue.
+            for expected in (
+                node.name,
+                str(estimate),
+                str(vtcm * 1024 * 1024),
+                "23096",
+            ):
+                assert expected in caplog.text
+
+        # Anything that is not the pathological shape must stay silent, or the
+        # warning becomes noise in every export log.
+        silent_cases = [
+            # The Conv2d shape the op tests already sweep.
+            (
+                "small_dilated",
+                {"cin": 1, "cout": 6, "kernel": 3, "dilation": 2, "hw": 8},
+                vtcm,
+            ),
+            # Wide and heavy, but dilation 1 tiles down to the kernel.
+            ("undilated", {**reported, "dilation": 1, "padding": 1}, vtcm),
+            # Depthwise: the channel volume driving the failure is not present.
+            (
+                "grouped",
+                {
+                    "cin": 960,
+                    "cout": 960,
+                    "kernel": 3,
+                    "dilation": 36,
+                    "hw": 65,
+                    "groups": 960,
+                },
+                vtcm,
+            ),
+            # SocInfo defaults vtcm_size_in_mb to 0, which means "unknown" and
+            # must not be read as "no space available".
+            ("unknown_vtcm_size", reported, 0),
+        ]
+        for label, kwargs, vtcm_mb in silent_cases:
+            with subtests.test(msg=label):
+                node = __class__._conv_node(**kwargs)
+                with caplog.at_level(logging.WARNING):
+                    caplog.clear()
+                    assert (
+                        warn_if_dilated_conv_may_not_fit_vtcm(node, vtcm_mb) is None
+                    ), f"{label} should not warn"
+                assert caplog.text == ""
+
+        with subtests.test(msg="threshold_follows_the_soc"):
+            # 4 MB parts (e.g. SAR2230P, SW6100) hit this at lower cin, so the
+            # check must read VTCM from the SoC rather than hardcode 8 MB.
+            node = __class__._conv_node(cin=256, cout=64, kernel=3, dilation=36, hw=65)
+            assert warn_if_dilated_conv_may_not_fit_vtcm(node, 8) is None
+            assert warn_if_dilated_conv_may_not_fit_vtcm(node, 1) is not None
+
+
+class DilatedConvTcmFitSentinel:
+    """Alarm for when HTP learns to tile the convolution from #23096.
+
+    This asserts the *desired* end state -- that the reported convolution
+    compiles -- so it fails today and is marked xfail at the call site. When the
+    backend fix lands it starts passing, and `xfail(strict=True)` turns that
+    XPASS into a failure, which is the notification to delete this, the
+    partitioner warning in `warn_if_dilated_conv_may_not_fit_vtcm`, and the
+    troubleshooting entry in `docs/source/backends-qualcomm.md`.
+
+    a16w8 rather than fp16 because the quantized path is where the TCM-fit check
+    actually runs: it fails on the x86 host at finalize with `not sufficiently
+    tiled to fit in TCM`, so no device is involved. The fp16 path skips the check
+    and only fails on-device, which would mean deliberately hanging a DSP on
+    every CI run.
+
+    Two things this does not cover:
+
+    * It only fires when the test runs against a QNN SDK carrying the fix. With
+      a pinned SDK version it stays xfail however long the backend takes, so the
+      real trigger is an SDK upgrade rather than the fix itself.
+    * It watches the tiling defect. If the backend instead only makes fp16
+      perform the check it currently skips -- the cheaper of the two fixes --
+      a16w8 keeps failing and this stays xfail, even though the warning has by
+      then become redundant, since users would get a compile error.
+
+    It is also a sentinel rather than a correctness test: it flips for any change
+    that stops this shape raising, including one in the quantizer path or in how
+    the SDK reports the failure.
+    """
+
+    @staticmethod
+    def test():
+        # The reported shape. padding == dilation keeps the output spatially the
+        # same size as the input, which is what ASPP does.
+        module = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                960, 256, kernel_size=3, padding=36, dilation=36, bias=False
+            )
+        ).eval()
+        inputs = (torch.randn(1, 960, 65, 65),)
+
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_16a8w,
+            soc_model=default_property().soc_model,
+        )
+        compile_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=getattr(QcomChipset, default_property().soc_model),
+            backend_options=generate_htp_compiler_spec(use_fp16=False),
+        )
+
+        with calibrate(module, [inputs], quantizer) as quantized:
+            # Raises today: graph prepare cannot tile this into VTCM and reports
+            # `Requires 8638464 bytes` against 8388608 available on an 8 MB part.
+            to_edge_transform_and_lower_to_qnn(quantized, inputs, compile_spec)
 
 
 class FixedPointFloatingPointMixedPrecision:
@@ -527,15 +752,15 @@ class SkipNodeQuantizer:
 class QAT:
     @staticmethod
     def _make_qat_quantizer(quant_dtype, block_size_map=None):
-        q = make_quantizer(
+        quantizer = make_quantizer(
             quant_dtype=quant_dtype,
             per_channel_conv=True,
             is_qat=True,
             soc_model="SM8650",
         )
         if block_size_map:
-            q.set_block_size_map(block_size_map)
-        return q
+            quantizer.set_block_size_map(block_size_map)
+        return quantizer
 
     @staticmethod
     def _get_converted_module(
@@ -560,7 +785,10 @@ class QAT:
         from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
             PerBlockParamFakeQuantize,
         )
-        from torchao.quantization.pt2e import FusedMovingAvgObsFakeQuantize
+        from torchao.quantization.pt2e import (
+            FakeQuantizeBase,
+            FusedMovingAvgObsFakeQuantize,
+        )
 
         module = _UtilsModel()
         inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 8, 8))
@@ -568,15 +796,13 @@ class QAT:
         with subtests.test(msg="16a4w_pcq"):
             # activation: FusedMovingAvgObsFakeQuantize (uint16 range, per-tensor)
             # weight: FusedMovingAvgObsFakeQuantize (int4 range [-7,7], per-channel)
-            q = __class__._make_qat_quantizer(QuantDtype.use_16a4w)
+            quantizer = __class__._make_qat_quantizer(QuantDtype.use_16a4w)
             exported = torch.export.export(module, inputs, strict=True).module()
-            prepared = prepare_qat_pt2e(exported, q)
+            prepared = prepare_qat_pt2e(exported, quantizer)
             fq_modules = [
-                m
-                for m in prepared.modules()
-                if isinstance(m, FusedMovingAvgObsFakeQuantize)
+                m for m in prepared.modules() if isinstance(m, FakeQuantizeBase)
             ]
-            assert len(fq_modules) > 0, "no FusedMovingAvgObsFakeQuantize found"
+            assert len(fq_modules) > 0, "no FakeQuantizeBase found"
             # activation FQs have uint16 range (quant_max=65535)
             act_fqs = [m for m in fq_modules if m.quant_max == 65535]
             # weight FQs have int4 range (quant_max=7)
@@ -589,12 +815,12 @@ class QAT:
         with subtests.test(msg="16a4w_block"):
             # activation: FusedMovingAvgObsFakeQuantize (uint16 range)
             # weight: PerBlockParamFakeQuantize (int4 range)
-            q = __class__._make_qat_quantizer(
+            quantizer = __class__._make_qat_quantizer(
                 QuantDtype.use_16a4w_block,
                 block_size_map={"conv2d": (1, 4, 1, 1)},
             )
             exported = torch.export.export(module, inputs, strict=True).module()
-            prepared = prepare_qat_pt2e(exported, q)
+            prepared = prepare_qat_pt2e(exported, quantizer)
             act_fqs = [
                 m
                 for m in prepared.modules()
@@ -617,9 +843,9 @@ class QAT:
         with subtests.test(msg="fp16a8w"):
             # activation: None (FP16 — no activation quantization)
             # weight: FusedMovingAvgObsFakeQuantize (int8 range [-127,127], per-tensor or per-channel)
-            q = __class__._make_qat_quantizer(QuantDtype.use_fp16a8w)
+            quantizer = __class__._make_qat_quantizer(QuantDtype.use_fp16a8w)
             exported = torch.export.export(module, inputs, strict=True).module()
-            prepared = prepare_qat_pt2e(exported, q)
+            prepared = prepare_qat_pt2e(exported, quantizer)
             fq_modules = [
                 m
                 for m in prepared.modules()
@@ -633,3 +859,246 @@ class QAT:
             assert len(weight_fqs) > 0, "no int8-range weight FQ found for fp16a8w"
             # should complete without error
             __class__._get_converted_module(module, prepared, inputs)
+
+
+class ConcatObserverDeepcopy:
+    """copy.deepcopy of a prepared model, as done before convert_pt2e by
+    training frameworks, must not walk the graph through ConcatObserver's
+    fx.Node references.
+    """
+
+    class _DeepCat(torch.nn.Module):
+        def __init__(self, depth: int = 300):
+            super().__init__()
+            self.depth = depth
+
+        def forward(self, x, y):
+            for _ in range(self.depth):
+                x = x + 0.5
+            return torch.cat([x, y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
+            ConcatObserver,
+        )
+
+        module = __class__._DeepCat()
+        inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8))
+        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w, soc_model="SM8650")
+        exported = torch.export.export(module, inputs, strict=True).module()
+        prepared = prepare_pt2e(exported, quantizer)
+        prepared(*inputs)
+
+        with subtests.test(msg="deepcopy_and_convert"):
+            copied = copy.deepcopy(prepared)
+            convert_pt2e(copied)
+
+        with subtests.test(msg="copy_input_observers_point_into_the_copy"):
+            [(name, observer)] = [
+                (n, m)
+                for n, m in prepared.named_modules()
+                if isinstance(m, ConcatObserver)
+            ]
+            assert len(observer.input_observers) == 2
+            names = {id(m): n for n, m in prepared.named_modules() if n}
+            input_names = [names[id(obs)] for obs in observer.input_observers]
+
+            copied = copy.deepcopy(prepared)
+            copied_observer = copied.get_submodule(name)
+            for input_name, copied_input in zip(
+                input_names, copied_observer.input_observers
+            ):
+                assert copied_input is copied.get_submodule(input_name)
+            assert copied_observer.concat_node is observer.concat_node
+            torch.testing.assert_close(copied_observer.min_val, observer.min_val)
+            torch.testing.assert_close(copied_observer.max_val, observer.max_val)
+
+        with subtests.test(
+            msg="deepcopy_before_first_forward_does_not_leak_into_original"
+        ):
+            fresh_module = __class__._DeepCat()
+            fresh_exported = torch.export.export(
+                fresh_module, inputs, strict=True
+            ).module()
+            fresh_prepared = prepare_pt2e(fresh_exported, quantizer)
+
+            # deepcopy before input_observers has ever been lazily populated
+            fresh_copy = copy.deepcopy(fresh_prepared)
+            fresh_copy(*inputs)
+
+            for n, m in fresh_prepared.named_modules():
+                if hasattr(m, "min_val"):
+                    assert m.min_val == float("inf") and m.max_val == float(
+                        "-inf"
+                    ), f"original model's {n} was mutated by calibrating its copy"
+
+
+class QATConcat:
+    """Multiple QAT steps with per-step shifting input ranges."""
+
+    class _ConcatQatModel(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.cat([x, y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        module = __class__._ConcatQatModel()
+        # step 1 sets a wide baseline, step 2 is narrower than history
+        # (shared range must not shrink), step 3 widens again on the
+        # *other* input (union must keep growing on either side).
+        steps = [
+            (torch.ones(1, 4, 8) * 1.0, torch.ones(1, 4, 8) * 4.0),
+            (torch.ones(1, 4, 8) * 0.1, torch.ones(1, 4, 8) * 0.1),
+            (torch.ones(1, 4, 8) * 8.0, torch.ones(1, 4, 8) * 0.5),
+        ]
+
+        quantizer = QAT._make_qat_quantizer(QuantDtype.use_8a8w)
+        exported = torch.export.export(module, steps[0], strict=True).module()
+        prepared = prepare_qat_pt2e(exported, quantizer)
+
+        [cat] = [
+            n for n in prepared.graph.nodes if n.target == torch.ops.aten.cat.default
+        ]
+        output_module = prepared.get_submodule(list(cat.users)[0].target)
+        input_modules = [prepared.get_submodule(n.target) for n in cat.args[0]]
+        concat_observer = output_module.activation_post_process
+
+        running_min, running_max = float("inf"), float("-inf")
+        prev_shared_min, prev_shared_max = float("inf"), float("-inf")
+        prior_running_min, prior_running_max = running_min, running_max
+        for step_idx, (x, y) in enumerate(steps):
+            prepared(x, y)
+            running_min = min(running_min, x.min().item(), y.min().item())
+            running_max = max(running_max, x.max().item(), y.max().item())
+
+            with subtests.test(msg=f"step_{step_idx}_shared_range_never_shrinks"):
+                assert concat_observer.min_val.item() <= prev_shared_min
+                assert concat_observer.max_val.item() >= prev_shared_max
+
+            if step_idx > 0:
+                with subtests.test(
+                    msg=f"step_{step_idx}_shared_range_covers_prior_union"
+                ):
+                    # EMA observers need a step to settle after a sudden
+                    # widen, so only require the shared range to have
+                    # caught up with the union as of the *previous* step,
+                    # not this step's own fresh extremes.
+                    quant_step = (prior_running_max - prior_running_min) / 255
+                    assert (
+                        concat_observer.min_val.item() <= prior_running_min + quant_step
+                    )
+                    assert (
+                        concat_observer.max_val.item() >= prior_running_max - quant_step
+                    )
+
+            prev_shared_min = concat_observer.min_val.item()
+            prev_shared_max = concat_observer.max_val.item()
+            prior_running_min, prior_running_max = running_min, running_max
+
+            with subtests.test(msg=f"step_{step_idx}_every_input_exactly_synced"):
+                for input_module in input_modules:
+                    target = input_module.activation_post_process
+                    torch.testing.assert_close(target.min_val, concat_observer.min_val)
+                    torch.testing.assert_close(target.max_val, concat_observer.max_val)
+
+        with subtests.test(msg="convert_after_multi_step_gives_one_qparam"):
+            converted = convert_pt2e(prepared)
+            [cat] = [
+                n
+                for n in converted.graph.nodes
+                if n.target == torch.ops.aten.cat.default
+            ]
+            cat_users = list(cat.users)
+            assert (
+                len(cat_users) == 1
+            ), f"Expected 1 user of cat, got {len(cat_users)}: {cat_users}"
+            dequant = cat_users[0]
+            qparam_nodes = list(cat.args[0]) + [dequant]
+            qparams = {tuple(n.args[1:3]) for n in qparam_nodes}
+            assert len(qparams) == 1, qparams
+
+
+class QATConcatWithFixedQParamsInputs:
+    """A cat() input coming straight from a fixed-qparams op (sigmoid) has
+    no min_val/max_val of its own: ConcatObserver's range-sharing hack must
+    skip it instead of stomping its fixed scale/zero_point, while the
+    regular input still gets synced to the shared range as usual.
+    """
+
+    class _ConcatSigmoidModel(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.cat([torch.sigmoid(x), y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        from torchao.quantization.pt2e import FixedQParamsObserver
+
+        module = __class__._ConcatSigmoidModel()
+        # y's range is far outside sigmoid's [0, 1] output, so the shared
+        # concat range the regular input gets synced to looks nothing like
+        # the fixed input's own qparams.
+        inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8) * 5)
+
+        quantizer = QAT._make_qat_quantizer(QuantDtype.use_8a8w)
+        exported = torch.export.export(module, inputs, strict=True).module()
+        prepared = prepare_qat_pt2e(exported, quantizer)
+
+        [cat] = [
+            n for n in prepared.graph.nodes if n.target == torch.ops.aten.cat.default
+        ]
+        input_modules = [prepared.get_submodule(n.target) for n in cat.args[0]]
+        fixed_idx = next(
+            i
+            for i, m in enumerate(input_modules)
+            if isinstance(m, FixedQParamsObserver)
+        )
+        fixed_module = input_modules[fixed_idx]
+        regular_module = input_modules[1 - fixed_idx]
+        concat_observer = prepared.get_submodule(
+            list(cat.users)[0].target
+        ).activation_post_process
+        initial_scale, initial_zero_point = fixed_module.calculate_qparams()
+
+        with subtests.test(msg="no_crash_with_fixed_qparams_input"):
+            for _ in range(3):
+                prepared(*inputs)
+
+        with subtests.test(msg="fixed_input_qparams_untouched_by_shared_range"):
+            scale, zero_point = fixed_module.calculate_qparams()
+            torch.testing.assert_close(scale, initial_scale)
+            torch.testing.assert_close(zero_point, initial_zero_point)
+
+        with subtests.test(msg="regular_input_still_synced_to_shared_range"):
+            target = regular_module.activation_post_process
+            torch.testing.assert_close(target.min_val, concat_observer.min_val)
+            torch.testing.assert_close(target.max_val, concat_observer.max_val)
+
+        with subtests.test(msg="convert_requantizes_only_the_fixed_input"):
+            converted = convert_pt2e(prepared)
+            [cat] = [
+                n
+                for n in converted.graph.nodes
+                if n.target == torch.ops.aten.cat.default
+            ]
+            [dequant] = list(cat.users)
+            fixed_arg = cat.args[0][fixed_idx]
+            regular_arg = cat.args[0][1 - fixed_idx]
+            assert tuple(fixed_arg.args[1:3]) == (
+                initial_scale.item(),
+                initial_zero_point.item(),
+            )
+            assert tuple(regular_arg.args[1:3]) == tuple(dequant.args[1:3])
+
+
+class LoweringWithExportedProgram:
+    @staticmethod
+    def test(compile_spec):
+        from unittest import mock
+
+        module = _UtilsModel()
+        inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 8, 8))
+        exported = torch.export.export(module, inputs, strict=True)
+        with mock.patch("torch.export.export", wraps=torch.export.export) as export_spy:
+            to_edge_transform_and_lower_to_qnn(exported, None, compile_spec)
+            export_spy.assert_not_called()

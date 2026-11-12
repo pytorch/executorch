@@ -42,6 +42,12 @@ set(_metadata_pte_files
     "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_prefill.pte"
     "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_vocab.pte"
     "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_missing.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_wrong_type.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_mismatched.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_heads.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_dims.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_windows.pte"
+    "${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_empty.pte"
 )
 add_custom_command(
   OUTPUT ${_metadata_pte_files}
@@ -68,7 +74,7 @@ set_property(
   TEST test_runner
   PROPERTY
     ENVIRONMENT
-    "ET_MODEL_METADATA_FULL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_full.pte;ET_MODEL_METADATA_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_last.pte;ET_MODEL_METADATA_SELECTED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_selected.pte;ET_MODEL_METADATA_INVALID_CONTEXT_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_context.pte;ET_MODEL_METADATA_INVALID_PREFILL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_prefill.pte;ET_MODEL_METADATA_INVALID_VOCAB_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_vocab.pte;ET_MODEL_METADATA_MISSING_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_missing.pte"
+    "ET_MODEL_METADATA_FULL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_full.pte;ET_MODEL_METADATA_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_last.pte;ET_MODEL_METADATA_SELECTED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_selected.pte;ET_MODEL_METADATA_INVALID_CONTEXT_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_context.pte;ET_MODEL_METADATA_INVALID_PREFILL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_prefill.pte;ET_MODEL_METADATA_INVALID_VOCAB_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_invalid_vocab.pte;ET_MODEL_METADATA_MISSING_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_missing.pte;ET_MODEL_METADATA_GEOMETRY_WRONG_TYPE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_wrong_type.pte;ET_MODEL_METADATA_GEOMETRY_MISMATCHED_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_mismatched.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_HEADS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_heads.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_DIMS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_dims.pte;ET_MODEL_METADATA_GEOMETRY_INVALID_WINDOWS_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_invalid_windows.pte;ET_MODEL_METADATA_GEOMETRY_EMPTY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModelMetadata_geometry_empty.pte"
 )
 
 # Override sanitizer to this issue:

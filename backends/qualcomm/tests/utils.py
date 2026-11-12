@@ -15,6 +15,9 @@ import numpy as np
 import torch
 import torchao
 from executorch import exir
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 
 from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
@@ -24,17 +27,20 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     QNNIntermediateDebugger,
 )
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     generate_inputs,
     get_backend_type,
     make_quantizer,
     QnnConfig,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchLpaiTargetEnv,
+)
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -44,14 +50,17 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    generate_qnn_executorch_option,
     get_qnn_context_binary_alignment,
     get_soc_to_chipset_map,
+    qnn_edge_config,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import make_output_dir
 
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -239,14 +248,14 @@ class TestQNN(unittest.TestCase):
             )
 
             # init device once
-            adb = SimpleADB(
+            device = Device(
                 qnn_config=qnn_config,
                 pte_path=[],
                 workspace="/data/local/tmp/qnn_executorch_test",
                 error_only=cls.error_only,
             )
 
-            adb.push(
+            device.push(
                 backends={get_backend_type(cls.backend)},
                 init_env=True,
             )
@@ -603,7 +612,7 @@ class TestQNN(unittest.TestCase):
                     direct_build_folder=self.direct_build_folder,
                 )
 
-                adb = SimpleADB(
+                device = Device(
                     qnn_config=qnn_config,
                     pte_path=pte_fname,
                     workspace="/data/local/tmp/qnn_executorch_test",
@@ -619,32 +628,34 @@ class TestQNN(unittest.TestCase):
                         else None
                     ),
                 )
-                adb.push(
+                device.push(
                     inputs=[processed_inputs],
                     files=op_package_paths,
                     init_env=False,
                     backends={get_backend_type(self.backend)},
                 )
-                adb.extra_cmds += extra_cmds
+                device.extra_cmds += extra_cmds
                 if save_inference_speed:
-                    adb.extra_cmds += (
+                    device.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
 
                 if save_heap_result:
-                    adb.extra_cmds += (
+                    device.extra_cmds += (
                         f" --heap_profiling_path {self.dsp_heap_profile_filename}"
                     )
-                adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-                adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(host_output_path=tmp_dir, callback=post_process)
+                device.bridge.rmdir(device.output_folder)
+                device.execute(
+                    method_index=method_index, output_callback=output_callback
+                )
+                device.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:
-                    adb.pull_etdump(etdump_path, callback=validate_profile)
+                    device.pull_etdump(etdump_path, callback=validate_profile)
 
                 if expected_compared_events != -1:
-                    adb.pull_debug_output(
+                    device.pull_debug_output(
                         etdump_path,
                         debug_output_path,
                         callback=validate_intermediate_tensor,
@@ -655,11 +666,42 @@ class TestQNN(unittest.TestCase):
                     ) as f:
                         self.inference_speed = float(f.read())
                 if save_heap_result:
-                    adb.pull_heap_output(
-                        f"{adb.workspace}/{self.dsp_heap_profile_filename}",
+                    device.pull_heap_output(
+                        f"{device.workspace}/{self.dsp_heap_profile_filename}",
                         f"{tmp_dir}/{self.dsp_heap_profile_filename}",
                         callback=validate_heap_profile,
                     )
+
+    def assert_batch_norm_folded(self, module, sample_inputs):
+        """In fp16 a surviving BatchNorm multiplies the convolution's rounding
+        error by its per-channel scale, so it has to be folded into the
+        preceding convolution before lowering.
+
+        Runs the pipeline the lowering runs, without the partitioner: once the
+        graph is partitioned it holds nothing but the delegate call, so a
+        BatchNorm inside the payload would go unnoticed.
+        """
+        exported_program = torch.export.export(module, sample_inputs, strict=True)
+        backend_type = flatbuffer_to_option(
+            generate_qnn_executorch_option(self.compiler_specs)
+        ).backend_options.backend_type
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
+        edge_prog_mgr = to_edge_transform_and_lower(
+            {"forward": pass_manager.transform_for_export_pipeline(exported_program)},
+            transform_passes={
+                "forward": pass_manager.get_to_edge_transform_passes(
+                    exported_program, compiler_specs=self.compiler_specs
+                )
+            },
+            partitioner=None,
+            compile_config=qnn_edge_config(),
+        )
+        survivors = [
+            node
+            for node in edge_prog_mgr.exported_program().graph.nodes
+            if node.op == "call_function" and "batch_norm" in str(node.target)
+        ]
+        self.assertFalse(survivors, f"BatchNorm survived the fold: {survivors}")
 
     def lower_module_and_test_output(
         self,
@@ -765,6 +807,7 @@ class TestQNN(unittest.TestCase):
         bypass_check: bool = False,
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
+        convert_linear_to_conv2d: bool = False,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
@@ -780,6 +823,7 @@ class TestQNN(unittest.TestCase):
             backend=get_backend_type(self.backend),
             soc_model=self.soc_model,
         )
+        quantizer.set_convert_linear_to_conv2d(convert_linear_to_conv2d)
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)
@@ -846,7 +890,7 @@ class TestQNN(unittest.TestCase):
         optimizer.step()
         return convert_pt2e(prepared)
 
-    def get_adb_tool(self, pte_fname):
+    def get_device_tool(self, pte_fname):
         qnn_config = QnnConfig(
             backend=self.backend,
             build_folder=self.build_folder,
@@ -856,13 +900,13 @@ class TestQNN(unittest.TestCase):
             direct_build_folder=self.direct_build_folder,
         )
 
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=pte_fname,
             workspace="/data/local/tmp/qnn_executorch_test",
             error_only=self.error_only,
         )
-        return adb
+        return device
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):

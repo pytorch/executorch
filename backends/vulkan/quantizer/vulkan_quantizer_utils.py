@@ -201,21 +201,26 @@ def _convert_scalars_to_attrs(model: torch.fx.GraphModule) -> torch.fx.GraphModu
         args = list(n.args)
         new_args = []
         for i in range(len(args)):
-            if isinstance(args[i], torch.fx.Node):
+            # Only FP32 binary ops need scalar lifting for quantization. Other
+            # dtypes must retain Python scalar promotion and rounding semantics.
+            if (
+                isinstance(args[i], torch.fx.Node)
+                or n.meta["val"].dtype != torch.float32
+            ):
                 new_args.append(args[i])
                 continue
             prefix = "_tensor_constant_"
             get_new_attr_name = get_new_attr_name_with_prefix(prefix)
             tensor_constant_name = get_new_attr_name(model)
-            float_tensor = torch.tensor(float(args[i]))
-            model.register_buffer(tensor_constant_name, float_tensor)
+            scalar_tensor = torch.tensor(args[i], dtype=n.meta["val"].dtype)
+            model.register_buffer(tensor_constant_name, scalar_tensor)
             fake_mode = n.meta["val"].fake_mode
             with model.graph.inserting_before(n):
                 get_attr_node = model.graph.create_node(
                     "get_attr", tensor_constant_name, (), {}
                 )
                 get_attr_node.meta["val"] = fake_mode.from_tensor(
-                    float_tensor, static_shapes=True
+                    scalar_tensor, static_shapes=True
                 )
                 new_args.append(get_attr_node)
         n.args = tuple(new_args)

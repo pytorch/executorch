@@ -29,7 +29,7 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.quantize_io_pass import (

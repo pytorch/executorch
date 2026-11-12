@@ -102,6 +102,93 @@ inline TensorPtr make_tensor_ptr(
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
+ * Overload for a typed data pointer. The scalar type is deduced from the
+ * pointer's element type, the same way the vector overload deduces it from the
+ * vector's element type, so a buffer of one type does not become a Tensor of
+ * another. Pass `type` explicitly to reinterpret the buffer as a different
+ * type.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the pointer.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param data A pointer to the data buffer (CPU or device, see device).
+ * @param dim_order A vector specifying the order of dimensions.
+ * @param strides A vector specifying the strides of the tensor.
+ * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param deleter A custom deleter function for managing the lifetime of the
+ * data buffer.
+ * @return A TensorPtr that manages the newly created Tensor.
+ */
+template <
+    typename T,
+    executorch::aten::ScalarType deduced_type =
+        runtime::CppTypeToScalarType<T>::value>
+inline TensorPtr make_tensor_ptr(
+    std::vector<executorch::aten::SizesType> sizes,
+    T* data,
+    std::vector<executorch::aten::DimOrderType> dim_order,
+    std::vector<executorch::aten::StridesType> strides,
+    const executorch::aten::ScalarType type = deduced_type,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
+    const executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    std::function<void(void*)> deleter = nullptr) {
+  return make_tensor_ptr(
+      std::move(sizes),
+      static_cast<void*>(data),
+      std::move(dim_order),
+      std::move(strides),
+      type,
+      device,
+      dynamism,
+      std::move(deleter));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * Convenience overload for a typed data pointer; see the typed overload above
+ * for type deduction.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the pointer.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param data A pointer to the data buffer (CPU or device, see device).
+ * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @param deleter A custom deleter function for managing the lifetime of the
+ * data buffer.
+ * @return A TensorPtr that manages the newly created Tensor.
+ */
+template <
+    typename T,
+    executorch::aten::ScalarType deduced_type =
+        runtime::CppTypeToScalarType<T>::value>
+inline TensorPtr make_tensor_ptr(
+    std::vector<executorch::aten::SizesType> sizes,
+    T* data,
+    const executorch::aten::ScalarType type = deduced_type,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
+    const executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+    std::function<void(void*)> deleter = nullptr) {
+  return make_tensor_ptr(
+      std::move(sizes),
+      static_cast<void*>(data),
+      {},
+      {},
+      type,
+      device,
+      dynamism,
+      std::move(deleter));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
  * vector's data type. If the specified `type` differs from the deduced type of

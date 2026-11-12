@@ -92,7 +92,7 @@ cd ../../..
 ### 4. Install Zephyr SDK
 
 ```bash
-west sdk install --gnu-toolchains arm-zephyr-eabi
+west sdk install --version 1.0.1 --gnu-toolchains arm-zephyr-eabi
 ```
 
 ### 5. Install Ethos-U tools (if targeting NPU boards)
@@ -194,4 +194,4 @@ When `CONFIG_ET_ARM_MODEL_PTE_DMA_ACCESSIBLE=y` is set in the board conf (which 
 |-------|-----|--------|--------|
 | mps3/corstone300/fvp | Ethos-U55 | 512K ITCM + 2M ISRAM | hello-executorch (full), MV2 (build-only) |
 | mps4/corstone320/fvp | Ethos-U85 | 4M ISRAM + 2M SRAM | hello-executorch (full), MV2 (full) |
-| alif_e8_dk | Ethos-U55-256 | 4M MRAM + 2M SRAM | MV2 (model runs from MRAM in-place) |
+| ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp | Ethos-U55-256 | 5.5M MRAM + 8M SRAM | MV2 (model runs from MRAM in-place) |

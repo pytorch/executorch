@@ -26,6 +26,7 @@ using executorch::extension::llm::cache::Cache;
 using executorch::extension::llm::cache::CacheBuilder;
 using executorch::extension::llm::cache::CacheConfig;
 using executorch::extension::llm::cache::CacheFactory;
+using executorch::extension::llm::cache::CacheGeometry;
 using executorch::extension::llm::cache::CacheRegistry;
 using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
@@ -34,7 +35,7 @@ using executorch::extension::llm::cache::InstallGuard;
 using executorch::extension::llm::cache::SequenceControl;
 using executorch::extension::llm::cache::SequencePlanner;
 namespace kind = executorch::extension::llm::cache::kind;
-using executorch::extension::llm::cache::LayerConfig;
+using executorch::extension::llm::cache::LayerGeometry;
 using executorch::extension::llm::cache::LayerPolicy;
 using executorch::extension::llm::cache::SequenceCache;
 using executorch::runtime::BackendOptions;
@@ -55,11 +56,14 @@ std::string installed_key(const InstallGuard& guard) {
   return key;
 }
 
-LayerConfig flat_layer() {
-  return LayerConfig{LayerPolicy{LayerPolicy::Kind::Flat, 0}, 2, 8};
+LayerGeometry flat_layer() {
+  return LayerGeometry{LayerPolicy{LayerPolicy::Kind::Flat, 0}, 2, 8};
 }
-LayerConfig ring_layer(int window) {
-  return LayerConfig{LayerPolicy{LayerPolicy::Kind::Ring, window}, 2, 8};
+LayerGeometry ring_layer(int window) {
+  return LayerGeometry{LayerPolicy{LayerPolicy::Kind::Ring, window}, 2, 8};
+}
+CacheConfig config(int capacity) {
+  return CacheConfig{capacity, 0};
 }
 
 struct UnsupportedFace {
@@ -76,10 +80,32 @@ class CacheTest : public ::testing::Test {
   }
 };
 
+TEST_F(CacheTest, GeometryDefaultsToNonDFlash) {
+  const CacheGeometry geometry{{flat_layer()}};
+  EXPECT_FALSE(geometry.dflash_block_size.has_value());
+  EXPECT_TRUE(valid(geometry));
+}
+
+TEST_F(CacheTest, GeometryAcceptsNonnegativeDFlashBlockSize) {
+  for (int block_size : {0, 1, 4}) {
+    const CacheGeometry geometry{{flat_layer(), ring_layer(4)}, block_size};
+    ASSERT_TRUE(geometry.dflash_block_size.has_value());
+    EXPECT_EQ(*geometry.dflash_block_size, block_size);
+    EXPECT_TRUE(valid(geometry));
+    EXPECT_TRUE(valid(geometry, config(8)));
+  }
+}
+
+TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
+  const CacheGeometry geometry{{flat_layer()}, -1};
+  EXPECT_FALSE(valid(geometry));
+  EXPECT_FALSE(valid(geometry, config(8)));
+}
+
 // ---- Flat policy -----------------------------------------------------------
 
 TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {
-  SequenceCache cache(CacheConfig{8, 1, {flat_layer()}});
+  SequenceCache cache(CacheGeometry{{flat_layer()}}, config(8));
 
   auto p0 = cache.plan(/*layer=*/0, /*position=*/0, /*T=*/4); // prefill
   ASSERT_TRUE(p0.has_value());
@@ -102,7 +128,7 @@ TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {
 
 TEST_F(CacheTest, RingPlanWrapsAndEvicts) {
   // window 4, max_write unset -> defaults to window -> ring of 2*4 - 1 = 7.
-  SequenceCache cache(CacheConfig{100, 1, {ring_layer(4)}});
+  SequenceCache cache(CacheGeometry{{ring_layer(4)}}, config(100));
 
   // Prefill chunk of 4 at position 0: one write run, reads [0,4), no wrap.
   auto p0 = cache.plan(0, 0, 4);
@@ -137,7 +163,8 @@ TEST_F(CacheTest, RingPlanWrapsAndEvicts) {
 // ---- Mixed flat/ring: one shared length across layers ----------------------
 
 TEST_F(CacheTest, MixedFlatRingShareOneLength) {
-  SequenceCache cache(CacheConfig{100, 2, {flat_layer(), ring_layer(4)}});
+  SequenceCache cache(
+      CacheGeometry{{flat_layer(), ring_layer(4)}}, config(100));
 
   // Same step drives both layers (T <= window); commit once.
   auto p = cache.plan(0, 0, 3);
@@ -153,7 +180,7 @@ TEST_F(CacheTest, MixedFlatRingShareOneLength) {
 // ---- Admission / rewind ----------------------------------------------------
 
 TEST_F(CacheTest, CanExtendBoundedByCapacity) {
-  SequenceCache cache(CacheConfig{2, 1, {flat_layer()}});
+  SequenceCache cache(CacheGeometry{{flat_layer()}}, config(2));
   EXPECT_TRUE(cache.can_extend(2));
   auto p = cache.plan(0, 0, 2);
   ASSERT_TRUE(p.has_value());
@@ -163,7 +190,7 @@ TEST_F(CacheTest, CanExtendBoundedByCapacity) {
 }
 
 TEST_F(CacheTest, FlatRewindsFreelyToZero) {
-  SequenceCache cache(CacheConfig{8, 1, {flat_layer()}});
+  SequenceCache cache(CacheGeometry{{flat_layer()}}, config(8));
   auto p = cache.plan(0, 0, 5);
   ASSERT_TRUE(p.has_value());
   cache.commit(*p);
@@ -174,7 +201,8 @@ TEST_F(CacheTest, FlatRewindsFreelyToZero) {
 }
 
 TEST_F(CacheTest, RewindBoundedByRingWindow) {
-  SequenceCache cache(CacheConfig{100, 2, {flat_layer(), ring_layer(4)}});
+  SequenceCache cache(
+      CacheGeometry{{flat_layer(), ring_layer(4)}}, config(100));
   // Advance length to 10 in chunks of 2 (<= window).
   for (int pos = 0; pos < 10; pos += 2) {
     auto p = cache.plan(0, pos, 2);
@@ -190,9 +218,9 @@ TEST_F(CacheTest, RewindBoundedByRingWindow) {
 
 TEST_F(CacheTest, RewindFloorHoldsAcrossSuccessiveRewinds) {
   // window 4, max_write 1 -> a ring of 4 slots holding the newest 4 positions.
-  CacheConfig cfg{100, 1, {ring_layer(4)}, 0};
+  CacheConfig cfg = config(100);
   cfg.max_write = 1;
-  SequenceCache cache(cfg);
+  SequenceCache cache(CacheGeometry{{ring_layer(4)}}, cfg);
   for (int pos = 0; pos < 10; ++pos) {
     auto p = cache.plan(0, pos, 1);
     ASSERT_TRUE(p.has_value());
@@ -205,7 +233,7 @@ TEST_F(CacheTest, RewindFloorHoldsAcrossSuccessiveRewinds) {
 }
 
 TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
-  SequenceCache cache(CacheConfig{4, 1, {flat_layer()}});
+  SequenceCache cache(CacheGeometry{{flat_layer()}}, config(4));
   Cache* base = &cache;
   ASSERT_NE(base->as<SequenceControl>(), nullptr);
   ASSERT_NE(base->as<SequencePlanner>(), nullptr);
@@ -224,8 +252,10 @@ TEST_F(CacheTest, NullFaceIdsNeverMatch) {
 }
 
 TEST_F(CacheTest, LiveGuardsDoNotCollideOnKeys) {
-  auto a = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
-  auto b = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+  auto a =
+      std::make_shared<SequenceCache>(CacheGeometry{{flat_layer()}}, config(4));
+  auto b =
+      std::make_shared<SequenceCache>(CacheGeometry{{flat_layer()}}, config(4));
   InstallGuard ga(a);
   InstallGuard gb(b);
 
@@ -247,59 +277,61 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
       reg.register_builder(
           "TestBackend",
           kind::kSingle,
-          [](const CacheConfig& cfg) {
+          [](const CacheGeometry& geometry, const CacheConfig& cfg) {
             return std::static_pointer_cast<Cache>(
-                std::make_shared<SequenceCache>(cfg));
+                std::make_shared<SequenceCache>(geometry, cfg));
           }),
       Error::Ok);
 
-  CacheConfig cfg{32, 1, {flat_layer()}};
-  auto cache = reg.build("TestBackend", kind::kSingle, cfg);
+  CacheGeometry geometry{{flat_layer()}};
+  CacheConfig cfg = config(32);
+  auto cache = reg.build("TestBackend", kind::kSingle, geometry, cfg);
   ASSERT_TRUE(cache.ok());
   EXPECT_EQ(cache.get()->as<SequenceControl>()->capacity(), 32);
 
-  EXPECT_EQ(reg.build("TestBackend", "missing", cfg).error(), Error::NotFound);
-
-  // A layers list that is neither size 1 nor n_layers would be indexed past
-  // the end, so build refuses it before the cache is constructed.
   EXPECT_EQ(
-      reg.build("TestBackend", kind::kSingle, CacheConfig{32, 3, {}}).error(),
+      reg.build("TestBackend", "missing", geometry, cfg).error(),
+      Error::NotFound);
+
+  EXPECT_EQ(
+      reg.build("TestBackend", kind::kSingle, CacheGeometry{}, cfg).error(),
       Error::InvalidArgument);
   EXPECT_EQ(
-      reg.build(
-             "TestBackend",
-             kind::kSingle,
-             CacheConfig{32, 3, {flat_layer(), flat_layer()}})
+      reg.build("TestBackend", kind::kSingle, geometry, CacheConfig{0, 0})
           .error(),
       Error::InvalidArgument);
 }
 
 TEST_F(CacheTest, BuilderRegistrationRejectsInvalidEntries) {
   CacheFactory factory;
-  CacheConfig cfg{32, 1, {flat_layer()}};
+  CacheGeometry geometry{{flat_layer()}};
+  CacheConfig cfg = config(32);
 
   EXPECT_EQ(
       factory.register_builder("TestBackend", "empty", CacheBuilder{}),
       Error::InvalidArgument);
   EXPECT_EQ(
-      factory.build("TestBackend", "empty", cfg).error(), Error::NotFound);
+      factory.build("TestBackend", "empty", geometry, cfg).error(),
+      Error::NotFound);
 
   EXPECT_EQ(
       factory.register_builder(
           "TestBackend",
           "duplicate",
-          [](const CacheConfig& config) {
+          [](const CacheGeometry& geometry, const CacheConfig& config) {
             return std::static_pointer_cast<Cache>(
-                std::make_shared<SequenceCache>(config));
+                std::make_shared<SequenceCache>(geometry, config));
           }),
       Error::Ok);
   EXPECT_EQ(
       factory.register_builder(
           "TestBackend",
           "duplicate",
-          [](const CacheConfig&) { return std::shared_ptr<Cache>{}; }),
+          [](const CacheGeometry&, const CacheConfig&) {
+            return std::shared_ptr<Cache>{};
+          }),
       Error::InvalidArgument);
-  auto original = factory.build("TestBackend", "duplicate", cfg);
+  auto original = factory.build("TestBackend", "duplicate", geometry, cfg);
   ASSERT_TRUE(original.ok());
   EXPECT_NE(original.get()->as<SequenceControl>(), nullptr);
 }
@@ -310,10 +342,14 @@ TEST_F(CacheTest, BuilderReturningNullIsAnError) {
       factory.register_builder(
           "TestBackend",
           "null",
-          [](const CacheConfig&) { return std::shared_ptr<Cache>{}; }),
+          [](const CacheGeometry&, const CacheConfig&) {
+            return std::shared_ptr<Cache>{};
+          }),
       Error::Ok);
   EXPECT_EQ(
-      factory.build("TestBackend", "null", CacheConfig{32, 1, {flat_layer()}})
+      factory
+          .build(
+              "TestBackend", "null", CacheGeometry{{flat_layer()}}, config(32))
           .error(),
       Error::Internal);
 }
@@ -326,7 +362,7 @@ TEST_F(CacheTest, NullCacheCannotBeInstalled) {
 
 TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   auto cache =
-      std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+      std::make_shared<SequenceCache>(CacheGeometry{{flat_layer()}}, config(4));
   std::string key;
   {
     InstallGuard guard(cache);
@@ -349,8 +385,8 @@ TEST_F(CacheTest, AcquiredCacheOutlivesRegistryEntry) {
   std::shared_ptr<Cache> acquired;
   std::string key;
   {
-    auto cache =
-        std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+    auto cache = std::make_shared<SequenceCache>(
+        CacheGeometry{{flat_layer()}}, config(4));
     weak = cache;
     InstallGuard guard(cache);
     key = installed_key(guard);
@@ -401,8 +437,8 @@ StepArgs flatten_step(std::initializer_list<SeqTokens> sequences) {
 struct Cells {
   explicit Cells(
       int capacity,
-      std::vector<LayerConfig> layers = {flat_layer(), flat_layer()})
-      : cache(CacheConfig{capacity, static_cast<int>(layers.size()), layers}),
+      std::vector<LayerGeometry> layers = {flat_layer(), flat_layer()})
+      : cache(CacheGeometry{std::move(layers)}, config(capacity)),
         ctl(cache.as<BatchControl>()),
         stepper(cache.as<CellStepper>()) {}
 
@@ -808,6 +844,106 @@ TEST_F(CacheTest, KvSharedLayerReservesIdempotently) {
   EXPECT_EQ(c.place(0, args.positions), donor); // same tokens -> same step
   EXPECT_EQ(c.cache.free_cells(), free_after_place); // no new cells claimed
   EXPECT_EQ(c.place(0, {7, 8, 9}), nullptr); // different tokens, never declared
+}
+
+TEST_F(CacheTest, DFlashCellRowsUseOwnerOrderAndContextAnchoredWindow) {
+  CacheGeometry geometry{{flat_layer(), ring_layer(2), ring_layer(2)}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(32));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  // b is first despite its larger id; context lengths are unequal.
+  const auto args = flatten_step({{b, 0, 5}, {a, 0, 3}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* flat = cache.place_step(0, args.positions.data(), 8);
+  const auto* windowed = cache.place_step(1, args.positions.data(), 8);
+  ASSERT_NE(flat, nullptr);
+  ASSERT_NE(windowed, nullptr);
+  EXPECT_EQ(flat->query_rows, (std::vector<int32_t>{3, 4, 6, 7}));
+  EXPECT_EQ(windowed->query_rows, flat->query_rows);
+  EXPECT_EQ(flat->cells, (std::vector<int32_t>{0, 1, 2, 3, 4, 5, 6, 7}));
+  EXPECT_EQ(row(*flat, 3), "11111...");
+  EXPECT_EQ(row(*flat, 4), "11111...");
+  EXPECT_EQ(row(*flat, 6), ".....111");
+  // b's context ends at 3: retain positions 1,2 and the full block 3,4.
+  EXPECT_EQ(row(*windowed, 3), ".1111...");
+  EXPECT_EQ(row(*windowed, 4), ".1111...");
+  EXPECT_EQ(row(*windowed, 6), ".....111");
+  EXPECT_EQ(cache.place_step(2, args.positions.data(), 8), windowed);
+  EXPECT_EQ(cache.free_cells(), 24);
+}
+
+TEST_F(CacheTest, DFlashCellRejectsMalformedGroupingWithoutPlacement) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  ASSERT_TRUE(cache.declare_step({b, b, a, a}));
+  EXPECT_FALSE(cache.declare_step({a, a, b, b, a, a}));
+  EXPECT_FALSE(cache.declare_step({a, a, b}));
+  EXPECT_FALSE(cache.declare_step({a, -1}));
+  const int32_t wrong[] = {0, 1, 0, 2};
+  EXPECT_EQ(cache.place_step(0, wrong, 4), nullptr);
+  EXPECT_EQ(cache.place_step(0, wrong, 3), nullptr);
+  EXPECT_EQ(cache.place_step(0, nullptr, 4), nullptr);
+  EXPECT_EQ(cache.free_cells(), 16);
+  EXPECT_EQ(cache.pos(a), 0);
+  EXPECT_EQ(cache.pos(b), 0);
+  const int32_t positions[] = {0, 1, 0, 1};
+  ASSERT_NE(cache.place_step(0, positions, 4), nullptr);
+  EXPECT_EQ(cache.free_cells(), 12);
+}
+
+TEST_F(CacheTest, DFlashCellRewindRetainsContextAndReusesTemporaryHoles) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = 2;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  auto args = flatten_step({{b, 0, 5}, {a, 0, 3}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  ASSERT_NE(cache.place_step(0, args.positions.data(), 8), nullptr);
+  ASSERT_TRUE(cache.rewind(b, cache.pos(b) - 2));
+  ASSERT_TRUE(cache.rewind(a, cache.pos(a) - 2));
+  EXPECT_EQ(cache.pos(b), 3);
+  EXPECT_EQ(cache.pos(a), 1);
+  EXPECT_EQ(cache.free_cells(), 12);
+  const auto fork = cache.seq_clone(b, std::nullopt);
+  ASSERT_TRUE(fork);
+  args = flatten_step({{a, 1, 2}, {*fork, 3, 2}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* step = cache.place_step(0, args.positions.data(), 4);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(step->cells, (std::vector<int32_t>{3, 4, 6, 7}));
+  EXPECT_EQ(step->query_rows, (std::vector<int32_t>{0, 1, 2, 3}));
+  EXPECT_EQ(row(*step, 0), "...111..");
+  EXPECT_EQ(row(*step, 2), "111...11");
+  ASSERT_TRUE(cache.seq_rm(a));
+  EXPECT_EQ(*cache.seq_new(), a);
+}
+
+TEST_F(CacheTest, DFlashZeroWarmupSelectsOneQueryPerOwnerAndPersistsContext) {
+  CacheGeometry geometry{{flat_layer(), ring_layer(2)}};
+  geometry.dflash_block_size = 0;
+  CellCache cache(geometry, config(16));
+  const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+  const auto args = flatten_step({{b, 0, 4}, {a, 0, 1}});
+  ASSERT_TRUE(cache.declare_step(args.seq_ids));
+  const auto* step = cache.place_step(1, args.positions.data(), 5);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(step->query_rows, (std::vector<int32_t>{3, 4}));
+  EXPECT_EQ(row(*step, 3), "..11.");
+  EXPECT_EQ(row(*step, 4), "....1");
+  EXPECT_EQ(cache.pos(b), 4);
+  EXPECT_EQ(cache.pos(a), 1);
+}
+
+TEST_F(CacheTest, DFlashGeometryRejectsNegativeBlocksAndUnknownPolicy) {
+  CacheGeometry geometry{{flat_layer()}};
+  geometry.dflash_block_size = -1;
+  EXPECT_FALSE(executorch::extension::llm::cache::valid(geometry));
+  geometry.dflash_block_size = 0;
+  EXPECT_TRUE(executorch::extension::llm::cache::valid(geometry));
+  geometry.layers[0].policy.kind = static_cast<LayerPolicy::Kind>(42);
+  EXPECT_FALSE(executorch::extension::llm::cache::valid(geometry));
 }
 
 TEST_F(CacheTest, CellRejectedDeclarationLeavesTheLastOneStanding) {

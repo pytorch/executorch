@@ -6,6 +6,7 @@
 
 import json
 import os
+import struct
 import tempfile
 import unittest
 import zipfile
@@ -33,6 +34,17 @@ def _entries(path: str) -> set[str]:
 def _read_entry(path: str, entry: str) -> bytes:
     with zipfile.ZipFile(path) as pkg:
         return pkg.read(entry)
+
+
+def _member_data_offset(path: str, entry: str) -> int:
+    """File offset of a stored member's data, read from its local header."""
+    with zipfile.ZipFile(path) as pkg:
+        header_offset = pkg.getinfo(entry).header_offset
+    with open(path, "rb") as f:
+        f.seek(header_offset)
+        local = f.read(30)
+    name_size, extra_size = struct.unpack("<HH", local[26:30])
+    return header_offset + 30 + name_size + extra_size
 
 
 def _rewrite(path: str, overrides: dict[str, bytes]) -> None:
@@ -251,6 +263,34 @@ class WritePtnTest(unittest.TestCase):
         _, out = read_ptn(self.path)
         for key, tensor in constants.items():
             self.assertTrue(torch.equal(out[key], tensor), f"{key} mismatched")
+
+    def test_tensor_data_is_aligned_in_the_file(self):
+        # Mixed element sizes with odd counts, so packing in key order would leave
+        # the wider tensors misaligned.
+        constants = {
+            "a": torch.arange(3, dtype=torch.int8),
+            "b": torch.arange(5, dtype=torch.float16),
+            "c": torch.arange(7, dtype=torch.float32),
+            "d": torch.arange(3, dtype=torch.int64),
+        }
+        # Vary the graph size so the safetensors member starts at every offset
+        # modulo the alignment.
+        for ptg_size in range(64):
+            with self.subTest(ptg_size=ptg_size):
+                write_ptn(self.path, b"x" * ptg_size, constants)
+                member = _member_data_offset(self.path, SAFETENSORS_ENTRY)
+                safetensors = _read_entry(self.path, SAFETENSORS_ENTRY)
+                header_size = int.from_bytes(safetensors[:8], "little")
+                data = member + 8 + header_size
+                self.assertEqual(data % 64, 0)
+
+                header = json.loads(safetensors[8 : 8 + header_size])
+                for key, tensor in constants.items():
+                    begin = header[key]["data_offsets"][0]
+                    self.assertEqual((data + begin) % tensor.element_size(), 0, key)
+                _, out = read_ptn(self.path)
+                for key, tensor in constants.items():
+                    self.assertTrue(torch.equal(out[key], tensor), key)
 
     def test_member_names_are_fixed_so_renaming_is_safe(self):
         write_ptn(self.path, _PTG, {"a": torch.zeros(2)})

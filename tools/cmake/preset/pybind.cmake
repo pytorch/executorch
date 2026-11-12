@@ -59,11 +59,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
-  # Both of these are Apple Silicon only. The TorchAO kernels build only for
-  # aarch64, which is what TORCHAO_BUILD_CPU_AARCH64 selects; the Apple
-  # framework build already ships them and this brings the wheel in line. MLX
-  # additionally needs the Metal compiler (xcrun -sdk macosx metal), which comes
-  # with Xcode and not with the Command Line Tools.
+  # MLX needs the Metal compiler (xcrun -sdk macosx metal), which comes with
+  # Xcode and not with the Command Line Tools, so it is probed rather than
+  # assumed. The TorchAO kernels are enabled for aarch64 here and under Linux
+  # below, because that is where their NEON paths are reachable. This gate keeps
+  # the exact spelling the macOS toolchain reports.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
     execute_process(
@@ -89,6 +89,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
+  # The same kernels the macOS arm64 wheel gets above, because the processor is
+  # what decides whether they can run, not the operating system. Off for x86
+  # because the build sets TORCHAO_BUILD_CPU_AARCH64, which compiles an
+  # aarch64-only kernel library under -march=armv8.4-a+dotprod, so an x86 build
+  # fails rather than degrades. Both spellings are accepted here because a Linux
+  # toolchain file may report either.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
+  endif()
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|i.86)$")
     # Auto-enable QNN on Linux x86 when the SDK is available. - QNN_SDK_ROOT set
     # explicitly → always enable - GitHub Actions CI → skip (avoids flaky 1.3GB
@@ -123,13 +132,14 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
   set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
   # Ship one shared runtime that both the pybind extension and standalone C++
-  # consumers link, so a process has a single backend registry. Not set on
-  # Windows, where the runtime has no export annotations for a DLL.
+  # consumers link, so a process has a single backend registry.
   set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  # Windows or other OS-specific code here
+  # One shared runtime, as on Linux and macOS. The event tracer stays off here,
+  # so the profiler library ships only because the Python extension links it.
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"

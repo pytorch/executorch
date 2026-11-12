@@ -1,4 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -40,6 +42,7 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:portable_lib",
@@ -61,11 +64,22 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_multiple_modules",
+    srcs = ["test_multiple_modules.py"],
+    deps = [
+        "//executorch/extension/pybindings:core",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_library,
     name = "test_pybindings_lib",
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
     ],
@@ -78,5 +92,40 @@ fbcode_target(
     srcs = ["test_backend_pybinding.py"],
     deps = [
         "//executorch/runtime:runtime",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "run_cuda_program",
+    srcs = ["run_cuda_program.py"],
+    main_function = "executorch.extension.pybindings.test.run_cuda_program.main",
+    # The compiled delegate resolves aoti_torch_* shims from the executable.
+    binary_linker_flags = ["-Wl,--export-dynamic"],
+    keep_gpu_sections = True,
+    deps = [
+        "//executorch/extension/pybindings:cuda_lib",
+        "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest_remote_gpu,
+    name = "test_pybindings_cuda_lib",
+    srcs = ["test_pybindings_cuda_lib.py"],
+    env = {
+        "RUN_CUDA_PROGRAM": "$(location :run_cuda_program)",
+    },
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+        subplatform = "A100",
+    ),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cuda:cuda_backend",
+        "//executorch/backends/cuda:cuda_partitioner",
+        "//executorch/exir:lib",
+        "fbsource//third-party/pypi/numpy:numpy",
     ],
 )

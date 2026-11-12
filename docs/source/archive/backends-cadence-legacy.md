@@ -51,7 +51,7 @@ In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DS
 - [J-Link](https://www.segger.com/downloads/jlink/)
     - Needed to flash the board with the firmware images. You can install this on the same platform that you installed the MCUXpresso IDE on.
     - Note: depending on the version of the NXP board, another probe than JLink might be installed. In any case, flashing is done using the MCUXpresso IDE in a similar way.
- - [MCUXpresso SDK](https://mcuxpresso.nxp.com/en/select?device=EVK-MIMXRT685)
+ - [MCUXpresso SDK](https://mcuxpresso.nxp.com/en/select?hardware=EVK-MIMXRT685) <!-- @lint-ignore NXP SDK Builder requires sign-in -->
     - Download this SDK to your Linux machine, extract it and take a note of the path where you store it. You'll need this later.
 - [Xtensa compiler](https://tensilicatools.com/platform/i-mx-rt600/)
     - Download this to your Linux machine. This is needed to build ExecuTorch for the HiFi4 DSP.

@@ -139,3 +139,12 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_metal_memory SOURCES runtime/test/test_memory.cpp EXTRA_LIBS
+    metal_backend
+  )
+endif()

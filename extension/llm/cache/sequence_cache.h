@@ -151,15 +151,12 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
                                       public SequenceControl,
                                       public SequencePlanner {
  public:
-  explicit SequenceCache(const CacheConfig& cfg)
+  SequenceCache(const CacheGeometry& geometry, const CacheConfig& cfg)
       : capacity_(cfg.capacity), max_write_(cfg.max_write) {
-    assert(valid(cfg));
-    layer_to_policy_.reserve(cfg.n_layers);
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
-      layer_to_policy_.push_back(policy_index(lc.policy));
+    assert(valid(geometry, cfg));
+    layer_to_policy_.reserve(geometry.layers.size());
+    for (const LayerGeometry& layer : geometry.layers) {
+      layer_to_policy_.push_back(policy_index(layer.policy));
     }
   }
 

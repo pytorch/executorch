@@ -115,10 +115,13 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
   // this only guarantees the one it returns is not already taken.
   virtual std::optional<int32_t> seq_new() = 0;
-  // A new sequence claiming src's slots below `upto`, all of them when unset.
-  // A shared slot keeps one position, so only a prefix can be shared, and the
-  // fork is a snapshot: slots src gains afterwards are its own. Nothing is
-  // copied. nullopt = an unknown or empty src, or no free sequence id.
+  // An independently writable snapshot of src below `upto`, all of it when
+  // unset. The source is unchanged, and later writes to either sequence must
+  // not affect the other. A layout may share slots or copy them; cloning can
+  // therefore require capacity as well as a free id. nullopt = an unknown or
+  // empty source, unavailable retained history, or insufficient resources.
+  // The caller owns the returned id until seq_rm. On failure, including an
+  // allocation exception, the implementation retains no new caller-owned id.
   virtual std::optional<int32_t> seq_clone(
       int32_t src,
       std::optional<int> upto) = 0;
@@ -144,19 +147,25 @@ struct ET_EXPERIMENTAL LayerPolicy {
   int window = 0; // Ring: sliding-window size; must be 0 when Flat
 };
 
-// Per-layer architecture facts + cache policy.
-struct ET_EXPERIMENTAL LayerConfig {
+// Immutable per-layer architecture facts + cache policy.
+struct ET_EXPERIMENTAL LayerGeometry {
   LayerPolicy policy; // default Flat
   int n_kv_heads;
   int head_dim;
 };
 
-// Model facts and the policy the byte layer sizes its pools from. `layers` is
-// per-layer: size 1 applies to every layer, else one entry each.
+// Model facts and the policy the byte layer sizes its pools from. There is
+// exactly one entry per model layer.
+struct ET_EXPERIMENTAL CacheGeometry {
+  std::vector<LayerGeometry> layers;
+  // Unset means ordinary attention. DFlash K/V are [new context, block].
+  // Nonnegative temporary block length; zero persists all K/V with one dummy Q.
+  std::optional<int> dflash_block_size = std::nullopt;
+};
+
+// Runtime-selected cache sizing and storage settings.
 struct ET_EXPERIMENTAL CacheConfig {
   int capacity; // logical cap in cells
-  int n_layers;
-  std::vector<LayerConfig> layers;
   int kv_dtype; // ET ScalarType the byte layer stores K/V in
   // Starting slots for a layer that keeps its history; it doubles from here
   // toward capacity. A windowed layer takes its whole window at once instead.
@@ -165,15 +174,45 @@ struct ET_EXPERIMENTAL CacheConfig {
   // Max tokens per step; a ring layer sizes slots to window + max_write - 1.
   // Unset = each ring layer uses its own window.
   std::optional<int> max_write;
+  // Sequences a batch layout must hold at once, for a byte layer whose
+  // storage width is fixed when the program is compiled. Unset = no fixed
+  // bound; the capacity they share is the only limit.
+  std::optional<int> max_seqs;
 };
 
-// Whether `cfg` satisfies the contract above.
+ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
+  if (geometry.layers.empty() ||
+      (geometry.dflash_block_size && *geometry.dflash_block_size < 0)) {
+    return false;
+  }
+  for (const LayerGeometry& layer : geometry.layers) {
+    if (layer.n_kv_heads <= 0 || layer.head_dim <= 0) {
+      return false;
+    }
+    if ((layer.policy.kind != LayerPolicy::Kind::Flat &&
+         layer.policy.kind != LayerPolicy::Kind::Ring) ||
+        (layer.policy.kind == LayerPolicy::Kind::Flat &&
+         layer.policy.window != 0) ||
+        (layer.policy.kind == LayerPolicy::Kind::Ring &&
+         layer.policy.window <= 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 ET_EXPERIMENTAL inline bool valid(const CacheConfig& cfg) {
   // initial_capacity may be 0 but not negative, and may exceed capacity -- the
   // byte layer clamps it.
-  return cfg.capacity > 0 && cfg.n_layers > 0 && cfg.initial_capacity >= 0 &&
-      (cfg.layers.size() == 1 ||
-       cfg.layers.size() == static_cast<size_t>(cfg.n_layers));
+  return cfg.capacity > 0 && cfg.initial_capacity >= 0 &&
+      (!cfg.max_write || *cfg.max_write > 0) &&
+      (!cfg.max_seqs || *cfg.max_seqs > 0);
+}
+
+ET_EXPERIMENTAL inline bool valid(
+    const CacheGeometry& geometry,
+    const CacheConfig& cfg) {
+  return valid(geometry) && valid(cfg);
 }
 
 } // namespace cache

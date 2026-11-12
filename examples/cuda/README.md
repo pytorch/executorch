@@ -55,13 +55,19 @@ python -m executorch.backends.cuda.merge_ptes \
 ```
 
 The inputs must come from the same ExecuTorch program and contain identical
-weights. Each regular `--input-pte` contributes only exact-SM native cubins;
-any PTX capability in a regular input is ignored. At most one
-`--fallback-pte` may be provided, and it must contain exactly one PTX-capable
-variant. The runtime uses it only when no regular input provides a native cubin
-for the current SM. The output PTD reuses one validated copy of the weights.
-After merging, the tool prints every native SM and PTX fallback together with
-its source PTE.
+weights. A plain `--input-pte` contributes its exact-SM native variant, and any
+PTX capability in that input is ignored. A previous merge output may also be
+used as an `--input-pte`; its native variants and fallback are carried forward.
+Identical inherited fallbacks are combined into one. Different inherited
+fallbacks require an explicit replacement or the merge is rejected.
+
+At most one `--fallback-pte` may be provided. It must contain exactly one
+variant, which must be PTX-capable, and it replaces any fallback inherited from
+regular inputs. Pass a previous merge output as an `--input-pte`, not as the
+fallback. The runtime uses the fallback only when no regular input provides a
+native cubin for the current SM. The output PTD reuses one validated copy of the
+weights. After merging, the tool prints every native SM and PTX fallback
+together with its immediate source PTE.
 
 Export every regular input with PTX disabled:
 

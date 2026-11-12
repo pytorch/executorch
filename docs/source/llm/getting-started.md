@@ -20,7 +20,8 @@ Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) expor
 
 ### Exporting
 - [Exporting LLMs](export-llm.md) - Export using ExecuTorch's native `export_llm` API with advanced optimizations
-- [Exporting LLMs with Optimum](export-llm-optimum.md) - Export Hugging Face models with broader architecture support
+- [Transformers exporters](https://huggingface.co/docs/transformers/en/exporters) - Experimental, broad programmatic export of Hugging Face models
+- [Exporting LLMs with Optimum](export-llm-optimum.md) - Tested Hugging Face recipes, quantization, and higher-level APIs
 - [Exporting custom LLMs](export-custom-llm.md)
 
 ### Running

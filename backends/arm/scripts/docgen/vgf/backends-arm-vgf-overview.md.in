@@ -40,6 +40,12 @@ The main configuration point for the lowering is the `VgfCompileSpec` consumed b
 To extract the VGF file for integration into applications without the ExecuTorch runtime, use `VgfCompileSpec.dump_intermediate_artifacts_to()`.  
 The full user-facing API is documented below.
 
+For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
+Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
+are contained in one delegated partition, and whose new value is not returned or
+read outside that partition. The backend aliases each buffer's
+input and mutation output to persistent VGF storage across invocations.
+
 $COMPILE_SPEC
 
 ### Partitioner API
@@ -87,6 +93,7 @@ described in the rest of this guide but with a concrete end-to-end sample.
 
 **→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
+**→{doc}`/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization` — Dynamic W8A8 quantization tutorial.**
 
 ```{toctree}
 :maxdepth: 2
@@ -98,4 +105,5 @@ arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/vgf-getting-started
 VGF_op_support
+tutorials/vgf-dynamic-w8a8-quantization
 ```

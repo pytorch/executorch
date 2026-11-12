@@ -13,10 +13,10 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -107,7 +107,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
 
     # get training / validation data
     labels = {key: index for index, key in enumerate(data.Conference.unique())}
-    data["label"] = data.Conference.replace(labels)
+    data["label"] = data.Conference.map(labels)
 
     train, val, _, _ = train_test_split(
         data.index.values,
@@ -131,6 +131,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
         "google/mobilebert-uncased",
         num_labels=len(labels),
         return_dict=False,
+        use_safetensors=True,
     )
 
     # tokenize dataset
@@ -284,19 +285,19 @@ def main(args):
     if args.compile_only:
         return
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # get torch cpu result
     cpu_preds, true_vals = evaluate(model, data_val)

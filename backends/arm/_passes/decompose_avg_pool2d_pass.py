@@ -111,7 +111,7 @@ class DecomposeAvgPool2dPass(ArmOpTargetedPass):
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
 
-        if len(args) > 2 and args[2] is not None:
+        if len(args) > 2 and args[2]:
             stride_h, stride_w = args[2]
         else:
             stride_h, stride_w = kernel_h, kernel_w

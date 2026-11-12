@@ -186,6 +186,12 @@ class ComputeGraph final {
 
   std::vector<Value> values_;
   std::vector<api::ParamsBuffer> param_ubos_;
+  // Buffers that back tensors and are owned by the graph, e.g. imported from
+  // an AHardwareBuffer.
+  std::vector<vkapi::VulkanBuffer> external_buffers_;
+  // Whether a tensor or staging buffer wraps memory that is also accessed
+  // outside the graph.
+  bool has_external_memory_ = false;
 
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
@@ -276,6 +282,10 @@ class ComputeGraph final {
 
   inline GraphConfig& graphconfig() {
     return config_;
+  }
+
+  inline bool has_external_memory() const {
+    return has_external_memory_;
   }
 
   // Check if the ComputeGraph has a value at the specified index
@@ -371,6 +381,12 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  inline vkapi::ScalarType original_dtype_of(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isTensor() ? value.toConstTensor().original_dtype()
+                            : dtype_of(idx);
+  }
+
   vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
@@ -434,9 +450,9 @@ class ComputeGraph final {
   bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
 
   /*
-   * Checks that the value at `idx` is either a 2D tensor, or if the tensor has
-   * more than 2 dims, the outermost dims have size of 1, i.e. can be squeezed
-   * to be a 2D tensor.
+   * Checks that the value at `idx` is a 1D tensor (a single row), a 2D tensor,
+   * or a tensor whose outermost dims have size of 1, i.e. can be squeezed to
+   * be a 2D tensor.
    */
   bool is_2d_matrix(const ValueRef idx) const;
 
@@ -454,6 +470,19 @@ class ComputeGraph final {
    * buffer
    */
   bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that texture reads outside the logical limits of the tensor at
+   * `idx` return zero, i.e. that the following is true:
+   * 1. The value at `idx` is a tensor with texture storage
+   * 2. The image extents of the tensor match its logical limits
+   * 3. The image sampler uses nearest filtering and a transparent black border
+   */
+  bool samples_zero_outside_tensor(const ValueRef idx) const;
+
+  inline bool val_has_external_storage(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().has_external_storage();
+  }
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
@@ -804,6 +833,32 @@ class ComputeGraph final {
       const vkapi::VulkanBuffer& buffer);
 
   /*
+   * Wrap an image that something else created on the graph's device, and
+   * destroys, as a texture3d tensor. The image stays in
+   * VK_IMAGE_LAYOUT_GENERAL. Throws if its format or extents do not match the
+   * tensor.
+   */
+  ValueRef add_external_vkimage_backed_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const VkImage image,
+      const VkImageView view,
+      const VkFormat format,
+      const VkExtent3D extents);
+
+  /*
+   * Wrap a buffer as a buffer tensor. The graph takes ownership of `buffer`,
+   * which may alias a VkBuffer owned elsewhere or own imported memory. Throws
+   * if it is too small for the tensor.
+   */
+  ValueRef add_external_vkbuffer_backed_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      vkapi::VulkanBuffer&& buffer);
+
+  /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(
@@ -868,6 +923,15 @@ class ComputeGraph final {
       const size_t numel,
       const vkapi::CopyDirection direction);
 
+  /*
+   * Add a staging buffer over external memory, which the graph takes ownership
+   * of. Throws if it cannot hold `numel` elements.
+   */
+  ValueRef add_staging(
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      vkapi::VulkanBuffer&& external_buffer);
+
   ValueRef add_none();
 
   template <typename T>
@@ -897,11 +961,29 @@ class ComputeGraph final {
 
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
 
+  /*
+   * Stages the input in external memory, e.g. a buffer that an app writes,
+   * which the graph takes ownership of.
+   */
+  ValueRef set_input_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype,
+      vkapi::VulkanBuffer&& external_staging);
+
   ValueRef set_output_tensor(
       const ValueRef idx,
       vkapi::ScalarType staging_dtype);
 
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  /*
+   * Stages the output in external memory, e.g. a buffer that an app reads,
+   * which the graph takes ownership of.
+   */
+  ValueRef set_output_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype,
+      vkapi::VulkanBuffer&& external_staging);
 
   ValueRef set_output_value(const ValueRef idx);
 
@@ -1032,8 +1114,11 @@ class ComputeGraph final {
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * Buffer tensors use linear dispatch intent. Oversized X dimensions are
-   * wrapped across X and Y according to device workgroup-count limits.
+   * Ordinary buffers use one invocation per physical scalar. Packed int8
+   * tensors retain logical-element dispatch because their kernels map groups
+   * of four logical bytes to each int32 storage element. Buffer dispatch uses
+   * linear intent; oversized X dimensions wrap across X and Y according to
+   * device workgroup-count limits.
    */
   GlobalWorkGrid create_gwg(const ValueRef idx);
 
@@ -1137,12 +1222,6 @@ class ComputeGraph final {
    * to GPU.
    */
   void prepack();
-
-  //
-  // Optional Graph Execution
-  //
-
-  void optional_warmup_execute();
 
   //
   // Graph Execution

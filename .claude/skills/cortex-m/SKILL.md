@@ -33,10 +33,8 @@ exported = export(quantized, example_inputs)
 edge = to_edge_transform_and_lower(
     exported,
     compile_config=cortex_m_edge_compile_config(),
+    transform_passes=CortexMPassManager(),
 )
-edge._edge_programs["forward"] = CortexMPassManager(
-    edge.exported_program(), CortexMPassManager.pass_list
-).transform()
 et_program = edge.to_executorch()
 ```
 

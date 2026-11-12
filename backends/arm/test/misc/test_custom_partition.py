@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,12 +8,17 @@ from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    TosaPipelineFP,
+)
+from executorch.backends.test.harness.stages import StageType
 from executorch.exir.backend.operator_support import (
     DontPartition,
     DontPartitionModule,
     DontPartitionName,
 )
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
@@ -43,6 +48,62 @@ class NestedModule(torch.nn.Module):
         a = x.sigmoid()
         b = a + y
         return self.nested(a, b)
+
+
+# Reproduce the shared partition boundary used by YOLO. One split output stays
+# in portable code while the other can enter another delegate. This exposes a
+# bug where the first delegate claims its shared output is FP32 but writes
+# INT16 data.
+#
+#     conv -> split -> reshape -> BMM (portable)
+#                 `-> relu            (next delegate)
+class ConvSplitBMM(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(2, 4, 1)
+
+    def forward(self, x, y):
+        lhs, other = self.conv(x).split([2, 2], dim=1)
+        lhs = lhs.reshape(1, 2, 4)
+        return torch.bmm(lhs, y), torch.relu(other)
+
+
+@common.XfailIfNoCorstone300
+def test_a16w8_u55_INT_split_boundary():
+    """Keep INT-only delegate outputs quantized across split boundaries."""
+    # Keep this partition boundary stable if U55 gains INT16 BMM support.
+    reject_bmm = DontPartition(exir_ops.edge.aten.bmm.default)
+    pipeline = EthosU55PipelineINT(
+        ConvSplitBMM(),
+        (torch.rand(1, 2, 2, 2), torch.rand(1, 4, 3)),
+        # The operator-support docs treat these expected-op lists as support
+        # evidence. Do not list BMM: this test deliberately runs it portably.
+        ["torch.ops.aten.conv2d.default"],
+        [],
+        a16w8_quantization=True,
+    )
+    pipeline.tester.use_portable_ops = True
+    pipeline.change_args("to_edge_transform_and_lower", additional_checks=[reject_bmm])
+    pipeline.change_args(
+        "check_count.exir",
+        {"torch.ops.higher_order.executorch_call_delegate": 2},
+    )
+
+    def check_delegate_output_dtypes():
+        artifact = pipeline.tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+        for node in artifact.exported_program().graph.nodes:
+            if node.target == executorch_call_delegate:
+                assert all(
+                    not output.dtype.is_floating_point for output in node.meta["val"]
+                )
+
+    pipeline.add_stage_after(
+        "check_count.exir", check_delegate_output_dtypes, suffix="output_dtypes"
+    )
+    pipeline.run()
+
+    assert reject_bmm.has_rejected_node()
 
 
 @common.parametrize("test_data", CustomPartitioning.inputs)

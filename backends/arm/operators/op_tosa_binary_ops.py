@@ -41,19 +41,19 @@ binary_operator_factory(
     "tosa.BITWISE_AND.default",
     ts.Op.BITWISE_AND,
     "BitwiseAndAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.BITWISE_OR.default",
     ts.Op.BITWISE_OR,
     "BitwiseOrAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.BITWISE_XOR.default",
     ts.Op.BITWISE_XOR,
     "BitwiseXorAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT64],
 )
 binary_operator_factory(
     "tosa.INTDIV.default",

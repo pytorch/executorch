@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "dbf45dbfcc515421dd6099037d3e2637b90748c8"
+    "v8.0.0"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -89,6 +89,14 @@ if(EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
     message(
       FATAL_ERROR
         "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS is ON, but CMSIS-NN did not define the cmsis_nn pybind target."
+    )
+  endif()
+  # CMSIS-NN's test-only shared library takes the static library's name, so on
+  # Windows its import library is cmsis-nn.lib as well: two rules for one file,
+  # which Ninja refuses. Only the import library needs another name.
+  if(WIN32 AND TARGET cmsis-nn-shared)
+    set_target_properties(
+      cmsis-nn-shared PROPERTIES ARCHIVE_OUTPUT_NAME cmsis-nn-shared
     )
   endif()
 endif()

@@ -147,9 +147,11 @@ class LowerableVisionModelWrapper(Qwen3VLModelTestModule):
 
         with torch.no_grad():
             grid_thw = _make_image_grid_thw(self.visual.pos_embed.weight.device)
-            pos_embeds = self.visual.fast_pos_embed_interpolate(grid_thw)
+            pos_embeds = self.visual.fast_pos_embed_interpolate(  # type: ignore[operator]
+                grid_thw
+            )
 
-            rotary_pos_emb = self.visual.rot_pos_emb(grid_thw)
+            rotary_pos_emb = self.visual.rot_pos_emb(grid_thw)  # type: ignore[operator]
             emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
             cos = emb.cos()
             sin = emb.sin()
@@ -380,6 +382,7 @@ def test_qwen3_vl_text_model_tosa_mxfp8_bf16():
 
 @pytest.mark.slow
 @pytest.mark.xlarge
+@pytest.mark.timeout(3600)
 @common.parametrize("test_case", TOSA_FP_TEST_CASES)
 def test_qwen3_vl_2b_instruct_full_models_tosa_FP_bf16(
     test_case: Qwen3VLModelTestCase,
@@ -405,6 +408,7 @@ def test_qwen3_vl_2b_instruct_full_models_vgf_no_quant_bf16(
 
 @pytest.mark.slow
 @pytest.mark.xlarge
+@pytest.mark.timeout(3600)
 def test_qwen3_vl_2b_instruct_text_model_tosa_mxfp8_bf16():
     _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
         _make_qwen3_vl_2b_instruct_layer_config,

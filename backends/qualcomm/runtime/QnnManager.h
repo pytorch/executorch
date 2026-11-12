@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -37,7 +38,12 @@ class QnnManager {
   // provided graph_names. Note: For online_prepare or deserialization, the
   // graph name will be obtained from the binary.
   executorch::runtime::Error InitContext(
-      std::optional<std::vector<std::string>> graph_names = std::nullopt);
+      const std::optional<std::vector<std::string>>& graph_names = std::nullopt,
+      Qnn_ContextHandle_t spill_fill_handle = nullptr);
+
+  Qnn_ContextHandle_t GetContextHandle() const {
+    return backend_params_ptr_->qnn_context_ptr_->GetHandle();
+  }
   // This function only initialize the context cache to get spill fill buffer
   // size
   executorch::runtime::Error InitContextCache();
@@ -85,6 +91,12 @@ class QnnManager {
   executorch::runtime::Error Compile(
       const std::string& graph_name,
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
+  executorch::runtime::Error CreateDlc(void** dlc_handle);
+  executorch::runtime::Error AddContextToDlc(void* dlc_handle);
+  executorch::runtime::Error GetDlcBinary(
+      void* dlc_handle,
+      std::vector<uint8_t>& binary);
+  void FreeDlc(void* dlc_handle);
 
   executorch::runtime::Error RegisterMem(
       void* data_ptr,

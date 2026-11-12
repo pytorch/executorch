@@ -29,12 +29,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   test-webgpu-native:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-16-128
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       # The test script alone runs about 60 minutes, and the checkout plus the
       # Dawn and SwiftShader source builds in front of it have been measured

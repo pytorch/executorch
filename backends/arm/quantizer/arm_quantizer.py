@@ -31,6 +31,7 @@ from executorch.backends.arm.quantizer.quantization_config import (
     VGFQuantizationConfig,
 )
 from executorch.backends.arm.quantizer.quantizer_support import (
+    PowTensorTensorPositiveBaseCheck,
     TOSA_QUANTIZER_SUPPORT_DICT,
 )
 from executorch.backends.arm.tosa import TosaSpecification
@@ -195,8 +196,9 @@ def get_symmetric_quantization_config(
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
 
-    Activations use an affine qscheme; "symmetric" refers to the weight
-    quantization qscheme.
+    Activations normally use an affine qscheme. Dynamic INT8 activations
+    using the symmetric [-127, 127] range use per-tensor symmetric
+    qparams so TorchAO emits choose_qparams_symmetric.tensor.
 
     Args:
         is_per_channel (bool): Whether to use per-channel quantization for
@@ -235,7 +237,11 @@ def get_symmetric_quantization_config(
         dtype=torch.int8,
         quant_min=act_qmin,
         quant_max=act_qmax,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric
+            if is_dynamic and act_qmin == -127 and act_qmax == 127
+            else torch.per_tensor_affine
+        ),
         is_dynamic=is_dynamic,
         observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
             **extra_args,
@@ -478,6 +484,8 @@ def get_symmetric_a16w8_quantization_config(
         is_per_channel=is_per_channel,
         is_qat=is_qat,
         is_dynamic=is_dynamic,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
     )
 
     if is_dynamic:
@@ -582,6 +590,39 @@ def _for_each_filtered_node(
     for node in model.graph.nodes:
         if filter_fn(node):
             yield node
+
+
+def _strip_exported_program_guards(model: GraphModule) -> None:
+    """Discard torch.export's side-effect-only input-guard call before PT2E.
+
+    Since torch 2.15, ExportedProgram.module() may insert a call_module node
+    targeting ``_guards_fn``. The Arm annotation passes cannot lower that node.
+    This is equivalent to using ``module(check_guards=False)`` for PT2E;
+    unrelated call_module nodes must not be removed.
+
+    """
+    guard_nodes = [
+        node
+        for node in model.graph.nodes
+        if node.op == "call_module" and node.target == "_guards_fn"
+    ]
+    if not guard_nodes:
+        return
+
+    # The generated guard returns None and has no consumers. Never erase a
+    # call whose result is used, even if it happens to have this name.
+    if any(node.users for node in guard_nodes):
+        raise RuntimeError("Cannot remove _guards_fn: its result is in use")
+
+    for node in guard_nodes:
+        model.graph.erase_node(node)
+
+    # PyTorch's exported-module pre-hook tests for this attribute. Removing it
+    # also restores the standard input constraint checks provided by the hook,
+    # as happens with module(check_guards=False).
+    if hasattr(model, "_guards_fn"):
+        delattr(model, "_guards_fn")
+    model.recompile()
 
 
 class TOSAQuantizer(Quantizer):
@@ -890,6 +931,7 @@ class TOSAQuantizer(Quantizer):
             GraphModule: Transformed model prepared for annotation.
 
         """
+        _strip_exported_program_guards(model)
         return self.quantizer.transform_for_annotation(model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
@@ -924,32 +966,19 @@ class TOSAQuantizer(Quantizer):
             if node.op != "call_function":
                 continue
 
-            devices = set()
+            devices: set[str] = set()
             for arg_node in node.all_input_nodes:
                 meta_val = arg_node.meta.get("val", None)
                 if meta_val is None:
                     continue
-                if isinstance(meta_val, (tuple, list)):
-                    for tensor in meta_val:
-                        devices.add(
-                            str(
-                                getattr(
-                                    tensor,
-                                    "device",
-                                    f"Could not get device from {tensor}",
-                                )
-                            )
-                        )
-                else:
-                    devices.add(
-                        str(
-                            getattr(
-                                meta_val,
-                                "device",
-                                f"Could not get device from {meta_val}",
-                            )
-                        )
-                    )
+                values = (
+                    meta_val if isinstance(meta_val, (tuple, list)) else (meta_val,)
+                )
+                devices.update(
+                    str(value.device)
+                    for value in values
+                    if isinstance(value, torch.Tensor)
+                )
 
                 if len(devices) > 1:
                     raise ValueError(
@@ -1248,8 +1277,27 @@ class _TOSAQuantizerV2(ComposableQuantizer):
                 f"got {type(compile_spec_or_tosa_spec)}"
             )
 
-        self.pattern_matcher = PatternMatcher(TOSA_QUANTIZER_SUPPORT_DICT)
-        self.shared_qspec_quantizer = SharedQspecQuantizer()
+        # pow.Tensor_Tensor has no native INT TOSA POW representation.
+        # For pure INT targets it may enter transform-for-annotation only when
+        # the graph proves that the base is strictly positive. The guarded
+        # DecomposePowTensorTensorPass can then safely rewrite it into
+        # quantizable LOG -> MUL -> EXP operations.
+        support_dict = TOSA_QUANTIZER_SUPPORT_DICT
+        if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+            support_dict = dict(TOSA_QUANTIZER_SUPPORT_DICT)
+            support_dict[(torch.ops.aten.pow.Tensor_Tensor,)] = (
+                PowTensorTensorPositiveBaseCheck
+            )
+
+        self.pattern_matcher = PatternMatcher(support_dict)
+        excluded_targets = TOSAQuantizationConfig.SHARED_INPUT_ACT_QSPEC_PATTERNS
+        self.shared_qspec_quantizer = SharedQspecQuantizer(
+            targets=[
+                target
+                for target in SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT
+                if target not in excluded_targets
+            ]
+        )
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None
         self._quantizers: List[Quantizer] = []

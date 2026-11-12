@@ -11,13 +11,8 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
-from executorch.exir.dialects._ops import (  # type: ignore[import-not-found]
-    ops as exir_ops,
-)
-from executorch.exir.pass_base import (  # type: ignore[import-not-found]
-    ExportPass,
-    PassResult,
-)
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeAnyPass(ArmPass):

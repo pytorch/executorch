@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:build_variables.bzl", "PLATFORM_SRCS")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load(":log.bzl", "get_et_logging_flags")
 
 def _select_pal(dict_):
@@ -75,6 +75,7 @@ def define_common_targets():
             "compat_unistd.h",
         ],
         srcs = PLATFORM_SRCS,
+        headers = ["platform.h"] if not runtime.is_oss and not is_xplat() else [],
         exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",

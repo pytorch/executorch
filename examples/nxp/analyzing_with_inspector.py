@@ -13,10 +13,18 @@ from executorch.backends.nxp.tests.profiling_utils import (
     get_neutron_kernel_kinds,
 )
 
-from executorch.devtools import Inspector
+from executorch.devtools.inspector import Inspector, TimeScale
 
 # Global mapping of Neutron kernel IDs to names used by the delegate metadata parser.
 kernel_kinds = {}
+
+# NPU frequency. Default value for the i.MXRT700 SoC is 324 MHz.
+NPU_FREQUENCY_HZ = 324000000  # 324 MHz
+
+
+def neutron_cycle_converter(event_name, time_in_cycles):
+    # Convert NPU cycles to milliseconds
+    return (time_in_cycles / NPU_FREQUENCY_HZ) * 1000  # ms
 
 
 def parse_delegate_metadata(
@@ -61,7 +69,10 @@ if __name__ == "__main__":
         inspector = Inspector(
             etdump_path=etdump_path,
             etrecord=etrecord_path,
+            source_time_scale=TimeScale.NS,
+            target_time_scale=TimeScale.MS,
             delegate_metadata_parser=parse_delegate_metadata,
+            delegate_time_scale_converter=neutron_cycle_converter,
         )
 
         # Access raw event data and filter quantized_decomposed nodes

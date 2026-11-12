@@ -79,6 +79,22 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
+        name = "replace_instance_norm",
+        srcs = ["replace_instance_norm.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/vulkan:op_registry",
+            "//executorch/backends/vulkan:utils_lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/passes:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "tag_memory_meta_pass",
         srcs = ["tag_memory_meta_pass.py"],
         visibility = [
@@ -90,6 +106,20 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/dialects:lib",
             "//executorch/backends/vulkan:utils_lib",
             "//executorch/backends/vulkan/serialization:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "conv1d_as_conv2d",
+        srcs = ["conv1d_as_conv2d.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/transforms:utils",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
         ],
     )
 
@@ -144,6 +174,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/examples/...",
         ],
         deps = [
+            ":conv1d_as_conv2d",
             ":fold_qdq",
             ":fuse_patterns",
             ":fuse_quantized_ops",
@@ -151,6 +182,7 @@ def define_common_targets(is_fbcode = False):
             ":insert_prepack_nodes",
             ":remove_asserts",
             ":remove_redundant_ops",
+            ":replace_instance_norm",
             ":squeeze_unsqueeze_inputs",
             ":tag_memory_meta_pass",
         ]

@@ -11,13 +11,17 @@ from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
-import executorch.exir as exir
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.library import cmsis_nn
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.utils import (
     build_activation_lut,
     is_foldable_alpha,
     quantize_multiplier_aot,
@@ -25,14 +29,6 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     SHIFT_INT8,
     to_physical_order,
 )
-from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
-    required_cmsis_nn_buffer_sizes,
-)
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
-)
-from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,
@@ -80,32 +76,8 @@ class AtenToCortexMPass(AtenToDialectPass):
                 raise RuntimeError(
                     f"Cortex-M lowering left {node.target} in the graph."
                 )
-            self._initialize_alloc_node_size(node)
 
         return PassResult(result.graph_module, result.modified or max_pool_modified)
-
-    def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
-        """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
-        scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
-            node, self.target_config.backend
-        )
-        if scratch_buffer_sizes is None:
-            return
-
-        for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
-            scratch_arg = node.args[-(i + 1)]
-            if (
-                not isinstance(scratch_arg, torch.fx.Node)
-                or scratch_arg.target != exir.memory.alloc
-            ):
-                raise RuntimeError(
-                    f"Expected scratch alloc node as final argument(s) for {node.target}, got {scratch_arg}."
-                )
-
-            scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
-            scratch_arg.meta["val"] = torch.empty(
-                (scratch_buffer_size,), dtype=torch.uint8, device="meta"
-            )
 
 
 def _create_uninitialized_alloc_node(
@@ -388,21 +360,32 @@ def _get_linear_replacement(
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
-    weight_scale = node.meta["input_qparams"][1].scale
-    weight_zp = node.meta["input_qparams"][1].zp
+    weight_qparams = node.meta["input_qparams"][1]
     output_scale = node.meta["output_qparams"][0].scale
     output_zp = node.meta["output_qparams"][0].zp
     output_min = node.meta["output_qparams"][0].qmin
     output_max = node.meta["output_qparams"][0].qmax
 
-    if weight_zp != 0:
+    # Per-channel weights carry one scale and zero point per output feature.
+    if weight_qparams.per_channel:
+        assert (
+            weight_qparams.axis == 0
+        ), f"Per-channel linear weights must be quantized on axis 0; got {weight_qparams.axis}"
+        weight_scales = weight_qparams.get_scale_per_channel()
+        weight_zps = weight_qparams.get_zp_per_channel()
+    else:
+        weight_scales, weight_zps = [weight_qparams.scale], [weight_qparams.zp]
+    if any(zp != 0 for zp in weight_zps):
         raise NotImplementedError(
             f"cortex_m::quantized_linear assumes symmetric weight "
-            f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+            f"quantization (weight_zp == 0); got weight_zp={weight_qparams.zp}"
         )
 
-    quantized_multiplier, quantized_shift = quantize_multiplier_aot(
-        (input_scale * weight_scale) / output_scale
+    quantized_multipliers, quantized_shifts = zip(
+        *(
+            quantize_multiplier_aot((input_scale * weight_scale) / output_scale)
+            for weight_scale in weight_scales
+        )
     )
 
     # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
@@ -421,7 +404,7 @@ def _get_linear_replacement(
 
     if target_config.backend == cmsis_nn.Backend.MVE:
         kernel_sum_tensor = _compute_kernel_sum(
-            weights_tensor, bias_tensor, -input_zp, -weight_zp
+            weights_tensor, bias_tensor, -input_zp, -weight_zps[0]
         )
         with node.graph.inserting_after(weights):
             kernel_sum_arg = create_constant_placeholder(
@@ -436,21 +419,45 @@ def _get_linear_replacement(
         kernel_sum_arg = None
         bias_arg = bias_node
 
+    multipliers_arg: Argument
+    shifts_arg: Argument
+    if len(weight_scales) == 1:
+        target = exir_ops.edge.cortex_m.quantized_linear.default
+        multipliers_arg = list(quantized_multipliers)
+        shifts_arg = list(quantized_shifts)
+    else:
+        target = exir_ops.edge.cortex_m.quantized_linear_per_channel.default
+        with node.graph.inserting_after(weights):
+            multipliers_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+            shifts_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
     args = (
         linear_args[0],
         weights,
         bias_arg,
         kernel_sum_arg,
         -input_zp,
-        -weight_zp,
+        -weight_zps[0],
         output_zp,
-        [quantized_multiplier],
-        [quantized_shift],
+        multipliers_arg,
+        shifts_arg,
         output_max,
         output_min,
     )
 
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_linear.default, args)
+    return DialectNodeSpec(target, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(
@@ -526,6 +533,17 @@ def _get_convolution_replacement(
     in_channels = param_weight_tensor.shape[1] * groups
     out_channels = param_weight_tensor.shape[0]
     is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
+    # CMSIS-NN MVE already repacks these weights and runs regular convolution on
+    # every inference. Emit that layout at export to avoid repeated repacking
+    # and its scratch storage. The >8 limit covers both compiler thresholds.
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    if (
+        is_depthwise
+        and dialect_pass.target_config.backend == cmsis_nn.Backend.MVE
+        and in_channels == 1
+        and out_channels > 8
+    ):
+        is_depthwise = False
 
     # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
     # unoptimized implementation otherwise.
@@ -880,7 +898,7 @@ def _get_avg_pool2d_replacement(
     output_mult, output_shift = quantize_multiplier_aot(input_scale)
 
     avg_padding = padding
-    if count_include_pad:
+    if count_include_pad and any(padding):
         pad_h, pad_w = padding
         if explicit_nhwc:
             pre_pad = post_pad = [0, pad_h, pad_w, 0]

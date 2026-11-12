@@ -15,12 +15,13 @@ root_dir="${et_dir}/examples/arm/arm-scratch"
 setup_path_script=""
 mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
 mlsdk_manifest_url="${MLSDK_MANIFEST_URL:-https://github.com/arm/ai-ml-sdk-manifest.git}"
-mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2026.03.0}" # Keep this in sync with backends/arm/requirements-arm-vgf.txt and backends/arm/requirements-arm-vgf-runtime.txt
+mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2026.09.0}" # Keep this in sync with backends/arm/requirements-arm-vgf.txt and backends/arm/requirements-arm-vgf-runtime.txt
 
 enable_model_converter=0
 enable_vgf_lib=0
 enable_emulation_layer=0
 enable_vulkan_sdk=0
+expected_emulation_layer_version="0.11.0"
 
 source "${script_dir}/utils.sh"
 source "${script_dir}/vulkan_utils.sh"
@@ -241,6 +242,41 @@ function download_ai_mlsdk_manifest() {
     mlsdk_sync_manifest "${manifest_dir}"
 }
 
+function validate_emulation_layer_source_version() {
+    local manifest_dir="$1"
+    local emulation_layer_dir="${manifest_dir}/sw/emulation-layer"
+    local pyproject="${emulation_layer_dir}/pyproject.toml"
+    local source_version=""
+
+    if [[ ! -f "${pyproject}" ]]; then
+        log_step "mlsdk" \
+            "Unable to validate emulation-layer source version: ${pyproject} not found"
+        return 1
+    fi
+
+    source_version="$(
+        sed -nE 's/^[[:space:]]*fallback_version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+            "${pyproject}" | head -n 1
+    )"
+
+    if [[ -z "${source_version}" ]]; then
+        log_step "mlsdk" \
+            "Unable to determine emulation-layer source version from ${pyproject}"
+        return 1
+    fi
+
+    if [[ "${source_version}" != "${expected_emulation_layer_version}" ]]; then
+        log_step "mlsdk" \
+            "Emulation-layer source version mismatch: expected ${expected_emulation_layer_version}, found ${source_version}."
+        log_step "mlsdk" \
+            "The selected MLSDK manifest (${mlsdk_manifest_tag}) is not in sync with backends/arm/requirements-arm-vgf.txt."
+        return 1
+    fi
+
+    log_step "mlsdk" \
+        "Validated emulation-layer source version ${source_version}"
+}
+
 function setup_mlsdk_source() {
     local manifest_dir="$1"
 
@@ -254,6 +290,10 @@ function setup_mlsdk_source() {
 
     log_step "mlsdk" "Syncing MLSDK manifest into ${manifest_dir}"
     download_ai_mlsdk_manifest "${manifest_dir}"
+
+    if [[ "${enable_emulation_layer}" -eq 1 ]]; then
+        validate_emulation_layer_source_version "${manifest_dir}"
+    fi
 
     pushd "${manifest_dir}" >/dev/null || return 1
     local parallel_jobs

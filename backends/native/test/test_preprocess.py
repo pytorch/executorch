@@ -89,10 +89,11 @@ class PtnConstantHandoffTest(unittest.TestCase):
         base = torch.arange(6).view(2, 3)
         view = base.t()
         edge_program = SimpleNamespace(
-            graph_module=object(),
+            graph_module=torch.fx.GraphModule(nn.Module(), torch.fx.Graph()),
             graph_signature=object(),
             state_dict={},
             constants={},
+            range_constraints={},
         )
 
         with patch(

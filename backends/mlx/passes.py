@@ -8,18 +8,12 @@
 Graph transformation passes for the MLX backend.
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import torch
-from executorch.backends.mlx.pattern_utils import (
-    extract_lifted_tensor_constant,
-    match_target,
-    OpStep,
-    PatternMatch,
-    walk_back,
-)
 from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
+from executorch.backends.transforms.fuse_gqa_with_sdpa import FuseGQAWithSDPAPass
+from executorch.backends.transforms.fuse_rms_norm import FuseRMSNormPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
     ExportedProgramPassBase,
@@ -27,16 +21,18 @@ from executorch.exir.pass_base import (
     ExportPass,
     PassResult,
 )
+from executorch.exir.pass_manager import PassType
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.fx import GraphModule, Node
 
 
-def get_default_passes() -> List[ExportPass]:
+def get_default_passes() -> List[PassType]:
     """
     Returns a list of passes that are enabled by default for the MLX backend.
     """
     return [
-        FuseRMSNormPass(),
+        FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),
+        FuseGQAWithSDPAPass(),
         CanonicalizePermutePass(),
         CollapseViewCopyPass(),
         CollapsePermutePass(),
@@ -101,175 +97,6 @@ class MLXReinplacePass(ExportedProgramPassBase):
         if ops_to_inplace:
             reinplace_pass(exported_program, ops_to_inplace=ops_to_inplace)
         return ExportedProgramPassResult(exported_program, True)
-
-
-@dataclass
-class RMSNormMatch(PatternMatch):
-    """
-    Matched RMSNorm pattern.
-
-    HuggingFace Llama's RMSNorm decomposes into:
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + eps)
-        return weight * hidden_states.to(input_dtype)
-
-    Graph pattern:
-        _to_copy (to f32) [optional]
-        pow(x, 2)
-        mean_dim(pow_out, [-1], keepdim=True)
-        add(mean_out, eps_tensor)
-        rsqrt(add_out)
-        mul(to_copy_out, rsqrt_out)
-        _to_copy (back to original dtype) [optional]
-        mul(weight, to_copy_out)
-    """
-
-    input_node: Node = None  # type: ignore[assignment]
-    weight_node: Node = None  # type: ignore[assignment]
-    eps: float = 0.0
-
-    @classmethod
-    def maybe_create(cls, head: Node, **context) -> Optional["RMSNormMatch"]:
-        """Match RMSNorm pattern starting from final mul(weight, normalized)."""
-        # Head must be mul
-        if not match_target(head, torch.ops.aten.mul.Tensor):
-            return None
-
-        if len(head.args) < 2:
-            return None
-
-        # Try both orderings: mul(weight, normalized) or mul(normalized, weight)
-        for weight_idx, norm_idx in [(0, 1), (1, 0)]:
-            weight_node = head.args[weight_idx]
-            norm_node = head.args[norm_idx]
-
-            if not isinstance(norm_node, Node):
-                continue
-
-            # Match entire chain with single walk_back:
-            #   [_to_copy] -> mul(input, rsqrt) -> rsqrt -> add -> mean -> pow -> [_to_copy]
-            # The mul follows arg_index=1 to get rsqrt (not input)
-            result = walk_back(
-                norm_node,
-                [
-                    OpStep(
-                        op=torch.ops.aten._to_copy.default,
-                        optional=True,
-                        kwargs={
-                            "dtype",
-                            "layout",
-                            "device",
-                            "pin_memory",
-                            "non_blocking",
-                            "memory_format",
-                        },
-                    ),
-                    OpStep(op=torch.ops.aten.mul.Tensor, nargs=2, arg_index=1),
-                    OpStep(op=torch.ops.aten.rsqrt.default),
-                    OpStep(op=torch.ops.aten.add.Tensor, nargs=2),
-                    OpStep(op=torch.ops.aten.mean.dim, nargs=(2, 3), kwargs={"dtype"}),
-                    OpStep(op=torch.ops.aten.pow.Tensor_Scalar, nargs=2),
-                    OpStep(
-                        op=torch.ops.aten._to_copy.default,
-                        optional=True,
-                        require_single_user=False,  # _to_copy output used by both pow and mul
-                        kwargs={
-                            "dtype",
-                            "layout",
-                            "device",
-                            "pin_memory",
-                            "non_blocking",
-                            "memory_format",
-                        },
-                    ),
-                ],
-            )
-            if result is None:
-                continue
-
-            original_input, entries = result
-            to_copy_out, mul, rsqrt, add, mean, pow, to_copy_in = entries
-
-            # If input _to_copy matched, verify it has exactly 2 users: pow and mul
-            if to_copy_in is not None:
-                users = set(to_copy_in.users.keys())
-                expected_users = {pow, mul}
-                if users != expected_users:
-                    continue
-
-            # Validate pow exponent is 2
-            if pow.args[1] != 2:
-                continue
-
-            # Extract epsilon from add node (it's a lifted tensor constant)
-            eps_value = None
-            for arg in add.args:
-                eps_value = extract_lifted_tensor_constant(arg)
-                if eps_value is not None:
-                    break
-
-            if eps_value is None:
-                continue
-
-            # Build body from non-None entries
-            body = [n for n in entries if n is not None]
-
-            return cls(
-                head=head,
-                body=body,
-                input_node=original_input,
-                weight_node=weight_node,
-                eps=eps_value,
-            )
-
-        return None
-
-
-class FuseRMSNormPass(ExportPass):
-    """
-    Fuses decomposed RMSNorm operations into aten.rms_norm.
-
-    This reduces ~7 ops to 1 fused op per RMSNorm layer.
-    """
-
-    def call(self, graph_module: GraphModule) -> PassResult:
-        graph = graph_module.graph
-        modified = False
-
-        for node in list(graph.nodes):
-            match = RMSNormMatch.maybe_create(node)
-            if match is None:
-                continue
-
-            # Get input shape for normalized_shape
-            input_meta = match.input_node.meta.get("val")
-            if input_meta is None:
-                continue
-
-            # Create fused rms_norm node
-            with graph.inserting_before(node):
-                normalized_shape = [input_meta.shape[-1]]
-                rms_norm_node = graph.call_function(
-                    torch.ops.aten.rms_norm.default,
-                    args=(
-                        match.input_node,
-                        normalized_shape,
-                        match.weight_node,
-                        match.eps,
-                    ),
-                )
-                rms_norm_node.meta = node.meta.copy()
-
-            node.replace_all_uses_with(rms_norm_node)
-            match.remove_body_nodes(graph)
-            graph.erase_node(node)
-            modified = True
-
-        if modified:
-            graph.eliminate_dead_code()
-            graph.lint()
-
-        return PassResult(graph_module, modified)
 
 
 class CanonicalizePermutePass(ExportPass):
@@ -389,8 +216,9 @@ class CollapseDtypeConversionPass(ExportPass):
 
     _to_copy(dtype=bf16)(_to_copy(dtype=f32)(x)) → _to_copy(dtype=bf16)(x)
 
-    Only the final dtype matters. Only collapses when both nodes are pure dtype
-    conversions (no device/layout/memory_format changes).
+    Only collapse when the intermediate cast preserves every source value.
+    Narrowing or cross-kind casts may round, truncate, or overflow and must stay.
+    Both nodes must be pure dtype conversions (no device/layout/memory_format changes).
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -417,8 +245,31 @@ class CollapseDtypeConversionPass(ExportPass):
             if not _is_pure_dtype_cast(node_kw) or not _is_pure_dtype_cast(parent_kw):
                 continue
 
+            source = parent.args[0]
+            source_val = source.meta.get("val") if isinstance(source, Node) else None
+            if source_val is None:
+                continue
+            source_dtype = source_val.dtype
+            intermediate_dtype = parent_kw["dtype"]
+            if source_dtype != intermediate_dtype and (
+                source_dtype,
+                intermediate_dtype,
+            ) not in {
+                # Boolean values 0 and 1 are exact in each floating-point dtype.
+                (torch.bool, torch.float16),
+                (torch.bool, torch.bfloat16),
+                (torch.bool, torch.float32),
+                (torch.bool, torch.float64),
+                (torch.float16, torch.float32),
+                (torch.bfloat16, torch.float32),
+                (torch.float16, torch.float64),
+                (torch.bfloat16, torch.float64),
+                (torch.float32, torch.float64),
+            }:
+                continue
+
             # Rewrite: to_copy(to_copy(x, dtype=d1), dtype=d2) → to_copy(x, dtype=d2)
-            node.args = (parent.args[0],)
+            node.args = (source,)
             graph.erase_node(parent)
             modified = True
 

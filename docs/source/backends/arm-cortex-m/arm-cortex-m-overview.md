@@ -105,7 +105,7 @@ to use the same memory format as the export example.
 
 ### 2. Lower to edge and apply Cortex-M passes
 
-Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
+Lower to the edge dialect with the backend's `EdgeCompileConfig`, then apply `CortexMPassManager` through `EdgeProgramManager.transform()` to replace quantized subgraphs with CMSIS-NN operator implementations:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -122,9 +122,11 @@ config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
 
-pass_manager = CortexMPassManager(edge_program_manager.exported_program())
-edge_program_manager._edge_programs["forward"] = pass_manager.transform()
+edge_program_manager = edge_program_manager.transform(CortexMPassManager())
 ```
+
+Alternatively, pass `transform_passes=CortexMPassManager()` to
+`to_edge_transform_and_lower()` with the same compile configuration.
 
 ### 3. Serialize to .pte
 
@@ -147,7 +149,7 @@ cmake --preset arm-baremetal \
   -DCMAKE_BUILD_TYPE=Release \
   -DEXECUTORCH_BUILD_DEVTOOLS=ON \
   -Bcmake-out-arm
-cmake --build cmake-out-arm --target install -j$(nproc)
+cmake --build cmake-out-arm --target install
 
 # Build the executor runner, linking the .pte into the binary
 cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
@@ -156,8 +158,10 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/examples/arm/ethos-u-setup/arm-none-eabi-gcc
       -DTARGET_CPU=cortex-m55 \
       -Bbuild \
       examples/arm/executor_runner
-cmake --build build -j$(nproc) -- arm_executor_runner
+cmake --build build -- arm_executor_runner
 ```
+
+Adding `-j<N>` to `cmake --build` runs `<N>` jobs in parallel and tends to speed up the build significantly.
 
 Run on a simulated Cortex-M target:
 

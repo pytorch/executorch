@@ -15,7 +15,6 @@
 
 #include <vector>
 
-#include "QnnCommon.h"
 namespace executorch {
 namespace backends {
 namespace qnn {

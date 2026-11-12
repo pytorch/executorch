@@ -102,6 +102,15 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "method_meta_factory_test",
+        srcs = ["method_meta_factory_test.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -114,6 +123,7 @@ def define_common_targets(is_fbcode = False):
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_HALF_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddHalf.pte])",
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+            "ET_MODULE_CHANNELS_LAST_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleChannelsLast.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
             "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddMul.pte])",
@@ -170,6 +180,24 @@ def define_common_targets(is_fbcode = False):
             env = modules_env,
         )
 
+        for aten_mode in get_aten_mode_options():
+            aten_suffix = ("_aten" if aten_mode else "")
+
+            runtime.cxx_test(
+                name = "method_input_layout_test" + aten_suffix,
+                srcs = [
+                    "method_input_layout_test.cpp",
+                ],
+                deps = [
+                    ":managed_memory_manager",
+                    "//executorch/extension/data_loader:file_data_loader",
+                    "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                    "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                    "//executorch/runtime/executor:program" + aten_suffix,
+                ],
+                env = modules_env,
+            )
+
         runtime.cxx_test(
             name = "method_meta_test",
             srcs = [
@@ -177,7 +205,9 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
             ],
             env = dict(
                 modules_env,
@@ -207,7 +237,9 @@ def define_common_targets(is_fbcode = False):
                 "program_validation_test.cpp",
             ],
             deps = [
+                ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
@@ -268,6 +300,7 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments-da1024.pte])",
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments.pte])",
                 "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
+                "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-scratch.pte])",
             },
         )
 
@@ -344,9 +377,13 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:device_memory_buffer",
                 "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/schema:program",
             ],
             env = {
                 "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDevice.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.pte])",
+                "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddConstantWithDeviceProgram.ptd])",
             },
         )

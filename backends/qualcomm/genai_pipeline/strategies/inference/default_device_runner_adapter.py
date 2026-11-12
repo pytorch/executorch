@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class DefaultDeviceRunnerAdapter:
-    """Default adapter delegating to ``SimpleADB`` for on-device inference.
+    """Default adapter delegating to ``Device`` for on-device inference.
 
-    Wraps the ``SimpleADB`` class from ``export_utils.py`` to push artifacts,
-    execute models, and pull results from an Android device via ADB.
+    Wraps the ``Device`` class from ``export_utils.py`` to push artifacts,
+    execute models, and pull results from a local or remote target device.
 
     Args:
         qnn_config: A ``QnnConfig`` instance for device communication.
-        workspace: Folder for storing artifacts on the Android device.
+        workspace: Folder for storing artifacts on the target device.
     """
 
     def __init__(
@@ -35,38 +35,41 @@ class DefaultDeviceRunnerAdapter:
     ) -> None:
         self._qnn_config = qnn_config
         self._workspace = workspace
-        self._adb: Any = None
+        self._device: Any = None
 
     def push_artifacts(
         self,
-        artifact_paths: List[Path],
+        artifact_paths: Dict[str, Path],
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
     ) -> None:
-        """Push compiled artifacts and inputs to the device via ADB.
+        """Push compiled artifacts and inputs to the target device.
 
         Args:
-            artifact_paths: Paths to compiled .pte artifacts.
+            artifact_paths: Compiled .pte artifacts keyed by artifact name.
+                Every artifact is pushed; the keys select which on-device runner
+                argument each path is passed to, which is the runner's concern
+                rather than this adapter's.
             input_data: Optional input data to push to device.
             extra_files: Optional additional files to push.
         """
-        from executorch.backends.qualcomm.export_utils import SimpleADB
+        from executorch.backends.qualcomm.export_utils import Device
 
-        if self._adb is not None:
+        if self._device is not None:
             logger.warning(
-                "Overwriting existing ADB session. Previous artifacts will be "
+                "Overwriting existing device session. Previous artifacts will be "
                 "replaced on device."
             )
 
-        pte_paths = [str(p) for p in artifact_paths]
+        pte_paths = [str(p) for p in artifact_paths.values()]
 
         logger.info("Pushing artifacts to device: %s", pte_paths)
-        self._adb = SimpleADB(
+        self._device = Device(
             qnn_config=self._qnn_config,
             pte_path=pte_paths,
             workspace=self._workspace,
         )
-        self._adb.push(
+        self._device.push(
             inputs=input_data,
             files=extra_files,
         )
@@ -75,7 +78,7 @@ class DefaultDeviceRunnerAdapter:
         self,
         inference_options: Optional[Dict[str, Any]] = None,
     ) -> InferenceResult:
-        """Execute the model on device via ADB.
+        """Execute the model on the target device.
 
         Note: This is a two-step protocol. ``execute()`` runs the model and
         returns performance metrics. Call ``pull_results()`` afterward to
@@ -90,7 +93,7 @@ class DefaultDeviceRunnerAdapter:
             InferenceResult with performance metrics. ``output_data`` is None
             until ``pull_results()`` is called separately.
         """
-        if self._adb is None:
+        if self._device is None:
             raise RuntimeError(
                 "No artifacts have been pushed. Call push_artifacts() first."
             )
@@ -104,7 +107,7 @@ class DefaultDeviceRunnerAdapter:
             method_index,
             iteration,
         )
-        self._adb.execute(
+        self._device.execute(
             method_index=method_index,
             iteration=iteration,
         )
@@ -121,7 +124,7 @@ class DefaultDeviceRunnerAdapter:
         self,
         output_dir: Path,
     ) -> List[Path]:
-        """Pull inference results from the device via ADB.
+        """Pull inference results from the target device.
 
         Args:
             output_dir: Local directory to store pulled results.
@@ -129,7 +132,7 @@ class DefaultDeviceRunnerAdapter:
         Returns:
             List of paths to pulled result files.
         """
-        if self._adb is None:
+        if self._device is None:
             raise RuntimeError(
                 "No artifacts have been pushed. Call push_artifacts() first."
             )
@@ -137,9 +140,9 @@ class DefaultDeviceRunnerAdapter:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("Pulling results from device to %s", output_dir)
-        self._adb.pull(host_output_path=str(output_dir))
+        self._device.pull(host_output_path=str(output_dir))
 
-        # adb pull of a directory creates a subdirectory locally;
+        # pulling a directory creates a subdirectory locally;
         # collect actual result files from pulled content
         result_files = []
         for item in output_dir.iterdir():

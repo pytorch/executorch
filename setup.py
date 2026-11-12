@@ -105,10 +105,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         "runtime/executor/tensor_parser.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
-        # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
-        # publish either. The component it belongs to is a link dependency the runtime carries, not
-        # something a consumer includes.
-        "extension/threadpool/threadpool.h",
         # Declares CPUCachingAllocator, whose implementation is in a component no shipped library links,
         # so including it compiles and then fails at link time with an undefined reference.
         "extension/memory_allocator/cpu_caching_malloc_allocator.h",
@@ -167,6 +163,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF",
         "-DEXECUTORCH_BUILD_MLX=OFF",
         "-DEXECUTORCH_BUILD_OPENVINO=OFF",
         "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF",
@@ -337,6 +334,7 @@ def _top_level_package_dirs() -> FrozenSet[str]:
 # rather than scanned from .github, which a source distribution does not carry; a test re-derives
 # the list so it cannot drift.
 _CI_ENTRY_POINTS = (
+    "executorch.backends.cuda.batching.test.export_toy_decoder",
     "executorch.backends.mlx.test.run_all_tests",
     "executorch.backends.mlx.test.test_sample",
     "executorch.backends.mlx.test.test_slot_recycling",
@@ -733,9 +731,9 @@ def _cuda_train() -> str:
 
     Raises when a release row names a train the installed toolkit does not provide. The
     declared packages and the loader paths both come from this value, so disagreeing with
-    the toolkit that compiled the libraries produces a wheel that installs cleanly and then
-    cannot load: a cu126 row built against a 13.0 toolkit declares the CUDA 12 runtime for
-    binaries that need libcudart.so.13.
+    the toolkit that compiled the libraries produces a wheel that installs cleanly but
+    declares a train it was not compiled for, such as a cu134 row built against a 13.2
+    toolkit.
     """
     # An explicit OFF first, ahead of the release field. A CPU row on a builder that has a
     # toolkit installed sets both, so reading the row field first would declare a runtime
@@ -885,6 +883,34 @@ def _cuda_train() -> str:
     return detected
 
 
+def _windows_cuda_toolkit(cmake_configuration_args: List[str]) -> str:
+    """The CUDA toolkit root a Windows CUDA build compiles with, or "" when CUDA is off.
+
+    Decided with the same conditions the CUDA gate below uses, because the answer picks the
+    generator for the whole configure: a toolkit here with CUDA turned off would still build the
+    CPU wheel with Ninja instead of the Visual Studio ClangCL toolset. The compiler is the one
+    install_utils reports, so the toolkit that compiles is the train packaging declares.
+    """
+    arguments = cmake_configuration_args + [item for item in _cmake_args() if item]
+    if (
+        _is_minimal_build()
+        or _row_is_cpu_only()
+        or not install_utils.is_cmake_option_on(
+            arguments, "EXECUTORCH_BUILD_CUDA", default=True
+        )
+    ):
+        return ""
+    explicit = install_utils.is_cmake_option_on(
+        arguments, "EXECUTORCH_BUILD_CUDA", default=False
+    )
+    if not explicit and not install_utils.is_cuda_available():
+        return ""
+    nvcc = shutil.which(install_utils._selected_nvcc()[0])
+    if not nvcc:
+        return ""
+    return Path(nvcc).resolve().parent.parent.as_posix()
+
+
 def _cuda_libraries_built(cmake_cache_dir: Optional[str]) -> bool:
     """Whether this build produced the CUDA libraries, read from the CMake cache.
 
@@ -951,9 +977,10 @@ def _cuda_dependencies() -> List[str]:
     shared with torch instead of shipping a second one.
     """
     train = _cuda_train()
-    # Marked for Linux, because a CUDA wheel is only built there and these nvidia wheels publish no
-    # distribution for the other platforms, so an unmarked requirement would make a source install
-    # elsewhere fail on a dependency it cannot satisfy and does not need.
+    # Marked for Linux. These nvidia wheels publish no distribution for the other platforms, so an
+    # unmarked requirement would make an install elsewhere fail on a dependency it cannot satisfy.
+    # The Windows CUDA wheel needs none of them: its DLLs load only the driver (nvcuda.dll), and the
+    # CUDA runtime a model's own library imports comes from the CUDA Toolkit install.
     return [
         f"{name}; platform_system == 'Linux'"
         for name in _CUDA_RUNTIME_PACKAGES.get(train, ())
@@ -1105,11 +1132,9 @@ def _torchao_requirement() -> str:
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
 
-    version = module.TORCHAO_NIGHTLY_VERSION
-    if (
-        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
-        and not module.torchao_from_source()
-    ):
+    torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
+    version = module.get_torchao_version(torch_url)
+    if torch_url.endswith("/cu134") and not module.torchao_from_source():
         version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
@@ -1123,15 +1148,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module
@@ -1145,9 +1166,8 @@ def _base_dependencies() -> List[str]:
         # The MLX backend needs it too, though indirectly: it registers a torchao operator that
         # only exists once torchao has been imported.
         #
-        # The lower bound is the nightly install_requirements.py pins, so that installing this
-        # package over a development checkout leaves that pin in place. A bound at the stable
-        # release instead would evict it, because a dev release sorts below its own final.
+        # Match the version selected by install_requirements.py so installing the
+        # package preserves the CPU release or the selected nightly.
         #
         # The upper bound is what makes naming a pre-release safe. A specifier that names one
         # accepts pre-releases for this requirement, so without the bound pip would resolve a
@@ -1332,6 +1352,82 @@ def get_executable_name(name: str) -> str:
         return name + ".exe"
     else:
         return name
+
+
+# Visual Studio is a multi-config generator and writes into a per-config subdirectory.
+_CFG = "%BUILD_TYPE%/" if _is_windows() else ""
+
+
+def _windows_import_libraries() -> List["BuiltFile"]:
+    """The import library beside each DLL offered to C++ consumers, which they link against."""
+    if not _is_windows():
+        return []
+    entries = [
+        ("", "executorch_shared", "executorch", []),
+        (
+            "extension/threadpool/",
+            "executorch_threadpool",
+            None,
+            ["EXECUTORCH_BUILD_PTHREADPOOL", "EXECUTORCH_BUILD_CPUINFO"],
+        ),
+        (
+            "configurations/",
+            "executorch_kernels_optimized",
+            None,
+            ["EXECUTORCH_BUILD_KERNELS_OPTIMIZED"],
+        ),
+        (
+            "kernels/quantized/",
+            "executorch_kernels_quantized",
+            None,
+            ["EXECUTORCH_BUILD_KERNELS_QUANTIZED"],
+        ),
+        (
+            "backends/xnnpack/",
+            "executorch_backend_xnnpack",
+            None,
+            ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+        (
+            "backends/xnnpack/",
+            "executorch_xnnpack",
+            None,
+            ["EXECUTORCH_BUILD_XNNPACK", "EXECUTORCH_BUILD_NATIVE_CPU"],
+        ),
+        (
+            "backends/cpu/",
+            "executorch_backend_cpu",
+            None,
+            ["EXECUTORCH_BUILD_CPU"],
+        ),
+        (
+            "backends/cuda/",
+            "executorch_backend_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "extension/cuda/",
+            "executorch_extension_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "backends/openvino/",
+            "executorch_backend_openvino",
+            None,
+            ["EXECUTORCH_BUILD_OPENVINO"],
+        ),
+    ]
+    return [
+        BuiltFile(
+            src_dir=f"%CMAKE_CACHE_DIR%/{subdir}{_CFG}",
+            src_name=f"{built}.lib",
+            dst=f"executorch/lib/{shipped or built}.lib",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED", *flags],
+        )
+        for subdir, built, shipped, flags in entries
+    ]
 
 
 class _BaseExtension(Extension):
@@ -2252,6 +2348,12 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "lib/cmake/executorch/executorch-config.cmake",
                 ),
+                # Type checkers find a stub only under the module's own name, so
+                # the extension's stub ships as _C.pyi, as the Buck build names it.
+                (
+                    "extension/pybindings/pybindings.pyi",
+                    "extension/pybindings/_C.pyi",
+                ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator
             # build, which needs the kernel and tensor helpers, and a C++ application
@@ -2299,15 +2401,25 @@ class CustomBuildPy(build_py):
                 "devtools/etdump/utils.h",
                 "devtools/etdump/data_sinks/",
             ] + (
-                # The CUDA stream helper's public header, and the export macros it includes. Its library is
-                # shared so the process has one copy of the caller-stream state, and that is a handshake the
-                # caller takes part in, so a consumer needs the declarations to take part at all.
+                # The CUDA stream helper's public header, the device guard beside it, and the export macros
+                # they include. The stream helper's library is shared so the process has one copy of the
+                # caller-stream state, and that is a handshake the caller takes part in, so a consumer needs
+                # the declarations to take part at all. The device guard's own definitions are compiled into that
+                # same library, so a consumer needs this header to reach them. The CUDA allocator is compiled into
+                # it too, so another delegate can take the same allocator; its header names CUDA types, so it and
+                # the runtime API header it includes need the CUDA toolkit to compile.
                 #
                 # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
                 # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
                 # an unrecognised toolkit shipped both CUDA libraries and both CMake components with no
                 # header, so a consumer got a component it could link and not include.
-                ["extension/cuda/caller_stream.h", "extension/cuda/export.h"]
+                [
+                    "extension/cuda/caller_stream.h",
+                    "extension/cuda/cuda_allocator.h",
+                    "extension/cuda/device_guard.h",
+                    "extension/cuda/export.h",
+                    "extension/cuda/runtime_api.h",
+                ]
                 if _cuda_libraries_built(cmake_cache_dir)
                 else []
             ):
@@ -2458,6 +2570,17 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
 
 
+def _crt_definition(build_type: str) -> str:
+    """The define naming the C++ library the Windows DLLs were built with.
+
+    A Debug build links the debug C++ library, and a consumer has to match it, so the
+    runtime headers check this against the consumer's own configuration.
+    """
+    if build_type.lower() == "debug":
+        return "ET_PREBUILT_DEBUG_CRT"
+    return "ET_PREBUILT_RELEASE_CRT"
+
+
 def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
     """Fill in the tracer placeholder in an installed CMake configuration file.
 
@@ -2474,6 +2597,8 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
     enabled = CMakeCache(cache_path=cache_path).is_enabled(
         "EXECUTORCH_ENABLE_EVENT_TRACER"
     )
+    build_type = CMakeCache(cache_path=cache_path).get("CMAKE_BUILD_TYPE")
+    crt = _crt_definition(build_type.value if build_type else get_build_type())
     with open(path) as handle:
         contents = handle.read()
     with open(path, "w") as handle:
@@ -2481,7 +2606,7 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
             contents.replace(
                 "@EXECUTORCH_TRACER_DEFINITION@",
                 "ET_EVENT_TRACER_ENABLED" if enabled else "",
-            )
+            ).replace("@EXECUTORCH_CRT_DEFINITION@", crt)
         )
 
 
@@ -2516,7 +2641,7 @@ def _substitute_tracer_definition_from_args(destination) -> None:
         text.replace(
             "@EXECUTORCH_TRACER_DEFINITION@",
             "ET_EVENT_TRACER_ENABLED" if enabled else "",
-        )
+        ).replace("@EXECUTORCH_CRT_DEFINITION@", _crt_definition(get_build_type()))
     )
 
 
@@ -2571,9 +2696,43 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
-        # Use ClangCL on Windows.
+        # Use ClangCL on Windows. A CUDA build uses Ninja with clang-cl instead in a
+        # Visual Studio developer environment that has ninja: the CUDA toolkit's Visual
+        # Studio integration fails compiler identification under ClangCL on some toolkit
+        # and Visual Studio pairs (MSB4023 in its targets file), and switching the toolset
+        # to cl.exe instead fails on sources cl.exe cannot compile. The multi-config
+        # generator keeps the per-configuration output directories packaging reads. nvcc
+        # still compiles device code with cl.exe as its host compiler. Ninja finds the
+        # compilers only on PATH, which a developer environment provides and a plain shell
+        # does not, so without ninja, clang-cl and cl there the build keeps the Visual
+        # Studio generator it always used.
         if _is_windows():
-            cmake_configuration_args += ["-T ClangCL"]
+            windows_cuda_home = _windows_cuda_toolkit(cmake_configuration_args)
+            if windows_cuda_home and all(
+                shutil.which(tool) for tool in ("ninja", "clang-cl", "cl")
+            ):
+                cmake_configuration_args += [
+                    "-GNinja Multi-Config",
+                    "-DCMAKE_C_COMPILER=clang-cl",
+                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    f"-DCUDAToolkit_ROOT={windows_cuda_home}",
+                ]
+                # CMake reads CUDACXX only when CMAKE_CUDA_COMPILER is unset, so naming
+                # the compiler would drop options a user put there, such as the common
+                # -allow-unsupported-compiler for a newer Visual Studio.
+                if not os.environ.get("CUDACXX"):
+                    cmake_configuration_args += [
+                        f"-DCMAKE_CUDA_COMPILER={windows_cuda_home}/bin/nvcc.exe"
+                    ]
+            else:
+                if windows_cuda_home:
+                    log.warn(
+                        "building the CUDA backend with the Visual Studio generator, "
+                        "because ninja, clang-cl and cl are not all on PATH; run from "
+                        "a Visual Studio developer prompt with ninja for the Ninja "
+                        "build the wheels use"
+                    )
+                cmake_configuration_args += ["-T ClangCL"]
 
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
@@ -2668,11 +2827,12 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
-        # Enable OpenVINO backend on Linux. The backend uses dlopen at
-        # runtime so it has no build-time SDK dependency.
+        # Enable the OpenVINO backend on Linux and Windows. The backend loads
+        # the OpenVINO runtime at run time, so it has no build-time SDK
+        # dependency.
         if (
             not minimal_build
-            and sys.platform == "linux"
+            and sys.platform in ("linux", "win32")
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
                 "EXECUTORCH_BUILD_OPENVINO",
@@ -2748,6 +2908,9 @@ class CustomBuild(build):
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
+                # VGF can configure the registry target without linking it.
+                # Only Vulkan requires this DSO in the Python wheel today.
+                cmake_build_args += ["--target", "executorch_vulkan_shared_runtime"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
                 cmake_build_args += ["--target", "cmsis_nn"]
@@ -2783,6 +2946,8 @@ class CustomBuild(build):
                 cmake_build_args += ["--target", "etdump"]
                 if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
                     cmake_build_args += ["--target", "coremldelegate"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREAI"):
+                    cmake_build_args += ["--target", "coreaidelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
@@ -2795,6 +2960,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_CPU"):
+                    cmake_build_args += ["--target", "cpu_backend"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]
@@ -2885,7 +3052,7 @@ setup(
                 # only useful where something upgrades the library independently of
                 # what links it, which never happens inside a wheel.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_dir="%CMAKE_CACHE_DIR%/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch"),
                     dst="executorch/lib/" + get_dynamic_lib_name("executorch"),
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
@@ -2894,7 +3061,7 @@ setup(
                 # code fused into the Python extension, so a process has one copy of
                 # it however many consumers load.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_etdump"),
                     dst="executorch/lib/" + get_dynamic_lib_name("executorch_etdump"),
                     # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
@@ -2908,7 +3075,7 @@ setup(
                 # library so that a process has one pool rather than one per
                 # component that uses it.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_threadpool"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_threadpool"),
@@ -2925,7 +3092,7 @@ setup(
                 # Install the merged CPU kernels beside them, so the operators are
                 # registered once per process rather than once per component.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/configurations/",
+                    src_dir="%CMAKE_CACHE_DIR%/configurations/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_kernels_optimized"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_kernels_optimized"),
@@ -2937,12 +3104,26 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
                     ],
                 ),
+                # For build systems that read pkg-config rather than CMake packages.
+                # Not on Windows, where CMakeLists.txt does not generate it.
+                *(
+                    []
+                    if _is_windows()
+                    else [
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/",
+                            src_name="executorch-wheel.pc",
+                            dst="executorch/lib/pkgconfig/executorch.pc",
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                        ),
+                    ]
+                ),
                 # The CUDA delegate and the process-wide CUDA stream helper, for a
                 # wheel built from a CUDA index. Only present when the build asks for
                 # CUDA, so packaging requires that rather than looking for files a
                 # CPU-only build never produced.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_backend_cuda"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_backend_cuda"),
@@ -2976,7 +3157,7 @@ setup(
                 # A C++ application running a quantized model could not link
                 # them before.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_kernels_quantized"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_kernels_quantized"),
@@ -3014,13 +3195,33 @@ setup(
                 # Install the XNNPACK delegate beside them, so a process has one
                 # copy of it instead of one per component that uses it.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_backend_xnnpack"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_backend_xnnpack"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_xnnpack"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch_xnnpack"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                        "EXECUTORCH_BUILD_NATIVE_CPU",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cpu/" + _CFG,
+                    src_name=get_dynamic_lib_name("executorch_backend_cpu"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_cpu"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CPU",
                     ],
                 ),
                 # Install the MLX delegate beside them, so a C++ consumer can link
@@ -3049,6 +3250,26 @@ setup(
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
                 ),
+                # The Vulkan delegate requires one shared registry DSO even
+                # when its own library is static. VGF currently configures this
+                # target but does not use it, so do not ship it for VGF-only wheels.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/vulkan_shared/%BUILD_TYPE%/",
+                    src_name=get_dynamic_lib_name("executorch_vulkan_shared_runtime"),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_VULKAN"],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreai/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreai"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreai"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_COREAI",
+                    ],
+                ),
+                *_windows_import_libraries(),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
