@@ -30,6 +30,37 @@ _TORCH_CAN_OFFLOAD = hasattr(torch._inductor.config.aot_inductor, _AUTOTUNE_OFFL
 _LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
 
 
+class _ScaleShift(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weights = torch.nn.ParameterList(
+            torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for weight in self.weights:
+            x = x * weight + 1
+        return x
+
+
+def _execute(program, method_name, inputs):
+    """Run a method of a lowered program from its files, as an app would."""
+    from executorch.runtime import Runtime
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "model.pte")
+        with open(path, "wb") as f:
+            program.write_to_file(f)
+        program.write_tensor_data_to_file(directory)
+        (data,) = [
+            os.path.join(directory, name)
+            for name in os.listdir(directory)
+            if name.endswith(".ptd")
+        ]
+        runtime_program = Runtime.get().load_program(path, data_path=data)
+        return runtime_program.load_method(method_name).execute(inputs)
+
+
 class TestCudaBackendCompileOptions(unittest.TestCase):
     def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
         from executorch.backends.cuda.cuda_backend import (
@@ -122,6 +153,17 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         )
 
         self.assertFalse(options["triton.autotune_at_compile_time"])
+
+    def test_move_and_compile_agree_on_autotune_at_compile_time(self):
+        on = CompileSpec(key="autotune_at_compile_time", value=b"ON")
+        off = CompileSpec(key="autotune_at_compile_time", value=b"OFF")
+        for specs in ([on], [off], [on, off], [off, on]):
+            with self.subTest(specs=specs):
+                options = CudaBackend.get_aoti_compile_options(specs)
+                self.assertEqual(
+                    options["triton.autotune_at_compile_time"],
+                    CudaBackend._autotunes_at_compile_time(specs),
+                )
 
     def test_invalid_autotune_at_compile_time_compile_spec(self):
         with self.assertRaisesRegex(ValueError, "Invalid autotune_at_compile_time"):
@@ -646,22 +688,7 @@ class TestCudaExport(unittest.TestCase):
         """Autotuning runs kernels on random stand-ins for the weights. In
         low-memory mode, the real weights leave the GPU meanwhile instead of
         doubling up."""
-
-        class ScaleShift(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.weights = torch.nn.ParameterList(
-                    torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
-                )
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                for weight in self.weights:
-                    x = x * weight + 1
-                return x
-
-        from executorch.runtime import Runtime
-
-        module = ScaleShift().eval()
+        module = _ScaleShift().eval()
         x = torch.randn(1 << 24)
         weight_bytes = sum(weight.nbytes for weight in module.weights)
         before = torch.cuda.memory_allocated()
@@ -676,23 +703,120 @@ class TestCudaExport(unittest.TestCase):
         ).to_executorch()
         self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
         # The weights come back from the file, so the program must still match.
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "model.pte")
-            with open(path, "wb") as f:
-                program.write_to_file(f)
-            program.write_tensor_data_to_file(directory)
-            (data,) = [
-                os.path.join(directory, name)
-                for name in os.listdir(directory)
-                if name.endswith(".ptd")
-            ]
-            method = (
-                Runtime.get().load_program(path, data_path=data).load_method("forward")
-            )
-            (output,) = method.execute([x])
+        (output,) = _execute(program, "forward", [x])
         with torch.no_grad():
             expected = module(x)
         torch.testing.assert_close(output.cpu(), expected, atol=1e-4, rtol=1e-4)
+
+    def _lower_gpu_weights(self, module, compile_specs):
+        x = torch.randn(1 << 24, device="cuda")
+        expected = [weight.detach().cpu() for weight in module.weights]
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [CudaBackend.generate_method_name_compile_spec("forward"), *compile_specs],
+        ).to_executorch()
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        for weight, value in zip(module.weights, expected):
+            self.assertTrue(torch.equal(weight.cpu(), value))
+        (output,) = _execute(program, "forward", [x.cpu()])
+        with torch.no_grad():
+            reference = module(x)
+        torch.testing.assert_close(output.cpu(), reference.cpu(), atol=1e-4, rtol=1e-4)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_lowering_leaves_gpu_weights_in_place(self):
+        """Lowering leaves weights that already live on the GPU at their
+        addresses and unchanged, and the program matches eager."""
+        module = _ScaleShift().to("cuda").eval()
+        pointers = [weight.data_ptr() for weight in module.weights]
+        self._lower_gpu_weights(module, [])
+        self.assertEqual(pointers, [weight.data_ptr() for weight in module.weights])
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_lowering_leaves_written_gpu_buffers_unchanged(self):
+        """With compile-time autotune, the compile shares a GPU buffer the
+        graph writes with the caller and does not write it."""
+
+        class Counter(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("count", torch.zeros(4, device="cuda"))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.count.add_(1)
+                return self.count * x
+
+        module = Counter()
+        x = torch.randn(4, device="cuda")
+        program = self._export_to_cuda_with_lower(
+            module, (x,), [CudaBackend.generate_method_name_compile_spec("forward")]
+        ).to_executorch()
+        self.assertTrue(torch.equal(module.count.cpu(), torch.zeros(4)))
+        (output,) = _execute(program, "forward", [x.cpu()])
+        torch.testing.assert_close(output.cpu(), x.cpu())
+
+    @unittest.skipUnless(
+        _TORCH_CAN_OFFLOAD,
+        "This PyTorch cannot move the weights off the GPU during autotuning",
+    )
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_low_memory_gpu_weights_keep_their_values(self):
+        """Low-memory mode lets Inductor move the weights to disk while it
+        autotunes, so weights on the GPU may come back at new addresses, but
+        with the same values."""
+        self._lower_gpu_weights(_ScaleShift().to("cuda").eval(), [_LOW_MEMORY_ON])
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_methods_share_gpu_weights(self):
+        """Each method is moved and released on its own, and no release may
+        free the weights both methods still share with the module."""
+        module = _ScaleShift().to("cuda").eval()
+        x = torch.randn(1 << 24, device="cuda")
+        expected = [weight.detach().cpu() for weight in module.weights]
+        pointers = [weight.data_ptr() for weight in module.weights]
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        methods = ("forward", "second")
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = to_edge_transform_and_lower(
+            {name: export(module, (x,), strict=True) for name in methods},
+            partitioner={
+                name: [
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec(name)]
+                    )
+                ]
+                for name in methods
+            },
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()
+        # Every method's copy is made before the first compile, so copying the
+        # weights would hold two copies at once.
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        self.assertEqual(pointers, [weight.data_ptr() for weight in module.weights])
+        for weight, value in zip(module.weights, expected):
+            self.assertTrue(torch.equal(weight.cpu(), value))
+        with torch.no_grad():
+            reference = module(x).cpu()
+        for name in methods:
+            (output,) = _execute(program, name, [x.cpu()])
+            torch.testing.assert_close(output.cpu(), reference, atol=1e-4, rtol=1e-4)
 
     def test_resnet_block(self):
         """Test CUDA export for a ResNet-style block."""

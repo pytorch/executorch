@@ -14,8 +14,10 @@ from typing import Tuple
 from unittest.mock import patch
 
 import torch
+from executorch.backends.aoti.aoti_backend import _tensor_storages
 from executorch.backends.cuda.cuda_backend import (
     _aoti_device_type_for_weight,
+    _moved_program_tensors,
     CudaBackend,
 )
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -45,6 +47,16 @@ from torch._inductor.compile_fx import clone_preserve_strides
 from torch.export import export
 from torch.export.pt2_archive._package_weights import TensorProperties, Weights
 from torch.fx.passes.utils.fuser_utils import validate_partition
+from torch.multiprocessing.reductions import StorageWeakRef
+
+
+class _LinearModule(torch.nn.Module):
+    def __init__(self, device=None) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(256, 256, device=device)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
 
 
 class TestCudaLowMemoryExport(unittest.TestCase):
@@ -587,13 +599,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
             self.assertFalse(os.path.exists(path))
 
-    def test_low_memory_program_copy_shares_tensor_storage(self) -> None:
+    def test_program_copy_shares_tensor_storage(self) -> None:
         module = torch.nn.Linear(4, 3)
         program = export(module, (torch.randn(2, 4),), strict=True)
 
-        copied = CudaBackend.copy_exported_program_for_preprocess(
-            program, [CompileSpec("low_memory_mode", b"ON")]
-        )
+        copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
 
         self.assertIsNot(program, copied)
         self.assertIsNot(program.graph_module, copied.graph_module)
@@ -601,17 +611,143 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
         self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
 
-    def test_default_program_copy_has_independent_tensor_storage(self) -> None:
-        module = torch.nn.Linear(4, 3)
-        program = export(module, (torch.randn(2, 4),), strict=True)
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_move_copies_gpu_tensors_the_graph_writes(self) -> None:
+        class State(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("count", torch.zeros(4, device="cuda"))
+                self.scale = torch.nn.Parameter(
+                    torch.ones(4, device="cuda"), requires_grad=False
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.count.add_(1)
+                self.scale.mul_(2)
+                return self.count * self.scale + x
+
+        program = to_edge(
+            export(State(), (torch.ones(4, device="cuda"),), strict=True)
+        ).exported_program()
+        caller = [program.state_dict[name] for name in ("count", "scale")]
+        off = CompileSpec("autotune_at_compile_time", b"OFF")
+        low_memory = CompileSpec("low_memory_mode", b"ON")
+        for compile_specs, copies in (
+            ([], False),
+            ([low_memory], False),
+            ([off], True),
+            ([low_memory, off], True),
+        ):
+            with self.subTest(compile_specs=compile_specs):
+                copied = CudaBackend.copy_exported_program_for_preprocess(
+                    program, compile_specs
+                )
+                caller_storages = _tensor_storages(copied)
+                moved = CudaBackend.move_program_to_device(
+                    copied, "cuda", compile_specs
+                )
+                moved.module()  # Fails unless a copied parameter stays a Parameter.
+                compiled = [moved.state_dict[name] for name in ("count", "scale")]
+                moved_pointers = [t.data_ptr() for t in _moved_program_tensors()]
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(copies, tensor.data_ptr() != value.data_ptr())
+                    self.assertEqual(copies, value.data_ptr() in moved_pointers)
+                CudaBackend.release_moved_tensors(moved, compile_specs, caller_storages)
+
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(16, tensor.untyped_storage().nbytes())
+                    self.assertEqual(
+                        0 if copies else 16, value.untyped_storage().nbytes()
+                    )
+
+    def _assert_preprocess_keeps_gpu_weights(self, compile_specs) -> None:
+        module = _LinearModule(device="cuda")
+        expected = module.linear.weight.detach().clone()
+        program = export(module, (torch.randn(2, 256, device="cuda"),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(
+            program, compile_specs
+        )
+        self.assertEqual(
+            program.state_dict["linear.weight"].data_ptr(),
+            copied.state_dict["linear.weight"].data_ptr(),
+        )
+        caller_storages = _tensor_storages(copied)
+        moved = CudaBackend.move_program_to_device(copied, "cuda", compile_specs)
+        # Autotune parks these on the CPU when it runs out of memory.
+        self.assertEqual([], _moved_program_tensors())
+        CudaBackend.release_moved_tensors(moved, compile_specs, caller_storages)
+
+        self.assertEqual(
+            expected.untyped_storage().nbytes(),
+            module.linear.weight.untyped_storage().nbytes(),
+        )
+        self.assertTrue(torch.equal(expected, module.linear.weight))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_preprocess_keeps_gpu_weights_without_copying_them(self) -> None:
+        self._assert_preprocess_keeps_gpu_weights([])
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_low_memory_preprocess_keeps_gpu_weights(self) -> None:
+        self._assert_preprocess_keeps_gpu_weights(
+            [CompileSpec("low_memory_mode", b"ON")]
+        )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_release_frees_all_but_the_caller_storages(self) -> None:
+        module = _LinearModule(device="cuda")
+        module.register_buffer("scale", torch.ones(256))
+        expected = module.linear.weight.detach().clone()
+        program = export(module, (torch.randn(2, 256, device="cuda"),), strict=True)
 
         copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
-
-        self.assertIsNot(program.state_dict["weight"], copied.state_dict["weight"])
-        self.assertNotEqual(
-            program.state_dict["weight"].data_ptr(),
-            copied.state_dict["weight"].data_ptr(),
+        caller_storages = _tensor_storages(copied)
+        moved = CudaBackend.move_program_to_device(copied, "cuda", [])
+        scale = moved.state_dict["scale"]
+        self.assertEqual(
+            [scale.data_ptr()], [t.data_ptr() for t in _moved_program_tensors()]
         )
+        # As a pass that runs after the move would add one.
+        added = torch.ones(256, device="cuda")
+        moved._constants["added"] = added
+        CudaBackend.release_moved_tensors(moved, [], caller_storages)
+
+        self.assertEqual(0, scale.untyped_storage().nbytes())
+        self.assertEqual(0, added.untyped_storage().nbytes())
+        self.assertTrue(torch.equal(expected, module.linear.weight))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_release_frees_weights_moved_from_the_host(self) -> None:
+        module = _LinearModule()
+        expected = module.linear.weight.detach().clone()
+        program = export(module, (torch.randn(2, 256),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
+        caller_storages = _tensor_storages(copied)
+        moved = CudaBackend.move_program_to_device(copied, "cuda", [])
+        weight = moved.state_dict["linear.weight"]
+        CudaBackend.release_moved_tensors(moved, [], caller_storages)
+
+        self.assertEqual(0, weight.untyped_storage().nbytes())
+        self.assertTrue(torch.equal(expected, program.state_dict["linear.weight"]))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_preprocess_takes_caller_storages_before_the_move(self) -> None:
+        program = to_edge(
+            export(_LinearModule(), (torch.randn(2, 256),), strict=True)
+        ).exported_program()
+        weight = program.state_dict["linear.weight"]
+        with patch.object(CudaBackend, "release_moved_tensors") as release:
+            CudaBackend.preprocess(
+                program, [CudaBackend.generate_method_name_compile_spec("forward")]
+            )
+        moved, _, caller_storages = release.call_args.args
+
+        # Taken after the move, the set would hold the moved weights, so
+        # release would never free weights moved from the host.
+        self.assertIn(StorageWeakRef(weight.untyped_storage()), caller_storages)
+        self.assertFalse(caller_storages & _tensor_storages(moved))
 
 
 class TestCudaPartitioner(unittest.TestCase):

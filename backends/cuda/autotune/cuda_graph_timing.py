@@ -34,10 +34,10 @@ To keep captures succeeding:
 - each capture's graph and its memory pool are released right after timing,
   and the allocator's cache is emptied once it holds a lot of unused memory;
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
-  the tensors given as ``offload`` (the model's weights moved to the GPU for
-  the compile) are parked on the CPU while the candidate is timed and restored
-  afterwards. This is safe because AOTI autotunes on random inputs, never on
-  the model's tensors;
+  the tensors given as ``offload`` (the model's weights the compile moved to
+  the GPU, never GPU tensors the caller passed in) are parked on the CPU while
+  the candidate is timed and restored afterwards. This is safe because AOTI
+  autotunes on random inputs, never on the model's tensors;
 - a candidate that cannot be captured at all is timed with Inductor's default.
 """
 
@@ -199,6 +199,14 @@ def _restore_storage(storage: torch.UntypedStorage, host: torch.UntypedStorage) 
     storage.copy_(host)
 
 
+def _parkable(tensor: Any) -> bool:
+    return (
+        isinstance(tensor, torch.Tensor)
+        and tensor.is_cuda
+        and tensor.untyped_storage().nbytes() > 0
+    )
+
+
 @contextlib.contextmanager
 def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     """Moves the CUDA storages behind ``tensors`` to host memory, then back.
@@ -210,10 +218,10 @@ def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     seen: set[int] = set()
     try:
         for tensor in tensors:
-            if not isinstance(tensor, torch.Tensor) or not tensor.is_cuda:
+            if not _parkable(tensor):
                 continue
             storage = tensor.untyped_storage()
-            if storage.nbytes() == 0 or storage.data_ptr() in seen:
+            if storage.data_ptr() in seen:
                 continue
             seen.add(storage.data_ptr())
             host = storage.cpu()
@@ -255,9 +263,10 @@ def _time_capturing_robustly(
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
-        if _STATE.offload is None:
+        offload = [] if _STATE.offload is None else list(_STATE.offload())
+        if not any(map(_parkable, offload)):
             raise
-    with _parked_on_cpu(_STATE.offload()) as parked_bytes:
+    with _parked_on_cpu(offload) as parked_bytes:
         stats.offloads += 1
         logger.info(
             "CUDA-graph autotune timing: parked %.1f GiB of model tensors on the CPU to capture a candidate",
