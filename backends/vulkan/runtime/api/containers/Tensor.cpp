@@ -631,6 +631,19 @@ utils::StorageType storage_type(const vkapi::VulkanImage& image) {
   }
 }
 
+vkapi::ImageSampler::Properties image_sampler_properties(
+    const vkapi::ScalarType dtype) {
+  const bool floating = dtype == vkapi::kHalf || dtype == vkapi::kFloat ||
+      dtype == vkapi::kDouble;
+  return {
+      VK_FILTER_NEAREST,
+      VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+      floating ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
+               : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
+  };
+}
+
 vkapi::VulkanImage allocate_image(
     Context* const context_ptr,
     utils::uvec3& image_extents,
@@ -640,16 +653,8 @@ vkapi::VulkanImage allocate_image(
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
-  const bool floating = dtype == vkapi::kHalf || dtype == vkapi::kFloat ||
-      dtype == vkapi::kDouble;
-
-  vkapi::ImageSampler::Properties sampler_props{
-      VK_FILTER_NEAREST,
-      VK_SAMPLER_MIPMAP_MODE_NEAREST,
-      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-      floating ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
-               : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
-  };
+  vkapi::ImageSampler::Properties sampler_props =
+      image_sampler_properties(dtype);
 
   VkImageType image_type = VK_IMAGE_TYPE_3D;
   VkImageViewType image_view_type;
@@ -801,6 +806,7 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{0},
       image_(image),
       buffer_(vkapi::VulkanBuffer()),
+      external_(true),
       last_access_{} {}
 
 vTensorStorage::vTensorStorage(
@@ -815,6 +821,7 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{0},
       image_(vkapi::VulkanImage()),
       buffer_(buffer),
+      external_(true),
       last_access_{} {}
 
 vTensorStorage::~vTensorStorage() {
@@ -846,7 +853,8 @@ void vTensorStorage::transition(
   bool layout_changed = false;
   if (image_) {
     cur_layout = image_.layout();
-    new_layout = vkapi::vk_layout(cur_stage, cur_access);
+    new_layout = external_ ? VK_IMAGE_LAYOUT_GENERAL
+                           : vkapi::vk_layout(cur_stage, cur_access);
 
     layout_changed = cur_layout != new_layout;
   }
@@ -1383,6 +1391,9 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
 }
 
 bool vTensor::memory_is_bound() const {
+  if (storage_->external_) {
+    return true;
+  }
   switch (storage_type()) {
     case utils::kBuffer:
       return storage_->buffer_.has_memory();

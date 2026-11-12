@@ -11,7 +11,12 @@ import platform
 import subprocess
 import sys
 
-from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+from install_utils import (
+    determine_torch_url,
+    ensure_pip,
+    is_intel_mac_os,
+    python_is_compatible,
+)
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
@@ -284,6 +289,7 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    ensure_pip()
     if not python_is_compatible():
         sys.exit(1)
     main(sys.argv[1:])

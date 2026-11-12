@@ -179,13 +179,11 @@ TEST_F(BenchmarkValidation, StagedLinearUsesConstantWeightsAndOptionalBias) {
          {"max_dispatches", 2}});
     const auto host_data = prepare_tensor_data(typed);
     const auto expected = host_data;
-    EXPECT_EQ(
-        benchmark_operator(typed, host_data, true)
-            .at("validation")
-            .at("status"),
-        "PASS");
-    EXPECT_TRUE(
-        benchmark_operator(typed, host_data).contains("wall_time_operator_us"));
+    const Report validated = benchmark_operator(typed, host_data, true);
+    EXPECT_EQ(validated.at("validation").at("status"), "PASS");
+    const Report timed = benchmark_operator(typed, host_data);
+    EXPECT_TRUE(timed.contains("wall_time_operator_us"));
+    EXPECT_EQ(validated.at("execute_nodes"), timed.at("execute_nodes"));
     EXPECT_EQ(
         benchmark_operator(typed, host_data, true)
             .at("validation")

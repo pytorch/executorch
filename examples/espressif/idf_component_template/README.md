@@ -10,25 +10,42 @@ LICENSE file in the root directory of this source tree.
 
 **This tree is generated. Do not edit it by hand.** It is produced by
 `examples/espressif/build_idf_component.sh` in the
-[ExecuTorch](https://github.com/pytorch/executorch) repository:
+[ExecuTorch](https://github.com/pytorch/executorch) repository.
 
-```sh
-executorch/examples/espressif/build_idf_component.sh --out <this directory>
-```
-
-`VERSION` in this directory records the ExecuTorch commit and the
-kernel libraries the component ships.
+`VERSION` in this directory records the ExecuTorch commit, the generator's
+options, the kernel libraries the component ships and the torch to
+install with executorch. `examples/hello_executorch` is a complete
+project that runs a small model with its kernel bundle; its README says
+how they were made.
 
 ## Using it
+
+Depend on one exact version and commit `dependencies.lock`:
+
+```yaml
+dependencies:
+  pytorch/executorch: "==@ET_COMPONENT_VERSION@"
+```
+
+The registry's dev versions, `X.Y.Z-dev.YYYYMMDD`, come from the
+`nightly` branch. A copy you generate yourself is not published; use it
+from your project's `components/` or through `override_path`.
+
+A kernel bundle is made for one component version, a `~N` respin
+included, and the build refuses a bundle made for another version, or
+for the same version from another commit. With a range, the build
+breaks once the lock is re-solved to a newer version (for example by
+`idf.py update-dependencies`), until the bundle is regenerated.
 
 The component carries the runtime, every kernel of its kernel
 libraries (portable, quantized, the Cadence backend's generic kernels
 and the `esp_nn::` op library) and the ESP-NN delegate
 (`EspNNBackend`), but registers only the kernels your models use and
 links the delegate only when one of them uses it. It depends on
-`espressif/esp-nn`, which the component manager fetches; a project
-that builds without the component manager provides it as
-`components/esp-nn`. The kernels come
+`espressif/esp-nn`, which the component manager fetches from the
+production registry, components.espressif.com, even for a project that
+names another registry; a project that builds without the component
+manager provides it as `components/esp-nn`. The kernels come
 from a kernel bundle that `tools/gen_kernels.py` makes from your
 `.pte` files. Run it with the Python environment you exported the
 models with, after every export, ExecuTorch upgrade or update of this
@@ -36,6 +53,15 @@ component, and keep the bundle in your project:
 
 ```sh
 python <this directory>/tools/gen_kernels.py --pte main/model.pte --out main/et_kernels
+```
+
+The Python environment you export models and run `gen_kernels.py` with
+needs the executorch this component was built from, and the torch that
+`VERSION` names as `torch_requirement`, from its `torch_index`, since
+ExecuTorch's wheels declare no torch:
+
+```sh
+@ET_INSTALL@
 ```
 
 Then declare the models and the bundle, from a component's
@@ -112,10 +138,11 @@ errors under the `et_model` tag.
 
 ## Updating
 
-Re-run the generator against a newer ExecuTorch checkout and replace
-this whole directory, then regenerate your kernel bundle with the
-matching `executorch` Python package. Review the `VERSION` diff
-(commit, kernel library hashes); do not line-review vendored sources.
+Bump the `==` pin, or, for a vendored copy, re-run the generator
+against a newer ExecuTorch checkout and replace this whole directory.
+Then regenerate your kernel bundle with the matching `executorch`
+Python package. Review the `VERSION` diff (commit, kernel library
+hashes); do not line-review vendored sources.
 
 Projects moving from the op profiles of earlier versions remove
 `CONFIG_ET_ENABLE` and `CONFIG_ET_OP_PROFILE_*` from their sdkconfig,

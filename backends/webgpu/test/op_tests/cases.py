@@ -60,6 +60,13 @@ from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
     GENERAL_CONFIGS as _CONV1D_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
+from executorch.backends.webgpu.test.ops.test_elu_silu import (
+    ELU_CONFIGS,
+    EluModule,
+    extreme_values,
+    signed_ramp,
+    SiluModule,
+)
 from executorch.backends.webgpu.test.ops.test_expand_copy import (
     CONFIGS as _EXPAND_COPY_CONFIGS,
     ExpandCopyModule,
@@ -1330,6 +1337,14 @@ def _layer_norm_suite() -> WebGPUTestSuite:
                 construct={"normalized_shape": 1024},
                 inputs=(InputSpec(shape=(1, 8, 1024), gen=_ln_ramp),),
             ),
+            # Built at 128 rows, run at 125.
+            Case(
+                name="dynamic_rows_128_to_125",
+                construct={"normalized_shape": 512},
+                export_inputs=(InputSpec(shape=(1, 128, 512), gen=_ln_ramp),),
+                inputs=(InputSpec(shape=(1, 125, 512), gen=_ln_ramp),),
+                dynamic_shapes=({1: torch.export.Dim("ln_rows", min=1, max=128)},),
+            ),
         ],
         atol=1e-4,
         rtol=1e-3,
@@ -2545,4 +2560,68 @@ def _arange_suite() -> WebGPUTestSuite:
                 inputs=((4,),),
             ),
         ],
+    )
+
+
+@register_op_test("elu")
+def _elu_suite() -> WebGPUTestSuite:
+    def construct(cfg):
+        alpha, scale, input_scale = cfg
+        return {"alpha": alpha, "scale": scale, "input_scale": input_scale}
+
+    return WebGPUTestSuite(
+        module_factory=EluModule,
+        cases=[
+            Case(
+                name=name,
+                construct=construct(cfg),
+                inputs=(InputSpec(shape=(4, 257), gen=signed_ramp),),
+            )
+            for name, cfg in ELU_CONFIGS.items()
+        ]
+        + [
+            Case(
+                name="rank4_randn",
+                construct=construct(ELU_CONFIGS["alpha_half"]),
+                inputs=((S1, S2, S2, M2),),
+            ),
+            # A parameter input reaches the kernel through a prepack node.
+            Case(
+                name="param_input",
+                construct={"param_shape": (4, 257)},
+                inputs=((4, 257),),
+            ),
+            Case(
+                name="extreme_values",
+                construct=construct(ELU_CONFIGS["alpha_scaled"]),
+                inputs=(InputSpec(shape=(4, 10), gen=extreme_values),),
+                equal_nan=True,
+            ),
+        ],
+        atol=1e-5,
+        rtol=1e-4,
+    )
+
+
+@register_op_test("silu")
+def _silu_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=SiluModule,
+        cases=[
+            Case(name="mat", inputs=((M1, M2),)),
+            Case(name="rank3", inputs=((S1, M1, M2),)),
+            Case(name="range", inputs=(InputSpec(shape=(4, 257), gen=signed_ramp),)),
+            Case(
+                name="param_input",
+                construct={"param_shape": (4, 257)},
+                inputs=((4, 257),),
+            ),
+            Case(
+                name="extreme_values",
+                inputs=(InputSpec(shape=(4, 10), gen=extreme_values),),
+                equal_nan=True,
+            ),
+        ],
+        atol=1e-5,
+        rtol=1e-4,
     )

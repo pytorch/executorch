@@ -18,7 +18,7 @@ from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-@pytest.mark.parametrize("k", [1, 4])
+@pytest.mark.parametrize("k", [1, 4, 8])
 def test_decompose_topk_static_shapes_and_cumulative_masking(k):
     dtype = torch.float32
 
@@ -63,7 +63,7 @@ def test_decompose_topk_static_shapes_and_cumulative_masking(k):
         assert sentinel.kwargs["dtype"] == dtype
 
 
-@pytest.mark.parametrize("k", [1, 4])
+@pytest.mark.parametrize("k", [1, 4, 8])
 def test_decompose_topk_generated_nodes_preserve_provenance(k: int) -> None:
     """Every replacement op must remain attributable to its TopK source.
 
@@ -110,14 +110,13 @@ def test_decompose_topk_generated_nodes_preserve_provenance(k: int) -> None:
     all_nodes = list(result.graph_module.graph.nodes)
     assert not any(node.target in TOPK_OPS for node in all_nodes)
 
-    # There are 3 generated nodes for K=1 (ARGMAX, view, gather), and
-    # 19 for K=4 (including expert ids, masking and concatenation).
+    # K=1 emits 3 nodes; K>1 emits 4*K+3, including masking.
     generated = [
         node
         for node in all_nodes
         if node.op == "call_function" and node.meta.get("debug_handle") == 987654321
     ]
-    assert len(generated) == (3 if k == 1 else 19)
+    assert len(generated) == (3 if k == 1 else 4 * k + 3)
     assert (
         sum(node.target == exir_ops.backend.tosa.ARGMAX.default for node in generated)
         == k
