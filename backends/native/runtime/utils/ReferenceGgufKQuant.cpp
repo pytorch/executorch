@@ -18,8 +18,10 @@ namespace ptn::reference {
 namespace {
 
 constexpr std::string_view kQ4K = "gguf:q4_k";
+constexpr std::string_view kQ5K = "gguf:q5_k";
 constexpr std::string_view kQ6K = "gguf:q6_k";
 constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ5KBlockBytes = 176;
 constexpr size_t kQ6KBlockBytes = 210;
 // Below this many weights per thread, starting threads costs more than it
 // saves.
@@ -57,11 +59,15 @@ void q4_k_scale_min(const uint8_t* scales, int pair, float* scale, float* min) {
 
 // block_q4_K: fp16 d, fp16 dmin, 12 scale bytes, 128 nibble bytes. Each
 // 32-byte group yields 32 weights from its low nibbles, then 32 from its high.
-void decode_q4_k_block(const uint8_t* block, float* y) {
+// block_q5_K inserts, before the nibbles, 32 bytes holding each weight's fifth
+// bit: bits 2 * group and 2 * group + 1 of byte l, for weights l and l + 32 of
+// the group.
+void decode_q4_k_or_q5_k_block(const uint8_t* block, float* y, bool is_q5k) {
   const float d = half_to_float(block);
   const float dmin = half_to_float(block + 2);
   const uint8_t* scales = block + 4;
-  const uint8_t* q = block + 16;
+  const uint8_t* qh = block + 16;
+  const uint8_t* q = is_q5k ? block + 48 : block + 16;
   for (int group = 0; group < 4; ++group) {
     float scale = 0;
     float min = 0;
@@ -74,10 +80,24 @@ void decode_q4_k_block(const uint8_t* block, float* y) {
     const uint8_t* qg = q + 32 * group;
     float* yg = y + 64 * group;
     for (int l = 0; l < 32; ++l) {
-      yg[l] = d1 * static_cast<float>(qg[l] & 0xF) - m1;
-      yg[l + 32] = d2 * static_cast<float>(qg[l] >> 4) - m2;
+      int low = qg[l] & 0xF;
+      int high = qg[l] >> 4;
+      if (is_q5k) {
+        low |= ((qh[l] >> (2 * group)) & 1) << 4;
+        high |= ((qh[l] >> (2 * group + 1)) & 1) << 4;
+      }
+      yg[l] = d1 * static_cast<float>(low) - m1;
+      yg[l + 32] = d2 * static_cast<float>(high) - m2;
     }
   }
+}
+
+void decode_q4_k_block(const uint8_t* block, float* y) {
+  decode_q4_k_or_q5_k_block(block, y, /*is_q5k=*/false);
+}
+
+void decode_q5_k_block(const uint8_t* block, float* y) {
+  decode_q4_k_or_q5_k_block(block, y, /*is_q5k=*/true);
 }
 
 // block_q6_K: 128 low-nibble bytes, 64 high-bit bytes, 16 int8 scales, fp16 d.
@@ -113,6 +133,9 @@ struct Codec {
 Codec codec_of(std::string_view codec) {
   if (codec == kQ4K) {
     return {kQ4KBlockBytes, decode_q4_k_block};
+  }
+  if (codec == kQ5K) {
+    return {kQ5KBlockBytes, decode_q5_k_block};
   }
   if (codec == kQ6K) {
     return {kQ6KBlockBytes, decode_q6_k_block};
@@ -150,7 +173,7 @@ void decode_rows(
 
 // cppcheck-suppress unusedFunction
 bool is_gguf_kquant(std::string_view codec) {
-  return codec == kQ4K || codec == kQ6K;
+  return codec == kQ4K || codec == kQ5K || codec == kQ6K;
 }
 
 // cppcheck-suppress unusedFunction
