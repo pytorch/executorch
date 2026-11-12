@@ -8,13 +8,15 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-
-from backends.nxp.tests.model_output_comparator import AllCloseOutputComparator
 from executorch.backends.nxp.backend.ops_aliases import (
     AddTensor,
     GetItem,
     MaxPool2DWithIndices,
     PermuteCopy,
+)
+
+from executorch.backends.nxp.tests.comparators.all_close_comparator import (
+    AllCloseOutputComparator,
 )
 
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
