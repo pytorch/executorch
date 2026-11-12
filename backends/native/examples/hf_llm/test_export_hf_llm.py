@@ -407,6 +407,64 @@ class ExportHfLlmTest(unittest.TestCase):
         ops = _ops_except_casts(ep)
         self.assertEqual(ops["kvcache.update_and_attend.default"], 4)
         self.assertNotIn("aten.eq.Scalar", ops)
+        selected = OffGraphLastTokenLM(model, 32, selected=True).eval()
+        ids = torch.tensor([[3, 4, 5]])
+        with torch.no_grad():
+            with selected.cache_scope():
+                got = selected(ids, torch.arange(3), torch.tensor([2]))
+            with offgraph.cache_scope():
+                offgraph.reset_cache()
+                want = offgraph(ids, torch.arange(3))
+        torch.testing.assert_close(got, want)
+
+    def test_offgraph_selected_logits_match_the_last_token(self) -> None:
+        torch.manual_seed(7)
+        register_offgraph_attention("offgraph")
+        model = _tiny()
+        model.config._attn_implementation = "offgraph"
+        last = OffGraphLastTokenLM(model, 32).eval()
+        selected = OffGraphLastTokenLM(model, 32, selected=True).eval()
+        prompts = [[3, 4, 5, 6, 7, 8], [9, 10]]
+
+        want = golden_samples(last, prompts, 2)
+        got = golden_samples(selected, prompts, 2)
+
+        for sample, expected in zip(got.samples, want.samples, strict=True):
+            for call, ref in zip(sample.calls, expected.calls, strict=True):
+                ids = call.inputs[0]
+                self.assertTrue(
+                    torch.equal(call.inputs[2], torch.tensor([ids.shape[1] - 1]))
+                )
+                self.assertTrue(torch.equal(call.outputs[0], ref.outputs[0]))
+        self.assertEqual(selected.metadata()["get_logits_to_keep_mode"], 2)
+        self.assertEqual(last.metadata()["get_logits_to_keep_mode"], 1)
+        seq = torch.export.Dim("seq", min=1, max=31)
+        rows = torch.export.Dim("rows", min=1, max=31)
+        with torch.no_grad():
+            ep = torch.export.export(
+                selected,
+                (torch.tensor([[3, 4, 5]]), torch.arange(3), torch.tensor([0, 2])),
+                dynamic_shapes={
+                    "input_ids": {1: seq},
+                    "cache_position": {0: seq},
+                    "logits_to_keep": {0: rows},
+                },
+                strict=True,
+            )
+            with selected.cache_scope():
+                logits = ep.module()(
+                    torch.tensor([[3, 4, 5]]), torch.arange(3), torch.tensor([0, 2])
+                )
+        self.assertEqual(tuple(logits.shape), (1, 2, 128))
+        self.assertEqual(len(ep.graph_signature.user_inputs), 3)
+
+    def test_selected_logits_need_an_offgraph_cache(self) -> None:
+        argv = ["export_hf_llm", "--model", "unused", "--logits_to_keep", "selected"]
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(export_hf_llm, "_load") as load:
+                with self.assertRaises(SystemExit):
+                    export_hf_llm.main()
+        load.assert_not_called()
 
     def test_offgraph_cache_excludes_in_graph_cache_flags(self) -> None:
         for flags in (
@@ -536,6 +594,7 @@ class ExportHfLlmTest(unittest.TestCase):
                         "get_head_dims": [16, 16],
                         "get_windows": windows,
                         "get_max_context_len": 64,
+                        "get_logits_to_keep_mode": 1,
                     },
                 )
                 self.assertEqual(
