@@ -77,16 +77,23 @@ TEST(MLXCheckpoint, ReexportPreservesRetentionAndOwnsBytes) {
     step(source, id, p, 3);
   auto state =
       std::get<cache::SequenceCheckpoint>(source.export_to_cpu(id, 17));
-  const auto original = state.layers[1].key;
+  const auto original = state.layers;
   step(source, id, 18, 3);
-  EXPECT_EQ(state.layers[1].key, original);
+  EXPECT_EQ(state.layers[1].key, original[1].key);
   MLXBatchedCache restored(geometry(), config());
   auto target = std::get<int32_t>(restored.import_from_cpu(state, 17));
-  state.layers[0].key.assign(state.layers[0].key.size(), 0);
+  for (auto& layer : state.layers) {
+    layer.key.assign(layer.key.size(), 0);
+    layer.value.assign(layer.value.size(), 0);
+  }
   auto again =
       std::get<cache::SequenceCheckpoint>(restored.export_to_cpu(target, 17));
   EXPECT_EQ(again.layers[1].begin, 12);
-  EXPECT_EQ(again.layers[1].key, original);
+  ASSERT_EQ(again.layers.size(), original.size());
+  for (size_t i = 0; i < original.size(); ++i) {
+    EXPECT_EQ(again.layers[i].key, original[i].key);
+    EXPECT_EQ(again.layers[i].value, original[i].value);
+  }
   EXPECT_FALSE(restored.rewind(target, 14));
 }
 

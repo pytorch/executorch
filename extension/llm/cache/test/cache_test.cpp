@@ -12,6 +12,8 @@
 #include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 
+#include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -122,6 +124,45 @@ TEST_F(CacheTest, CheckpointRetentionRespectsTheAttentionPolicy) {
   }
 }
 
+TEST_F(CacheTest, CheckpointRejectsMalformedGeometryAndBufferExtents) {
+  namespace cache = executorch::extension::llm::cache;
+  auto cfg = config(8);
+  cfg.kv_dtype = 5;
+  CacheGeometry geometry{{flat_layer()}};
+  cache::SequenceCheckpoint state{
+      4,
+      5,
+      std::nullopt,
+      {{0, 2, 8, 0, std::vector<uint8_t>(128), std::vector<uint8_t>(128)}}};
+  ASSERT_TRUE(cache::valid_checkpoint(state, geometry, cfg, 4));
+  const std::vector<std::function<void(cache::SequenceCheckpoint&)>>
+      corruptions{
+          [](auto& s) { s.layers[0].key.pop_back(); },
+          [](auto& s) { s.layers[0].value.pop_back(); },
+          [](auto& s) { s.dtype = 0; },
+          [](auto& s) { s.dtype = 6; },
+          [](auto& s) { ++s.layers[0].heads; },
+          [](auto& s) { ++s.layers[0].head_dim; },
+          [](auto& s) { ++s.layers[0].window; },
+          [](auto& s) { s.dflash_block_size = 0; },
+          [](auto& s) { s.layers.clear(); },
+          [](auto& s) { s.layers[0].begin = 1; },
+          [](auto& s) { s.position = -1; }};
+  for (size_t i = 0; i < corruptions.size(); ++i) {
+    SCOPED_TRACE(i);
+    auto invalid = state;
+    corruptions[i](invalid);
+    EXPECT_FALSE(cache::valid_checkpoint(invalid, geometry, cfg, 4));
+  }
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 5));
+  cfg.capacity = 3;
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 4));
+  cfg.capacity = state.position = std::numeric_limits<int>::max();
+  state.layers[0].heads = geometry.layers[0].n_kv_heads = cfg.capacity;
+  state.layers[0].head_dim = geometry.layers[0].head_dim = cfg.capacity;
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 1));
+}
+
 TEST_F(
     CacheTest,
     CheckpointReservationUsesFreeCellsWithoutChangingOtherSequences) {
@@ -135,6 +176,9 @@ TEST_F(
   const auto second = cache.reserve_sequence(2);
   ASSERT_TRUE(first);
   ASSERT_TRUE(second);
+  for (int id : {-1, 64, std::numeric_limits<int32_t>::max()}) {
+    EXPECT_FALSE(cache.sequence_cells(id, 0));
+  }
   const auto retained = cache.sequence_cells(*second, 2);
   EXPECT_EQ(retained.value(), (std::vector<int32_t>{3, 4}));
   cache.seq_rm(*first);
@@ -147,6 +191,12 @@ TEST_F(
   EXPECT_EQ(cache.pos(*restored), 4);
   EXPECT_FALSE(cache.reserve_sequence(3));
   EXPECT_EQ(cache.sequence_cells(*second, 2), retained);
+  ASSERT_TRUE(cache.declare_step({*restored}));
+  const int position = 4;
+  const auto* step = cache.place_step(0, &position, 1);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(cache.pos(*restored), 5);
+  EXPECT_EQ(step->mask_bits, (std::vector<uint8_t>{1, 1, 1, 0, 0, 1, 1}));
   cache.seq_rm(*restored);
   cache.seq_rm(*second);
   EXPECT_TRUE(cache.reserve_sequence(8));

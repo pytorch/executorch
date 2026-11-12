@@ -414,14 +414,23 @@ struct ServingRuntime::Impl {
             ErrorCode::SessionBusy,
             "checkpoint export requires an idle session"};
       }
-      if (slot.dirty || !slot.logical_history || upto <= 0 ||
-          upto > slot.session->position()) {
+      if (slot.dirty || !slot.logical_history ||
+          slot.session->position() == 0) {
         return ServingError{
             ErrorCode::InvalidArgument,
             "checkpoint requires healthy committed history"};
       }
+      if (upto <= 0 || upto > slot.session->position()) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "checkpoint position is outside committed history (committed " +
+                std::to_string(slot.session->position()) + ")"};
+      }
+      const auto history = slot.logical_history;
+      auto* session = &*slot.session;
+      lock.unlock();
       auto& tokens = command.exported->tokens;
-      for (const auto& span : slot.logical_history->spans) {
+      for (const auto& span : history->spans) {
         const auto* raw = std::get_if<batching::TokenSpan>(&span);
         if (!raw || !raw->tokens) {
           return ServingError{
@@ -443,8 +452,7 @@ struct ServingRuntime::Impl {
             ErrorCode::InvalidArgument,
             "checkpoint token history is incomplete"};
       }
-      auto future = slot.session->export_checkpoint_to_cpu_async(upto);
-      lock.unlock();
+      auto future = session->export_checkpoint_to_cpu_async(upto);
       auto result = future.get();
       if (auto* error = std::get_if<batching::CheckpointError>(&result)) {
         return ServingError{ErrorCode::InvalidArgument, error->message};
@@ -474,13 +482,13 @@ struct ServingRuntime::Impl {
             ErrorCode::InvalidArgument,
             "invalid checkpoint position or token history"};
       }
+      lock.unlock();
       auto tokens = std::make_shared<const std::vector<batching::Token>>(
           checkpoint->tokens.begin(), checkpoint->tokens.begin() + upto);
       auto history = std::make_shared<const batching::PrefixIdentity>(
           batching::token_identity(tokens));
       auto state = std::shared_ptr<const batching::Checkpoint>(
           checkpoint, &checkpoint->state);
-      lock.unlock();
       auto result =
           runner_->restore_checkpoint_from_cpu_async(std::move(state), upto)
               .get();
@@ -2109,10 +2117,13 @@ void ServingRuntime::export_checkpoint_to_cpu_async(
       std::move(key),
       [checkpoint, callback = std::move(on_complete)](
           LifecycleResult error, bool) {
-        if (error)
-          callback(batching::CheckpointError{error->message});
-        else
-          callback(checkpoint);
+        if (callback) {
+          if (error) {
+            callback(std::move(*error));
+          } else {
+            callback(checkpoint);
+          }
+        }
       },
       checkpoint,
       {},
@@ -2128,7 +2139,9 @@ void ServingRuntime::restore_checkpoint_from_cpu_async(
       Impl::Operation::RestoreSessionCheckpoint,
       std::move(key),
       [callback = std::move(on_complete)](LifecycleResult error, bool) {
-        callback(std::move(error));
+        if (callback) {
+          callback(std::move(error));
+        }
       },
       {},
       std::move(checkpoint),

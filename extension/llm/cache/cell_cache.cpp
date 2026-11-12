@@ -33,16 +33,18 @@ CellCache::CellCache(const CacheGeometry& geometry, const CacheConfig& cfg)
 std::optional<std::vector<int32_t>> CellCache::sequence_cells(
     int32_t id,
     int upto) const {
-  if (!live(id) || upto < 0 || upto > pos(id))
+  if (!valid_seq(id) || !live(id) || upto < 0 || upto > pos(id)) {
     return std::nullopt;
+  }
   std::vector<int32_t> cells(upto, -1);
   for (int cell = 0; cell < used_end_; ++cell) {
     if ((owners_[cell] & bit(id)) && pos_[cell] >= 0 && pos_[cell] < upto) {
       cells[pos_[cell]] = cell;
     }
   }
-  if (std::find(cells.begin(), cells.end(), -1) != cells.end())
+  if (std::find(cells.begin(), cells.end(), -1) != cells.end()) {
     return std::nullopt;
+  }
   return cells;
 }
 

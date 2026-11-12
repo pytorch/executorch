@@ -23,6 +23,7 @@ namespace executorch::examples::llm_server::testing {
 enum class Checkpoint {
   Admitted,
   SessionCheckpointAdmitted,
+  SessionCheckpointIOStarted,
   BeforeBind,
   Bound,
   TerminalEnqueued,

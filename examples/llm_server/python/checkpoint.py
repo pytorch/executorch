@@ -62,7 +62,9 @@ def _validate_cache(cache, position, is_target, buffer):
     itemsize = {5: 2, 6: 4, 15: 2}.get(dtype)
     if itemsize is None:
         raise ValueError("unsupported checkpoint dtype")
-    block = cache.get("dflash_block_size")
+    if "dflash_block_size" not in cache:
+        raise ValueError("invalid checkpoint cache record")
+    block = cache["dflash_block_size"]
     if block is not None:
         _integer(block, "draft block size")
     layers = cache.get("layers")
@@ -221,19 +223,30 @@ def save_checkpoint(checkpoint: CPUCheckpoint, path: os.PathLike) -> None:
             os.unlink(temporary)
 
 
+def _open_checkpoint(path):
+    flags = os.O_RDONLY
+    if os.name == "posix":
+        flags |= os.O_NOFOLLOW | os.O_NONBLOCK
+    elif os.name == "nt":
+        flags |= os.O_BINARY
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("checkpoint must be a regular file")
+        stream = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    return stream
+
+
 def load_checkpoint(
     path: os.PathLike, *, expected_identity: str, max_bytes: int = _DEFAULT_MAX_BYTES
 ) -> CPUCheckpoint:
     """Read into CPU memory, verify integrity and identity; never restore a device."""
     if type(max_bytes) is not int or max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
-    flags = os.O_RDONLY
-    if os.name == "posix":
-        flags |= os.O_NOFOLLOW | os.O_NONBLOCK
-    fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            raise ValueError("checkpoint must be a regular file")
+    with _open_checkpoint(path) as stream:
         if stream.read(8) != _MAGIC:
             raise ValueError("unsupported checkpoint file version")
         raw_length = stream.read(8)
@@ -245,11 +258,16 @@ def load_checkpoint(
         raw_header = stream.read(length)
         if len(raw_header) != length:
             raise ValueError("truncated checkpoint header")
-        header = json.loads(raw_header)
+        try:
+            header = json.loads(raw_header)
+        except RecursionError as error:
+            raise ValueError("invalid checkpoint header") from error
         if (
             not isinstance(header, dict)
             or set(header) != {"metadata", "sha256"}
             or not isinstance(header["sha256"], str)
+            or len(header["sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in header["sha256"])
             or not isinstance(header["metadata"], dict)
             or set(header["metadata"]) != {"identity", "manifest"}
             or not isinstance(header["metadata"]["manifest"], dict)

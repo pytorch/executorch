@@ -10,6 +10,7 @@ import os
 import struct
 import subprocess
 import sys
+from dataclasses import replace
 
 import pytest
 from executorch.examples.llm_server.python.checkpoint import (
@@ -71,16 +72,110 @@ def test_roundtrip_and_explicit_partial_match(tmp_path):
         load_checkpoint(path, expected_identity="model-a", max_bytes=11)
 
 
+def dflash_sample():
+    target = sample(tuple(range(10)))
+    manifest = copy.deepcopy(target.manifest)
+    offset = len(target.data)
+    manifest["caches"].append(
+        {
+            "position": 8,
+            "dtype": 5,
+            "dflash_block_size": 2,
+            "layers": [
+                {
+                    "begin": 4,
+                    "heads": 1,
+                    "head_dim": 1,
+                    "window": 2,
+                    "key": [offset, 8],
+                    "value": [offset + 8, 8],
+                }
+            ],
+        }
+    )
+    manifest["hidden_row_bytes"] = 4
+    manifest["hidden"] = [offset + 16, 8]
+    data = target.data + b"\x02\x03" * 8 + b"features"
+    manifest["data_bytes"] = len(data)
+    return CPUCheckpoint(target.identity, manifest, data)
+
+
+def test_two_cache_roundtrip_and_restore_across_draft_frontier(tmp_path):
+    checkpoint = dflash_sample()
+    path = tmp_path / "dflash.etcp"
+    save_checkpoint(checkpoint, path)
+    restored = load_checkpoint(path, expected_identity=checkpoint.identity)
+    assert restored == checkpoint
+    for position in (6, 7, 8, 9, 10):
+        restored.validate_restore_position(position)
+    with pytest.raises(ValueError, match="no longer retains"):
+        restored.validate_restore_position(5)
+
+
+@pytest.mark.parametrize(
+    "kind", ["short", "extra", "offset", "zero_row", "draft_ahead", "single_cache_row"]
+)
+def test_draft_hidden_state_must_match_both_cache_positions(kind):
+    checkpoint = dflash_sample()
+    if kind == "short":
+        checkpoint = replace(checkpoint, data=checkpoint.data[:-1])
+        checkpoint.manifest["data_bytes"] -= 1
+    elif kind == "extra":
+        checkpoint = replace(checkpoint, data=checkpoint.data + b"\x00")
+        checkpoint.manifest["data_bytes"] += 1
+        checkpoint.manifest["hidden"][1] += 1
+    elif kind == "offset":
+        checkpoint.manifest["hidden"][0] -= 1
+    elif kind == "zero_row":
+        checkpoint.manifest["hidden_row_bytes"] = 0
+    elif kind == "draft_ahead":
+        checkpoint.manifest["caches"][1]["position"] = 11
+    else:
+        checkpoint = sample()
+        checkpoint.manifest["hidden_row_bytes"] = 4
+    with pytest.raises(ValueError):
+        checkpoint.validate(checkpoint.identity)
+
+
+def test_missing_dflash_metadata_is_rejected_before_restore(tmp_path):
+    checkpoint = sample(tuple(range(10)), begin=7, window=3)
+    del checkpoint.manifest["caches"][0]["dflash_block_size"]
+    with pytest.raises(ValueError, match="cache record"):
+        checkpoint.validate_restore_position(10)
+    with pytest.raises(ValueError, match="cache record"):
+        save_checkpoint(checkpoint, tmp_path / "invalid.etcp")
+
+
+@pytest.mark.parametrize("kind", ["non_ascii_digest", "nested_header"])
+def test_malformed_header_reports_value_error(tmp_path, kind):
+    path = tmp_path / "invalid.etcp"
+    save_checkpoint(sample(), path)
+    raw = path.read_bytes()
+    header_size = struct.unpack("<Q", raw[8:16])[0]
+    header = json.loads(raw[16 : 16 + header_size])
+    header["sha256"] = "é" * 64
+    data = (
+        json.dumps(header).encode()
+        if kind == "non_ascii_digest"
+        else b"[" * 2000 + b"0" + b"]" * 2000
+    )
+    path.write_bytes(raw[:8] + struct.pack("<Q", len(data)) + data + sample().data)
+    with pytest.raises(ValueError, match="invalid checkpoint header"):
+        load_checkpoint(path, expected_identity="model-a")
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX file types")
-@pytest.mark.parametrize("kind", ["fifo", "symlink"])
+@pytest.mark.parametrize("kind", ["fifo", "symlink", "directory"])
 def test_load_rejects_nonregular_files_without_waiting(tmp_path, kind):
     path = tmp_path / "untrusted.etcp"
     if kind == "fifo":
         os.mkfifo(path)
-    else:
+    elif kind == "symlink":
         saved = tmp_path / "valid.etcp"
         save_checkpoint(sample(), saved)
         path.symlink_to(saved)
+    else:
+        path.mkdir()
     result = subprocess.run(
         [
             sys.executable,
@@ -96,9 +191,42 @@ def test_load_rejects_nonregular_files_without_waiting(tmp_path, kind):
     assert result.returncode != 0
     assert (
         "regular file" in result.stderr
-        if kind == "fifo"
+        if kind != "symlink"
         else "OSError" in result.stderr
     )
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_load_closes_descriptor_before_file_object_owns_it(
+    tmp_path, monkeypatch, directory
+):
+    path = tmp_path if directory else tmp_path / "state.etcp"
+    if not directory:
+        save_checkpoint(sample(), path)
+    opened = []
+    original = os.open
+
+    def record_open(*args, **kwargs):
+        fd = original(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def fail_fdopen(*args, **kwargs):
+        raise ValueError("file object construction failed")
+
+    monkeypatch.setattr(os, "open", record_open)
+    monkeypatch.setattr(os, "fdopen", fail_fdopen)
+    with pytest.raises(ValueError, match="regular file|construction failed"):
+        load_checkpoint(path, expected_identity="model-a")
+    assert len(opened) == 1
+    try:
+        with pytest.raises(OSError):
+            os.fstat(opened[0])
+    finally:
+        try:
+            os.close(opened[0])
+        except OSError:
+            pass
 
 
 @pytest.mark.parametrize(

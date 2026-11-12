@@ -90,13 +90,21 @@ def test_delete_saved_session_is_explicit_and_idempotent(tmp_path):
 
 
 @pytest.mark.parametrize("save_first", [False, True])
-@pytest.mark.parametrize("restore_second", [False, True])
+@pytest.mark.parametrize("second_kind", ["save", "resume", "export", "restore"])
 def test_advanced_operations_share_persistence_queue(
-    tmp_path, save_first, restore_second
+    tmp_path, monkeypatch, save_first, second_kind
 ):
+    async def inline_io(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    # Remove thread scheduling from the admission check: an unlocked restore
+    # must reach _submit before this test acknowledges the first transfer.
+    monkeypatch.setattr(asyncio, "to_thread", inline_io)
+
     async def run():
         store = SessionStore(tmp_path, "model-a")
         checkpoint = sample()
+        store.save("second", checkpoint)
         async with _fake_client(session_store=store) as (client, proc):
             first = asyncio.create_task(
                 client.save_session("first")
@@ -106,34 +114,88 @@ def test_advanced_operations_share_persistence_queue(
                 )
             )
             frame = await proc.stdin.frames.get()
-            second = asyncio.create_task(
-                client.restore_checkpoint_from_cpu(
+            if second_kind == "restore":
+                operation = client.restore_checkpoint_from_cpu(
                     checkpoint, "second", position=3, expected_identity=store.identity
                 )
-                if restore_second
-                else client.export_checkpoint_to_cpu(
+            elif second_kind == "export":
+                operation = client.export_checkpoint_to_cpu(
                     "second", position=3, identity=store.identity
                 )
-            )
+            elif second_kind == "save":
+                operation = client.save_session("second")
+            else:
+                operation = client.resume_session("second")
+            second = asyncio.create_task(operation)
             await _barrier(client, proc)
-            assert proc.stdin.frames.empty()
+            early = (
+                proc.stdin.frames.get_nowait()
+                if not proc.stdin.frames.empty()
+                else None
+            )
             Path(frame["path"]).write_bytes(checkpoint.data)
             proc.send(frame["request_id"], exported=True, manifest=checkpoint.manifest)
             await first
-            frame = await proc.stdin.frames.get()
-            if restore_second:
+            frame = early or await proc.stdin.frames.get()
+            if second_kind in ("restore", "resume"):
                 assert frame["op"] == "restore_checkpoint"
                 proc.send(frame["request_id"], restored=True)
-                assert await second is None
+                assert await second == ("second" if second_kind == "resume" else None)
             else:
                 assert frame["op"] == "export_checkpoint"
                 Path(frame["path"]).write_bytes(checkpoint.data)
                 proc.send(
                     frame["request_id"], exported=True, manifest=checkpoint.manifest
                 )
-                assert await second == checkpoint
+                assert await second == (checkpoint if second_kind == "export" else None)
+            assert early is None
             if save_first:
                 assert store.load("first") == checkpoint
+
+    asyncio.run(asyncio.wait_for(run(), 10))
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_wrong_loop_advanced_call_does_not_bind_persistence_lock(tmp_path, restore):
+    async def run():
+        store = SessionStore(tmp_path, "model-a")
+        checkpoint = sample()
+        async with _fake_client(session_store=store) as (client, proc):
+            active = asyncio.create_task(client.save_session("active"))
+            frame = await proc.stdin.frames.get()
+
+            async def wrong_loop():
+                operation = (
+                    client.restore_checkpoint_from_cpu(
+                        checkpoint,
+                        "other",
+                        position=3,
+                        expected_identity=store.identity,
+                    )
+                    if restore
+                    else client.export_checkpoint_to_cpu(
+                        "other", position=3, identity=store.identity
+                    )
+                )
+                with pytest.raises(WorkerError, match="startup event loop"):
+                    await asyncio.wait_for(operation, 1)
+
+            try:
+                await asyncio.to_thread(asyncio.run, wrong_loop())
+                queued = asyncio.create_task(client.save_session("other"))
+                await _barrier(client, proc)
+                assert not queued.done()
+            finally:
+                Path(frame["path"]).write_bytes(checkpoint.data)
+                proc.send(
+                    frame["request_id"], exported=True, manifest=checkpoint.manifest
+                )
+                await active
+            frame = await proc.stdin.frames.get()
+            Path(frame["path"]).write_bytes(checkpoint.data)
+            proc.send(frame["request_id"], exported=True, manifest=checkpoint.manifest)
+            await queued
+            assert store.load("other") == checkpoint
 
     asyncio.run(asyncio.wait_for(run(), 10))
 

@@ -110,8 +110,10 @@ struct ET_EXPERIMENTAL SessionCheckpoint {
   batching::Checkpoint state;
   std::vector<batching::Token> tokens;
 };
-using CheckpointCallback ET_EXPERIMENTAL = std::function<void(
-    batching::CheckpointResult<std::shared_ptr<SessionCheckpoint>>)>;
+using SessionCheckpointResult ET_EXPERIMENTAL =
+    std::variant<std::shared_ptr<SessionCheckpoint>, ServingError>;
+using CheckpointCallback ET_EXPERIMENTAL =
+    std::function<void(SessionCheckpointResult)>;
 
 class ET_EXPERIMENTAL ServingRuntime {
  public:

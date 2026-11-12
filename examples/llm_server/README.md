@@ -150,7 +150,8 @@ include all generated tokens.
 Configure a `SessionStore` at worker startup, then call `save_session(id)` before
 closing and `resume_session(id)` after restarting. Serving chooses the committed
 checkpoint boundary and validates compatibility. Applications keep conversation
-history independently and send the complete next prompt after resume. Advanced
+history independently and send the complete next prompt after resume, extending
+exactly the saved token IDs to reuse the checkpoint. Advanced
 CPU export and partial-restore APIs remain available. See
 [the checkpoint API and application flow](CHECKPOINTS.md). Saving and resuming
 are explicit operations; closing does not automatically save.

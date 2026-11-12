@@ -172,6 +172,16 @@ cudaMemsetAsync(void* ptr, int value, size_t size, cudaStream_t stream) {
   return hipMemsetAsync(ptr, value, size, stream);
 }
 
+inline cudaError_t cudaMemset2DAsync(
+    void* ptr,
+    size_t pitch,
+    int value,
+    size_t width,
+    size_t height,
+    cudaStream_t stream) {
+  return hipMemset2DAsync(ptr, pitch, value, width, height, stream);
+}
+
 inline cudaError_t cudaPointerGetAttributes(
     cudaPointerAttributes* attributes,
     const void* ptr) {

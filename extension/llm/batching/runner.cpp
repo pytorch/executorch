@@ -1047,13 +1047,17 @@ void RunnerImpl::process_command_(ExportCheckpointCommand command) {
 }
 
 void RunnerImpl::process_command_(RestoreCheckpointCommand command) {
-  if (!is_running_() || !command.checkpoint || command.upto < 0 ||
+  if (!is_running_()) {
+    command.ack->set_value(CheckpointError{"runner is stopping"});
+    return;
+  }
+  if (!command.checkpoint || command.upto < 0 ||
       command.upto > command.checkpoint->position) {
-    command.ack->set_value(
-        CheckpointError{"invalid checkpoint or runner is stopping"});
+    command.ack->set_value(CheckpointError{"invalid checkpoint position"});
     return;
   }
   std::optional<SessionId> owned;
+  CheckpointError failure{"runner is stopping"};
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
@@ -1084,15 +1088,17 @@ void RunnerImpl::process_command_(RestoreCheckpointCommand command) {
       return;
     }
 #if ET_HAS_EXCEPTIONS
+  } catch (const std::exception& error) {
+    failure.message = error.what();
   } catch (...) {
+    failure.message = "checkpoint restore failed";
   }
 #endif
   if (owned) {
     sessions_.erase(*owned);
     executor_.close_session(*owned);
   }
-  command.ack->set_value(
-      CheckpointError{"checkpoint restore failed or runner stopped"});
+  command.ack->set_value(std::move(failure));
 }
 
 void RunnerImpl::process_command_(StartCommand command) {

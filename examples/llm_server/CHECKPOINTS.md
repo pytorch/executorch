@@ -50,9 +50,9 @@ loads that saved state into a new session with the same ID and returns the ID.
 The application sends its complete next prompt. To reuse the saved state, that
 prompt must extend exactly the saved token IDs, including chat formatting and
 committed generated tokens. Re-rendering messages can change those IDs and cause
-a cold prefill. The advanced API below supports explicitly restoring an earlier
-matching prefix. No token positions, checkpoint
-objects, or per-call fingerprints are required for these operations.
+a cold prefill. `save_session` and `resume_session` require no token positions,
+checkpoint objects, or per-call fingerprints. The advanced API below supports
+explicitly restoring an earlier matching prefix.
 
 `SessionRuntime` exposes the same `save_session(id)` and `resume_session(id)`
 methods. Within its request-capacity limit, they retain its per-session lease
@@ -85,14 +85,18 @@ Queued saves and resumes can be cancelled without starting. With
 `MultiplexedWorkerClient`, cancellation of a started transfer waits for settlement
 and may leave a saved file or restored session. With `SessionRuntime`, the
 cancelled caller returns immediately while the transfer settles under its session
-lease; later admitted same-session operations wait behind that settlement. Neither
+lease and continues to occupy request capacity; later admitted same-session
+operations wait behind that settlement. Neither
 API undoes a completed save or restore.
 Model loading and checkpoint transfer still take time; this avoids recomputing
 saved tokens, not starting the model itself. There are no HTTP persistence
 endpoints or automatic save-on-exit hooks in this API.
 
-To remove a saved conversation, first finish all pending persistence operations
-(for example, close the owning worker), then explicitly delete its saved state:
+To remove a saved conversation, first finish all pending persistence operations.
+For a worker client, await its outstanding save/resume tasks; `client.close()`
+alone does not wait for Python file writes. For `SessionRuntime`,
+`await runtime.aclose_worker()` closes the worker and waits for its background
+operations to settle. Then explicitly delete the saved state:
 
 ```python
 removed = await asyncio.to_thread(store.delete, "chat-42")
@@ -103,6 +107,9 @@ There is no automatic retention or deletion on model changes. A killed writer ca
 leave hidden temporary files named `.<session-hash>.etcp.*`. After all writers have
 stopped, an application or operator may remove these temporary files; startup does
 not guess whether another process is still writing.
+Export/import staging can also leave `executorch-checkpoint-*` directories in the
+system temporary directory after a process is killed. Remove those only after
+the application and its workers have exited.
 
 ## Advanced checkpoint API
 
@@ -245,3 +252,6 @@ The native primitives are `Session::export_checkpoint_to_cpu_async` and
 checkpoint methods on the engine thread. `cache::CheckpointControl` is the shared
 CPU-transfer interface for cache implementations. Other stateful architectures
 must implement complete continuation snapshots before enabling export.
+
+The native transfer messages and ordering rules are specified in the
+[worker protocol](spec/README.md#explicit-checkpoint-transfers).

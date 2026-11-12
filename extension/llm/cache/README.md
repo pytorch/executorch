@@ -97,6 +97,12 @@ implementation lists the faces it offers through `expose`.
 | backend          | `SequencePlanner` | `CellStepper`  |
 | backend-specific | each backend names its own, such as `MLXCache` ||
 
+`CheckpointControl`, also in `cache.h`, is optional. It transfers committed
+state to or from owned CPU buffers described by `checkpoint.h`. Callers check
+whether the face exists and explicitly choose when to copy; this interface does
+not manage files or choose an eviction policy. Copy cost depends on the backend
+layout, particularly when a sequence spans fragmented cells.
+
 Control-plane faces live in `cache.h`. A runner calls `as<SequenceControl>()`
 on something it got from the registry, so it must see the face without choosing
 a layout. Backend faces live with their layout in `sequence_cache.h` or
@@ -185,6 +191,7 @@ disappears.
 
 ```
 cache.h                 faces, the face mechanism, config           neutral
+checkpoint.h            owned CPU buffers and checkpoint validation neutral
 sequence_cache.h        SequenceCache, SequencePlanner, flat/ring    neutral
 cell_cache.{h,cpp}      CellCache, CellStepper, the cell pool        neutral
 cache_registry.{h,cpp}  CacheRegistry, CacheFactory, InstallGuard    ExecuTorch

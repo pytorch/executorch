@@ -84,6 +84,8 @@ async def _read_message(stdout, max_message_bytes):
 
 
 async def _settle_checkpoint(operation):
+    # Keep staging files and the transfer lock alive until native work settles,
+    # even if the caller is cancelled.
     task = asyncio.create_task(operation)
     cancelled = False
     while not task.done():
@@ -872,7 +874,7 @@ class MultiplexedWorkerClient:
     async def resume_session(self, session_id: str) -> str:
         """Restore saved state under the same unused key and return that key.
 
-        Send the full next prompt through this session, including prior history.
+        Send a full next prompt extending exactly the saved token IDs for reuse.
         Missing, incompatible, or unusable checkpoints raise; no cold fallback is
         selected. Queued resumes can cancel; after starting, cancellation may
         leave a restored session, as with native restore.
@@ -899,8 +901,10 @@ class MultiplexedWorkerClient:
         self, session_id: str, *, position: int, identity: str
     ) -> CPUCheckpoint:
         """Export committed state; cancellation waits for native/file I/O settlement."""
+        self._ensure_usable()
         _validate_integer(position, "position", 1, _INT32_MAX)
         async with self._session_persistence_lock:
+            self._ensure_usable()
             return await _settle_checkpoint(
                 self._export_checkpoint_to_cpu(
                     session_id, position=position, identity=identity
@@ -916,7 +920,9 @@ class MultiplexedWorkerClient:
         expected_identity: str,
     ) -> None:
         """Restore an unused session key at an explicit retained boundary."""
+        self._ensure_usable()
         async with self._session_persistence_lock:
+            self._ensure_usable()
             await _settle_checkpoint(
                 self._restore_checkpoint_from_cpu(
                     checkpoint,
@@ -954,8 +960,6 @@ class MultiplexedWorkerClient:
                 ack="exported",
             )
             try:
-                # A cancelled Python waiter must not delete the staging file
-                # while native code still owns the operation.
                 result = await asyncio.shield(state.completion)
                 if isinstance(result, WorkerError):
                     raise result

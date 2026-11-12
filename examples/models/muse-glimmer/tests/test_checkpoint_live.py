@@ -39,19 +39,44 @@ def _checkpoint_artifacts(argv):
     parser.add_argument("--data_path", default="")
     parser.add_argument("--pos_embed_path", default="")
     paths, settings = parser.parse_known_args(argv[1:])
-    files = [paths.pte, paths.tokenizer]
+    tokenizer = Path(paths.tokenizer)
+    tokenizer_files = (
+        [tokenizer / "tokenizer.json"]
+        + [
+            tokenizer / name
+            for name in ("tokenizer_config.json", "special_tokens_map.json")
+            if (tokenizer / name).exists()
+        ]
+        if tokenizer.is_dir()
+        else [tokenizer]
+    )
+    files = [paths.pte, *(str(path) for path in tokenizer_files)]
     files.extend(path for path in (paths.data_path, paths.pos_embed_path) if path)
     return files, {"worker_flags": settings}
 
 
 @pytest.mark.parametrize("equals", [False, True])
-def test_live_identity_includes_all_worker_artifacts(tmp_path, equals):
+@pytest.mark.parametrize("tokenizer_directory", [False, True])
+def test_live_identity_includes_all_worker_artifacts(
+    tmp_path, equals, tokenizer_directory
+):
     command = ["worker"]
     paths = []
     for name in ("pte", "tokenizer", "data_path", "pos_embed_path"):
         path = tmp_path / name
-        path.write_bytes(name.encode())
-        paths.append(path)
+        if name == "tokenizer" and tokenizer_directory:
+            path.mkdir()
+            for filename in (
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "special_tokens_map.json",
+            ):
+                artifact = path / filename
+                artifact.write_bytes(filename.encode())
+                paths.append(artifact)
+        else:
+            path.write_bytes(name.encode())
+            paths.append(path)
         command.extend([f"--{name}={path}"] if equals else [f"--{name}", str(path)])
     command.append("--dflash=true")
     files, configuration = _checkpoint_artifacts(command)
