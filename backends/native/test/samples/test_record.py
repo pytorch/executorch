@@ -27,8 +27,13 @@ from executorch.backends.native.test.samples.schemes import (
     Torchao,
 )
 from executorch.exir.native import read_samples
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
-from torchao.quantization import IntxWeightOnlyConfig, quantize_
+from torchao.quantization import (
+    IntxUnpackedToInt8Tensor,
+    IntxWeightOnlyConfig,
+    quantize_,
+)
 from torchao.quantization.granularity import PerGroup
 
 
@@ -183,6 +188,23 @@ class RecordTest(unittest.TestCase):
         families = len(GGUF_SUPER_SCALES["q4_k"])
         self.assertTrue(Gguf("q4_k").fits(linears(families)))
         self.assertFalse(Gguf("q4_k").fits(linears(families + 1)))
+
+    def test_weight_only_schemes_quantize_embeddings(self) -> None:
+        model = torch.nn.Embedding(8, 256)
+        fitting = {name for name, scheme in schemes().items() if scheme.fits(model)}
+        self.assertEqual(
+            fitting, {"float", "int4wo_g32", "int4wo_g128", "gguf_q4_k", "gguf_q6_k"}
+        )
+        ids = torch.tensor([[0, 7], [3, 3]])
+        for name in sorted(fitting - {"float"}):
+            scheme = schemes()[name]
+            quantized = copy.deepcopy(model).eval()
+            scheme.quantize(quantized)
+            self.assertIsInstance(
+                quantized.weight, (IntxUnpackedToInt8Tensor, ExportableGGUFTensor)
+            )
+            weight = scheme.decode(quantized.weight)
+            torch.testing.assert_close(quantized(ids), weight[ids], rtol=0, atol=0)
 
     def test_precise_decodes_intx_weights_in_float32(self) -> None:
         # A code times its scale can need more bits than bf16 holds, so decoding
