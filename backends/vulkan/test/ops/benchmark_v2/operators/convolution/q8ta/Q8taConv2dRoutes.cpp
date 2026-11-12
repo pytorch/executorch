@@ -206,6 +206,11 @@ Json build_legacy_4w4c(
     const Json& options) {
   check_options(options);
   supported(args.size() == 16, "Q8 legacy route requires16 native arguments");
+  const bool is_depthwise =
+      graph.get_int(args[13]) == graph.size_at<int64_t>(-3, args[0]);
+  supported(
+      is_depthwise || graph.can_use_int8_dot_product(),
+      "Q8 legacy route requires accelerated packed integer dot product");
   for (ValueRef tensor : {args[0], args[15]}) {
     const auto& packing = graph.packed_dim_info_of(tensor);
     supported(
