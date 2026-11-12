@@ -56,6 +56,45 @@ def _layer_norm_check(
     return all(d == 1 for d in normalized_shape[:-1]) and vulkan_check(node)
 
 
+# int64 tensors run as int32 on device.
+_DEVICE_DTYPE = {torch.int64: torch.int32}
+
+# Conversions the WebGPU copy kernels implement besides a copy within one dtype.
+_WEBGPU_CONVERSIONS = {
+    (torch.int32, torch.float32),
+    (torch.bool, torch.float32),
+    (torch.float32, torch.int32),
+}
+
+
+def _copy_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # A copy within one dtype, or a conversion between int32 or bool and fp32.
+    # Vulkan also converts fp16 <-> fp32, which the WebGPU kernels refuse.
+    src = node.args[0]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_dtype = src.meta["val"].dtype
+    dst_dtype = node.meta["val"].dtype
+    src_dtype = _DEVICE_DTYPE.get(src_dtype, src_dtype)
+    dst_dtype = _DEVICE_DTYPE.get(dst_dtype, dst_dtype)
+    supported = src_dtype == dst_dtype or (src_dtype, dst_dtype) in _WEBGPU_CONVERSIONS
+    return supported and vulkan_check(node)
+
+
+def _permute_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # The WebGPU kernel moves 4-byte elements only.
+    src = node.args[0]
+    return (
+        isinstance(src, torch.fx.Node)
+        and src.meta["val"].dtype in (torch.float32, torch.int32, torch.int64)
+        and vulkan_check(node)
+    )
+
+
 def _fp32_unary_features() -> OpFeatures:
     return OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
@@ -110,6 +149,18 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
     ),
     exir_ops.edge.aten.native_layer_norm.default: _webgpu_features(
         exir_ops.edge.aten.native_layer_norm.default, _layer_norm_check
+    ),
+    exir_ops.edge.aten._to_copy.default: _webgpu_features(
+        exir_ops.edge.aten._to_copy.default, _copy_check
+    ),
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default: _webgpu_features(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default, _copy_check
+    ),
+    exir_ops.edge.aten.permute.default: _webgpu_features(
+        exir_ops.edge.aten.permute.default, _permute_check
+    ),
+    exir_ops.edge.aten.permute_copy.default: _webgpu_features(
+        exir_ops.edge.aten.permute_copy.default, _permute_check
     ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from typing import Callable, Dict, List, Set, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -302,7 +302,8 @@ class TestWebGPUPartitioner(unittest.TestCase):
         # These WebGPU kernels read and write array<f32>: fp16 tensors would be
         # misread, so WebGPU never takes these ops with fp16 inputs, while
         # Vulkan does. Ops the Vulkan partitioner keeps whole decompose instead
-        # (hardswish into fp32 math), so the program still lowers.
+        # (hardswish into fp32 math), and what WebGPU takes of the result must
+        # be within its kernels too.
         for name, (fn, shape) in _FP32_ONLY_MODULES.items():
             with self.subTest(op=name):
                 module = ElementwiseModule(fn)
@@ -310,33 +311,96 @@ class TestWebGPUPartitioner(unittest.TestCase):
                     shape
                 )
                 fp16 = fp32.to(torch.float16)
-                self.assertIn(
-                    torch.float32,
-                    self._fp32_only_input_dtypes(WebGPUPartitioner(), module, fp32),
+                self.assertTrue(
+                    any(
+                        node.target in _FP32_ONLY_OPS
+                        for node in self._delegated_nodes(
+                            WebGPUPartitioner(), module, fp32
+                        )
+                    )
                 )
-                self.assertNotIn(
-                    torch.float16,
-                    self._fp32_only_input_dtypes(WebGPUPartitioner(), module, fp16),
+                self.assertEqual(
+                    self._refused_by_webgpu_kernels(
+                        self._delegated_nodes(WebGPUPartitioner(), module, fp16)
+                    ),
+                    [],
                 )
-                self.assertIn(
-                    torch.float16,
-                    self._fp32_only_input_dtypes(VulkanPartitioner(), module, fp16),
+                self.assertNotEqual(
+                    self._refused_by_webgpu_kernels(
+                        self._delegated_nodes(VulkanPartitioner(), module, fp16)
+                    ),
+                    [],
                 )
 
-    def _fp32_only_input_dtypes(
+    def test_copies_and_permutes_the_webgpu_kernels_lack_stay_on_cpu(self) -> None:
+        # Vulkan converts fp16 <-> fp32 and permutes any dtype; the WebGPU
+        # kernels convert only between int32 or bool and fp32, and permute
+        # 4-byte elements.
+        cases = {
+            "fp16_to_fp32": (lambda x: x.to(torch.float32), torch.float16, False),
+            "fp32_to_fp16": (lambda x: x.to(torch.float16), torch.float32, False),
+            "permute_fp16": (lambda x: x.permute(1, 0), torch.float16, False),
+            "int32_to_fp32": (lambda x: x.to(torch.float32), torch.int32, True),
+            "permute_fp32": (lambda x: x.permute(1, 0), torch.float32, True),
+        }
+        for name, (fn, dtype, webgpu_takes_it) in cases.items():
+            with self.subTest(case=name):
+                module = ElementwiseModule(fn)
+                x = torch.arange(32).reshape(4, 8).to(dtype)
+                self.assertEqual(
+                    bool(self._delegated_nodes(WebGPUPartitioner(), module, x)),
+                    webgpu_takes_it,
+                )
+                self.assertTrue(self._delegated_nodes(VulkanPartitioner(), module, x))
+
+    def _delegated_nodes(
         self, partitioner: Partitioner, module: torch.nn.Module, x: torch.Tensor
-    ) -> Set[torch.dtype]:
-        """The dtypes of the first input of every delegated fp32-only op."""
+    ) -> List[torch.fx.Node]:
         exported_program = torch.export.export(module, (x,))
         edge = to_edge_transform_and_lower(exported_program, partitioner=[partitioner])
-        return {
-            node.args[0].meta["val"].dtype
+        return [
+            node
             for _, lowered, _ in get_lowered_submodules(
                 edge.exported_program().graph_module
             )
             for node in lowered.original_module.graph.nodes
-            if node.op == "call_function" and node.target in _FP32_ONLY_OPS
+            if node.op == "call_function"
+        ]
+
+    def _refused_by_webgpu_kernels(self, nodes: List[torch.fx.Node]) -> List[str]:
+        """The nodes the WebGPU kernels would misread or refuse at delegate
+        init: an fp32-only op with other inputs, a conversion other than between
+        int32 or bool and fp32, or a permute of elements that are not 4 bytes."""
+        device = {torch.int64: torch.int32}
+        conversions = {
+            (torch.int32, torch.float32),
+            (torch.bool, torch.float32),
+            (torch.float32, torch.int32),
         }
+        refused = []
+        for node in nodes:
+            src = node.args[0]
+            if not isinstance(src, torch.fx.Node):
+                continue
+            src_dtype = device.get(src.meta["val"].dtype, src.meta["val"].dtype)
+            dst_dtype = device.get(node.meta["val"].dtype, node.meta["val"].dtype)
+            if node.target in _FP32_ONLY_OPS:
+                ok = src_dtype == torch.float32
+            elif node.target in (
+                exir_ops.edge.aten._to_copy.default,
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            ):
+                ok = src_dtype == dst_dtype or (src_dtype, dst_dtype) in conversions
+            elif node.target in (
+                exir_ops.edge.aten.permute.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ):
+                ok = src_dtype in (torch.float32, torch.int32)
+            else:
+                ok = True
+            if not ok:
+                refused.append(f"{node.target}({src_dtype} -> {dst_dtype})")
+        return refused
 
     def test_arange_unsupported_forms_stay_on_cpu(self) -> None:
         # Vulkan implements fp16 and SymInt-bounded arange; the WebGPU kernel does
