@@ -80,6 +80,7 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 }
 
 constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ4_0BlockBytes = 18;
 
 // The safetensors header of the affine linear program's constants.
 constexpr const char* kQ4_0SafeTensorsHeader =
@@ -329,6 +330,40 @@ class TestProgram {
     placeholder(name, meta);
     bindings_.push_back(fbs::CreateNamedTensorRefDirect(
         builder_, name.c_str(), "weight", meta, fbs::InputKind::PARAMETER));
+  }
+
+  // Symmetric int4 AffineGroup weights `weight` with float scales
+  // `weight_scale` per group of 32, in a persistent buffer if `mutated`.
+  void affine_weight(
+      const std::string& name,
+      const std::vector<int64_t>& shape,
+      bool mutated = false) {
+    const auto quant = fbs::CreateQuantSpec(
+        builder_,
+        fbs::QuantScheme::AffineGroup,
+        fbs::CreateAffineGroupDirect(
+            builder_, "weight_scale", fbs::ScalarType::FLOAT, -8, 7, 32)
+            .Union());
+    const auto meta =
+        create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
+    placeholder(name, meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_,
+        name.c_str(),
+        "weight",
+        meta,
+        mutated ? fbs::InputKind::BUFFER : fbs::InputKind::PARAMETER,
+        mutated));
+    const std::string scale = name + "_scale";
+    const auto scale_meta = create_tensor_meta(
+        builder_, fbs::ScalarType::FLOAT, {shape.at(0), shape.at(1) / 32});
+    placeholder(scale, scale_meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_,
+        scale.c_str(),
+        "weight_scale",
+        scale_meta,
+        fbs::InputKind::PARAMETER));
   }
 
   void call(
@@ -1776,6 +1811,190 @@ TEST(GgmlEngineTest, ChecksEmbeddingIndicesOnTheHost) {
     executable->set_input(0, ids.data(), 2, ScalarType::Long);
     EXPECT_THROW(executable->execute(), std::out_of_range);
   }
+}
+
+// A context for `program_bytes` with a `rows`-row int4 weight of 32-weight
+// groups and float `scales`. Row r holds q = r + 1, stored as the nibble q + 8.
+std::unique_ptr<GgmlEngineContext> make_int4_context(
+    GgmlEngineHost& host,
+    const std::vector<uint8_t>& program_bytes,
+    size_t rows,
+    const std::vector<float>& scales) {
+  const size_t scale_bytes = scales.size() * sizeof(float);
+  const size_t weight_bytes = scales.size() * 16;
+  std::vector<uint8_t> safetensors = testing::make_safetensors(
+      R"({"weight_scale":{"dtype":"F32","shape":[)" + std::to_string(rows) +
+          "," + std::to_string(scales.size() / rows) +
+          R"(],"data_offsets":[0,)" + std::to_string(scale_bytes) +
+          R"(]},"weight":{"dtype":"U8","shape":[)" +
+          std::to_string(weight_bytes) + R"(],"data_offsets":[)" +
+          std::to_string(scale_bytes) + "," +
+          std::to_string(scale_bytes + weight_bytes) + "]}}",
+      scale_bytes + weight_bytes);
+  uint8_t* payload =
+      safetensors.data() + safetensors.size() - scale_bytes - weight_bytes;
+  std::memcpy(payload, scales.data(), scale_bytes);
+  const size_t row_bytes = weight_bytes / rows;
+  for (size_t r = 0; r < rows; ++r) {
+    std::fill_n(
+        payload + scale_bytes + r * row_bytes,
+        row_bytes,
+        static_cast<uint8_t>(0x99 + 0x11 * r));
+  }
+  return host.create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry, std::move(safetensors)},
+          })))));
+}
+
+TEST(GgmlEngineTest, EmbedsInt4RowsWithExactFloatScales) {
+  // Three rows of two groups, with scales fp16 can't hold.
+  const std::vector<float> scales = {0.1f, 0.3f, 0.7f, 1.1f, 1.3f, 1.7f};
+  TestProgram program;
+  program.affine_weight("weight", {3, 64});
+  program.input("ids", fbs::ScalarType::LONG, {2, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {2, 2, 64});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 3, scales);
+  auto executable = context->compile("forward");
+  EXPECT_EQ(
+      context->materialized_constant_bytes(),
+      6 * kQ4_0BlockBytes + 6 * sizeof(float));
+  const std::vector<int64_t> ids = {2, 0, 1, 2};
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->execute();
+  std::vector<float> rows(4 * 64);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 64];
+    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+        << i;
+  }
+}
+
+TEST(GgmlEngineTest, KeepsFp16ExactScalesOfInt4EmbeddingsInBlocks) {
+  const std::vector<float> scales = {0.5f, 0.25f, 0.125f, 2.0f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 64});
+  program.input("ids", fbs::ScalarType::LONG, {3});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {3, 64});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 2, scales);
+  auto executable = context->compile("forward");
+  EXPECT_EQ(context->materialized_constant_bytes(), 4 * kQ4_0BlockBytes);
+  const std::vector<int64_t> ids = {1, 0, 1};
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->execute();
+  std::vector<float> rows(3 * 64);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 64];
+    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+        << i;
+  }
+}
+
+// Only an embedding reads the weight, but its write-back updates the Q4_0
+// blocks, so they keep the scales: 0.1 and 0.3 narrow to fp16.
+TEST(GgmlEngineTest, KeepsScalesOfMutableInt4EmbeddingsInBlocks) {
+  const std::vector<float> narrowed = {0.0999755859375f, 0.300048828125f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 32}, /*mutated=*/true);
+  program.input("ids", fbs::ScalarType::LONG, {2});
+  program.input("update", fbs::ScalarType::FLOAT, {2, 32});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {2, 32});
+  program.mutate("weight", "update");
+  auto host = GgmlEngineHost::create();
+  auto context =
+      make_int4_context(*host, program.finish("rows"), 2, {0.1f, 0.3f});
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> ids = {0, 1};
+  const std::vector<float> update(2 * 32, 2.0f);
+  std::vector<float> initial;
+  for (const int64_t id : ids) {
+    initial.insert(initial.end(), 32, static_cast<float>(id + 1) * narrowed[id]);
+  }
+  std::vector<float> rows(2 * 32);
+  for (const std::vector<float>& expected : {initial, update}) {
+    executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+    executable->set_input(1, update.data(), update.size(), ScalarType::Float);
+    executable->execute();
+    executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+    EXPECT_EQ(rows, expected);
+  }
+}
+
+// It passes with or without the float row scales;
+// EmbedsInt4RowsWithExactFloatScales is the test that needs them.
+TEST(GgmlEngineTest, NarrowsScalesOfInt4EmbeddingsSharedWithLinear) {
+  // A linear also reads the weight, so its Q4_0 blocks hold the scales in
+  // fp16: 0.1 and 0.3 narrow to these.
+  const std::vector<float> narrowed = {0.0999755859375f, 0.300048828125f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 32});
+  program.input("ids", fbs::ScalarType::LONG, {3});
+  program.input("x", fbs::ScalarType::FLOAT, {1, 32});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {3, 32});
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  auto context =
+      make_int4_context(*host, program.finish("rows"), 2, {0.1f, 0.3f});
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> ids = {1, 0, 1};
+  const std::vector<float> x(32, 1.0f);
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->set_input(1, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  std::vector<float> rows(3 * 32);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 32];
+    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * narrowed[id]) << i;
+  }
+}
+
+TEST(GgmlEngineTest, RejectsZeroWidthInt4Weights) {
+  TestProgram program;
+  program.affine_weight("weight", {2, 0});
+  program.input("ids", fbs::ScalarType::LONG, {1});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {1, 0});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 2, {});
+  expect_compile_error(*context, "affine weights must be int4 [N, K]");
 }
 
 TEST(GgmlEngineTest, RejectsPackedWeightOutsideLinearOrEmbedding) {
