@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor_manager import (
@@ -16,9 +16,11 @@ from executorch.backends.qualcomm.builders.utils import (
     is_constant,
     is_graph_output,
 )
+from executorch.backends.qualcomm.partition.utils import must_stay_on_cpu
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_INDEX_CAST,
     QCOM_INSERTED_CAST,
+    QCOM_KEEP_INT64,
     QCOM_ORIG_DTYPE,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -33,8 +35,9 @@ class I64toI32(ExportPass):
     This will be applied on operator and constant nodes such as weights.
     Every cast it inserts is marked with QCOM_INSERTED_CAST.
     An ATen or quantized_decomposed op that QNN has no builder for runs on
-    CPU, so its int64 results stay int64, and a QNN op reads them through an
-    int32 cast.
+    CPU, and so do an op the partitioner skips and an op whose data types or
+    shapes keep it off QNN. Their int64 results stay int64, and a QNN op
+    reads them through an int32 cast.
     """
 
     # This dict is to ensure that the input of the OPs are int64 due to PyTorch and CPU kernel restrictions.
@@ -57,21 +60,35 @@ class I64toI32(ExportPass):
         self,
         edge_program,
         skip_node: FrozenSet[str] = frozenset(),
+        skip_node_id_set: Optional[set] = None,
+        skip_node_op_set: Optional[set] = None,
     ):
         super(I64toI32, self).__init__()
         self.edge_program = edge_program
         self.skip_node = skip_node
+        self.skip_node_id_set = skip_node_id_set or set()
+        self.skip_node_op_set = skip_node_op_set or set()
 
     # pyre-ignore[2]
     def _is_tensor_of_dtype(self, node_val, dtype: torch.dtype) -> bool:
         return isinstance(node_val, FakeTensor) and node_val.dtype == dtype
 
     @staticmethod
-    def _runs_on_cpu(op) -> bool:
-        return (
+    def _runs_on_cpu(op, meta) -> bool:
+        return QCOM_KEEP_INT64 in meta or (
             getattr(op, "namespace", None) in ("aten", "quantized_decomposed")
             and op.__name__ not in _node_visitor_dict
         )
+
+    def _mark_ops_kept_on_cpu(self, graph_module: torch.fx.GraphModule):
+        # The partitioner leaves these ops on CPU even when QNN has a builder.
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and (
+                node.name in self.skip_node_id_set
+                or getattr(node.target, "__name__", None) in self.skip_node_op_set
+                or must_stay_on_cpu(node)
+            ):
+                node.meta[QCOM_KEEP_INT64] = True
 
     def _cast_to_int32(self, res, meta):
         # QNN builders handle integer tensors such as indices as int32, so no
@@ -98,7 +115,7 @@ class I64toI32(ExportPass):
         return res
 
     def call_operator(self, op, args, kwargs, meta):
-        if self._runs_on_cpu(op):
+        if self._runs_on_cpu(op, meta):
             # Casting a product, for example, to int32 would wrap it, and some
             # CPU kernels need int64, like the zero point of quantize_per_token.
             # An op that also reads an int32 tensor reads these results cast too,
@@ -123,7 +140,7 @@ class I64toI32(ExportPass):
 
     def call_getitem(self, value, key, meta):
         res = super().call_getitem(value, key, meta)
-        if self._runs_on_cpu(value.node.target):
+        if self._runs_on_cpu(value.node.target, value.node.meta):
             return self._keep_cpu_result(res)
         return self._cast_to_int32(res, meta)
 
@@ -264,6 +281,7 @@ class I64toI32(ExportPass):
         self._record_original_output_dtype(graph_module)
         self._cast_constant_to_int32(graph_module)
         self._cast_op_args_to_i64(graph_module)
+        self._mark_ops_kept_on_cpu(graph_module)
         # The int32 cast of each int64 result of a CPU op, made when a QNN op
         # first reads it.
         self.cpu_results = {}
