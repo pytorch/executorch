@@ -19,6 +19,11 @@
 namespace vkcompute {
 namespace api {
 
+// IEEE half-precision conversions; float_to_half rounds to the nearest f16,
+// ties to even.
+float half_to_float(uint16_t h);
+uint16_t float_to_half(float f);
+
 vkapi::ScalarType get_staging_dtype(
     Context* context_p,
     vkapi::ScalarType dtype);
