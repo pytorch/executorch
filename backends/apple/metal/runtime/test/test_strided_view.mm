@@ -34,6 +34,17 @@ constexpr int32_t kDeviceCpu = 0;
 
 } // namespace
 
+namespace executorch::backends::metal {
+extern "C" AOTITorchError aoti_torch_mps_gated_delta_rule(
+    AOTITensorHandle Q,
+    AOTITensorHandle K,
+    AOTITensorHandle V,
+    AOTITensorHandle G,
+    AOTITensorHandle Beta,
+    AOTITensorHandle StateIn,
+    AOTITensorHandle* retY);
+} // namespace executorch::backends::metal
+
 class MetalStridedViewTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -274,6 +285,60 @@ TEST_F(MetalStridedViewTest, HandWrittenKernelMayNotWriteAStridedView) {
         copy->setArg(1, *view, ETMetalKernelFunction::ArgAccess::kWrite),
         std::runtime_error);
   });
+}
+
+// An op that refuses an argument after allocating its output deletes the
+// output rather than leaving it to the final cleanup. gated_delta_rule writes
+// its state in place, and a hand-written kernel may not write a strided view.
+TEST_F(MetalStridedViewTest, OpRefusingAnArgumentDeletesItsOutput) {
+  auto make = [](std::vector<int64_t> sizes, AOTITensorHandle* tensor) {
+    std::vector<int64_t> strides(sizes.size(), 1);
+    for (int d = static_cast<int>(sizes.size()) - 2; d >= 0; d--) {
+      strides[d] = strides[d + 1] * sizes[d + 1];
+    }
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            static_cast<int64_t>(sizes.size()),
+            sizes.data(),
+            strides.data(),
+            kFloat32,
+            kDeviceMps,
+            0,
+            tensor),
+        Error::Ok);
+  };
+  AOTITensorHandle q = nullptr, k = nullptr, v = nullptr, g = nullptr,
+                   beta = nullptr, state_base = nullptr;
+  // A shape the op has a kernel for: Dk = Dv = 64, Hk = Hv = 4.
+  make({1, 1, 4, 64}, &q);
+  make({1, 1, 4, 64}, &k);
+  make({1, 1, 4, 64}, &v);
+  make({1, 1, 4}, &g);
+  make({1, 1, 4}, &beta);
+  make({1, 4, 64, 128}, &state_base);
+  ASSERT_FALSE(HasFatalFailure());
+  // The left half of each row: not densely packed.
+  const int64_t state_sizes[4] = {1, 4, 64, 64};
+  const int64_t state_strides[4] = {32768, 8192, 128, 1};
+  AOTITensorHandle state = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          state_base, 4, state_sizes, state_strides, 0, &state),
+      Error::Ok);
+  // The op has a kernel for these shapes: with a packed state it runs.
+  AOTITensorHandle packed_state = nullptr;
+  make({1, 4, 64, 64}, &packed_state);
+  AOTITensorHandle y = nullptr;
+  ASSERT_EQ(
+      aoti_torch_mps_gated_delta_rule(q, k, v, g, beta, packed_state, &y),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(y), Error::Ok);
+  y = nullptr;
+  const size_t handles = tensors.size();
+
+  EXPECT_NE(
+      aoti_torch_mps_gated_delta_rule(q, k, v, g, beta, state, &y), Error::Ok);
+  EXPECT_EQ(tensors.size(), handles);
 }
 
 // A view the packed copy cannot gather is not recorded: an empty one (the

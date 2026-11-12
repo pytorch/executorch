@@ -187,6 +187,8 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
     return Error::Internal;
   }
 
+  // Owns the output buffer once created: deleted if anything after fails.
+  AOTITensorHandle y_handle = nullptr;
   try {
     @autoreleasepool {
       auto* q_tensor = reinterpret_cast<Tensor*>(Q);          // [B, T, Hk, Dk]
@@ -257,7 +259,6 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
       std::vector<int64_t> y_sizes = {B, T, Hv, Dv};
       std::vector<int64_t> y_strides = {T * Hv * Dv, Hv * Dv, Dv, 1};
 
-      AOTITensorHandle y_handle = nullptr;
       AOTITorchError create_err = aoti_torch_create_tensor_from_blob_v2(
           y_ptr, 4, y_sizes.data(), y_strides.data(),
           0, dtype, 13, 0, &y_handle, 0, nullptr, 0);
@@ -311,9 +312,15 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps_gated_delta_rule exception: %s", e.what());
+    if (y_handle) {
+      aoti_torch_delete_tensor_object(y_handle);
+    }
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps_gated_delta_rule: unknown exception");
+    if (y_handle) {
+      aoti_torch_delete_tensor_object(y_handle);
+    }
     return Error::Internal;
   }
 }

@@ -412,6 +412,8 @@ AOTITorchError aoti_torch_mps_gather_qmv(
     return Error::Internal;
   }
 
+  // Owns the output buffer once created: deleted if anything after fails.
+  AOTITensorHandle out_tensor_handle = nullptr;
   try {
     @autoreleasepool {
       auto* x_tensor = reinterpret_cast<Tensor*>(X);        // [P, K]
@@ -507,7 +509,6 @@ AOTITorchError aoti_torch_mps_gather_qmv(
       std::vector<int64_t> output_sizes = {P, N};
       std::vector<int64_t> output_strides = {N, 1};
 
-      AOTITensorHandle out_tensor_handle = nullptr;
       AOTITorchError create_result = aoti_torch_create_tensor_from_blob_v2(
           out_contents_ptr, 2, output_sizes.data(), output_strides.data(),
           0, dtype, 13, 0, &out_tensor_handle, 0, nullptr, 0);
@@ -573,9 +574,15 @@ AOTITorchError aoti_torch_mps_gather_qmv(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps_gather_qmv exception: %s", e.what());
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps_gather_qmv: unknown exception");
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   }
 }

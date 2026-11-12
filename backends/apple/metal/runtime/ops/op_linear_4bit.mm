@@ -1621,6 +1621,8 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
     return Error::Internal;
   }
 
+  // Owns the output buffer once created: deleted if anything after fails.
+  AOTITensorHandle out_tensor_handle = nullptr;
   try {
     @autoreleasepool {
       // Convert AOTITensorHandle to ExecutorTorch tensors
@@ -1806,7 +1808,6 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
       std::vector<int64_t> output_sizes = {M, N};
       std::vector<int64_t> output_strides = {N, 1};
 
-      AOTITensorHandle out_tensor_handle = nullptr;
       AOTITorchError create_out_result = aoti_torch_create_tensor_from_blob_v2(
           out_contents_ptr,
           2,  // ndim
@@ -1936,9 +1937,15 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight exception: %s", e.what());
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: unknown exception");
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   }
 }
