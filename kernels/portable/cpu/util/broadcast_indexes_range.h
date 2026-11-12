@@ -57,6 +57,28 @@ class BroadcastIndexesIterator {
   BroadcastIndexesIterator() = default;
 
   template <typename... Args>
+  explicit BroadcastIndexesIterator(const Tensor& output, const Args&... args)
+      : output_dim_or_zero_if_no_broadcasting_(
+            !support_noncontiguous_input_tensors &&
+                    (sizes_match_ignoring_leading_1s(
+                         args.sizes(),
+                         output.sizes()) &&
+                     ...)
+                ? 0
+                : output.dim()),
+        output_shape_(output.sizes()) {
+    static_assert(
+        sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
+        "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
+        "arguments!");
+    if (support_noncontiguous_input_tensors ||
+        output_dim_or_zero_if_no_broadcasting_ != 0) {
+      effective_input_broadcast_strides_ = {
+          effective_input_broadcast_stride(output, args)...};
+    }
+  }
+
+  template <typename... Args>
   explicit BroadcastIndexesIterator(
       ArrayRef<Tensor::SizesType> output_sizes,
       const Args&... args)
@@ -91,6 +113,13 @@ class BroadcastIndexesIterator {
       const Args&... args)
       : current_indexes_{
             output_numel,
+            0,
+        } {}
+
+  template <typename... Args>
+  BroadcastIndexesIterator(make_end_t, const Tensor& t, const Args&... args)
+      : current_indexes_{
+            t.numel(),
             0,
         } {}
 
@@ -202,8 +231,35 @@ class BroadcastIndexesIterator {
   }
 
   ShapeType effective_input_broadcast_stride(
+      const Tensor& output,
+      const Tensor& t) const {
+    ShapeType result = {0};
+    ET_CHECK_MSG(
+        t.dim() <= output.dim(),
+        "input to broadcasting op should have dim at most output dim, but %d > %d!",
+        (int)t.dim(),
+        (int)output.dim());
+
+    const auto num_leading_ones = output.dim() - t.dim();
+    for (const auto idx : c10::irange(num_leading_ones)) {
+      result[idx] = 0;
+    }
+    const auto t_sizes = t.sizes();
+    const auto t_strides = t.strides();
+    for (const auto idx :
+         c10::irange(num_leading_ones, num_leading_ones + t.dim())) {
+      result[idx] = t_sizes[idx - num_leading_ones] == 1
+          ? 0
+          : t_strides[idx - num_leading_ones];
+    }
+    return result;
+  }
+
+  ShapeType effective_input_broadcast_stride(
       ssize_t output_dim,
       const Tensor& t) const {
+    // Kept separate from the overload above so that code using an output
+    // tensor compiles as it did before this overload was added.
     ShapeType result = {0};
     ET_CHECK_MSG(
         t.dim() <= output_dim,
@@ -256,12 +312,22 @@ class BroadcastIndexesIterator<1, false> {
   BroadcastIndexesIterator() = default;
 
   explicit BroadcastIndexesIterator(
-      [[maybe_unused]] ArrayRef<Tensor::SizesType> output_sizes,
+      [[maybe_unused]] const Tensor& output,
       [[maybe_unused]] const Tensor& input) {}
 
   struct make_end_t {
     explicit constexpr make_end_t() = default;
   };
+
+  BroadcastIndexesIterator(
+      make_end_t,
+      const Tensor& output,
+      [[maybe_unused]] const Tensor& input)
+      : current_indexes_({output.numel(), output.numel()}) {}
+
+  explicit BroadcastIndexesIterator(
+      [[maybe_unused]] ArrayRef<Tensor::SizesType> output_sizes,
+      [[maybe_unused]] const Tensor& input) {}
 
   BroadcastIndexesIterator(
       make_end_t,
@@ -349,12 +415,6 @@ class BroadcastIndexesIterator<1, false> {
  * tensors are currently never supported (but note that this can be
  * worked around by ignoring the output index and providing the true
  * output as an extra input).
- *
- * Only the output's sizes are used, so they can be passed instead of an
- * output tensor; their storage must stay alive and unchanged while the range
- * or its iterators are in use. With one input and
- * support_noncontiguous_input_tensors=false, the input is assumed to have
- * the output's shape and is not broadcast.
  */
 template <
     std::size_t kNumInputs,
@@ -366,12 +426,40 @@ class BroadcastIndexesRange {
 
   template <typename... Args>
   BroadcastIndexesRange(const Tensor& output, const Args&... args)
-      : output_sizes_(output.sizes()),
-        output_numel_(output.numel()),
-        inputs_{(&args)...} {}
+      : tensors_{&output, (&args)...} {}
+
+  iterator begin() const {
+    return std::apply(
+        [](const auto&... args) { return iterator((*args)...); }, tensors_);
+  }
+
+  iterator end() const {
+    return std::apply(
+        [](const auto&... args) {
+          return iterator(typename iterator::make_end_t(), (*args)...);
+        },
+        tensors_);
+  }
+
+ private:
+  std::array<const Tensor*, kNumInputs + 1> tensors_;
+};
+
+/**
+ * Like BroadcastIndexesRange, but takes the output's sizes instead of an
+ * output tensor. The sizes' storage must stay alive and unchanged while the
+ * range or its iterators are in use.
+ */
+template <
+    std::size_t kNumInputs,
+    bool support_noncontiguous_input_tensors = false>
+class BroadcastIndexesShapeRange {
+ public:
+  using iterator = internal::
+      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_input_tensors>;
 
   template <typename... Args>
-  BroadcastIndexesRange(
+  BroadcastIndexesShapeRange(
       ArrayRef<Tensor::SizesType> output_sizes,
       const Args&... args)
       : output_sizes_(output_sizes),

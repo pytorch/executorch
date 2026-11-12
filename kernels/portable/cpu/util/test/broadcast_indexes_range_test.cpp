@@ -16,6 +16,7 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::BroadcastIndexesRange;
+using torch::executor::BroadcastIndexesShapeRange;
 using torch::executor::delinearize_index;
 using torch::executor::linearize_access_indexes;
 
@@ -273,23 +274,25 @@ TEST(BroadcastIndexesRangeTest, OutputSizesMatchOutputTensor) {
   Tensor in_b = tf.zeros({2, 1, 4});
   Tensor in_c = tf.zeros({2, 3, 4});
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<1>(out.sizes(), in_c)),
+      range_to_vec(BroadcastIndexesShapeRange<1>(out.sizes(), in_c)),
       range_to_vec(BroadcastIndexesRange<1>(out, in_c)));
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b)),
+      range_to_vec(BroadcastIndexesShapeRange<2>(out.sizes(), in_a, in_b)),
       range_to_vec(BroadcastIndexesRange<2>(out, in_a, in_b)));
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<3>(out.sizes(), in_a, in_b, in_c)),
+      range_to_vec(
+          BroadcastIndexesShapeRange<3>(out.sizes(), in_a, in_b, in_c)),
       range_to_vec(BroadcastIndexesRange<3>(out, in_a, in_b, in_c)));
-  test_operator_plus(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b));
+  test_operator_plus(BroadcastIndexesShapeRange<2>(out.sizes(), in_a, in_b));
 
   Tensor scalar = tf.zeros({});
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<2>(scalar.sizes(), scalar, scalar)),
+      range_to_vec(
+          BroadcastIndexesShapeRange<2>(scalar.sizes(), scalar, scalar)),
       range_to_vec(BroadcastIndexesRange<2>(scalar, scalar, scalar)));
 
   Tensor empty = tf.zeros({2, 0});
   EXPECT_TRUE(
-      range_to_vec(BroadcastIndexesRange<2>(empty.sizes(), empty, empty))
+      range_to_vec(BroadcastIndexesShapeRange<2>(empty.sizes(), empty, empty))
           .empty());
 }

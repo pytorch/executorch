@@ -88,7 +88,7 @@ Tensor& masked_select_out(
     }
   } else {
     for (const auto [unused_index, in_index, mask_index] :
-         BroadcastIndexesRange<2>(
+         BroadcastIndexesShapeRange<2>(
              {broadcast_sizes, broadcast_ndim}, in, mask)) {
       (void)unused_index;
       if (mask_data[mask_index]) {
