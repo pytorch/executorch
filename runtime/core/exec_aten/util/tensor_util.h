@@ -103,7 +103,7 @@
     ET_CHECK_MSG(                                                      \
         a_numel__ == b_numel__ && b_numel__ == c_numel__ &&            \
             ((a_numel__ == 1 && b_numel__ == 1 && c_numel__ == 1) ||   \
-             a_dim__ == b_dim__ && b_dim__ == c_dim__),                \
+             (a_dim__ == b_dim__ && b_dim__ == c_dim__)),              \
         ET_TENSOR_CHECK_PREFIX__                                       \
         ": numel={%zu, %zu, %zu}, dim={%zu, %zu, %zu}",                \
         a_numel__,                                                     \
@@ -248,13 +248,14 @@
     ET_CHECK_MSG(                                                             \
         strides[strides.size() - 1] == 1,                                     \
         "The stride of the last dimension shall be 1 for contiguous tensor, " \
-        "not %d",                                                             \
+        "not %" ET_PRI_SIZES_AND_STRIDES,                                     \
         strides[strides.size() - 1]);                                         \
     for (size_t i = strides.size() - 1; i > 0; i--) {                         \
       ET_CHECK_MSG(                                                           \
           strides[i - 1] == strides[i] * sizes[i],                            \
           "The stride of the %zu-th dimension shall equal to "                \
-          "strides[%zu] * sizes[%zu], now is %d and %d",                      \
+          "strides[%zu] * sizes[%zu], now is %" ET_PRI_SIZES_AND_STRIDES      \
+          " and %" ET_PRI_SIZES_AND_STRIDES,                                  \
           i - 1,                                                              \
           i,                                                                  \
           i,                                                                  \
@@ -270,24 +271,27 @@
  */
 #define ET_CHECK_SAME_STRIDES2(a__, b__)                                       \
   do {                                                                         \
+    const size_t a_dim__ = a__.dim();                                          \
+    const size_t b_dim__ = b__.dim();                                          \
     ET_CHECK_MSG(                                                              \
-        a__.dim() == b__.dim(),                                                \
+        a_dim__ == b_dim__,                                                    \
         "Two tensors shall have same number of strides, but not %zu and %zu.", \
-        a__.dim(),                                                             \
-        b__.dim());                                                            \
+        a_dim__,                                                               \
+        b_dim__);                                                              \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
         a_strides = a__.strides();                                             \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
         b_strides = b__.strides();                                             \
-    for (const auto i : c10::irange(a__.dim())) {                              \
+    for (size_t i = 0; i < a_dim__; i++) {                                     \
       ET_CHECK_MSG(                                                            \
           a_strides[i] == b_strides[i],                                        \
           "a.strides()[%zu] shall equal to b.strides()[%zu], "                 \
-          "but now is %d and %d.",                                             \
+          "but now is %" ET_PRI_SIZES_AND_STRIDES                              \
+          " and %" ET_PRI_SIZES_AND_STRIDES ".",                               \
           i,                                                                   \
           i,                                                                   \
-          (int32_t)a_strides[i],                                               \
-          (int32_t)b_strides[i]);                                              \
+          a_strides[i],                                                        \
+          b_strides[i]);                                                       \
     }                                                                          \
   } while (0)
 
@@ -298,30 +302,35 @@
  */
 #define ET_CHECK_SAME_STRIDES3(a__, b__, c__)                           \
   do {                                                                  \
+    const size_t a_dim__ = a__.dim();                                   \
+    const size_t b_dim__ = b__.dim();                                   \
+    const size_t c_dim__ = c__.dim();                                   \
     ET_CHECK_MSG(                                                       \
-        a__.dim() == b__.dim() && b__.dim() == c__.dim(),               \
+        a_dim__ == b_dim__ && b_dim__ == c_dim__,                       \
         "Three tensors shall have same number of strides, "             \
         "but not %zu, %zu and %zu.",                                    \
-        a__.dim(),                                                      \
-        b__.dim(),                                                      \
-        c__.dim());                                                     \
+        a_dim__,                                                        \
+        b_dim__,                                                        \
+        c_dim__);                                                       \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
         a_strides = a__.strides();                                      \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
         b_strides = b__.strides();                                      \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
         c_strides = c__.strides();                                      \
-    for (const auto i : c10::irange(a__.dim())) {                       \
+    for (size_t i = 0; i < a_dim__; i++) {                              \
       ET_CHECK_MSG(                                                     \
           a_strides[i] == b_strides[i] && b_strides[i] == c_strides[i], \
           "a_strides[%zu], b_strides[%zu] and c_strides[%zu] "          \
-          "shall share same value, but now is %d, %d and %d",           \
+          "shall share same value, but now is "                         \
+          "%" ET_PRI_SIZES_AND_STRIDES ", %" ET_PRI_SIZES_AND_STRIDES   \
+          " and %" ET_PRI_SIZES_AND_STRIDES,                            \
           i,                                                            \
           i,                                                            \
           i,                                                            \
-          (int32_t)a_strides[i],                                        \
-          (int32_t)b_strides[i],                                        \
-          (int32_t)c_strides[i]);                                       \
+          a_strides[i],                                                 \
+          b_strides[i],                                                 \
+          c_strides[i]);                                                \
     }                                                                   \
   } while (0)
 

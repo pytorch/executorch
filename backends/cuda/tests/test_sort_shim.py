@@ -45,6 +45,8 @@ _CUDA_FALLBACK_KERNELS = frozenset(
         "aoti_torch_index_put_out",
         "aoti_torch_cuda_scatter_reduce_two_out",
         "aoti_torch_cuda_scatter_src_out",
+        "aoti_torch_cuda_masked_select",
+        "aoti_torch_cuda_nonzero",
     }
 )
 

@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import dataclasses
+import json
 import logging
 import sys
 import warnings
@@ -932,7 +933,7 @@ class EventBlock:
         self,
         handle_map: Dict[str, List[int]],
         delegate_map: Optional[Dict[str, DelegateMetadata]] = None,
-        instruction_id_to_num_outs_map: Dict[int, int] = None,
+        instruction_id_to_num_outs_map: Dict[str, int] = None,
     ):
         """
         Given mappings from instruction id to debug handles, populate the
@@ -1132,16 +1133,25 @@ class Inspector:
             return
 
         # (1) Debug Handle Symbolification
-        for event_block in self.event_blocks:
-            event_block._gen_resolve_debug_handles(
-                self._etrecord._debug_handle_map[FORWARD],
-                (
-                    self._etrecord._delegate_map[FORWARD]
-                    if self._etrecord._delegate_map is not None
-                    else None
-                ),
-                self._etrecord._instruction_id_to_num_outs_map[FORWARD],
+        if self.event_blocks:
+            # An ETRecord object from get_etrecord() has int keys (at every level)
+            # and tuples; save()/parse_etrecord() gives the JSON shape (str keys,
+            # lists) that _gen_resolve_debug_handles expects, so use that for both.
+            debug_handle_map = json.loads(json.dumps(self._etrecord._debug_handle_map))
+            delegate_map = (
+                json.loads(json.dumps(self._etrecord._delegate_map))[FORWARD]
+                if self._etrecord._delegate_map is not None
+                else None
             )
+            num_outs_map = json.loads(
+                json.dumps(self._etrecord._instruction_id_to_num_outs_map)
+            )
+            for event_block in self.event_blocks:
+                event_block._gen_resolve_debug_handles(
+                    debug_handle_map[FORWARD],
+                    delegate_map,
+                    num_outs_map[FORWARD],
+                )
 
         # (2) Event Metadata Association
         self.op_graph_dict = gen_graphs_from_etrecord(

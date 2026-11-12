@@ -212,7 +212,7 @@ target_link_libraries(my_app PRIVATE native_api native_vulkan_engine)
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_runtime_test` covers the shared runtime
 and API. `native_cpu_engine_test` covers the CPU engine when
 `EXECUTORCH_BUILD_NATIVE_CPU` is enabled. `native_vulkan_passes_test` covers the
-Vulkan graph rewrites without requiring a GPU. When either runner below is
+Vulkan graph rewrites without requiring a GPU. When any runner below is
 enabled, `native_runner_utils_test` covers their shared runner utilities. Run these
 with `ctest --test-dir cmake-out -R native_` after `cmake --build cmake-out`.
 
@@ -323,6 +323,35 @@ and prints the selected engine and device and the top-5 logits. When
 `--rtol`/`--atol` (both default to `1e-3`). Exit codes are 0 on success, 1 for
 invalid arguments, 2 for a loading or execution error, and 3 for a reference
 mismatch.
+
+## Whisper speech recognition runner
+
+`EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON` builds `run_whisper_ggml_cpu` from
+`examples/audio` with Native GGML on CPU. It requires gflags. Initialize the
+GGML submodule as described above, then:
+
+```sh
+cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON
+cmake --build cmake-out --target run_whisper_ggml_cpu
+cmake --install cmake-out --prefix install
+install/bin/run_whisper_ggml_cpu --cpu_threads 4 \
+  --package whisper_tiny.ptn --input input_features.bin \
+  --prompt prompt_ids.txt --expected expected_ids.txt --eos_ids 50257
+```
+
+Export the `.ptn` with
+[`export_hf_whisper.py`](examples/audio/export_hf_whisper.py); `--dump_dir` also
+writes the log-mel input, forced prompt, and eager greedy ids, and the exporter
+prints the model's EOS ids. The runner projects cross-attention K/V once, then
+preserves those inputs and its self-attention cache across prefill and decode,
+including GGML graph rebuilds. It greedily decodes until EOS or
+`--max_new_tokens` (default 32, matching the exporter), capped by the remaining
+decoder context. `--max_cached_graphs` defaults to 1; 0 rebuilds each call.
+When `--expected` is given, it exits nonzero if the generated ids differ from
+the reference. Use the same `--max_new_tokens` value when exporting reference
+vectors and running the comparison.
 
 ## Native LLM runner
 

@@ -462,7 +462,16 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
-    """
+    """Sets the number of threads in the CPU thread pool.
+
+    Call it before loading methods. A method loaded earlier keeps its XNNPACK
+    parts on the old thread pool until the method is destroyed, while its other
+    kernels use the new count and its ``CpuBackend`` parts fail to run. A
+    ``Program`` from ``executorch.runtime`` and an ``ExecuTorchModule`` keep the
+    methods they loaded, so load the method from a new one to use the new count.
+    Calling it while a ``CpuBackend`` part is loading or running is not safe.
+    A count of 0, or the current count, changes nothing.
+
     .. warning::
 
         This API is experimental and subject to change without notice.

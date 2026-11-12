@@ -68,7 +68,7 @@ help() {
     echo "  --output=<FOLDER>                    Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>             Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>          Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
-    echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc). Default: ${toolchain}"
+    echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc). Default: ${toolchain}"
     echo "  --select_ops_list=<OPS>              Comma separated list of portable (non-delegated) kernels to include Default: ${select_ops_list}"
     echo "                                         NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                         See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
@@ -98,8 +98,13 @@ done
 
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+    size_tool=arm-none-eabi-size
+elif [[ ${toolchain} == "arm-none-eabi-clang" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+    size_tool=llvm-size
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+    size_tool=arm-zephyr-eabi-size
 elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
     echo "Error: aarch64-linux-musl-gcc is not supported for this bare-metal runner."
     echo "       Use executorch/backends/arm/scripts/build_executorch.sh with aarch64-linux-musl-gcc"
@@ -107,7 +112,7 @@ elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
     exit 1;
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
-    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc}"
     exit 1;
 fi
 toolchain_cmake=$(realpath ${toolchain_cmake})
@@ -252,6 +257,6 @@ cmake --build ${output_folder} -j"${parallel_jobs}" -- arm_executor_runner
 
 echo "[${BASH_SOURCE[0]}] Generated ${toolchain} elf file:"
 find ${output_folder} -name "arm_executor_runner"
-echo "executable_text: $(find ${output_folder} -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $1}') bytes"
-echo "executable_data: $(find ${output_folder} -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $2}') bytes"
-echo "executable_bss:  $(find ${output_folder} -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $3}') bytes"
+echo "executable_text: $(find ${output_folder} -name arm_executor_runner -exec ${size_tool} {} \; | grep -v filename | awk '{print $1}') bytes"
+echo "executable_data: $(find ${output_folder} -name arm_executor_runner -exec ${size_tool} {} \; | grep -v filename | awk '{print $2}') bytes"
+echo "executable_bss:  $(find ${output_folder} -name arm_executor_runner -exec ${size_tool} {} \; | grep -v filename | awk '{print $3}') bytes"

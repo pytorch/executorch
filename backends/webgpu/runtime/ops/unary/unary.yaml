@@ -21,6 +21,10 @@ unary:
       OPERATOR: "round(x)"
     - NAME: rsqrt
       OPERATOR: "1.0 / sqrt(x)"
+    - NAME: silu
+      # x * sigmoid(x) with exp of -|x| only, so exp never overflows and
+      # silu(-inf) = -inf * 0 = NaN as in PyTorch.
+      OPERATOR: "x * select(1.0, exp(-abs(x)), x < 0.0) / (1.0 + exp(-abs(x)))"
     - NAME: sin
       OPERATOR: "sin(x)"
     - NAME: sqrt

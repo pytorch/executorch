@@ -135,6 +135,23 @@ int dotPacked4x8Acc_fallback(const int a, const int b, const int acc) {
   #define dotPacked4x8AccSat(a, b, acc) dotPacked4x8AccSatEXT(a, b, acc)
 #endif
 
+// a * b + c. Adreno 740 and 750 run fma() on f16 vectors at about half speed,
+// but some f32 shaders were up to 35% slower there with * and + than with
+// fma(). Shaders that accumulate in f16 define HAS_FLOAT16_ACCUMULATION before
+// the first include of this header to compute f16vec4 multiply-adds with * and
+// +; other shaders call fma().
+#ifdef HAS_FLOAT16_ACCUMULATION
+vec4 mul_add(const vec4 a, const vec4 b, const vec4 c) {
+  return fma(a, b, c);
+}
+
+f16vec4 mul_add(const f16vec4 a, const f16vec4 b, const f16vec4 c) {
+  return c + a * b;
+}
+#else
+#define mul_add(a, b, c) fma(a, b, c)
+#endif
+
 #ifdef DEBUG_MODE
 
 #define printf debugPrintfEXT

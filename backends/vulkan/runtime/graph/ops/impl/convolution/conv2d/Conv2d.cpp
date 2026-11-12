@@ -9,12 +9,77 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
 namespace vkcompute {
+
+Conv2dEpilogueArgs::Conv2dEpilogueArgs(
+    const Conv2dEpilogue& epilogue,
+    const ValueRef in,
+    const ValueRef packed_bias,
+    const ValueRef packed_scale)
+    : residual(epilogue.has_residual() ? epilogue.residual : in),
+      scale(epilogue.has_scale() ? packed_scale : packed_bias) {}
+
+ValueRef prepack_conv2d_residual_scale(
+    ComputeGraph& graph,
+    const Conv2dEpilogue& epilogue,
+    const ValueRef weight_data,
+    const bool transposed) {
+  if (!epilogue.has_scale()) {
+    return kDummyValueRef;
+  }
+  return prepack_biases(
+      graph,
+      epilogue.scale,
+      weight_data,
+      transposed,
+      utils::kTexture2D,
+      utils::kWidthPacked);
+}
+
+void check_conv2d_residual_on_resize(
+    ComputeGraph* graph,
+    const ValueRef out,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef residual = resize_args.back();
+  VK_CHECK_COND(
+      !is_valid(residual) || graph->sizes_of(residual) == graph->sizes_of(out),
+      "conv2d residual must match the resized output's sizes");
+}
+
+Conv2dEpilogueParams create_conv2d_epilogue_params(
+    const Conv2dEpilogue& epilogue,
+    const bool f16_epilogue) {
+  if (!f16_epilogue) {
+    return {
+        epilogue.activation_a, epilogue.activation_b, epilogue.residual_alpha};
+  }
+  const auto round_to_half = [](const float f) {
+    return api::half_to_float(api::float_to_half(f));
+  };
+  return {
+      round_to_half(epilogue.activation_a),
+      round_to_half(epilogue.activation_b),
+      round_to_half(epilogue.residual_alpha)};
+}
+
+void append_conv2d_epilogue_spec_vars(
+    vkapi::SpecVarList& spec_vars,
+    const Conv2dEpilogue& epilogue) {
+  // The shaders ignore activation_op without an activation.
+  const UnaryOpType activation =
+      epilogue.activation.value_or(UnaryOpType::kClamp);
+  spec_vars.append(vkapi::SpecVar(epilogue.has_activation()));
+  spec_vars.append(vkapi::SpecVar(static_cast<int32_t>(activation)));
+  spec_vars.append(vkapi::SpecVar(epilogue.has_residual()));
+  spec_vars.append(vkapi::SpecVar(epilogue.has_scale()));
+  spec_vars.append(vkapi::SpecVar(static_cast<int32_t>(epilogue.residual_op)));
+}
 
 void resize_conv2d_node(
     ComputeGraph* graph,
@@ -50,6 +115,7 @@ void resize_conv2d_node(
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
   graph->virtual_resize(out, new_out_sizes);
+  check_conv2d_residual_on_resize(graph, out, extra_args);
 }
 
 Conv2dMethod get_conv2d_method(
@@ -131,7 +197,111 @@ bool should_use_conv2d_im2col(
       (graph.device_is_mali() && n * k_total <= kIm2colMaxCheapGatherElements);
 }
 
-void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+namespace {
+
+// The conv2d shader epilogue implements only these residual ops and
+// activations.
+BinaryOpType residual_op_from_string(const std::string& name) {
+  if (name == "add") {
+    return BinaryOpType::kAdd;
+  }
+  if (name == "sub") {
+    return BinaryOpType::kSub;
+  }
+  if (name == "mul") {
+    return BinaryOpType::kMul;
+  }
+  VK_THROW("Unsupported conv2d residual op: ", name);
+}
+
+UnaryOpType activation_from_string(const std::string& name) {
+  if (name == "relu") {
+    return UnaryOpType::kRelu;
+  }
+  if (name == "clamp") {
+    return UnaryOpType::kClamp;
+  }
+  if (name == "leaky_relu") {
+    return UnaryOpType::kLeakyRelu;
+  }
+  VK_THROW("Unsupported conv2d activation: ", name);
+}
+
+void check_conv2d_epilogue(
+    ComputeGraph& graph,
+    const Conv2dEpilogue& epilogue,
+    const ValueRef weight_data,
+    const ValueRef out) {
+  if (epilogue.has_residual()) {
+    const ValueRef residual = epilogue.residual;
+    VK_CHECK_COND(
+        graph.sizes_of(residual) == graph.sizes_of(out) &&
+            graph.dtype_of(residual) == graph.dtype_of(out) &&
+            graph.storage_type_of(residual) == utils::kTexture3D &&
+            graph.hashed_layout_of(residual) == graph.hashed_layout_of(out),
+        "conv2d residual must match the output's sizes, dtype and layout");
+  }
+  if (epilogue.has_scale()) {
+    VK_CHECK_COND(
+        epilogue.has_residual(), "conv2d residual scale requires a residual");
+    VK_CHECK_COND(
+        graph.val_is_tref(epilogue.scale),
+        "conv2d residual scale must be a constant");
+    // Other shapes with one value per channel, such as [C], broadcast along
+    // another dim of the output.
+    const std::vector<int64_t> sizes = graph.sizes_of(epilogue.scale);
+    const int64_t channels = graph.size_at<int64_t>(-3, out);
+    VK_CHECK_COND(
+        (sizes.size() == 3 || sizes.size() == 4) &&
+            sizes.at(sizes.size() - 3) == channels &&
+            utils::multiply_integers(sizes) == channels &&
+            graph.dtype_of(epilogue.scale) == graph.dtype_of(weight_data),
+        "conv2d residual scale must be a [1, C, 1, 1] or [C, 1, 1] tensor "
+        "with the weight's dtype");
+  }
+}
+
+} // namespace
+
+Conv2dEpilogue conv2d_epilogue_from_args(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  Conv2dEpilogue epilogue;
+  if (args.size() == 12) {
+    // conv_with_clamp passes out_min and out_max before the output
+    epilogue.activation = UnaryOpType::kClamp;
+    epilogue.activation_a = graph.extract_scalar<float>(args[9]);
+    epilogue.activation_b = graph.extract_scalar<float>(args[10]);
+    return epilogue;
+  }
+  if (args.size() == 10) {
+    return epilogue;
+  }
+  // conv2d.with_epilogue passes residual, residual_scale, residual_op, alpha,
+  // activation, activation_a and activation_b before the output
+  VK_CHECK_COND(args.size() == 17, "Unexpected conv2d argument count");
+  if (graph.val_is_not_none(args[9])) {
+    epilogue.residual = args[9];
+    epilogue.residual_op =
+        residual_op_from_string(graph.extract_string(args[11]));
+    epilogue.residual_alpha = graph.extract_scalar<float>(args[12]);
+  }
+  if (graph.val_is_not_none(args[10])) {
+    epilogue.scale = args[10];
+  }
+  const std::string activation = graph.extract_string(args[13]);
+  if (activation != "none") {
+    epilogue.activation = activation_from_string(activation);
+    epilogue.activation_a = graph.extract_scalar<float>(args[14]);
+    epilogue.activation_b = graph.extract_scalar<float>(args[15]);
+  }
+  check_conv2d_epilogue(graph, epilogue, args[1], args.back());
+  return epilogue;
+}
+
+void conv2d_with_epilogue_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
   const ValueRef in = args[0];
   const ValueRef weight_data = args[1];
   const ValueRef bias = args[2];
@@ -141,23 +311,12 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef transposed = args[6];
   const ValueRef output_padding = args[7];
   const ValueRef groups = args[8];
-  // conv2d with clamp passes out_min and out_max before the output
-  const bool clamp_out = args.size() != 10;
-  const ValueRef out_min = clamp_out ? args[9] : kDummyValueRef;
-  const ValueRef out_max = clamp_out ? args[10] : kDummyValueRef;
-  const ValueRef out = clamp_out ? args[11] : args[9];
+  const ValueRef out = args.back();
+
+  VK_CHECK_COND(graph.dim_of(in) == 4);
+  const Conv2dEpilogue epilogue = conv2d_epilogue_from_args(graph, args);
 
   const bool transposed_val = graph.get_bool(transposed);
-
-  float out_min_val = 0.0f;
-  float out_max_val = 0.0f;
-  if (out_min != kDummyValueRef) {
-    out_min_val = graph.extract_scalar<float>(out_min);
-  }
-  if (out_max != kDummyValueRef) {
-    out_max_val = graph.extract_scalar<float>(out_max);
-  }
-
   const int64_t groups_val = graph.get_int(groups);
 
   const Conv2dMethod method =
@@ -174,24 +333,12 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         padding,
         out,
         transposed_val,
-        clamp_out,
-        out_min_val,
-        out_max_val);
+        epilogue);
   }
 
   if (method == Conv2dMethod::Depthwise) {
     return conv2d_dw_impl(
-        graph,
-        in,
-        weight_data,
-        bias,
-        stride,
-        padding,
-        dilation,
-        out,
-        clamp_out,
-        out_min_val,
-        out_max_val);
+        graph, in, weight_data, bias, stride, padding, dilation, out, epilogue);
   }
 
   const Kernel2dParams kernel_params = create_kernel2d_params(
@@ -213,17 +360,7 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           graph, weight_data, groups_val, kernel_params, out, fast_tiled);
   if (use_im2col) {
     return conv2d_gemm_impl(
-        graph,
-        in,
-        weight_data,
-        bias,
-        stride,
-        padding,
-        dilation,
-        out,
-        clamp_out,
-        out_min_val,
-        out_max_val);
+        graph, in, weight_data, bias, stride, padding, dilation, out, epilogue);
   }
 
   return conv2d_direct_impl(
@@ -238,9 +375,7 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_padding,
       groups,
       out,
-      clamp_out,
-      out_min_val,
-      out_max_val);
+      epilogue);
 }
 
 } // namespace vkcompute

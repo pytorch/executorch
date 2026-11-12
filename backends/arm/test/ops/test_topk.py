@@ -77,7 +77,7 @@ def _execute(manager, inputs):
 test_data = {
     f"{dtype}_k{k}_{shape}": (dtype, k, shape)
     for dtype in (torch.float16, torch.float32)
-    for k in (1, 2, 3, 4)
+    for k in (1, 2, 3, 4, 5, 6, 7, 8)
     for shape in ("equal", "larger")
 }
 
@@ -87,7 +87,7 @@ def test_topk_tosa_FP(test_data):
     dtype, k, shape = test_data
     # E: Number of experts; K: Number of activated experts.
     # "equal" means E == K; "larger" means E > K.
-    experts = k if shape == "equal" else 8
+    experts = k if shape == "equal" else max(8, k + 1)
     scores = torch.arange(experts, dtype=dtype).unsqueeze(0)
     scores = torch.cat((scores.roll(2, 1), -scores.roll(3, 1)), dim=0)
     module = TopK(k, dim=1 if shape == "equal" else -1)
@@ -105,7 +105,7 @@ def test_topk_tosa_FP(test_data):
 
 
 @common.parametrize("dtype", {"fp16": torch.float16, "fp32": torch.float32})
-@common.parametrize("k", {"k1": 1, "k4": 4})
+@common.parametrize("k", {"k1": 1, "k4": 4, "k8": 8})
 @common.SkipIfNoModelConverter
 def test_topk_vgf_no_quant(dtype, k):
     scores = torch.tensor([[3.0, -1.0, 4.0, 0.0, 2.0, -2.0, 1.0, -3.0]], dtype=dtype)
@@ -122,10 +122,13 @@ def test_topk_vgf_no_quant(dtype, k):
     pipeline.run()
 
 
-@common.parametrize("k", {"k1": 1, "k4": 4})
+@common.parametrize("k", {"k1": 1, "k4": 4, "k8": 8})
 @common.parametrize("output", {key: key for key in ("values", "indices", "int32")})
 def test_topk_output_interfaces_tosa_FP(k, output):
-    scores = torch.tensor([[2.0, -1.0, 4.0, 0.0]], dtype=torch.float32)
+    scores = torch.tensor(
+        [[2.0, -1.0, 4.0, 0.0, 3.0, 5.0, -2.0, 1.0]],
+        dtype=torch.float32,
+    )
     model = TopK(k, output=output)
     pipeline = TosaPipelineFP[input_t](
         model,
@@ -148,8 +151,8 @@ def test_topk_output_interfaces_tosa_FP(k, output):
 
 
 @common.parametrize("dtype", {"fp16": torch.float16, "fp32": torch.float32})
-def test_topk_ties_and_extremes_tosa_FP(dtype):
-    k = 4
+@common.parametrize("k", {"k4": 4, "k8": 8})
+def test_topk_ties_and_extremes_tosa_FP(dtype, k):
     minimum, maximum = torch.finfo(dtype).min, torch.finfo(dtype).max
     scores = torch.tensor(
         [
@@ -189,7 +192,7 @@ def test_topk_ties_and_extremes_tosa_FP(dtype):
 
 unsupported = {
     "rank3": (TopK(1), torch.randn(2, 3, 8), "TOSA-1.0+FP+INT"),
-    "k5": (TopK(5), torch.randn(2, 8), "TOSA-1.0+FP+INT"),
+    "k9": (TopK(9), torch.randn(2, 16), "TOSA-1.0+FP+INT"),
     "missing_int": (TopK(2), torch.randn(2, 8), "TOSA-1.0+FP"),
     "missing_fp": (TopK(1), torch.randn(2, 8), "TOSA-1.0+INT"),
 }
