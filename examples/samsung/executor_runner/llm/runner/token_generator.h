@@ -122,13 +122,15 @@ class ET_EXPERIMENTAL TokenGenerator {
       token_callback(
           ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
 
-      // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (eos_ids_->find(cur_token) != eos_ids_->end()) {
-        // ET_LOG(Info, "Reached to the end of generation");
+      if (is_eos(cur_token)) {
         break;
       }
     }
     return pos - start_pos;
+  }
+
+  bool is_eos(uint64_t token) const {
+    return eos_ids_->count(token) > 0;
   }
 
   /**

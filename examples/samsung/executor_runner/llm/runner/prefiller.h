@@ -22,21 +22,30 @@ namespace extension = ::executorch::extension;
 
 class ET_EXPERIMENTAL Prefiller : public llm::TextPrefiller {
  public:
+  // max_seq_len is the prefill method's chunk length and prefill_cache_len
+  // the number of positions its KV cache holds; positions past it go through
+  // the decode method.
   Prefiller(
       llm::TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
       bool enable_parallel_prefill,
-      int64_t max_seq_len = 128);
+      int64_t max_seq_len,
+      int64_t prefill_cache_len);
 
   virtual ~Prefiller() = default;
 
-  virtual runtime::Result<uint64_t> prefill(
-      std::vector<uint64_t>& prompt_tokens,
-      int64_t& start_pos) override;
+  using llm::TextPrefiller::prefill;
+  using llm::TextPrefiller::prefill_chunk;
 
-  virtual runtime::Result<uint64_t> prefill_chunk(
+  runtime::Result<uint64_t> prefill(
       std::vector<uint64_t>& prompt_tokens,
-      int64_t& start_pos) override;
+      int64_t& start_pos,
+      float temperature) override;
+
+  runtime::Result<uint64_t> prefill_chunk(
+      std::vector<uint64_t>& prompt_tokens,
+      int64_t& start_pos,
+      float temperature) override;
 
  private:
   /**
@@ -49,6 +58,7 @@ class ET_EXPERIMENTAL Prefiller : public llm::TextPrefiller {
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
   int64_t max_seq_len_;
+  int64_t prefill_cache_len_;
 };
 
 } // namespace example

@@ -280,6 +280,12 @@ int main(int argc, char** argv) {
   optind = idx; // resume scanning after the positional model arguments
   int opt;
   while ((opt = getopt_long(argc, argv, "", long_opts, NULL)) != -1) {
+    // Unknown option or missing value; getopt_long already printed why and
+    // left optarg null.
+    if (opt == '?' || opt == ':') {
+      rc_total = 1;
+      break;
+    }
     const bool is_file = opt == OPT_RAW_FILE || opt == OPT_SYS_FILE ||
         opt == OPT_USR_FILE || opt == OPT_PRE_FILE;
     std::string content;

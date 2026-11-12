@@ -26,7 +26,7 @@ You can refer to `run_llama3_sample.sh` for a complete execution example. The ke
     ...
 ```
 
-For Gemma 4 multimodal inference, also pass the vision encoder and the image with `--vision_model_path`, `--image_path` and, optionally, `--prompt_before_image` for the text placed before the image.
+For Gemma 4 multimodal inference, also pass the vision encoder and the image with `--vision_model_path`, `--image_path` and, optionally, `--prompt_before_image` for the text placed before the image. The image is inserted into the user turn of the formatted prompt, so it cannot be combined with `raw_prompt`.
 
 ### Where to find config files
 
@@ -39,7 +39,7 @@ Ensure these files are pushed to the target device (e.g., to `/data/local/tmp/`)
 
 ### Position embeddings
 
-`--pos_embedding_path` is optional: when the file is missing, the runner precomputes the RoPE tables from the config. For Gemma 4, generate the table that matches the exported model with:
+`--pos_embedding_path` is optional: when the file is missing, the runner precomputes the RoPE tables from the config. For Llama 3 this applies `rope_theta` and a `rope_scaling` of `rope_type` `llama3` from the config, copied from the checkpoint's `config.json`; any other `rope_type` needs the file. For Gemma 4, generate the table that matches the exported model with:
 
 ```bash
 python -m executorch.examples.samsung.scripts.gemma4_pos_embedding \

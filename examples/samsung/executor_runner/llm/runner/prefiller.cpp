@@ -11,6 +11,7 @@
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
 #include <algorithm>
+#include <cinttypes>
 
 namespace example {
 
@@ -23,7 +24,8 @@ Prefiller::Prefiller(
     llm::TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
     bool enable_parallel_prefill,
-    int64_t max_seq_len)
+    int64_t max_seq_len,
+    int64_t prefill_cache_len)
     : TextPrefiller(
           text_decoder_runner,
           use_kv_cache,
@@ -32,59 +34,56 @@ Prefiller::Prefiller(
       text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill),
-      max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
+      max_seq_len_(max_seq_len > 0 ? max_seq_len : 128),
+      prefill_cache_len_(prefill_cache_len) {}
 
 runtime::Result<uint64_t> Prefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
-    int64_t& start_pos) {
+    int64_t& start_pos,
+    float temperature) {
   ET_CHECK_OR_RETURN_ERROR(
       !prompt_tokens.empty(), InvalidArgument, "Prompt cannot be empty");
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
   }
 
-  // If prompt tokens exceed max_seq_len_, we need to chunk them
-  int32_t num_prompt_tokens = prompt_tokens.size();
+  const int64_t num_prompt_tokens = prompt_tokens.size();
   ET_LOG(
       Info,
-      "Micro Batch: num_prompt(%d), prefill::max_seq_len(%ld), start_pos(%ld)",
+      "Micro Batch: num_prompt(%" PRId64 "), prefill::max_seq_len(%" PRId64
+      "), start_pos(%" PRId64 ")",
       num_prompt_tokens,
       max_seq_len_,
       start_pos);
 
-  if (num_prompt_tokens > max_seq_len_) {
-    uint64_t cur_token = 0;
-    int num_tokens_to_process = 0;
-
-    while (num_tokens_to_process < num_prompt_tokens) {
-      auto num_tokens_to_prefill_with = std::min<int>(
-          num_prompt_tokens - num_tokens_to_process, max_seq_len_);
-
-      std::vector<uint64_t> prompt_tokens_to_process(
-          num_tokens_to_prefill_with);
-      std::copy(
-          prompt_tokens.begin() + num_tokens_to_process,
-          prompt_tokens.begin() + num_tokens_to_process +
-              num_tokens_to_prefill_with,
-          prompt_tokens_to_process.begin());
-
-      auto chunk_result = prefill_chunk(prompt_tokens_to_process, start_pos);
-      ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
-      cur_token = chunk_result.get();
-
-      num_tokens_to_process += num_tokens_to_prefill_with;
+  uint64_t cur_token = 0;
+  int64_t num_processed = 0;
+  while (num_processed < num_prompt_tokens) {
+    int64_t chunk_len =
+        std::min(num_prompt_tokens - num_processed, max_seq_len_);
+    if (enable_parallel_prefill_) {
+      // Once the prefill cache is full, feed the rest one token at a time,
+      // which the decoder runs through the decode method.
+      chunk_len = std::max<int64_t>(
+          1, std::min(chunk_len, prefill_cache_len_ - start_pos));
     }
-
-    return cur_token;
-  } else {
-    // If prompt tokens don't exceed max_seq_len_, process them directly
-    return prefill_chunk(prompt_tokens, start_pos);
+    std::vector<uint64_t> chunk(
+        prompt_tokens.begin() + num_processed,
+        prompt_tokens.begin() + num_processed + chunk_len);
+    num_processed += chunk_len;
+    // Only the last chunk's prediction is used, so only it is sampled.
+    cur_token = ET_UNWRAP(prefill_chunk(
+        chunk,
+        start_pos,
+        num_processed == num_prompt_tokens ? temperature : 0.0f));
   }
+  return cur_token;
 }
 
 runtime::Result<uint64_t> Prefiller::prefill_chunk(
     std::vector<uint64_t>& prompt_tokens,
-    int64_t& start_pos) {
+    int64_t& start_pos,
+    float temperature) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
@@ -105,7 +104,8 @@ runtime::Result<uint64_t> Prefiller::prefill_chunk(
         Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
 
     start_pos += num_prompt_tokens;
-    cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
+    cur_token =
+        text_decoder_runner_->logits_to_token(outputs_res.get(), temperature);
   } else { // sequential prefill
     int64_t pos = 0; // position in the sequence
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
@@ -140,7 +140,8 @@ runtime::Result<uint64_t> Prefiller::prefill_chunk(
       start_pos++;
     }
 
-    cur_token = text_decoder_runner_->logits_to_token(logits_tensor);
+    cur_token =
+        text_decoder_runner_->logits_to_token(logits_tensor, temperature);
   }
   return cur_token;
 }

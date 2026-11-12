@@ -138,6 +138,16 @@ class Llama3Args : public BaseModelArgs {
   DecoderModelVersion get_version() const override {
     return DecoderModelVersion::kLlama3;
   }
+  // HF rope_scaling of rope_type "llama3", as used from Llama 3.1 on.
+  struct RopeScaling {
+    float factor = 1.0f;
+    float low_freq_factor = 1.0f;
+    float high_freq_factor = 4.0f;
+    float original_max_position_embeddings = 8192.0f;
+  };
+  float rope_theta = 500000.0f;
+  std::string rope_type = "default";
+  RopeScaling rope_scaling;
   int64_t hidden_dim = 0;
   int64_t n_heads = 0;
   int64_t n_kv_heads = 0;

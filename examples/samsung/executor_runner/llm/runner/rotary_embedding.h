@@ -43,7 +43,8 @@ class RotaryEmbedding {
       size_t seq_len,
       size_t dim,
       float base,
-      float rope_pct);
+      float rope_pct,
+      const Llama3Args::RopeScaling* llama3_scaling = nullptr);
 
   const RunnerConfig& config_;
   bool loaded_;

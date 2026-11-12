@@ -11,12 +11,42 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <vector>
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/rotary_embedding.h>
 
 namespace example {
 
 namespace runtime = ::executorch::runtime;
+
+namespace {
+
+// Same as apply_scaling in examples/models/llama/rope.py and HF's "llama3"
+// rope_type: keep high frequencies, divide low ones by factor, and blend the
+// band in between.
+void apply_llama3_rope_scaling(
+    const Llama3Args::RopeScaling& scaling,
+    std::vector<float>& inv_freq) {
+  constexpr float kPi = 3.14159265358979323846f;
+  const float old_context_len = scaling.original_max_position_embeddings;
+  const float low_freq_wavelen = old_context_len / scaling.low_freq_factor;
+  const float high_freq_wavelen = old_context_len / scaling.high_freq_factor;
+  for (float& freq : inv_freq) {
+    const float wavelen = 2.0f * kPi / freq;
+    if (wavelen < high_freq_wavelen) {
+      continue;
+    }
+    if (wavelen > low_freq_wavelen) {
+      freq /= scaling.factor;
+      continue;
+    }
+    const float smooth = (old_context_len / wavelen - scaling.low_freq_factor) /
+        (scaling.high_freq_factor - scaling.low_freq_factor);
+    freq = (1.0f - smooth) * freq / scaling.factor + smooth * freq;
+  }
+}
+
+} // namespace
 
 RotaryEmbedding::RotaryEmbedding(const RunnerConfig& config)
     : config_(config),
@@ -39,7 +69,7 @@ RotaryEmbedding::RotaryEmbedding(const RunnerConfig& config)
       auto* args = static_cast<Llama3Args*>(config_.model_args.get());
       normalized_global_head_dim_ = args->get_head_dim();
       normalized_local_head_dim_ = args->get_head_dim();
-      base_freq_global_ = 500000.0f;
+      base_freq_global_ = args->rope_theta;
       rope_percentage_ = 1.0f;
       break;
     }
@@ -149,13 +179,35 @@ runtime::Error RotaryEmbedding::load_by_precompute_rope_tables() {
       reinterpret_cast<uintptr_t>(global_sin_ptr) % alignof(float) == 0 &&
       "global_sin_ is misaligned for float access!");
 
+  const Llama3Args::RopeScaling* llama3_scaling = nullptr;
+  if (config_.model_version == DecoderModelVersion::kLlama3) {
+    const auto& args = static_cast<const Llama3Args&>(*config_.model_args);
+    ET_CHECK_OR_RETURN_ERROR(
+        args.rope_type == "default" || args.rope_type == "llama3",
+        NotSupported,
+        "RoPE scaling '%s' cannot be precomputed; provide the position "
+        "embedding file",
+        args.rope_type.c_str());
+    if (args.rope_type == "llama3") {
+      const auto& scaling = args.rope_scaling;
+      ET_CHECK_OR_RETURN_ERROR(
+          scaling.factor > 0.0f && scaling.low_freq_factor > 0.0f &&
+              scaling.low_freq_factor < scaling.high_freq_factor &&
+              scaling.original_max_position_embeddings > 0.0f,
+          InvalidArgument,
+          "Invalid llama3 rope_scaling parameters");
+      llama3_scaling = &scaling;
+    }
+  }
+
   ET_CHECK_OK_OR_RETURN_ERROR(compute_rope_table(
       global_cos_ptr,
       global_sin_ptr,
       seq_len_,
       normalized_global_head_dim_,
       base_freq_global_,
-      rope_percentage_));
+      rope_percentage_,
+      llama3_scaling));
 
   if (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal) {
     float* local_cos_ptr = reinterpret_cast<float*>(local_cos_.get());
@@ -199,7 +251,8 @@ runtime::Error RotaryEmbedding::compute_rope_table(
     size_t seq_len,
     size_t dim,
     float base,
-    float rope_pct) {
+    float rope_pct,
+    const Llama3Args::RopeScaling* llama3_scaling) {
   ET_CHECK_OR_RETURN_ERROR(
       cos_ptr != nullptr, InvalidArgument, "cos_ptr cannot be nullptr.");
   ET_CHECK_OR_RETURN_ERROR(
@@ -233,6 +286,15 @@ runtime::Error RotaryEmbedding::compute_rope_table(
   // convention), so for full RoPE this reduces to the standard formula.
   const float freq_denom = static_cast<float>(dim);
 
+  // inv_freq_i = base^(-2i / head_dim)
+  std::vector<float> inv_freq(rotary_half);
+  for (size_t i = 0; i < rotary_half; ++i) {
+    inv_freq[i] = std::pow(base, -2.0f * static_cast<float>(i) / freq_denom);
+  }
+  if (llama3_scaling != nullptr) {
+    apply_llama3_rope_scaling(*llama3_scaling, inv_freq);
+  }
+
   for (size_t pos = 0; pos < seq_len; ++pos) {
     float* cos_row = cos_ptr + pos * dim;
     float* sin_row = sin_ptr + pos * dim;
@@ -245,10 +307,7 @@ runtime::Error RotaryEmbedding::compute_rope_table(
     }
 
     for (size_t i = 0; i < rotary_half; ++i) {
-      // inv_freq_i = base^(-2i / head_dim)
-      const float exponent = -2.0f * static_cast<float>(i) / freq_denom;
-      const float inv_freq = std::pow(base, exponent);
-      const float angle = static_cast<float>(pos) * inv_freq;
+      const float angle = static_cast<float>(pos) * inv_freq[i];
 
       const float c = std::cos(angle);
       const float s = std::sin(angle);

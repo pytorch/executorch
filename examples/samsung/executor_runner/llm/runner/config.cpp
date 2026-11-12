@@ -235,6 +235,29 @@ Error RunnerConfig::load_from_json() {
       } else {
         args->sliding_window = std::nullopt;
       }
+      if (src.contains("rope_theta") && src["rope_theta"].is_number()) {
+        args->rope_theta = src["rope_theta"].get<float>();
+      }
+      if (src.contains("rope_scaling") && src["rope_scaling"].is_object()) {
+        const json& scaling = src["rope_scaling"];
+        for (const char* key : {"rope_type", "type"}) {
+          if (scaling.contains(key) && scaling[key].is_string()) {
+            args->rope_type = scaling[key].get<std::string>();
+            break;
+          }
+        }
+        auto read = [&scaling](const char* key, float& out) {
+          if (scaling.contains(key) && scaling[key].is_number()) {
+            out = scaling[key].get<float>();
+          }
+        };
+        read("factor", args->rope_scaling.factor);
+        read("low_freq_factor", args->rope_scaling.low_freq_factor);
+        read("high_freq_factor", args->rope_scaling.high_freq_factor);
+        read(
+            "original_max_position_embeddings",
+            args->rope_scaling.original_max_position_embeddings);
+      }
       model_args = std::move(args);
       break;
     }

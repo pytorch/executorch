@@ -9,6 +9,7 @@
 // A simple LLM runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
+#include <executorch/backends/samsung/runtime/extension/exynos_file_data_loader.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -35,6 +36,7 @@ namespace runtime = ::executorch::runtime;
 namespace aten = ::executorch::aten;
 namespace extension = ::executorch::extension;
 
+using ::executorch::backends::enn::ExynosFileDataLoader;
 using json = nlohmann::json;
 
 std::string LLMRunner::get_formatted_prompt(
@@ -258,23 +260,46 @@ runtime::Error LLMRunner::generate_from_pos(
   stats_->inference_start_ms = llm::time_in_ms();
   text_token_generator_->clear_stop();
 
+  const bool has_image = model_version_ == DecoderModelVersion::kGemma4 &&
+      vision_encoder_ != nullptr && !config_.image_path.empty();
+  ET_CHECK_OR_RETURN_ERROR(
+      !(has_image && config_.raw_prompt),
+      InvalidArgument,
+      "Image input cannot be combined with raw_prompt, which is fed verbatim");
+
+  // The image block goes between prompt_before_image and prompt in the user
+  // turn. Format the turn around a placeholder and split the text there.
+  static const std::string kImageSlot = "\x01<image_slot>\x01";
+  const std::string user_prompt =
+      has_image ? config_.prompt_before_image + kImageSlot + prompt : prompt;
+
   // Raw prompts are already fully formatted (special tokens, system turn, tool
   // declaration); feed them verbatim and skip every template transformation.
   std::string input_prompt = config_.raw_prompt
       ? prompt
       : get_formatted_prompt(
-            prompt,
+            user_prompt,
             config_.system_prompt,
             config_.assistant_prefill_prompt,
             model_version_);
   if (!config_.raw_prompt && model_version_ == DecoderModelVersion::kGemma3) {
     replace_all_newlines(input_prompt);
   }
+  std::string prompt_after_image;
+  if (has_image) {
+    const size_t slot = input_prompt.find(kImageSlot);
+    ET_CHECK_OR_RETURN_ERROR(
+        slot != std::string::npos,
+        Internal,
+        "Formatted prompt lost the image placeholder");
+    prompt_after_image = input_prompt.substr(slot + kImageSlot.size());
+    input_prompt.erase(slot);
+  }
 
   ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       input_prompt,
       /*bos=*/config.num_bos,
-      /*eos=*/config.num_eos);
+      /*eos=*/has_image ? 0 : config.num_eos);
 
   ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", input_prompt.c_str());
@@ -290,14 +315,9 @@ runtime::Error LLMRunner::generate_from_pos(
     prompt_tokens.insert(prompt_tokens.begin(), tokenizer_->bos_tok());
   }
 
-  // Gemma 4 multimodal: run the vision encoder and inject the image token
-  // block. The user turn becomes:
-  //   <|turn>user\n <before_image> <boi> <img>xN <eoi> <prompt>
-  //   <turn|>\n<turn>model\n
-  // <prompt> holds the text AFTER the image; <before_image>
-  // (config_.prompt_before_image) is the text placed BEFORE the image.
-  if (model_version_ == DecoderModelVersion::kGemma4 &&
-      vision_encoder_ != nullptr && !config_.image_path.empty()) {
+  // Gemma 4 multimodal: run the vision encoder and insert
+  // <boi> <img>xN <eoi> at the image slot.
+  if (has_image) {
     auto* llm_io = static_cast<example::LlmIOManager*>(io_manager_.get());
 
     // Vision embeddings are injected only by the multi-token prefill method;
@@ -319,35 +339,22 @@ runtime::Error LLMRunner::generate_from_pos(
         static_cast<long long>(vision_encoder_->hidden_size()),
         static_cast<long long>(config_.model_args->get_hidden_dim()));
 
-    auto enc = [this](
-                   const std::string& s, std::vector<uint64_t>& out) -> bool {
-      auto r = tokenizer_->encode(s, /*bos=*/0, /*eos=*/0);
-      if (r.error() != ::tokenizers::Error::Ok) {
-        ET_LOG(Error, "Failed to encode text segment");
-        return false;
-      }
-      auto toks = std::move(r.get());
-      out.insert(out.end(), toks.begin(), toks.end());
-      return true;
-    };
+    auto after_res = tokenizer_->encode(
+        prompt_after_image, /*bos=*/0, /*eos=*/config.num_eos);
+    ET_CHECK_TK_OK_OR_RETURN_ERROR(
+        after_res.error(),
+        "Failed to encode prompt %s",
+        prompt_after_image.c_str());
 
-    std::vector<uint64_t> vision_tokens;
-    vision_tokens.push_back(kGemma4BosId);
-    if (!enc("<|turn>user\n", vision_tokens) ||
-        (!config_.prompt_before_image.empty() &&
-         !enc(config_.prompt_before_image, vision_tokens))) {
-      return runtime::Error::InvalidArgument;
-    }
-    vision_tokens.push_back(kGemma4BoiTokenId);
-    for (int64_t i = 0; i < num_vision_tokens; ++i) {
-      vision_tokens.push_back(kGemma4ImageTokenId);
-    }
-    vision_tokens.push_back(kGemma4EoiTokenId);
-    if (!enc(prompt, vision_tokens) ||
-        !enc("<turn|>\n<|turn>model\n", vision_tokens)) {
-      return runtime::Error::InvalidArgument;
-    }
-    prompt_tokens = std::move(vision_tokens);
+    const std::vector<uint64_t>& after_tokens = after_res.get();
+    prompt_tokens.push_back(kGemma4BoiTokenId);
+    prompt_tokens.insert(
+        prompt_tokens.end(),
+        static_cast<size_t>(num_vision_tokens),
+        static_cast<uint64_t>(kGemma4ImageTokenId));
+    prompt_tokens.push_back(kGemma4EoiTokenId);
+    prompt_tokens.insert(
+        prompt_tokens.end(), after_tokens.begin(), after_tokens.end());
 
     llm_io->set_vision_embeddings(
         vision_encoder_->vision_embeds(), num_vision_tokens);
@@ -397,14 +404,15 @@ runtime::Error LLMRunner::generate_from_pos(
 
   // print prompts
   if (config.echo) {
-    wrapped_callback(input_prompt);
+    wrapped_callback(input_prompt + prompt_after_image);
   }
+  const float temperature =
+      temperature_ == -1.0f ? config.temperature : temperature_;
   int64_t pos = start_pos;
-  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos, temperature);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
-  if (model_version_ == DecoderModelVersion::kGemma4 &&
-      vision_encoder_ != nullptr && !config_.image_path.empty()) {
+  if (has_image) {
     const auto consumed = static_cast<example::LlmIOManager*>(io_manager_.get())
                               ->num_vision_embeds_consumed();
     ET_CHECK_OR_RETURN_ERROR(
@@ -453,12 +461,11 @@ runtime::Error LLMRunner::generate_from_pos(
         full_answer += piece;
         wrapped_callback(piece);
       };
-  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
-      prompt_tokens,
-      pos,
-      max_new_tokens - 1,
-      temperature_ == -1.0f ? config.temperature : temperature_,
-      collect_callback));
+  int64_t num_generated_tokens = 0;
+  if (!text_token_generator_->is_eos(cur_token)) {
+    num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+        prompt_tokens, pos, max_new_tokens - 1, temperature, collect_callback));
+  }
 
   // A temporary new line to separate stdout mixed with results.
   wrapped_callback(ET_UNWRAP_TOKENIZER(
@@ -674,16 +681,35 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
   float temperature = runner_config.temperature;
   bool is_decode_only = runner_config.is_decode_only;
 
-  std::unique_ptr<extension::Module> module;
-  if (runner_paths.data_path.has_value()) {
-    module = std::make_unique<extension::Module>(
-        runner_paths.model_path,
-        runner_paths.data_path.value(),
-        extension::Module::LoadMode::File);
-  } else {
-    module = std::make_unique<extension::Module>(
-        runner_paths.model_path, extension::Module::LoadMode::File);
+  // ENN opens delegates and external weights through their dmabuf FDs, so
+  // both artifacts must be loaded into ENN shared memory.
+  auto load_shared =
+      [](const std::string& path) -> std::unique_ptr<runtime::DataLoader> {
+    auto loader = ExynosFileDataLoader::from(path.c_str());
+    if (!loader.ok()) {
+      ET_LOG(Error, "Failed to load %s into ENN shared memory", path.c_str());
+      return nullptr;
+    }
+    return std::make_unique<ExynosFileDataLoader>(std::move(loader.get()));
+  };
+  std::unique_ptr<runtime::DataLoader> program_loader =
+      load_shared(runner_paths.model_path);
+  if (program_loader == nullptr) {
+    return nullptr;
   }
+  std::unique_ptr<runtime::DataLoader> data_map_loader;
+  if (runner_paths.data_path.has_value()) {
+    data_map_loader = load_shared(runner_paths.data_path.value());
+    if (data_map_loader == nullptr) {
+      return nullptr;
+    }
+  }
+  auto module = std::make_unique<extension::Module>(
+      std::move(program_loader),
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*event_tracer=*/nullptr,
+      std::move(data_map_loader));
 
   executorch::runtime::Result<std::unordered_set<std::string>> methods_res =
       module->method_names();
@@ -765,7 +791,9 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
       runner->get_metadata().at(llm::kUseKVCache),
       runner->get_metadata().at(llm::kEnableDynamicShape) |
           (separated_prefill_decode),
-      config.model_args->get_prefill_seq_len());
+      config.model_args->get_prefill_seq_len(),
+      config.model_args->get_max_seq_len() -
+          config.model_args->get_prefill_seq_len());
 
   auto text_token_generator = std::make_unique<example::TokenGenerator>(
       runner->get_tokenizer(),
