@@ -102,6 +102,51 @@ TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
   EXPECT_FALSE(valid(geometry, config(8)));
 }
 
+TEST_F(
+    CacheTest,
+    CheckpointReservationUsesFreeCellsWithoutChangingOtherSequences) {
+  class CheckpointCells : public CellCache {
+   public:
+    using CellCache::CellCache;
+    using CellCache::reserve_sequence;
+    using CellCache::sequence_cells;
+  } cache(CacheGeometry{{flat_layer()}}, config(8));
+  const auto first = cache.reserve_sequence(3);
+  const auto second = cache.reserve_sequence(2);
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  const auto retained = cache.sequence_cells(*second, 2);
+  EXPECT_EQ(retained.value(), (std::vector<int32_t>{3, 4}));
+  cache.seq_rm(*first);
+  const auto restored = cache.reserve_sequence(4);
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(
+      cache.sequence_cells(*restored, 4).value(),
+      (std::vector<int32_t>{0, 1, 2, 5}));
+  EXPECT_EQ(cache.sequence_cells(*second, 2), retained);
+  EXPECT_EQ(cache.pos(*restored), 4);
+  EXPECT_FALSE(cache.reserve_sequence(3));
+  EXPECT_EQ(cache.sequence_cells(*second, 2), retained);
+  cache.seq_rm(*restored);
+  cache.seq_rm(*second);
+  EXPECT_TRUE(cache.reserve_sequence(8));
+}
+
+TEST_F(CacheTest, RestoredHistoryFloorSurvivesRewindAndClone) {
+  SequenceCache cache(CacheGeometry{{ring_layer(4)}}, config(32));
+  ASSERT_TRUE(cache.restore_checkpoint_position(12, 10));
+  EXPECT_EQ(cache.written_length(), 12);
+  EXPECT_FALSE(cache.can_rewind(9));
+  EXPECT_TRUE(cache.rewind(10));
+  SequenceCache clone(cache);
+  EXPECT_FALSE(clone.can_rewind(9));
+  EXPECT_TRUE(clone.can_rewind(10));
+  EXPECT_FALSE(clone.restore_checkpoint_position(12, 0));
+  clone.clear();
+  EXPECT_TRUE(clone.can_rewind(0));
+  EXPECT_FALSE(cache.can_rewind(0));
+}
+
 // ---- Flat policy -----------------------------------------------------------
 
 TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {

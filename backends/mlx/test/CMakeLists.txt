@@ -208,3 +208,17 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
     mlx_sequence_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()
+
+et_cxx_test(
+  mlx_checkpoint_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_checkpoint_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_checkpoint_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)

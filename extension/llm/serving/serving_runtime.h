@@ -106,6 +106,13 @@ using CloseCallback ET_EXPERIMENTAL = std::function<void(CloseResult)>;
 using GenerateResult ET_EXPERIMENTAL =
     std::variant<RequestHandle, ServingError>;
 
+struct ET_EXPERIMENTAL SessionCheckpoint {
+  batching::Checkpoint state;
+  std::vector<batching::Token> tokens;
+};
+using CheckpointCallback ET_EXPERIMENTAL = std::function<void(
+    batching::CheckpointResult<std::shared_ptr<SessionCheckpoint>>)>;
+
 class ET_EXPERIMENTAL ServingRuntime {
  public:
   // Owns one Runner and its scheduler. The borrowed executor must outlive
@@ -158,6 +165,19 @@ class ET_EXPERIMENTAL ServingRuntime {
   // reuse shared snapshots matching the supplied full prompt.
   void open_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> open_session_async(std::string key);
+
+  // Explicit checkpoint operations, serialized with this key's lifecycle.
+  // Export rejects active/dirty sessions. Restore requires an unused key;
+  // failure leaves the registry unchanged. Only token histories are supported.
+  void export_checkpoint_to_cpu_async(
+      std::string key,
+      batching::Position upto,
+      CheckpointCallback on_complete);
+  void restore_checkpoint_from_cpu_async(
+      std::string key,
+      std::shared_ptr<const SessionCheckpoint> checkpoint,
+      batching::Position upto,
+      LifecycleCallback on_complete);
 
   // Idempotent, including absent keys. Cancels prior same-key requests and
   // releases the logical slot before acknowledging callback quiescence.

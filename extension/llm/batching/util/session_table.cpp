@@ -133,6 +133,35 @@ std::optional<SessionId> SessionTable::clone(SessionId source, Position upto) {
 #endif
 }
 
+cache::CheckpointResult<cache::SequenceCheckpoint>
+SessionTable::export_checkpoint(
+    cache::CheckpointControl& cache,
+    SessionId source,
+    Position upto) {
+  const auto it = sessions_.find(source);
+  if (it == sessions_.end() || upto < 0 || upto > ctl_.pos(it->second.seq_id)) {
+    return cache::CheckpointError{"invalid checkpoint source or position"};
+  }
+  return cache.export_to_cpu(it->second.seq_id, upto);
+}
+
+cache::CheckpointResult<SessionId> SessionTable::restore_checkpoint(
+    cache::CheckpointControl& cache,
+    const cache::SequenceCheckpoint& checkpoint,
+    Position upto) {
+  if (upto < 0 || upto > max_session_tokens_ || next_session_ == 0 ||
+      sessions_.size() >= static_cast<size_t>(max_sessions_)) {
+    return cache::CheckpointError{"checkpoint exceeds session capacity"};
+  }
+  auto result = cache.import_from_cpu(checkpoint, upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&result))
+    return *error;
+  const auto session = publish(std::get<int32_t>(result), upto);
+  if (!session)
+    return cache::CheckpointError{"checkpoint session publication failed"};
+  return *session;
+}
+
 void SessionTable::set_sampling(
     SessionId session,
     const SamplingParams& params,

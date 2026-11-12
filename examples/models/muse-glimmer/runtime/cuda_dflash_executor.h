@@ -200,6 +200,12 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   std::optional<batching::SessionId> clone(
       batching::SessionId source,
       batching::Position upto) override;
+  batching::CheckpointResult<batching::Checkpoint> export_checkpoint_to_cpu(
+      batching::SessionId source,
+      batching::Position upto) override;
+  batching::CheckpointResult<batching::SessionId> restore_checkpoint_from_cpu(
+      const batching::Checkpoint& checkpoint,
+      batching::Position upto) override;
   void set_sampling(
       batching::SessionId session,
       const batching::SamplingParams& params,

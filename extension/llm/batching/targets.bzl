@@ -15,6 +15,7 @@ def define_common_targets():
             "runner.cpp",
         ],
         exported_headers = [
+            "checkpoint.h",
             "decode_first_scheduler.h",
             "executor.h",
             "metrics.h",
@@ -26,6 +27,7 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/platform:compiler",
         ],
     )

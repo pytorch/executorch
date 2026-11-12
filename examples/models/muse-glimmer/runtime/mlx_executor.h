@@ -36,6 +36,12 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
   std::optional<batching::SessionId> clone(
       batching::SessionId source,
       batching::Position upto) override;
+  batching::CheckpointResult<batching::Checkpoint> export_checkpoint_to_cpu(
+      batching::SessionId source,
+      batching::Position upto) override;
+  batching::CheckpointResult<batching::SessionId> restore_checkpoint_from_cpu(
+      const batching::Checkpoint& checkpoint,
+      batching::Position upto) override;
   void set_sampling(
       batching::SessionId session,
       const batching::SamplingParams& params,
@@ -94,6 +100,7 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
   std::unique_ptr<DFlash> dflash_;
   std::unique_ptr<Module> module_;
   cache::BatchControl* const ctl_;
+  cache::CheckpointControl* const checkpoint_ctl_;
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
   std::unique_ptr<MuseGlimmerModelEmbeddings> embeddings_;
   const int max_sessions_;

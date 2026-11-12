@@ -144,3 +144,10 @@ request stop strings remain active. Rebuild the multiplexed worker to include th
 support; no chat-template changes are needed. Generation continues after EOS, but
 the HTTP response only parses and displays the first assistant turn. Usage counts
 include all generated tokens.
+
+### Explicit session checkpoints
+
+Applications can explicitly export committed session state to CPU, save and load
+checkpoint files in Python, and restore a new named session at a retained token
+position. See [the checkpoint API and application flow](CHECKPOINTS.md). These
+operations do not enable automatic disk caching.

@@ -16,11 +16,14 @@ import asyncio
 import json
 import logging
 import math
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+from .checkpoint import CPUCheckpoint
 from .worker_client import (
     _decode_worker_json,
     _PROCESS_WAIT_TIMEOUT_SECONDS,
@@ -77,6 +80,23 @@ async def _read_message(stdout, max_message_bytes):
         return _decode_worker_json(line.decode("utf-8"))
     except UnicodeDecodeError as error:
         raise WorkerError("invalid worker UTF-8") from error
+
+
+async def _settle_checkpoint(operation):
+    task = asyncio.create_task(operation)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    if cancelled:
+        if not task.cancelled():
+            task.exception()
+        raise asyncio.CancelledError
+    return task.result()
 
 
 async def _drain_and_wait(proc):
@@ -564,7 +584,16 @@ class MultiplexedWorkerClient:
         MultiplexedWorkerClient._validate_id(msg.get("request_id"))
         kinds = [
             key
-            for key in ("token", "done", "error", "opened", "closed", "reset")
+            for key in (
+                "token",
+                "done",
+                "error",
+                "opened",
+                "closed",
+                "reset",
+                "exported",
+                "restored",
+            )
             if key in msg
         ]
         if "cancelled" in msg and "done" not in msg:
@@ -814,6 +843,107 @@ class MultiplexedWorkerClient:
         """Close idempotently; return whether it existed, or None for older workers."""
         result = await self._op("close", session_id, "closed")
         return result.get("existed")
+
+    async def export_checkpoint_to_cpu(
+        self, session_id: str, *, position: int, identity: str
+    ) -> CPUCheckpoint:
+        """Export committed state; cancellation waits for native/file I/O settlement."""
+        return await _settle_checkpoint(
+            self._export_checkpoint_to_cpu(
+                session_id, position=position, identity=identity
+            )
+        )
+
+    async def restore_checkpoint_from_cpu(
+        self,
+        checkpoint: CPUCheckpoint,
+        session_id: str,
+        *,
+        position: int,
+        expected_identity: str,
+    ) -> None:
+        """Restore an unused session key at an explicit retained boundary."""
+        await _settle_checkpoint(
+            self._restore_checkpoint_from_cpu(
+                checkpoint,
+                session_id,
+                position=position,
+                expected_identity=expected_identity,
+            )
+        )
+
+    async def _export_checkpoint_to_cpu(
+        self, session_id: str, *, position: int, identity: str
+    ) -> CPUCheckpoint:
+        """Copy an idle session's committed state to owned CPU bytes.
+
+        Identity is the caller's explicit digest of model/tokenizer artifacts
+        and activation-affecting settings. No durable file is created here.
+        """
+        _validate_integer(position, "position", 1, _INT32_MAX)
+        if not isinstance(identity, str) or not identity:
+            raise ValueError("checkpoint identity must be a nonempty string")
+        with tempfile.TemporaryDirectory(prefix="executorch-checkpoint-") as staging:
+            path = Path(staging) / "data"
+            path.touch(mode=0o600)
+            state = self._submit(
+                {
+                    "op": "export_checkpoint",
+                    "session_id": session_id,
+                    "position": position,
+                    "path": str(path),
+                },
+                op="export_checkpoint",
+                ack="exported",
+            )
+            try:
+                # A cancelled Python waiter must not delete the staging file
+                # while native code still owns the operation.
+                result = await asyncio.shield(state.completion)
+                if isinstance(result, WorkerError):
+                    raise result
+                checkpoint = CPUCheckpoint(
+                    identity,
+                    result["manifest"],
+                    await asyncio.to_thread(path.read_bytes),
+                )
+                checkpoint.validate(identity)
+                return checkpoint
+            finally:
+                self._abandon(state)
+
+    async def _restore_checkpoint_from_cpu(
+        self,
+        checkpoint: CPUCheckpoint,
+        session_id: str,
+        *,
+        position: int,
+        expected_identity: str,
+    ) -> None:
+        """Restore a new session at the requested boundary; never choose a fallback."""
+        checkpoint.validate(expected_identity)
+        checkpoint.validate_restore_position(position)
+        with tempfile.TemporaryDirectory(prefix="executorch-checkpoint-") as staging:
+            path = Path(staging) / "data"
+            await asyncio.to_thread(path.write_bytes, checkpoint.data)
+            state = self._submit(
+                {
+                    "op": "restore_checkpoint",
+                    "session_id": session_id,
+                    "position": position,
+                    "path": str(path),
+                    "data_offset": 0,
+                    "manifest": checkpoint.manifest,
+                },
+                op="restore_checkpoint",
+                ack="restored",
+            )
+            try:
+                result = await asyncio.shield(state.completion)
+                if isinstance(result, WorkerError):
+                    raise result
+            finally:
+                self._abandon(state)
 
     async def _cleanup(self):
         self._reader.cancel()

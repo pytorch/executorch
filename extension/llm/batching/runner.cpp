@@ -301,6 +301,12 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::future<std::optional<Session>> clone_async(
       SessionId source,
       Position upto);
+  std::future<CheckpointResult<Checkpoint>> export_checkpoint_to_cpu_async(
+      SessionId source,
+      Position upto);
+  std::future<CheckpointResult<Session>> restore_checkpoint_from_cpu_async(
+      std::shared_ptr<const Checkpoint> checkpoint,
+      Position upto);
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
@@ -437,6 +443,17 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::shared_ptr<std::promise<std::optional<Session>>> ack;
   };
 
+  struct ExportCheckpointCommand {
+    SessionId source;
+    Position upto;
+    std::shared_ptr<std::promise<CheckpointResult<Checkpoint>>> ack;
+  };
+  struct RestoreCheckpointCommand {
+    std::shared_ptr<const Checkpoint> checkpoint;
+    Position upto;
+    std::shared_ptr<std::promise<CheckpointResult<Session>>> ack;
+  };
+
   struct StartCommand {
     GenerationRequest request;
   };
@@ -454,6 +471,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       OpenCommand,
       CloseCommand,
       CloneCommand,
+      ExportCheckpointCommand,
+      RestoreCheckpointCommand,
       StartCommand,
       AcceptsCommand>;
 
@@ -462,6 +481,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void process_command_(OpenCommand command);
   void process_command_(CloseCommand command);
   void process_command_(CloneCommand command);
+  void process_command_(ExportCheckpointCommand command);
+  void process_command_(RestoreCheckpointCommand command);
   void process_command_(StartCommand command);
   void process_command_(AcceptsCommand command);
   std::optional<RetiredSession> retire_session_(SessionId session);
@@ -610,6 +631,23 @@ Position Session::position() const noexcept {
     return 0;
   }
   return state_->status->position.load(std::memory_order_acquire);
+}
+
+std::future<CheckpointResult<Checkpoint>>
+Session::export_checkpoint_to_cpu_async(Position upto) const {
+  if (!state_) {
+    std::promise<CheckpointResult<Checkpoint>> ack;
+    ack.set_value(CheckpointError{"checkpoint source is not open"});
+    return ack.get_future();
+  }
+  return state_->impl->export_checkpoint_to_cpu_async(state_->session, upto);
+}
+
+std::future<CheckpointResult<Session>>
+Runner::restore_checkpoint_from_cpu_async(
+    std::shared_ptr<const Checkpoint> checkpoint,
+    Position upto) {
+  return impl_->restore_checkpoint_from_cpu_async(std::move(checkpoint), upto);
 }
 
 std::future<std::optional<Session>> Session::clone_async(Position upto) const {
@@ -867,6 +905,12 @@ void RunnerImpl::process_pending_commands_() {
             [this](OpenCommand& open) { process_command_(std::move(open)); },
             [this](CloseCommand& close) { process_command_(std::move(close)); },
             [this](CloneCommand& clone) { process_command_(std::move(clone)); },
+            [this](ExportCheckpointCommand& command) {
+              process_command_(std::move(command));
+            },
+            [this](RestoreCheckpointCommand& command) {
+              process_command_(std::move(command));
+            },
             [this](StartCommand& start) { process_command_(std::move(start)); },
             [this](AcceptsCommand& accepts) {
               process_command_(std::move(accepts));
@@ -977,6 +1021,78 @@ void RunnerImpl::process_command_(CloneCommand command) {
     }
     command.ack->set_value(std::nullopt);
   }
+}
+
+void RunnerImpl::process_command_(ExportCheckpointCommand command) {
+  const auto source = sessions_.find(command.source);
+  if (!is_running_() || source == sessions_.end() || source->second.poisoned ||
+      source->second.active_generation || command.upto < 0 ||
+      command.upto > source->second.position()) {
+    command.ack->set_value(CheckpointError{
+        "checkpoint requires an idle, healthy source and a committed position"});
+    return;
+  }
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    command.ack->set_value(
+        executor_.export_checkpoint_to_cpu(command.source, command.upto));
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::exception& error) {
+    command.ack->set_value(CheckpointError{error.what()});
+  } catch (...) {
+    command.ack->set_value(CheckpointError{"checkpoint export failed"});
+  }
+#endif
+}
+
+void RunnerImpl::process_command_(RestoreCheckpointCommand command) {
+  if (!is_running_() || !command.checkpoint || command.upto < 0 ||
+      command.upto > command.checkpoint->position) {
+    command.ack->set_value(
+        CheckpointError{"invalid checkpoint or runner is stopping"});
+    return;
+  }
+  std::optional<SessionId> owned;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    auto result = executor_.restore_checkpoint_from_cpu(
+        *command.checkpoint, command.upto);
+    command.checkpoint.reset();
+    if (auto* error = std::get_if<CheckpointError>(&result)) {
+      command.ack->set_value(*error);
+      return;
+    }
+    const auto sid = std::get<SessionId>(result);
+    if (issued_session_ids_.count(sid)) {
+      command.ack->set_value(
+          CheckpointError{"executor returned a duplicate session id"});
+      return;
+    }
+    owned = sid;
+    issued_session_ids_.insert(sid);
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+      auto status = std::make_shared<SessionStatus>();
+      status->position.store(command.upto, std::memory_order_relaxed);
+      SessionRecord record;
+      record.status = status;
+      sessions_.emplace(sid, std::move(record));
+      command.ack->set_value(Session(std::make_unique<SessionState>(
+          shared_from_this(), sid, std::move(status))));
+      return;
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+  }
+#endif
+  if (owned) {
+    sessions_.erase(*owned);
+    executor_.close_session(*owned);
+  }
+  command.ack->set_value(
+      CheckpointError{"checkpoint restore failed or runner stopped"});
 }
 
 void RunnerImpl::process_command_(StartCommand command) {
@@ -1378,6 +1494,41 @@ std::future<std::optional<Session>> RunnerImpl::clone_async(
       return future;
     }
     inbox_.emplace_back(CloneCommand{source, upto, std::move(ack)});
+  }
+  notify_engine_();
+  return future;
+}
+
+std::future<CheckpointResult<Checkpoint>>
+RunnerImpl::export_checkpoint_to_cpu_async(SessionId source, Position upto) {
+  auto ack = std::make_shared<std::promise<CheckpointResult<Checkpoint>>>();
+  auto future = ack->get_future();
+  {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
+      ack->set_value(CheckpointError{"runner is stopping"});
+      return future;
+    }
+    inbox_.emplace_back(ExportCheckpointCommand{source, upto, std::move(ack)});
+  }
+  notify_engine_();
+  return future;
+}
+
+std::future<CheckpointResult<Session>>
+RunnerImpl::restore_checkpoint_from_cpu_async(
+    std::shared_ptr<const Checkpoint> checkpoint,
+    Position upto) {
+  auto ack = std::make_shared<std::promise<CheckpointResult<Session>>>();
+  auto future = ack->get_future();
+  {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
+      ack->set_value(CheckpointError{"runner is stopping"});
+      return future;
+    }
+    inbox_.emplace_back(
+        RestoreCheckpointCommand{std::move(checkpoint), upto, std::move(ack)});
   }
   notify_engine_();
   return future;
