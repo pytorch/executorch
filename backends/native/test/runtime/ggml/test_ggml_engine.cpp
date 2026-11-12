@@ -282,9 +282,18 @@ std::unique_ptr<GgmlEngineContext> make_context(
       host, program_bytes, kquant_block(kQ4KBlockBytes), options);
 }
 
-// A tensor (by name), an int, a float, an int list, or None.
-using TestArg = std::
-    variant<std::string, int64_t, double, std::vector<int64_t>, std::monostate>;
+// An optional tensor list: a tensor name per entry, or nullopt for None.
+using TestOptionalTensors = std::vector<std::optional<std::string>>;
+
+// A tensor (by name), an int, a float, an int list, None, or an optional
+// tensor list.
+using TestArg = std::variant<
+    std::string,
+    int64_t,
+    double,
+    std::vector<int64_t>,
+    std::monostate,
+    TestOptionalTensors>;
 
 // A one-method program assembled value by value; every node's output value
 // carries the node's name.
@@ -450,6 +459,22 @@ class TestProgram {
           builder_,
           fbs::ArgumentValue::IntListArg,
           fbs::CreateIntListArgDirect(builder_, list).Union());
+    }
+    if (const auto* tensors = std::get_if<TestOptionalTensors>(&arg)) {
+      std::vector<flatbuffers::Offset<flatbuffers::String>> names;
+      std::vector<uint8_t> has_value;
+      for (const auto& name : *tensors) {
+        names.push_back(builder_.CreateString(name.value_or("")));
+        has_value.push_back(name.has_value());
+      }
+      return fbs::CreateArgument(
+          builder_,
+          fbs::ArgumentValue::OptionalTensorListArg,
+          fbs::CreateOptionalTensorListArg(
+              builder_,
+              builder_.CreateVector(names),
+              builder_.CreateVector(has_value))
+              .Union());
     }
     return fbs::CreateArgument(
         builder_,
@@ -2289,6 +2314,39 @@ TEST(GgmlEngineTest, OffGraphAttentionNeedsAMatchingCache) {
       make_context(*host, make_update_and_attend_program(1), narrow.options)
           ->compile("forward"),
       std::runtime_error);
+}
+
+// x[:, rows] of a [1, T, D] x, as Hugging Face selects logits_to_keep rows.
+TEST(GgmlEngineTest, GathersRowsAfterALeadingOne) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 6, 8});
+  program.input("rows", fbs::ScalarType::LONG, {2});
+  program.call(
+      "selected",
+      "torch.ops.aten.index.Tensor",
+      {{"self", std::string("x")},
+       {"indices", TestOptionalTensors{std::nullopt, "rows"}}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 8});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("selected"));
+  auto executable = context->compile("forward");
+  std::vector<float> x(48);
+  std::iota(x.begin(), x.end(), 0.0f);
+  const std::vector<int64_t> rows = {4, 1};
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(1, rows.data(), rows.size(), ScalarType::Long);
+  executable->execute();
+  EXPECT_EQ(executable->output_sizes(0), (std::vector<int64_t>{1, 2, 8}));
+  std::vector<float> out(16);
+  executable->get_output(0, out.data(), out.size(), ScalarType::Float);
+  for (int64_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(out[i], x[4 * 8 + i]);
+    EXPECT_EQ(out[8 + i], x[1 * 8 + i]);
+  }
+  const std::vector<int64_t> outside = {6, 0};
+  executable->set_input(1, outside.data(), outside.size(), ScalarType::Long);
+  EXPECT_ANY_THROW(executable->execute());
 }
 
 TEST(GgmlEngineTest, RejectsQuantizedGraphInputsAndOutputs) {
