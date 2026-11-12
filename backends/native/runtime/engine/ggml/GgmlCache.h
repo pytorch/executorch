@@ -15,6 +15,7 @@
 #include <ggml-cpp.h>
 #include <ggml.h>
 
+#include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 
 namespace ptn {
@@ -104,6 +105,53 @@ class GgmlSequenceCache final
 
  private:
   GgmlKvPool pool_;
+};
+
+// The off-graph KV cache of many sequences for the ggml engine: the neutral
+// CellCache over a GgmlKvPool whose rows are its cells, every layer growing
+// toward the pool's capacity. A step's cells and masks come from place_step; a
+// windowed layer keeps every cell and its mask narrows to the window. Like
+// CellCache, it is not thread-safe: executables bound to one cache must be
+// serialized.
+class GgmlCellCache final
+    : public executorch::extension::llm::cache::CellCache {
+ public:
+  static constexpr const char* kFaceName = "ptn.ggml.CellCache";
+
+  // Throws on geometry or config the ggml engine cannot serve.
+  GgmlCellCache(
+      const executorch::extension::llm::cache::CacheGeometry& geometry,
+      const executorch::extension::llm::cache::CacheConfig& cfg);
+
+  GgmlCellCache(const GgmlCellCache&) = delete;
+  GgmlCellCache& operator=(const GgmlCellCache&) = delete;
+
+  GgmlKvPool& pool() {
+    return pool_;
+  }
+
+ protected:
+  void* face(executorch::extension::llm::cache::FaceId id) override;
+
+ private:
+  GgmlKvPool pool_;
+};
+
+// The off-graph cache an executable binds: its storage and its layout, one of
+// a single sequence or cells.
+struct GgmlKvCache {
+  GgmlSequenceCache* sequence = nullptr;
+  GgmlCellCache* cells = nullptr;
+
+  explicit operator bool() const {
+    return sequence != nullptr || cells != nullptr;
+  }
+  GgmlKvPool& pool() const {
+    return sequence != nullptr ? sequence->pool() : cells->pool();
+  }
+  int capacity() const {
+    return sequence != nullptr ? sequence->capacity() : cells->capacity();
+  }
 };
 
 } // namespace ptn

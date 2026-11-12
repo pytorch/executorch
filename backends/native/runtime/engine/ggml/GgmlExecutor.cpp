@@ -50,6 +50,7 @@ namespace ptn {
 namespace {
 
 using namespace ggml_detail;
+namespace cache = executorch::extension::llm::cache;
 using executorch::extension::llm::cache::Run;
 using executorch::extension::llm::cache::SeqStepPlan;
 
@@ -166,7 +167,7 @@ class GgmlExecutable final : public EngineExecutable {
       size_t* materialized_constant_bytes,
       size_t* heap_copied_constant_bytes,
       GgmlMutableKeyOwners& mutable_key_owners,
-      GgmlSequenceCache* kv_cache)
+      GgmlKvCache kv_cache)
       : mutable_key_claim_(mutable_key_owners, method),
         method_(method),
         package_(package),
@@ -267,13 +268,15 @@ class GgmlExecutable final : public EngineExecutable {
       offgraph_step_ = checked_offgraph_step();
     }
 
-    // A step that fails before its graph runs leaves the cache unchanged; one
-    // that fails while running may have written rows from its start.
+    // A cell step ends with its forward, giving back the cells it claimed if
+    // the forward fails. A sequence step that fails before its graph runs
+    // leaves the sequence unchanged; one that fails while running may have
+    // written rows from its start.
     bool ran = false;
     std::optional<SeqStepPlan> step;
     try {
       if (valid(offgraph_position_)) {
-        bind_offgraph(offgraph_step_->start + offgraph_step_->tokens);
+        bind_offgraph(offgraph_step_->rows);
       }
       if (options_.max_cached_graphs == 0) {
         ggml_backend_sched_reset(scheduler_.get());
@@ -301,17 +304,23 @@ class GgmlExecutable final : public EngineExecutable {
         }
       }
     } catch (...) {
-      if (ran && valid(offgraph_position_) &&
-          offgraph_step_->start < kv_cache_->length()) {
-        kv_cache_->rewind(static_cast<int>(offgraph_step_->start));
+      if (valid(offgraph_position_) && kv_cache_.cells != nullptr) {
+        kv_cache_.cells->abandon_step();
+      } else if (
+          ran && valid(offgraph_position_) &&
+          offgraph_step_->positions.front() < kv_cache_.sequence->length()) {
+        kv_cache_.sequence->rewind(offgraph_step_->positions.front());
       }
       throw;
     }
     if (step) {
-      if (offgraph_step_->start < kv_cache_->length()) {
-        kv_cache_->rewind(static_cast<int>(offgraph_step_->start));
+      if (offgraph_step_->positions.front() < kv_cache_.sequence->length()) {
+        kv_cache_.sequence->rewind(offgraph_step_->positions.front());
       }
-      kv_cache_->commit(*step);
+      kv_cache_.sequence->commit(*step);
+    }
+    if (valid(offgraph_position_) && kv_cache_.cells != nullptr) {
+      kv_cache_.cells->end_step();
     }
     executed_ = true;
   }
@@ -1246,8 +1255,8 @@ class GgmlExecutable final : public EngineExecutable {
               : mask.keys);
     }
     if (valid(offgraph_position_)) {
-      // The cache rows up to the step's last position, bucketed like masks.
-      const int64_t needed = offgraph_step_->start + offgraph_step_->tokens;
+      // The cache rows the step reads, bucketed like masks.
+      const int64_t needed = offgraph_step_->rows;
       out.push_back(std::min<int64_t>(
           offgraph_storage_->rows,
           (needed + kKeyExtentBucket - 1) / kKeyExtentBucket *
@@ -1280,7 +1289,7 @@ class GgmlExecutable final : public EngineExecutable {
     if (!valid(offgraph_position_)) {
       return;
     }
-    if (kv_cache_ == nullptr) {
+    if (!kv_cache_) {
       throw std::runtime_error(
           "ggml: method '" + method_.name +
           "' calls kvcache.update_and_attend but its context has no KV "
@@ -1293,15 +1302,15 @@ class GgmlExecutable final : public EngineExecutable {
   // the graphs built over the old storage, which this executable keeps alive
   // until then.
   void bind_offgraph(int64_t rows) {
-    kv_cache_->pool().reserve(primary_backend_, static_cast<int>(rows));
-    if (kv_cache_->pool().storage() == offgraph_storage_) {
+    kv_cache_.pool().reserve(primary_backend_, static_cast<int>(rows));
+    if (kv_cache_.pool().storage() == offgraph_storage_) {
       return;
     }
     for (CachedGraph& cached : cached_graphs_) {
       ggml_backend_sched_synchronize(cached.scheduler.get());
     }
     cached_graphs_.clear();
-    offgraph_storage_ = kv_cache_->pool().storage();
+    offgraph_storage_ = kv_cache_.pool().storage();
     offgraph_cache_.layers.clear();
     for (const GgmlKvPool::Layer& layer : offgraph_storage_->layers) {
       offgraph_cache_.layers.push_back(
@@ -1313,14 +1322,13 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   struct OffGraphStep {
-    int64_t start;
-    int64_t tokens;
+    // Per token, its logical position.
+    std::vector<int32_t> positions;
+    // Cache rows the step reads, which storage must hold.
+    int64_t rows;
   };
 
-  // Reads the step's positions on the host and checks they are consecutive,
-  // fit the cache, and start no later than the sequence's length, at a
-  // position the sequence can rewind to. A step that starts earlier rewinds
-  // the sequence to its start once it has run.
+  // Reads the step's positions on the host and checks them against the cache.
   OffGraphStep checked_offgraph_step() {
     HostIntEvaluator host = host_evaluator();
     const HostInts* values = host.tensor(offgraph_position_);
@@ -1329,7 +1337,38 @@ class GgmlExecutable final : public EngineExecutable {
           "ggml: update_and_attend positions must be computable on the host "
           "from graph inputs");
     }
-    const std::vector<int64_t>& positions = values->data;
+    OffGraphStep step;
+    for (const int64_t position : values->data) {
+      if (position < 0 || position >= kv_cache_.capacity()) {
+        throw std::out_of_range(
+            "ggml: KV cache position " + std::to_string(position) +
+            " is outside the cache capacity of " +
+            std::to_string(kv_cache_.capacity()));
+      }
+      step.positions.push_back(static_cast<int32_t>(position));
+    }
+    if (kv_cache_.cells != nullptr) {
+      // Placing the step claims its cells for every layer of the forward.
+      const cache::CellStep* placed = kv_cache_.cells->place_step(
+          0, step.positions.data(), static_cast<int>(step.positions.size()));
+      if (placed == nullptr) {
+        throw std::invalid_argument(
+            "ggml: the cell cache refused the step: declare it first, with "
+            "positions continuing each sequence and room in the pool");
+      }
+      step.rows = placed->read_len;
+      return step;
+    }
+    step.rows = checked_sequence_step(step.positions);
+    return step;
+  }
+
+  // Checks a single-sequence step's positions are consecutive, fit the cache,
+  // and start no later than the sequence's length, at a position the sequence
+  // can rewind to, and returns the rows it reads. A step that starts earlier
+  // rewinds the sequence to its start once it has run.
+  int64_t checked_sequence_step(const std::vector<int32_t>& positions) {
+    GgmlSequenceCache& sequence = *kv_cache_.sequence;
     const int64_t start = positions.front();
     for (size_t i = 0; i < positions.size(); ++i) {
       if (positions[i] != start + static_cast<int64_t>(i)) {
@@ -1338,25 +1377,25 @@ class GgmlExecutable final : public EngineExecutable {
       }
     }
     const auto tokens = static_cast<int64_t>(positions.size());
-    if (start < 0 || start + tokens > kv_cache_->capacity()) {
+    if (start + tokens > sequence.capacity()) {
       throw std::out_of_range(
           "ggml: KV cache step [" + std::to_string(start) + ", " +
           std::to_string(start + tokens) + ") exceeds the cache capacity of " +
-          std::to_string(kv_cache_->capacity()));
+          std::to_string(sequence.capacity()));
     }
-    if (start > kv_cache_->length()) {
+    if (start > sequence.length()) {
       throw std::invalid_argument(
           "ggml: KV cache step starts at position " + std::to_string(start) +
           ", past the sequence's length of " +
-          std::to_string(kv_cache_->length()));
+          std::to_string(sequence.length()));
     }
-    if (start < kv_cache_->length() &&
-        !kv_cache_->can_rewind(static_cast<int>(start))) {
+    if (start < sequence.length() &&
+        !sequence.can_rewind(static_cast<int>(start))) {
       throw std::runtime_error(
           "ggml: the KV cache cannot rewind to position " +
           std::to_string(start));
     }
-    return {start, tokens};
+    return start + tokens;
   }
 
   // Plans the step on the cache and fills each window's cache rows and mask.
@@ -1366,13 +1405,18 @@ class GgmlExecutable final : public EngineExecutable {
       return std::nullopt;
     }
     const OffGraphUploads& slots = *instance.offgraph;
-    if (offgraph_step_->tokens != slots.tokens) {
+    if (static_cast<int64_t>(offgraph_step_->positions.size()) !=
+        slots.tokens) {
       throw std::runtime_error(
           "ggml: update_and_attend needs one position per token");
     }
-    const int64_t start = offgraph_step_->start;
+    if (kv_cache_.cells != nullptr) {
+      prepare_cell_step(instance);
+      return std::nullopt;
+    }
+    const int64_t start = offgraph_step_->positions.front();
     const auto plan_layer = [&](int layer) {
-      const std::optional<SeqStepPlan> plan = kv_cache_->plan(
+      const std::optional<SeqStepPlan> plan = kv_cache_.sequence->plan(
           layer, static_cast<int>(start), static_cast<int>(slots.tokens));
       if (!plan) {
         throw std::runtime_error(
@@ -1434,6 +1478,39 @@ class GgmlExecutable final : public EngineExecutable {
       committed = plan;
     }
     return committed;
+  }
+
+  // Fills each window's cache rows and mask from the placed cell step, which
+  // every layer of the forward shares.
+  void prepare_cell_step(GraphInstance& instance) {
+    const OffGraphUploads& slots = *instance.offgraph;
+    const ggml_fp16_t attend = ggml_fp32_to_fp16(0.0f);
+    const ggml_fp16_t masked =
+        ggml_fp32_to_fp16(-std::numeric_limits<float>::infinity());
+    for (const OffGraphUploads::Group& group : slots.groups) {
+      const cache::CellStep* step = kv_cache_.cells->place_step(
+          group.layer,
+          offgraph_step_->positions.data(),
+          static_cast<int>(slots.tokens));
+      if (step == nullptr || step->read_len > group.keys ||
+          static_cast<int64_t>(step->cells.size()) != slots.tokens) {
+        throw std::logic_error("ggml: the cell step does not fit the graph");
+      }
+      std::vector<uint8_t>& rows = instance.uploads[group.rows].bytes;
+      rows.resize(step->cells.size() * sizeof(int32_t));
+      std::memcpy(rows.data(), step->cells.data(), rows.size());
+      std::vector<uint8_t>& mask = instance.uploads[group.mask].bytes;
+      mask.resize(
+          static_cast<size_t>(slots.tokens * group.keys) * sizeof(ggml_fp16_t));
+      auto* bias = reinterpret_cast<ggml_fp16_t*>(mask.data());
+      for (int64_t i = 0; i < slots.tokens; ++i) {
+        const uint8_t* bits = step->mask_bits.data() + i * step->read_len;
+        for (int64_t j = 0; j < group.keys; ++j) {
+          bias[i * group.keys + j] =
+              j < step->read_len && bits[j] != 0 ? attend : masked;
+        }
+      }
+    }
   }
 
   // Small integer constants, e.g. a key offset, read once from the package.
@@ -1505,7 +1582,7 @@ class GgmlExecutable final : public EngineExecutable {
   const Method& method_;
   const Package& package_;
   GgmlEngineOptions options_;
-  GgmlSequenceCache* kv_cache_;
+  GgmlKvCache kv_cache_;
   // The position tensor of the method's update_and_attend calls, if any.
   ValueId offgraph_position_ = kInvalid;
   // Cache storage; build_graph sets the keys per graph.
@@ -1607,7 +1684,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
     GgmlMutableKeyOwners& mutable_key_owners,
-    GgmlSequenceCache* kv_cache) {
+    GgmlKvCache kv_cache) {
   return std::make_unique<GgmlExecutable>(
       method,
       package,

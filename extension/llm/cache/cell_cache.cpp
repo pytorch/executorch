@@ -208,6 +208,27 @@ CellCache::place_step(int layer, const int32_t* positions, int length) {
   return &step_for(windows_[layer]);
 }
 
+void CellCache::end_step() {
+  invalidate_steps();
+}
+
+void CellCache::abandon_step() {
+  if (!placed_) {
+    return;
+  }
+  // Each sequence's first position in the step.
+  std::map<int32_t, int32_t> starts;
+  for (size_t i = 0; i < step_seq_ids_.size(); ++i) {
+    const auto [it, inserted] =
+        starts.try_emplace(step_seq_ids_[i], step_pos_[i]);
+    it->second = std::min(it->second, step_pos_[i]);
+  }
+  for (const auto& [seq_id, start] : starts) {
+    drop_from(seq_id, start);
+  }
+  invalidate_steps();
+}
+
 // -- internals ---------------------------------------------------------------
 
 uint64_t CellCache::bit(int32_t seq_id) {

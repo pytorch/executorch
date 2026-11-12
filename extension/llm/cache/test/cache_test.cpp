@@ -684,6 +684,34 @@ TEST_F(CacheTest, CellVerbBetweenLayersInvalidatesTheStep) {
   EXPECT_EQ(c.place(1, {2}), nullptr);
 }
 
+TEST_F(CacheTest, CellEndedStepIsNotReServed) {
+  Cells c(16);
+  const int32_t s0 = c.seq_new();
+  ASSERT_NE(c.step(flatten_step({{s0, 0, 2}})), nullptr);
+  ASSERT_NE(c.place(1, {0, 1}), nullptr); // another layer of the same forward
+
+  c.cache.end_step();
+  EXPECT_EQ(c.place(0, {0, 1}), nullptr); // a later forward must declare
+  c.cache.abandon_step(); // nothing placed, so nothing to give back
+  EXPECT_EQ(c.ctl->pos(s0), 2);
+}
+
+TEST_F(CacheTest, CellAbandonedStepGivesBackItsCells) {
+  Cells c(16);
+  const int32_t s0 = c.seq_new();
+  const int32_t s1 = c.seq_new();
+  c.step(flatten_step({{s0, 0, 3}}));
+  c.cache.end_step();
+  ASSERT_NE(c.step(flatten_step({{s0, 3, 1}, {s1, 0, 2}})), nullptr);
+
+  c.cache.abandon_step();
+  EXPECT_EQ(c.ctl->pos(s0), 3);
+  EXPECT_EQ(c.ctl->pos(s1), 0);
+  EXPECT_EQ(c.cache.free_cells(), 13);
+  // The same step runs again once declared.
+  EXPECT_NE(c.step(flatten_step({{s0, 3, 1}, {s1, 0, 2}})), nullptr);
+}
+
 TEST_F(CacheTest, CellRewindDropsTheTail) {
   Cells c(16);
   const int32_t s0 = c.seq_new();
