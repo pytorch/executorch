@@ -724,6 +724,135 @@ TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
   }
 }
 
+// x [4, 3], or its transpose, to the power `exponent`.
+std::vector<uint8_t> make_pow_program(
+    const TestArg& exponent,
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.pow.Tensor_Scalar",
+      {{"self", self}, {"exponent", exponent}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// x * x computed in double rounds to the correctly rounded float, so the
+// results, NaN and the sign of zero must match exactly.
+TEST(GgmlEngineTest, PowByTwoSquaresExactly) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -4.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f,
+      3e38f,
+      8.5f};
+  for (const TestArg& exponent : {TestArg{int64_t{2}}, TestArg{2.0}}) {
+    for (const bool transposed : {false, true}) {
+      for (const size_t cached : {size_t{0}, size_t{1}}) {
+        SCOPED_TRACE(
+            std::string(
+                std::holds_alternative<double>(exponent) ? "2.0" : "2") +
+            "/" + std::to_string(transposed) + "/" + std::to_string(cached));
+        auto host = GgmlEngineHost::create(
+            GgmlEngineOptions{.max_cached_graphs = cached});
+        auto context =
+            make_context(*host, make_pow_program(exponent, transposed));
+        auto executable = context->compile("forward");
+        for (const float scale : {1.0f, -0.5f}) {
+          std::vector<float> input = x;
+          for (float& value : input) {
+            value *= scale;
+          }
+          executable->set_input(
+              0, input.data(), input.size(), ScalarType::Float);
+          executable->execute();
+          std::vector<float> y(input.size());
+          executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+          for (size_t i = 0; i < y.size(); ++i) {
+            // y[r][c] reads x[c][r] when transposed.
+            const double value = input[transposed ? (i % 4) * 3 + i / 4 : i];
+            const auto expected = static_cast<float>(value * value);
+            SCOPED_TRACE(value);
+            if (std::isnan(expected)) {
+              EXPECT_TRUE(std::isnan(y[i])) << y[i];
+            } else {
+              EXPECT_EQ(y[i], expected);
+              EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// pow(x, 0.5) only needs to reach ggml_sqrt, whose values the sqrt test covers:
+// -0 tells it apart from C's pow, which gives +0.
+TEST(GgmlEngineTest, PowByHalfIsSqrt) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, make_pow_program(0.5, false));
+  auto executable = context->compile("forward");
+  std::vector<float> x(12, 6.25f);
+  x[0] = -0.0f;
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  std::vector<float> y(x.size());
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  EXPECT_EQ(y[0], 0.0f);
+  EXPECT_TRUE(std::signbit(y[0]));
+  EXPECT_EQ(
+      std::vector<float>(y.begin() + 1, y.end()), std::vector<float>(11, 2.5f));
+}
+
+TEST(GgmlEngineTest, RejectsUnsupportedPow) {
+  expect_compile_error(
+      make_pow_program(3.0, false), "exponents 2 and 0.5 only, not 3");
+  expect_compile_error(make_pow_program(1e-7, false), "only, not 1e-07");
+  expect_compile_error(
+      make_pow_program(2.0000001, false), "only, not 2.0000001");
+  expect_compile_error(
+      make_pow_program(0.5, false, fbs::ScalarType::HALF),
+      "supports Float tensors only, not Half");
+  // The Long sum is carried as F32, but ATen squares it as an integer.
+  TestProgram program;
+  program.input("i", fbs::ScalarType::LONG, {4, 3});
+  program.call(
+      "s",
+      "torch.ops.aten.add.Tensor",
+      {{"self", std::string("i")}, {"other", std::string("i")}},
+      fbs::ScalarType::LONG,
+      {4, 3});
+  program.call(
+      "y",
+      "torch.ops.aten.pow.Tensor_Scalar",
+      {{"self", std::string("s")}, {"exponent", int64_t{2}}},
+      fbs::ScalarType::LONG,
+      {4, 3});
+  expect_compile_error(
+      program.finish("y"), "supports Float tensors only, not Long");
+}
+
 // tanh of x [4, 3], or of its transpose.
 std::vector<uint8_t> make_tanh_program(
     bool transposed,

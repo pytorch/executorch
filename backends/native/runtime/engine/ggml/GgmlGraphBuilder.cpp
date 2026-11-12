@@ -697,6 +697,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_hardtanh(node);
   } else if (key == "aten.sqrt.default") {
     lower_sqrt(node);
+  } else if (key == "aten.pow.Tensor_Scalar") {
+    lower_pow(node);
   } else if (key == "aten.convolution.default") {
     lower_convolution(node);
   } else if (key == "aten._native_batch_norm_legit_no_training.default") {
