@@ -19,7 +19,7 @@ conda install -y cmake
 # Activate the VS environment - this is required for MSVC to work.
 & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64
 
-# Install glslc (via conda-forge shaderc) and put it on PATH in this process.
+# Install glslc (a pinned shaderc build) and put it on PATH in this process.
 .ci/scripts/setup-vulkan-windows-deps.ps1
 
 # Install CI requirements
