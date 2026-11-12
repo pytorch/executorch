@@ -90,5 +90,5 @@ class FromCalibrationDataDatasetCreator(BaseDatasetCreator):
 
             example_tensors = example if isinstance(example, list) else [example]
             for spec_idx, tensor in enumerate(example_tensors):
-                bin_file_name = f"{dataset_dir_path}/example_{label}_{cl}_{i}_i{str(spec_idx).zfill(2)}.bin"
+                bin_file_name = f"{dataset_dir_path}/example_{label}_{cl}_{i}_i{str(spec_idx).zfill(4)}.bin"
                 tensor.numpy().tofile(bin_file_name)
