@@ -25,11 +25,29 @@ framework/                Parsing, graph setup, validation, timing, and reportin
 operators/                CPU references, routes, throughput counters, and checks
   <family>/.../cases/      JSON case collections by operator and quantization scheme
 examples/                 Small shader and operator configuration examples
+format_json.py            Formatter for the JSON files
 ```
 
 Each expanded case runs separately. Shader variants can share one binding
 interface through `shader_sweep`; operators can sweep argument sets, dtype and
 storage variables, and execution routes.
+
+## Formatting JSON files
+
+`format_json.py` keeps a JSON value on one line when its one-line form is at
+most 200 characters, not counting its key and indentation, and lists longer
+objects and arrays one entry per line. An object with one entry is measured by
+that entry's value. Parsed content is unchanged, and files with duplicate keys
+are rejected.
+
+The `ETVKJSONFORMAT` lintrunner linter checks these files, and `lintrunner -a`
+formats them. To format without lintrunner, run the script; without paths, it
+formats every JSON file under `benchmark_v2`. Other formatters, such as
+Prettier on save, expand these files; format them again afterwards.
+
+```sh
+python3 backends/vulkan/test/ops/benchmark_v2/format_json.py [PATH ...]
+```
 
 ## Building with CMake
 
@@ -81,6 +99,7 @@ name; tensor and benchmark settings belong in the JSON file.
 | `--error_mode=report\|throw\|skip` | `report` | Report failures and continue, stop on the first failure, or disable validation. Unsupported cases report `SKIP`. |
 | `--validate_specs` | `false` | Audit schemas and registrations without allocating case tensors or running GPU work. |
 | `--validation_only` | `false` | Run correctness checks without calibration or timing passes. Requires validation enabled. |
+| `--fault_rel=<r>` | none | Test hook: scale every GPU output by `1 + r` before validation. Reports record `fault_rel`. |
 | `--table_name_max_chars=<N>` | `32` | Limit shader/operator names in table output; `0` disables truncation. |
 | `--table_inputs_max_chars=<N>` | `64` | Limit table input strings; `0` disables truncation. |
 | `--helpshort` | — | Show the binary's flags and defaults. |
@@ -289,7 +308,7 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default`, `et_vk.conv_with_clamp.default` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
@@ -379,8 +398,9 @@ The shared `reference: "copy"` checks identical logical outputs for both shaders
 
 The global picker is `default_pick_gwg`. It uses the first tensor binding whose
 `access` is `write` or `read_write`: logical element count for buffers, texture
-extents for textures. Local pickers are `default_pick_lwg`, `pick_required_lwg`,
-`pick_xy_square_lwg`, `pick_xz_square_lwg`, and `pick_120shape_lwg`.
+extents for textures. Local pickers are `default_pick_lwg`, `pick_balanced_lwg`,
+`pick_required_lwg`, `pick_xy_square_lwg`, `pick_xz_square_lwg`, and
+`pick_120shape_lwg`.
 `pick_required_lwg` needs a global grid with a wrapping hint, such as the default
 buffer grid. Unsupported names produce a case error.
 
@@ -745,10 +765,12 @@ case that reproduces its dispatch.
 input `[1, 64, 128, 128]` and weight `[128, 64, 3, 3]`. Each dispatch covers a
 113-row output tile, so K = 3 x 3 x 64 = 576, M = 113 x 128 = 14464, and
 N = 128. The bindings follow the shader interface: the output, the `[M, K]`
-im2col tile, the `[K/4, N/4 x 16]` packed weight, the bias, and the output sizes
-UBO. The push constants are `(K/4, row offset, rows per tile, 0)` followed by
-unused clamp bounds. This shader has no registered CPU reference, so run the
-example with `--validation_mode=none`.
+im2col tile, the `[K/4, N/4 x 16]` packed weight, the bias, one-element residual
+and residual scale tensors, and the output sizes UBO. The specialization
+constants disable the epilogue, so the residual and scale are never read. The
+push constants are `(K/4, row offset, rows per tile, 0)` followed by the unused
+activation bounds and residual alpha. This shader has no registered CPU
+reference, so run the example with `--validation_mode=none`.
 
 The window boundaries are printed to stderr as they occur:
 
@@ -937,6 +959,19 @@ finite and nonnegative. FP16 accumulation may require larger tolerances for
 long reductions. Reports include per-output mismatch counts and error maxima,
 and `reference_wall_time_us`, without tensor values.
 
+Each output also reports `mean_abs_error`, `rms_error`, and `reference_rms` over
+its finite elements. RMS error is a stable measure of precision: comparing
+`rms_error` between two builds on the same inputs shows error growth that the
+pass/fail tolerances can hide. Statistics without a finite element are null.
+
+`--fault_rel=<r>` scales every GPU output by `1 + r` before the comparison, so a
+correctness gate can be shown to fail on a known error; each validation report
+then records `fault_rel`. The injected error is `r * abs(expected)`, so
+`is_close` fails only where `r > rtol + atol / abs(expected)`: `r = 0.01` fails
+FP32 cases at the default tolerances but no FP16 case, whose defaults are
+`atol=rtol=1e-2`. Use `r = 0.1` or more for FP16 cases, or gate on `rms_error`
+growth against a baseline run.
+
 ## Operator source organization
 
 Operator code follows family and quantization-scheme folders, using the production
@@ -1028,7 +1063,8 @@ outputs according to `--validation_mode`. Use
 `--validation_only` to execute GPU correctness checks without calibration or
 benchmark passes; it requires `--validation_mode=all` or `first` and
 `--error_mode=report` or `throw`. With `first`, remaining cases report `SKIP`
-without allocating tensors or executing benchmark passes.
+without allocating tensors or executing benchmark passes. Validation-only
+operator reports list the operator's `execute_nodes`, as timed reports do.
 
 Device support is determined while constructing and executing each case. The
 binary catches ET-VK `ShaderNotSupportedError` and unsupported-route exceptions
@@ -1041,6 +1077,15 @@ than executing cases to establish device support.
 Validation-only `check` cases return PASS, FAIL, or SKIP with diagnostic details;
 they have no latency measurements. Unselected checks report `SKIP`, including
 all checks under `--validation_mode=none` or `--error_mode=skip`.
+
+The built-in `operator_dynamic_resize` check tests operators under dynamic
+shapes. `parameters.operator_case` must expand to one case, which the check
+builds once at its declared sizes; they bound every later size. For each
+`validation_steps` entry it resizes the staged inputs listed in `tensor_sizes`,
+checks that the output named by `parameters.output_name` resized to
+`expected_output_sizes`, executes the graph, and validates the output unless the
+step sets `validate_output` to false. See the `dynamic_resize` cases in
+`convolution/conv2d/cases/correctness.json`.
 
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:

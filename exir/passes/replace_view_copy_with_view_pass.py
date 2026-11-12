@@ -274,6 +274,7 @@ class _ViewSpec(TensorSpec):
             "mem_offset",
             "storage_base",
             "storage_base_offset",
+            "min_allocated_memory",
             "dtype",  # property
             "extra_tensor_info",  # property
             "device",

@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
+import json
+import re
 import stat
 import struct
 import tempfile
@@ -11,6 +14,30 @@ import unittest
 from pathlib import Path
 
 from runtime import gen_vulkan_spv
+
+
+class TestF16ImageStores(unittest.TestCase):
+    def test_writable_rgba16f_images_round_stores(self) -> None:
+        for access in ("w", "rw"):
+            with self.subTest(access=access):
+                declaration = gen_vulkan_spv.layout_declare_image(
+                    0, access, "t_out", "half"
+                )
+                self.assertIn("round_to_f16(texel)", declaration)
+
+    def test_f16_texels_skip_rounding_in_f16_shaders(self) -> None:
+        declaration = gen_vulkan_spv.layout_declare_image(0, "w", "t_out", "half")
+        self.assertIn(
+            "#ifdef HAS_FLOAT16_ACCUMULATION\n"
+            "vec4 round_to_f16(const f16vec4 v) { return vec4(v); }",
+            declaration,
+        )
+
+    def test_other_images_store_unchanged(self) -> None:
+        for access, dtype in (("r", "half"), ("w", "float"), ("w", "int32")):
+            with self.subTest(access=access, dtype=dtype):
+                declaration = gen_vulkan_spv.layout_declare_image(0, access, "t", dtype)
+                self.assertNotIn("round_to_f16", declaration)
 
 
 class TestNestedShaderSources(unittest.TestCase):
@@ -261,6 +288,274 @@ class TestNestedShaderSources(unittest.TestCase):
             generator.generateSPV(output_dir, cache_dir, nthreads=1)
 
             self.assertEqual(compiler_log.read_text().splitlines(), ["compile"])
+
+    def test_selection_preserves_helpers_but_omits_unselected_glsl(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_root = root / "src"
+            self._write_shader(source_root / "keep", "kept")
+            self._write_shader(source_root / "drop", "dropped")
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=None,
+                shader_regexes=[re.compile("kept")],
+            )
+            self.assertEqual(
+                set(generator.output_file_map),
+                {"keep/kept", "keep/common", "drop/common"},
+            )
+            output_dir, cache_dir = root / "out", root / "cache"
+            output_dir.mkdir()
+            cache_dir.mkdir()
+            generator.generateSPV(output_dir, cache_dir, nthreads=1)
+            self.assertTrue((output_dir / "keep" / "kept.glsl").is_file())
+            self.assertTrue((output_dir / "keep" / "common.glslh").is_file())
+            self.assertFalse((output_dir / "drop" / "dropped.glsl").exists())
+
+    def test_selection_does_not_embed_stale_cached_shaders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_root = root / "src"
+            self._write_shader(source_root / "keep", "kept")
+            self._write_shader(source_root / "drop", "dropped")
+            output_dir, cache_dir = root / "out", root / "cache"
+            output_dir.mkdir()
+            cache_dir.mkdir()
+            compiler, compiler_log = self._write_fake_compiler(root)
+            full_generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=str(compiler)
+            )
+            full_spv = full_generator.generateSPV(output_dir, cache_dir, nthreads=1)
+            self.assertEqual(sum(path is not None for path in full_spv), 2)
+            selected_generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=str(compiler),
+                shader_regexes=[re.compile("kept")],
+            )
+            selected_spv = selected_generator.generateSPV(
+                output_dir, cache_dir, nthreads=1
+            )
+            self.assertEqual(sum(path is not None for path in selected_spv), 1)
+            self.assertEqual(
+                compiler_log.read_text().splitlines(), ["compile", "compile"]
+            )
+            cpp_path = output_dir / "spv.cpp"
+            gen_vulkan_spv.genCppFiles(
+                selected_spv, str(output_dir / "spv.h"), str(cpp_path)
+            )
+            self.assertIn("kept_bin", cpp_path.read_text())
+            self.assertNotIn("dropped_bin", cpp_path.read_text())
+            self.assertTrue(
+                all(Path(path).exists() for path in full_spv if path is not None)
+            )
+
+    def test_selection_rejects_empty_unknown_and_header_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path(temp_dir) / "src"
+            self._write_shader(source_root, "kept")
+            cases = [
+                ([], "must not be empty"),
+                ([re.compile("missing")], "match no shaders: missing"),
+                (
+                    [re.compile("kept"), re.compile("missing")],
+                    "match no shaders: missing",
+                ),
+                ([re.compile("common")], "match no shaders: common"),
+                ([re.compile("kep")], "match no shaders: kep"),
+            ]
+            for patterns, message in cases:
+                with self.subTest(patterns=patterns), self.assertRaisesRegex(
+                    ValueError, message
+                ):
+                    gen_vulkan_spv.SPVGenerator(
+                        str(source_root), {}, glslc_path=None, shader_regexes=patterns
+                    )
+
+    def test_selection_supports_untemplated_shaders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path(temp_dir)
+            (source_root / "kept.glsl").write_text("#version 450\nvoid main() {}\n")
+            (source_root / "dropped.glsl").write_text("#version 450\nvoid main() {}\n")
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=None,
+                shader_regexes=[re.compile("kept")],
+            )
+            self.assertEqual(set(generator.output_file_map), {"kept"})
+            full_generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=None
+            )
+            self.assertEqual(set(full_generator.output_file_map), {"kept", "dropped"})
+
+    def test_regex_selects_yaml_expanded_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_root = root / "src"
+            self._write_shader(source_root, "parameterized")
+            (source_root / "kernel.yaml").write_text(
+                "kernel:\n"
+                "  parameter_names_with_default_values: {DTYPE: float}\n"
+                "  generate_variant_forall:\n"
+                "    DTYPE: [{VALUE: float}, {VALUE: half}]\n"
+                "  shader_variants: [{NAME: parameterized}]\n"
+            )
+            output_dir, cache_dir = root / "out", root / "cache"
+            output_dir.mkdir()
+            cache_dir.mkdir()
+            compiler, compiler_log = self._write_fake_compiler(root)
+            full_generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=str(compiler)
+            )
+            self.assertEqual(
+                set(full_generator.output_file_map),
+                {"parameterized_float", "parameterized_half", "common"},
+            )
+            full_spv = full_generator.generateSPV(output_dir, cache_dir, nthreads=1)
+            self.assertEqual(sum(path is not None for path in full_spv), 2)
+            selected_generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=str(compiler),
+                shader_regexes=[re.compile("parameterized_half")],
+            )
+            self.assertEqual(
+                set(selected_generator.output_file_map),
+                {"parameterized_half", "common"},
+            )
+            selected_spv = selected_generator.generateSPV(
+                output_dir, cache_dir, nthreads=1
+            )
+            self.assertEqual(sum(path is not None for path in selected_spv), 1)
+            self.assertEqual(
+                compiler_log.read_text().splitlines(), ["compile", "compile"]
+            )
+            cpp_path = output_dir / "spv.cpp"
+            gen_vulkan_spv.genCppFiles(
+                selected_spv, str(output_dir / "spv.h"), str(cpp_path)
+            )
+            self.assertIn("parameterized_half_bin", cpp_path.read_text())
+            self.assertNotIn("parameterized_float_bin", cpp_path.read_text())
+
+    def test_regex_family_includes_new_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path(temp_dir) / "src"
+            self._write_shader(source_root / "old", "conv2d_old_float")
+            self._write_shader(source_root / "drop", "not_conv2d_float")
+            patterns = [re.compile("conv2d_.*")]
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=None, shader_regexes=patterns
+            )
+            self.assertIn("old/conv2d_old_float", generator.output_file_map)
+            self.assertNotIn("drop/not_conv2d_float", generator.output_file_map)
+
+            self._write_shader(source_root / "new", "conv2d_new_half")
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=None, shader_regexes=patterns
+            )
+            self.assertIn("old/conv2d_old_float", generator.output_file_map)
+            self.assertIn("new/conv2d_new_half", generator.output_file_map)
+            self.assertNotIn("drop/not_conv2d_float", generator.output_file_map)
+
+    def test_regex_matches_full_expanded_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path(temp_dir)
+            for directory, name in (
+                ("keep", "kept"),
+                ("prefix", "prefix_kept"),
+                ("suffix", "kept_suffix"),
+            ):
+                self._write_shader(source_root / directory, name)
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=None,
+                shader_regexes=[re.compile("kept")],
+            )
+            self.assertIn("keep/kept", generator.output_file_map)
+            self.assertNotIn("prefix/prefix_kept", generator.output_file_map)
+            self.assertNotIn("suffix/kept_suffix", generator.output_file_map)
+
+    def test_overlapping_regexes_compile_shader_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_root = root / "src"
+            self._write_shader(source_root / "keep", "kept")
+            self._write_shader(source_root / "drop", "dropped")
+            output_dir, cache_dir = root / "out", root / "cache"
+            output_dir.mkdir()
+            cache_dir.mkdir()
+            compiler, compiler_log = self._write_fake_compiler(root)
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root),
+                {},
+                glslc_path=str(compiler),
+                shader_regexes=[re.compile("kept"), re.compile("ke.*")],
+            )
+            spv_files = generator.generateSPV(output_dir, cache_dir, nthreads=1)
+            self.assertEqual(sum(path is not None for path in spv_files), 1)
+            self.assertEqual(compiler_log.read_text().splitlines(), ["compile"])
+
+
+class TestShaderAllowlistManifest(unittest.TestCase):
+    def test_valid_manifest_accepts_literal_and_family_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "shaders.json"
+            path.write_text(
+                json.dumps(
+                    {"shader_regexes": ["a_float", "b_(float|half)"], "models": []}
+                )
+            )
+            patterns = gen_vulkan_spv.load_shader_regexes(str(path))
+            self.assertEqual(
+                [pattern.pattern for pattern in patterns], ["a_float", "b_(float|half)"]
+            )
+            self.assertIsNotNone(patterns[1].fullmatch("b_float"))
+            self.assertIsNotNone(patterns[1].fullmatch("b_half"))
+            self.assertIsNone(patterns[1].fullmatch("b_half_extra"))
+
+    def test_invalid_manifest_is_rejected(self) -> None:
+        cases = [
+            [],
+            {},
+            {"shader_names": ["a_float"]},
+            {"shader_regexes": []},
+            {"shader_regexes": "a_float"},
+            {"shader_regexes": [""]},
+            {"shader_regexes": ["a_float", 1]},
+            {"shader_regexes": ["a_float", "a_float"]},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "shaders.json"
+            for manifest in cases:
+                path.write_text(json.dumps(manifest))
+                with self.subTest(manifest=manifest), self.assertRaises(
+                    argparse.ArgumentTypeError
+                ):
+                    gen_vulkan_spv.load_shader_regexes(str(path))
+
+    def test_invalid_regex_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "shaders.json"
+            path.write_text(json.dumps({"shader_regexes": ["a_float", "("]}))
+            with self.assertRaisesRegex(
+                argparse.ArgumentTypeError, "Invalid shader regex"
+            ):
+                gen_vulkan_spv.load_shader_regexes(str(path))
+
+    def test_missing_or_malformed_json_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "shaders.json"
+            with self.assertRaises(argparse.ArgumentTypeError):
+                gen_vulkan_spv.load_shader_regexes(str(path))
+            path.write_text("{")
+            with self.assertRaises(argparse.ArgumentTypeError):
+                gen_vulkan_spv.load_shader_regexes(str(path))
+            path.write_bytes(b"\xff")
+            with self.assertRaises(argparse.ArgumentTypeError):
+                gen_vulkan_spv.load_shader_regexes(str(path))
 
 
 class TestShaderCapabilities(unittest.TestCase):

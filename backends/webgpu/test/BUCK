@@ -37,16 +37,20 @@ fbcode_target(
     _kind = python_unittest,
     name = "test_webgpu_partitioner",
     srcs = [
+        "ops/test_elu_silu.py",
         "test_webgpu_partitioner.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/serialization:lib",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/backends/webgpu/partitioner:webgpu_partitioner",
         "//executorch/backends/webgpu/test:tester",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir:lowered_backend_module",
     ],
 )
 

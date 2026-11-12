@@ -47,6 +47,8 @@ def define_common_targets(is_fbcode = False):
     cuda_shim_cpp_unittest("aoti_torch_new_tensor_handle")
     cuda_shim_cpp_unittest("aoti_torch_item_bool")
     cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")
+    cuda_shim_cpp_unittest("aoti_torch_cuda_masked_select")
+    cuda_shim_cpp_unittest("aoti_torch_cuda_nonzero")
 
     cpp_unittest(
         name = "test_op__device_copy",

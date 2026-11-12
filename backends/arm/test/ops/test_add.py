@@ -221,8 +221,18 @@ def test_add_tensor_tosa_FP_2(test_data: input_t2):
     "test_data", Add3.test_data | Add3.test_data_fp16 | Add3.test_data_bf16
 )
 def test_add_tensor_tosa_FP_3(test_data: input_t2):
+    data = test_data()
+    # Eager bf16 add/sub with alpha may round once (fused multiply-add), while
+    # the lowered graph rounds after both the multiply and the add/sub.
+    tol = 1e-2 if data[0].dtype == torch.bfloat16 else 1e-3
     pipeline = TosaPipelineFP[input_t2](
-        Add3(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+        Add3(),
+        data,
+        aten_op,
+        exir_op,
+        atol=tol,
+        rtol=tol,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
