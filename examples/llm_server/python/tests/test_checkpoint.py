@@ -6,7 +6,10 @@
 
 import copy
 import json
+import os
 import struct
+import subprocess
+import sys
 
 import pytest
 from executorch.examples.llm_server.python.checkpoint import (
@@ -66,6 +69,36 @@ def test_roundtrip_and_explicit_partial_match(tmp_path):
         load_checkpoint(path, expected_identity="model-b")
     with pytest.raises(ValueError, match="exceeds limit"):
         load_checkpoint(path, expected_identity="model-a", max_bytes=11)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file types")
+@pytest.mark.parametrize("kind", ["fifo", "symlink"])
+def test_load_rejects_nonregular_files_without_waiting(tmp_path, kind):
+    path = tmp_path / "untrusted.etcp"
+    if kind == "fifo":
+        os.mkfifo(path)
+    else:
+        saved = tmp_path / "valid.etcp"
+        save_checkpoint(sample(), saved)
+        path.symlink_to(saved)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from executorch.examples.llm_server.python.checkpoint "
+            "import load_checkpoint; load_checkpoint(sys.argv[1], expected_identity='model-a')",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert (
+        "regular file" in result.stderr
+        if kind == "fifo"
+        else "OSError" in result.stderr
+    )
 
 
 @pytest.mark.parametrize(

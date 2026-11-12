@@ -180,3 +180,46 @@ def test_save_close_restart_and_resume_without_checkpoint_details(
             await runtime.aclose_worker()
 
     asyncio.run(asyncio.wait_for(run(), 20))
+
+
+@pytest.mark.parametrize("outcome", ["reset", "stop_string", "cancel"])
+def test_unsaveable_turn_preserves_saved_state_until_clean_turn(
+    worker_path, tmp_path, outcome
+):
+    async def run():
+        store = SessionStore(tmp_path, "test")
+        worker = await spawn_multiplexed_worker([worker_path], session_store=store)
+        try:
+            await generate(worker, "chat", "abcdef")
+            await worker.save_session("chat")
+            before = store.load("chat")
+            if outcome == "reset":
+                await worker.reset_session("chat")
+            else:
+                stream = worker.generate(
+                    "next turn",
+                    SimpleNamespace(
+                        session_id="chat",
+                        max_new_tokens=512,
+                        stop=(
+                            list("abcdefghijklmnopqrstuvwxyz")
+                            if outcome == "stop_string"
+                            else []
+                        ),
+                    ),
+                )
+                async for _ in stream:
+                    if outcome == "cancel":
+                        assert stream.cancel()
+                        break
+                await stream.wait()
+            with pytest.raises(WorkerError, match="committed history"):
+                await worker.save_session("chat")
+            assert store.load("chat") == before
+            await generate(worker, "chat", "clean replacement turn")
+            await worker.save_session("chat")
+            assert store.load("chat") != before
+        finally:
+            await worker.close()
+
+    asyncio.run(asyncio.wait_for(run(), 20))

@@ -2,8 +2,9 @@
 
 A checkpoint contains committed model state at a particular token position. It
 can be copied to CPU memory, saved to a file, loaded, and restored into a new
-session. Applications choose the prefix, file, compatibility identity, restore
-position, and error recovery. Starting the server does not discover or load files;
+session. Applications explicitly choose when to save and resume. The advanced API
+also exposes the prefix, file, compatibility identity, and restore position.
+Starting the server does not discover or load files;
 finishing a request does not save one.
 
 ## Save and resume a session
@@ -15,6 +16,8 @@ adapters in `model_files`, and backend, RoPE, and draft settings in
 `configuration`. Recreate this configuration when starting a new process.
 
 ```python
+import asyncio
+
 from executorch.examples.llm_server.python.session_store import SessionStore
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
@@ -44,28 +47,62 @@ session_id = await worker.resume_session("chat-42")
 
 The native runtime chooses the current committed checkpoint boundary. Resume
 loads that saved state into a new session with the same ID and returns the ID.
-The application sends its complete next prompt, including prior history; serving
-matches the tokens and prefills only the suffix. No token positions, checkpoint
+The application sends its complete next prompt. To reuse the saved state, that
+prompt must extend exactly the saved token IDs, including chat formatting and
+committed generated tokens. Re-rendering messages can change those IDs and cause
+a cold prefill. The advanced API below supports explicitly restoring an earlier
+matching prefix. No token positions, checkpoint
 objects, or per-call fingerprints are required for these operations.
 
 `SessionRuntime` exposes the same `save_session(id)` and `resume_session(id)`
-methods. They retain its per-session lease through native and file I/O, so saves
-wait for earlier same-session work. When using the worker client directly, wait
+methods. Within its request-capacity limit, they retain its per-session lease
+through native and file I/O, so saves wait for earlier same-session work.
+When using the worker client directly, wait
 for generation to finish before saving. Closing a session or worker never saves
 implicitly and does not delete its saved checkpoint. Saving again atomically
-replaces that session's previous file. A client serializes save/resume operations
-through file I/O, bounding loaded checkpoint memory and preserving save order.
+replaces that session's previous file. A client serializes both API levels'
+checkpoint operations through file I/O, bounding loaded checkpoint memory and
+preserving save order.
+
+Saving requires a nonempty, idle, healthy, token-only history. A turn cancelled,
+failed, or cut by a stop string leaves state that cannot be saved; empty/reset
+sessions and image or other opaque histories are also rejected. Save raises and
+preserves the previous file. A later successful token-only turn can make the
+session saveable again. Keep the application's conversation history independently
+so it can rebuild state when saving is unavailable.
+
+`SessionStore.create(..., max_bytes=...)` sets the payload limit for both save and
+load; the default is 16 GiB. A larger save fails before replacing the previous
+file. On POSIX, the store directory must be owned by the current user and must not
+be group- or other-writable. A newly created store uses mode 0700; an existing
+owned mode-0755 directory is also accepted.
 
 Persist messages, tool results, and UI state in the application independently of
 this model state. Resume requires an unused live session ID. A missing or corrupt
 file, incompatible model/configuration, or unsupported checkpoint raises an
 error; the application explicitly chooses whether to rebuild from its history.
-Queued saves and resumes can be cancelled without starting. Once a transfer has
-started, cancellation waits for settlement and may leave a saved file or restored
-session, which the application can close if it abandons the operation.
+Queued saves and resumes can be cancelled without starting. With
+`MultiplexedWorkerClient`, cancellation of a started transfer waits for settlement
+and may leave a saved file or restored session. With `SessionRuntime`, the
+cancelled caller returns immediately while the transfer settles under its session
+lease; later admitted same-session operations wait behind that settlement. Neither
+API undoes a completed save or restore.
 Model loading and checkpoint transfer still take time; this avoids recomputing
 saved tokens, not starting the model itself. There are no HTTP persistence
 endpoints or automatic save-on-exit hooks in this API.
+
+To remove a saved conversation, first finish all pending persistence operations
+(for example, close the owning worker), then explicitly delete its saved state:
+
+```python
+removed = await asyncio.to_thread(store.delete, "chat-42")
+```
+
+This returns whether a file existed. It does not close or reset a live session.
+There is no automatic retention or deletion on model changes. A killed writer can
+leave hidden temporary files named `.<session-hash>.etcp.*`. After all writers have
+stopped, an application or operator may remove these temporary files; startup does
+not guess whether another process is still writing.
 
 ## Advanced checkpoint API
 
@@ -150,10 +187,13 @@ formatting. Comparing strings or message lists is insufficient.
 position = checkpoint.common_prefix_length(next_prompt_token_ids)
 # Leave at least one prompt token to process: checkpoints do not store logits.
 position = min(position, max(0, len(next_prompt_token_ids) - 1))
-checkpoint.validate_restore_position(position)
-await worker.restore_checkpoint_from_cpu(
-    checkpoint, "conversation", position=position, expected_identity=identity
-)
+if position == 0:
+    await worker.open_session("conversation")  # Explicitly choose a fresh prefill.
+else:
+    checkpoint.validate_restore_position(position)
+    await worker.restore_checkpoint_from_cpu(
+        checkpoint, "conversation", position=position, expected_identity=identity
+    )
 ```
 
 A token match does not prove that a restore is possible. A sliding-window layer may
@@ -197,7 +237,8 @@ position must still pass the retained-history checks.
   explicitly.
 - File access is local to the Python application and its child worker. These are
   not HTTP file-path endpoints. Keep application checkpoints private as they hold
-  state derived from prompts.
+  state derived from prompts. The checksum detects corruption, not authenticity;
+  load only trusted files. Loads reject nonregular files and, on POSIX, symlinks.
 
 The native primitives are `Session::export_checkpoint_to_cpu_async` and
 `Runner::restore_checkpoint_from_cpu_async`. They call the optional executor

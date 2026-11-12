@@ -222,3 +222,12 @@ et_cxx_test(
 target_include_directories(
   mlx_checkpoint_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_checkpoint_test PRIVATE -fsanitize=address,undefined
+                                -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_checkpoint_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()

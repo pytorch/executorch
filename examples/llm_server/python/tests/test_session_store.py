@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import asyncio
+import os
 import threading
 from pathlib import Path
 
@@ -49,6 +50,92 @@ def test_store_binds_artifacts_and_settings_and_contains_session_paths(tmp_path)
             changed.load(key)
 
     asyncio.run(run())
+
+
+def test_store_size_limit_preserves_last_loadable_save(tmp_path):
+    before = sample()
+    store = SessionStore(tmp_path, "model-a", max_bytes=len(before.data))
+    store.save("chat", before)
+    larger = sample((11, 12, 13, 14))
+    with pytest.raises(ValueError, match="max_bytes"):
+        store.save("chat", larger)
+    assert store.load("chat") == before
+    expanded = SessionStore(tmp_path, "model-a", max_bytes=len(larger.data))
+    expanded.save("chat", larger)
+    assert expanded.load("chat") == larger
+    with pytest.raises(ValueError, match="exceeds limit"):
+        store.load("chat")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory modes")
+def test_store_rejects_shared_writable_directory(tmp_path):
+    tmp_path.chmod(0o777)
+    try:
+        with pytest.raises(ValueError, match="not writable by others"):
+            SessionStore(tmp_path, "model-a")
+    finally:
+        tmp_path.chmod(0o755)
+    assert SessionStore(tmp_path, "model-a").directory == tmp_path
+
+
+def test_delete_saved_session_is_explicit_and_idempotent(tmp_path):
+    store = SessionStore(tmp_path, "model-a")
+    store.save("chat", sample())
+    store.save("other", sample())
+    assert store.delete("chat")
+    assert not store.delete("chat")
+    with pytest.raises(FileNotFoundError):
+        store.load("chat")
+    assert store.load("other") == sample()
+
+
+@pytest.mark.parametrize("save_first", [False, True])
+@pytest.mark.parametrize("restore_second", [False, True])
+def test_advanced_operations_share_persistence_queue(
+    tmp_path, save_first, restore_second
+):
+    async def run():
+        store = SessionStore(tmp_path, "model-a")
+        checkpoint = sample()
+        async with _fake_client(session_store=store) as (client, proc):
+            first = asyncio.create_task(
+                client.save_session("first")
+                if save_first
+                else client.export_checkpoint_to_cpu(
+                    "first", position=3, identity=store.identity
+                )
+            )
+            frame = await proc.stdin.frames.get()
+            second = asyncio.create_task(
+                client.restore_checkpoint_from_cpu(
+                    checkpoint, "second", position=3, expected_identity=store.identity
+                )
+                if restore_second
+                else client.export_checkpoint_to_cpu(
+                    "second", position=3, identity=store.identity
+                )
+            )
+            await _barrier(client, proc)
+            assert proc.stdin.frames.empty()
+            Path(frame["path"]).write_bytes(checkpoint.data)
+            proc.send(frame["request_id"], exported=True, manifest=checkpoint.manifest)
+            await first
+            frame = await proc.stdin.frames.get()
+            if restore_second:
+                assert frame["op"] == "restore_checkpoint"
+                proc.send(frame["request_id"], restored=True)
+                assert await second is None
+            else:
+                assert frame["op"] == "export_checkpoint"
+                Path(frame["path"]).write_bytes(checkpoint.data)
+                proc.send(
+                    frame["request_id"], exported=True, manifest=checkpoint.manifest
+                )
+                assert await second == checkpoint
+            if save_first:
+                assert store.load("first") == checkpoint
+
+    asyncio.run(asyncio.wait_for(run(), 10))
 
 
 def test_save_cancellation_waits_for_atomic_publication(tmp_path, monkeypatch):

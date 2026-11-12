@@ -900,11 +900,12 @@ class MultiplexedWorkerClient:
     ) -> CPUCheckpoint:
         """Export committed state; cancellation waits for native/file I/O settlement."""
         _validate_integer(position, "position", 1, _INT32_MAX)
-        return await _settle_checkpoint(
-            self._export_checkpoint_to_cpu(
-                session_id, position=position, identity=identity
+        async with self._session_persistence_lock:
+            return await _settle_checkpoint(
+                self._export_checkpoint_to_cpu(
+                    session_id, position=position, identity=identity
+                )
             )
-        )
 
     async def restore_checkpoint_from_cpu(
         self,
@@ -915,14 +916,15 @@ class MultiplexedWorkerClient:
         expected_identity: str,
     ) -> None:
         """Restore an unused session key at an explicit retained boundary."""
-        await _settle_checkpoint(
-            self._restore_checkpoint_from_cpu(
-                checkpoint,
-                session_id,
-                position=position,
-                expected_identity=expected_identity,
+        async with self._session_persistence_lock:
+            await _settle_checkpoint(
+                self._restore_checkpoint_from_cpu(
+                    checkpoint,
+                    session_id,
+                    position=position,
+                    expected_identity=expected_identity,
+                )
             )
-        )
 
     async def _export_checkpoint_to_cpu(
         self, session_id: str, *, position: int | None, identity: str

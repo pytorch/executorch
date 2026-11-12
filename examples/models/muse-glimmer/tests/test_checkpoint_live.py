@@ -12,6 +12,7 @@ context capacity of at least 8192, at least three sessions, and disable the shar
 prefix cache. Run once with DFlash and once without it.
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -20,6 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 from executorch.examples.llm_server.python.checkpoint import (
+    checkpoint_identity,
     load_checkpoint,
     save_checkpoint,
 )
@@ -28,6 +30,39 @@ from executorch.examples.llm_server.python.multiplexed_worker_client import (
 )
 from executorch.examples.llm_server.python.session_store import SessionStore
 from executorch.examples.llm_server.python.worker_client import WorkerError
+
+
+def _checkpoint_artifacts(argv):
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--pte", required=True)
+    parser.add_argument("--tokenizer", required=True)
+    parser.add_argument("--data_path", default="")
+    parser.add_argument("--pos_embed_path", default="")
+    paths, settings = parser.parse_known_args(argv[1:])
+    files = [paths.pte, paths.tokenizer]
+    files.extend(path for path in (paths.data_path, paths.pos_embed_path) if path)
+    return files, {"worker_flags": settings}
+
+
+@pytest.mark.parametrize("equals", [False, True])
+def test_live_identity_includes_all_worker_artifacts(tmp_path, equals):
+    command = ["worker"]
+    paths = []
+    for name in ("pte", "tokenizer", "data_path", "pos_embed_path"):
+        path = tmp_path / name
+        path.write_bytes(name.encode())
+        paths.append(path)
+        command.extend([f"--{name}={path}"] if equals else [f"--{name}", str(path)])
+    command.append("--dflash=true")
+    files, configuration = _checkpoint_artifacts(command)
+    assert files == [str(path) for path in paths]
+    assert configuration == {"worker_flags": ["--dflash=true"]}
+    identity = checkpoint_identity(files, configuration)
+    for path in paths:
+        before = path.read_bytes()
+        path.write_bytes(before + b"changed")
+        assert checkpoint_identity(files, configuration) != identity
+        path.write_bytes(before)
 
 
 @pytest.mark.parametrize("prefix_length", [512, 4096])
@@ -63,13 +98,11 @@ def test_restart_matches_cold_continuation(tmp_path, prefix_length):
 
     async def run(log):
         argv = json.loads(command)
-        model = next(
-            arg.removeprefix("--pte=") for arg in argv if arg.startswith("--pte=")
-        )
+        model_files, configuration = _checkpoint_artifacts(argv)
         store = await SessionStore.create(
             tmp_path / "sessions",
-            model_files=[model, Path(hf_dir) / "tokenizer.json"],
-            configuration={"worker_command": argv},
+            model_files=model_files,
+            configuration=configuration,
         )
         worker = await spawn_multiplexed_worker(argv, stderr=log, session_store=store)
         try:

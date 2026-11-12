@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import os
+import stat
 import struct
 import tempfile
 from dataclasses import dataclass
@@ -226,7 +227,13 @@ def load_checkpoint(
     """Read into CPU memory, verify integrity and identity; never restore a device."""
     if type(max_bytes) is not int or max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
-    with open(path, "rb") as stream:
+    flags = os.O_RDONLY
+    if os.name == "posix":
+        flags |= os.O_NOFOLLOW | os.O_NONBLOCK
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("checkpoint must be a regular file")
         if stream.read(8) != _MAGIC:
             raise ValueError("unsupported checkpoint file version")
         raw_length = stream.read(8)

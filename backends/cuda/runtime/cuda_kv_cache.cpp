@@ -1227,6 +1227,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       for (int p = begin; p < upto; ++p)
         rows.push_back((p % layer_rows_[i]) * columns_ + *column);
       for (bool value : {false, true}) {
+        if (is_ring(geometry_.layers[i])) {
+          // Attention also loads masked ring rows: 0 * stale NaN is NaN.
+          auto* base = static_cast<uint8_t*>(pool_.layer_data(i, value));
+          const auto held = std::min(layer_rows_[i], pool_.rows() / columns_);
+          if (cudaMemset2DAsync(
+                  base + row * *column,
+                  row * columns_,
+                  0,
+                  row,
+                  static_cast<size_t>(held),
+                  pool_.stream()) != cudaSuccess) {
+            (void)pool_.synchronize();
+            return cache::CheckpointError{
+                "checkpoint ring initialization failed"};
+          }
+        }
         const auto& bytes = value ? layer.value : layer.key;
         const auto* data = bytes.data();
         if (upto)
