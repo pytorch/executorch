@@ -87,6 +87,12 @@ INT64_EXTENSION_CASTS = (
     (torch.int64, torch.int32),
 )
 
+# Lowered as two casts through int32.
+INT64_WIDENING_CASTS = (
+    (torch.int8, torch.int64),
+    (torch.int16, torch.int64),
+)
+
 TO_DIM_ORDER_INT_PROFILE_NOOP_CASTS = (
     (torch.bool, torch.bool),
     (torch.int8, torch.int8),
@@ -173,5 +179,7 @@ def supported_to_dim_order_casts(tosa_spec: TosaSpecification) -> SupportedCastM
         casts.update(BF16_FP8E5M2_CASTS)
     if tosa_spec.support_extension("int64"):
         casts.update(INT64_EXTENSION_CASTS)
+        if tosa_spec.support_integer():
+            casts.update(INT64_WIDENING_CASTS)
 
     return _cast_map(casts)

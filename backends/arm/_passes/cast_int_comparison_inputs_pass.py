@@ -8,8 +8,12 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm.tosa.cast_support import supported_tosa_casts
+from executorch.backends.arm.tosa.cast_support import (
+    INT64_WIDENING_CASTS,
+    supported_tosa_casts,
+)
 from executorch.backends.arm.tosa.specification import (
+    context_supports_int64,
     get_context_spec,
     TosaSpecification,
 )
@@ -84,6 +88,8 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
                 comparison_dtypes.add(torch.bfloat16)
 
         supported_casts = supported_tosa_casts(tosa_spec)
+        if context_supports_int64():
+            supported_casts |= set(INT64_WIDENING_CASTS)
         if (
             cast_dtype not in comparison_dtypes
             or (

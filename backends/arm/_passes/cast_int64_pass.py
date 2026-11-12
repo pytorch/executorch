@@ -5,10 +5,11 @@
 
 
 import logging
-from typing import Any, Set, Type
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import get_compute_dtype
 from executorch.backends.arm._passes.cast_int_comparison_inputs_pass import (
     CastIntComparisonInputsPass,
 )
@@ -171,12 +172,9 @@ class CastInt64BuffersToInt32Pass(ArmPass):
     def _compares_in_int64(cls, user: torch.fx.Node) -> bool:
         if user.target not in cls._comparison_ops:
             return False
-        operands: list[Any] = [
-            arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
-            for arg in user.args[:2]
-        ]
-        return torch.result_type(*operands) == torch.int64 and all(
-            arg.meta["val"].dtype in (torch.int64, torch.int32, torch.bool)
+        return get_compute_dtype(user) == torch.int64 and all(
+            arg.meta["val"].dtype
+            in (torch.int64, torch.int32, torch.int16, torch.int8, torch.bool)
             for arg in user.all_input_nodes
             if isinstance(arg.meta.get("val"), torch.Tensor)
         )
@@ -188,6 +186,33 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             user.op == "output"
             or cls._compares_in_int64(user)
             or (isinstance(value, torch.Tensor) and value.dtype == torch.int64)
+        )
+
+    @classmethod
+    def _narrows_zero_dim(cls, node: torch.fx.Node, user: torch.fx.Node) -> bool:
+        """Return True when ``user`` computes the zero-dimensional ``node`` in a
+        narrower integer dtype.
+
+        A cast qualifies when its users compute in an integer dtype at least as
+        wide as the cast. Comparisons qualify only in int32, and quantized users
+        do not qualify.
+
+        """
+        if node.meta["val"].dim() != 0:
+            return False
+        integer_dtypes = (torch.int8, torch.int16, torch.int32, torch.int64)
+        dtype = get_compute_dtype(user)
+        if dtype not in integer_dtypes[:3]:
+            return False
+        if user.meta["val"].dtype == torch.bool and dtype != torch.int32:
+            return False
+        if user.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            return not user.meta.get("input_qparams")
+        wider = integer_dtypes[integer_dtypes.index(dtype) :]
+        return all(
+            get_compute_dtype(consumer) in wider
+            and not consumer.meta.get("input_qparams")
+            for consumer in user.users
         )
 
     @staticmethod
@@ -218,7 +243,10 @@ class CastInt64BuffersToInt32Pass(ArmPass):
                 int64_users = [
                     user for user in node.users if self._computes_in_int64(user)
                 ]
-                if len(int64_users) == len(node.users):
+                if all(
+                    user in int64_users or self._narrows_zero_dim(node, user)
+                    for user in node.users
+                ):
                     continue
             if self._cast_constant_to_int32(node):
                 converted += 1

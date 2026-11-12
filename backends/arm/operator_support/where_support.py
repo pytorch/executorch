@@ -9,7 +9,7 @@ import torch
 import torch.fx as fx
 from executorch.backends.arm.constants import DQ_OPS, INT_DTYPES
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
-    _int64_operands_agree,
+    _can_handle_int64_operands,
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
@@ -44,10 +44,10 @@ class WhereSupported(SupportedTOSAOperatorCheck):
             return False
 
         x_dtype, y_dtype = x.meta["val"].dtype, y.meta["val"].dtype
-        if torch.int64 in (x_dtype, y_dtype) and not _int64_operands_agree(node):
+        if torch.int64 in (x_dtype, y_dtype) and not _can_handle_int64_operands(node):
             self.reporter.report_reject(
                 node,
-                f"Operands of {node.target} do not all cast to int64.",
+                f"Operands of {node.target} have unsupported int64 dtypes.",
             )
             return False
 
