@@ -163,7 +163,8 @@ def _hop_written_operands(
     for i, arg in enumerate(node.args):
         if not isinstance(arg, torch.fx.Node) or arg.op != "get_attr":
             continue
-        submodule = getattr(graph_module, arg.target)
+        # An unlifted graph reads a parameter through a qualified name.
+        submodule = operator.attrgetter(arg.target)(graph_module)
         if not isinstance(submodule, torch.fx.GraphModule):
             continue
         submodule_written = _nodes_written_in_place(submodule)
