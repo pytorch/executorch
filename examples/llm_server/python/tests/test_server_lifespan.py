@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
@@ -21,7 +20,6 @@ from executorch.examples.llm_server.python.multiplexed_worker_client import (
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
-
 
 _WORKER = r"""
 import json, sys
@@ -53,9 +51,9 @@ def test_factory_native_startup_requests_and_shutdown_share_loop():
     resources = {}
 
     class ObservedServing(ServingChat):
-        async def create(self, req):
+        async def create(self, req, *, observer=None):
             loops.append(asyncio.get_running_loop())
-            return await super().create(req)
+            return await super().create(req, observer=observer)
 
         async def reset_session(self, session_id):
             loops.append(asyncio.get_running_loop())

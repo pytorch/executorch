@@ -323,6 +323,7 @@ def test_local_overflow_holds_reservation_until_wire_terminal_and_isolates_peer(
             with pytest.raises(WorkerError) as full:
                 client.reserve_request()
             assert full.value.code == "capacity_exhausted"
+            assert full.value.admitted is False
             assert slow.request_id in client._requests
             proc.send(cancel["request_id"], cancelled=True)
             proc.send(slow.request_id, done=True, cancelled=True, finish_reason="stop")
@@ -342,16 +343,20 @@ def test_cancel_ack_error_is_local_until_native_terminal():
             await proc.stdin.frames.get()
             assert stream.cancel()
             cancel = await proc.stdin.frames.get()
-            proc.send(cancel["request_id"], error="cannot cancel", code="busy")
+            proc.send(
+                cancel["request_id"], error="cannot cancel", code="busy", admitted=False
+            )
             with pytest.raises(WorkerError, match="cannot cancel") as error:
                 await anext(stream)
             assert error.value.code == "busy"
+            assert error.value.admitted is None
             waiter = asyncio.create_task(stream.wait())
             await asyncio.sleep(0)
             assert not waiter.done()
             with pytest.raises(WorkerError) as full:
                 client.reserve_request()
             assert full.value.code == "capacity_exhausted"
+            assert full.value.admitted is False
             proc.send(
                 stream.request_id, done=True, cancelled=True, finish_reason="stop"
             )
@@ -377,6 +382,7 @@ def test_wire_terminal_requires_consumption_and_drains_queued_tokens(terminal_er
             with pytest.raises(WorkerError) as full:
                 client.reserve_request()
             assert full.value.code == "capacity_exhausted"
+            assert full.value.admitted is False
             assert await anext(stream) == "first"
             assert await anext(stream) == "second"
             if terminal_error:
@@ -542,6 +548,10 @@ _BAD_FRAMES = [
         {"request_id": 1, "done": True, "cancelled": True, "finish_reason": "length"},
         {"request_id": 1, "error": 4},
         {"request_id": 1, "error": "bad", "code": False},
+        {"request_id": 1, "error": "bad", "admitted": 0},
+        {"request_id": 1, "done": True, "admitted": False},
+        {"request_id": 1, "closed": True, "existed": 1},
+        {"request_id": 1, "opened": True, "existed": False},
         {"request_id": 1, "opened": True},
         {"request_id": 1, "cancelled": True},
         {"request_id": True, "done": True},
@@ -757,6 +767,7 @@ def test_capacity_release_reset_and_uint64_exhaustion():
             with pytest.raises(WorkerError) as full:
                 client.reserve_request()
             assert full.value.code == "capacity_exhausted"
+            assert full.value.admitted is False
             assert not client.release_request(999)
             assert client.release_request(b_id)
             client._next_request_id = _UINT64_MAX
@@ -1701,3 +1712,33 @@ def test_ignore_eos_capability_comes_from_native_readiness(advertised, stops):
             )
 
     _run(scenario())
+
+
+@pytest.mark.parametrize("admitted", [None, False, True])
+def test_wire_admission_error_preserves_known_admission(admitted):
+    async def scenario():
+        proc = _AsyncProc()
+        client = MultiplexedWorkerClient(proc)
+        try:
+            stream = client.generate("hi", SimpleNamespace(max_new_tokens=1))
+            await proc.stdin.frames.get()
+            fields = {} if admitted is None else {"admitted": admitted}
+            proc.send(
+                stream.request_id, error="full", code="capacity_exhausted", **fields
+            )
+            with pytest.raises(WorkerError) as error:
+                await anext(stream)
+            assert error.value.code == "capacity_exhausted"
+            assert error.value.admitted is admitted
+        finally:
+            await client.close()
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("value", [False, 1, [], {}, ""])
+def test_invalid_matched_stop_metadata(value):
+    with pytest.raises(WorkerError, match="matched_stop"):
+        MultiplexedWorkerClient._validate_generation_terminal(
+            {"matched_stop": value, "finish_reason": "stop"}
+        )

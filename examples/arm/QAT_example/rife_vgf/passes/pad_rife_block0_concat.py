@@ -4,15 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import operator
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
-from executorch.backends.arm.vgf.shaders.grid_sampler import (
-    CUSTOM_SHADER_DOMAIN_NAME,
-    flow_offset_grid_sampler_operator_name,
-)
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export import ExportedProgram
@@ -20,64 +16,41 @@ from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
-from ..shaders.final_warps import BLEND_OPERATOR_NAME
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
     _shape_values,
     _symmetric_weight,
     _tensor_shape,
-    OPERATOR_NAME,
     TOSA,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _ignores_alpha(custom, image):
-    if (
-        not _is_op(custom, TOSA.CUSTOM.default, 1)
-        or custom.kwargs.get("domain_name") != CUSTOM_SHADER_DOMAIN_NAME
-    ):
-        return False
-    name = custom.kwargs.get("operator_name")
-    if name in (OPERATOR_NAME, BLEND_OPERATOR_NAME):
-        return image in custom.args[0][:2] and image not in custom.args[0][2:]
-    if (
-        name != flow_offset_grid_sampler_operator_name()
-        or custom.args[0][0] is not image
-    ):
-        return False
-    for output in custom.users:
-        if not _is_op(output, operator.getitem, 2) or output.args[1] != 0:
-            return False
-        for user in output.users:
-            channel_axis = 3
-            crops = [user]
-            if _is_op(user, TOSA.TRANSPOSE.default, 2):
-                if _shape_values(user.args[1]) != [0, 3, 1, 2]:
-                    return False
-                channel_axis = 1
-                crops = list(user.users)
-            for crop in crops:
-                if (
-                    not _is_op(crop, TOSA.SLICE.default, 3)
-                    or _shape_values(crop.args[1])[channel_axis] != 0
-                    or _shape_values(crop.args[2])[channel_axis] != 3
-                ):
-                    return False
-    return True
-
-
-def _reusable_padding(image):
+def _reusable_padding(image, code):
     for candidate in image.users:
         if (
-            _is_op(candidate, TOSA.PAD.default, 2)
+            _is_op(candidate, TOSA.PAD.default, 3)
             and _shape_values(candidate.args[1]) == [0, 0, 0, 0, 0, 0, 0, 1]
-            and all(_ignores_alpha(user, candidate) for user in candidate.users)
+            and _is_op(candidate.args[2], TOSA.CONST.default, 3)
+            and candidate.args[2].args == ([code], [1], torch.int8)
         ):
             return candidate
     return None
+
+
+def _move_padding_before_resize(image, resize):
+    positions = {node: i for i, node in enumerate(image.graph.nodes)}
+    if positions[image] < positions[resize]:
+        return
+    for operand in image.args[1:]:
+        if (
+            isinstance(operand, torch.fx.Node)
+            and positions[operand] > positions[resize]
+        ):
+            resize.prepend(operand)
+    resize.prepend(image)
 
 
 class PadRifeBlock0ConcatPass(ArmPass):
@@ -132,18 +105,24 @@ class PadRifeBlock0ConcatPass(ArmPass):
             ):
                 raise ValueError("Expected a private signed 1/4 image rescale.")
             resize = rescale.args[0]
+            if not _is_op(resize, TOSA.RESIZE.default, 4):
+                raise ValueError("Expected a bilinear RGB resize.")
+            parameters = [_shape_values(arg) for arg in resize.args[1:]]
+            if parameters not in (
+                [[2, 4, 2, 4], [1, 1], [-1, -1]],
+                [[2, 8, 2, 8], [3, 3], [-3, -3]],
+            ):
+                raise ValueError("Expected a half-size or quarter-size RGB resize.")
+            factor = parameters[0][1] // 2
             if (
-                not _is_op(resize, TOSA.RESIZE.default, 4)
-                or [_shape_values(arg) for arg in resize.args[1:]]
-                != [[2, 4, 2, 4], [1, 1], [-1, -1]]
-                or resize.kwargs != {"resize_mode": "bilinear"}
+                resize.kwargs != {"resize_mode": "bilinear"}
                 or resize.meta["val"].dtype != torch.int32
                 or set(resize.users) != {rescale}
                 or _tensor_shape(resize.args[0])
-                != (shape[0], shape[1] * 2, shape[2] * 2, 3)
+                != (shape[0], shape[1] * factor, shape[2] * factor, 3)
                 or resize.args[0].meta["val"].dtype != torch.int8
             ):
-                raise ValueError("Expected the original half-size RGB resize.")
+                raise ValueError("Expected a private signed INT8 RGB resize.")
         return conv, weight, int(timestep.flatten()[0])
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -175,9 +154,12 @@ class PadRifeBlock0ConcatPass(ArmPass):
                 )
             for rescale, code in zip(concat.args[0][:2], (timestep, 0)):
                 resize = rescale.args[0]
-                image = _reusable_padding(resize.args[0])
+                image = _reusable_padding(resize.args[0], code)
                 if image is None:
                     with graph.inserting_before(resize):
+                        pad_value = create_const(
+                            graph, code, torch.int8, resize.args[0]
+                        )
                         padding = graph.call_function(
                             TOSA.CONST_SHAPE.default, ([0, 0, 0, 0, 0, 0, 0, 1],)
                         )
@@ -186,18 +168,11 @@ class PadRifeBlock0ConcatPass(ArmPass):
                             TosaSpecialDtype.meta_key(): TosaSpecialDtype.SHAPE,
                         }
                         image = graph.call_function(
-                            TOSA.PAD.default, (resize.args[0], padding), {"value": code}
+                            TOSA.PAD.default, (resize.args[0], padding, pad_value)
                         )
                         image.meta = dict(resize.args[0].meta)
                 else:
-                    # The recognized shaders only use RGB; their alpha padding is unused.
-                    image.kwargs = {"value": code}
-                    padding = image.args[1]
-                    if isinstance(padding, torch.fx.Node) and list(graph.nodes).index(
-                        padding
-                    ) > list(graph.nodes).index(resize):
-                        resize.prepend(padding)
-                    resize.prepend(image)
+                    _move_padding_before_resize(image, resize)
                 resize.args = (image, *resize.args[1:])
                 # Constant bilinear input becomes 4 * code, then RESCALE divides by 4.
                 for node in (image, resize, rescale):

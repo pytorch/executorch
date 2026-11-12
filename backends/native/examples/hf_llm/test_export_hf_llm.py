@@ -27,6 +27,7 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     LastTokenLM,
     load_gguf,
 )
+from executorch.export.utils import is_fbcode
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
@@ -316,6 +317,46 @@ class ExportHfLlmTest(unittest.TestCase):
             samples = golden_samples(LastTokenLM(model, 16).eval(), [[3, 4]], 0)
             self.assertEqual(samples.tol, tol)
 
-    def test_fp16_kv_cache_rejects_sliding_window_layers(self) -> None:
-        with self.assertRaisesRegex(ValueError, "cannot change the KV dtype"):
-            LastTokenLM(_tiny("gemma3"), 32, torch.float16)
+    def test_cache_writes_index_the_cache_position_input(self) -> None:
+        seq = torch.export.Dim("seq", min=1, max=31)
+        for arch, kv_dtype in (("llama", torch.float32), ("gemma3", torch.float16)):
+            with self.subTest(arch=arch, kv_dtype=kv_dtype):
+                if arch == "gemma3" and is_fbcode():
+                    self.skipTest("skipping for fbcode")
+                torch.manual_seed(7)
+                model = _tiny(arch)
+                fp32 = LastTokenLM(model, 32).eval()
+                wrapper = LastTokenLM(copy.deepcopy(model), 32, kv_dtype).eval()
+                ids = torch.tensor([[3, 4, 5, 6]])
+                with torch.no_grad():
+                    ep = torch.export.export(
+                        wrapper,
+                        (ids, torch.arange(4)),
+                        dynamic_shapes={
+                            "input_ids": {1: seq},
+                            "cache_position": {0: seq},
+                        },
+                        strict=True,
+                    )
+                    exported = ep.module()
+                    for step_ids, positions in (
+                        (ids, torch.arange(4)),
+                        (torch.tensor([[9]]), torch.tensor([4])),
+                        (ids, torch.arange(4)),
+                    ):
+                        self.assertTrue(
+                            torch.allclose(
+                                fp32(step_ids, positions),
+                                exported(step_ids, positions),
+                                atol=1e-2,
+                                rtol=2e-2,
+                            )
+                        )
+                writes = [
+                    n
+                    for n in ep.graph.nodes
+                    if n.target == torch.ops.aten.index_copy_.default
+                ]
+                self.assertEqual(len(writes), 2 * model.config.num_hidden_layers)
+                for n in writes:
+                    self.assertEqual(n.args[2].name, "cache_position")

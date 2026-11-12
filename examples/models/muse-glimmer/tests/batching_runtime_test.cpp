@@ -275,10 +275,22 @@ void preparation() {
               image_tail->prefix_identity()->spans.back()),
       "image tail must remain an opaque position");
   context.max_prompt_positions = 3;
+  const auto overflow = std::get<serving::ServingError>(
+      prepare({{"prompt", "a<img>b"}, {"image", image}}, context, identity));
   require(
-      std::holds_alternative<serving::ServingError>(prepare(
-          {{"prompt", "a<img>b"}, {"image", image}}, context, identity)),
-      "expanded limit ignored");
+      overflow.code == serving::ErrorCode::ContextLengthExceeded &&
+          overflow.context_overflow &&
+          overflow.context_overflow->prompt_tokens == 4 &&
+          overflow.context_overflow->context_length == 3,
+      "image overflow lost exact BOS/image/text-tail counts");
+  const auto token_overflow = std::get<serving::ServingError>(prepare(
+      {{"prompt_segments", {{{"ids", {200000, 1, 2, 3}}}, {{"text", "tail"}}}}},
+      context,
+      identity));
+  require(
+      token_overflow.context_overflow &&
+          token_overflow.context_overflow->prompt_tokens == 8,
+      "oversized ID prefix lost its BOS or trailing text count");
   context.max_prompt_positions = 99;
   image["data"] = "not-base64";
   require(
@@ -559,10 +571,11 @@ void serving_reuse() {
           next.session_reset_reason == "exact_prefix" && executor.clones == 1 &&
           executor.last_size == 1 && executor.last_text_token == 99,
       "named mixed continuation did not execute MG suffix");
+  // The retained prompt end is cloned for the lookup, not captured again.
   auto hit = generate("snapshot", prompt);
   require(
       hit.reused_prompt_tokens == 4 && hit.prefilled_prompt_tokens == 1 &&
-          executor.clones == 3 && executor.last_size == 1 &&
+          executor.clones == 2 && executor.last_size == 1 &&
           executor.last_text_token == 98,
       "mixed snapshot did not reuse image identity and execute MG suffix");
 }
