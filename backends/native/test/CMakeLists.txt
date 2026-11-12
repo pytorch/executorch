@@ -62,6 +62,7 @@ add_custom_command(
     executorch.backends.native.test.samples.generate --out ${_native_op_samples}
   COMMAND ${CMAKE_COMMAND} -E touch ${_native_op_samples}.stamp
   DEPENDS flatc ${_native_op_samples_srcs}
+          ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_embedding.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
   VERBATIM
 )
@@ -159,9 +160,14 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   set_tests_properties(native_ggml_sample_test PROPERTIES DISABLED TRUE)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
+  # native_ggml_sample_test_no_linear judges the other ops without it.
   add_test(NAME native_ggml_sample_test_act_quant
            COMMAND native_ggml_sample_test --packages=${_native_op_samples}
                    --device=cpu --allow_activation_quant_for_weight_only
+  )
+  add_test(NAME native_ggml_sample_test_no_linear
+           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+                   --device=cpu --gtest_filter=-linear_*
   )
   target_compile_options(
     native_ggml_sample_test

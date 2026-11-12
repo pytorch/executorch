@@ -39,9 +39,14 @@ class Scheme:
 
     @property
     def weight_only(self) -> bool:
-        """Whether the scheme quantizes only weights; `record` then adds
-        `golden-int8_act`."""
+        """Whether the scheme quantizes only weights."""
         return False
+
+    def adds_int8_act(self, model: torch.nn.Module) -> bool:
+        """Whether `record` adds `golden-int8_act` for `model`: the scheme
+        quantizes only weights and `model` has inputs int8_activations
+        quantizes."""
+        return self.weight_only and bool(_targets(model, _ACTIVATED))
 
     def fits(self, model: torch.nn.Module) -> bool:
         return True
