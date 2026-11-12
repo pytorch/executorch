@@ -8,6 +8,9 @@ import itertools
 import unittest
 
 import torch
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+)
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
@@ -88,6 +91,52 @@ class TestConvertToLinear(unittest.TestCase):
                     "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
                 }
             )
+            .run_method_and_compare_outputs(inputs=inputs)
+        )
+
+    def test_fp32_transpose_upstream_of_partition_is_not_converted(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.randn(6, 6))
+
+            def forward(self, x):
+                # The transposes around the add are outside the linear.
+                return torch.nn.functional.linear(x, (self.a.t() + 1).t())
+
+        x = torch.randn(4, 6)
+        tester = Tester(Model(), (x,)).export().to_edge()
+        # Cancels the permute pair at the weight, so the mm reads the add
+        # directly and the only permute left is upstream of the partition.
+        FuseCascadedTransposeOrPermuteOps()(
+            tester.get_artifact().exported_program().graph_module
+        )
+        (
+            tester.check_count(
+                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
+            )
+            .run_passes(self.PassStage)
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mm_default": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_linear_default"])
+            .run_method_and_compare_outputs(inputs=(x,))
+        )
+
+    def test_fp32_weight_with_non_node_arg_is_not_converted(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, w1, w2):
+                return torch.nn.functional.linear(x, torch.cat([w1, w2]).t())
+
+        inputs = (torch.randn(4, 6), torch.randn(3, 6), torch.randn(3, 6))
+        tester = Tester(Model(), inputs).export().to_edge()
+        # Cancels the permute pair at the weight, so the mm reads the cat, whose
+        # first arg is a list.
+        FuseCascadedTransposeOrPermuteOps()(
+            tester.get_artifact().exported_program().graph_module
+        )
+        (
+            tester.run_passes(self.PassStage)
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mm_default": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_linear_default"])
             .run_method_and_compare_outputs(inputs=inputs)
         )
 
