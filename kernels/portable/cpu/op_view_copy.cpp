@@ -64,7 +64,7 @@ Tensor& view_copy_out(
     // Iterate the input's logical shape; the output may have a different rank.
     for (const auto [output_index, input_index] :
          BroadcastIndexesRange<1, /*support_noncontiguous_input_tensors=*/true>(
-             self, self)) {
+             self.sizes(), self)) {
       memcpy(
           output_data + output_index * element_size,
           input_data + input_index * element_size,
