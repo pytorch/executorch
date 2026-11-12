@@ -71,7 +71,7 @@ std::optional<Conv2dWinogradConfig> find_conv2d_winograd_config(
     const int64_t groups);
 
 // The Winograd configuration that computes a convolution faster than the other
-// conv2d routes on this GPU, if any.
+// conv2d routes, if any.
 std::optional<Conv2dWinogradConfig> pick_conv2d_winograd_config(
     ComputeGraph& graph,
     const ValueRef in,

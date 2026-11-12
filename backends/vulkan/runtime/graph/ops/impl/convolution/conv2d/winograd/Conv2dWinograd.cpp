@@ -494,20 +494,16 @@ std::optional<Conv2dWinogradConfig> pick_conv2d_winograd_config(
     const Kernel2dParams& kernel_params,
     const bool transposed,
     const int64_t groups) {
-  if (!(graph.device_is_adreno() || graph.device_is_mali())) {
-    return std::nullopt;
-  }
   const int64_t channels = std::min(
       graph.size_at<int64_t>(0, weight_data),
       graph.size_at<int64_t>(1, weight_data));
   const int64_t plane =
       graph.size_at<int64_t>(-1, in) * graph.size_at<int64_t>(-2, in);
-  // Against the direct and im2col routes on Adreno 740, 750 and 830 and
-  // Mali-G715, F(4x4, 3x3) took 0.2 to 0.9 times as long with 128 or more
-  // channels, on planes of 32x32 and larger. It also won with 48 to 96
-  // channels on large planes, but its f16 rounding error there cost DSR's
-  // full-resolution 64-channel convs 2 to 3.5 dB of output PSNR. It was slower
-  // on most shapes on Xclipse 940.
+  // Against the direct and im2col routes on Adreno 740, 750 and 830, Mali-G715
+  // and Xclipse 940, F(4x4, 3x3) took 0.2 to 0.9 times as long with 128 or more
+  // channels, on planes of 32x32 and larger. It also won with 48 to 96 channels
+  // on large planes, but its f16 rounding error there cost DSR's
+  // full-resolution 64-channel convs 2 to 3.5 dB of output PSNR.
   if (channels >= 128 && plane >= 32 * 32 &&
       can_use_conv2d_winograd(
           graph,
