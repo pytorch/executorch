@@ -14,6 +14,7 @@
 #include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
+#include <cstdint>
 #include <functional>
 #include <unordered_map>
 
@@ -447,6 +448,14 @@ AOTITorchError aoti_torch_mps_memcpy(
 
     if (!buffer || !constants_start) {
         ET_LOG(Error, "aoti_torch_mps_memcpy: null buffer or constants_start");
+        return Error::InvalidArgument;
+    }
+    // The constant is read from [constants_start + bytes_read, + data_size),
+    // which must not wrap.
+    if (bytes_read > SIZE_MAX - data_size ||
+        reinterpret_cast<uintptr_t>(constants_start) > UINTPTR_MAX - (bytes_read + data_size)) {
+        ET_LOG(Error, "aoti_torch_mps_memcpy: %zu bytes at offset %zu from %p wrap around",
+               data_size, bytes_read, constants_start);
         return Error::InvalidArgument;
     }
 
