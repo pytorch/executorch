@@ -492,11 +492,13 @@ class GgmlExecutable final : public EngineExecutable {
     std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
       return backend.get();
     });
+    // The scheduler hashes a graph's leafs as well as its nodes, and a graph
+    // holds up to graph_size of each.
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
         static_cast<int>(raw.size()),
-        options_.graph_size,
+        2 * options_.graph_size,
         /*parallel=*/false,
         /*op_offload=*/true));
     if (!scheduler) {
