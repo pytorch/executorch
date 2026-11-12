@@ -330,6 +330,32 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
+// Reads a 1-D int32/int64 tensor on the host. Free for a materialized input;
+// only indices computed in the graph, which can be a strided view, cost a sync.
+inline std::vector<int64_t>
+read_host_indices(array a, const char* op, StreamOrDevice s) {
+  eval(a);
+  if (!a.flags().row_contiguous) {
+    a = contiguous(a, false, s);
+    eval(a);
+  }
+  const size_t size = a.size();
+  std::vector<int64_t> values(size);
+  switch (a.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(a.data<int32_t>(), a.data<int32_t>() + size, values.begin());
+      break;
+    case ::mlx::core::int64:
+      std::copy(a.data<int64_t>(), a.data<int64_t>() + size, values.begin());
+      break;
+    default:
+      throw std::invalid_argument(
+          std::string(op) + ": indices must be int32 or int64, got " +
+          ExecutionState::dtype_str(a.dtype()));
+  }
+  return values;
+}
+
 inline void exec_update_and_attend(
     const UpdateAndAttendNode& n,
     ExecutionState& st,
@@ -350,32 +376,14 @@ inline void exec_update_and_attend(
   // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
-  auto pos = st.const_tensor_ref(n.position);
-  eval(pos);
-  // The entries are read in order off the buffer, which a strided view would
-  // walk with the wrong stride.
-  if (!pos.flags().row_contiguous) {
-    throw std::runtime_error("update_and_attend: position must be contiguous");
-  }
-  const int length = static_cast<int>(pos.size());
-  std::vector<int32_t> positions(static_cast<size_t>(length));
-  switch (pos.dtype()) {
-    case ::mlx::core::int32:
-      std::copy(
-          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
-      break;
-    case ::mlx::core::int64:
-      std::transform(
-          pos.data<int64_t>(),
-          pos.data<int64_t>() + length,
-          positions.begin(),
-          [](int64_t p) { return static_cast<int32_t>(p); });
-      break;
-    default:
-      throw std::runtime_error(
-          std::string("update_and_attend: position must be int32 or int64, ") +
-          "got " + ExecutionState::dtype_str(pos.dtype()));
-  }
+  const std::vector<int64_t> host_positions = read_host_indices(
+      st.const_tensor_ref(n.position), "update_and_attend", s);
+  std::vector<int32_t> positions(host_positions.size());
+  std::transform(
+      host_positions.begin(),
+      host_positions.end(),
+      positions.begin(),
+      [](int64_t p) { return static_cast<int32_t>(p); });
   array out = st.cache->attend(
       *n.layer_id,
       positions,
@@ -1376,7 +1384,11 @@ inline std::tuple<int, int, int, int> next_contiguous_run(
 // Optimizes into slice_update calls for contiguous runs
 inline void
 exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
-  array& dst = st.tensor_ref(n.dst);
+  // When out == dst, use direct assignment to preserve MLX buffer donation.
+  // Only then is dst written, so a functional update may read a constant.
+  const bool in_place = (n.out.idx == n.dst.idx);
+  const array& dst =
+      in_place ? st.tensor_ref(n.dst) : st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
   const array& indices = st.const_tensor_ref(n.indices);
   if (indices.ndim() != 1) {
@@ -1387,26 +1399,18 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   const size_t uaxis = static_cast<size_t>(axis);
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
-  // Get indices as a vector of ints, handling negative indices
-  // Note: PyTorch uses int64 for indices, so we read as int64_t
-  eval(indices); // Ensure indices are materialized before accessing data
-  if (indices.dtype() != ::mlx::core::int64) {
-    throw std::invalid_argument(
-        std::string("IndexCopyNode: expected int64 indices, got ") +
-        ExecutionState::dtype_str(indices.dtype()));
-  }
-  std::vector<int32_t> idx_vec(indices.size());
-  auto idx_data = indices.data<int64_t>();
-  for (size_t i = 0; i < indices.size(); ++i) {
-    int64_t idx = idx_data[i];
-    if (idx < 0) {
-      idx += dst_dim;
-    }
+  // Like ATen, negative indices are rejected rather than wrapped. Export
+  // accepts int32 indices too.
+  const std::vector<int64_t> host_indices =
+      read_host_indices(indices, "IndexCopyNode", s);
+  std::vector<int32_t> idx_vec(host_indices.size());
+  for (size_t i = 0; i < host_indices.size(); ++i) {
+    const int64_t idx = host_indices[i];
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
-          "IndexCopyNode: index " + std::to_string(idx_data[i]) +
-          " out of range for axis " + std::to_string(axis) + " with size " +
-          std::to_string(dst_dim));
+          "index_copy: index " + std::to_string(idx) +
+          " is out of bounds for dimension " + std::to_string(axis) +
+          " with size " + std::to_string(dst_dim));
     }
     if (idx > std::numeric_limits<int32_t>::max()) {
       throw std::out_of_range(
@@ -1416,11 +1420,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
     idx_vec[i] = static_cast<int>(idx);
   }
 
-  // When out == dst, use direct assignment to preserve MLX buffer donation.
-  // TODO: I'm not sure if this is needed as a special case since the standard
-  // st.set_tensor does a std::move. Keeping for now, but should investigate and
-  // possibly remove in future.
-  const bool in_place = (n.out.idx == n.dst.idx);
+  // TODO: I'm not sure the in-place case is needed as a special case since the
+  // standard st.set_tensor does a std::move. Keeping for now, but should
+  // investigate and possibly remove in future.
 
   if (idx_vec.empty()) {
     if (!in_place) {
@@ -1470,8 +1472,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
         : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
 
     if (in_place) {
-      dst = slice_update(
-          dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+      array& target = st.tensor_ref(n.dst);
+      target = slice_update(
+          target, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
     } else {
       result = slice_update(
           result, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);

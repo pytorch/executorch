@@ -35,7 +35,11 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.backend.utils import (
+    tag_constant_data,
+    tag_in_place_input_mutations,
+    tag_mutated_buffer,
+)
 from executorch.exir.pass_manager import ExportedProgramPassManager
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
@@ -379,6 +383,9 @@ class MLXPartitioner(Partitioner):
             # Tag mutated buffers so they are included in the partition
             # This ensures the partitioned subgraph has proper mutation tracking
             tag_mutated_buffer(edge_program)
+            # MLXBackend::execute writes an input the program updates back into
+            # the caller's tensor, so the method needs no write-back copy_.
+            tag_in_place_input_mutations(edge_program)
 
         return PartitionResult(
             tagged_exported_program=edge_program,

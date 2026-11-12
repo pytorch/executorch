@@ -32,10 +32,12 @@
 
 #include <executorch/backends/mlx/runtime/backend_options.h>
 
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include <TargetConditionals.h>
 
@@ -102,9 +104,10 @@ array tensor_to_mlx(
     return ::mlx::core::zeros(shape, dtype);
   }
 
-  // SAFETY: MLX reads this data during async_eval() Metal command encoding,
-  // which completes before the lock is released. The ET tensor must remain
-  // valid until async_eval returns.
+  // SAFETY: When MLX can wrap this memory without a copy, the GPU reads it,
+  // and for an input the program updates may write it, until the arrays
+  // submitted by execute() are waited on. The ET tensor must remain valid
+  // until execute() returns.
   const void* cptr = t.const_data_ptr();
   if (!cptr) {
     throw std::runtime_error("tensor_to_mlx: tensor has null data pointer");
@@ -128,9 +131,21 @@ array prepare_output(
   return result;
 }
 
-// Wait for a prepared output array and copy its data to an ET tensor.
+// Whether [a, a + a_nbytes) and [b, b + b_nbytes) share any byte.
+bool overlaps(const void* a, size_t a_nbytes, const void* b, size_t b_nbytes) {
+  const auto a_begin = reinterpret_cast<uintptr_t>(a);
+  const auto b_begin = reinterpret_cast<uintptr_t>(b);
+  return a_nbytes > 0 && b_nbytes > 0 && a_begin < b_begin + b_nbytes &&
+      b_begin < a_begin + a_nbytes;
+}
+
+// Wait for a prepared output array and copy its data to an ET tensor, or copy
+// `snapshot` instead when it holds the array's data taken earlier.
 // The array must have been submitted via async_eval before calling this.
-void write_output(array& arr, ETTensor& out) {
+void write_output(
+    array& arr,
+    ETTensor& out,
+    const std::vector<uint8_t>& snapshot = {}) {
   arr.wait();
 
   // Resize output tensor if shape doesn't match (dynamic shapes)
@@ -171,12 +186,16 @@ void write_output(array& arr, ETTensor& out) {
         " bytes, output has " + std::to_string(out_nbytes) + " bytes");
   }
 
-  const void* src = arr.data<void>();
+  const void* src = snapshot.empty() ? arr.data<void>() : snapshot.data();
   if (!src) {
     throw std::runtime_error(
         "write_output: arr.data<void>() is null after wait()");
   }
-  std::memcpy(out.mutable_data_ptr(), src, out_nbytes);
+  // An updated input can be computed into its own memory when MLX donates the
+  // wrapped buffer, and is then already in place.
+  if (src != out.const_data_ptr()) {
+    std::memcpy(out.mutable_data_ptr(), src, out_nbytes);
+  }
 }
 
 } // namespace
@@ -572,6 +591,20 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
+        // An input the program updates is written back like an output, after
+        // the outputs. Its slot no longer holds the bound input array, so MLX
+        // can donate that array's buffer to whatever reads it last.
+        for (uint32_t position : program.mutated_inputs) {
+          ETTensor& in_tensor = args[position]->toTensor();
+          array in_arr = prepare_output(
+              h->state.const_tensor_ref(Tid{program.input_map[position].idx}),
+              resolve_dtype(static_cast<executorch::aten::ScalarType>(
+                  in_tensor.scalar_type())),
+              h->stream);
+          tensor_output_info.push_back({position, prepared_outputs.size()});
+          prepared_outputs.push_back(std::move(in_arr));
+        }
+
         // Submit all output work to GPU asynchronously
         // async_eval encodes Metal commands and returns immediately.
         // The GPU will signal events on completion.
@@ -581,11 +614,49 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
       } // Lock released — GPU is still executing
 
-      for (auto& info : tensor_output_info) {
+      // Per write (outputs, then updated inputs), a copy of its data when it
+      // must not be read from the array at the time it is written.
+      std::vector<std::vector<uint8_t>> snapshots(tensor_output_info.size());
+      if (!program.mutated_inputs.empty()) {
+        // A write into an input's memory must not land while work still
+        // reading that input is in flight.
+        for (auto& arr : prepared_outputs) {
+          arr.wait();
+        }
+        // Writes then go one after another, so a write into an input's memory
+        // would also change any later write whose array still reads that
+        // memory, e.g. one updated input computed into another's donated
+        // buffer. Copy such arrays out before writing any.
+        for (size_t i = 0; i < tensor_output_info.size(); ++i) {
+          const array& arr =
+              prepared_outputs[tensor_output_info[i].prepared_idx];
+          // Writes up to and including this one.
+          for (size_t w = 0; w <= i; ++w) {
+            const auto& written = tensor_output_info[w];
+            const array& written_arr = prepared_outputs[written.prepared_idx];
+            const void* dst =
+                args[written.arg_idx]->toTensor().const_data_ptr();
+            if (written_arr.data<void>() != dst &&
+                overlaps(
+                    arr.data<void>(),
+                    arr.nbytes(),
+                    dst,
+                    written_arr.nbytes())) {
+              const auto* src = static_cast<const uint8_t*>(arr.data<void>());
+              snapshots[i].assign(src, src + arr.nbytes());
+              break;
+            }
+          }
+        }
+      }
+
+      for (size_t i = 0; i < tensor_output_info.size(); ++i) {
+        const auto& info = tensor_output_info[i];
         ETTensor& out_tensor = args[info.arg_idx]->toTensor();
 
         // write_output waits on arr to be ready
-        write_output(prepared_outputs[info.prepared_idx], out_tensor);
+        write_output(
+            prepared_outputs[info.prepared_idx], out_tensor, snapshots[i]);
       }
 
       h->state.reset(); // Release temp GPU buffers back to MLX cache

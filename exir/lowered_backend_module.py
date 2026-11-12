@@ -52,6 +52,10 @@ from torch.fx.passes.utils.fuser_utils import (
     topo_sort,
 )
 
+# Set by tag_in_place_input_mutations on a mutated user input's placeholder,
+# naming the partition that writes the input in place.
+DELEGATE_WRITES_IN_PLACE = "delegate_writes_in_place"
+
 
 class LoweredBackendModule(torch.nn.Module):
     """
@@ -608,7 +612,9 @@ def _get_new_signature(  # noqa: C901
             be removed from the toplevel ExportedProgram.
         output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
             been consumed by the delegate (buffer mutation nodes) and should be
-            removed from the toplevel ExportedProgram.
+            removed from the toplevel ExportedProgram, or user input mutations
+            the delegate writes in place, which the toplevel ExportedProgram
+            returns as the input instead.
     """
     old_signature = original_program.graph_signature
 
@@ -631,6 +637,16 @@ def _get_new_signature(  # noqa: C901
     if not is_submodule:
         for output_spec in old_signature.output_specs:
             toplevel_output_node_to_sig[output_spec.arg.name].append(output_spec)
+
+    # User inputs whose mutation the partitioner left to this delegate.
+    inputs_mutated_in_delegate = {
+        node.name
+        for node in original_program.graph.nodes
+        if node.op == "placeholder" and node.meta.get(DELEGATE_WRITES_IN_PLACE) == tag
+    }
+    submodule_inputs = {
+        node.name for node in gm.graph.nodes if node.op == "placeholder"
+    }
 
     for node in gm.graph.nodes:
         if node.op == "placeholder":
@@ -712,6 +728,21 @@ def _get_new_signature(  # noqa: C901
                 if i in buffer_mutation_idxs:
                     assert isinstance(output_node, torch.fx.Node)
                     orig_output_specs = buffer_mutation_idxs[i]
+                    mutation_specs = [
+                        spec
+                        for spec in orig_output_specs
+                        if spec.kind == OutputKind.USER_INPUT_MUTATION
+                    ]
+                    written_by_delegate = (
+                        len(mutation_specs) == 1
+                        and mutation_specs[0].target in inputs_mutated_in_delegate
+                        and mutation_specs[0].target in submodule_inputs
+                        and all(
+                            spec.kind
+                            in (OutputKind.USER_INPUT_MUTATION, OutputKind.USER_OUTPUT)
+                            for spec in orig_output_specs
+                        )
+                    )
 
                     if any(
                         orig_output_spec.kind == OutputKind.BUFFER_MUTATION
@@ -749,6 +780,20 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.BUFFER_MUTATION,
+                                arg=TensorArgument(name=output_node.name),
+                                target=orig_output_spec.target,
+                            )
+                        )
+                        output_specs_to_delete[orig_output_spec.arg.name] = (
+                            orig_output_spec
+                        )
+                    elif written_by_delegate:
+                        # The delegate writes the input itself, so the method
+                        # returns the input wherever it returned this output.
+                        orig_output_spec = mutation_specs[0]
+                        output_specs.append(
+                            OutputSpec(
+                                kind=OutputKind.USER_INPUT_MUTATION,
                                 arg=TensorArgument(name=output_node.name),
                                 target=orig_output_spec.target,
                             )
@@ -819,7 +864,9 @@ def create_exported_program_from_submodule(
             be removed from the toplevel ExportedProgram.
         output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
             been consumed by the delegate (buffer mutation nodes) and should be
-            removed from the toplevel ExportedProgram.
+            removed from the toplevel ExportedProgram, or user input mutations
+            the delegate writes in place, which the toplevel ExportedProgram
+            returns as the input instead.
     """
     # Arrange the submodule's placeholders in order
     submodule = arrange_graph_placeholders(submodule, owning_program, tag)
@@ -1057,10 +1104,28 @@ def _unsafe_adjust_original_program(  # noqa: C901
         if input_spec.target is not None
     }
 
+    # A user input mutation the delegate took over is returned as the input
+    # itself, which the delegate has written by the time it returns.
+    inputs_written_by_delegate = {
+        name: spec.target
+        for name, spec in output_specs_to_delete.items()
+        if spec.kind == OutputKind.USER_INPUT_MUTATION
+    }
     original_program._graph_signature.output_specs = [
-        output_spec
+        (
+            OutputSpec(
+                kind=output_spec.kind,
+                arg=TensorArgument(
+                    name=inputs_written_by_delegate[output_spec.arg.name]
+                ),
+                target=output_spec.target,
+            )
+            if output_spec.arg.name in inputs_written_by_delegate
+            else output_spec
+        )
         for output_spec in original_program.graph_signature.output_specs
         if output_spec.arg.name not in output_specs_to_delete
+        or output_spec.arg.name in inputs_written_by_delegate
     ]
 
     # Delete all parameters/buffers consumed by the created exported program
@@ -1100,10 +1165,21 @@ def _unsafe_adjust_original_program(  # noqa: C901
         len(toplevel_output_node.args) == 1
     ), f"Invalid output node: {toplevel_output_node} with args {toplevel_output_node.args}"
 
+    placeholders = {
+        node.name: node
+        for node in original_program.graph.nodes
+        if node.op == "placeholder"
+    }
     new_output_args = [
-        arg
+        (
+            placeholders[inputs_written_by_delegate[arg.name]]
+            if isinstance(arg, torch.fx.Node) and arg.name in inputs_written_by_delegate
+            else arg
+        )
         for arg in toplevel_output_node.args[0]
-        if not isinstance(arg, torch.fx.Node) or arg.name not in output_specs_to_delete
+        if not isinstance(arg, torch.fx.Node)
+        or arg.name not in output_specs_to_delete
+        or arg.name in inputs_written_by_delegate
     ]
     toplevel_output_node.args = (tuple(new_output_args),)
 

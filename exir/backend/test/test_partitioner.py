@@ -32,6 +32,7 @@ from executorch.exir.backend.test.op_partitioner_demo import (
 from executorch.exir.backend.utils import (
     get_delegates,
     tag_constant_data,
+    tag_in_place_input_mutations,
     tag_mutated_buffer,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -804,3 +805,119 @@ class TestPartitioner(unittest.TestCase):
         edge_program_manager = exir.to_edge(exir_program_aten)
         with self.assertRaises(AssertionError):
             edge_program_manager.to_backend(AddAttributePartitionerDemo())
+
+
+class _InPlaceInputPartitioner(AllNodesPartitionerDemo):
+    """Delegates every node except calls to `host_ops`, and lets the delegate
+    write the user inputs it mutates."""
+
+    def __init__(self, host_ops=frozenset()) -> None:
+        super().__init__()
+        self.host_ops = host_ops
+
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
+        result = super().partition(edge_exported_program)
+        for node in edge_exported_program.graph.nodes:
+            if node.op == "call_function" and node.target in self.host_ops:
+                node.meta.pop("delegation_tag", None)
+        tag_in_place_input_mutations(edge_exported_program)
+        return result
+
+
+class _CacheUpdate(torch.nn.Module):
+    def forward(self, k, k_cache, pos):
+        k_cache.index_copy_(2, pos, k)
+        return k_cache.sum(-1)
+
+
+class TestDelegateWritesUserInput(unittest.TestCase):
+    def _inputs(self):
+        return (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
+
+    def _lower(self, model, partitioner):
+        ep = torch.export.export(model, self._inputs(), strict=True)
+        return exir.to_edge(ep).to_backend(partitioner)
+
+    def test_tagged_input_mutation_stays_in_delegate(self) -> None:
+        lowered = self._lower(_CacheUpdate(), _InPlaceInputPartitioner())
+        ep = lowered.exported_program()
+
+        # The delegate's program mutates the input and returns only the sum.
+        (delegate,) = get_delegates(ep.graph)
+        delegated_ep = getattr(ep.graph_module, delegate.name).original_module
+        self.assertEqual(
+            list(delegated_ep.graph_signature.user_inputs_to_mutate.values()),
+            ["k_cache"],
+        )
+        self.assertEqual(len(delegated_ep.graph_signature.user_outputs), 1)
+
+        # The method returns the input itself as the mutation.
+        self.assertEqual(
+            ep.graph_signature.user_inputs_to_mutate, {"k_cache": "k_cache"}
+        )
+
+        k, k_cache, pos = self._inputs()
+        expected = k_cache.clone().index_copy_(2, pos, k)
+        summed = ep.module()(k, k_cache, pos)
+        self.assertTrue(torch.equal(k_cache, expected))
+        self.assertTrue(torch.equal(summed, expected.sum(-1)))
+
+        # So no write-back is inserted, and the output is the input's value.
+        program = lowered.to_executorch()
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[0], plan.inputs[1])
+
+    def test_untagged_input_mutation_is_written_back(self) -> None:
+        lowered = self._lower(_CacheUpdate(), AllNodesPartitionerDemo())
+        (delegate,) = get_delegates(lowered.exported_program().graph)
+        delegated_ep = getattr(
+            lowered.exported_program().graph_module, delegate.name
+        ).original_module
+        self.assertEqual(delegated_ep.graph_signature.user_inputs_to_mutate, {})
+
+        graph = lowered.to_executorch().exported_program().graph
+        self.assertEqual(
+            sum(n.target == torch.ops.aten.copy_.default for n in graph.nodes), 1
+        )
+
+    def test_input_read_on_host_is_written_back(self) -> None:
+        class ReadOnHostThenUpdate(torch.nn.Module):
+            def forward(self, k, k_cache, pos):
+                doubled = k_cache * 2
+                k_cache.index_copy_(2, pos, k)
+                return doubled
+
+        lowered = self._lower(
+            ReadOnHostThenUpdate(),
+            _InPlaceInputPartitioner(frozenset({exir_ops.edge.aten.mul.Tensor})),
+        )
+        graph = lowered.to_executorch().exported_program().graph
+        self.assertEqual(
+            sum(n.target == torch.ops.aten.copy_.default for n in graph.nodes), 1
+        )
+
+    def test_update_read_on_host_is_written_back(self) -> None:
+        class UpdateThenReadOnHost(torch.nn.Module):
+            def forward(self, k, k_cache, pos):
+                k_cache.index_copy_(2, pos, k)
+                return k_cache * 2
+
+        lowered = self._lower(
+            UpdateThenReadOnHost(),
+            _InPlaceInputPartitioner(frozenset({exir_ops.edge.aten.mul.Tensor})),
+        )
+        ep = lowered.exported_program()
+        k, k_cache, pos = self._inputs()
+        expected = k_cache.clone().index_copy_(2, pos, k)
+        doubled = ep.module()(k, k_cache, pos)
+        self.assertTrue(torch.equal(k_cache, expected))
+        self.assertTrue(torch.equal(doubled, expected * 2))
+
+        graph = lowered.to_executorch().exported_program().graph
+        self.assertEqual(
+            sum(n.target == torch.ops.aten.copy_.default for n in graph.nodes), 1
+        )

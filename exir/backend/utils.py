@@ -21,7 +21,10 @@ from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.lowered_backend_module import create_submodule_from_nodes
+from executorch.exir.lowered_backend_module import (
+    create_submodule_from_nodes,
+    DELEGATE_WRITES_IN_PLACE,
+)
 from tabulate import tabulate
 from torch.export.graph_signature import OutputKind
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
@@ -460,6 +463,34 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                 "it is read or written outside one partition, no node reads it, "
                 "or its new value is also returned."
             )
+
+
+def tag_in_place_input_mutations(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners whose delegate writes a mutated user input
+    in place. Marks each user input the program mutates whose readers, update,
+    and readers of the update other than the program output all belong to one
+    partition. Lowering then keeps that mutation inside the delegate as a
+    USER_INPUT_MUTATION of its program instead of returning the update, so the
+    method needs no write-back. Unlike tag_mutated_buffer, the input stays an
+    argument of the method. Call after tagging all other nodes.
+    """
+    sig = edge_program.graph_signature
+    update_of = {name: out for out, name in sig.user_inputs_to_mutate.items()}
+    nodes = {node.name: node for node in edge_program.graph.nodes}
+    for node in edge_program.graph.nodes:
+        if node.op != "placeholder" or node.name not in update_of:
+            continue
+        update = nodes[update_of[node.name]]
+        tags = {user.meta.get("delegation_tag") for user in node.users}
+        tags.add(update.meta.get("delegation_tag"))
+        tags.update(
+            user.meta.get("delegation_tag")
+            for user in update.users
+            if user.op != "output"
+        )
+        if len(tags) == 1 and None not in tags:
+            node.meta[DELEGATE_WRITES_IN_PLACE] = tags.pop()
 
 
 def is_shape_dynamic(node: torch.fx.Node) -> bool:
