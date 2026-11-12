@@ -1233,10 +1233,25 @@ def register_sdpa_cpp_ops():
 
 @update_features("et_vk::sdpa")
 def register_general_sdpa():
+    def pick_sdpa_storage(
+        node: torch.fx.Node,
+    ) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+        # Buffer shaders read attn_mask in the query's dtype; texture shaders
+        # sample it as floats.
+        mask = node.args[3] if len(node.args) > 3 else node.kwargs.get("attn_mask")
+        query = node.args[0]
+        if (
+            utils.is_tensor_node(mask)
+            and mask.meta["val"].dtype != query.meta["val"].dtype  # type: ignore[union-attr]
+        ):
+            return utils.WIDTH_PACKED_TEXTURE, utils.WIDTH_PACKED_TEXTURE
+        return utils.CONTIGUOUS_ANY, utils.CONTIGUOUS_ANY
+
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        pick_io_storage_fn=pick_sdpa_storage,
     )
 
 
@@ -2304,4 +2319,6 @@ def get_op_features(target: Any) -> OpFeatures:
 
 
 def handles_own_prepacking(target: OpKey) -> bool:
-    return get_op_features(target).supports_prepacking
+    # Ops without a Vulkan registration (e.g. ones only a backend's
+    # op_features_overrides delegates) read constants through prepack nodes.
+    return has_impl(target) and get_op_features(target).supports_prepacking

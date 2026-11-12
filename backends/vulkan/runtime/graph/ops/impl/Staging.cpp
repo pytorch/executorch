@@ -88,6 +88,22 @@ void add_staging_to_tensor_node(
       nullptr));
 }
 
+// The output staging elements that the shader writes. An external staging
+// buffer may be larger than the data, so only the elements that staging
+// allocated for the tensor, without texel padding, would hold are written.
+size_t written_staging_numel(
+    ComputeGraph* graph,
+    const ValueRef in_tensor,
+    const ValueRef out_staging) {
+  StagingPtr staging = graph->get_staging(out_staging);
+  if (staging->is_external()) {
+    return api::get_staging_nbytes(
+               staging->dtype(), graph->numel_of(in_tensor)) /
+        vkapi::element_size(staging->dtype());
+  }
+  return staging->numel();
+}
+
 GlobalWorkGrid tensor_to_staging_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -107,7 +123,7 @@ GlobalWorkGrid tensor_to_staging_gwg(
   // elements in the output buffer divided by 4.
   if (is_bitw8_shader(shader)) {
     const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
-        graph->get_staging(out_staging)->numel() / 4);
+        written_staging_numel(graph, in_tensor, out_staging) / 4);
     gwg = graph->create_linear_gwg(buffer_len);
   } else if (is_coalesced_image_to_nchw_shader(shader)) {
     // The coalesced (output-centric) image_to_nchw variant dispatches one
@@ -116,7 +132,7 @@ GlobalWorkGrid tensor_to_staging_gwg(
     // buffer fully coalesced. This mirrors the buffer_to_nchw path, whose
     // global size is already numel-based via create_gwg.
     const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
-        graph->get_staging(out_staging)->numel());
+        written_staging_numel(graph, in_tensor, out_staging));
     gwg = graph->create_linear_gwg(buffer_len);
   }
   // Otherwise (texel-centric image_to_nchw, used on unified-memory GPUs) keep

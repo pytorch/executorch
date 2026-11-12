@@ -9,6 +9,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -87,13 +88,20 @@ class ET_EXPERIMENTAL PrefixCache {
     PromptCapture& operator=(const PromptCapture&) = delete;
 
     // Wrap once per generation; queue a clone before the first output.
-    // User callback exceptions fail generation.
-    GenerationCallback wrap(GenerationCallback on_update = {}) {
+    // on_ready runs at most once, from the first update at which collect()
+    // would not block: once that clone has settled, or immediately if none was
+    // queued. If generation ends first, collect after it ends. on_ready must
+    // not block or throw. User callback exceptions fail generation. An inactive
+    // capture returns on_update unchanged.
+    GenerationCallback wrap(
+        GenerationCallback on_update = {},
+        std::function<void()> on_ready = {}) {
       if (!state_) {
         return on_update;
       }
-      return [state = state_, on_update = std::move(on_update)](
-                 const GenerationUpdate& update) {
+      return [state = state_,
+              on_update = std::move(on_update),
+              on_ready = std::move(on_ready)](const GenerationUpdate& update) {
         if (!state->attempted && !update.tokens.empty()) {
           state->attempted = true;
 #if ET_HAS_EXCEPTIONS
@@ -102,9 +110,18 @@ class ET_EXPERIMENTAL PrefixCache {
             state->snapshot = state->request_clone(
                 static_cast<Position>(state->tokens.size()));
 #if ET_HAS_EXCEPTIONS
-          } catch (const std::bad_alloc&) {
+          } catch (...) {
+            // Optional capture failure leaves generation usable.
           }
 #endif
+        }
+        // After notification the collector owns the future.
+        if (on_ready && state->attempted && !state->notified &&
+            (!state->snapshot.valid() ||
+             state->snapshot.wait_for(std::chrono::seconds(0)) ==
+                 std::future_status::ready)) {
+          state->notified = true;
+          on_ready();
         }
         if (on_update) {
           on_update(update);
@@ -161,7 +178,8 @@ class ET_EXPERIMENTAL PrefixCache {
       };
     }
 
-    // May block; serialize with capture_at or wait for wrap's generation.
+    // May block; serialize with capture_at. With wrap, collect on another
+    // thread after on_ready, or wait for generation to finish.
     // The PrefixCache must outlive collection.
     bool collect() {
       auto state = state_;
@@ -209,6 +227,7 @@ class ET_EXPERIMENTAL PrefixCache {
       std::size_t captured_tokens = 0;
       bool attempted = false;
       CheckpointMetadata metadata;
+      bool notified = false;
     };
 
     static bool queue_capture(
@@ -300,13 +319,9 @@ class ET_EXPERIMENTAL PrefixCache {
         snapshot.position() != static_cast<Position>(tokens.size())) {
       return false;
     }
-    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-      if (it->tokens.size() == tokens.size() &&
-          common_prefix(it->tokens, tokens) == tokens.size()) {
-        it->metadata = std::move(metadata);
-        entries_.splice(entries_.begin(), entries_, it);
-        return true;
-      }
+    if (touch_identity(tokens)) {
+      entries_.front().metadata = std::move(metadata);
+      return true;
     }
 #if ET_HAS_EXCEPTIONS
     try {
@@ -350,6 +365,19 @@ class ET_EXPERIMENTAL PrefixCache {
   // final token for a forward. The returned session survives cache eviction.
   std::optional<PrefixMatch> lookup(const std::vector<Token>& request) {
     return lookup_identity(copy_tokens(request));
+  }
+
+  // Refresh recency as inserting this exact identity again would, without a
+  // clone.
+  bool touch_identity(const PrefixIdentity& tokens) {
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+      if (it->tokens.size() == tokens.size() &&
+          common_prefix(it->tokens, tokens) == tokens.size()) {
+        entries_.splice(entries_.begin(), entries_, it);
+        return true;
+      }
+    }
+    return false;
   }
 
   std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {

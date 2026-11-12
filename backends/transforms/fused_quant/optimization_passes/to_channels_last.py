@@ -18,6 +18,7 @@ from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.fused_quant.ops_utils import compute_conv_out_shape_nhwc
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.frontends.fused_quant.colorer import is_colored
 from torch import fx
 from torch._export.utils import _detect_fake_mode_from_gm
 
@@ -265,6 +266,10 @@ class ToChannelsLast(ExportPass):
 
     For most backends, NHWC layout is more efficient than NCHW layout, so this optimization
     is applied in the fused_quant IR.
+
+    Colored nodes are left alone: a backend that claimed an op is going to lower
+    it itself, and relayouting would take it away. See
+    :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
     """
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:
@@ -284,6 +289,8 @@ class ToChannelsLast(ExportPass):
             op="call_function",
             target=exir_ops.edge.fused_quant.convolution.default,
         ):
+            if is_colored(node):
+                continue
             _convert_convolution_to_channels_last(node)
             modified = True
 
@@ -291,6 +298,8 @@ class ToChannelsLast(ExportPass):
             op="call_function",
             target=exir_ops.edge.fused_quant.max_pool2d_with_indices.default,
         ):
+            if is_colored(node):
+                continue
             _convert_max_pool2d_with_indices_to_channels_last(node)
             modified = True
 
@@ -298,6 +307,8 @@ class ToChannelsLast(ExportPass):
             op="call_function",
             target=exir_ops.edge.fused_quant.avg_pool2d.default,
         ):
+            if is_colored(node):
+                continue
             _convert_avg_pool2d_to_channels_last(node)
             modified = True
 

@@ -931,6 +931,22 @@ TEST_F(PrefixCacheTest, FindRefreshesLruOnlyAfterTouch) {
   }
 }
 
+TEST_F(PrefixCacheTest, TouchIdentityRefreshesOnlyExactEntry) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  const auto identity = [](Tokens tokens) {
+    return token_identity(std::make_shared<const Tokens>(std::move(tokens)));
+  };
+  EXPECT_FALSE(cache.touch_identity(identity({1})));
+  EXPECT_FALSE(cache.touch_identity(identity({1, 2, 3})));
+  EXPECT_FALSE(cache.touch_identity(identity({1, 3})));
+  EXPECT_TRUE(cache.touch_identity(identity({1, 2})));
+  ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+  EXPECT_TRUE(cache.touch_identity(identity({1, 2})));
+  EXPECT_FALSE(cache.touch_identity(identity({3, 4})));
+}
+
 TEST_F(PrefixCacheTest, TouchOfEvictedMatchDoesNotRefreshReinsertedEntry) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
@@ -1252,6 +1268,31 @@ TEST_F(PrefixCacheTest, PromptCapturePrecedesDecodeRetentionLoss) {
   expect_cold_match(*match, prompt);
 }
 
+TEST_F(PrefixCacheTest, WrappedCaptureNotifiesOnceAfterCloneSettles) {
+  const Tokens prompt{1, 2, 3};
+  for (int count : {1, 4}) {
+    PrefixCache cache(1);
+    auto source = open();
+    auto capture = cache.capture_prompt(source, prompt);
+    std::size_t delivered = 0;
+    std::vector<std::size_t> notified_after;
+    auto generation = run_callback(
+        source,
+        prompt,
+        capture.wrap(
+            [&](const auto&) { ++delivered; },
+            [&] { notified_after.push_back(delivered); }),
+        count);
+    EXPECT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
+    // The clone queued by the first update settles before a later one.
+    EXPECT_EQ(
+        notified_after,
+        count == 1 ? std::vector<std::size_t>{} : std::vector<std::size_t>{1});
+    ASSERT_TRUE(capture.collect());
+    EXPECT_TRUE(cache.lookup(prompt));
+  }
+}
+
 TEST_F(PrefixCacheTest, PromptCaptureCopiesFullHistoryAfterPrefixReuse) {
   PrefixCache cache(2);
   ASSERT_TRUE(cache.insert({1, 2, 3, 4}, snapshot({1, 2, 3, 4})));
@@ -1505,14 +1546,19 @@ TEST_F(
   auto capture = cache.capture_prompt(source, prompt);
   Tokens received;
   std::optional<FinishReason> finished;
-  auto callback = capture.wrap([&](const auto& update) {
-    received = update.tokens;
-    finished = update.finish_reason;
-  });
+  int ready = 0;
+  auto callback = capture.wrap(
+      [&](const auto& update) {
+        EXPECT_EQ(ready, 1);
+        received = update.tokens;
+        finished = update.finish_reason;
+      },
+      [&] { ++ready; });
   source = Session{};
   ASSERT_TRUE(executor.wait_for_live(0));
   const GenerationUpdate update{{101, 102}, FinishReason::StopToken, {}};
   callback(update);
+  EXPECT_EQ(ready, 1);
   EXPECT_EQ(received, update.tokens);
   EXPECT_EQ(finished, update.finish_reason);
   EXPECT_FALSE(capture.collect());
@@ -1571,9 +1617,12 @@ TEST_F(
         &empty_capture,
         &invalid_capture}) {
     Tokens received;
-    capture->wrap([&](const auto& delivered) { received = delivered.tokens; })(
-        update);
+    bool ready = false;
+    capture->wrap(
+        [&](const auto& delivered) { received = delivered.tokens; },
+        [&] { ready = true; })(update);
     EXPECT_EQ(received, update.tokens);
+    EXPECT_FALSE(ready);
     EXPECT_FALSE(capture->wrap());
     EXPECT_FALSE(capture->collect());
   }

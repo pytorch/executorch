@@ -19,7 +19,7 @@ namespace ptn::vulkan {
 namespace {
 
 bool needs_prepack(const Node& node) {
-  constexpr std::array<std::string_view, 7> kOps{
+  constexpr std::array<std::string_view, 9> kOps{
       "torch.ops.aten._to_copy.default",
       "torch.ops.aten.add.Tensor",
       "torch.ops.aten.clamp.default",
@@ -27,6 +27,8 @@ bool needs_prepack(const Node& node) {
       "torch.ops.aten.index.Tensor",
       "torch.ops.aten.mul.Tensor",
       "torch.ops.aten.slice_copy.Tensor",
+      "torch.ops.aten.where.self",
+      "torch.ops.et_vk.sdpa.default",
   };
   return node.is_call() && std::ranges::find(kOps, node.target) != kOps.end();
 }
