@@ -978,6 +978,9 @@ TEST_F(CPUPlanTest, StepTraceNameCountsTheRegionsRemainingNodes) {
   ASSERT_EQ(plan.select(), Error::Ok);
   ASSERT_EQ(plan.steps().size(), 1);
   EXPECT_EQ(plan.steps()[0].trace_name, "XNNPACK/subgraph:sum+1");
+  EXPECT_NE(
+      plan.describe(0).find("\"trace_name\":\"XNNPACK/subgraph:sum+1\""),
+      std::string::npos);
 }
 
 TEST_F(XNNLayoutTest, TracesEachXNNPACKOperatorWithItsOwnShapes) {
