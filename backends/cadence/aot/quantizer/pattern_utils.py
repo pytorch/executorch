@@ -227,6 +227,44 @@ def get_weight_zero_point(gm: fx.GraphModule, dq_weight: fx.Node) -> int | torch
     return zps.to(torch.int32).flatten()
 
 
+# The quantizer computes the bias scale in float32 and fusion in float64, so a
+# bias at the accumulator scale gives a ratio within 6e-8 of 1.
+_BIAS_SCALE_RATIO_ATOL = 1e-5
+
+
+def bias_at_scale(
+    gm: fx.GraphModule,
+    dq_bias: fx.Node,
+    bias_scale: float | torch.Tensor,
+    like_node: fx.Node,
+) -> fx.Node:
+    """The int32 bias operand for an accumulator at ``bias_scale``.
+
+    Quantized linear and conv ops add the int32 bias straight to the int32
+    accumulator, whose scale is input_scale * weight_scale. The quantizer derives
+    the bias scale the same way, but quantizes a shared bias only once, so a
+    Linear that runs on inputs with different scales (QuantizableLSTM runs one per
+    time step) has a bias whose scale matches only one of them. For the others,
+    this returns the bias constant rescaled to ``bias_scale``.
+    """
+    bias_q = get_arg(dq_bias, "input", fx.Node)
+    ratio = torch.as_tensor(get_weight_scale(gm, dq_bias), dtype=torch.float64) / (
+        torch.as_tensor(bias_scale, dtype=torch.float64)
+    )
+    if torch.allclose(ratio, torch.ones_like(ratio), rtol=0, atol=_BIAS_SCALE_RATIO_ATOL):
+        return bias_q
+    values = resolve_constant(gm, bias_q)
+    assert (
+        values is not None
+    ), f"cannot rescale {bias_q}: the bias is not a constant of the program"
+    rescaled = torch.round(values.to(torch.float64) * ratio)
+    int32 = torch.iinfo(torch.int32)
+    assert bool(
+        ((rescaled >= int32.min) & (rescaled <= int32.max)).all()
+    ), f"cannot rescale {bias_q}: the rescaled bias does not fit in int32"
+    return add_constant_placeholder(gm, rescaled.to(torch.int32), like_node, "bias")
+
+
 def insert_node_with_meta(
     gm: fx.GraphModule,
     op: OpOverload,
@@ -296,7 +334,7 @@ def fuse_conv(
     input_scale = get_arg(dq_input, "scale", float)
     bias_scale = input_scale * weight_scale
     if dq_bias is not None:
-        bias_q = get_arg(dq_bias, "input", fx.Node)
+        bias_q = bias_at_scale(gm, dq_bias, bias_scale, conv_node)
     else:
         # Cadence quantized conv ops require a non-optional bias argument.
         weight_node = get_arg(dq_weight, "input", fx.Node)
@@ -387,7 +425,7 @@ def fuse_linear(
     )
     out_multiplier, out_shift = quantize_tensor_multiplier(requantize_scale_t)
     if dq_bias is not None:
-        bias_q = get_arg(dq_bias, "input", fx.Node)
+        bias_q = bias_at_scale(gm, dq_bias, bias_scale, op_node)
     else:
         # Cadence quantized linear ops require a non-optional bias argument.
         weight_node = get_arg(dq_weight, "input", fx.Node)

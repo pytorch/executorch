@@ -20,7 +20,7 @@ from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noq
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
 
-from ..verifier import EXIREdgeDialectVerifier
+from ..verifier import EXIRATenDialectVerifier, EXIREdgeDialectVerifier
 
 
 class TestEdgeDialectVerifier(unittest.TestCase):
@@ -30,6 +30,29 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             yield None
         except exc_type:
             raise self.failureException("{} raised".format(exc_type.__name__))
+
+    def _assert_leaves_the_callers_lists_unchanged(self, make_verifier: Any) -> None:
+        exception_list = [torch.ops.aten.sort.default]
+        preserve_ops = [torch.ops.aten.linear.default]
+        config = EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.median.default],
+            preserve_ops=[torch.ops.aten.gelu.default],
+        )
+
+        make_verifier(
+            edge_compile_config=config,
+            core_aten_ops_exception_list=exception_list,
+            preserve_ops=preserve_ops,
+        )
+
+        self.assertEqual(exception_list, [torch.ops.aten.sort.default])
+        self.assertEqual(preserve_ops, [torch.ops.aten.linear.default])
+
+    def test_aten_verifier_leaves_the_callers_lists_unchanged(self) -> None:
+        self._assert_leaves_the_callers_lists_unchanged(EXIRATenDialectVerifier)
+
+    def test_edge_verifier_leaves_the_callers_lists_unchanged(self) -> None:
+        self._assert_leaves_the_callers_lists_unchanged(EXIREdgeDialectVerifier)
 
     def test_edge_verifier_check_valid_op_succeed_given_custom_op(self) -> None:
         edge_op = ops.edge.quantized_decomposed.quantize_per_tensor.default
