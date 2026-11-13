@@ -131,5 +131,8 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
     - [winskuo-quic](https://github.com/winskuo-quic)
     - [DannyYuyang-quic](https://github.com/DannyYuyang-quic)
     - [haowhsu-quic](https://github.com/haowhsu-quic)
+    - [harshs-qti](https://github.com/harshs-qti)
+    - [qti-horodnic](https://github.com/qti-horodnic)
+    - [qti-mmadhava](https://github.com/qti-mmadhava)
 
 Thanks again for your contribution!
