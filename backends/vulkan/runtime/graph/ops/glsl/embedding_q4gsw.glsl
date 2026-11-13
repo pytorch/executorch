@@ -148,9 +148,13 @@ void main() {
   const int indices_bufi = z_idx * int(stride_at(indices, 1)) + y_idx;
   const int embedding_idx = t_indices[indices_bufi];
 #else
+  // The indices' width, height and channels are the output's height, channels
+  // and batches.
+  const int channel = z_idx % out_sizes.z;
+  const int batch = z_idx / out_sizes.z;
   const ivec4 in_texel =
-      texelFetch(t_indices, ivec3(indices_idx >> 2, 0, 0), 0);
-  const int embedding_idx = in_texel[indices_idx & 3];
+      texelFetch(t_indices, ivec3(y_idx >> 2, channel, batch), 0);
+  const int embedding_idx = in_texel[y_idx & 3];
 #endif
 
   const int base_dim = block_in_row << 5;
