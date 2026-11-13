@@ -7,6 +7,7 @@
 """Small export exemplars must preserve the full selected-logit API."""
 
 import copy
+import importlib.util
 import tempfile
 import unittest
 from dataclasses import replace
@@ -31,6 +32,9 @@ class CapturedPrograms(Exception):
     pass
 
 
+@unittest.skipUnless(
+    importlib.util.find_spec("triton"), "export_cuda_batching needs Triton"
+)
 class SequenceExportInputsTest(unittest.TestCase):
     def test_small_logits_example_preserves_token_and_embedding_capacity(self):
         torch.manual_seed(42)

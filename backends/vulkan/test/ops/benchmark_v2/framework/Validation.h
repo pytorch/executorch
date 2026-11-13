@@ -23,6 +23,10 @@ std::map<std::string, ValueRef> add_validation_outputs(
     const std::map<std::string, ValueRef>& tensors,
     const Json& accesses);
 
+// Scales every GPU output by 1 + fault_rel before validation, so a correctness
+// gate can be shown to fail on a known error.
+void set_validation_fault_rel(double fault_rel);
+
 Report validate_outputs(
     const Json& spec,
     ComputeGraph& graph,

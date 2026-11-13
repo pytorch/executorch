@@ -950,6 +950,31 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.packed_dim_of(q) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(k) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v) == WHCN::kWidthDim);
+  // The buffer shaders index every tensor as contiguous rows.
+  for (const ValueRef t : {q, k, v, attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) || !graph.val_is_tensor(t) ||
+            !graph.is_buffer_storage(t) || graph.is_contiguous_buffer_tensor(t),
+        "fused SDPA requires contiguous buffer tensors");
+  }
+  // The QK shader binds the mask and attention weights in the query's storage,
+  // and the attention weights take the output's.
+  for (const ValueRef t : {attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) ||
+            graph.storage_type_of(t) == graph.storage_type_of(q),
+        "fused SDPA requires the attn_mask and output in the query's storage");
+  }
+  // Buffer shaders read the mask in the query's dtype; texture shaders sample
+  // it as floats.
+  VK_CHECK_COND(
+      graph.val_is_none(attn_mask) ||
+          (graph.is_buffer_storage(q)
+               ? graph.dtype_of(attn_mask) == graph.dtype_of(q)
+               : graph.dtype_of(attn_mask) == vkapi::kFloat ||
+                   graph.dtype_of(attn_mask) == vkapi::kHalf),
+      "fused SDPA requires an attn_mask of the query's dtype, or a float one "
+      "in textures");
 
   // Compute scale
   const int32_t head_dim = graph.size_at<int32_t>(-1, q);
@@ -977,6 +1002,16 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // entire fused SDPA pipeline uses a uniform storage type. attn_weights stays
   // in fp32 for numerical stability of the Q@K^T accumulation.
   const utils::StorageType attn_storage = graph.storage_type_of(out);
+  if (attn_storage == utils::kBuffer) {
+    // max_buffer_numel() is maxStorageBufferRange, a byte limit, and buffer
+    // rows are padded to whole texels.
+    VK_CHECK_COND(
+        B * H * S * static_cast<int64_t>(utils::align_up_4(L)) *
+                static_cast<int64_t>(sizeof(float)) <=
+            graph.max_buffer_numel(),
+        "fused SDPA attention weights exceed the device's storage buffer "
+        "range");
+  }
 
   TmpTensor attn_weights(
       &graph,

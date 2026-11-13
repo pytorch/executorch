@@ -332,6 +332,14 @@ TEST_F(TensorPtrTest, TensorOwningEmptyData) {
   EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
 }
 
+TEST_F(TensorPtrTest, TensorWithInnerZeroSize) {
+  // A size-0 dim counts as size 1 for the strides outside it, as in PyTorch.
+  auto tensor = make_tensor_ptr({2, 0, 3}, std::vector<float>{});
+  EXPECT_EQ(tensor->strides()[0], 3);
+  EXPECT_EQ(tensor->strides()[1], 3);
+  EXPECT_EQ(tensor->strides()[2], 1);
+}
+
 TEST_F(TensorPtrTest, TensorDataOnly) {
   auto tensor = make_tensor_ptr({1.0f, 2.0f, 3.0f, 4.0f});
 
@@ -1091,6 +1099,59 @@ TEST_F(TensorPtrTest, TensorInvalidDimOrder) {
         auto _ = make_tensor_ptr({4, 5}, data, {2, 1}, {1, 4});
       },
       "");
+}
+
+TEST_F(TensorPtrTest, ValidateTensorLayoutRejectsInvalidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({2, 2}, {}, {8, 2}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {1, 0}, {1, 4}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({4, 5}, {2, 1}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {}, {4, 1, 1}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {0, 1, 2}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {1, 1}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({-1, 4}, {}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout(
+          std::vector<executorch::aten::SizesType>(17, 1), {}, {}),
+      Error::InvalidArgument);
+  const executorch::aten::SizesType large = 1 << 30;
+  EXPECT_EQ(
+      validate_tensor_layout({large, large, large}, {}, {}),
+      Error::InvalidArgument);
+  // The square of this size overflows StridesType.
+  const auto huge = executorch::aten::SizesType(1)
+      << (4 * sizeof(executorch::aten::StridesType));
+  EXPECT_EQ(
+      validate_tensor_layout({0, huge, huge}, {}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({2, huge, huge}, {}, {}), Error::InvalidArgument);
+}
+
+TEST_F(TensorPtrTest, ValidateTensorLayoutAcceptsValidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({2, 3}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {1, 0}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({1, 4}, {}, {100, 1}), Error::Ok);
+}
+
+TEST_F(TensorPtrTest, TensorWithMaxDims) {
+  const std::vector<executorch::aten::SizesType> sizes(16, 1);
+  EXPECT_EQ(validate_tensor_layout(sizes, {}, {}), Error::Ok);
+  EXPECT_EQ(make_tensor_ptr(sizes, {1.f})->dim(), 16);
+}
+
+TEST_F(TensorPtrTest, TensorOverflowingStrides) {
+  // The square of this size overflows StridesType, but make_tensor_ptr has
+  // always accepted such a layout.
+  const auto huge = executorch::aten::SizesType(1)
+      << (4 * sizeof(executorch::aten::StridesType));
+  auto tensor = make_tensor_ptr({0, huge, huge}, std::vector<float>{});
+  EXPECT_EQ(tensor->numel(), 0);
+  EXPECT_EQ(tensor->strides()[1], huge);
+  EXPECT_EQ(tensor->strides()[2], 1);
 }
 
 TEST_F(TensorPtrTest, TensorCustomDeleter) {

@@ -78,19 +78,12 @@ void main() {
   FPInputTile in_tile;
   Int8WeightTile int8_weight_tile;
 
-  const bool dont_check_bounds = (M - m) >= TILE_M;
-  if (dont_check_bounds) {
-    for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
-      load_input_tile_no_checks(in_tile, k4, m, K4, M);
-      load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
-      fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
-    }
-  } else {
-    for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
-      load_input_tile_with_checks(in_tile, k4, m, K4, M);
-      load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
-      fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
-    }
+  // A second, unchecked copy of this loop for full tiles gave wrong buffer
+  // outputs for the last, partial row tile on Adreno 750.
+  for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
+    load_input_tile_with_checks(in_tile, k4, m, K4, M);
+    load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
+    fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
   }
 
   FPPerOutChannelParams weight_scales_tile;
@@ -106,9 +99,5 @@ void main() {
     apply_weight_scales(out_tile, weight_scales_tile);
   }
 
-  if (dont_check_bounds) {
-    write_output_tile_no_checks(out_tile, n4, m, N4, M);
-  } else {
-    write_output_tile_with_checks(out_tile, n4, m, N4, M);
-  }
+  write_output_tile_with_checks(out_tile, n4, m, N4, M);
 }
