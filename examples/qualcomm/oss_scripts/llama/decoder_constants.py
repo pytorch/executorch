@@ -75,9 +75,12 @@ DECODER_MODEL_VERSION = {
     "gemma4-e2b": "gemma4",
     "lfm3-1_7b": "lfm3",
     "lfm3-1_7b_base": "lfm3_base",
+    "lfm3-2b_vl": "lfm3",
+    "lfm3-2b_omni": "lfm3",
+    "lfm3-2b_omni_speech": "lfm3_speech",
 }
 
-# Text decoders sharing the LFM3-1.7B backbone.
+# Text decoders sharing the LFM3-1.7B backbone (multimodal variants: decoder only).
 LFM3_DECODER_MODELS = {
     name
     for name, version in DECODER_MODEL_VERSION.items()

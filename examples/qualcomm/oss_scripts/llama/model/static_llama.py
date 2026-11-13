@@ -1238,6 +1238,10 @@ class ShortConvHybridLlamaModel(LlamaModel):
         ]
         self.conv_layers = [i for i, t in enumerate(self.layer_types) if t == "conv"]
         self.conv_state_len = config.conv_L_cache - 1
+        self.embedding_input = bool(kwargs.get("embedding_input", False))
+        self.image_token_id = kwargs.get("image_token_id")
+        self.audio_token_id = kwargs.get("audio_token_id")
+        self.output_hidden = bool(kwargs.get("output_hidden", False))
 
         # Row r of a conv state holds position input_pos[0] - conv_state_len + r.
         # Kept independent of ar_len: hybrid export copies buffers from the
@@ -1291,7 +1295,7 @@ class ShortConvHybridLlamaModel(LlamaModel):
         local_freqs_cos = self.local_freqs_cos[input_pos][0]
         local_freqs_sin = self.local_freqs_sin[input_pos][0]
 
-        hidden_states = self.tok_embeddings(tokens)
+        hidden_states = tokens if self.embedding_input else self.tok_embeddings(tokens)
 
         # select, not slice: a [:, :1] slice is a no-op alias when ar_len == 1,
         # which breaks the graph matching used to share encodings across graphs.
@@ -1331,14 +1335,20 @@ class ShortConvHybridLlamaModel(LlamaModel):
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
 
+        if self.output_cache and self.output_hidden:
+            return logits, hidden_states, output_k_cache, output_v_cache + output_conv
         if self.output_cache:
             return logits, output_k_cache, output_v_cache + output_conv
         return logits
 
     def get_example_inputs(self):
         dtype = torch.int64 if self.use_i64_token else torch.int32
-        tokens = torch.randint(
-            self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
+        tokens = (
+            torch.randn(self.max_batch_size, self.ar_len, self.dim)
+            if self.embedding_input
+            else torch.randint(
+                self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
+            )
         )
         atten_mask = AttentionMask(
             [
@@ -1376,4 +1386,15 @@ class ShortConvHybridLlamaModel(LlamaModel):
             "get_n_conv_layers": len(self.conv_layers),
             "get_conv_state_len": self.conv_state_len,
             "get_sliding_window": self.sliding_window,
+            **(
+                {"image_token_id": self.image_token_id}
+                if self.image_token_id is not None
+                else {}
+            ),
+            **(
+                {"audio_token_id": self.audio_token_id}
+                if self.audio_token_id is not None
+                else {}
+            ),
+            **({"get_output_hidden": 1} if self.output_hidden else {}),
         }

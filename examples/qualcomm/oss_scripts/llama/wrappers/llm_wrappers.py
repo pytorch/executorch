@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import argparse
 import copy
+import dataclasses
 import gc
 import inspect
 import json
@@ -415,7 +416,10 @@ class TextDecoder(Component):
 
         # get embedding model
         tok_embedding = None
-        if self.apply_embedding:
+        if (
+            self.apply_embedding
+            and self.control_args.decoder_model not in LFM3_DECODER_MODELS
+        ):
             if hasattr(self.config, AUDIO_ENCODER):
                 auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(
                     self.config.repo_id, _attn_implementation="eager"
@@ -478,6 +482,18 @@ class TextDecoder(Component):
                 use_i64_token=use_i64_token,
                 **get_model_specific_kwargs(self.control_args, self.config),
             )
+            if (
+                self.apply_embedding
+                and self.control_args.decoder_model in LFM3_DECODER_MODELS
+            ):
+                tok_embedding = TokenEmbedding(
+                    decoder.tok_embeddings,
+                    decoder.max_batch_size,
+                    decoder.ar_len,
+                    decoder.vocab_size,
+                    decoder.dim,
+                    use_i64_token,
+                )
 
         self.meta = decoder.get_metadata()
         # get example input
@@ -547,6 +563,41 @@ class TextDecoder(Component):
                             self.meta["get_logits_zero_point"] = output_node.args[2]
                             break
 
+    def _calibrate_with_embeddings(self):
+        """Extra calibration on precomputed input-embedding sequences
+        (--calib_embeddings), e.g. speech frames fed back to an embedding-input
+        decoder."""
+        path = self.control_args.calib_embeddings
+        if not path:
+            return
+        for embeds in torch.load(path, weights_only=True):
+            inputs = self._decoder_inference.get_inputs(
+                torch.zeros(1, self.export_input[0].shape[1], dtype=torch.int32),
+                tok_embedding=self.tok_embedding,
+            )
+            padded = torch.zeros_like(inputs.inputs_embeds)
+            n = min(embeds.shape[1], padded.shape[1])
+            padded[:, :n] = embeds[:, :n]
+            self.decoder(*dataclasses.replace(inputs, inputs_embeds=padded))
+        logging.info(f"Calibrated on precomputed embeddings from {path}")
+
+    def _save_hidden_quant_attrs(self):
+        """Decoders with a hidden-state output return it right after the logits."""
+        if not self.meta.get("get_output_hidden"):
+            return
+        output = next(n for n in self.decoder.graph.nodes if n.op == "output")
+        hidden = output.args[0][1] if len(output.args[0]) > 1 else None
+        if (
+            not isinstance(hidden, torch.fx.Node)
+            or hidden.target
+            != torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        ):
+            raise RuntimeError(
+                "Hidden-state output 1 must have per-tensor dequantization attributes"
+            )
+        self.meta["get_hidden_scale"] = hidden.args[1]
+        self.meta["get_hidden_zero_point"] = hidden.args[2]
+
     def _save_output_kv_cache_quant_attrs(self):
         kv_idx = 0
         for node in self.decoder.graph.nodes:
@@ -587,7 +638,7 @@ class TextDecoder(Component):
                 source = source.args[0]
         return None
 
-    def _tag_ios(self, node, fixed_point_type):  # noqa: C901
+    def _tag_ios(self, node, fixed_point_type, is_tok_embedding=False):  # noqa: C901
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
@@ -620,7 +671,19 @@ class TextDecoder(Component):
             elif node.meta["val"].size() in atten_mask_shape:
                 quant_io_type = fixed_point_type["io_type"]
 
-        if self.control_args.decoder_model in LFM3_DECODER_MODELS:
+        if not is_tok_embedding and self.meta.get("get_output_hidden"):
+            if any(
+                user.op == "output"
+                and len(user.args[0]) > 1
+                and user.args[0][1] is node
+                for user in node.users
+            ):
+                return fixed_point_type["io_type"]
+
+        if (
+            self.control_args.decoder_model in LFM3_DECODER_MODELS
+            and not is_tok_embedding
+        ):
             conv_type = self._tag_conv_state_ios(node, fixed_point_type)
             if conv_type is not None:
                 return conv_type
@@ -843,6 +906,7 @@ class TextDecoder(Component):
                         tok_embedding=self.tok_embedding,
                         seq_mse_candidates=self.config.seq_mse_candidates,
                     ).quantize(calib_loader=calibration_dataloaders)
+                    self._calibrate_with_embeddings()
                     logging.info("Calibration complete")
             else:
                 # one dummy inference to remove affine observer
@@ -897,7 +961,7 @@ class TextDecoder(Component):
             self.tok_embedding_passes_job[TagQuantIO][
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
             ]["get_quant_io_dtype_fn"] = partial(
-                self._tag_ios, fixed_point_type=fixed_point_type
+                self._tag_ios, fixed_point_type=fixed_point_type, is_tok_embedding=True
             )
 
 
@@ -1119,6 +1183,7 @@ class HybridTextDecoder(Component):
 
             # save logit's quantization attributes to meta
             self.decode._save_logits_quant_attrs()
+            self.decode._save_hidden_quant_attrs()
 
             # save output KV cache's quantization attributes to meta for attention sink
             self.decode._save_output_kv_cache_quant_attrs()
@@ -1282,7 +1347,17 @@ class Modality(Component):
         self.modality = modality
         repo_id = config.repo_id
 
-        if config := getattr(config, modality, None):
+        if (config := getattr(config, modality, None)) and getattr(
+            config, "loads_own_weights", False
+        ):
+            # Weights come from the checkpoint inside create_encoder; no HF modeling code.
+            self.model = config().create_encoder(None).eval()
+            self.meta = self.model.get_metadata()
+            self.example_input = self.model.get_example_inputs()
+            self.quant_recipe = None
+            self.config = config
+            self._encoder_inference = EncoderInference()
+        elif config:
             if modality == AUDIO_ENCODER:
                 auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(repo_id)
             elif modality == TEXT_ENCODER:

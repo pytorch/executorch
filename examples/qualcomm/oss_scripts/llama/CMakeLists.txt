@@ -111,6 +111,9 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_token_generator.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_lhd_token_generator.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_lhd_token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/lfm3_speech_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/lfm3_speech_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/hidden_state.h
 )
 
 list(APPEND _multimodal_runner__srcs)

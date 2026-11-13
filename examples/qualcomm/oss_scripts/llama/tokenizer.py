@@ -27,6 +27,16 @@ AUDIO_TOKEN = "<audio>"
 
 # Special tokens for Vision-Language Model
 VLM_SPECIAL_TOKENS = {
+    "lfm3-2b_vl": {
+        IMG_TOKEN: "<|image|>",
+        "fake_wrap_start": "",
+        "fake_wrap_end": "",
+    },
+    "lfm3-2b_omni": {
+        IMG_TOKEN: "<|image|>",
+        "fake_wrap_start": "",
+        "fake_wrap_end": "",
+    },
     "smolvlm_500m_instruct": {
         IMG_TOKEN: "<image>",
         "global_img": "<global-img>",
@@ -43,7 +53,10 @@ VLM_SPECIAL_TOKENS = {
 ALM_SPECIAL_TOKENS = {
     "granite_speech_3_3-2b": {
         AUDIO_TOKEN: "<|audio|>",
-    }
+    },
+    "lfm3-2b_omni_speech": {
+        AUDIO_TOKEN: "<|audio|>",
+    },
 }
 
 

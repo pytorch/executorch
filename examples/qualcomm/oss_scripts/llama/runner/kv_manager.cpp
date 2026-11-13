@@ -134,11 +134,10 @@ KVManager::KVManager(Metadata metadata, std::unique_ptr<MethodMeta> method_meta)
   v_cache_out_nbytes_.resize(metadata_.num_layers);
 
   for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-    // k output: index 1 + layer
-    Result<TensorInfo> k_out = method_meta->output_tensor_meta(1 + layer);
-    // v output: index 1 + num_layers + layer
+    const int32_t first = metadata_.first_kv_output;
+    Result<TensorInfo> k_out = method_meta->output_tensor_meta(first + layer);
     Result<TensorInfo> v_out =
-        method_meta->output_tensor_meta(1 + metadata_.num_layers + layer);
+        method_meta->output_tensor_meta(first + metadata_.num_layers + layer);
 
     if (kv_cache_dtype_ == executorch::aten::ScalarType::Undefined) {
       kv_cache_dtype_ = k_out->scalar_type();

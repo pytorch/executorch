@@ -35,7 +35,16 @@ class ModalityPreprocessor:
     """Wraps AutoProcessor for one model repo; caches the processor across calls."""
 
     def __init__(self, repo_id: str):
-        self._processor = AutoProcessor.from_pretrained(repo_id)
+        self._repo_id = repo_id
+        self._cached_processor = None
+
+    @property
+    def _processor(self):
+        # Created on first use: encoder configs with their own preprocessing
+        # never need it (and their processors may be custom code).
+        if self._cached_processor is None:
+            self._cached_processor = AutoProcessor.from_pretrained(self._repo_id)
+        return self._cached_processor
 
     def preprocess_audio(
         self,
@@ -64,6 +73,8 @@ class ModalityPreprocessor:
         images: list,
     ) -> List[Tuple[torch.Tensor, ...]]:
         """Applies the vision processor to all images → list of (pixel_values,) per patch."""
+        if hasattr(config, "preprocess_image"):
+            return [(config.preprocess_image(img),) for img in images]
         pixel_values = self._processor(
             text=prompt,
             images=images,
@@ -102,7 +113,11 @@ def preprocess_encoder_inputs(
         if not hasattr(config, modality) or not paths:
             continue
         modality_config = getattr(config, modality)
-        if issubclass(modality_config, AudioModalityConfig):
+        if issubclass(modality_config, AudioModalityConfig) and hasattr(
+            modality_config, "preprocess_audio"
+        ):
+            result[modality] = [(modality_config.preprocess_audio(p),) for p in paths]
+        elif issubclass(modality_config, AudioModalityConfig):
             token = ALM_SPECIAL_TOKENS[decoder_model][AUDIO_TOKEN]
             normalized_prompt = token * len(paths)
             result[modality] = [

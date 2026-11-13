@@ -25,6 +25,7 @@ from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
+    LFM3_DECODER_MODELS,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
@@ -140,6 +141,14 @@ def get_model_specific_kwargs(control_args: argparse.Namespace, config: LLMModel
 
     """
     kwargs = {}
+    if control_args.decoder_model in LFM3_DECODER_MODELS:
+        return {
+            "embedding_input": hasattr(config, AUDIO_ENCODER)
+            or hasattr(config, VISION_ENCODER),
+            "audio_token_id": getattr(config, "audio_token_id", None),
+            "image_token_id": getattr(config, "image_token_id", None),
+            "output_hidden": getattr(config, "output_hidden", False),
+        }
     # For multimodal models, we need the special token ID that represents modality placeholders
     # in the input sequence. This token is used to mark positions where modality embeddings
     # should be inserted during inference.

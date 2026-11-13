@@ -108,6 +108,80 @@ class SmolVLMEncoder(VisionModalityConfig):
 
 
 @dataclass(init=False, frozen=True)
+class Lfm3OmniVisionEncoder(VisionModalityConfig):
+    """
+    LFM3-Omni vision tower + projector at a fixed 448x448 input (196 image embeddings).
+    Built from the HF checkpoint directly; exported in fp16 (no quant recipe).
+    """
+
+    encoder_class = None
+    img_seq_len = 196
+    img_resized_h = 448
+    img_resized_w = 448
+    quant_recipe = None
+    repo_id = "LiquidAI/LFM3-Omni-2B"
+    loads_own_weights = True
+    use_fp16 = True
+
+    @classmethod
+    def preprocess_image(cls, image):
+        from executorch.examples.qualcomm.oss_scripts.lfm3.preprocess import (
+            preprocess_pil,
+        )
+
+        # [1, 1, patches, patch_dim], as the runner's image path feeds the encoder.
+        return preprocess_pil(image, cls.img_resized_h)[None, None]
+
+    def create_encoder(self, config):
+        from executorch.examples.qualcomm.oss_scripts.lfm3.vision import (
+            Lfm3OmniVisionEncoder as Encoder,
+        )
+
+        return Encoder(self.repo_id, self.img_resized_h, self.img_resized_w)
+
+
+@dataclass(init=False, frozen=True)
+class Lfm3OmniAudioEncoder(AudioModalityConfig):
+    """
+    LFM3-Omni speech encoder + projector on a fixed 10.24 s window (1024 mel frames,
+    128 audio embeddings). Input rows: 128 log-mel bins plus a valid-frame row.
+    Built from the HF checkpoint directly; exported in fp16 (no quant recipe).
+    """
+
+    encoder_class = None
+    max_frames = 1024
+    audio_seq_len = 128
+    n_bins = 129
+    quant_recipe = None
+    repo_id = "LiquidAI/LFM3-Omni-2B"
+    loads_own_weights = True
+    use_fp16 = True
+
+    @classmethod
+    def preprocess_audio(cls, path):
+        from executorch.examples.qualcomm.oss_scripts.lfm3.preprocess import (
+            audio_features,
+            load_wav,
+        )
+
+        return audio_features(load_wav(path), cls.max_frames)
+
+    def create_encoder(self, config):
+        from executorch.examples.qualcomm.oss_scripts.lfm3.audio import (
+            Lfm3OmniAudioEncoder as Encoder,
+        )
+
+        return Encoder(self.repo_id, self.max_frames)
+
+
+@dataclass(init=False, frozen=True)
+class Lfm3VLVisionEncoder(Lfm3OmniVisionEncoder):
+    """LFM3-VL vision tower + projector: same architecture as LFM3-Omni's."""
+
+    repo_id = "LiquidAI/LFM3-VL-2B"
+
+
+@dataclass(init=False, frozen=True)
 class InternVL3Encoder(VisionModalityConfig):
     """
     Config for InternVL3 vision encoder.

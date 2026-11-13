@@ -142,6 +142,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":static_llama",
                 "//caffe2:torch",
+                "//executorch/examples/qualcomm/oss_scripts/lfm3:lfm3",
             ],
         )
 
@@ -364,6 +365,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/examples/models/lfm3:lfm3",
                 "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
                 "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+                "//executorch/examples/qualcomm/oss_scripts/lfm3:speech_policy",
                 "//executorch/extension/export_util:export_util",
                 "//executorch/extension/llm/export:export_lib",
                 "//executorch/extension/pybindings:aten_lib",

@@ -714,6 +714,35 @@ class Lfm3QuantRecipe(StaticLLMQuantRecipe):
         self.recipe.custom_quant_annotations.append(annotate_conv_state)
 
 
+class Lfm3SpeechQuantRecipe(StaticLLMQuantRecipe):
+    """LFM3-Omni with speech output: 8-bit weights. The depth decoder reads the
+    decoder's final hidden state every speech frame; with 4-bit weights its
+    first-pass predictions agree with fp32 far less often."""
+
+    default_quant_dtype = QuantDtype.use_16a8w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = QuantRecipe(
+            self.default_quant_dtype,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_TENSOR,
+            verbose=verbose,
+        ).add_node_target(
+            {
+                torch.ops.aten.conv2d.default,
+            },
+            QuantDtype.use_16a8w,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_CHANNEL,
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+        self.recipe.custom_quant_annotations.append(annotate_conv_state)
+
+
 class Smollm2QuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a8w
 

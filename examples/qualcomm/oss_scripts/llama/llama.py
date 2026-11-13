@@ -26,6 +26,9 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
 )
+from executorch.examples.qualcomm.oss_scripts.lfm3.speech_policy import (
+    require_speech_calibration,
+)
 from executorch.examples.qualcomm.oss_scripts.llama import (
     LLMModelConfig,
     SUPPORTED_LLM_MODELS,
@@ -123,7 +126,9 @@ def compile(
             # In multi‑image scenarios, we skip encoder quantization by default to preserve modality feature quality,
             # because the encoder is quite sensitive and quantization can make it harder for the model to distinguish
             # between images within the same conversation.
-            to_skip = len(args.image_path) > 1
+            to_skip = len(args.image_path) > 1 or getattr(
+                getattr(decoder_model_config, modality, None), "use_fp16", False
+            )
             if args.backend == "htp":
                 backend_options = generate_htp_compiler_spec(
                     use_fp16=to_skip,
@@ -623,6 +628,15 @@ def _build_parser():
     )
 
     parser.add_argument(
+        "--calib_embeddings",
+        type=str,
+        default=None,
+        help="Optional .pt file with a list of [1, seq_len, dim] decoder input-embedding "
+        "sequences, used as extra calibration for embedding-input decoders (e.g. "
+        "LFM3-Omni speech frames, which no text or encoder sample produces).",
+    )
+
+    parser.add_argument(
         "--calib_hf_dataset",
         type=str,
         default=None,
@@ -774,6 +788,12 @@ def export_llama(args) -> None:
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
     decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
+    require_speech_calibration(
+        getattr(decoder_model_config, "output_hidden", False),
+        args.calib_embeddings,
+        args.pre_gen_pte,
+        args.use_fp16,
+    )
     logging.info(f"*** {args.decoder_model} ***\n%s", str(decoder_model_config))
 
     if args.max_context_len is None:

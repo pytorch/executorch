@@ -155,6 +155,10 @@ class EncoderDatasetBuilder:
         prompt: str,
         paths: List[str],
     ) -> List[Tuple[torch.Tensor, ...]]:
+        if issubclass(config, AudioModalityConfig) and hasattr(
+            config, "preprocess_audio"
+        ):
+            return [(config.preprocess_audio(p),) for p in paths]
         if issubclass(config, AudioModalityConfig):
             return [
                 self._preprocessor.preprocess_audio(
