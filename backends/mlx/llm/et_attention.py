@@ -38,6 +38,33 @@ if TYPE_CHECKING:
     from executorch.examples.models.llama.attention import AttentionMHA
 
 
+def _check_mlx_unsupported(
+    *,
+    use_q_gate: bool,
+    is_kv_shared_layer: bool,
+    use_attn_o_norm: bool,
+    use_attn_o_gate: bool,
+    scale_query_by: float,
+) -> None:
+    """Raise if any attention option has no MLX implementation.
+
+    Shared by __init__ and from_attention_mha so the two paths cannot drift.
+    """
+    unsupported = []
+    if use_q_gate:
+        unsupported.append("use_q_gate")
+    if is_kv_shared_layer:
+        unsupported.append("is_kv_shared_layer (YOCO)")
+    if use_attn_o_norm:
+        unsupported.append("use_attn_o_norm")
+    if use_attn_o_gate:
+        unsupported.append("use_attn_o_gate")
+    if scale_query_by != 1.0:
+        unsupported.append(f"scale_query_by={scale_query_by}")
+    if unsupported:
+        raise NotImplementedError(f"MLXAttentionMHA does not support: {unsupported}")
+
+
 @register_attention("mlx")
 class MLXAttentionMHA(Attention):
     """
@@ -58,25 +85,16 @@ class MLXAttentionMHA(Attention):
         if not args.use_kv_cache:
             raise ValueError("MLXAttention requires use_kv_cache=True")
 
-        # Fail loudly on unsupported options (must match from_attention_mha)
-        if getattr(args, "use_q_gate", False):
-            raise NotImplementedError("MLXAttentionMHA does not support use_q_gate")
-        if getattr(args, "is_kv_shared_layer", False):
-            raise NotImplementedError(
-                "MLXAttentionMHA does not support is_kv_shared_layer (YOCO)"
-            )
-        if getattr(args, "use_attn_o_norm", False):
-            raise NotImplementedError(
-                "MLXAttentionMHA does not support use_attn_o_norm"
-            )
-        if getattr(args, "use_attn_o_gate", False):
-            raise NotImplementedError(
-                "MLXAttentionMHA does not support use_attn_o_gate"
-            )
-        if getattr(args, "scale_query_by", 1.0) != 1.0:
-            raise NotImplementedError(
-                f"MLXAttentionMHA does not support scale_query_by={args.scale_query_by}"
-            )
+        # Fail loudly on unsupported options
+        num_kv_shared = args.num_kv_shared_layers
+        _check_mlx_unsupported(
+            use_q_gate=args.use_q_gate,
+            is_kv_shared_layer=num_kv_shared > 0
+            and layer_id >= args.n_layers - num_kv_shared,
+            use_attn_o_norm=args.use_attn_o_norm,
+            use_attn_o_gate=args.use_attn_o_gate,
+            scale_query_by=args.scale_query_by,
+        )
 
         self.use_kv_cache = True
         self.n_heads = args.n_heads
@@ -96,21 +114,16 @@ class MLXAttentionMHA(Attention):
         self.enable_dynamic_shape = args.enable_dynamic_shape
 
         # Output gate support (Spark-X2.5 uses headwise_attn_output_gate)
-        self.headwise_attn_output_gate = getattr(
-            args, "headwise_attn_output_gate", False
-        )
+        self.headwise_attn_output_gate = args.headwise_attn_output_gate
 
         # Sliding window support
         self.is_sliding = (
-            getattr(args, "layer_types", None) is not None
+            args.layer_types is not None
             and layer_id < len(args.layer_types)
             and args.layer_types[layer_id] == "sliding_attention"
         )
         # Only set sliding_window for sliding layers (consistent with from_attention_mha)
-        if self.is_sliding:
-            self.sliding_window = getattr(args, "sliding_window", None)
-        else:
-            self.sliding_window = None
+        self.sliding_window = args.sliding_window if self.is_sliding else None
 
         if self.use_qk_norm:
             self.q_norm_fn = RMSNorm(self.head_dim, eps=args.norm_eps)
@@ -138,8 +151,9 @@ class MLXAttentionMHA(Attention):
         self.rope_traditional = not rope.params.use_hf_rope
         self.rope_dims = int(self.head_dim * rope.params.partial_rotary_factor)
 
-        # Sliding-window layers use ring buffer cache
-        if self.is_sliding and self.sliding_window:
+        # Sliding-window layers use a ring buffer, but only when the context can
+        # outgrow the window; otherwise a plain cache is smaller and equivalent.
+        if self._uses_ring_buffer(args.max_context_len, self.sliding_window):
             self.kv_cache = RingBufferKVCache(
                 max_batch_size=args.max_batch_size,
                 max_context_length=self.sliding_window,
@@ -162,6 +176,10 @@ class MLXAttentionMHA(Attention):
             return False
         return True
 
+    @staticmethod
+    def _uses_ring_buffer(max_context_len: int, sliding_window: Optional[int]) -> bool:
+        return sliding_window is not None and max_context_len > sliding_window
+
     @classmethod
     def from_attention_mha(
         cls, other: "AttentionMHA", dtype: Optional[torch.dtype] = None
@@ -175,23 +193,17 @@ class MLXAttentionMHA(Attention):
         from executorch.examples.models.llama.attention import AttentionMHA
 
         assert isinstance(other, AttentionMHA)
+        if not other.use_kv_cache:
+            raise ValueError("MLXAttention requires use_kv_cache=True")
 
         # Fail loudly on unsupported AttentionMHA options
-        _unsupported = []
-        if getattr(other, "use_q_gate", False):
-            _unsupported.append("use_q_gate")
-        if getattr(other, "is_kv_shared_layer", False):
-            _unsupported.append("is_kv_shared_layer (YOCO)")
-        if getattr(other, "use_attn_o_norm", False):
-            _unsupported.append("use_attn_o_norm")
-        if getattr(other, "use_attn_o_gate", False):
-            _unsupported.append("use_attn_o_gate")
-        if getattr(other, "scale_query_by", 1.0) != 1.0:
-            _unsupported.append(f"scale_query_by={other.scale_query_by}")
-        if _unsupported:
-            raise NotImplementedError(
-                f"MLXAttentionMHA does not support: {_unsupported}"
-            )
+        _check_mlx_unsupported(
+            use_q_gate=other.use_q_gate,
+            is_kv_shared_layer=other.is_kv_shared_layer,
+            use_attn_o_norm=other.use_attn_o_norm,
+            use_attn_o_gate=other.use_attn_o_gate,
+            scale_query_by=other.scale_query_by,
+        )
 
         instance = cls.__new__(cls)
         Attention.__init__(instance)
@@ -213,19 +225,12 @@ class MLXAttentionMHA(Attention):
         instance.enable_dynamic_shape = other.enable_dynamic_shape
 
         # Copy output gate fields (Spark-X2.5 uses headwise_attn_output_gate)
-        instance.headwise_attn_output_gate = getattr(
-            other, "headwise_attn_output_gate", False
-        )
         # use_attn_o_gate and use_attn_o_norm are checked in unsupported list above
+        instance.headwise_attn_output_gate = other.headwise_attn_output_gate
 
         # Copy sliding window fields
-        # AttentionMHA doesn't store sliding_window as attribute, get it from kv_cache
-        instance.is_sliding = getattr(other, "is_sliding", False)
-        if hasattr(other, "kv_cache") and hasattr(other.kv_cache, "window_size"):
-            # RingKVCache stores window_size
-            instance.sliding_window = other.kv_cache.window_size
-        else:
-            instance.sliding_window = None
+        instance.is_sliding = other.is_sliding
+        instance.sliding_window = other.sliding_window
 
         # Share weight references
         instance.wq = other.wq
@@ -252,19 +257,18 @@ class MLXAttentionMHA(Attention):
         if instance.headwise_attn_output_gate:
             instance.og = other.og
 
-        # Create fresh MLX KV cache (ring buffer for sliding layers)
-        cache_dtype = dtype if dtype is not None else torch.float32
-        if hasattr(other, "kv_cache") and hasattr(other.kv_cache, "k_cache"):
-            cache_dtype = dtype if dtype is not None else other.kv_cache.k_cache.dtype
+        # Create fresh MLX KV cache (ring buffer for sliding layers whose
+        # context can outgrow the window)
+        cache_dtype = dtype if dtype is not None else other.kv_cache.k_cache.dtype
 
-        if instance.is_sliding and instance.sliding_window:
+        if cls._uses_ring_buffer(other.max_context_len, instance.sliding_window):
             instance.kv_cache = RingBufferKVCache(
                 max_batch_size=other.max_batch_size,
                 max_context_length=instance.sliding_window,
                 n_heads=instance.n_kv_heads,
                 head_dim=instance.head_dim,
                 dtype=cache_dtype,
-                max_write_len=min(other.max_context_len, instance.sliding_window),
+                max_write_len=min(other.max_seq_len, instance.sliding_window),
             )
         else:
             instance.kv_cache = KVCache(
@@ -340,7 +344,7 @@ class MLXAttentionMHA(Attention):
         k, v = self.kv_cache.update(start_pos, k, v)
 
         # Sliding-window layers use ring-buffer mask; full layers use causal
-        if self.is_sliding and isinstance(self.kv_cache, RingBufferKVCache):
+        if isinstance(self.kv_cache, RingBufferKVCache):
             sdpa_mask = self.kv_cache.create_sliding_window_mask(start_pos, seqlen)
             # seqlen <= max_write_len <= window keeps this non-negative
             sdpa_start = self.kv_cache.buffer_size - seqlen

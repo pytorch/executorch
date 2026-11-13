@@ -442,21 +442,14 @@ llama-cuda-debug:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
-# Internal target for MLX runner builds
-.mlx-runner:
+lfm_2_5-mlx spark_x2_5-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
-	@echo "==> Building $(MODEL_NAME) runner with MLX..."
+	@echo "==> Building Llama runner with MLX..."
 	cd examples/models/llama && cmake --workflow --preset llama-mlx
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
-
-lfm_2_5-mlx:
-	@$(MAKE) .mlx-runner MODEL_NAME="LFM2.5"
-
-spark_x2_5-mlx:
-	@$(MAKE) .mlx-runner MODEL_NAME="Spark-X2.5"
 
 llava-cpu:
 	@echo "==> Building and installing ExecuTorch..."

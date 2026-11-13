@@ -38,6 +38,15 @@ python -m extension.llm.export.export_llm \
   +export.output_name="spark_x2_5_4b_mlx_4w.pte"
 ```
 
+Note (MLX): the sliding-window layers use a ring KV cache whose single-forward
+write is bounded by `sliding_window` (512), so prefill must be chunked to at
+most 512 tokens per forward pass; keep `export.max_seq_length <= 512`
+(the default 128 is fine). `export.max_context_length` may exceed the window,
+e.g. `+export.max_seq_length=512 +export.max_context_length=4096`. When
+`max_context_length <= 512` the window never evicts, so the sliding layers
+fall back to a plain KV cache. The same single-write bound applies to the
+Gemma 4 MLX path.
+
 Export Spark-X2.5-1.7B to XNNPack, FP32:
 ```
 python -m extension.llm.export.export_llm \

@@ -429,6 +429,8 @@ class AttentionMHA(Attention):
             and layer_id < len(args.layer_types)
             and args.layer_types[layer_id] == "sliding_attention"
         )
+        self.sliding_window = args.sliding_window if self.is_sliding else None
+        self.max_seq_len = args.max_seq_len
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
