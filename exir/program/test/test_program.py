@@ -1061,6 +1061,36 @@ class TestProgramManagers(unittest.TestCase):
             program, ops_not_to_decompose, expected_non_decomposed_edge_ops
         )
 
+    def test_to_edge_leaves_the_preserve_ops_list_unchanged(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        preserve_ops = [torch.ops.aten.linear.default]
+
+        for _ in range(2):
+            to_edge(
+                program, compile_config=EdgeCompileConfig(preserve_ops=preserve_ops)
+            )
+
+        self.assertEqual(preserve_ops, [torch.ops.aten.linear.default])
+
+    def test_edge_program_manager_leaves_the_exception_list_unchanged(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        edge_program = to_edge(program).exported_program()
+        exception_list = [torch.ops.aten._linalg_svd.default]
+
+        EdgeProgramManager(
+            edge_program,
+            compile_config=EdgeCompileConfig(
+                _core_aten_ops_exception_list=[
+                    torch.ops.aten.linalg_vector_norm.default
+                ]
+            ),
+            core_aten_ops_exception_list=exception_list,
+        )
+
+        self.assertEqual(exception_list, [torch.ops.aten._linalg_svd.default])
+
     def test_to_edge_with_partial_ops_preserved(self):
         model = TestLinearSDPACombined()
         program = torch.export.export(model, model._get_random_inputs(), strict=True)
