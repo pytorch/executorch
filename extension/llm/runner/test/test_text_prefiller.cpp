@@ -31,6 +31,7 @@ class MockTextDecoderRunner : public TextDecoderRunner {
       step,
       (executorch::extension::TensorPtr&, int64_t),
       ());
+  MOCK_METHOD(int64_t, max_tokens_per_step, (int64_t), (const, override));
   MOCK_METHOD(bool, is_method_loaded, (), ());
   MOCK_METHOD(Result<uint64_t>, prefill, (std::vector<uint64_t>&, int64_t), ());
   MOCK_METHOD(::executorch::runtime::Error, load, (), ());
@@ -42,6 +43,8 @@ class TextPrefillerTest : public Test {
   void SetUp() override {
     executorch::runtime::runtime_init();
     // Set up default behavior for the text decoder runner
+    ON_CALL(text_decoder_runner_, max_tokens_per_step(_))
+        .WillByDefault(Return(-1));
     ON_CALL(text_decoder_runner_, is_method_loaded())
         .WillByDefault(Return(true));
     ON_CALL(text_decoder_runner_, step)
@@ -515,4 +518,58 @@ TEST_F(
   // initial_pos + num_tokens, not double-incremented
   EXPECT_EQ(start_pos, 108); // 100 + 8 tokens
 }
+TEST_F(TextPrefillerTest, FallsBackToDecodeForAPaddedTail) {
+  MockTextDecoderRunner decode;
+  TextPrefiller prefiller(&text_decoder_runner_, true, true, 4, &decode);
+  std::vector<uint64_t> tokens = {7, 9};
+  int64_t start = 13;
+  EXPECT_CALL(text_decoder_runner_, max_tokens_per_step(13))
+      .WillOnce(Return(0));
+  EXPECT_CALL(text_decoder_runner_, step(_, _)).Times(0);
+  EXPECT_CALL(decode, load()).WillOnce(Return(Error::Ok));
+  InSequence sequence;
+  EXPECT_CALL(decode, step(_, 13)).WillOnce([&](auto& input, int64_t) {
+    EXPECT_EQ(input->numel(), 1);
+    EXPECT_EQ(input->template const_data_ptr<int64_t>()[0], 7);
+    return Result<executorch::aten::Tensor>(tensor);
+  });
+  EXPECT_CALL(decode, step(_, 14)).WillOnce([&](auto& input, int64_t) {
+    EXPECT_EQ(input->template const_data_ptr<int64_t>()[0], 9);
+    return Result<executorch::aten::Tensor>(tensor);
+  });
+  auto result = prefiller.prefill(tokens, start);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(*result, 3);
+  EXPECT_EQ(start, 15);
+}
+
+TEST_F(TextPrefillerTest, DoesNotRetryOtherErrorsAsDecode) {
+  MockTextDecoderRunner decode;
+  TextPrefiller prefiller(&text_decoder_runner_, true, true, 4, &decode);
+  std::vector<uint64_t> tokens = {7, 9};
+  int64_t start = 13;
+  EXPECT_CALL(text_decoder_runner_, step(_, 13))
+      .WillOnce([](auto&, int64_t) -> Result<executorch::aten::Tensor> {
+        return Error::InvalidArgument;
+      });
+  EXPECT_CALL(decode, step(_, _)).Times(0);
+  EXPECT_EQ(prefiller.prefill(tokens, start).error(), Error::InvalidArgument);
+  EXPECT_EQ(start, 13);
+}
+
+TEST_F(TextPrefillerTest, DoesNotRetryExecutionResourceErrors) {
+  MockTextDecoderRunner decode;
+  TextPrefiller prefiller(&text_decoder_runner_, true, true, 4, &decode);
+  std::vector<uint64_t> tokens = {7, 9};
+  int64_t start = 13;
+  EXPECT_CALL(text_decoder_runner_, step(_, 13))
+      .WillOnce([](auto&, int64_t) -> Result<executorch::aten::Tensor> {
+        return Error::OutOfResources;
+      });
+  EXPECT_CALL(decode, load()).Times(0);
+  EXPECT_CALL(decode, step(_, _)).Times(0);
+  EXPECT_EQ(prefiller.prefill(tokens, start).error(), Error::OutOfResources);
+  EXPECT_EQ(start, 13);
+}
+
 } // namespace
