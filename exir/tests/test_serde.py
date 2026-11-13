@@ -7,6 +7,7 @@
 # pyre-strict
 
 import io
+import operator
 import os
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ from executorch.exir.serde.export_serialize import (
     deserialize_torch_artifact,
     GraphModuleDeserializer,
     serialize_torch_artifact,
+    SerializeError,
 )
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch import nn
@@ -389,6 +391,171 @@ class TestSerde(unittest.TestCase):
                     node.meta.get("from_node"), node_new.meta.get("from_node")
                 ):
                     self.assertEqual(node_source.to_dict(), node_source_new.to_dict())
+
+    def test_meta_custom(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x, y):
+                return torch.relu(x + y)
+
+        inputs = (torch.randn(2, 4), torch.randn(2, 4))
+        edge = to_edge(export(Model(), inputs, strict=True))
+        program = edge.exported_program()
+        annotated = [n for n in program.graph.nodes if n.op == "call_function"]
+        for i, node in enumerate(annotated):
+            node.meta["custom"] = {"ranges": {"out": [-1.5, 2.0]}, "index": i}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "program.pt2")
+            exir.save(program, path)
+            loaded = exir.load(path)
+
+        loaded_nodes = {n.name: n for n in loaded.graph.nodes}
+        for node in annotated:
+            self.assertEqual(
+                loaded_nodes[node.name].meta.get("custom"), node.meta["custom"]
+            )
+
+    def test_meta_custom_not_json_serializable_raises(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        edge = to_edge(export(Model(), (torch.randn(2, 4),), strict=True))
+        program = edge.exported_program()
+        (relu,) = [n for n in program.graph.nodes if n.op == "call_function"]
+        relu.meta["custom"] = {"value": object()}
+
+        with self.assertRaisesRegex(SerializeError, relu.name) as raised:
+            exir.save(program, io.BytesIO())
+        self.assertIsInstance(raised.exception.__cause__, TypeError)
+
+    def test_meta_custom_empty(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        program = to_edge(
+            export(Model(), (torch.randn(2, 4),), strict=True)
+        ).exported_program()
+        (relu,) = [n for n in program.graph.nodes if n.op == "call_function"]
+        for custom in ({}, [], None, False, 0, ""):
+            with self.subTest(custom=custom):
+                relu.meta["custom"] = custom
+                buffer = io.BytesIO()
+                exir.save(program, buffer)
+                buffer.seek(0)
+                loaded = exir.load(buffer)
+                loaded_relu = next(n for n in loaded.graph.nodes if n.name == relu.name)
+                self.assertIn("custom", loaded_relu.meta)
+                self.assertEqual(loaded_relu.meta["custom"], custom)
+
+    def test_meta_custom_json_conversions(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        class CustomDict(dict):
+            pass
+
+        program = to_edge(
+            export(Model(), (torch.randn(2, 4),), strict=True)
+        ).exported_program()
+        (relu,) = [n for n in program.graph.nodes if n.op == "call_function"]
+        relu.meta["custom"] = CustomDict({"pads": (1, 1), "keys": {0: "a"}})
+        buffer = io.BytesIO()
+        exir.save(program, buffer)
+        buffer.seek(0)
+        loaded = exir.load(buffer)
+        loaded_relu = next(n for n in loaded.graph.nodes if n.name == relu.name)
+        custom = loaded_relu.meta["custom"]
+        self.assertIs(type(custom), dict)
+        self.assertEqual(custom, {"pads": [1, 1], "keys": {"0": "a"}})
+
+    def test_meta_custom_multiple_outputs(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                values, indices = torch.max(x, dim=1)
+                return values, indices
+
+        inputs = (torch.randn(2, 4),)
+        for dialect in ("aten", "edge"):
+            with self.subTest(dialect=dialect):
+                program = export(Model(), inputs, strict=True)
+                self.assertIs(program.call_spec.out_spec.type, tuple)
+                if dialect == "edge":
+                    program = to_edge(program).exported_program()
+                (producer,) = [
+                    n
+                    for n in program.graph.nodes
+                    if n.op == "call_function" and n.target is not operator.getitem
+                ]
+                custom = {"ranges": {"out": [-1.5, 2.0]}}
+                producer.meta["custom"] = custom
+                buffer = io.BytesIO()
+                exir.save(program, buffer)
+                buffer.seek(0)
+                loaded = exir.load(buffer)
+                loaded_producer = next(
+                    n for n in loaded.graph.nodes if n.name == producer.name
+                )
+                outputs = list(loaded_producer.users)
+                self.assertEqual(len(outputs), 2)
+                for output in outputs:
+                    self.assertIs(output.target, operator.getitem)
+                    self.assertEqual(output.meta["custom"], custom)
+                outputs[0].meta["custom"]["ranges"]["out"][0] = 10.0
+                self.assertEqual(outputs[1].meta["custom"], custom)
+                self.assertEqual(loaded_producer.meta["custom"], custom)
+                self.check_ep(program, loaded, inputs)
+
+    def test_meta_custom_delegate(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return (x + x) - x
+
+        edge = to_edge(export(Model(), (torch.randn(1, 2),), strict=True))
+        program = edge.to_backend(BackendWithNDMPartitioner()).exported_program()
+        (_, lowered, delegate_node) = get_lowered_submodules(program.graph_module)[0]
+        delegate_node.meta["custom"] = {"delegate": True}
+        original_nodes = [
+            n for n in lowered.original_module.graph.nodes if n.op == "call_function"
+        ]
+        self.assertTrue(original_nodes)
+        for i, node in enumerate(original_nodes):
+            node.meta["custom"] = {"index": i}
+        buffer = io.BytesIO()
+        exir.save(program, buffer)
+        buffer.seek(0)
+        loaded = exir.load(buffer)
+        (_, loaded_lowered, loaded_delegate) = get_lowered_submodules(
+            loaded.graph_module
+        )[0]
+        self.assertEqual(loaded_delegate.meta["custom"], {"delegate": True})
+        loaded_nodes = {n.name: n for n in loaded_lowered.original_module.graph.nodes}
+        for node in original_nodes:
+            self.assertEqual(
+                loaded_nodes[node.name].meta["custom"], node.meta["custom"]
+            )
+
+    def test_meta_custom_alloc(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        edge = to_edge(export(Model(), (torch.randn(2, 4),), strict=True))
+        program = edge.to_executorch().exported_program()
+        allocs = [n for n in program.graph.nodes if n.target is exir.memory.alloc]
+        self.assertTrue(allocs)
+        for node in allocs:
+            node.meta["custom"] = {"allocation": True}
+        buffer = io.BytesIO()
+        exir.save(program, buffer)
+        buffer.seek(0)
+        loaded = exir.load(buffer)
+        loaded_allocs = [n for n in loaded.graph.nodes if n.target is exir.memory.alloc]
+        self.assertEqual(len(loaded_allocs), len(allocs))
+        for node in loaded_allocs:
+            self.assertEqual(node.meta["custom"], {"allocation": True})
 
     def test_memory_ops(self) -> None:
         class MemoryOpsModule(nn.Module):

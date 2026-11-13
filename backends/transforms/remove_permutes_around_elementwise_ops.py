@@ -96,6 +96,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             exir_ops.edge.aten.pad.default,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.slice_copy.Tensor,
+            exir_ops.edge.aten.expand_copy.default,
         }
         try:
             self._permutable_ops.add(
@@ -613,7 +614,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if self.get_permutation(inp) != current_start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
-            elif (inp_val := inp.meta.get("val")) is not None and inp_val.numel() == 1:
+            elif not isinstance(inp_val := inp.meta.get("val"), torch.Tensor | None):
+                # A symbolic scalar such as sym_size may read a dim of a region
+                # tensor, which removing the permutes would change.
+                return False
+            elif inp_val is not None and inp_val.numel() == 1:
                 # A numel-1 input (per-tensor quant scale / zero_point, scalar
                 # constant, ...) is layout-invariant: it broadcasts identically
                 # under any permutation, so it needs no compensating permute and
@@ -844,6 +849,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_reduction_dim(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
+            elif node.target == exir_ops.edge.aten.expand_copy.default:
+                self.update_expand_copy(node, node_start_perm)
             elif node.target in self._PAD_OPS:
                 self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
@@ -1025,6 +1032,17 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)
         set_arg(node, "dim", start_permute[dim])
+
+    def update_expand_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
+        size = cast(list[int], get_arg(node, "size"))
+        # Reordering can move a -1 onto a dim a rank-growing expand adds, where
+        # -1 is invalid, so spell out every concrete size.
+        out_shape = node.meta["val"].shape
+        size = [
+            out if d == -1 and isinstance(out, int) else d
+            for d, out in zip(size, out_shape)
+        ]
+        set_arg(node, "size", [size[start_permute.index(i)] for i in range(len(size))])
 
     def update_pad(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         pad = list(cast(list[int], node.args[1]))

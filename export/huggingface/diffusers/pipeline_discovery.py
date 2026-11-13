@@ -60,7 +60,7 @@ def pipeline_spec_from_model_index(
             f"{pipeline_name} requires text encoder components "
             f"{defaults.text_encoder_slots}, found {text_encoder_slots}"
         )
-    if len(export_spec.default_max_sequence_lengths) != len(text_encoder_slots):
+    if len(export_spec.default_max_text_sequence_lengths) != len(text_encoder_slots):
         raise ValueError(
             f"{pipeline_name} must define one maximum sequence length per "
             "text encoder"
@@ -103,7 +103,7 @@ def resolve_huggingface_pipeline(
         model_info=DiffusionModelInfo(
             scheduler_name=scheduler_name,
             scheduler_prediction_type=prediction_type,
-            max_sequence_lengths=export_spec.default_max_sequence_lengths,
+            max_sequence_lengths=export_spec.default_max_text_sequence_lengths,
             zero_negative_prompt=zero_negative_prompt,
         ),
     )

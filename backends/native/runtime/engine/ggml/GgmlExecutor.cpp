@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -491,11 +492,13 @@ class GgmlExecutable final : public EngineExecutable {
     std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
       return backend.get();
     });
+    // The scheduler hashes a graph's leafs as well as its nodes, and a graph
+    // holds up to graph_size of each.
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
         static_cast<int>(raw.size()),
-        options_.graph_size,
+        2 * options_.graph_size,
         /*parallel=*/false,
         /*op_offload=*/true));
     if (!scheduler) {
@@ -542,7 +545,27 @@ class GgmlExecutable final : public EngineExecutable {
             "' may only feed linear or embedding weights, not '" + node.target +
             "'");
       }
+      if (op == "aten.linear.default" &&
+          !options_.allow_activation_quant_for_weight_only &&
+          !has_dequantized_input(node)) {
+        throw std::runtime_error(
+            "ggml: weight-only quantized linear '" + node.name +
+            "' needs allow_activation_quant_for_weight_only, since ggml "
+            "quantizes its activations");
+      }
     }
+  }
+
+  bool has_dequantized_input(const Node& linear) const {
+    const NamedArgument* input = find_arg(linear, "input", 0);
+    if (input == nullptr || input->arg.kind() != ArgKind::Tensor) {
+      return false;
+    }
+    const NodeId producer =
+        method_.graph.value(input->arg.as_tensor().id).producer_id;
+    return valid(producer) &&
+        op_key(method_.graph.node(producer).target) ==
+        "torchao.dequantize_affine.default";
   }
 
   // Converters read some dtypes through typed pointers, so the package's bytes
@@ -969,13 +992,13 @@ class GgmlExecutable final : public EngineExecutable {
       }
       std::vector<float> factors = to_float_vector(
           bytes->span(), method_.graph.value(inv_freq).tensor_meta().dtype);
-      // ggml_rope_ext with freq_base 1 computes theta = pos / factor.
-      for (float& factor : factors) {
-        if (factor == 0.0f) {
-          throw std::runtime_error("ggml: rope inv_freq has a zero entry");
-        }
-        factor = 1.0f / factor;
-      }
+      // ggml_rope_ext with freq_base 1 computes theta = pos / factor. A zero
+      // frequency leaves its dims unrotated, as partial RoPE does: an
+      // infinite factor gives theta = 0.
+      std::ranges::transform(factors, factors.begin(), [](float factor) {
+        return factor == 0.0f ? std::numeric_limits<float>::infinity()
+                              : 1.0f / factor;
+      });
       std::vector<uint8_t> raw(factors.size() * sizeof(float));
       std::memcpy(raw.data(), factors.data(), raw.size());
       rope_freq_factors_.emplace(inv_freq, std::move(raw));

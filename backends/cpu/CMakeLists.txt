@@ -31,12 +31,25 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   add_library(cpu_reference runtime/providers/reference/ReferenceProvider.cpp)
   target_link_libraries(cpu_reference PUBLIC cpu_runtime)
 
-  add_library(cpu_xnnpack runtime/providers/xnnpack/XNNPACKProvider.cpp)
+  add_library(
+    cpu_xnnpack runtime/providers/xnnpack/XNNPACKPasses.cpp
+                runtime/providers/xnnpack/XNNPACKProvider.cpp
+  )
   target_link_libraries(
     cpu_xnnpack
     PUBLIC cpu_runtime
-    PRIVATE extension_threadpool
+    PRIVATE extension_threadpool xnnpack_profiler
   )
+  if(EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES)
+    # Operator shapes come from XNNPACK's internal runtime header in its source
+    # root.
+    target_include_directories(
+      cpu_xnnpack PRIVATE $<TARGET_PROPERTY:XNNPACK,SOURCE_DIR>
+    )
+    target_compile_definitions(
+      cpu_xnnpack PRIVATE ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+    )
+  endif()
   if(EXECUTORCH_BUILD_SHARED)
     target_link_libraries(cpu_xnnpack PRIVATE xnnpack_shared)
   else()
@@ -66,6 +79,25 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
     PATTERN "*.h"
     PATTERN "test" EXCLUDE
   )
+
+  if(EXECUTORCH_BUILD_TESTS AND TARGET etdump)
+    add_executable(cpu_plan_test runtime/test/CPUPlanTest.cpp)
+    target_link_libraries(
+      cpu_plan_test
+      PRIVATE cpu_reference cpu_xnnpack optimized_native_cpu_ops_lib etdump
+              GTest::gtest_main
+    )
+    if(EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES)
+      target_compile_definitions(
+        cpu_plan_test PRIVATE ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+      )
+    endif()
+    target_compile_options(
+      cpu_plan_test PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+                            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+    )
+    add_test(NAME cpu_plan_test COMMAND cpu_plan_test)
+  endif()
 endif()
 
 if(NOT EXECUTORCH_BUILD_CPU)
@@ -106,8 +138,16 @@ add_library(
 )
 target_link_libraries(
   cpu_backend PRIVATE native_program extension_threadpool
-                      optimized_native_cpu_ops_lib
+                      optimized_native_cpu_ops_lib xnnpack_profiler
 )
+if(EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES)
+  target_include_directories(
+    cpu_backend PRIVATE $<TARGET_PROPERTY:XNNPACK,SOURCE_DIR>
+  )
+  target_compile_definitions(
+    cpu_backend PRIVATE ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  )
+endif()
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
     cpu_backend PROPERTIES OUTPUT_NAME executorch_backend_cpu

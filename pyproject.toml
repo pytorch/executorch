@@ -138,6 +138,8 @@ license-files = ["LICENSE"]
   "py.typed",
 ]
 
+"executorch.examples.models.muse_glimmer.serving" = ["*.jinja"]
+
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
 

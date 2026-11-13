@@ -21,6 +21,7 @@ from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyn
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes import replace_complex_with_real_pass
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
 
@@ -987,6 +988,38 @@ class TestCudaExport(unittest.TestCase):
 
     @unittest.skipIf(
         torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_masked_select(self):
+        """A direct masked_select call reaches its fallback kernel, unlike a mask
+        index, which Inductor reads as index.Tensor."""
+
+        class MaskedSelectModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.masked_select(x, x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            MaskedSelectModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_nonzero(self):
+        """A direct nonzero call reaches its fallback kernel, unlike a mask index,
+        which Inductor reads as index.Tensor."""
+
+        class NonzeroModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.nonzero(x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            NonzeroModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_fused_sdpa(self):
@@ -1119,7 +1152,9 @@ class TestCudaExport(unittest.TestCase):
                 pairs = torch.view_as_complex(
                     x.to(self.precision).unflatten(-1, (-1, 2))
                 )
-                rotated = torch.view_as_real(pairs * grid * spin.unsqueeze(1) * 0.5)
+                rotated = torch.view_as_real(
+                    pairs * grid * spin.unsqueeze(1) * torch.tensor(0.5)
+                )
                 # A view_as_real can also be an output of the program, and two
                 # of one complex tensor become one output in two slots.
                 return (
@@ -1130,17 +1165,30 @@ class TestCudaExport(unittest.TestCase):
 
         angles = torch.randn(4, 12)
         # Rotary embeddings are often computed in float64, so in complex128.
-        for dtype, precision in (
-            (torch.float32, torch.float32),
-            (torch.bfloat16, torch.float32),
-            (torch.float32, torch.float64),
+        for dtype, precision, device in (
+            (torch.float32, torch.float32, "cpu"),
+            (torch.bfloat16, torch.float32, "cpu"),
+            (torch.float32, torch.float64, "cpu"),
+            # torch.tensor(0.5) stays on the CPU, so on the GPU the product
+            # with it keeps the program complex until the backend moves the
+            # program to the GPU and rewrites it.
+            (torch.float32, torch.float64, "cuda"),
         ):
-            with self.subTest(dtype=dtype, precision=precision):
-                model = ComplexRope(precision)
+            with self.subTest(dtype=dtype, precision=precision, device=device):
+                model = ComplexRope(precision).to(device)
                 x = torch.randn(4, 3, 24, dtype=dtype)
-                program = self._export_to_cuda_with_lower(
-                    model, (x, angles)
-                ).to_executorch()
+                inputs = (x.to(device), angles.to(device))
+                logs = (
+                    self.assertLogs(replace_complex_with_real_pass.logger, "INFO")
+                    if device == "cuda"
+                    else self.assertNoLogs(
+                        replace_complex_with_real_pass.logger, "INFO"
+                    )
+                )
+                with logs:
+                    program = self._export_to_cuda_with_lower(
+                        model, inputs
+                    ).to_executorch()
                 with tempfile.TemporaryDirectory() as directory:
                     path = os.path.join(directory, "model.pte")
                     with open(path, "wb") as f:
@@ -1157,8 +1205,53 @@ class TestCudaExport(unittest.TestCase):
                         .load_method("forward")
                     )
                     outputs = method.execute([x, angles])
-                for output, expected in zip(outputs, model(x, angles), strict=True):
-                    torch.testing.assert_close(output.cpu(), expected)
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected.cpu())
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_complex_product_with_cpu_tensor_without_dims(self):
+        """A program on the GPU can keep tensors with no dims on the CPU, and
+        complex products with them still lower."""
+        from executorch.runtime import Runtime
+
+        class Scaled(torch.nn.Module):
+            def __init__(self, factor):
+                super().__init__()
+                # Unlike buffers, plain attributes stay on the CPU in .to().
+                self.factor = factor
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                return torch.view_as_real(pairs * self.factor).flatten(-2)
+
+        x = torch.randn(4, 8, device="cuda")
+        for factor in (
+            torch.tensor(0.5),
+            torch.polar(torch.tensor(1.0), torch.tensor(0.3)),
+        ):
+            with self.subTest(dtype=factor.dtype):
+                model = Scaled(factor).to("cuda")
+                program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "model.pte")
+                    with open(path, "wb") as f:
+                        program.write_to_file(f)
+                    program.write_tensor_data_to_file(directory)
+                    (data,) = [
+                        os.path.join(directory, name)
+                        for name in os.listdir(directory)
+                        if name.endswith(".ptd")
+                    ]
+                    method = (
+                        Runtime.get()
+                        .load_program(path, data_path=data)
+                        .load_method("forward")
+                    )
+                    (output,) = method.execute([x.cpu()])
+                torch.testing.assert_close(output.cpu(), model(x).cpu())
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """

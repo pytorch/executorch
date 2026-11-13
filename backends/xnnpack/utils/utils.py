@@ -28,6 +28,11 @@ from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_no
 PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
 PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
 
+# Names of the GEMMs whose weight or bias a node computes from params. The GEMM
+# configs set it while checking a GEMM, which may still be rejected, and
+# FoldComputedParamsPass reads it in the delegate, where node names are kept.
+COMPUTED_PARAM_TAG = "xnn_computed_param"
+
 
 def check_or_raise(condition: bool, err: str) -> None:
     """
@@ -75,16 +80,34 @@ def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> Lis
     """Return mean dims as non-negative indices for the given rank."""
     if rank <= 0:
         raise ValueError(f"Expected rank > 0, got {rank}")
-    if mean_dims is None:
-        return list(range(rank))
     if isinstance(mean_dims, int):
         mean_dims = [mean_dims]
+    # None and an empty list both average over every dim.
+    if not mean_dims:
+        return list(range(rank))
     normalized_dims = []
     for dim in mean_dims:
         if dim < -rank or dim >= rank:
             raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
         normalized_dims.append(dim % rank)
     return normalized_dims
+
+
+def is_global_avg_pool_mean(node: torch.fx.Node) -> bool:
+    """
+    Whether a mean.dim node averages a 4D tensor across dims [2, 3] with
+    keepdim=True, which lowers to Global Average Pooling on an NHWC input.
+    XNNPACK has no bf16 Global Average Pooling, so this is False for bf16.
+    """
+    if not (len(node.args) >= 3 and bool(node.args[2])):
+        return False
+    if node.meta["val"].dtype == torch.bfloat16:
+        return False
+    # With keepdim the output has the input's rank. Reading it from the mean
+    # itself keeps this valid inside ChannelsLastTaggedReshapePass, which can
+    # replace the mean's input with a node that has no "val" yet.
+    rank = node.meta["val"].dim()
+    return rank == 4 and sorted(normalize_mean_dims(node.args[1], rank)) == [2, 3]
 
 
 def normalize_pool2d_args(
@@ -167,6 +190,29 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
         or is_param(exp_prog, node)
         or is_buffer(exp_prog, node)
         or is_lifted_tensor_constant(exp_prog, node)
+    )
+
+
+def is_foldable_broadcast_operand(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> bool:
+    """
+    A rank < 4 constant operand of a broadcasting op that ChannelsLastTaggedReshapePass
+    can reshape to 4D and lay out as NHWC ahead of time. A mutated buffer is
+    not constant, and a symbolic shape cannot be expressed in XNNStaticReshape.
+    """
+    if node.op != "placeholder" or not is_param_node(exp_prog, node):
+        return False
+    signature = exp_prog.graph_signature
+    buffer = signature.inputs_to_buffers.get(node.name)
+    if buffer in signature.buffers_to_mutate.values():
+        return False
+    val = node.meta.get("val", None)
+    return (
+        isinstance(val, torch.Tensor)
+        and not has_free_symbols(val.shape)
+        and 0 < val.dim() < 4
+        and val.numel() > 1
     )
 
 

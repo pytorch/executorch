@@ -7,16 +7,19 @@
 """Supported diffusion pipeline specifications and registry."""
 
 from .base import DiffusionPipelineBehavior
+from .flux import FluxPipelineBehavior
 from .sd15 import SD15PipelineBehavior
 from .sdxl import SDXLPipelineBehavior
 
 PIPELINE_BEHAVIORS: dict[str, DiffusionPipelineBehavior] = {
+    FluxPipelineBehavior.name: FluxPipelineBehavior(),
     SDXLPipelineBehavior.name: SDXLPipelineBehavior(),
     SD15PipelineBehavior.name: SD15PipelineBehavior(),
 }
 
 __all__ = [
     "DiffusionPipelineBehavior",
+    "FluxPipelineBehavior",
     "PIPELINE_BEHAVIORS",
     "SD15PipelineBehavior",
     "SDXLPipelineBehavior",

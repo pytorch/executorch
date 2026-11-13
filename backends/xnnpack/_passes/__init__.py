@@ -29,6 +29,9 @@ from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatena
 from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
     DecomposeDepthwiseConvTransposePass,
 )
+from executorch.backends.xnnpack._passes.fold_computed_params import (
+    FoldComputedParamsPass,
+)
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
@@ -77,6 +80,7 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                FoldComputedParamsPass,
                 RewriteFp16SiluPass,
                 XNNPACKRemoveCloneOpsTransform,
                 # TODO - remove this pass once we have a better support for dim_order ops lowering

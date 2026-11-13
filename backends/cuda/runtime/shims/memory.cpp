@@ -385,7 +385,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
-    int64_t storage_offset,
+    int64_t offset_increment,
     SlimTensor** ret_new_tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       self != nullptr,
@@ -411,12 +411,17 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
   IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
 
-  // Create a new tensor view using as_strided. This creates a tensor that
-  // shares the same underlying storage but with different sizes, strides,
-  // and storage offset. SlimTensor::as_strided() handles this via copy
-  // constructor which shares the SharedPtr<Storage>.
-  *ret_new_tensor =
-      new SlimTensor(self->as_strided(sizes, strides, storage_offset));
+  const int64_t self_offset = self->storage_offset();
+  ET_CHECK_OR_RETURN_ERROR(
+      self_offset >= 0 && offset_increment >= -self_offset &&
+          offset_increment <= INT64_MAX - self_offset,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: storage offset %lld plus increment %lld "
+      "is out of range",
+      static_cast<long long>(self_offset),
+      static_cast<long long>(offset_increment));
+  *ret_new_tensor = new SlimTensor(
+      self->as_strided(sizes, strides, self_offset + offset_increment));
 
   return Error::Ok;
 }
@@ -433,7 +438,7 @@ AOTITorchError aoti_torch_as_strided(
       static_cast<int64_t>(self->dim()),
       sizes_ptr,
       strides_ptr,
-      self->storage_offset(),
+      /*offset_increment=*/0,
       ret_new_tensor);
 }
 
