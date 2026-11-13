@@ -225,8 +225,12 @@ if [[ "${EXECUTORCH_BUILD_VULKAN:-0}" != "0" \
   )
   if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     git -c http.sslBackend=openssl submodule update --init "${VULKAN_SUBMODULES[@]}"
-    echo "Installing Vulkan SDK for Windows wheel build..."
-    powershell -ExecutionPolicy Bypass -File .ci/scripts/setup-vulkan-windows-deps.ps1
+    echo "Installing glslc for Windows wheel build..."
+    # The script runs in a child process, so put glslc on this shell's PATH here.
+    _glslc_dir="${RUNNER_TEMP:-${TEMP:-/tmp}}/glslc"
+    powershell -ExecutionPolicy Bypass -File .ci/scripts/setup-vulkan-windows-deps.ps1 \
+      -InstallDir "$(cygpath -w "${_glslc_dir}")"
+    export PATH="$(cygpath -u "${_glslc_dir}")/bin:${PATH}"
   else
     git submodule update --init "${VULKAN_SUBMODULES[@]}"
     # Install glslc from conda-forge rather than the LunarG SDK: the manylinux
