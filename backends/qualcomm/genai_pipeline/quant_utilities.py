@@ -214,6 +214,8 @@ def encoding_override(  # noqa: C901
     pbq_target = {
         torch.ops.torchao.dequantize_affine,
         torch.ops.torchao.quantize_affine,
+        torch.ops.torchao.dequantize_affine.default,
+        torch.ops.torchao.quantize_affine.default,
     }
     pcq_target = {
         torch.ops.quantized_decomposed.dequantize_per_channel.default,
