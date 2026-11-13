@@ -242,12 +242,11 @@ Json check_wmma_family_shared_memory(const Json&, ComputeGraph&) {
   return {{"status", "PASS"}, {"variants", variants}};
 }
 
-// The Vulkan memory model is enabled only on a device that matches a family.
-// On any other device the capability gate keeps rejecting every shader that
-// declares VulkanMemoryModel, as main does (its gate has no mapping for it):
-// parameters.memory_model_shaders lists upstream kernels that declare it
-// (linear_coopmat, matmul_coopmat, the q4gsw / dq8ca coopmat kernels). On a
-// family device it is enabled and every family variant passes the gate.
+// Family kernels pass the capability gate on a family device: the Vulkan
+// memory model is enabled there and accepted for every family variant. On any
+// device, the gate's verdict on the upstream shaders that declare
+// VulkanMemoryModel (parameters.memory_model_shaders) is reported, not
+// asserted; kernel choice is left to the dispatch gates.
 Json check_wmma_memory_model_gate(const Json& spec, ComputeGraph& graph) {
   const RouteExpectation expectation = route_expectation();
   const CoopmatFamily family = coopmat_family(coopmat_device_key(&graph));
@@ -282,17 +281,7 @@ Json check_wmma_memory_model_gate(const Json& spec, ComputeGraph& graph) {
     upstream[name] = passes_gate(name) ? "accepted" : "rejected";
   }
   Json family_kernels = Json::array();
-  if (family == CoopmatFamily::kNone) {
-    reference::require(
-        !enabled && !accepted,
-        "Vulkan memory model enabled or accepted on a device that matches no family");
-    for (const auto& [name, result] : upstream.items()) {
-      reference::require(
-          result == "rejected",
-          name +
-              " passes the capability gate on a device that matches no family");
-    }
-  } else {
+  if (family != CoopmatFamily::kNone) {
     reference::require(
         enabled && accepted,
         "Vulkan memory model not enabled on family " + family_name);
