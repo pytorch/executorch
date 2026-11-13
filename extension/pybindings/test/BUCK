@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
@@ -42,6 +47,9 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
@@ -57,6 +65,9 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:aten_lib",
@@ -80,6 +91,9 @@ fbcode_target(
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
