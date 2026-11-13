@@ -17,8 +17,8 @@ from typing import Any
 import torch
 from executorch.exir._warnings import experimental
 
-from .metadata import DiffusionMetadata, METADATA_METHODS
-from .pipeline_behaviors import DiffusionPipelineBehavior, PIPELINE_BEHAVIORS
+from ..metadata import DiffusionMetadata, METADATA_METHODS
+from ..pipeline_behaviors import DiffusionPipelineBehavior, PIPELINE_BEHAVIORS
 
 ConditioningTensors = tuple[torch.Tensor, ...]
 PromptConditioning = tuple[ConditioningTensors, ConditioningTensors | None]
@@ -475,7 +475,3 @@ def main(argv: Sequence[str] | None = None) -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels).save(args.output)
     print(f"Saved {args.output}")
-
-
-if __name__ == "__main__":
-    main()

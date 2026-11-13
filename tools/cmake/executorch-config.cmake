@@ -114,6 +114,7 @@ set(optional_lib_list
     portable_ops_lib
     custom_ops
     extension_asr_runner
+    extension_diffusers_runner
     extension_evalue_util
     extension_llm_runner
     extension_llm_sampler
