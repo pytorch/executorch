@@ -43,7 +43,7 @@ case "${component}" in
     )
     # TODO: run the other sample tests once they pass.
     targets+=(run_hf_llm_ggml run_whisper_ggml_cpu native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test)
-    test_regex='^native_(ggml_engine|llm_runner_utils|output_check)_test$|^native_ggml_sample_test_act_quant$'
+    test_regex='^native_(ggml_engine|llm_runner_utils|output_check)_test$|^native_ggml_sample_test_(act_quant|no_linear)$'
     ;;
   vulkan)
     cmake_args+=(
