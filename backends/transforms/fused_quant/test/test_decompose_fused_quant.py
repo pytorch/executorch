@@ -382,3 +382,37 @@ class DecomposeFusedQuantTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a lifted constant"):
             DecomposeFusedQuant()(program)
         self.assertEqual(str(program.graph), before)
+
+    def test_rejects_channels_last_ops_before_rewriting(self) -> None:
+        inp = torch.randint(-8, 8, (1, 4, 4, 2), dtype=torch.int8)
+        builder = ProgramBuilder()
+        inp_node = builder.placeholder("inp", inp)
+        first = builder.call_operator(
+            exir_ops.edge.fused_quant.relu.default,
+            args=(
+                inp_node,
+                *create_per_tensor_qparams(builder, dtype=torch.float32),
+                *create_per_tensor_qparams(builder),
+            ),
+        )
+        second = builder.call_operator(
+            exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
+            args=(
+                first,
+                *create_per_tensor_qparams(builder, dtype=torch.float32),
+                *create_per_tensor_qparams(builder),
+                [2, 2],
+                [2, 2],
+                [0, 0],
+                False,
+                True,
+                None,
+            ),
+        )
+        builder.output([second])
+        program = builder.get_program()
+        before = str(program.graph)
+
+        with self.assertRaisesRegex(ValueError, "run ToChannelsFirst"):
+            DecomposeFusedQuant()(program)
+        self.assertEqual(str(program.graph), before)
