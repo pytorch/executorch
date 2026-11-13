@@ -184,6 +184,26 @@ class QuantizedKVCache(nn.Module):
             self.cache_fp_type,
         )
 
+        # k_out/v_out are always self.cache_fp_type (float32), but k_val/v_val
+        # carry whatever dtype the live model activations use (e.g. bfloat16
+        # or float16 for on-device inference). Neither update path below
+        # tolerates that mismatch:
+        #  - torch.ops.llama.update_cache (use_custom_update_cache_op=True) is
+        #    a raw memcpy-based op keyed on byte size, not dtype: a
+        #    same-byte-size mismatch (e.g. bfloat16 into a float16-sized slot)
+        #    silently reinterprets bits and corrupts the cache, while a
+        #    different-byte-size mismatch (e.g. bfloat16/float16 into this
+        #    float32 cache) hits a fatal assertion and aborts the process.
+        #  - the plain-assignment fallback below (`k_out[:, input_pos] = k_val`)
+        #    is advanced/fancy indexing (input_pos is a tensor), which lowers
+        #    to index_put_ and raises `RuntimeError: Index put requires the
+        #    source and destination dtypes match` instead of promoting, unlike
+        #    plain slice assignment.
+        # Cast once, up front, so both paths get a value already in the
+        # cache's float dtype.
+        k_val = k_val.to(k_out.dtype)
+        v_val = v_val.to(v_out.dtype)
+
         # When returning float values we just use the last value
         # instead of dequantized value.
         start_pos = input_pos[0].item()
