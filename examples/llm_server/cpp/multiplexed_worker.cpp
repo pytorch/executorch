@@ -592,11 +592,11 @@ class Worker {
         {
           std::lock_guard<std::mutex> lock(mutex_);
           if (session_checkpoint_operation_) {
-            complete(
-                op,
-                failure(
-                    "capacity_exhausted",
-                    "another checkpoint transfer is in progress"));
+            auto response = failure(
+                "capacity_exhausted",
+                "another checkpoint transfer is in progress");
+            response["admitted"] = false;
+            complete(op, std::move(response));
             return;
           }
           session_checkpoint_operation_ = op;

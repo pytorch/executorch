@@ -355,9 +355,12 @@ must be restorable by the checkpoint and within the runtime context limit. It
 creates an idle session without a pending prediction or sampling state.
 
 Only one checkpoint transfer may be outstanding per worker. Another transfer
-receives `capacity_exhausted`. During restore file I/O, later `generate`, `open`,
+receives `capacity_exhausted` with `admitted:false`. While restore is pending, later
+`generate`, `open`,
 `close`, `reset`, export, or restore requests for that key receive `session_busy`
-with `admitted:false`; retry after the restore terminal. Other keys continue.
+with `admitted:false`; retry after the restore terminal. This also temporarily
+blocks an existing live key when a restore incorrectly targets it, until that
+restore fails. Other keys continue.
 The reservation is released on success or failure before queuing that terminal.
 Runtime errors retain their serving codes; staging-file or manifest failures
 return `checkpoint_error`.

@@ -370,7 +370,9 @@ TEST_F(ProtocolTest, RestoreFileIOReservesKeyAndReleasesItAfterFailure) {
        {"request_id", ++id},
        {"session_id", "other"},
        {"path", "/unused-checkpoint-transfer"}});
-  EXPECT_EQ(receive().at("code"), "capacity_exhausted");
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
   loading->release();
   auto failed = receive();
   EXPECT_EQ(failed.at("request_id"), 1);

@@ -181,12 +181,15 @@ class CPUCheckpoint:
 
 
 def _metadata(checkpoint):
-    return json.dumps(
-        {"identity": checkpoint.identity, "manifest": checkpoint.manifest},
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode()
+    try:
+        return json.dumps(
+            {"identity": checkpoint.identity, "manifest": checkpoint.manifest},
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    except RecursionError as error:
+        raise ValueError("invalid checkpoint header") from error
 
 
 def save_checkpoint(checkpoint: CPUCheckpoint, path: os.PathLike) -> None:

@@ -402,9 +402,13 @@ struct ServingRuntime::Impl {
     }
     auto it = sessions_.find(command.key);
     if (command.operation == Operation::ExportSessionCheckpoint) {
-      if (it == sessions_.end() || !it->second.session) {
+      if (it == sessions_.end()) {
         return ServingError{
             ErrorCode::SessionNotFound, "checkpoint session not found"};
+      }
+      if (it->second.phase != SessionPhase::Open || !it->second.session) {
+        return ServingError{
+            ErrorCode::NotReady, "checkpoint session is unavailable"};
       }
       auto& slot = it->second;
       const auto upto = command.session_checkpoint_position.value_or(

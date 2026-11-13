@@ -275,6 +275,12 @@ TEST_F(
   auto empty = export_result("empty");
   ASSERT_TRUE(std::holds_alternative<ServingError>(empty));
   EXPECT_EQ(std::get<ServingError>(empty).code, ErrorCode::InvalidArgument);
+  executor.refuse_next_open = true;
+  expect_error(
+      runtime->reset_session_async("empty"), ErrorCode::CapacityExceeded);
+  auto unavailable = export_result("empty");
+  ASSERT_TRUE(std::holds_alternative<ServingError>(unavailable));
+  EXPECT_EQ(std::get<ServingError>(unavailable).code, ErrorCode::NotReady);
   runtime->export_checkpoint_to_cpu_async("missing", std::nullopt, {});
   runtime->restore_checkpoint_from_cpu_async("invalid", nullptr, 1, {});
   ASSERT_FALSE(result(runtime->close_session_async("empty")));

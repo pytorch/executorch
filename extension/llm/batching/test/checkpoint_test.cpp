@@ -210,6 +210,8 @@ TEST(RunnerCheckpoint, AbandonedRestoreFutureReleasesSession) {
   {
     auto abandoned = runner.restore_checkpoint_from_cpu_async(checkpoint, 5);
     abandoned.wait();
+    // Let the engine release its promise before destroying the sole future.
+    runner.accepts_async(nullptr).get();
     EXPECT_EQ(executor.open_count(), 1);
   }
   // The abandoned result owns the Session and queues its close on destruction.

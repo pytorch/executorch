@@ -164,6 +164,33 @@ def test_malformed_header_reports_value_error(tmp_path, kind):
         load_checkpoint(path, expected_identity="model-a")
 
 
+@pytest.mark.parametrize("depth", [50000, 100000])
+def test_deep_metadata_digest_reports_value_error(tmp_path, depth):
+    checkpoint = sample()
+    header = {
+        "metadata": {
+            "identity": checkpoint.identity,
+            "manifest": {**checkpoint.manifest, "unused": "__deep__"},
+        },
+        "sha256": "0" * 64,
+    }
+    nested = b"[" * depth + b"0" + b"]" * depth
+    encoded = json.dumps(header).encode().replace(b'"__deep__"', nested)
+    path = tmp_path / "deep.etcp"
+    path.write_bytes(
+        b"ETCP0002" + struct.pack("<Q", len(encoded)) + encoded + checkpoint.data
+    )
+    previous_limit = sys.getrecursionlimit()
+    try:
+        # Python 3.14 can decode deeper trees than its encoder can serialize.
+        if sys.version_info >= (3, 14):
+            sys.setrecursionlimit(300000)
+        with pytest.raises(ValueError):
+            load_checkpoint(path, expected_identity=checkpoint.identity)
+    finally:
+        sys.setrecursionlimit(previous_limit)
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX file types")
 @pytest.mark.parametrize("kind", ["fifo", "symlink", "directory"])
 def test_load_rejects_nonregular_files_without_waiting(tmp_path, kind):
