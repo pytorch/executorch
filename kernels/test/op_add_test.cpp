@@ -575,6 +575,108 @@ TEST_F(OpAddOutKernelTest, BroadcastOneElementRank0Tensor) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlpha) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x = tf.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tf.zeros({3, 2});
+
+  op_add_out(x, y, 2, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make({3, 2}, {-1.25, -0.25, 0.75, 1.75, 2.75, 4.75}));
+
+  op_add_out(y, x, 2, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 2}, {2, 2.5, 3, 3.5, 4, 5}));
+
+  // Rank 0
+  Tensor z = tf.make({}, {1.75});
+  op_add_out(z, y, -3, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 2}, {6.25, 4.75, 3.25, 1.75, 0.25, -2.75}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaInt) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor x = tf.make({}, {7});
+  Tensor y = tf.make({2, 2}, {-2, 0, 1, 5});
+
+  Tensor out = tf.zeros({2, 2});
+
+  op_add_out(x, y, -3, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {13, 7, 4, -8}));
+
+  op_add_out(y, x, -3, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {-23, -21, -20, -16}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaTypePromotion) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> tfDouble;
+  Tensor x = tfDouble.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tfDouble.zeros({3, 2});
+
+  op_add_out(x, y, 2, out);
+  EXPECT_TENSOR_EQ(
+      out, tfDouble.make({3, 2}, {-1.25, -0.25, 0.75, 1.75, 2.75, 4.75}));
+
+  op_add_out(y, x, 2, out);
+  EXPECT_TENSOR_EQ(out, tfDouble.make({3, 2}, {2, 2.5, 3, 3.5, 4, 5}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaHalf) {
+  TensorFactory<ScalarType::Half> tf;
+  Tensor x = tf.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tf.zeros({3, 2});
+
+  op_add_out(x, y, 0.5, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 2}, {1, 1.25, 1.5, 1.75, 2, 2.5}));
+
+  op_add_out(y, x, 0.5, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make({3, 2}, {-0.625, -0.125, 0.375, 0.875, 1.375, 2.375}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaBFloat16) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  Tensor x = tf.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tf.zeros({3, 2});
+
+  op_add_out(x, y, 0.5, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 2}, {1, 1.25, 1.5, 1.75, 2, 2.5}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaBool) {
+  TensorFactory<ScalarType::Bool> tf;
+  Tensor x = tf.make({1}, {false});
+  Tensor y = tf.make({2, 2}, {true, false, false, true});
+
+  Tensor out = tf.zeros({2, 2});
+
+  op_add_out(x, y, true, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {true, false, false, true}));
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaComplex) {
+  using CTYPE = executorch::aten::complex<float>;
+  TensorFactory<ScalarType::ComplexFloat> tf;
+  Tensor x = tf.make({}, {CTYPE(2, 2)});
+  Tensor y = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
+
+  Tensor out = tf.zeros({2});
+
+  op_add_out(x, y, 1, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2}, {CTYPE(3, 3), CTYPE(4, 0)}));
+
+  op_add_out(x, y, 2, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2}, {CTYPE(4, 4), CTYPE(6, -2)}));
+}
+
 TEST_F(OpAddOutKernelTest, BroadcastNDTest) {
   // Test 3D tensors
   test_broadcast_3D<ScalarType::Float>();
