@@ -7,6 +7,7 @@
 import copy
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 
@@ -18,7 +19,7 @@ from executorch.backends.native.test.samples.cases import (
     draws,
     suite_cases,
 )
-from executorch.backends.native.test.samples.record import record
+from executorch.backends.native.test.samples.record import DTYPES, record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
     GGUF_SUPER_SCALES,
@@ -116,6 +117,14 @@ class RecordTest(unittest.TestCase):
                 got.calls[0].outputs, want.calls[0].outputs, rtol=0, atol=0
             )
 
+    def test_record_adds_no_8da4w_golden_without_a_linear(self) -> None:
+        inputs = draws(1, (3,), sampler=partial(torch.randint, 8))
+        case = Case("embedding", torch.nn.Embedding(8, 64), inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "embedding.ptn"
+            record([case], schemes()["int4wo_g32"], path, dtypes=["f32"])
+            self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
+
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)
         case = chain("pair", torch.nn.Identity(), (a, 3), (b, a))
@@ -129,6 +138,34 @@ class RecordTest(unittest.TestCase):
             ],
         )
         self.assertEqual(case.dynamic_shapes, ({0: a}, {0: b, 1: a}))
+
+    def test_chain_draws_from_its_sampler(self) -> None:
+        case = chain(
+            "ids",
+            torch.nn.Embedding(8, 2),
+            (Dim("tokens", min=1, max=4),),
+            sampler=partial(torch.randint, 8),
+        )
+        for (x,) in case.inputs:
+            self.assertEqual(x.dtype, torch.int64)
+            self.assertTrue(((x >= 0) & (x < 8)).all())
+
+    def test_record_keeps_integer_inputs_in_every_dtype(self) -> None:
+        model = torch.nn.Embedding(8, 4)
+        inputs = draws(1, (3,), sampler=partial(torch.randint, 8))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "embedding.ptn"
+            record([Case("embedding", model, inputs)], Scheme(), path)
+            samples = read_samples(str(path))["golden"].samples
+        ((ids,),) = inputs
+        self.assertEqual(len(samples), len(DTYPES))
+        for sample in samples:
+            (call,) = sample.calls
+            dtype = DTYPES[call.method.rsplit("_", 1)[1]]
+            self.assertEqual(call.inputs[0].dtype, torch.int64)
+            torch.testing.assert_close(
+                call.outputs[0], model.weight.detach().to(dtype)[ids], rtol=0, atol=0
+            )
 
     def test_record_chains_a_dynamic_case_into_one_sample(self) -> None:
         case = chain("linear", torch.nn.Linear(32, 4), (Dim("batch", min=1, max=6), 32))
