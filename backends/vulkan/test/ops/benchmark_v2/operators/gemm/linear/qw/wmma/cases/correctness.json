@@ -76,7 +76,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 256]}, "expected_output_sizes": [256, 384], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 256]}, "expected_output_sizes": [256, 384], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M2048 K2048 N512 g128 texture3d",
@@ -136,7 +136,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [2048, 2048]}, "expected_output_sizes": [2048, 512], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [2048, 2048]}, "expected_output_sizes": [2048, 512], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K3072 N1024 g128 texture3d",
@@ -196,7 +196,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 3072]}, "expected_output_sizes": [256, 1024], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 3072]}, "expected_output_sizes": [256, 1024], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K2048 N8192 g128 texture3d",
@@ -256,7 +256,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K4096 N8192 g128 texture3d",
@@ -316,7 +316,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 4096]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 4096]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K14336 N4096 g128 texture3d",
@@ -376,7 +376,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 14336]}, "expected_output_sizes": [256, 4096], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 14336]}, "expected_output_sizes": [256, 4096], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K896 N4864 g128 texture3d",
@@ -436,7 +436,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 896]}, "expected_output_sizes": [256, 4864], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 896]}, "expected_output_sizes": [256, 4864], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K9216 N2304 g128 texture3d",
@@ -496,7 +496,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 9216]}, "expected_output_sizes": [256, 2304], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 9216]}, "expected_output_sizes": [256, 2304], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma q4gsw M256 K2048 N2048 g64 texture3d",
@@ -556,7 +556,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
   },
   {
     "name": "wmma dq8ca_q4gsw M256 K256 N384 g128 texture3d",
@@ -1475,13 +1475,13 @@
       "output_name": "output"
     },
     "validation_steps": [
-      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}},
-      {"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [300, 2048]}, "expected_output_sizes": [300, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [100, 2048]}, "expected_output_sizes": [100, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048], "expected_kernels": {"xe2": "linear_q4gsw_coop_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [129, 2048]}, "expected_output_sizes": [129, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
-      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}
     ]
   },
   {
@@ -2080,10 +2080,10 @@
       "output_name": "output"
     },
     "validation_steps": [
-      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [300, 2048]}, "expected_output_sizes": [300, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
       {"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048], "expected_kernels": {"xe2": "linear_q4gsw_coop_buffer_texture2d_half"}},
-      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half"}}
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}
     ]
   },
   {

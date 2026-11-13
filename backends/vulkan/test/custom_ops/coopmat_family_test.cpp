@@ -147,7 +147,7 @@ std::string xe2_rule(const WmmaShape& s) {
   if (s.op == WmmaOp::kQ4gsw) {
     return kQ +
         (s.output == WmmaStorage::kTexture3D ? "t128x128k16g82s16m8flib"
-                                             : "t128x128k16g44s16m8fli");
+                                             : "t128x128k16g44s16m8fl");
   }
   return kD +
       (s.K * s.N >= 20000000 ? "t128x128k64g84s16m8n13"
@@ -354,7 +354,7 @@ TEST(CoopmatFamilyTest, Xe2Rows) {
   // Any aligned shape, not only the Llama projections.
   EXPECT_EQ(
       selected(d, prefill(WmmaOp::kQ4gsw, 128, 256, 384, WmmaStorage::kBuffer)),
-      kQ + "t128x128k16g44s16m8fli");
+      kQ + "t128x128k16g44s16m8fl");
 }
 
 TEST(CoopmatFamilyTest, NvidiaRows) {
@@ -614,7 +614,7 @@ TEST(CoopmatFamilyTest, SharedMemoryLimit) {
       selected(with_limit(xe2, 18432), q4_tex), kQ + "t128x128k16g82s16m8flib");
   EXPECT_EQ(selected(with_limit(xe2, 18431), q4_tex), "");
   EXPECT_EQ(
-      selected(with_limit(xe2, 18431), q4_buf), kQ + "t128x128k16g44s16m8fli");
+      selected(with_limit(xe2, 18431), q4_buf), kQ + "t128x128k16g44s16m8fl");
   EXPECT_EQ(selected(with_limit(xe2, 16383), q4_buf), "");
 
   // The measured devices (Arc B580, Arc Pro B70, RTX 4070 Ti SUPER, Jetson
