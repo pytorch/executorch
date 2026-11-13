@@ -28,6 +28,7 @@ from typing import (
 
 import torch
 from executorch.exir import memory
+from executorch.exir._node_provenance import freeze_node_provenance
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -913,6 +914,7 @@ class _ExportPassBase(PassBase):
     def call_submodule(
         self, graph_module: fx.GraphModule, inputs: Tuple[Argument, ...]
     ) -> PassResult:
+        freeze_node_provenance(graph_module.graph)
         prev_tracer, self.tracer = self.tracer, self.ExportTracer(
             self, graph_module.graph._codegen
         )
@@ -925,6 +927,7 @@ class _ExportPassBase(PassBase):
         with fx_traceback.preserve_node_meta():
             interpreter.run(*inputs_data)
 
+        freeze_node_provenance(self.tracer.graph)
         new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
         self._validate_symbolic_input_snapshots(graph_module, new_graph_module)
 
