@@ -14,6 +14,7 @@
 
 #include <fstream>
 #include <functional>
+#include <map>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -665,29 +666,137 @@ std::string read_file(const std::string& path) {
   return ss.str();
 }
 
-// Every kernel name a row can produce must be a variant in its yaml.
-TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
+std::string trim(const std::string& s) {
+  const size_t b = s.find_first_not_of(' ');
+  const size_t e = s.find_last_not_of(" \r");
+  return b == std::string::npos ? "" : s.substr(b, e - b + 1);
+}
+
+// The shader variants of a template yaml with their parameters, expanded as
+// gen_vulkan_spv.py does for the subset of the format the family yamls use:
+// defaults, a template-level generate_variant_forall of VALUE lists (a
+// variant that sets a forall parameter skips that axis), and variants of
+// scalar parameters. The forall suffixes are appended to NAME in order.
+std::map<std::string, std::map<std::string, std::string>> yaml_variants(
+    const std::string& text) {
+  using Params = std::map<std::string, std::string>;
+  Params defaults;
+  std::vector<std::pair<std::string, std::vector<std::string>>> forall;
+  std::vector<std::pair<std::string, Params>> variants;
+  std::string section;
+  std::istringstream in(text);
+  for (std::string line; std::getline(in, line);) {
+    const std::string t = trim(line);
+    if (t.empty() || t[0] == '#') {
+      continue;
+    }
+    const size_t indent = line.find_first_not_of(' ');
+    if (indent == 0) {
+      continue; // the template name
+    }
+    if (indent == 2) {
+      section = t;
+      continue;
+    }
+    const size_t colon = t.find(':');
+    EXPECT_NE(colon, std::string::npos) << line;
+    const std::string key = trim(t.substr(0, colon));
+    const std::string value = trim(t.substr(colon + 1));
+    if (section == "parameter_names_with_default_values:") {
+      defaults[key] = value;
+    } else if (section == "generate_variant_forall:") {
+      if (indent == 4) {
+        forall.emplace_back(key, std::vector<std::string>{});
+      } else {
+        EXPECT_EQ(key, "- VALUE") << line;
+        forall.back().second.push_back(value);
+      }
+    } else if (section == "shader_variants:") {
+      if (key == "- NAME") {
+        variants.emplace_back(value, Params{});
+      } else {
+        EXPECT_NE(key, "generate_variant_forall") << "not supported";
+        variants.back().second[key] = value;
+      }
+    }
+  }
+  std::map<std::string, Params> out;
+  for (const auto& [name, overrides] : variants) {
+    std::vector<std::pair<std::string, Params>> expanded = {{name, defaults}};
+    for (auto& [_, params] : expanded) {
+      for (const auto& [k, v] : overrides) {
+        params[k] = v;
+      }
+    }
+    for (const auto& [key, values] : forall) {
+      if (overrides.count(key) != 0) {
+        continue;
+      }
+      std::vector<std::pair<std::string, Params>> next;
+      for (const auto& [n, params] : expanded) {
+        for (const std::string& v : values) {
+          Params p = params;
+          p[key] = v;
+          next.emplace_back(n + "_" + v, p);
+        }
+      }
+      expanded = std::move(next);
+    }
+    for (const auto& [n, params] : expanded) {
+      EXPECT_EQ(out.count(n), 0u) << "variant " << n << " defined twice";
+      out[n] = params;
+    }
+  }
+  return out;
+}
+
+std::map<std::string, std::map<std::string, std::string>> family_variants() {
   const std::string dir =
       std::string(COOPMAT_FAMILY_TEST_GLSL_DIR) + "/gemm/linear/qw/";
-  std::string yamls;
+  std::map<std::string, std::map<std::string, std::string>> all;
   for (const char* yaml :
        {"q4gsw/wmma/linear_q4gsw_wmma.yaml",
         "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma.yaml"}) {
     const std::string contents = read_file(dir + yaml);
-    ASSERT_FALSE(contents.empty()) << "cannot read " << dir << yaml;
-    yamls += contents;
+    EXPECT_FALSE(contents.empty()) << "cannot read " << dir << yaml;
+    for (auto& [name, params] : yaml_variants(contents)) {
+      all[name] = std::move(params);
+    }
   }
+  return all;
+}
+
+// The kernel names a row dispatches (CoopmatFamily.h: <kernel_base>_<io>_
+// <weight>_<dtype>[_<zero-point dtype>]), with the IO storage of each.
+std::vector<std::pair<std::string, const char*>> row_kernel_names(
+    const WmmaRow& row) {
+  std::vector<std::pair<std::string, const char*>> names;
   const std::pair<uint8_t, const char*> combos[] = {
-      {kWmmaTex3dTex2d, "_texture3d_texture2d_half"},
-      {kWmmaBufTex2d, "_buffer_texture2d_half"}};
+      {kWmmaTex3dTex2d, "texture3d"}, {kWmmaBufTex2d, "buffer"}};
+  for (const auto& [bit, io] : combos) {
+    if ((row.storages & bit) == 0) {
+      continue;
+    }
+    const std::string name =
+        std::string(row.kernel_base) + "_" + io + "_texture2d_half";
+    if (row.op == WmmaOp::kQ4gsw) {
+      names.emplace_back(name, io);
+    } else {
+      names.emplace_back(name + "_zpint8", io);
+      names.emplace_back(name + "_zpinherit", io);
+    }
+  }
+  return names;
+}
+
+// Every kernel name a row can produce must be a variant in its yaml.
+TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
+  const auto variants = family_variants();
+  ASSERT_FALSE(variants.empty());
   for (const CoopmatFamily f : {CoopmatFamily::kXe2, CoopmatFamily::kNvidia}) {
     for (const WmmaRow& row : coopmat_family_rows(f)) {
-      for (const auto& c : combos) {
-        if (row.storages & c.first) {
-          const std::string name = std::string(row.kernel_base) + c.second;
-          EXPECT_NE(yamls.find("NAME: " + name + "\n"), std::string::npos)
-              << "no shader variant " << name;
-        }
+      for (const auto& [name, io] : row_kernel_names(row)) {
+        EXPECT_EQ(variants.count(name), 1u) << "no shader variant " << name;
       }
     }
   }
