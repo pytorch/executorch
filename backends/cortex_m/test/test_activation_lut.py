@@ -15,9 +15,8 @@ These pin the entries directly, which is where the domain handling lives.
 import unittest
 
 import torch
-from executorch.backends.cortex_m.passes.aten_to_cortex_m_pass import (
-    _get_activation_replacement,
-    AtenToCortexMPass,
+from executorch.backends.cortex_m.passes.fuse_elementwise_to_lut_pass import (
+    FuseQuantizedElementwiseToLUTPass,
 )
 from executorch.backends.cortex_m.quantizer.quantizer_support import (
     ACTIVATION_OP_PATTERNS,
@@ -113,11 +112,8 @@ class ActivationLutEdgeTests(unittest.TestCase):
         }
         # gelu is the exception: torch exposes no in-place spelling for it.
         self.assertEqual(in_place, quantizer - {aten.gelu.default})
-        substituted = {
-            target
-            for target, fn in AtenToCortexMPass._DIALECT_SUBSTITUTIONS.items()
-            if fn is _get_activation_replacement
-        }
+        program = torch.export.export(torch.nn.Identity(), (torch.ones(2),))
+        substituted = FuseQuantizedElementwiseToLUTPass(program).table_targets
         self.assertEqual(quantizer, set(_ACTIVATION_FNS))
         self.assertEqual(quantizer, substituted)
 

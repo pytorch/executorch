@@ -22,7 +22,6 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
 from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
 from executorch.backends.cortex_m.utils import (
-    build_activation_lut,
     is_foldable_alpha,
     quantize_multiplier_aot,
     quantize_val,
@@ -276,57 +275,6 @@ def _has_qparams(node: Node) -> bool:
     return (
         node.meta.get("input_qparams", {}) != {}
         and node.meta.get("output_qparams", {}) != {}
-    )
-
-
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sigmoid.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.gelu.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log2.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log10.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log1p.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sqrt.default)
-@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.rsqrt.default)
-def _get_activation_replacement(
-    node: Node, dialect_pass: AtenToDialectPass
-) -> DialectNodeSpec | None:
-    """Lower a standalone quantized unary activation to a single
-    cortex_m.quantized_activation call backed by an AoT-built 256-entry
-    int8 LUT. The kernel is shape-agnostic; the LUT encodes both the
-    activation function and the input/output qparams.
-    """
-    if not _has_qparams(node):
-        return None
-
-    exported_program = dialect_pass.exported_program
-    input_qparams = node.meta["input_qparams"][0]
-    output_qparams = node.meta["output_qparams"][0]
-    lut_tensor = build_activation_lut(
-        node.target,
-        float(input_qparams.scale),
-        int(input_qparams.zp),
-        float(output_qparams.scale),
-        int(output_qparams.zp),
-    )
-
-    # Constant placeholders must appear before user-input placeholders;
-    # anchor on the first existing placeholder so the new LUT lands in the
-    # constant-placeholder block at the top of the graph.
-    first_placeholder = next(n for n in node.graph.nodes if n.op == "placeholder")
-    with node.graph.inserting_before(first_placeholder):
-        lut_node = create_constant_placeholder(
-            exported_program,
-            node.graph,
-            node.name + "_lut",
-            InputKind.PARAMETER,
-            lut_tensor,
-        )
-
-    new_args = (node.args[0], lut_node)
-    return DialectNodeSpec(
-        exir_ops.edge.cortex_m.quantized_activation.default, new_args
     )
 
 
