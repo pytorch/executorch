@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 import unittest
 from unittest import mock
 
@@ -12,8 +11,8 @@ import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
-from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
-    DecomposeDepthwiseConvTransposePass,
+from executorch.backends.xnnpack._passes.decompose_conv_transpose import (
+    DecomposeConvTransposePass,
 )
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
@@ -31,7 +30,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 
 
 class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
-    PassStage = RunPasses([DecomposeDepthwiseConvTransposePass])
+    PassStage = RunPasses([DecomposeConvTransposePass])
 
     conv = "executorch_exir_dialects_edge__ops_aten_convolution_default"
     pad = "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"
@@ -92,17 +91,17 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         )
 
     def _check_lowered(
-        self, module, inputs, tol=1e-3, dynamic_shapes=None, num_deconvs=1
+        self, module, inputs, tol=1e-3, dynamic_shapes=None, num_deconvs=1, phases=4
     ):
         # XNNPACK delegates an fp32 depthwise transposed conv on its own, so
         # one delegate and matching outputs do not prove the pass ran during
         # lowering: count its calls and check the serialized graph.
         tester = Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes).export()
         with mock.patch.object(
-            DecomposeDepthwiseConvTransposePass,
+            DecomposeConvTransposePass,
             "_decompose",
             autospec=True,
-            side_effect=DecomposeDepthwiseConvTransposePass._decompose,
+            side_effect=DecomposeConvTransposePass._decompose,
         ) as decompose:
             tester.to_edge_transform_and_lower()
         self.assertEqual(decompose.call_count, num_deconvs)
@@ -112,6 +111,9 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         node_types = tester.xnnpack_node_types()
         self.assertEqual(node_types["XNNConvTranspose2d"], 0, node_types)
         self.assertEqual(node_types["XNNDepthToSpace2d"], num_deconvs, node_types)
+        self.assertEqual(
+            node_types["XNNDepthwiseConv2d"], phases * num_deconvs, node_types
+        )
         (
             tester.to_executorch()
             .serialize()
@@ -157,7 +159,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         module = self.DwDeconv(kernel=3, stride=3, padding=0, channels=4)
         inputs = (torch.randn(1, 4, 4, 5),)
         self._check_pass(module, inputs, {self.conv: 9, self.cat: 1, self.d2s: 1})
-        self._check_lowered(module, inputs)
+        self._check_lowered(module, inputs, phases=9)
 
     def test_conv_before_deconv(self):
         # The phase pads read the conv's output rather than a graph input.
@@ -236,7 +238,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
         )
         self.assertEqual(self._count_phase_placeholders(tester), 18)
-        self._check_lowered(module, inputs, num_deconvs=2)
+        self._check_lowered(module, inputs, num_deconvs=2, phases=9)
 
     def test_shared_weight_same_params(self):
         # Identical deconvs on one weight share one set of phase placeholders.
@@ -248,7 +250,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             module, inputs, {self.conv: 18, self.cat: 2, self.d2s: 2}
         )
         self.assertEqual(self._count_phase_placeholders(tester), 9)
-        self._check_lowered(module, inputs, num_deconvs=2)
+        self._check_lowered(module, inputs, num_deconvs=2, phases=9)
 
     def test_batch_gt_1(self):
         module = self.DwDeconv(kernel=4, stride=2, padding=1)
@@ -274,11 +276,11 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         self._check_lowered(Deconv(), inputs)
 
     def test_deconv_relu(self):
-        # The activation follows depth_to_space_2d instead of fusing into the
-        # removed transposed conv, which relies on the pass running before
-        # FuseActivationPass in the default pass list. The phase pads read the
-        # NHWC output of the leading conv and fold into the phase convs through
-        # FusePadIntoConvPass at the end of that list.
+        # The activation moves onto every phase conv and fuses there, which
+        # relies on the pass running before FuseActivationPass in the default
+        # pass list. The phase pads read the NHWC output of the leading conv
+        # and fold into the phase convs through FusePadIntoConvPass at the end
+        # of that list.
         module = torch.nn.Sequential(
             torch.nn.Conv2d(8, 8, 3, padding=1),
             self.DwDeconv(kernel=4, stride=2, padding=1),
@@ -289,7 +291,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             Tester(module.eval(), inputs).export().get_artifact()
         ).passes
         self.assertLess(
-            default_passes.index(DecomposeDepthwiseConvTransposePass),
+            default_passes.index(DecomposeConvTransposePass),
             default_passes.index(FuseActivationPass),
         )
         tester = (
@@ -304,17 +306,15 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             .exported_program()
             .graph_module.graph
         )
-        (relu,) = [
-            n for n in graph.nodes if n.target == exir_ops.edge.aten.relu.default
-        ]
-        self.assertEqual(
-            relu.args[0].target, exir_ops.edge.et_xnnpack.depth_to_space_2d.default
+        self.assertFalse(
+            any(n.target == exir_ops.edge.aten.relu.default for n in graph.nodes)
         )
         convs = [
             n for n in graph.nodes if n.target == exir_ops.edge.aten.convolution.default
         ]
         self.assertEqual(
-            [FuseActivationPass.get_fused_activation(n) for n in convs], [None] * 5
+            sum(FuseActivationPass.get_fused_activation(n) is not None for n in convs),
+            4,
         )
         self.assertEqual(
             sum(FusePadIntoConvPass.get_fused_padding(n) is not None for n in convs), 4
@@ -383,9 +383,19 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         inputs = (torch.randn(1, 8, 6, 6),)
         self._check_pass(self.QuantizedDwDeconv(), inputs, {self.conv: 1, self.d2s: 0})
 
-    def test_not_a_clean_upscale_is_left_alone(self):
-        # k=4, p=0: output is 2H + 2, not a x2 upscale.
+    def test_not_a_clean_upscale(self):
+        # k=4, p=0: output is 2H + 2; every phase has 2 taps and a symmetric
+        # pad of 1, which the phase convs take as their padding.
         module = self.DwDeconv(kernel=4, stride=2, padding=0)
+        inputs = (torch.randn(1, 8, 6, 6),)
+        self._check_pass(
+            module, inputs, {self.conv: 4, self.pad: 0, self.cat: 1, self.d2s: 1}
+        )
+        self._check_lowered(module, inputs)
+
+    def test_negative_pad_is_left_alone(self):
+        # k=3, p=2: phase 1 only reads inputs past its own step.
+        module = self.DwDeconv(kernel=3, stride=2, padding=2)
         inputs = (torch.randn(1, 8, 6, 6),)
         self._check_pass(module, inputs, {self.conv: 1, self.d2s: 0})
 
@@ -393,42 +403,3 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         module = torch.nn.ConvTranspose2d(8, 8, 4, stride=2, padding=1, groups=4)
         inputs = (torch.randn(1, 8, 6, 6),)
         self._check_pass(module, inputs, {self.conv: 1, self.d2s: 0})
-
-    def test_phase_math_matches_conv_transpose2d(self):
-        # The decomposition in plain torch, independent of the lowering.
-        import executorch.backends.xnnpack.custom_ops_lib as lib
-
-        for k, s, p, o in [
-            (4, 2, 1, 0),
-            (3, 2, 1, 1),
-            (2, 2, 0, 0),
-            (3, 3, 0, 0),
-            (5, 2, 2, 1),
-        ]:
-            c, h, w = 3, 5, 6
-            x = torch.randn(1, c, h, w)
-            weight = torch.randn(c, 1, k, k)
-            ref = torch.nn.functional.conv_transpose2d(
-                x, weight, stride=s, padding=p, output_padding=o, groups=c
-            )
-            phases = []
-            for ay in range(s):
-                for ax in range(s):
-                    taps = []
-                    for a in (ay, ax):
-                        t_min = math.ceil(-(a + p) / s)
-                        t_max = math.floor((k - 1 - a - p) / s)
-                        taps.append((t_min, t_max))
-                    (ty_min, ty_max), (tx_min, tx_max) = taps
-                    iy = torch.tensor(
-                        [s * (ty_max - q) + ay + p for q in range(ty_max - ty_min + 1)]
-                    )
-                    ix = torch.tensor(
-                        [s * (tx_max - q) + ax + p for q in range(tx_max - tx_min + 1)]
-                    )
-                    wp = weight[:, :, iy][:, :, :, ix]
-                    xp = torch.nn.functional.pad(x, (tx_max, -tx_min, ty_max, -ty_min))
-                    phases.append(torch.nn.functional.conv2d(xp, wp, groups=c))
-            out = lib.depth_to_space_2d_op(torch.cat(phases, 1), s)
-            self.assertEqual(out.shape, ref.shape, (k, s, p, o))
-            self.assertTrue(torch.allclose(out, ref, atol=1e-5), (k, s, p, o))
