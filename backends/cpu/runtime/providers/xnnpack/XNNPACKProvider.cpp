@@ -391,6 +391,8 @@ class XNNExecutable final : public Executable {
         context_.execution.threadpool,
         runtime_flags,
         &runtime_));
+    CPU_XNN_CHECK(xnn_delete_subgraph(subgraph_));
+    subgraph_ = nullptr;
     if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
       profiling_ = check_profiling(
           profiler_.initialize(runtime_, &state_.operator_counts),

@@ -364,14 +364,24 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   const auto original_weight = buffers[1];
   std::memset(buffers[1].data, 0xFF, buffers[1].readable_bytes);
   buffers[1] = {};
-  for (auto* executable : {first.get().get(), second.get().get()}) {
-    ASSERT_EQ(executable->bind(), Error::Ok);
-    ASSERT_EQ(executable->run(execution_context), Error::Ok);
+  GuardedBuffer replacement(18 * sizeof(float));
+  std::fill_n(static_cast<float*>(replacement.buffer.data), 18, 2);
+  const auto original = buffers[0];
+  for (const auto& input : {original, replacement.buffer, original}) {
+    buffers[0] = input;
+    for (auto* executable : {first.get().get(), second.get().get()}) {
+      ASSERT_EQ(executable->bind(), Error::Ok);
+      ASSERT_EQ(executable->run(execution_context), Error::Ok);
+    }
+    const float scale = *static_cast<const float*>(input.data);
+    EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 400 * scale);
+    EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784 * scale);
   }
-  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 400);
-  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784);
 
   first.get().reset();
+  ASSERT_EQ(second.get()->bind(), Error::Ok);
+  ASSERT_EQ(second.get()->run(execution_context), Error::Ok);
+  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784);
   second.get().reset();
   provider.reset();
   graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {2, 2, 1, 1});
