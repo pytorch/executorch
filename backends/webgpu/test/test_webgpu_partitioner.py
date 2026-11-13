@@ -17,6 +17,11 @@ from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.partitioner.partitioner import (
     _WEBGPU_SKIP_FUSION_PATTERNS,
 )
+from executorch.backends.webgpu.test.ops.test_conv_transpose1d import (
+    CLAMP_CONFIGS as CONV_TRANSPOSE1D_CLAMP_CONFIGS,
+    CONFIGS as CONV_TRANSPOSE1D_CONFIGS,
+    ConvTranspose1dModule,
+)
 from executorch.backends.webgpu.test.ops.test_elu_silu import (
     EluModule,
     SiluCondModule,
@@ -400,6 +405,62 @@ class TestWebGPUPartitioner(unittest.TestCase):
         ]
         self.assertNotIn(exir_ops.edge.aten.silu.default, targets)
         self.assertIn(exir_ops.edge.aten.sigmoid.default, targets)
+
+    def test_conv_transpose1d_is_delegated(self) -> None:
+        convolution = exir_ops.edge.aten.convolution.default
+        for name in (
+            "stride2_padding",
+            "output_padding",
+            "output_padding_dilation",
+            "groups_no_bias",
+            "dilation",
+            "batch2_gather",
+        ):
+            kwargs, shape = CONV_TRANSPOSE1D_CONFIGS[name]
+            with self.subTest(config=name):
+                module = ConvTranspose1dModule(**kwargs)
+                x = torch.randn(*shape)
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(convolution, delegated)
+
+    def test_transposed_conv_stays_on_cpu(self) -> None:
+        # Dynamic inputs (the transposed kernels have no resize hook) and a
+        # following relu/hardtanh (conv_with_clamp has no transposed path).
+        conv2d = torch.nn.ConvTranspose2d(4, 6, kernel_size=2, stride=2)
+        cases = {
+            "relu_2d": (
+                torch.nn.Sequential(
+                    torch.nn.ConvTranspose2d(4, 6, kernel_size=2, stride=2),
+                    torch.nn.ReLU(),
+                ),
+                torch.randn(1, 4, 6, 6),
+                None,
+            ),
+            "dynamic_1d": (
+                ConvTranspose1dModule(4, 6, 3, stride=2),
+                torch.randn(1, 4, 9),
+                {"x": {2: torch.export.Dim("length", min=2, max=9)}},
+            ),
+            "dynamic_2d": (
+                conv2d,
+                torch.randn(1, 4, 6, 6),
+                {"input": {2: torch.export.Dim("height", min=2, max=6)}},
+            ),
+        }
+        for name, (kwargs, shape) in CONV_TRANSPOSE1D_CLAMP_CONFIGS.items():
+            cases[name] = (ConvTranspose1dModule(**kwargs), torch.randn(*shape), None)
+        for name, (module, x, dynamic_shapes) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, _ = self._lower_split(
+                    WebGPUPartitioner(), module, (x,), dynamic_shapes
+                )
+                self.assertIn(
+                    exir_ops.edge.aten.convolution.default,
+                    self._targets(non_lowered),
+                )
 
 
 if __name__ == "__main__":

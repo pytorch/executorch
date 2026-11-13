@@ -31,16 +31,24 @@ def _arange_bounds_are_static(node: torch.fx.Node) -> bool:
     return not any(isinstance(arg, torch.fx.Node) for arg in node.args[:3])
 
 
+def _has_static_shape(x: torch.fx.Node) -> bool:
+    return all(isinstance(d, int) for d in x.meta["val"].shape)
+
+
 def _webgpu_features(
     target: OpKey,
     check: Callable[[torch.fx.Node, Callable[[torch.fx.Node], bool]], bool],
+    dtypes: Optional[vk_utils.DtypeSet] = None,
 ) -> OpFeatures:
     """A copy of the Vulkan features of `target` whose input check is
-    `check(node, vulkan_check)`."""
+    `check(node, vulkan_check)`, optionally with narrower dtypes."""
     vulkan_features = vulkan_supported_ops[target]
     vulkan_check = vulkan_features.are_node_inputs_supported_fn or allow_node
     features = copy.copy(vulkan_features)
     features.are_node_inputs_supported_fn = lambda node: check(node, vulkan_check)
+    if dtypes is not None:
+        features.inputs_dtypes = vk_utils.DtypeSetList(dtypes)
+        features.outputs_dtypes = vk_utils.DtypeSetList(dtypes)
     return features
 
 
@@ -53,6 +61,32 @@ def _layer_norm_check(
     if not isinstance(normalized_shape, (list, tuple)):
         return False
     return all(d == 1 for d in normalized_shape[:-1]) and vulkan_check(node)
+
+
+# FuseClampPass folds a convolution whose only user is one of these into
+# et_vk.conv_with_clamp, which has no transposed path.
+_CLAMP_ACTIVATIONS = (
+    exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.hardtanh.default,
+)
+
+
+def _convolution_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    if not node.args[6]:
+        return vulkan_check(node)
+    x = node.args[0]
+    # Transposed: the kernels have no resize hook, so the input must be static.
+    if not isinstance(x, torch.fx.Node) or not _has_static_shape(x):
+        return False
+    if len(node.users) == 1 and next(iter(node.users)).target in _CLAMP_ACTIVATIONS:
+        return False
+    # A 3-D one runs on the transposed 2-D kernels with H = 1; the Vulkan check
+    # rejects every transposed 1-D convolution.
+    if len(x.meta["val"].shape) == 3:
+        return True
+    return vulkan_check(node)
 
 
 def _fp32_unary_features() -> OpFeatures:
@@ -75,6 +109,11 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
     ),
     exir_ops.edge.aten.native_layer_norm.default: _webgpu_features(
         exir_ops.edge.aten.native_layer_norm.default, _layer_norm_check
+    ),
+    exir_ops.edge.aten.convolution.default: _webgpu_features(
+        exir_ops.edge.aten.convolution.default,
+        _convolution_check,
+        dtypes={torch.float32},
     ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),

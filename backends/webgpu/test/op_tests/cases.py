@@ -59,6 +59,11 @@ from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
     Conv1dPwModule,
     GENERAL_CONFIGS as _CONV1D_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_conv_transpose1d import (
+    CLAMP_CONFIGS as CONV_TRANSPOSE1D_CLAMP_CONFIGS,
+    CONFIGS as CONV_TRANSPOSE1D_CONFIGS,
+    ConvTranspose1dModule,
+)
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
 from executorch.backends.webgpu.test.ops.test_elu_silu import (
     ELU_CONFIGS,
@@ -2624,4 +2629,20 @@ def _silu_suite() -> WebGPUTestSuite:
         ],
         atol=1e-5,
         rtol=1e-4,
+    )
+
+
+@register_op_test("conv_transpose1d")
+def _conv_transpose1d_suite() -> WebGPUTestSuite:
+    # 3-D transposed aten.convolution, run on the transposed 2-D kernels (H = 1).
+    # The clamp cases keep the convolution on CPU and check the model still runs.
+    configs = {**CONV_TRANSPOSE1D_CONFIGS, **CONV_TRANSPOSE1D_CLAMP_CONFIGS}
+    return WebGPUTestSuite(
+        module_factory=ConvTranspose1dModule,
+        cases=[
+            Case(name=name, construct=kwargs, inputs=(shape,))
+            for name, (kwargs, shape) in configs.items()
+        ],
+        atol=1e-4,
+        rtol=1e-3,
     )
