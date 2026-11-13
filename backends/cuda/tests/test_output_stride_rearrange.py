@@ -283,6 +283,24 @@ class _SlicedLinear(nn.Module):
         return self.proj(x)[:, :, :14]
 
 
+class _MaskedAttention(nn.Module):
+    """With a mask, SDPA's output comes back with its query and head dims
+    swapped in memory. It is not a view, so CopyReturnedViewsPass leaves it
+    strided."""
+
+    def forward(self, q, k, v, mask):
+        return F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+
+def _attention_inputs(queries):
+    return (
+        torch.randn(1, 4, queries, 64),
+        torch.randn(1, 4, 200, 64),
+        torch.randn(1, 4, 200, 64),
+        torch.rand(1, 1, queries, 200) > 0.3,
+    )
+
+
 class _MaskedRows(nn.Module):
     def forward(self, x, mask):
         return x[mask] * 2
@@ -422,33 +440,61 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
 
     def _assert_matches_eager(self, module, x, out):
         self.assertIsInstance(out, torch.Tensor)
+        args = x if isinstance(x, tuple) else (x,)
         with torch.no_grad():
-            expected = module(x.cuda()).cpu()
+            expected = module(*(a.cuda() for a in args)).cpu()
         torch.testing.assert_close(out, expected, atol=1e-4, rtol=1e-4)
 
-    def test_sliced_output_matches_eager_past_warmup(self):
+    def test_sliced_output_replays_in_a_graph(self):
+        # The backend copies the returned slice out contiguously, so the method
+        # keeps its graph.
         torch.manual_seed(0)
         module = _SlicedLinear().cuda().eval()
         # Three warmup calls, the capture call, then replays.
         inputs = [torch.randn(1, 50, 64) for _ in range(6)]
-        outputs = self._run_with_cuda_graph(module, (inputs[0].cuda(),), inputs)
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, (inputs[0].cuda(),), inputs)
+        self.assertIn("captured and instantiated for 'forward'", log.text)
         for i, (x, out) in enumerate(zip(inputs, outputs)):
             with self.subTest(call=i):
                 self._assert_matches_eager(module, x, out)
 
+    def test_strided_output_matches_eager_past_warmup(self):
+        torch.manual_seed(0)
+        module = _MaskedAttention().eval()
+        inputs = [_attention_inputs(4) for _ in range(6)]
+        example = tuple(t.cuda() for t in inputs[0])
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, example, inputs)
+        self.assertIn(
+            "disabled for 'forward', output 0 is not laid out like its ETensor",
+            log.text,
+        )
+        for i, (args, out) in enumerate(zip(inputs, outputs)):
+            with self.subTest(call=i):
+                self._assert_matches_eager(module, args, out)
+
     def test_strided_output_first_seen_at_capture(self):
         torch.manual_seed(0)
-        module = _SlicedLinear().cuda().eval()
-        # With one row the slice is contiguous, so only the capture call sees a
-        # strided output.
-        inputs = [torch.randn(1, rows, 64) for rows in (1, 1, 1, 50, 50, 50)]
-        rows = torch.export.Dim("rows", min=1, max=64)
-        outputs = self._run_with_cuda_graph(
-            module, (inputs[3].cuda(),), inputs, dynamic_shapes=({1: rows},)
+        module = _MaskedAttention().eval()
+        # With one query the output is contiguous, so only the capture call sees
+        # a strided output.
+        inputs = [_attention_inputs(queries) for queries in (1, 1, 1, 50, 50, 50)]
+        example = tuple(t.cuda() for t in inputs[3])
+        queries = torch.export.Dim("queries", min=1, max=64)
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(
+                module,
+                example,
+                inputs,
+                dynamic_shapes=({2: queries}, None, None, {2: queries}),
+            )
+        self.assertIn(
+            "output 0 of 'forward' is not laid out like its ETensor", log.text
         )
-        for i, (x, out) in enumerate(zip(inputs, outputs)):
+        for i, (args, out) in enumerate(zip(inputs, outputs)):
             with self.subTest(call=i):
-                self._assert_matches_eager(module, x, out)
+                self._assert_matches_eager(module, args, out)
 
     def test_input_shape_changes_after_capture(self):
         torch.manual_seed(0)
