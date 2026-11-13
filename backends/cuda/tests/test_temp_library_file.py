@@ -9,8 +9,8 @@
 Loading a method writes that library to a file in the system temporary
 directory and opens it from there. These tests check that the file is readable
 only by its owner, that it is removed once the program is freed, and that a
-failure to create or write it is a load error. A failed write also leaves no
-file behind.
+missing temporary directory or a failed write is a load error. A failed write
+also leaves no file behind.
 """
 
 import os
