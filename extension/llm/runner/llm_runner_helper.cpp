@@ -10,6 +10,7 @@
 
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -26,10 +27,14 @@
 #include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
+#include <limits>
+
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
+
+void register_builtin_io_managers() {}
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     const std::string& tokenizer_path,
@@ -126,6 +131,13 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
       if (!get_result.ok()) {
         return get_result.error();
       }
+      if (!get_result->isInt() && !get_result->isBool()) {
+        ET_LOG(
+            Error,
+            "Metadata method %s must return an integer or boolean.",
+            method_name.c_str());
+        return Error::InvalidArgument;
+      }
       value = get_result->toScalar().to<decltype(metadata)::mapped_type>();
     } else {
       ET_LOG(
@@ -146,6 +158,15 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
         Info,
         "Setting kMaxContextLen to kMaxSeqLen value: %" PRId64,
         metadata[llm::kMaxContextLen]);
+  }
+
+  for (const auto* name : {kMaxSeqLen, kMaxContextLen}) {
+    const auto value = metadata.at(name);
+    ET_CHECK_OR_RETURN_ERROR(
+        value > 0 && value <= std::numeric_limits<int32_t>::max(),
+        InvalidArgument,
+        "Metadata %s must be in [1, INT32_MAX].",
+        name);
   }
 
   // Set tokenizer-related metadata
@@ -266,8 +287,32 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       llm::get_eos_ids(tokenizer.get(), module.get()));
 
-  // Create IOManager
-  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
+  // Create the IOManager for the I/O contract the program declares, if any.
+  register_builtin_io_managers();
+  std::string io_contract;
+  if (auto names = module->method_names();
+      names.ok() && names->count(kIoContract)) {
+    auto contract = module->get(kIoContract);
+    if (!contract.ok() || !contract->isString()) {
+      ET_LOG(Error, "Failed to read the program's I/O contract label.");
+      return nullptr;
+    }
+    io_contract = std::string(contract->toString());
+    if (io_contract.empty()) {
+      ET_LOG(Error, "The program's I/O contract label is empty.");
+      return nullptr;
+    }
+    ET_LOG(Info, "I/O contract: %s", io_contract.c_str());
+  }
+  auto io_manager_result = make_io_manager(*module, io_contract);
+  if (!io_manager_result.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to create the IOManager: 0x%x.",
+        static_cast<unsigned>(io_manager_result.error()));
+    return nullptr;
+  }
+  auto io_manager = std::move(*io_manager_result);
 
   // Read vocab_size for Sampler
   int32_t vocab_size = static_cast<int32_t>(metadata.at(kVocabSize));
@@ -289,6 +334,17 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       method_names.count(kPrefillMethod) > 0) {
     prefill_method_name = kPrefillMethod;
   }
+  // An IOManager may drive methods of its own contract's names.
+  auto [io_prefill, io_decode] = io_manager->method_names(method_names);
+  if (!io_prefill.empty()) {
+    prefill_method_name = io_prefill;
+  }
+  if (io_manager->load(
+          prefill_method_name,
+          io_decode.empty() ? prefill_method_name : io_decode) != Error::Ok) {
+    ET_LOG(Error, "Failed to load the IOManager");
+    return nullptr;
+  }
 
   // Create text_decoder_runner
   ET_LOG(Info, "Using method: %s", prefill_method_name.c_str());
@@ -302,7 +358,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   // The decode stage gets its own decoder runner when the PTE exports a
   // separate decode method; otherwise both stages share text_decoder_runner.
   std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner;
-  if (method_names.count(kDecodeMethod) > 0 &&
+  if (!io_decode.empty() && io_decode != prefill_method_name) {
+    decode_text_decoder_runner = std::make_unique<TextDecoderRunner>(
+        module.get(),
+        io_manager.get(),
+        io_decode,
+        std::make_unique<Sampler>(vocab_size, init_temp),
+        stats.get());
+  } else if (
+      io_decode.empty() && method_names.count(kDecodeMethod) > 0 &&
       prefill_method_name != kDecodeMethod) {
     ET_LOG(Info, "Using decode method: %s", kDecodeMethod);
     decode_text_decoder_runner = std::make_unique<TextDecoderRunner>(
@@ -316,12 +380,17 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       ? decode_text_decoder_runner.get()
       : text_decoder_runner.get();
 
-  // Create text_prefiller
+  // Create text_prefiller. A prompt method with a fixed step size takes the
+  // prompt in chunks of that size.
+  const int64_t step_tokens =
+      io_manager->max_tokens_per_step(prefill_method_name);
   auto text_prefiller = std::make_unique<TextPrefiller>(
       text_decoder_runner.get(),
       metadata.at(kUseKVCache),
-      metadata.at(kEnableDynamicShape),
-      metadata.at(kMaxSeqLen));
+      step_tokens > 1 ? true
+                      : static_cast<bool>(metadata.at(kEnableDynamicShape)),
+      step_tokens > 1 ? step_tokens : metadata.at(kMaxSeqLen),
+      step_tokens > 1 ? decode_runner : nullptr);
 
   // Create text_token_generator with stats
   auto text_token_generator = std::make_unique<TextTokenGenerator>(

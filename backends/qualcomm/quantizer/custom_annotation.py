@@ -269,9 +269,14 @@ def annotate_kv_8bit(  # noqa: C901
         if (
             node.op == "call_function"
             and node.target == torch.ops.aten.matmul.default
-            and all(arg.op == "call_function" for arg in node.args)
+            and all(
+                arg.op == "call_function"
+                or (arg.op == "placeholder" and arg.meta["val"].is_floating_point())
+                for arg in node.args
+            )
         ):
-            # Only apply custom annotation on Q @ K^T @ V
+            # Only apply custom annotation on Q @ K^T @ V (activations, or a
+            # cache that is a graph input), not on matmuls with constants.
             annotate_matmul(node, quantization_config_16a8w)
             annotate_matmul_input1(node.args[1], is_qat=is_qat)
 
