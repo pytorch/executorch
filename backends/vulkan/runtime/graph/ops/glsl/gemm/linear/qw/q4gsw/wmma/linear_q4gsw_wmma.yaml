@@ -36,7 +36,7 @@ linear_q4gsw_wmma:
     CSH_IN_ASH: false
   shader_variants:
     # Intel Xe2: subgroup 16, MMA 8x16x16 (the only fp16 shape Xe2 exposes),
-    # fragment-contiguous shared memory and image loads for A.
+    # fragment-contiguous shared memory; image loads for A with texture3d IO.
     - NAME: linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half
       IO_STORAGE: texture3d
       MMA_M: 8
@@ -46,13 +46,12 @@ linear_q4gsw_wmma:
       FRAG_LAYOUT: true
       IMG_A: true
       CSH_BAND: true
-    - NAME: linear_q4gsw_wmma_t128x128k16g44s16m8fli_buffer_texture2d_half
+    - NAME: linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half
       MMA_M: 8
       SG_GRID_X: 4
       SG_GRID_Y: 4
       SUBGROUP_SIZE: 16
       FRAG_LAYOUT: true
-      IMG_A: true
     # NVIDIA: subgroup 32, MMA 16x16x16 with fp16 accumulation (K <= 8192).
     - NAME: linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half
       IO_STORAGE: texture3d

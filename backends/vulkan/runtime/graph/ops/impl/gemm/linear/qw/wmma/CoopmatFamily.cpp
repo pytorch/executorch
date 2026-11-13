@@ -63,7 +63,7 @@ const std::vector<WmmaRow>& xe2_rows() {
        /*image_a=*/true},
       // 4w, buffer IO: 4 x 4 subgroups.
       {WmmaOp::kQ4gsw,
-       "linear_q4gsw_wmma_t128x128k16g44s16m8fli",
+       "linear_q4gsw_wmma_t128x128k16g44s16m8fl",
        {128, 128, 16, 4, 4, 16, 8},
        kWmmaBufTex2d,
        {0, 16384},
