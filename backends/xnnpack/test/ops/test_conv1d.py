@@ -4,9 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
+import tempfile
 import unittest
+from pathlib import Path
 
 import torch
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
@@ -16,6 +20,7 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.runtime import Runtime, Verification
 
 
 class TestConv1d(unittest.TestCase):
@@ -292,3 +297,45 @@ class TestConv1d(unittest.TestCase):
             passes=RunPasses(pass_functions=[constant_prop_pass]),
             skip_to_executorch=True,
         )
+
+    class ConvTranspose1dBiasReused(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.convtr = torch.nn.ConvTranspose1d(8, 4, kernel_size=4, stride=2)
+
+        def forward(self, x):
+            return self.convtr(x) - self.convtr.bias.view(1, -1, 1)
+
+    def test_fp32_conv_transpose1d_bias_reused_file_load(self):
+        """
+        XNNPACK packs a convolution's bias, so the delegate frees its data after
+        init. Here the subtraction reads the same bias by pointer at every
+        execution, so it must stay alive. Only a load from a file really frees
+        the data.
+        """
+        module = self.ConvTranspose1dBiasReused().eval()
+        x = torch.randn(1, 8, 6)
+        expected = module(x)
+
+        tester = (
+            Tester(module, (x,))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+        )
+        buf = tester.stages[StageType.SERIALIZE].artifact
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pte_path = Path(temp_dir) / "conv_transpose1d.pte"
+            pte_path.write_bytes(buf)
+            program = Runtime.get().load_program(
+                pte_path, verification=Verification.Minimal
+            )
+            method = program.load_method("forward")
+            actual = method.execute((x,))[0].clone()
+            # Release the mapping before the temp dir is removed (Windows).
+            del method, program
+            gc.collect()
+
+        self.assertTrue(torch.allclose(expected, actual, atol=1e-5))

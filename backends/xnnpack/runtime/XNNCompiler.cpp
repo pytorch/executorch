@@ -13,6 +13,7 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <xnnpack.h>
 #include <cinttypes>
+#include <initializer_list>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -2284,6 +2285,126 @@ uint32_t getSerializedValueId(ValuePtr value) noexcept {
 }
 
 /*
+Appends the ids of the values `node` reads, except the filter and bias of
+FullyConnected and the convolutions, which XNNPACK packs. Returns false for a
+node type it does not know.
+*/
+bool appendUnpackedInputIds(
+    const fb_xnnpack::XNode* node,
+    std::vector<uint32_t>& ids) {
+  using U = fb_xnnpack::XNodeUnion;
+  const void* p = node->xnode_union();
+  if (p == nullptr) {
+    return false;
+  }
+  const U type = node->xnode_union_type();
+  auto any_of = [type](std::initializer_list<U> types) {
+    for (U t : types) {
+      if (t == type) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (any_of(
+          {U::XNNAdd,
+           U::XNNDiv,
+           U::XNNMinimum,
+           U::XNNMultiply,
+           U::XNNSubtract,
+           U::XNNMaximum,
+           U::XNNPReLU,
+           U::XNNBatchMatrixMultiply})) {
+    auto n = static_cast<const fb_xnnpack::_XNNNode2x1*>(p);
+    ids.push_back(n->input1_id());
+    ids.push_back(n->input2_id());
+  } else if (any_of(
+                 {U::XNNSoftmax,
+                  U::XNNSigmoid,
+                  U::XNNClamp,
+                  U::XNNFloor,
+                  U::XNNConvert,
+                  U::XNNGlobalAvgPooling2d,
+                  U::XNNSquareRoot,
+                  U::XNNCeiling,
+                  U::XNNHardswish,
+                  U::XNNNegate,
+                  U::XNNSquare,
+                  U::XNNAbs,
+                  U::XNNReciprocalSquareRoot,
+                  U::XNNLog,
+                  U::XNNGelu,
+                  U::XNNTanh,
+                  U::XNNExp,
+                  U::XNNSin,
+                  U::XNNCopy,
+                  U::XNNCos,
+                  U::XNNApproxGelu})) {
+    ids.push_back(static_cast<const fb_xnnpack::_XNNNode1x1*>(p)->input_id());
+  } else if (any_of(
+                 {U::XNNConcatenate2,
+                  U::XNNConcatenate3,
+                  U::XNNConcatenate4,
+                  U::XNNConcatenate5})) {
+    auto n = static_cast<const fb_xnnpack::_XNNCat*>(p);
+    ids.insert(
+        ids.end(),
+        {n->input1_id(),
+         n->input2_id(),
+         n->input3_id(),
+         n->input4_id(),
+         n->input5_id()});
+  } else if (type == U::XNNFullyConnected) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNFullyConnected*>(p)->input1_id());
+  } else if (any_of(
+                 {U::XNNConv2d,
+                  U::XNNDepthwiseConv2d,
+                  U::XNNConvTranspose2d})) {
+    ids.push_back(static_cast<const fb_xnnpack::_XNNNodeConv*>(p)->input1_id());
+  } else if (any_of({U::XNNAvgPooling2d, U::XNNMaxPooling2d})) {
+    ids.push_back(static_cast<const fb_xnnpack::_XNNPooling2D*>(p)->input_id());
+  } else if (type == U::XNNStaticTranspose) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNStaticTranspose*>(p)->input_id());
+  } else if (type == U::XNNStaticResizeBilinear2D) {
+    ids.push_back(static_cast<const fb_xnnpack::XNNStaticResizeBilinear2D*>(p)
+                      ->input_id());
+  } else if (type == U::XNNStaticConstantPad) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNStaticConstantPad*>(p)->input_id());
+  } else if (type == U::XNNStaticReshape) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNStaticReshape*>(p)->input_id());
+  } else if (type == U::XNNStaticSlice) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNStaticSlice*>(p)->input_id());
+  } else if (type == U::XNNDepthToSpace2d) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNDepthToSpace2d*>(p)->input_id());
+  } else if (type == U::XNNELU) {
+    ids.push_back(static_cast<const fb_xnnpack::XNNELU*>(p)->input_id());
+  } else if (type == U::XNNLeakyReLU) {
+    ids.push_back(static_cast<const fb_xnnpack::XNNLeakyReLU*>(p)->input_id());
+  } else if (type == U::XNNArgMaxPooling2d) {
+    ids.push_back(
+        static_cast<const fb_xnnpack::XNNArgMaxPooling2d*>(p)->input_id());
+  } else if (type == U::XNNScaledDotProductAttention) {
+    auto n = static_cast<const fb_xnnpack::XNNScaledDotProductAttention*>(p);
+    ids.insert(
+        ids.end(),
+        {n->query_id(),
+         n->key_id(),
+         n->value_id(),
+         n->scale_id(),
+         n->mask_id()});
+  } else {
+    return false;
+  }
+  return true;
+}
+
+/*
 Serialized ids of the values that XNNPACK copies into its own packed storage
 while the runtime is created. Every other constant value is referenced by raw
 pointer for the lifetime of the runtime.
@@ -2314,6 +2435,20 @@ std::unordered_set<uint32_t> getPackedValueIds(GraphPtr flatbuffer_graph) {
       auto n = node->xnode_union_as_XNNConvTranspose2d();
       insert_weights(n->filter_id(), n->bias_id());
     }
+  }
+
+  // A packed weight or bias that another node also reads (a bias reused by a
+  // reshape or a subtract, for example) is referenced by raw pointer by that
+  // node, so it must stay alive with the runtime.
+  std::vector<uint32_t> reads;
+  for (auto node : *flatbuffer_graph->xnodes()) {
+    if (!appendUnpackedInputIds(node, reads)) {
+      // A node type listed nowhere below: keep every constant alive.
+      return {};
+    }
+  }
+  for (uint32_t id : reads) {
+    packed_ids.erase(id);
   }
   return packed_ids;
 }

@@ -45,3 +45,14 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
     ],
 )
+
+fbcode_target(_kind = runtime.python_library,
+    name = "custom_ops_lib",
+    srcs = [
+        "custom_ops_lib.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
