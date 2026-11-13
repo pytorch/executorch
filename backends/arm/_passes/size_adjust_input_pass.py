@@ -118,9 +118,9 @@ def _ceil_mode_adds_output(
 ) -> bool:
     """Return whether ceil_mode gives one more output element than floor mode.
 
-    PyTorch drops a last ceil_mode window that would start in the right
-    padding. Ceil mode then pools over the same windows as floor mode, and the
-    input has to be truncated in the same way.
+    PyTorch drops a last ceil_mode window that would start in the right padding.
+    Ceil mode then pools over the same windows as floor mode, and the input has
+    to be truncated in the same way.
 
     """
     ceil_post_pad = adjust_pooling_pad_if_needed(
@@ -129,7 +129,7 @@ def _ceil_mode_adds_output(
     floor_post_pad = adjust_pooling_pad_if_needed(
         input_size, kernel_size, stride, pad, False
     )
-    return ceil_post_pad != floor_post_pad
+    return bool(ceil_post_pad != floor_post_pad)
 
 
 def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
