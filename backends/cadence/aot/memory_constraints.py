@@ -14,7 +14,7 @@ from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, Ty
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.pass_utils import CompileMode
+from executorch.backends.cadence.aot.pass_utils import CompileMode, get_arg
 from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
 from executorch.exir.pass_manager import PassManager
@@ -627,11 +627,11 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
 
         # A slice/select op is redundant only if (a) either the slicing/select
         # is along the outermost dimension, or (b) all dimensions previous to
-        # slicing/select dimension are 0 or 1.
-        node_spec = node.meta.get("spec")
-        tensor_shape = list(node_spec.shape)
-        dim = 0 if len(node.args) == 1 else node.args[1]
-        if dim and not set(tensor_shape[0:dim]).issubset({0, 1}):
+        # slicing/select dimension are 0 or 1. A select drops its dimension from
+        # the output, so use the input shape.
+        input_shape = input_node.meta["spec"].shape
+        dim = get_arg(node, "dim", int) % len(input_shape)
+        if not set(input_shape[0:dim]).issubset({0, 1}):
             return False
 
         # The slice step should be 1 for contiguity.

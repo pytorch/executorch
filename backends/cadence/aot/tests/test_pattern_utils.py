@@ -917,3 +917,118 @@ class TestFuseConvPerChannelRequantEncoding(unittest.TestCase):
             f"out_shift per channel: got {out_shift}, "
             f"expected {expected_shift.to(torch.int32)}",
         )
+
+
+class TestFusedBiasScale(unittest.TestCase):
+    """The fused int32 bias must be at the accumulator scale, input * weight.
+
+    The quantizer quantizes a shared bias once, so a Linear that runs on inputs
+    with different scales (QuantizableLSTM runs one per time step) reaches fusion
+    with a bias whose scale matches only one of its calls.
+    """
+
+    INPUT_SCALE = 0.1
+    WEIGHT_SCALE = 0.05
+    BIAS = torch.tensor([100, -50, 25, 0], dtype=torch.int32)
+
+    def _build_program(
+        self, op: torch._ops.OpOverload, bias_scale: float, bias: torch.Tensor
+    ) -> tuple[ExportedProgram, torch.fx.Node]:
+        """A dq -> op(input, weight, bias) -> q program, the bias at bias_scale."""
+        out_channels = bias.numel()
+        is_conv = op == torch.ops.aten.conv1d.default
+        builder = ProgramBuilder()
+        x_q = builder.placeholder(
+            "x_q",
+            torch.randint(-8, 8, (1, 3, 5) if is_conv else (2, 3), dtype=torch.int8),
+        )
+        w_q = builder.placeholder(
+            "w_q",
+            torch.randint(
+                -8, 8, (out_channels, 3, 1) if is_conv else (out_channels, 3)
+            ).to(torch.int8),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        b_q = builder.placeholder("b_q", bias, input_kind=InputKind.CONSTANT_TENSOR)
+        dq_input = builder.call_operator(
+            op=DQ_PER_TENSOR, args=(x_q, self.INPUT_SCALE, 0, -128, 127, torch.int8)
+        )
+        dq_weight = builder.call_operator(
+            op=DQ_PER_TENSOR, args=(w_q, self.WEIGHT_SCALE, 0, -128, 127, torch.int8)
+        )
+        dq_bias = builder.call_operator(
+            op=DQ_PER_TENSOR,
+            args=(b_q, bias_scale, 0, -(2**31), 2**31 - 1, torch.int32),
+        )
+        anchor = builder.call_operator(op=op, args=(dq_input, dq_weight, dq_bias))
+        q = builder.call_operator(
+            op=Q_PER_TENSOR, args=(anchor, 0.2, 0, -128, 127, torch.int8)
+        )
+        builder.output([q])
+        ep = builder.get_program()
+        ep.graph_module.meta[EXPORTED_PROGRAM_META_KEY] = ep
+        return ep, ep.graph.find_nodes(op="call_function", target=op)[0]
+
+    def _fused_bias(
+        self, op: torch._ops.OpOverload, bias_scale: float, bias: torch.Tensor
+    ) -> tuple[ExportedProgram, torch.fx.Node]:
+        ep, anchor = self._build_program(op, bias_scale, bias)
+        pattern = (
+            Conv1dPattern() if op == torch.ops.aten.conv1d.default else LinearPattern()
+        )
+        fused = pattern.fuse(ep.graph_module, anchor)
+        self.assertIsNotNone(fused)
+        bias_node = cast(torch.fx.Node, fused).args[2]
+        self.assertIsInstance(bias_node, torch.fx.Node)
+        return ep, cast(torch.fx.Node, bias_node)
+
+    def test_linear_rescales_a_bias_quantized_for_another_input_scale(self) -> None:
+        # The bias was quantized at 0.4 times the accumulator scale of this call.
+        bias_scale = 0.4 * self.INPUT_SCALE * self.WEIGHT_SCALE
+        ep, bias_node = self._fused_bias(
+            torch.ops.aten.linear.default, bias_scale, self.BIAS
+        )
+
+        rescaled = resolve_constant(ep.graph_module, bias_node)
+
+        self.assertIsNotNone(rescaled)
+        self.assertTrue(
+            torch.equal(
+                cast(torch.Tensor, rescaled),
+                torch.tensor([40, -20, 10, 0], dtype=torch.int32),
+            )
+        )
+
+    def test_conv_rescales_a_bias_quantized_for_another_input_scale(self) -> None:
+        bias_scale = 2.0 * self.INPUT_SCALE * self.WEIGHT_SCALE
+        ep, bias_node = self._fused_bias(
+            torch.ops.aten.conv1d.default, bias_scale, self.BIAS
+        )
+
+        rescaled = resolve_constant(ep.graph_module, bias_node)
+
+        self.assertIsNotNone(rescaled)
+        self.assertTrue(
+            torch.equal(
+                cast(torch.Tensor, rescaled),
+                torch.tensor([200, -100, 50, 0], dtype=torch.int32),
+            )
+        )
+
+    def test_bias_at_the_accumulator_scale_is_used_as_is(self) -> None:
+        _, bias_node = self._fused_bias(
+            torch.ops.aten.linear.default,
+            self.INPUT_SCALE * self.WEIGHT_SCALE,
+            self.BIAS,
+        )
+
+        self.assertEqual(bias_node.name, "b_q")
+
+    def test_rescaling_past_int32_raises(self) -> None:
+        bias = torch.tensor([2**30, 0, 0, 0], dtype=torch.int32)
+        with self.assertRaisesRegex(AssertionError, "does not fit in int32"):
+            self._fused_bias(
+                torch.ops.aten.linear.default,
+                4.0 * self.INPUT_SCALE * self.WEIGHT_SCALE,
+                bias,
+            )

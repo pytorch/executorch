@@ -1016,6 +1016,67 @@ class TestMemTransform(unittest.TestCase):
         )
         self.verify_nop_memory_alloc(graph_module)
 
+    def _plan_select_or_slice(
+        self,
+        input_shape: list[int],
+        op: torch._ops.OpOverload,
+        args: tuple[int, ...],
+        out_shape: list[int],
+    ) -> torch.fx.GraphModule:
+        """Memory-plans op(add(x, full), *args), whose input is planned."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.ones(*input_shape, dtype=torch.float32))
+        to_add_to_x = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(input_shape, 123.0),
+            kwargs={"dtype": torch.float32},
+        )
+        add_x = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(x, to_add_to_x)
+        )
+        out = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(out_shape, 0.0),
+            kwargs={"dtype": torch.float32},
+        )
+        result = builder.call_operator(op=op, args=(add_x, *args), kwargs={"out": out})
+        builder.output([result])
+        graph_module = self.run_memory_planning_only(
+            builder.get_graph_module(), alloc_graph_input=False
+        )
+        graph_module.graph.eliminate_dead_code()
+        return graph_module
+
+    def test_does_not_optimize_select_on_a_negative_inner_dim(self) -> None:
+        # dim=-2 of a [3, 4, 5] input is dim 1, behind a dim of size 3, so the
+        # selected values are not contiguous in the input.
+        graph_module = self._plan_select_or_slice(
+            [3, 4, 5], torch.ops.aten.select_copy.int_out, (-2, 1), [3, 5]
+        )
+        self.assertEqual(
+            count_node(graph_module, torch.ops.aten._select_copy_nop.int_out), 0
+        )
+        self.assertEqual(
+            count_node(graph_module, torch.ops.aten.select_copy.int_out), 1
+        )
+
+    def test_optimize_select_on_a_negative_outermost_dim(self) -> None:
+        graph_module = self._plan_select_or_slice(
+            [3, 6], torch.ops.aten.select_copy.int_out, (-2, 1), [6]
+        )
+        self.assertEqual(
+            count_node(graph_module, torch.ops.aten._select_copy_nop.int_out), 1
+        )
+        self.verify_nop_memory_alloc(graph_module)
+
+    def test_does_not_optimize_slice_on_a_negative_inner_dim(self) -> None:
+        graph_module = self._plan_select_or_slice(
+            [3, 6], torch.ops.aten.slice_copy.Tensor_out, (-1, 0, 2, 1), [3, 2]
+        )
+        self.assertEqual(
+            count_node(graph_module, torch.ops.aten._slice_copy_nop.Tensor_out), 0
+        )
+
     def test_optimize_select_depending_on_mode(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.ones(2, 6, dtype=torch.float32))
