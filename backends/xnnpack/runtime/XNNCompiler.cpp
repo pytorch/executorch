@@ -131,6 +131,8 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_pfp32;
     case DataType::xnn_datatype_bf16:
       return xnn_datatype::xnn_datatype_bf16;
+    case DataType::xnn_datatype_qcint2:
+      return xnn_datatype::xnn_datatype_qcint2;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
@@ -144,6 +146,7 @@ bool isQuantizedDataType(const xnn_datatype data_type) {
     case xnn_datatype::xnn_datatype_qcint8:
     case xnn_datatype::xnn_datatype_qcint32:
     case xnn_datatype::xnn_datatype_qcint4:
+    case xnn_datatype::xnn_datatype_qcint2:
     case xnn_datatype::xnn_datatype_qdint8:
       return true;
     default:

@@ -239,6 +239,8 @@ class NodeVisitor:
                         quant_params.is_qc4w is True
                     ), "Only 4-bit per channel group quantization is supported"
                     return XNNDatatype.xnn_datatype_qbint4
+                elif quant_params.is_qc2w:
+                    return XNNDatatype.xnn_datatype_qcint2
                 else:
                     # 4/8-bit per channel quantized weights
                     return (
@@ -543,6 +545,26 @@ class NodeVisitor:
         inp = inp.contiguous().view(-1)
         return (inp[1::2] << 4 | inp[::2]).view(oc, int(ic / 2))
 
+    @staticmethod
+    def convert_to_qc2w(inp: torch.Tensor) -> torch.Tensor:
+        """
+        Pack a [-2, 1] tensor as XNNPACK qcint2: two's complement crumbs, four
+        per byte from the low bits up, contiguous across rows (rows are not
+        padded to a byte boundary).
+        """
+        import torch.nn.functional as F
+
+        min, max = inp.min().item(), inp.max().item()
+        assert (
+            max <= 1 and min >= -2
+        ), f"convert_to_qc2w: [min,max] out of [-2, 1] range, got [{min}, {max}]"
+
+        crumbs = (inp.contiguous().view(-1).to(torch.int16) & 0x3).to(torch.uint8)
+        crumbs = F.pad(crumbs, (0, -crumbs.numel() % 4)).view(-1, 4)
+        return (
+            crumbs[:, 0] | crumbs[:, 1] << 2 | crumbs[:, 2] << 4 | crumbs[:, 3] << 6
+        )
+
     def get_serialized_buffer_index(
         self,
         tensor: torch.fx.Node,
@@ -622,6 +644,8 @@ class NodeVisitor:
 
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
+        elif quant_params is not None and quant_params.is_qc2w:
+            const_val = self.convert_to_qc2w(const_val)
 
         # The bytes are read from the start of the storage, so a view of a
         # larger tensor needs its own copy.

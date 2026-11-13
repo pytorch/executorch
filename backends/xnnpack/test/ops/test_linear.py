@@ -10,8 +10,10 @@ from dataclasses import replace
 
 from itertools import product
 from typing import Callable, Dict, List, Optional, Tuple
+from unittest.mock import patch
 
 import torch
+from executorch.backends.xnnpack.operators.node_visitor import NodeVisitor
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
@@ -252,6 +254,15 @@ class TestLinear(unittest.TestCase):
             weight_qmax=7,
         )
         return qconfig
+
+    @staticmethod
+    def _get_2b_dqconfig() -> QuantizationConfig:
+        return get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+            weight_qmin=-2,
+            weight_qmax=1,
+        )
 
     def _test_linear(
         self,
@@ -701,6 +712,30 @@ class TestLinear(unittest.TestCase):
                 atol=5e-2,  # TODO(T212995726): Investigate right atol for rand[n] inputs
             )
 
+    def _test_qd8_per_channel_2w_linear(self, dtype: torch.dtype = torch.float):
+        for bias, ipc, opc in product([False, True], [2, 63], [1, 127]):
+            module = BaseLinear(
+                in_size=2,
+                input_channels=ipc,
+                output_channels=opc,
+                dtype=dtype,
+                use_bias=bias,
+            )
+            # Weights in [-2, 1] also fit int8; check they are packed as qcint2.
+            with patch.object(
+                NodeVisitor, "convert_to_qc2w", wraps=NodeVisitor.convert_to_qc2w
+            ) as pack:
+                self._test_dqlinear(
+                    module,
+                    module.get_inputs(),
+                    dynamic_shapes=({1: torch.export.Dim("batch", max=100)},),
+                    is_per_channel=True,
+                    uses_bias=bias,
+                    qconfig=self._get_2b_dqconfig(),
+                    atol=5e-2,
+                )
+            self.assertTrue(pack.called)
+
     def _test_qd8_per_token_weight_per_channel_group_int4(
         self, dtype: torch.dtype = torch.float
     ):
@@ -897,6 +932,42 @@ class TestLinear(unittest.TestCase):
     # Tests for q[dp]8-f32-qc4w
     def test_linear_qd8_f32_per_channel_int4(self):
         self._test_qd8_per_channel_4w_linear(dtype=torch.float)
+
+    # Tests for qd8-f16-qc2w
+    def test_linear_qd8_f16_per_channel_int2(self):
+        self._test_qd8_per_channel_2w_linear(dtype=torch.half)
+
+    # Tests for qd8-f32-qc2w
+    def test_linear_qd8_f32_per_channel_int2(self):
+        self._test_qd8_per_channel_2w_linear(dtype=torch.float)
+
+    # Tests for qs8-qc2w
+    def test_qs8_linear_per_channel_int2(self):
+        quant_config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=False, weight_qmin=-2, weight_qmax=1
+        )
+        for use_bias in (False, True):
+            module = BaseLinear(input_channels=63, output_channels=127, use_bias=use_bias)
+            with patch.object(
+                NodeVisitor, "convert_to_qc2w", wraps=NodeVisitor.convert_to_qc2w
+            ) as pack:
+                (
+                    Tester(module, module.get_inputs())
+                    .quantize(Quantize(quantization_config=quant_config))
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                    .check_not(
+                        [
+                            "executorch_exir_dialects_edge__ops_aten_mm_default",
+                            "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                        ]
+                    )
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(qtol=1)
+                )
+            self.assertTrue(pack.called)
 
     # Tests for q[dp]8-f16-qb4w
     @unittest.skipIf(
