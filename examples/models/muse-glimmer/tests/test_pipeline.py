@@ -295,6 +295,36 @@ class TestRingKVCacheTest(unittest.TestCase):
         for i in range(4):
             self.assertEqual(k_out[0, 0, i, 0].item(), float(i))
 
+    def test_ring_sized_for_max_write_len(self):
+        self.assertEqual(self._make_cache(window=4).buf_size, 7)
+        cache = RingKVCache(
+            max_batch_size=1,
+            window_size=4,
+            num_kv_heads=2,
+            head_dim=8,
+            max_write_len=8,
+        )
+        self.assertEqual(cache.buf_size, 11)
+
+    def test_prefill_chunks_see_full_window(self):
+        """Every query of max-size chunks attends to its full window."""
+        model = MuseGlimmerModel(TINY_CONFIG)
+        window = model._sliding_window
+        for chunk in (3, window, 2 * window):
+            model.set_max_prefill_chunk(chunk)
+            sliding = next(
+                layer.self_attn for layer in model.layers if layer.self_attn.is_sliding
+            )
+            self.assertEqual(sliding.kv_cache.buf_size, window + chunk - 1)
+            for start in range(0, TINY_CONFIG.max_seq_len - chunk + 1, chunk):
+                input_pos = torch.arange(start, start + chunk, dtype=torch.long)
+                sliding_mask, _ = model._build_masks(input_pos)
+                visible = sliding_mask[0, 0].sum(-1)
+                expected = torch.clamp(input_pos + 1, max=window)
+                self.assertTrue(
+                    torch.equal(visible, expected), f"chunk={chunk} start={start}"
+                )
+
 
 class TestFlatKVCacheTest(unittest.TestCase):
     def _make_cache(self, max_seq=16, heads=2, head_dim=8):

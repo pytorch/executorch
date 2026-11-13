@@ -1004,6 +1004,22 @@ class TestCudaExport(unittest.TestCase):
 
     @unittest.skipIf(
         torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_nonzero(self):
+        """A direct nonzero call reaches its fallback kernel, unlike a mask index,
+        which Inductor reads as index.Tensor."""
+
+        class NonzeroModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.nonzero(x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            NonzeroModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_fused_sdpa(self):

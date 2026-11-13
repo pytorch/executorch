@@ -28,6 +28,11 @@ from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_no
 PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
 PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
 
+# Names of the GEMMs whose weight or bias a node computes from params. The GEMM
+# configs set it while checking a GEMM, which may still be rejected, and
+# FoldComputedParamsPass reads it in the delegate, where node names are kept.
+COMPUTED_PARAM_TAG = "xnn_computed_param"
+
 
 def check_or_raise(condition: bool, err: str) -> None:
     """

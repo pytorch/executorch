@@ -381,7 +381,7 @@ def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
             return f"font-size: {size}px"
 
         if get_ipython() is not None:
-            styled_df = df.style.applymap(style_text_size)
+            styled_df = df.style.map(style_text_size)
             display(styled_df)
         else:
             raise Exception(

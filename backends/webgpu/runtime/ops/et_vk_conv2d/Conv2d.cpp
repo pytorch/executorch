@@ -23,7 +23,9 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace executorch::backends::webgpu {
@@ -66,19 +68,82 @@ constexpr uint64_t kGemmMinM = 8u;
 constexpr uint64_t kGemmMinK = 16u;
 constexpr uint64_t kGemmMinWorkgroups = 256u;
 
-// Transposed 2D convolution (gather form), folded into the convolution handler
-// (C2: a 2nd WEBGPU_REGISTER_OP(aten.convolution.default) would be silently
-// dropped). weight layout = torch convT [IC, OC/groups, KH, KW]. CPU-derisked
-// vs torch.conv_transpose2d to fp64 round-off incl. non-square spatial +
-// kernel.
+// Spatial dims of a transposed convolution. A 1-D one ([B, C, L] input,
+// [IC, OC/groups, K] weight) is the 2-D case with H = 1: the NCL buffers are
+// byte-identical to NC1L, and its 1-element stride/padding/dilation/
+// output_padding lists describe W.
+struct ConvTransposeGeometry {
+  uint32_t IH, IW, KH, KW;
+  uint32_t sH, sW, pH, pW, dH, dW, opH, opW;
+};
+
+ConvTransposeGeometry parse_conv_transpose_geometry(
+    WebGPUGraph& graph,
+    const std::vector<int>& args,
+    size_t rank) {
+  const auto& in = graph.get_tensor(args.at(0));
+  const auto& weight = graph.get_tensor(args.at(1));
+  ConvTransposeGeometry g = {};
+  if (rank == 3) {
+    const auto one = [&](int id, const char* name) {
+      const auto& v = graph.get_int_list(id);
+      if (v.size() != 1) {
+        throw std::runtime_error(
+            std::string("WebGPU conv_transpose1d: ") + name +
+            " must have 1 element");
+      }
+      if (v[0] < 0 || v[0] > std::numeric_limits<int32_t>::max()) {
+        throw std::runtime_error(
+            std::string("WebGPU conv_transpose1d: ") + name + " out of range");
+      }
+      return static_cast<uint32_t>(v[0]);
+    };
+    g.IH = g.KH = g.sH = g.dH = 1;
+    g.pH = g.opH = 0;
+    g.IW = static_cast<uint32_t>(in.dims[2]);
+    g.KW = static_cast<uint32_t>(weight.dims[2]);
+    g.sW = one(args.at(3), "stride");
+    g.pW = one(args.at(4), "padding");
+    g.dW = one(args.at(5), "dilation");
+    g.opW = one(args.at(7), "output_padding");
+    return g;
+  }
+  g.IH = static_cast<uint32_t>(in.dims[2]);
+  g.IW = static_cast<uint32_t>(in.dims[3]);
+  g.KH = static_cast<uint32_t>(weight.dims[2]);
+  g.KW = static_cast<uint32_t>(weight.dims[3]);
+  utils::parse_hw(
+      graph.get_int_list(args.at(3)), g.sH, g.sW, "conv_transpose2d", "stride");
+  utils::parse_hw(
+      graph.get_int_list(args.at(4)),
+      g.pH,
+      g.pW,
+      "conv_transpose2d",
+      "padding");
+  utils::parse_hw(
+      graph.get_int_list(args.at(5)),
+      g.dH,
+      g.dW,
+      "conv_transpose2d",
+      "dilation");
+  utils::parse_hw(
+      graph.get_int_list(args.at(7)),
+      g.opH,
+      g.opW,
+      "conv_transpose2d",
+      "output_padding");
+  return g;
+}
+
+// Transposed 1D/2D convolution (gather form), folded into the convolution
+// handler (C2: a 2nd WEBGPU_REGISTER_OP(aten.convolution.default) would be
+// silently dropped). weight layout = torch convT [IC, OC/groups, KH, KW]
+// ([IC, OC/groups, K] for 1D). CPU-derisked vs torch.conv_transpose2d to fp64
+// round-off incl. non-square spatial + kernel.
 void conv_transpose2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in_id = args.at(0);
   const int weight_id = args.at(1);
   const int bias_id = args.at(2);
-  const int stride_id = args.at(3);
-  const int padding_id = args.at(4);
-  const int dilation_id = args.at(5);
-  const int output_padding_id = args.at(7);
   const int groups_id = args.at(8);
   const int out_id = args.at(9);
 
@@ -87,58 +152,52 @@ void conv_transpose2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& in = graph.get_tensor(in_id);
   const auto& weight = graph.get_tensor(weight_id);
   const auto& out = graph.get_tensor(out_id);
-  if (in.dims.size() != 4 || weight.dims.size() != 4 || out.dims.size() != 4) {
+  const size_t rank = in.dims.size();
+  if ((rank != 3 && rank != 4) || weight.dims.size() != rank ||
+      out.dims.size() != rank) {
     throw std::runtime_error(
-        "WebGPU conv_transpose2d: expected 4D in/weight/out");
+        "WebGPU conv_transpose: expected 3D or 4D in/weight/out of one rank");
   }
 
-  uint32_t sH, sW, pH, pW, dH, dW, opH, opW;
-  utils::parse_hw(
-      graph.get_int_list(stride_id), sH, sW, "conv_transpose2d", "stride");
-  utils::parse_hw(
-      graph.get_int_list(padding_id), pH, pW, "conv_transpose2d", "padding");
-  utils::parse_hw(
-      graph.get_int_list(dilation_id), dH, dW, "conv_transpose2d", "dilation");
-  utils::parse_hw(
-      graph.get_int_list(output_padding_id),
-      opH,
-      opW,
-      "conv_transpose2d",
-      "output_padding");
+  const char* kind = rank == 3 ? "conv_transpose1d" : "conv_transpose2d";
+  const std::string op_name = std::string("WebGPU ") + kind;
+  const ConvTransposeGeometry geo =
+      parse_conv_transpose_geometry(graph, args, rank);
+  const uint32_t sH = geo.sH, sW = geo.sW, pH = geo.pH, pW = geo.pW;
+  const uint32_t dH = geo.dH, dW = geo.dW, opH = geo.opH, opW = geo.opW;
 
   const uint32_t B = static_cast<uint32_t>(in.dims[0]);
   const uint32_t IC = static_cast<uint32_t>(in.dims[1]);
-  const uint32_t IH = static_cast<uint32_t>(in.dims[2]);
-  const uint32_t IW = static_cast<uint32_t>(in.dims[3]);
+  const uint32_t IH = geo.IH;
+  const uint32_t IW = geo.IW;
   const uint32_t groups = static_cast<uint32_t>(graph.get_int(groups_id));
   // Transposed weight: [IC, OC/groups, KH, KW].
-  const uint32_t KH = static_cast<uint32_t>(weight.dims[2]);
-  const uint32_t KW = static_cast<uint32_t>(weight.dims[3]);
+  const uint32_t KH = geo.KH;
+  const uint32_t KW = geo.KW;
   const uint32_t OCpg = static_cast<uint32_t>(weight.dims[1]);
   const uint32_t OC = OCpg * groups;
 
   if (groups == 0 || IC % groups != 0 || OC % groups != 0) {
-    throw std::runtime_error(
-        "WebGPU conv_transpose2d: groups must divide IC/OC");
+    throw std::runtime_error(op_name + ": groups must divide IC/OC");
   }
   if (static_cast<uint32_t>(weight.dims[0]) != IC) {
-    throw std::runtime_error("WebGPU conv_transpose2d: weight dim0 != IC");
+    throw std::runtime_error(op_name + ": weight dim0 != IC");
   }
   if (sH == 0 || sW == 0) {
-    throw std::runtime_error("WebGPU conv_transpose2d: zero stride");
+    throw std::runtime_error(op_name + ": zero stride");
   }
   // Guard a u32 underflow in (IH-1)/(IW-1) below, and a zero dilation/kernel
   // that would mis-size the output geometry.
   if (IH == 0 || IW == 0) {
-    throw std::runtime_error("WebGPU conv_transpose2d: zero input spatial dim");
+    throw std::runtime_error(op_name + ": zero input spatial dim");
   }
   if (dH == 0 || dW == 0 || KH == 0 || KW == 0) {
-    throw std::runtime_error(
-        "WebGPU conv_transpose2d: zero dilation or kernel dim");
+    throw std::runtime_error(op_name + ": zero dilation or kernel dim");
   }
-  if (opH >= sH || opW >= sW) {
+  // ATen's rule: output_padding must be smaller than stride or dilation.
+  if (opH >= std::max(sH, dH) || opW >= std::max(sW, dW)) {
     throw std::runtime_error(
-        "WebGPU conv_transpose2d: output_padding >= stride");
+        op_name + ": output_padding must be < max(stride, dilation)");
   }
 
   // OH = (IH-1)*sH - 2*pH + dH*(KH-1) + output_padding + 1.
@@ -147,20 +206,21 @@ void conv_transpose2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int64_t ow_v = int64_t(IW - 1) * int64_t(sW) - 2 * int64_t(pW) +
       int64_t(dW) * (int64_t(KW) - 1) + int64_t(opW) + 1;
   if (oh_v <= 0 || ow_v <= 0) {
-    throw std::runtime_error(
-        "WebGPU conv_transpose2d: invalid output geometry");
+    throw std::runtime_error(op_name + ": invalid output geometry");
   }
   const uint32_t OH = static_cast<uint32_t>(oh_v);
   const uint32_t OW = static_cast<uint32_t>(ow_v);
 
+  const bool out_matches = rank == 3
+      ? static_cast<uint32_t>(out.dims[2]) == OW
+      : static_cast<uint32_t>(out.dims[2]) == OH &&
+          static_cast<uint32_t>(out.dims[3]) == OW;
   if (static_cast<uint32_t>(out.dims[0]) != B ||
-      static_cast<uint32_t>(out.dims[1]) != OC ||
-      static_cast<uint32_t>(out.dims[2]) != OH ||
-      static_cast<uint32_t>(out.dims[3]) != OW) {
-    throw std::runtime_error("WebGPU conv_transpose2d: output shape mismatch");
+      static_cast<uint32_t>(out.dims[1]) != OC || !out_matches) {
+    throw std::runtime_error(op_name + ": output shape mismatch");
   }
 
-  uint64_t out_numel = utils::check_fp32(out, "conv_transpose2d", "output");
+  uint64_t out_numel = utils::check_fp32(out, kind, "output");
 
   const bool has_bias =
       graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor;
@@ -296,7 +356,15 @@ bool add_conv2d(
   const int out_id = args.at(9);
 
   // aten.convolution.default covers conv1d (3D) and conv2d (4D); the registry
-  // is first-wins, so one handler must serve both ranks. Route 3D to conv1d.
+  // is first-wins, so one handler must serve both ranks. Transposed convs of
+  // either rank take the transposed 2D kernel (3D as H = 1); other 3D convs go
+  // to conv1d.
+  if (graph.get_bool(transposed_id)) {
+    // C2: fold — transposed conv is a distinct gather kernel, same
+    // registration.
+    conv_transpose2d_impl(graph, args);
+    return true;
+  }
   if (graph.get_tensor(in_id).dims.size() == 3) {
     conv1d_dispatch(graph, args);
     return true;
@@ -304,12 +372,6 @@ bool add_conv2d(
 
   WGPUDevice device = graph.device();
 
-  if (graph.get_bool(transposed_id)) {
-    // C2: fold — transposed conv is a distinct gather kernel, same
-    // registration.
-    conv_transpose2d_impl(graph, args);
-    return true;
-  }
   // output_padding (args[7]) is only meaningful for transposed conv; require it
   // to be zero so a stale non-transposed export can't silently mis-size output.
   for (int64_t v : graph.get_int_list(args.at(7))) {

@@ -12,6 +12,10 @@
  *   out = activation(residual_op(conv, residual * scale, alpha))
  *
  * residual_op is add, sub or mul, and activation is clamp, relu or leaky_relu.
+ * The ops compute in VEC4_T, the including shader's texel type, so that texels
+ * computed in f16 stay f16 and are stored without rounding. Where VEC4_T is
+ * f16vec4, the host rounds the uniforms to the nearest f16, so converting them
+ * is exact.
  *
  * The including shader binds t_residual, a texture3d with the output's sizes,
  * and declares the specialization constants has_residual, has_scale,
@@ -46,34 +50,37 @@
 // op is a specialization constant, so every case of their switches stays in the
 // SPIR-V, and the epilogue is inlined at each output store of every conv2d
 // shader.
-vec4 apply_residual_op(const vec4 v, const vec4 residual) {
+VEC4_T apply_residual_op(const VEC4_T v, const VEC4_T residual) {
   switch (residual_op) {
     case BINARY_OP_SUB:
-      return v - residual_alpha * residual;
+      return v - VEC4_T(residual_alpha) * residual;
     case BINARY_OP_MUL:
       return v * residual;
     default: // BINARY_OP_ADD
-      return v + residual_alpha * residual;
+      return v + VEC4_T(residual_alpha) * residual;
   }
 }
 
-vec4 apply_activation(const vec4 v) {
+VEC4_T apply_activation(const VEC4_T v) {
   switch (activation_op) {
     case UNARY_OP_RELU:
-      return max(v, vec4(0));
+      return max(v, VEC4_T(0));
     case UNARY_OP_LEAKY_RELU:
-      return leaky_relu(v, activation_a);
+      return mix(v * VEC4_T(activation_a), v, greaterThan(v, VEC4_T(0)));
     default: // UNARY_OP_CLAMP
-      return clamp(v, activation_a, activation_b);
+      return clamp(v, VEC4_T(activation_a), VEC4_T(activation_b));
   }
 }
 
-// `scale` is the residual scale of the output channels in `pos.z`.
-vec4 apply_epilogue(vec4 v, const ivec3 pos, const vec4 scale) {
+// `residual` is the residual texel of `v`, read only if has_residual, and
+// `scale` is the residual scale of its output channels.
+VEC4_T apply_epilogue_with_residual(
+    VEC4_T v,
+    VEC4_T residual,
+    const vec4 scale) {
   if (has_residual) {
-    vec4 residual = texelFetch(t_residual, pos, 0);
     if (has_scale) {
-      residual *= scale;
+      residual *= VEC4_T(scale);
     }
     v = apply_residual_op(v, residual);
   }
@@ -81,6 +88,15 @@ vec4 apply_epilogue(vec4 v, const ivec3 pos, const vec4 scale) {
     v = apply_activation(v);
   }
   return v;
+}
+
+// `scale` is the residual scale of the output channels in `pos.z`.
+VEC4_T apply_epilogue(const VEC4_T v, const ivec3 pos, const vec4 scale) {
+  VEC4_T residual = VEC4_T(0);
+  if (has_residual) {
+    residual = VEC4_T(texelFetch(t_residual, pos, 0));
+  }
+  return apply_epilogue_with_residual(v, residual, scale);
 }
 
 #endif // CONV2D_EPILOGUE_GLSLH

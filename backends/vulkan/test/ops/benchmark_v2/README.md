@@ -99,6 +99,7 @@ name; tensor and benchmark settings belong in the JSON file.
 | `--error_mode=report\|throw\|skip` | `report` | Report failures and continue, stop on the first failure, or disable validation. Unsupported cases report `SKIP`. |
 | `--validate_specs` | `false` | Audit schemas and registrations without allocating case tensors or running GPU work. |
 | `--validation_only` | `false` | Run correctness checks without calibration or timing passes. Requires validation enabled. |
+| `--fault_rel=<r>` | none | Test hook: scale every GPU output by `1 + r` before validation. Reports record `fault_rel`. |
 | `--table_name_max_chars=<N>` | `32` | Limit shader/operator names in table output; `0` disables truncation. |
 | `--table_inputs_max_chars=<N>` | `64` | Limit table input strings; `0` disables truncation. |
 | `--helpshort` | — | Show the binary's flags and defaults. |
@@ -307,11 +308,13 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`, `winograd`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. `winograd` accepts `chunk_rows`, a positive number of output tile rows per chunk, and `weight_storage`: `buffer` or `texture2d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
 batch 1 and channels-packed texture3d input/output. im2col requires groups 1.
+winograd requires groups 1, Half tensors, and a 3x3 kernel with stride 1,
+dilation 1, and padding 1.
 The Q8TA routes use packed int8 buffers and the production streaming feasibility
 checks. Route eligibility is separate from automatic performance heuristics:
 for example, forcing floating-point im2col can test dilated convolutions even
@@ -958,6 +961,19 @@ finite and nonnegative. FP16 accumulation may require larger tolerances for
 long reductions. Reports include per-output mismatch counts and error maxima,
 and `reference_wall_time_us`, without tensor values.
 
+Each output also reports `mean_abs_error`, `rms_error`, and `reference_rms` over
+its finite elements. RMS error is a stable measure of precision: comparing
+`rms_error` between two builds on the same inputs shows error growth that the
+pass/fail tolerances can hide. Statistics without a finite element are null.
+
+`--fault_rel=<r>` scales every GPU output by `1 + r` before the comparison, so a
+correctness gate can be shown to fail on a known error; each validation report
+then records `fault_rel`. The injected error is `r * abs(expected)`, so
+`is_close` fails only where `r > rtol + atol / abs(expected)`: `r = 0.01` fails
+FP32 cases at the default tolerances but no FP16 case, whose defaults are
+`atol=rtol=1e-2`. Use `r = 0.1` or more for FP16 cases, or gate on `rms_error`
+growth against a baseline run.
+
 ## Operator source organization
 
 Operator code follows family and quantization-scheme folders, using the production
@@ -1049,7 +1065,8 @@ outputs according to `--validation_mode`. Use
 `--validation_only` to execute GPU correctness checks without calibration or
 benchmark passes; it requires `--validation_mode=all` or `first` and
 `--error_mode=report` or `throw`. With `first`, remaining cases report `SKIP`
-without allocating tensors or executing benchmark passes.
+without allocating tensors or executing benchmark passes. Validation-only
+operator reports list the operator's `execute_nodes`, as timed reports do.
 
 Device support is determined while constructing and executing each case. The
 binary catches ET-VK `ShaderNotSupportedError` and unsupported-route exceptions

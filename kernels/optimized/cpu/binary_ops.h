@@ -223,17 +223,15 @@ std::optional<BroadcastElementwisePlan> plan_broadcast_elementwise(
     const Tensor& b,
     Tensor& out,
     const ElementwiseOptimizedPath selected_optimized_path);
-} // namespace internal
 
 template <typename CTYPE, typename Op>
-Tensor& handle_broadcast_elementwise(
+Tensor& handle_broadcast_elementwise_impl(
     KernelRuntimeContext& ctx,
     const Op& vec_fun,
     const Tensor& a,
     const Tensor& b,
     Tensor& out,
-    const ElementwiseOptimizedPath selected_optimized_path,
-    const std::optional<Scalar>& alpha = {}) {
+    const ElementwiseOptimizedPath selected_optimized_path) {
   if ((selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
@@ -256,6 +254,36 @@ Tensor& handle_broadcast_elementwise(
       opt_plan->broadcast_size,
       opt_plan->inner_size);
   return out;
+}
+} // namespace internal
+
+// vec_fun always receives (a, b). The reverse paths hand the broadcasting maps
+// (b, a), so vec_fun's arguments are swapped back on those paths. Pass
+// kCommutative = true when the order doesn't matter to skip compiling the
+// swapped copy.
+template <typename CTYPE, bool kCommutative = false, typename Op>
+Tensor& handle_broadcast_elementwise(
+    KernelRuntimeContext& ctx,
+    const Op& vec_fun,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out,
+    const ElementwiseOptimizedPath selected_optimized_path,
+    const std::optional<Scalar>& alpha = {}) {
+  if constexpr (!kCommutative) {
+    if (selected_optimized_path ==
+            ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+        selected_optimized_path ==
+            ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+        selected_optimized_path ==
+            ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+      auto swapped_fun = [&vec_fun](auto x, auto y) { return vec_fun(y, x); };
+      return internal::handle_broadcast_elementwise_impl<CTYPE>(
+          ctx, swapped_fun, a, b, out, selected_optimized_path);
+    }
+  }
+  return internal::handle_broadcast_elementwise_impl<CTYPE>(
+      ctx, vec_fun, a, b, out, selected_optimized_path);
 }
 } // namespace executor
 } // namespace torch
