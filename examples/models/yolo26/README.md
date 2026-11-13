@@ -84,11 +84,21 @@ python export_and_validate.py --help
 
 OpenVINO:
 
+Linux/macOS:
+
 ```bash
 cd examples/models/yolo26
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENVINO_BACKEND=ON ..
 make -j$(nproc)
+```
+
+Windows (PowerShell):
+
+```powershell
+cd examples/models/yolo26
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_OPENVINO_BACKEND=ON
+cmake --build build --config Release --parallel
 ```
 
 XNNPACK:
@@ -102,14 +112,30 @@ make -j$(nproc)
 
 ### Step 6: Run the demo
 
+Linux/macOS:
+
 ```bash
 ./build/Yolo26DetectionDemo -model_path /path/to/exported/model -input_path /path/to/video/file -output_path /path/to/output/annotated/video
 ```
 
+Windows (PowerShell):
+
+```powershell
+.\build\Release\Yolo26DetectionDemo.exe -model_path C:\path\to\exported\model.pte -input_path C:\path\to\video\file.mp4 -output_path C:\path\to\output\annotated\video.mp4
+```
+
 To get a full parameters description please use the following command:
+
+Linux/macOS:
 
 ```bash
 ./build/Yolo26DetectionDemo --help
+```
+
+Windows (PowerShell):
+
+```powershell
+.\build\Release\Yolo26DetectionDemo.exe --help
 ```
 
 ## Credits
