@@ -3,6 +3,12 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
+fbcode_target(
+    _kind = runtime.export_file,
+    name = "test_preprocess.py",
+    visibility = ["PUBLIC"],
+)
+
 fbcode_target(_kind = runtime.python_library,
     name = "preprocess_sdk_unbound",
     srcs = [
@@ -62,7 +68,9 @@ fbcode_target(
         "test_preprocess.py",
     ],
     deps = [
-        ":preprocess",
+        # @oss-disable[end= ]: ":preprocess_sdk_unbound",
+        # @oss-disable[end= ]: "//executorch/backends/mediatek/fb/sdk_test_doubles:sdk_test_doubles",
+        ":preprocess", # @oss-enable
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_api",
