@@ -672,7 +672,6 @@ TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
   std::string yamls;
   for (const char* yaml :
        {"q4gsw/wmma/linear_q4gsw_wmma.yaml",
-        "q4gsw/wmma/linear_q4gsw_wmma_bx.yaml",
         "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma.yaml",
         "dq8ca_q4gsw/wmma/linear_dq8ca_q4gsw_wmma_rowmajor.yaml"}) {
     const std::string contents = read_file(dir + yaml);

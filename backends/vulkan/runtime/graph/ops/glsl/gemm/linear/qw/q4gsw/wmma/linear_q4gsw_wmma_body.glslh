@@ -8,10 +8,10 @@
 
 // Body of linear_q4gsw_wmma. Included by its template header
 // (linear_q4gsw_wmma.glsl), which defines the bindings, the spec constants,
-// ACC_T, the optional IO_TEXTURE / FRAG_LAYOUT / IMG_A / B_COLMAJOR / CSH_BAND
-// macros and the tile constants MMA_{M,N,K}, WG_TILE_{M,N,K}, SG_GRID_{X,Y},
-// SUBGROUP_SIZE. Must not contain template syntax: .glslh files are not
-// expanded per variant.
+// ACC_T, the optional IO_TEXTURE / FRAG_LAYOUT / IMG_A / B_COLMAJOR / CSH_BAND /
+// B_TEXEL / CSH_IN_ASH macros and the tile constants MMA_{M,N,K},
+// WG_TILE_{M,N,K}, SG_GRID_{X,Y}, SUBGROUP_SIZE. Must not contain template
+// syntax: .glslh files are not expanded per variant.
 
 #ifndef LINEAR_Q4GSW_WMMA_BODY_GLSLH
 #define LINEAR_Q4GSW_WMMA_BODY_GLSLH
@@ -90,7 +90,14 @@ const uint CSH_ROWS = MMA_M;
 #else
 const uint CSH_ROWS = SG_GRID_Y * MMA_M;
 #endif
+// CSH_IN_ASH stages the drain band in Ash instead: Ash is dead after the
+// last MMA and every drain iteration starts with a barrier.
+#if defined(CSH_IN_ASH) && defined(CSH_BAND)
+#error "CSH_IN_ASH is not combined with CSH_BAND"
+#endif
+#ifndef CSH_IN_ASH
 shared float16_t Csh[CSH_ROWS * WG_TILE_N];
+#endif
 #endif
 
 // Staging thread maps: each thread covers one uvec4 (8 fp16) per pass.
@@ -110,6 +117,17 @@ const uint BT_KQ = WG_TILE_K / 4u;
 const uint BT_N8 = WG_TILE_N / 8u;
 const uint BT_ITEMS = BT_KQ * BT_N8 * 2u;
 const uint BT_PASSES = (BT_ITEMS + WG_SIZE - 1u) / WG_SIZE;
+#endif
+#ifdef B_TEXEL
+// Texel-wise B staging: one packed-weight texel (4 K rows x 8 N) feeds all
+// B_PASSES rows of a thread; B_RP threads share a texel when B_PASSES < 4.
+// Row of pass p within the chunk, and its first nibble index in the texel.
+#if defined(B_COLMAJOR)
+#error "B_TEXEL is not combined with B_COLMAJOR"
+#endif
+const uint B_RP = 4u / B_PASSES;
+#define B_TROW(p) ((b_row_offset / B_RP) * 4u + (b_row_offset % B_RP) * B_PASSES + (p))
+#define B_TCOL(p) (2u * ((b_row_offset % B_RP) * B_PASSES + (p)))
 #endif
 
 // Accumulator coopmats (MMAS_PER_SG_M x MMAS_PER_SG_N per subgroup).
@@ -267,7 +285,15 @@ void main() {
     sc0 = t_weight_scales[sc_n4];
     sc1 = t_weight_scales[sc_n4 + 1u];
     [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+#ifdef B_TEXEL
+      if (p > 0u) {
+        temp_B[p] = temp_B[0];
+        continue;
+      }
+      const uint k_row = B_TROW(0u);
+#else
       const uint k_row = p * B_ROWS_PER_PASS + b_row_offset;
+#endif
       ivec4 wblock;
       wblock = WFETCH(ivec2(k_row >> 2u, n8_blk));
       temp_B[p] = wblock;
@@ -286,8 +312,13 @@ void main() {
     }
 #else
     [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+#ifdef B_TEXEL
+      BSH_STORE(B_SH_IDX(B_TROW(p), b_col),
+          dequant_block(temp_B[p], B_TCOL(p), B_TCOL(p) + 1u, sc0, sc1));
+#else
       BSH_STORE(B_SH_IDX(p * B_ROWS_PER_PASS + b_row_offset, b_col),
           dequant_block(temp_B[p], col_lo, col_hi, sc0, sc1));
+#endif
     }
 #endif
   }
@@ -344,7 +375,15 @@ void main() {
       }
 #else
       [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+#ifdef B_TEXEL
+        if (p > 0u) {
+          temp_B[p] = temp_B[0];
+          continue;
+        }
+        const uint k_row = chunkK_nxt + B_TROW(0u);
+#else
         const uint k_row = chunkK_nxt + p * B_ROWS_PER_PASS + b_row_offset;
+#endif
         temp_B[p] = WFETCH(ivec2(k_row >> 2u, n8_blk));
       }
       const uint group_nxt = (chunk + 1u) / CHUNKS_PER_GROUP;
@@ -409,8 +448,13 @@ void main() {
       }
 #else
       [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+#ifdef B_TEXEL
+        BSH_STORE(nxt_base_B + B_SH_IDX(B_TROW(p), b_col),
+            dequant_block(temp_B[p], B_TCOL(p), B_TCOL(p) + 1u, sc0, sc1));
+#else
         BSH_STORE(nxt_base_B + B_SH_IDX(p * B_ROWS_PER_PASS + b_row_offset, b_col),
             dequant_block(temp_B[p], col_lo, col_hi, sc0, sc1));
+#endif
       }
 #endif
     }
@@ -538,12 +582,21 @@ void main() {
     memoryBarrierShared();
     barrier();
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
+#ifdef CSH_IN_ASH
+      coopMatStore(
+          coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]), Ash,
+          (warpInTile.y * MMA_M * WG_TILE_N +
+              MMA_N * (MMAS_PER_SG_N * warpInTile.x + j)) / FP16_PER_VEC4,
+          WG_TILE_N / FP16_PER_VEC4,
+          gl_CooperativeMatrixLayoutRowMajor);
+#else
       coopMatStore(
           coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]), Csh,
           warpInTile.y * MMA_M * WG_TILE_N +
               MMA_N * (MMAS_PER_SG_N * warpInTile.x + j),
           WG_TILE_N,
           gl_CooperativeMatrixLayoutRowMajor);
+#endif
     }
     memoryBarrierShared();
     barrier();
@@ -559,6 +612,15 @@ void main() {
       if (m >= uint(output_sizes.y)) {
         continue;
       }
+#ifdef CSH_IN_ASH
+      // base is a multiple of 4 halves: the texel is one half of a uvec4.
+      const uvec4 q = Ash[base / FP16_PER_VEC4];
+      const bool hi = (base % FP16_PER_VEC4) != 0u;
+      imageStore(
+          t_output,
+          ivec3(tile_n_start / 4u + lc4, m, 0),
+          vec4(unpackHalf2x16(hi ? q.z : q.x), unpackHalf2x16(hi ? q.w : q.y)));
+#else
       imageStore(
           t_output,
           ivec3(tile_n_start / 4u + lc4, m, 0),
@@ -567,6 +629,7 @@ void main() {
               float(Csh[base + 1u]),
               float(Csh[base + 2u]),
               float(Csh[base + 3u])));
+#endif
     }
   }
 #endif // CSH_BAND
