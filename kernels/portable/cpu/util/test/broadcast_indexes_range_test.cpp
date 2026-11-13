@@ -264,3 +264,32 @@ TEST(BroadcastIndexesRangeTest, FourDBroadcastingWithOneDimsInOutput) {
   four_d_broadcasting_test<2, 3, 1, 5>();
   four_d_broadcasting_test<2, 1, 3, 1>();
 }
+
+TEST(BroadcastIndexesRangeTest, OutputSizesMatchOutputTensor) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor out = tf.zeros({2, 3, 4});
+  Tensor in_a = tf.zeros({3, 1});
+  Tensor in_b = tf.zeros({2, 1, 4});
+  Tensor in_c = tf.zeros({2, 3, 4});
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesRange<1>(out.sizes(), in_c)),
+      range_to_vec(BroadcastIndexesRange<1>(out, in_c)));
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b)),
+      range_to_vec(BroadcastIndexesRange<2>(out, in_a, in_b)));
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesRange<3>(out.sizes(), in_a, in_b, in_c)),
+      range_to_vec(BroadcastIndexesRange<3>(out, in_a, in_b, in_c)));
+  test_operator_plus(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b));
+
+  Tensor scalar = tf.zeros({});
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesRange<2>(scalar.sizes(), scalar, scalar)),
+      range_to_vec(BroadcastIndexesRange<2>(scalar, scalar, scalar)));
+
+  Tensor empty = tf.zeros({2, 0});
+  EXPECT_TRUE(
+      range_to_vec(BroadcastIndexesRange<2>(empty.sizes(), empty, empty))
+          .empty());
+}

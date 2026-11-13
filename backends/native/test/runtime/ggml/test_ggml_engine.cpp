@@ -1833,7 +1833,9 @@ std::unique_ptr<GgmlEngineContext> make_int4_context(
       scale_bytes + weight_bytes);
   uint8_t* payload =
       safetensors.data() + safetensors.size() - scale_bytes - weight_bytes;
-  std::memcpy(payload, scales.data(), scale_bytes);
+  if (!scales.empty()) {
+    std::memcpy(payload, scales.data(), scale_bytes);
+  }
   const size_t row_bytes = weight_bytes / rows;
   for (size_t r = 0; r < rows; ++r) {
     std::fill_n(
@@ -1876,7 +1878,8 @@ TEST(GgmlEngineTest, EmbedsInt4RowsWithExactFloatScales) {
   executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
   for (size_t i = 0; i < rows.size(); ++i) {
     const int64_t id = ids[i / 64];
-    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+    EXPECT_EQ(
+        rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
         << i;
   }
 }
@@ -1903,7 +1906,8 @@ TEST(GgmlEngineTest, KeepsFp16ExactScalesOfInt4EmbeddingsInBlocks) {
   executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
   for (size_t i = 0; i < rows.size(); ++i) {
     const int64_t id = ids[i / 64];
-    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+    EXPECT_EQ(
+        rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
         << i;
   }
 }
@@ -1931,7 +1935,8 @@ TEST(GgmlEngineTest, KeepsScalesOfMutableInt4EmbeddingsInBlocks) {
   const std::vector<float> update(2 * 32, 2.0f);
   std::vector<float> initial;
   for (const int64_t id : ids) {
-    initial.insert(initial.end(), 32, static_cast<float>(id + 1) * narrowed[id]);
+    initial.insert(
+        initial.end(), 32, static_cast<float>(id + 1) * narrowed[id]);
   }
   std::vector<float> rows(2 * 32);
   for (const std::vector<float>& expected : {initial, update}) {
