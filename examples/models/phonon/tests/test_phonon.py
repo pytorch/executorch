@@ -255,8 +255,9 @@ class TestPrograms(unittest.TestCase):
         self._check_swaps("vulkan", [7, 1, 2])
 
     def test_xnnpack_swaps_preserve_outputs(self):
-        # The depthwise upsampler, 2 decoder transposed convs.
-        self._check_swaps("xnnpack", [1, 2])
+        # The depthwise upsampler; XNNPACK lowers the decoder's transposed
+        # convs as convs itself.
+        self._check_swaps("xnnpack", [1])
 
     def test_conv_transpose_as_conv_matches(self):
         torch.manual_seed(0)

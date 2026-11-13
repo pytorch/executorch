@@ -15,9 +15,9 @@ per backend:
                           the Mimi decoder splits at every ELU.
   conv_transpose1d_as_2d  Vulkan runs transposed convolution on 4-D inputs only.
   conv_transpose1d_as_conv1d
-                          XNNPACK's deconvolution is slow; this runs the Mimi
-                          decoder's transposed convolutions (kernel =
-                          2 * stride) as a convolution and an interleave.
+                          Runs the Mimi decoder's transposed convolutions
+                          (kernel = 2 * stride) as a convolution and an
+                          interleave; XNNPACK's lowering does the same.
   depthwise_conv_transpose_as_mul
                           Vulkan computes the Mimi upsampler (depthwise,
                           kernel = 2 * stride) incorrectly; this runs it as a
