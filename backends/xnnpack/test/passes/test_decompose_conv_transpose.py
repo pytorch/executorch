@@ -15,9 +15,6 @@ from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack._passes.decompose_conv_transpose import (
     DecomposeConvTransposePass,
 )
-from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
-    DecomposeDepthwiseConvTransposePass,
-)
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 from executorch.exir._serialize import _deserialize_pte_binary
@@ -37,6 +34,8 @@ class TestDecomposeConvTransposePass(unittest.TestCase):
     view = "executorch_exir_dialects_edge__ops_aten_view_copy_default"
     permute = "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
     slice = "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
+    pad = "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"
+    cat = "executorch_exir_dialects_edge__ops_aten_cat_default"
     d2s = "executorch_exir_dialects_edge__ops_et_xnnpack_depth_to_space_2d_default"
 
     def setUp(self):
@@ -94,7 +93,11 @@ class TestDecomposeConvTransposePass(unittest.TestCase):
             dw_tests.TestDecomposeDepthwiseConvTransposePass._xnnpack_node_types(tester)
         )
         self.assertEqual(node_types["XNNConvTranspose2d"], 0, node_types)
-        self.assertGreaterEqual(node_types["XNNConv2d"], num_deconvs, node_types)
+        self.assertGreaterEqual(
+            node_types["XNNConv2d"] + node_types["XNNDepthwiseConv2d"],
+            num_deconvs,
+            node_types,
+        )
         (
             tester.to_executorch()
             .serialize()
@@ -236,10 +239,6 @@ class TestDecomposeConvTransposePass(unittest.TestCase):
             Tester(module.eval(), inputs).export().get_artifact()
         ).passes
         self.assertLess(
-            passes.index(DecomposeDepthwiseConvTransposePass),
-            passes.index(DecomposeConvTransposePass),
-        )
-        self.assertLess(
             passes.index(DecomposeConvTransposePass),
             passes.index(FuseActivationPass),
         )
@@ -276,9 +275,52 @@ class TestDecomposeConvTransposePass(unittest.TestCase):
             torch.allclose(loaded.forward(inputs)[0], module(*inputs), atol=1e-4)
         )
 
+    def test_depthwise_1d_unpadded(self):
+        # The upsampler of a streaming audio decoder: every phase has 2 taps
+        # and a symmetric pad of 1, so no pads and no slice.
+        for stride in (2, 16):
+            for steps in (1, 5):
+                with self.subTest(stride=stride, steps=steps):
+                    module = self._deconv(
+                        1, 8, 8, 2 * stride, stride, groups=8, bias=False
+                    )
+                    inputs = (torch.randn(1, 8, steps),)
+                    self._check_rewritten(
+                        module,
+                        inputs,
+                        {
+                            self.conv: stride,
+                            self.pad: 0,
+                            self.cat: 1,
+                            self.view: 2,
+                            self.slice: 0,
+                        },
+                    )
+                    self._check_lowered(module, inputs)
+
+    def test_depthwise_1d_padded(self):
+        # k=4, p=1, output_padding=1: phase 1 reads its input through an
+        # asymmetric pad, and the odd output size needs a slice.
+        module = self._deconv(1, 8, 8, 4, 2, padding=1, output_padding=1, groups=8)
+        inputs = (torch.randn(2, 8, 5),)
+        self._check_rewritten(
+            module, inputs, {self.conv: 2, self.pad: 1, self.cat: 1, self.slice: 1}
+        )
+        self._check_lowered(module, inputs)
+
+    def test_depthwise_2d_odd_output(self):
+        # k=5, p=0: 2H + 3 outputs, sliced from 2H + 4 on both axes.
+        module = self._deconv(2, 8, 8, 5, 2, groups=8)
+        inputs = (torch.randn(1, 8, 4, 6),)
+        self._check_rewritten(
+            module,
+            inputs,
+            {self.conv: 4, self.pad: 3, self.cat: 1, self.d2s: 1, self.slice: 2},
+        )
+        self._check_lowered(module, inputs)
+
     def test_left_alone(self):
         for name, module, shape in (
-            ("depthwise", self._deconv(1, 4, 4, 4, 2, groups=4), (1, 4, 5)),
             ("grouped", self._deconv(1, 4, 4, 4, 2, groups=2), (1, 4, 5)),
             ("dilated", self._deconv(1, 4, 4, 4, 2, dilation=2), (1, 4, 5)),
             ("kernel not a multiple", self._deconv(1, 4, 4, 3, 2), (1, 4, 5)),
@@ -289,6 +331,11 @@ class TestDecomposeConvTransposePass(unittest.TestCase):
                 (1, 4, 5),
             ),
             ("unequal strides", self._deconv(2, 4, 4, (4, 2), (2, 1)), (1, 4, 5, 5)),
+            (
+                "depthwise with a negative pad",
+                self._deconv(1, 4, 4, 3, 2, padding=2, groups=4),
+                (1, 4, 5),
+            ),
         ):
             with self.subTest(name):
                 self._check_left_alone(module, (torch.randn(*shape),))

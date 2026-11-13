@@ -1,9 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) 2026 Software Mansion
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
+import math
+from dataclasses import dataclass
 from typing import cast, List, Optional, Tuple
 
 import executorch.backends.xnnpack.custom_ops_lib  # noqa: F401  registers et_xnnpack ops
@@ -19,28 +23,72 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
 
+@dataclass
+class _Axis:
+    # Per phase: the kernel indices of its stride-1 correlation and its
+    # (before, after) zero pad of the input.
+    taps: List[List[int]]
+    pads: List[Tuple[int, int]]
+    # Each phase computes size + extra outputs; crop slices the interleaved
+    # axis to the transposed conv's output.
+    extra: int
+    crop: Optional[Tuple[int, int]]
+
+
+@dataclass
+class _Plan:
+    stride: int
+    padding: List[int]
+    depthwise: bool
+    out_channels: int
+    x_shape: List
+    axes: List[_Axis]
+
+
+def _call(graph: torch.fx.Graph, target, *args) -> torch.fx.Node:
+    return graph.create_node("call_function", target, args)
+
+
+def _conv(graph: torch.fx.Graph, x, w, b, padding: List[int], groups: int):
+    ones, zeros = [1] * len(padding), [0] * len(padding)
+    return _call(
+        graph,
+        exir_ops.edge.aten.convolution.default,
+        *(x, w, b, ones, padding, ones, False, zeros, groups),
+    )
+
+
 class DecomposeConvTransposePass(XNNPACKPass):
     """
-    Lower a dense (groups == 1) 1-D or 2-D transposed conv whose kernel is a
-    multiple of its stride s > 1 as one stride-1 conv that computes every
-    output phase, a depth to space that interleaves the phases, and a slice
-    for the padding.
+    Lower a 1-D or 2-D transposed conv with stride s > 1 as stride-1 convs
+    that compute its output phases, an interleave of the phases and, where
+    needed, a slice. XNNPACK runs transposed convs through its deconvolution,
+    which is much slower than its convolution kernels.
 
-    With k = m * s taps per axis, output phase j of a stride-s transposed conv
-    is an m-tap correlation of the input (before the padding p is cropped):
+    Polyphase decomposition: output phase a of a stride-s transposed conv is an
+    ordinary correlation of the input with every s-th tap of the kernel,
 
-        y[s*q + j] = sum_{u < m} x[q + u - (m - 1)] * w[s*(m - 1 - u) + j]
+        y[s*q + a] = sum_t x[q - t] * w[s*t + a + p],   0 <= s*t + a + p < k,
 
-    The conv has padding m - 1 and s * out_channels outputs per axis, ordered
-    phase-major so that the 2-D interleave is the block-major
-    depth_to_space_2d. XNNPACK runs it on its convolution kernels, which are
-    much faster than its deconvolution; k = 2 * s is the usual upsampler of
-    audio decoders.
+    per axis. The phases concatenated along channels in phase-major order are
+    the block-major input of depth_to_space_2d; in 1-D the interleave is a
+    view, a permute and a view.
 
-    Depthwise transposed convs are left to DecomposeDepthwiseConvTransposePass.
-    Grouped ones and those with dilation, output_padding > padding, unequal
-    2-D strides, a dequantized weight or dynamic shapes stay on XNNPACK's own
-    node.
+    A dense transposed conv (groups == 1) computes all phases in one conv with
+    s * out_channels outputs (s**2 * out_channels in 2-D). That needs the same
+    taps in every phase, so it computes the output before the padding p is
+    cropped, where that holds whenever the kernel is a multiple of the stride,
+    and a slice drops the padding.
+
+    A depthwise transposed conv (groups == in_channels == out_channels)
+    computes each phase in its own depthwise conv, since XNNPACK only runs its
+    depthwise microkernels with one output channel per group. Each phase reads
+    the input through its own zero pad, so only an output size that is not a
+    multiple of s needs a slice.
+
+    Grouped transposed convs, dilation, unequal 2-D strides, a dequantized
+    weight, and phases without taps or that would need a negative pad stay on
+    XNNPACK's own node.
     """
 
     def call(self, graph_module: torch.fx.GraphModule):
@@ -57,7 +105,7 @@ class DecomposeConvTransposePass(XNNPACKPass):
                 if plan is not None:
                     plans.append((node, plan))
         for node, plan in plans:
-            self._decompose(graph, node, *plan)
+            self._decompose(graph, node, plan)
 
         modified = bool(plans)
         if modified:
@@ -65,9 +113,35 @@ class DecomposeConvTransposePass(XNNPACKPass):
             graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, modified)
 
-    def _plan(
-        self, node: torch.fx.Node
-    ) -> Optional[Tuple[int, List[int], List[int], List[int]]]:
+    @staticmethod
+    def _axis(
+        size, kernel: int, s: int, padding: int, output_padding: int, dense: bool
+    ) -> Optional[_Axis]:
+        p, op = (0, 0) if dense else (padding, output_padding)
+        # The output has (size - 1) * s + shift elements.
+        shift = kernel - 2 * p + op
+        extra = math.ceil(shift / s) - 1
+        taps, pads = [], []
+        for a in range(s):
+            # integer t with 0 <= s*t + a + p <= kernel - 1, as a stride-1
+            # correlation kernel W[q] = w[s * (t_max - q) + a + p]
+            t_min = math.ceil(-(a + p) / s)
+            t_max = math.floor((kernel - 1 - a - p) / s)
+            pad = (t_max, extra - t_min)
+            if t_min > t_max or min(pad) < 0:
+                return None
+            taps.append([s * (t_max - q) + a + p for q in range(t_max - t_min + 1)])
+            pads.append(pad)
+        if dense:
+            if len(set(pads)) != 1 or output_padding > padding:
+                return None
+            out = (size - 1) * s - 2 * padding + kernel + output_padding
+            crop = (padding, padding + out) if padding else None
+        else:
+            crop = (0, (size - 1) * s + shift) if shift % s else None
+        return _Axis(taps, pads, extra, crop)
+
+    def _plan(self, node: torch.fx.Node) -> Optional[_Plan]:
         (
             x,
             weight,
@@ -79,19 +153,19 @@ class DecomposeConvTransposePass(XNNPACKPass):
             output_padding,
             groups,
         ) = node.args
-        if not transposed or groups != 1:
+        if not transposed:
             return None
         if not is_param_node(self.exported_program, weight):
             return None
         if bias is not None and not is_param_node(self.exported_program, bias):
             return None
-        x_shape = list(x.meta["val"].shape)
-        out_shape = list(node.meta["val"].shape)
-        if not all(isinstance(d, int) for d in x_shape + out_shape):
-            return None
-        kernel = list(weight.meta["val"].shape[2:])
-        dims = len(kernel)
+        w_shape = list(weight.meta["val"].shape)
+        dims = len(w_shape) - 2
         if dims not in (1, 2):
+            return None
+        # transposed conv weight is (in, out / groups, *kernel)
+        depthwise = groups > 1 and groups == w_shape[0] and w_shape[1] == 1
+        if groups != 1 and not depthwise:
             return None
         # ATen broadcasts a single spatial value over every spatial dim.
         stride, padding, dilation, output_padding = (
@@ -99,96 +173,142 @@ class DecomposeConvTransposePass(XNNPACKPass):
             for p in cast(List[List[int]], [stride, padding, dilation, output_padding])
         )
         s = stride[0]
-        if (
-            s < 2
-            or any(v != s for v in stride)
-            or any(k % s for k in kernel)
-            or any(d != 1 for d in dilation)
-            or any(o > p for o, p in zip(output_padding, padding))
-        ):
+        if s < 2 or any(v != s for v in stride) or any(d != 1 for d in dilation):
             return None
-        return s, padding, x_shape, out_shape
+        x_shape = list(x.meta["val"].shape)
+        axes = []
+        for i in range(dims):
+            axis = self._axis(
+                x_shape[2 + i],
+                w_shape[2 + i],
+                s,
+                padding[i],
+                output_padding[i],
+                not depthwise,
+            )
+            if axis is None:
+                return None
+            axes.append(axis)
+        # The 1-D interleave and the slice take explicit sizes.
+        needs_static = dims == 1 or any(axis.crop for axis in axes)
+        if needs_static and not all(isinstance(d, int) for d in x_shape):
+            return None
+        out_channels = w_shape[0] if depthwise else w_shape[1]
+        return _Plan(s, padding, depthwise, out_channels, x_shape, axes)
 
-    def _decompose(
-        self,
-        graph: torch.fx.Graph,
-        node: torch.fx.Node,
-        s: int,
-        padding: List[int],
-        x_shape: List[int],
-        out_shape: List[int],
-    ) -> None:
+    def _decompose(self, graph: torch.fx.Graph, node: torch.fx.Node, plan: _Plan):
         x, weight_node, bias_node = node.args[0], node.args[1], node.args[2]
-        weight = get_param_tensor(self.exported_program, weight_node)
-        assert weight is not None
-        c_in, c_out, *kernel = weight.shape
-        dims = len(kernel)
-        taps = [k // s for k in kernel]
-        phases = s**dims
-
-        # w[ci, co, s*t + j] per axis -> phase_weight[(j, co), ci, m - 1 - t]
-        tap_axes = [2 + 2 * i for i in range(dims)]
-        phase_axes = [3 + 2 * i for i in range(dims)]
-        phase_weight = (
-            weight.reshape(c_in, c_out, *[d for m in taps for d in (m, s)])
-            .flip(tap_axes)
-            .permute(*phase_axes, 1, 0, *tap_axes)
-            .reshape(phases * c_out, c_in, *taps)
-            .contiguous()
-        )
-        phase_weight_node = self._constant_like(
-            graph, weight_node, f"_s{s}_phases", phase_weight
-        )
-        phase_bias_node = None
-        if bias_node is not None:
-            bias = get_param_tensor(self.exported_program, bias_node)
-            assert bias is not None
-            phase_bias_node = self._constant_like(
-                graph, bias_node, f"_x{phases}", bias.repeat(phases)
-            )
-
-        def call(target, *args) -> torch.fx.Node:
-            return graph.create_node("call_function", target, args)
-
         with graph.inserting_before(node):
-            y = call(
-                exir_ops.edge.aten.convolution.default,
-                x,
-                phase_weight_node,
-                phase_bias_node,
-                [1] * dims,
-                [m - 1 for m in taps],
-                [1] * dims,
-                False,
-                [0] * dims,
-                1,
+            phases = (self._depthwise_phases if plan.depthwise else self._dense_phases)(
+                graph, x, weight_node, bias_node, plan
             )
-            if dims == 2:
-                y = call(exir_ops.edge.et_xnnpack.depth_to_space_2d.default, y, s)
-            else:
-                batch, steps = x_shape[0], x_shape[2] + taps[0] - 1
-                y = call(
-                    exir_ops.edge.aten.view_copy.default, y, [batch, s, c_out, steps]
-                )
-                y = call(exir_ops.edge.aten.permute_copy.default, y, [0, 2, 3, 1])
-                y = call(
-                    exir_ops.edge.aten.view_copy.default, y, [batch, c_out, steps * s]
-                )
-            for axis, p in enumerate(padding):
-                if p:
-                    y = call(
-                        exir_ops.edge.aten.slice_copy.Tensor,
-                        y,
-                        2 + axis,
-                        p,
-                        p + out_shape[2 + axis],
-                        1,
-                    )
+            y = self._interleave(graph, phases, plan)
         node.replace_all_uses_with(y)
         graph.erase_node(node)
         for constant in (weight_node, bias_node):
             if constant is not None and len(constant.users) == 0:
                 delete_constant_placeholder(self.exported_program, constant)
+
+    def _phase_weights(
+        self, weight_node: torch.fx.Node, plan: _Plan
+    ) -> List[Tuple[Tuple[int, ...], torch.Tensor]]:
+        weight = get_param_tensor(self.exported_program, weight_node)
+        assert weight is not None
+        phase_weights = []
+        for phase in itertools.product(range(plan.stride), repeat=len(plan.axes)):
+            w = weight
+            for i, a in enumerate(phase):
+                w = w.index_select(2 + i, torch.tensor(plan.axes[i].taps[a]))
+            phase_weights.append((phase, w))
+        return phase_weights
+
+    def _dense_phases(self, graph, x, weight_node, bias_node, plan) -> torch.fx.Node:
+        phase_weights = self._phase_weights(weight_node, plan)
+        w = torch.cat([w.transpose(0, 1) for _, w in phase_weights])
+        w_node = self._constant_like(
+            graph, weight_node, f"_s{plan.stride}_phases", w.contiguous()
+        )
+        b_node = None
+        if bias_node is not None:
+            bias = get_param_tensor(self.exported_program, bias_node)
+            assert bias is not None
+            b_node = self._constant_like(
+                graph,
+                bias_node,
+                f"_x{len(phase_weights)}",
+                bias.repeat(len(phase_weights)),
+            )
+        padding = [axis.pads[0][0] for axis in plan.axes]
+        return _conv(graph, x, w_node, b_node, padding, 1)
+
+    def _depthwise_phases(
+        self, graph, x, weight_node, bias_node, plan
+    ) -> torch.fx.Node:
+        # In 1-D the phases run as 2-D convs on one unsqueezed input and are
+        # concatenated before one squeeze, so that XNNPACK converts the layout
+        # once rather than around every phase.
+        dims = len(plan.axes)
+        if dims == 1:
+            x = _call(graph, exir_ops.edge.aten.unsqueeze_copy.default, x, -1)
+        phase_convs = []
+        for phase, w in self._phase_weights(weight_node, plan):
+            pads = [plan.axes[i].pads[a] for i, a in enumerate(phase)]
+            if dims == 1:
+                w, pads = w.unsqueeze(-1), pads + [(0, 0)]
+            # The taps depend on s and padding too, so a weight shared by
+            # differently configured deconvs must not reuse the placeholders
+            # create_constant_placeholder finds by name.
+            w_node = self._constant_like(
+                graph,
+                weight_node,
+                f"_s{plan.stride}_p{'x'.join(map(str, plan.padding))}"
+                f"_phase_{'_'.join(map(str, phase))}",
+                w.contiguous(),
+            )
+            conv_input, conv_padding = x, [before for before, _ in pads]
+            if any(before != after for before, after in pads):
+                # constant_pad_nd lists the last dim first.
+                conv_input = _call(
+                    graph,
+                    exir_ops.edge.aten.constant_pad_nd.default,
+                    x,
+                    [v for pad in reversed(pads) for v in pad],
+                    0.0,
+                )
+                conv_padding = [0, 0]
+            phase_convs.append(
+                _conv(
+                    graph,
+                    conv_input,
+                    w_node,
+                    bias_node,
+                    conv_padding,
+                    plan.out_channels,
+                )
+            )
+        y = _call(graph, exir_ops.edge.aten.cat.default, phase_convs, 1)
+        if dims == 1:
+            y = _call(graph, exir_ops.edge.aten.squeeze_copy.dim, y, -1)
+        return y
+
+    @staticmethod
+    def _interleave(graph: torch.fx.Graph, y: torch.fx.Node, plan: _Plan):
+        s, axes = plan.stride, plan.axes
+        if len(axes) == 2:
+            y = _call(graph, exir_ops.edge.et_xnnpack.depth_to_space_2d.default, y, s)
+        else:
+            batch, c = plan.x_shape[0], plan.out_channels
+            steps = plan.x_shape[2] + axes[0].extra
+            view = exir_ops.edge.aten.view_copy.default
+            y = _call(graph, view, y, [batch, s, c, steps])
+            y = _call(graph, exir_ops.edge.aten.permute_copy.default, y, [0, 2, 3, 1])
+            y = _call(graph, view, y, [batch, c, steps * s])
+        for i, axis in enumerate(axes):
+            if axis.crop is not None:
+                y = _call(
+                    graph, exir_ops.edge.aten.slice_copy.Tensor, y, 2 + i, *axis.crop, 1
+                )
+        return y
 
     def _constant_like(
         self,

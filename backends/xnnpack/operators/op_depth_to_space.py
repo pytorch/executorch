@@ -25,7 +25,7 @@ from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_no
 class DepthToSpace2dVisitor(NodeVisitor):
     """
     et_xnnpack.depth_to_space_2d, the block-major depth to space that XNNPACK
-    provides natively. Introduced by DecomposeDepthwiseConvTransposePass, see
+    provides natively. Introduced by DecomposeConvTransposePass, see
     custom_ops_lib.py for the channel order.
     """
 

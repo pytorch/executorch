@@ -16,8 +16,8 @@ import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
-from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
-    DecomposeDepthwiseConvTransposePass,
+from executorch.backends.xnnpack._passes.decompose_conv_transpose import (
+    DecomposeConvTransposePass,
 )
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
@@ -40,7 +40,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 
 
 class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
-    PassStage = RunPasses([DecomposeDepthwiseConvTransposePass])
+    PassStage = RunPasses([DecomposeConvTransposePass])
 
     conv = "executorch_exir_dialects_edge__ops_aten_convolution_default"
     pad = "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"
@@ -143,10 +143,10 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         # lowering: count its calls and check the serialized graph.
         tester = Tester(module.eval(), inputs, dynamic_shapes=dynamic_shapes).export()
         with mock.patch.object(
-            DecomposeDepthwiseConvTransposePass,
+            DecomposeConvTransposePass,
             "_decompose",
             autospec=True,
-            side_effect=DecomposeDepthwiseConvTransposePass._decompose,
+            side_effect=DecomposeConvTransposePass._decompose,
         ) as decompose:
             tester.to_edge_transform_and_lower()
         self.assertEqual(decompose.call_count, num_deconvs)
@@ -333,7 +333,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             Tester(module.eval(), inputs).export().get_artifact()
         ).passes
         self.assertLess(
-            default_passes.index(DecomposeDepthwiseConvTransposePass),
+            default_passes.index(DecomposeConvTransposePass),
             default_passes.index(FuseActivationPass),
         )
         tester = (
@@ -427,9 +427,19 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         inputs = (torch.randn(1, 8, 6, 6),)
         self._check_pass(self.QuantizedDwDeconv(), inputs, {self.conv: 1, self.d2s: 0})
 
-    def test_not_a_clean_upscale_is_left_alone(self):
-        # k=4, p=0: output is 2H + 2, not a x2 upscale.
+    def test_not_a_clean_upscale(self):
+        # k=4, p=0: output is 2H + 2; every phase has 2 taps and a symmetric
+        # pad of 1, which the phase convs take as their padding.
         module = self.DwDeconv(kernel=4, stride=2, padding=0)
+        inputs = (torch.randn(1, 8, 6, 6),)
+        self._check_pass(
+            module, inputs, {self.conv: 4, self.pad: 0, self.cat: 1, self.d2s: 1}
+        )
+        self._check_lowered(module, inputs)
+
+    def test_negative_pad_is_left_alone(self):
+        # k=3, p=2: phase 1 only reads inputs past its own step.
+        module = self.DwDeconv(kernel=3, stride=2, padding=2)
         inputs = (torch.randn(1, 8, 6, 6),)
         self._check_pass(module, inputs, {self.conv: 1, self.d2s: 0})
 
