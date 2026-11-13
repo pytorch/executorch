@@ -282,12 +282,24 @@ TEST(CoopmatFamilyTest, EnabledDeviceState) {
       "VK_KHR_cooperative_matrix",
       "VK_EXT_subgroup_size_control",
       "VK_KHR_vulkan_memory_model"};
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+  // Full subgroups stay off in this configuration, so no device has a family.
+  EXPECT_FALSE(vkapi::full_subgroups_enabled(created));
+  EXPECT_EQ(
+      coopmat_family(key_with(xe2_key(), extensions, created)),
+      CoopmatFamily::kNone);
+  EXPECT_EQ(
+      coopmat_family(key_with(nvidia_key(), extensions, created)),
+      CoopmatFamily::kNone);
+#else
+  EXPECT_TRUE(vkapi::full_subgroups_enabled(created));
   EXPECT_EQ(
       coopmat_family(key_with(xe2_key(), extensions, created)),
       CoopmatFamily::kXe2);
   EXPECT_EQ(
       coopmat_family(key_with(nvidia_key(), extensions, created)),
       CoopmatFamily::kNvidia);
+#endif
 
   std::vector<std::pair<const char*, CoopmatDeviceKey>> missing;
   missing.emplace_back(
