@@ -31,7 +31,10 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   add_library(cpu_reference runtime/providers/reference/ReferenceProvider.cpp)
   target_link_libraries(cpu_reference PUBLIC cpu_runtime)
 
-  add_library(cpu_xnnpack runtime/providers/xnnpack/XNNPACKProvider.cpp)
+  add_library(
+    cpu_xnnpack runtime/providers/xnnpack/XNNPACKPasses.cpp
+                runtime/providers/xnnpack/XNNPACKProvider.cpp
+  )
   target_link_libraries(
     cpu_xnnpack
     PUBLIC cpu_runtime

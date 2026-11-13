@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
+#include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKPasses.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
 #include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
@@ -29,6 +30,7 @@ namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
 using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
+using xnnpack::clamp_bound;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -84,22 +86,6 @@ bool fp32(const Kernel& node, const ptn::Graph& graph) {
   return std::all_of(values.begin(), values.end(), [&graph](auto id) {
     return graph.value(id).tensor_meta().dtype == ptn::ScalarType::Float;
   });
-}
-
-bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound) {
-  switch (argument.kind()) {
-    case ptn::ArgKind::None:
-      bound = fallback;
-      return true;
-    case ptn::ArgKind::Int:
-      bound = static_cast<float>(argument.as_int().value);
-      return argument.as_int().id == ptn::kInvalid;
-    case ptn::ArgKind::Float:
-      bound = static_cast<float>(argument.as_float().value);
-      return argument.as_float().id == ptn::kInvalid;
-    default:
-      return false;
-  }
 }
 
 struct MaxPool2d {
@@ -312,8 +298,21 @@ class XNNExecutable final : public Executable {
         region.inputs.begin(), region.inputs.end());
     std::unordered_set<ptn::ValueId> outputs(
         region.outputs.begin(), region.outputs.end());
+    const auto hardswish_chains = xnnpack::find_hardswish_chains(
+        region, context_.graph, context_.buffers);
+    std::unordered_map<KernelId, const xnnpack::HardswishChain*> recomposed;
     std::unordered_set<ptn::ValueId> used;
+    for (const auto& chain : hardswish_chains) {
+      for (auto id : chain.nodes) {
+        recomposed.emplace(id, &chain);
+      }
+      used.insert(chain.input);
+      used.insert(chain.output);
+    }
     for (auto id : region.nodes) {
+      if (recomposed.count(id)) {
+        continue;
+      }
       const auto& node = context_.graph.node(id);
       for (auto value : node.input_value_ids()) {
         used.insert(value);
@@ -361,7 +360,13 @@ class XNNExecutable final : public Executable {
       }
     }
     for (auto id : region.nodes) {
-      const auto error = define(context_.graph.node(id));
+      const auto chain = recomposed.find(id);
+      if (chain != recomposed.end() && chain->second->nodes.back() != id) {
+        continue;
+      }
+      const auto error = chain == recomposed.end()
+          ? define(context_.graph.node(id))
+          : hardswish(*chain->second);
       if (error != Error::Ok) {
         ET_LOG(
             Error,
@@ -813,6 +818,12 @@ class XNNExecutable final : public Executable {
         arg(node, 0).as_tensor().id,
         node.outputs.at(0).value_id,
         0));
+    return Error::Ok;
+  }
+
+  Error hardswish(const xnnpack::HardswishChain& chain) {
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_, xnn_unary_hardswish, nullptr, chain.input, chain.output, 0));
     return Error::Ok;
   }
 
