@@ -2,7 +2,20 @@ name: Android
 
 on:
   workflow_call:
+    inputs:
+      test-suite:
+        type: string
+        default: all
+        description: Android instrumentation suite (all, functional, or performance)
   workflow_dispatch:
+    inputs:
+      test-suite:
+        type: choice
+        default: all
+        options:
+          - all
+          - functional
+          - performance
 
 jobs:
   build-android:
@@ -22,6 +35,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Test Android emulator harness
+        run: |
+          python -m unittest discover -s .ci/scripts/tests -p test_run_android_emulator.py -v
 
       - name: Install Python dependencies
         run: |
@@ -51,7 +68,7 @@ jobs:
           set -eux
           bash extension/android/executorch_android/android_test_setup.sh
           cd extension/android
-          ANDROID_HOME="${ANDROID_HOME}" ./gradlew :executorch_android:assembleAndroidTest
+          ANDROID_HOME="${ANDROID_HOME}" ./gradlew :executorch_android:assembleAndroidTest :executorch_android:testDebugUnitTest --tests org.pytorch.executorch.NativeTestResourceCleanupTest
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -66,10 +83,13 @@ jobs:
     needs: build-android
     # NB: This job runs on the shared 8-core-ubuntu runner; KVM / bare-metal assumptions no longer apply
     runs-on: 8-core-ubuntu
+    timeout-minutes: 150
     env:
       API_LEVEL: 34
+      ANDROID_TEST_SUITE: ${{ inputs.test-suite || 'all' }}
     steps:
       - name: Setup SSH (Click me for login details)
+        timeout-minutes: 5
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
@@ -77,19 +97,23 @@ jobs:
             This is used to run Android emulators
 
       - uses: actions/checkout@v4
+        timeout-minutes: 5
         with:
           submodules: false
 
       - name: Download Artifacts
+        timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
           name: android-apps
 
       - name: Prepare test APK
+        timeout-minutes: 1
         run: |
           cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk android-test-debug-androidTest.apk
 
       - name: AVD cache
+        timeout-minutes: 5
         uses: actions/cache@v4
         id: avd-cache
         with:
@@ -100,6 +124,7 @@ jobs:
 
       # NB: It takes about 10m to cold boot the emulator here
       - name: Run Android emulator
+        timeout-minutes: 115
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -115,3 +140,44 @@ jobs:
           disable-animations: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
           emulator-boot-timeout: 900
+
+      - name: Collect runner diagnostics
+        timeout-minutes: 2
+        if: always()
+        run: |
+          {
+            uname -a
+            free -m
+            df -h
+            ls -l /dev/kvm || true
+            timeout --kill-after=5s 15s "$ANDROID_HOME/emulator/emulator" -version || true
+            timeout --kill-after=5s 15s "$ANDROID_HOME/emulator/emulator" -accel-check || true
+          } > runner-diagnostics.txt 2>&1
+
+      - name: Upload emulator diagnostics
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          path: |
+            result.txt
+            logcat.txt
+            devices.txt
+            emulator-properties.txt
+            device-storage.txt
+            install-summary.txt
+            install-attempt-*.txt
+            runner-diagnostics.txt
+            failure-summary.txt
+
+      - name: Report instrumentation failure
+        timeout-minutes: 1
+        if: failure()
+        run: |
+          if [ -s failure-summary.txt ]; then
+            cat failure-summary.txt
+          else
+            echo "No instrumentation summary was produced; inspect the failed setup step."
+          fi

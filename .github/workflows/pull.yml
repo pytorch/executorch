@@ -866,6 +866,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    with:
+      test-suite: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.base_ref, 'release/')) && 'all' || 'functional' }}
 
   llm-server:
     needs: [changed-files, run-decision]

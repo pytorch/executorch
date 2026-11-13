@@ -16,6 +16,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android-performance:
+    if: ${{ github.event_name != 'pull_request' }}
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_android.yml
+    with:
+      test-suite: performance
+
   docker-image:
     name: Resolve CI docker image
     uses: ./.github/workflows/_docker-image.yml
