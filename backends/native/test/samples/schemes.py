@@ -39,9 +39,14 @@ class Scheme:
 
     @property
     def weight_only(self) -> bool:
-        """Whether the scheme quantizes only weights; `record` then adds
-        `golden-int8_act`."""
+        """Whether the scheme quantizes only weights."""
         return False
+
+    def adds_int8_act(self, model: torch.nn.Module) -> bool:
+        """Whether `record` adds `golden-int8_act` for `model`: the scheme
+        quantizes only weights and `model` has inputs int8_activations
+        quantizes."""
+        return self.weight_only and bool(_targets(model, _DQA_QSCHEME_MODULES))
 
     def fits(self, model: torch.nn.Module) -> bool:
         return True
@@ -56,27 +61,44 @@ class Scheme:
         return value
 
 
-def _fits(model: torch.nn.Module, group: int | None) -> bool:
-    """Whether `model` has an nn.Linear and every one's in_features split into
-    groups of `group`, or form one group when it is None."""
-    linears = [m for m in model.modules() if isinstance(m, torch.nn.Linear)]
-    for m in linears:
-        size = m.in_features if group is None else group
+# Modules whose weight a weight-only scheme quantizes, each grouped along its
+# rows: an nn.Linear's in_features, an nn.Embedding's embedding_dim.
+_WO_QSCHEME_MODULES = (torch.nn.Linear, torch.nn.Embedding)
+# Modules whose inputs the int8 dynamic activation schemes quantize.
+_DQA_QSCHEME_MODULES = (torch.nn.Linear,)
+
+
+def _targets(model: torch.nn.Module, types: tuple[type, ...]) -> list[torch.nn.Module]:
+    return [m for m in model.modules() if isinstance(m, types)]
+
+
+def _fits(model: torch.nn.Module, types: tuple[type, ...], group: int | None) -> bool:
+    """Whether `model` has a module of `types` and every one's weight rows split
+    into groups of `group`, or form one group when it is None."""
+    targets = _targets(model, types)
+    for m in targets:
+        width = m.weight.shape[1]
+        size = width if group is None else group
         # torchao reduces a one-element-group weight to a single scale.
-        if size < 2 or m.in_features % size:
+        if size < 2 or width % size:
             return False
-    return bool(linears)
+    return bool(targets)
 
 
 @dataclass(frozen=True)
 class Torchao(Scheme):
-    """A torchao config applied to every nn.Linear."""
+    """A torchao config applied to every nn.Linear and, when it quantizes only
+    weights, every nn.Embedding."""
 
     config: AOBaseConfig
 
     @property
     def weight_only(self) -> bool:
         return isinstance(self.config, IntxWeightOnlyConfig)
+
+    @property
+    def _types(self) -> tuple[type, ...]:
+        return _WO_QSCHEME_MODULES if self.weight_only else _DQA_QSCHEME_MODULES
 
     def fits(self, model: torch.nn.Module) -> bool:
         granularity = (
@@ -85,11 +107,13 @@ class Torchao(Scheme):
             else self.config.weight_granularity
         )
         return _fits(
-            model, granularity.group_size if isinstance(granularity, PerGroup) else None
+            model,
+            self._types,
+            granularity.group_size if isinstance(granularity, PerGroup) else None,
         )
 
     def quantize(self, model: torch.nn.Module) -> None:
-        quantize_(model, self.config)
+        quantize_(model, self.config, filter_fn=lambda m, _: isinstance(m, self._types))
 
     def decode(self, value: torch.Tensor) -> torch.Tensor:
         if isinstance(value, IntxUnpackedToInt8Tensor):
@@ -103,9 +127,9 @@ class Torchao(Scheme):
 
 # Families of fp16 super-block scales by byte offset in each block: powers of
 # two, where a dmin of 8 d (q4_k) or 16 d (q5_k) centers random weights near
-# zero, then negative, rounded and subnormal ones. A model's i-th nn.Linear
-# takes the i-th family, so one nn.Linear per family isolates each in its own
-# output.
+# zero, then negative, rounded and subnormal ones. A model's i-th quantized
+# module takes the i-th family, so one module per family isolates each in its
+# own output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
@@ -147,21 +171,21 @@ def _random_blocks(
 
 
 def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
-    """Writes random `ggml_type` weights for every nn.Linear to a .gguf file and
-    loads them back as a GGUF checkpoint would be."""
-    linears = [m for m in model.modules() if isinstance(m, torch.nn.Linear)]
+    """Writes random `ggml_type` weights for every nn.Linear and nn.Embedding to
+    a .gguf file and loads them back as a GGUF checkpoint would be."""
+    targets = _targets(model, _WO_QSCHEME_MODULES)
     rng = np.random.default_rng(0)
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/weights.gguf"
-        writer = GGUFWriter(path, arch="linear")
+        writer = GGUFWriter(path, arch="samples")
         families = GGUF_SUPER_SCALES[ggml_type]
-        if len(linears) > len(families):
+        if len(targets) > len(families):
             raise ValueError(
-                f"{len(linears)} nn.Linears, {len(families)} {ggml_type} scale families"
+                f"{len(targets)} weights, {len(families)} {ggml_type} scale families"
             )
-        for i, (m, scales) in enumerate(zip(linears, families)):
+        for i, (m, scales) in enumerate(zip(targets, families)):
             writer.add_tensor(
-                f"linear.{i}.weight",
+                f"weight.{i}",
                 _random_blocks(ggml_type, *m.weight.shape, scales, rng),
                 raw_dtype=GGMLQuantizationType[ggml_type.upper()],
             )
@@ -169,7 +193,7 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
         writer.write_kv_data_to_file()
         writer.write_tensors_to_file()
         writer.close()
-        for m, (_, weight) in zip(linears, iter_gguf(path), strict=True):
+        for m, (_, weight) in zip(targets, iter_gguf(path), strict=True):
             m.weight = torch.nn.Parameter(
                 weight.to(m.weight.dtype), requires_grad=False
             )
@@ -178,7 +202,7 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
 @dataclass(frozen=True)
 class Gguf(Scheme):
     """Weight-only GGUF k-quant blocks (`q4_k`, `q5_k` or `q6_k`) for every
-    nn.Linear, loaded from a .gguf file."""
+    nn.Linear and nn.Embedding, loaded from a .gguf file."""
 
     ggml_type: str
 
@@ -187,8 +211,11 @@ class Gguf(Scheme):
         return True
 
     def fits(self, model: torch.nn.Module) -> bool:
-        linears = sum(isinstance(m, torch.nn.Linear) for m in model.modules())
-        return _fits(model, QK_K) and linears <= len(GGUF_SUPER_SCALES[self.ggml_type])
+        families = len(GGUF_SUPER_SCALES[self.ggml_type])
+        return (
+            _fits(model, _WO_QSCHEME_MODULES, QK_K)
+            and len(_targets(model, _WO_QSCHEME_MODULES)) <= families
+        )
 
     def quantize(self, model: torch.nn.Module) -> None:
         _load_gguf(model, self.ggml_type)
@@ -201,14 +228,14 @@ class Gguf(Scheme):
 
 @contextlib.contextmanager
 def int8_activations(model: torch.nn.Module) -> Iterator[None]:
-    """Quantizes every nn.Linear input as torchao's int8 dynamic activation
-    schemes do: int8, asymmetric, per token."""
+    """Quantizes the inputs of every `_DQA_QSCHEME_MODULES` module as torchao's
+    int8 dynamic activation schemes do: int8, asymmetric, per token."""
     hooks = [
         m.register_forward_pre_hook(
             lambda _, args: (_apply_int8_act_asym_per_token_quant_dequant(args[0]),)
         )
         for m in model.modules()
-        if isinstance(m, torch.nn.Linear)
+        if isinstance(m, _DQA_QSCHEME_MODULES)
     ]
     try:
         yield
