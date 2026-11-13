@@ -9,8 +9,10 @@
 # impl/gemm/linear/qw/wmma/CoopmatFamily.cpp, which also carries its tile
 # geometry; the two must stay in sync.
 #
-# Name: t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
-# m8 (MMA_M = 8), then i (dispatch order) or n<ORDER_NB_MAX> (blocked order).
+# Name: an optional rowmajor_ prefix (ROWMAJOR_A), then
+# t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
+# m8 (MMA_M = 8), then i (dispatch order) or n<ORDER_NB_MAX> (blocked order),
+# or mk32 (MMA_K = 32) for the row-major kernel.
 
 linear_dq8ca_q4gsw_wmma:
   parameter_names_with_default_values:
@@ -30,6 +32,7 @@ linear_dq8ca_q4gsw_wmma:
     SG_GRID_Y: 4
     SUBGROUP_SIZE: 16
     ORDER_NB_MAX: 0
+    ROWMAJOR_A: false
     ZP_DTYPE_MODE: zpint8
   # Zero-point binding: int8 image (zpint8) or the float dtype of the scales
   # (zpinherit), selected from the zero-point tensor's dtype as for
@@ -57,3 +60,11 @@ linear_dq8ca_q4gsw_wmma:
       A_MAP_FULL: true
       A_MULTI_BLOCK: true
       ORDER_NB_MAX: 13
+    # NVIDIA: row-major int8 activations, subgroup 32, int8 MMA 16x16x32.
+    - NAME: linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half
+      IO_STORAGE: texture3d
+      ROWMAJOR_A: true
+      MMA_M: 16
+      SG_GRID_X: 2
+      SG_GRID_Y: 4
+      SUBGROUP_SIZE: 32

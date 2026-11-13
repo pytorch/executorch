@@ -33,7 +33,8 @@ quantize_and_pack_4h4w_with_group_sums:
       NUM_WORKERS_PER_GROUP: 16
       OUTPUT_STORAGE: buffer
       INPUT_STORAGE: buffer
-    # Row-major output (kPackedInt8_4W) for linear_dq8ca_q4gsw_wmma_rowmajor.
+    # Row-major output (kPackedInt8_4W) for the ROWMAJOR_A linear_dq8ca_q4gsw_wmma
+    # variants.
     - NAME: quantize_and_pack_4w_with_group_sums_o2w32_buffer_texture3d
       OUTPUT_LAYOUT: 4w
     - NAME: quantize_and_pack_4w_with_group_sums_o4w16_buffer_texture3d
