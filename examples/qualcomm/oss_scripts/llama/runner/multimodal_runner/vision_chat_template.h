@@ -44,6 +44,11 @@ inline VisionSpecialTokens get_special_tokens(
       tokens.fake_wrap_start = "<img>";
       tokens.fake_wrap_end = "</img>";
       break;
+    case example::VisionLanguageModel::kLfm3Omni:
+      tokens.global_img = "";
+      tokens.fake_wrap_start = "<|vision_start|>";
+      tokens.fake_wrap_end = "<|vision_end|>";
+      break;
     default:
       break;
   }
@@ -108,6 +113,21 @@ inline std::string apply_chat_template(
       formatted_prompt.append("<|im_start|>user:\n");
       formatted_prompt.append(expand_image_tokens(prompt, specials));
       formatted_prompt.append("<|im_end|>assistant\n");
+      break;
+    }
+    case example::VisionLanguageModel::kLfm3Omni: {
+      // BOS is disabled for multimodal prompts, so it is part of the template;
+      // the multimodal runner is single-turn (one generate per conversation).
+      formatted_prompt.append("<|startoftext|>");
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|im_start|>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|im_end|>\n");
+      }
+      formatted_prompt.append("<|im_start|>user\n");
+      formatted_prompt.append(expand_image_tokens(prompt, specials));
+      formatted_prompt.append(
+          "<|im_end|>\n<|im_start|>assistant\n<think></think>");
       break;
     }
     default:

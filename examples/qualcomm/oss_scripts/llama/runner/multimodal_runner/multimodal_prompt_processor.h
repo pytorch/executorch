@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/lfm3/speech_policy.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
 
@@ -28,6 +29,8 @@ class MultimodalPromptProcessor : public example::PromptProcessor {
     int sliding_window;
     CacheMode cache_mode;
     int32_t embedding_dim = 0;
+    // > 0 when the decoder also returns its final hidden state (output 1).
+    int32_t hidden_dim = 0;
   };
 
   MultimodalPromptProcessor(
@@ -70,12 +73,41 @@ class MultimodalPromptProcessor : public example::PromptProcessor {
       AttentionSinkRopeRunner* attention_sink_rope_runner);
 
   /**
-   * @brief Get total I/O size in bytes (excluding the KV cache size)
-   * @return Total I/O size in bytes.
+   * @brief Final hidden state (uint16, graph-output encoding) of the last
+   * prompt token, or nullptr if the decoder has no hidden-state output.
+   */
+  const uint16_t* last_hidden() const {
+    if (metadata_.hidden_dim == 0) {
+      return nullptr;
+    }
+    ET_CHECK_MSG(
+        last_n_update_ > 0 && hidden_.tensor != nullptr &&
+            hidden_.tensor->scalar_type() ==
+                executorch::aten::ScalarType::UInt16,
+        "Speech prefill requires uint16 hidden states");
+    return reinterpret_cast<const uint16_t*>(hidden_.data) +
+        (last_n_update_ - 1) * metadata_.hidden_dim;
+  }
+
+  const uint16_t* last_logits() const {
+    ET_CHECK_MSG(
+        last_n_update_ > 0 &&
+            logits_.tensor->scalar_type() ==
+                executorch::aten::ScalarType::UInt16,
+        "Speech prefill requires uint16 logits");
+    return speech::last_logits_row(
+        reinterpret_cast<const uint16_t*>(logits_.data),
+        last_n_update_,
+        metadata_.vocab_size);
+  }
+
+  /**
+   * @brief Get total I/O size in bytes (excluding the KV cache size).
    */
   inline const size_t total_prompt_processor_io_size_in_bytes() const {
     return input_toks_.size + input_pos_.size + attention_mask_.size +
-        window_attention_mask_.size + logits_.size + input_embedding_.size;
+        window_attention_mask_.size + logits_.size + input_embedding_.size +
+        hidden_.size;
   }
 
  private:
@@ -115,5 +147,7 @@ class MultimodalPromptProcessor : public example::PromptProcessor {
 
   // Additional input for multimodal
   TensorStruct<float> input_embedding_;
+  TensorStructRaw hidden_{};
+  int32_t last_n_update_ = 0;
 };
 } // namespace example

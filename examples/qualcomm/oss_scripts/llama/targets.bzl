@@ -107,6 +107,7 @@ def define_common_targets(is_fbcode = False):
                 "model/vision_encoder.py",
             ],
             deps = [
+                ":masking_utils",
                 "//caffe2:torch",
                 "//executorch/examples/qualcomm:utils",
                 "//executorch/examples/models/llama:transformer_modules",
@@ -141,6 +142,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":static_llama",
                 "//caffe2:torch",
+                "//executorch/examples/qualcomm/oss_scripts/lfm3:lfm3",
             ],
         )
 
@@ -323,6 +325,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/devtools/backend_debug:delegation_info",
                 "//executorch/examples/models/llama:hf_download",
                 "//executorch/examples/models/llama:source_transformation",
+                "//executorch/examples/models/lfm3:lfm3",
+                "//executorch/extension/llm/custom_ops:model_sharding_py",
                 "//pytorch/ao:torchao",
                 "fbsource//third-party/pypi/transformers:transformers",
             ],
@@ -358,8 +362,10 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/examples/models/internvl3:internvl3",
                 "//executorch/examples/models/smolvlm:smolvlm",
                 "//executorch/examples/models/llama:hf_download",
+                "//executorch/examples/models/lfm3:lfm3",
                 "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
                 "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+                "//executorch/examples/qualcomm/oss_scripts/lfm3:speech_policy",
                 "//executorch/extension/export_util:export_util",
                 "//executorch/extension/llm/export:export_lib",
                 "//executorch/extension/pybindings:aten_lib",

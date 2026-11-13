@@ -48,6 +48,10 @@ class ModelArgs:
     head_dim: Optional[int] = None  # Optional customized head_dim
     # Qwen3.5 linear-attention dimensions.
     linear_conv_kernel_dim: int = 4
+    conv_L_cache: int = 3  # Short-convolution kernel width, including the current row
+    # RMSNorm on the operator and FFN outputs before each residual add (LFM3).
+    # Separate from post_attention_norm/post_ffn_norm, which static_llama uses.
+    use_sandwich_norm: bool = False
     linear_key_head_dim: Optional[int] = None
     linear_value_head_dim: Optional[int] = None
     linear_num_key_heads: Optional[int] = None

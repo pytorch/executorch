@@ -17,6 +17,8 @@ inline const std::string AUDIO_TOKEN = "<audio>";
 
 struct AudioSpecialTokens {
   std::string audio_token;
+  std::string wrap_start;
+  std::string wrap_end;
 };
 
 /**
@@ -29,6 +31,10 @@ inline AudioSpecialTokens get_special_tokens(
 
   switch (model_version) {
     case example::AudioLanguageModel::kGraniteSpeech:
+      break;
+    case example::AudioLanguageModel::kLfm3OmniSpeech:
+      tokens.wrap_start = "<|vision_start|>";
+      tokens.wrap_end = "<|vision_end|>";
       break;
     default:
       break;
@@ -46,7 +52,8 @@ inline std::string expand_audio_tokens(
     const std::string& prompt,
     const AudioSpecialTokens& specials) {
   // Create audio prompt with repeated audio tokens
-  std::string audio_prompt = specials.audio_token;
+  std::string audio_prompt =
+      specials.wrap_start + specials.audio_token + specials.wrap_end;
 
   // Replace single audio token with expanded version
   size_t pos = 0;
@@ -85,6 +92,21 @@ inline std::string apply_chat_template(
       formatted_prompt.append(expand_audio_tokens(prompt, specials));
       formatted_prompt.append(
           "<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>");
+      break;
+    }
+    case example::AudioLanguageModel::kLfm3OmniSpeech: {
+      // BOS is disabled for multimodal prompts, so it is part of the template;
+      // the multimodal runner is single-turn (one generate per conversation).
+      formatted_prompt.append("<|startoftext|>");
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|im_start|>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|im_end|>\n");
+      }
+      formatted_prompt.append("<|im_start|>user\n");
+      formatted_prompt.append(expand_audio_tokens(prompt, specials));
+      formatted_prompt.append(
+          "<|im_end|>\n<|im_start|>assistant\n<think></think>");
       break;
     }
     default:
