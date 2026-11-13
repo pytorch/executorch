@@ -9,8 +9,11 @@
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 
+#include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -100,6 +103,118 @@ TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
   const CacheGeometry geometry{{flat_layer()}, -1};
   EXPECT_FALSE(valid(geometry));
   EXPECT_FALSE(valid(geometry, config(8)));
+}
+
+TEST_F(CacheTest, CheckpointRetentionRespectsTheAttentionPolicy) {
+  namespace cache = executorch::extension::llm::cache;
+  auto cfg = config(32);
+  cfg.kv_dtype = 5;
+  for (auto block :
+       {std::optional<int>{}, std::optional<int>{0}, std::optional<int>{2}}) {
+    const CacheGeometry geometry{{ring_layer(4)}, block};
+    cache::SequenceCheckpoint state{
+        20,
+        5,
+        block,
+        {{14, 2, 8, 4, std::vector<uint8_t>(192), std::vector<uint8_t>(192)}}};
+    const int boundary = block ? 18 : 17;
+    EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, boundary - 1));
+    EXPECT_TRUE(cache::valid_checkpoint(state, geometry, cfg, boundary));
+    EXPECT_TRUE(cache::valid_checkpoint(state, geometry, cfg, 20));
+  }
+}
+
+TEST_F(CacheTest, CheckpointRejectsMalformedGeometryAndBufferExtents) {
+  namespace cache = executorch::extension::llm::cache;
+  auto cfg = config(8);
+  cfg.kv_dtype = 5;
+  CacheGeometry geometry{{flat_layer()}};
+  cache::SequenceCheckpoint state{
+      4,
+      5,
+      std::nullopt,
+      {{0, 2, 8, 0, std::vector<uint8_t>(128), std::vector<uint8_t>(128)}}};
+  ASSERT_TRUE(cache::valid_checkpoint(state, geometry, cfg, 4));
+  const std::vector<std::function<void(cache::SequenceCheckpoint&)>>
+      corruptions{
+          [](auto& s) { s.layers[0].key.pop_back(); },
+          [](auto& s) { s.layers[0].value.pop_back(); },
+          [](auto& s) { s.dtype = 0; },
+          [](auto& s) { s.dtype = 6; },
+          [](auto& s) { ++s.layers[0].heads; },
+          [](auto& s) { ++s.layers[0].head_dim; },
+          [](auto& s) { ++s.layers[0].window; },
+          [](auto& s) { s.dflash_block_size = 0; },
+          [](auto& s) { s.layers.clear(); },
+          [](auto& s) { s.layers[0].begin = 1; },
+          [](auto& s) { s.position = -1; }};
+  for (size_t i = 0; i < corruptions.size(); ++i) {
+    SCOPED_TRACE(i);
+    auto invalid = state;
+    corruptions[i](invalid);
+    EXPECT_FALSE(cache::valid_checkpoint(invalid, geometry, cfg, 4));
+  }
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 5));
+  cfg.capacity = 3;
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 4));
+  cfg.capacity = state.position = std::numeric_limits<int>::max();
+  state.layers[0].heads = geometry.layers[0].n_kv_heads = cfg.capacity;
+  state.layers[0].head_dim = geometry.layers[0].head_dim = cfg.capacity;
+  EXPECT_FALSE(cache::valid_checkpoint(state, geometry, cfg, 1));
+}
+
+TEST_F(
+    CacheTest,
+    CheckpointReservationUsesFreeCellsWithoutChangingOtherSequences) {
+  class CheckpointCells : public CellCache {
+   public:
+    using CellCache::CellCache;
+    using CellCache::reserve_sequence;
+    using CellCache::sequence_cells;
+  } cache(CacheGeometry{{flat_layer()}}, config(8));
+  const auto first = cache.reserve_sequence(3);
+  const auto second = cache.reserve_sequence(2);
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  for (int id : {-1, 64, std::numeric_limits<int32_t>::max()}) {
+    EXPECT_FALSE(cache.sequence_cells(id, 0));
+  }
+  const auto retained = cache.sequence_cells(*second, 2);
+  EXPECT_EQ(retained.value(), (std::vector<int32_t>{3, 4}));
+  cache.seq_rm(*first);
+  const auto restored = cache.reserve_sequence(4);
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(
+      cache.sequence_cells(*restored, 4).value(),
+      (std::vector<int32_t>{0, 1, 2, 5}));
+  EXPECT_EQ(cache.sequence_cells(*second, 2), retained);
+  EXPECT_EQ(cache.pos(*restored), 4);
+  EXPECT_FALSE(cache.reserve_sequence(3));
+  EXPECT_EQ(cache.sequence_cells(*second, 2), retained);
+  ASSERT_TRUE(cache.declare_step({*restored}));
+  const int position = 4;
+  const auto* step = cache.place_step(0, &position, 1);
+  ASSERT_NE(step, nullptr);
+  EXPECT_EQ(cache.pos(*restored), 5);
+  EXPECT_EQ(step->mask_bits, (std::vector<uint8_t>{1, 1, 1, 0, 0, 1, 1}));
+  cache.seq_rm(*restored);
+  cache.seq_rm(*second);
+  EXPECT_TRUE(cache.reserve_sequence(8));
+}
+
+TEST_F(CacheTest, RestoredHistoryFloorSurvivesRewindAndClone) {
+  SequenceCache cache(CacheGeometry{{ring_layer(4)}}, config(32));
+  ASSERT_TRUE(cache.restore_checkpoint_position(12, 10));
+  EXPECT_EQ(cache.written_length(), 12);
+  EXPECT_FALSE(cache.can_rewind(9));
+  EXPECT_TRUE(cache.rewind(10));
+  SequenceCache clone(cache);
+  EXPECT_FALSE(clone.can_rewind(9));
+  EXPECT_TRUE(clone.can_rewind(10));
+  EXPECT_FALSE(clone.restore_checkpoint_position(12, 0));
+  clone.clear();
+  EXPECT_TRUE(clone.can_rewind(0));
+  EXPECT_FALSE(cache.can_rewind(0));
 }
 
 // ---- Flat policy -----------------------------------------------------------

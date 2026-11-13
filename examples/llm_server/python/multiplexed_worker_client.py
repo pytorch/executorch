@@ -16,11 +16,15 @@ import asyncio
 import json
 import logging
 import math
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+from .checkpoint import CPUCheckpoint
+from .session_store import SessionStore
 from .worker_client import (
     _decode_worker_json,
     _PROCESS_WAIT_TIMEOUT_SECONDS,
@@ -77,6 +81,25 @@ async def _read_message(stdout, max_message_bytes):
         return _decode_worker_json(line.decode("utf-8"))
     except UnicodeDecodeError as error:
         raise WorkerError("invalid worker UTF-8") from error
+
+
+async def _settle_checkpoint(operation):
+    # Keep staging files and the transfer lock alive until native work settles,
+    # even if the caller is cancelled.
+    task = asyncio.create_task(operation)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    if cancelled:
+        if not task.cancelled():
+            task.exception()
+        raise asyncio.CancelledError
+    return task.result()
 
 
 async def _drain_and_wait(proc):
@@ -242,6 +265,7 @@ class MultiplexedWorkerClient:
         max_request_bytes: int = _MAX_REQUEST_BYTES,
         supports_ignore_eos: bool = False,
         default_stop_strings: list[str] | None = None,
+        session_store: SessionStore | None = None,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -261,6 +285,8 @@ class MultiplexedWorkerClient:
             raise WorkerError(
                 "default_stop_strings must be null or a list of nonempty strings"
             )
+        self._session_store = session_store
+        self._session_persistence_lock = asyncio.Lock()
         self.default_stop_strings = default_stop_strings
         self.supports_ignore_eos = supports_ignore_eos
         self.max_named_sessions = max_named_sessions
@@ -564,7 +590,16 @@ class MultiplexedWorkerClient:
         MultiplexedWorkerClient._validate_id(msg.get("request_id"))
         kinds = [
             key
-            for key in ("token", "done", "error", "opened", "closed", "reset")
+            for key in (
+                "token",
+                "done",
+                "error",
+                "opened",
+                "closed",
+                "reset",
+                "exported",
+                "restored",
+            )
             if key in msg
         ]
         if "cancelled" in msg and "done" not in msg:
@@ -815,6 +850,162 @@ class MultiplexedWorkerClient:
         result = await self._op("close", session_id, "closed")
         return result.get("existed")
 
+    async def save_session(self, session_id: str) -> None:
+        """Persist the idle session's latest committed state in its configured store.
+
+        Wait for generation to finish before saving. Queued saves can cancel;
+        once started, cancellation waits for publication to settle. Save
+        explicitly before close_session() or closing the worker.
+        """
+        self._ensure_usable()
+        if self._session_store is None:
+            raise WorkerError("session storage is not configured")
+        async with self._session_persistence_lock:
+            self._ensure_usable()
+            await _settle_checkpoint(self._save_session(session_id))
+
+    async def _save_session(self, session_id):
+        store = self._session_store
+        checkpoint = await self._export_checkpoint_to_cpu(
+            session_id, position=None, identity=store.identity
+        )
+        await asyncio.to_thread(store.save, session_id, checkpoint)
+
+    async def resume_session(self, session_id: str) -> str:
+        """Restore saved state under the same unused key and return that key.
+
+        Send a full next prompt extending exactly the saved token IDs for reuse.
+        Missing, incompatible, or unusable checkpoints raise; no cold fallback is
+        selected. Queued resumes can cancel; after starting, cancellation may
+        leave a restored session, as with native restore.
+        """
+        self._ensure_usable()
+        if self._session_store is None:
+            raise WorkerError("session storage is not configured")
+        async with self._session_persistence_lock:
+            self._ensure_usable()
+            return await _settle_checkpoint(self._resume_session(session_id))
+
+    async def _resume_session(self, session_id):
+        store = self._session_store
+        checkpoint = await asyncio.to_thread(store.load, session_id)
+        await self._restore_checkpoint_from_cpu(
+            checkpoint,
+            session_id,
+            position=checkpoint.manifest["position"],
+            expected_identity=store.identity,
+        )
+        return session_id
+
+    async def export_checkpoint_to_cpu(
+        self, session_id: str, *, position: int, identity: str
+    ) -> CPUCheckpoint:
+        """Export committed state; cancellation waits for native/file I/O settlement."""
+        self._ensure_usable()
+        _validate_integer(position, "position", 1, _INT32_MAX)
+        async with self._session_persistence_lock:
+            self._ensure_usable()
+            return await _settle_checkpoint(
+                self._export_checkpoint_to_cpu(
+                    session_id, position=position, identity=identity
+                )
+            )
+
+    async def restore_checkpoint_from_cpu(
+        self,
+        checkpoint: CPUCheckpoint,
+        session_id: str,
+        *,
+        position: int,
+        expected_identity: str,
+    ) -> None:
+        """Restore an unused session key at an explicit retained boundary."""
+        self._ensure_usable()
+        async with self._session_persistence_lock:
+            self._ensure_usable()
+            await _settle_checkpoint(
+                self._restore_checkpoint_from_cpu(
+                    checkpoint,
+                    session_id,
+                    position=position,
+                    expected_identity=expected_identity,
+                )
+            )
+
+    async def _export_checkpoint_to_cpu(
+        self, session_id: str, *, position: int | None, identity: str
+    ) -> CPUCheckpoint:
+        """Copy an idle session's committed state to owned CPU bytes.
+
+        Identity is the caller's explicit digest of model/tokenizer artifacts
+        and activation-affecting settings. No durable file is created here.
+        """
+        if position is not None:
+            _validate_integer(position, "position", 1, _INT32_MAX)
+        if not isinstance(identity, str) or not identity:
+            raise ValueError("checkpoint identity must be a nonempty string")
+        with tempfile.TemporaryDirectory(prefix="executorch-checkpoint-") as staging:
+            path = Path(staging) / "data"
+            path.touch(mode=0o600)
+            message = {
+                "op": "export_checkpoint",
+                "session_id": session_id,
+                "path": str(path),
+            }
+            if position is not None:
+                message["position"] = position
+            state = self._submit(
+                message,
+                op="export_checkpoint",
+                ack="exported",
+            )
+            try:
+                result = await asyncio.shield(state.completion)
+                if isinstance(result, WorkerError):
+                    raise result
+                checkpoint = CPUCheckpoint(
+                    identity,
+                    result["manifest"],
+                    await asyncio.to_thread(path.read_bytes),
+                )
+                checkpoint.validate(identity)
+                return checkpoint
+            finally:
+                self._abandon(state)
+
+    async def _restore_checkpoint_from_cpu(
+        self,
+        checkpoint: CPUCheckpoint,
+        session_id: str,
+        *,
+        position: int,
+        expected_identity: str,
+    ) -> None:
+        """Restore a new session at the requested boundary; never choose a fallback."""
+        checkpoint.validate(expected_identity)
+        checkpoint.validate_restore_position(position)
+        with tempfile.TemporaryDirectory(prefix="executorch-checkpoint-") as staging:
+            path = Path(staging) / "data"
+            await asyncio.to_thread(path.write_bytes, checkpoint.data)
+            state = self._submit(
+                {
+                    "op": "restore_checkpoint",
+                    "session_id": session_id,
+                    "position": position,
+                    "path": str(path),
+                    "data_offset": 0,
+                    "manifest": checkpoint.manifest,
+                },
+                op="restore_checkpoint",
+                ack="restored",
+            )
+            try:
+                result = await asyncio.shield(state.completion)
+                if isinstance(result, WorkerError):
+                    raise result
+            finally:
+                self._abandon(state)
+
     async def _cleanup(self):
         self._reader.cancel()
         self._writer.cancel()
@@ -852,11 +1043,14 @@ async def spawn_multiplexed_worker(
     max_buffered_chars: int = 1024 * 1024,
     max_message_bytes: int = _MAX_MESSAGE_BYTES,
     max_request_bytes: int = _MAX_REQUEST_BYTES,
+    session_store: SessionStore | None = None,
 ) -> MultiplexedWorkerClient:
     """Start a native worker on the caller's loop, requiring explicit multiplexing.
 
     Use from async application startup and await client.close() at shutdown.
     Sequential workers continue to use the synchronous spawn_worker factory.
+    Supply a model-configured SessionStore to enable explicit save_session() and
+    resume_session(); neither startup nor close() automatically persists state.
 
     max_request_bytes must not exceed the worker's configured input-frame limit
     (1 MiB for the shipped module worker). This factory does not negotiate or
@@ -896,6 +1090,7 @@ async def spawn_multiplexed_worker(
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,
             max_request_bytes=max_request_bytes,
+            session_store=session_store,
         )
     except BaseException:
         cleanup = asyncio.create_task(_shutdown_async_process(proc))

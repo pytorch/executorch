@@ -104,6 +104,9 @@ struct CudaDFlashTestPeer {
   static int frontier(DFlash& executor, b::SessionId sid) {
     return executor.sessions_.at(sid).frontier;
   }
+  static int64_t target_cells(DFlash& executor) {
+    return executor.target_->kv_metrics().logical_length;
+  }
   static int draft_position(DFlash& executor, b::SessionId sid) {
     return executor.draft_ctl_->pos(executor.sessions_.at(sid).draft_id);
   }
@@ -686,6 +689,129 @@ TEST_F(CudaDFlashNative, CloneBudgetRewindCapacityAndFailureAreClosed) {
   EXPECT_FALSE(executor_->open_session());
   EXPECT_FALSE(executor_->clone(*full, 0));
   EXPECT_FALSE(executor_->initialize());
+}
+
+TEST_F(CudaDFlashNative, CheckpointRestoresFullAndPartialContinuationState) {
+  create();
+  ASSERT_TRUE(executor_);
+  const auto source = open();
+  seed(source, 3);
+  b::BatchOutput output;
+  ASSERT_TRUE(executor_->execute({{input(source, 3, {1})}}, output));
+  Peer::check(*executor_, source, 20);
+  const std::array<std::pair<int, int>, 5> positions{
+      {{20, 20}, {20, 7}, {20, 3}, {7, 7}, {3, 3}}};
+  for (const auto& [export_upto, upto] : positions) {
+    auto exported = executor_->export_checkpoint_to_cpu(source, export_upto);
+    ASSERT_TRUE(std::holds_alternative<b::Checkpoint>(exported));
+    const auto checkpoint = std::get<b::Checkpoint>(std::move(exported));
+    ASSERT_EQ(checkpoint.caches.size(), 2);
+    EXPECT_EQ(checkpoint.position, export_upto);
+    EXPECT_EQ(checkpoint.caches[0].position, export_upto);
+    const int draft_upto = std::min(export_upto, 4);
+    EXPECT_EQ(checkpoint.caches[1].position, draft_upto);
+    EXPECT_EQ(
+        checkpoint.hidden, hidden_rows(draft_upto, export_upto - draft_upto));
+    auto reference = executor_->clone(source, upto);
+    ASSERT_TRUE(reference);
+    auto result = executor_->restore_checkpoint_from_cpu(checkpoint, upto);
+    ASSERT_TRUE(std::holds_alternative<b::SessionId>(result));
+    const auto restored = std::get<b::SessionId>(result);
+    Peer::check(*executor_, restored, upto);
+    EXPECT_FALSE(Peer::pending(*executor_, restored));
+    EXPECT_EQ(
+        Peer::draft_position(*executor_, restored),
+        Peer::draft_position(*executor_, *reference));
+    EXPECT_EQ(
+        Peer::hidden(*executor_, restored),
+        Peer::hidden(*executor_, *reference));
+    auto actual = executor_->export_checkpoint_to_cpu(restored, upto);
+    auto expected = executor_->export_checkpoint_to_cpu(*reference, upto);
+    ASSERT_TRUE(std::holds_alternative<b::Checkpoint>(actual));
+    ASSERT_TRUE(std::holds_alternative<b::Checkpoint>(expected));
+    const auto& a = std::get<b::Checkpoint>(actual);
+    const auto& e = std::get<b::Checkpoint>(expected);
+    EXPECT_EQ(a.format, e.format);
+    EXPECT_EQ(a.position, e.position);
+    EXPECT_EQ(a.hidden_row_bytes, e.hidden_row_bytes);
+    EXPECT_EQ(a.hidden, e.hidden);
+    ASSERT_EQ(a.caches.size(), e.caches.size());
+    for (size_t i = 0; i < a.caches.size(); ++i) {
+      EXPECT_EQ(a.caches[i].position, e.caches[i].position);
+      EXPECT_EQ(a.caches[i].dtype, e.caches[i].dtype);
+      EXPECT_EQ(a.caches[i].dflash_block_size, e.caches[i].dflash_block_size);
+      ASSERT_EQ(a.caches[i].layers.size(), e.caches[i].layers.size());
+      for (size_t j = 0; j < a.caches[i].layers.size(); ++j) {
+        const auto& x = a.caches[i].layers[j];
+        const auto& y = e.caches[i].layers[j];
+        EXPECT_EQ(x.begin, y.begin);
+        EXPECT_EQ(x.heads, y.heads);
+        EXPECT_EQ(x.head_dim, y.head_dim);
+        EXPECT_EQ(x.window, y.window);
+        EXPECT_EQ(x.key, y.key);
+        EXPECT_EQ(x.value, y.value);
+      }
+    }
+    for (const auto id : {*reference, restored})
+      executor_->set_sampling(id, {}, 0);
+    // Both paths append fresh prompt rows, discarding any cached prediction.
+    ASSERT_TRUE(executor_->execute(
+        {{input(*reference, upto, {1, 2}, false),
+          input(restored, upto, {1, 2}, false)}},
+        output));
+    fixture_->rejected.fill(2);
+    ASSERT_TRUE(executor_->execute(
+        {{input(*reference, upto + 2, {1}), input(restored, upto + 2, {1})}},
+        output));
+    ASSERT_TRUE(output.outputs[0]);
+    ASSERT_TRUE(output.outputs[1]);
+    // The fixture pins the adapter's burst, independently of real model logits.
+    EXPECT_EQ(output.outputs[0]->tokens, predictions(upto + 2, 4));
+    EXPECT_EQ(output.outputs[1]->tokens, predictions(upto + 2, 4));
+    EXPECT_FALSE(Peer::poisoned(*executor_, restored));
+    executor_->close_session(*reference);
+    executor_->close_session(restored);
+  }
+}
+
+TEST_F(CudaDFlashNative, CheckpointRejectsInvalidStateWithoutLeakingTarget) {
+  create();
+  ASSERT_TRUE(executor_);
+  const auto source = open();
+  seed(source, 3);
+  auto result = executor_->export_checkpoint_to_cpu(source, 3);
+  ASSERT_TRUE(std::holds_alternative<b::Checkpoint>(result));
+  const auto checkpoint = std::get<b::Checkpoint>(std::move(result));
+  for (int invalid = 0; invalid < 3; ++invalid) {
+    auto corrupt = checkpoint;
+    if (invalid == 0)
+      corrupt.format = "incompatible";
+    else if (invalid == 1)
+      ++corrupt.hidden_row_bytes;
+    else
+      corrupt.hidden.pop_back();
+    EXPECT_TRUE(std::holds_alternative<b::CheckpointError>(
+        executor_->restore_checkpoint_from_cpu(corrupt, 3)));
+  }
+  auto bad_draft = checkpoint;
+  bad_draft.caches[1].dtype = -1;
+  const auto occupied = Peer::target_cells(*executor_);
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    EXPECT_TRUE(std::holds_alternative<b::CheckpointError>(
+        executor_->restore_checkpoint_from_cpu(bad_draft, 3)));
+    EXPECT_EQ(Peer::target_cells(*executor_), occupied);
+  }
+  auto restored = executor_->restore_checkpoint_from_cpu(checkpoint, 3);
+  ASSERT_TRUE(std::holds_alternative<b::SessionId>(restored));
+  Peer::check(*executor_, std::get<b::SessionId>(restored), 3);
+  fixture_->fail_target_sampler = true;
+  b::BatchOutput output;
+  EXPECT_FALSE(executor_->execute({{input(source, 3, {1})}}, output));
+  EXPECT_TRUE(Peer::poisoned(*executor_, source));
+  EXPECT_TRUE(std::holds_alternative<b::CheckpointError>(
+      executor_->export_checkpoint_to_cpu(source, 3)));
+  EXPECT_TRUE(std::holds_alternative<b::CheckpointError>(
+      executor_->restore_checkpoint_from_cpu(checkpoint, 3)));
 }
 
 TEST_F(CudaDFlashNative, UnmodifiedOldArtifactRunsSoloAndFourOwnerDecode) {

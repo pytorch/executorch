@@ -1,10 +1,12 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
-    """Mirrors the extension_llm_batching CMake targets.
+    """Defines the extension_llm_batching targets.
 
-    `batching` is the scheduler, the executor seam and the runner, free of
-    ExecuTorch runtime types. `session_table` is what every executor over a
+    `batching` is the scheduler, the executor seam and the runner. It uses the
+    cache layer's headers; Buck exports the combined kv_cache target, including
+    its runtime dependencies, while CMake links batching only to Threads.
+    `session_table` is what every executor over a
     multi-sequence cache shares. `module_executor` implements the seam against
     a program and a KV cache.
     """
@@ -15,6 +17,7 @@ def define_common_targets():
             "runner.cpp",
         ],
         exported_headers = [
+            "checkpoint.h",
             "decode_first_scheduler.h",
             "executor.h",
             "metrics.h",
@@ -26,6 +29,7 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/platform:compiler",
         ],
     )

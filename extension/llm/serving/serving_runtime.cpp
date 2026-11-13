@@ -223,7 +223,14 @@ struct RequestState {
 struct ServingRuntime::Impl {
   using Request = std::shared_ptr<detail::RequestState>;
   using SessionKey = std::variant<std::string, RequestId>;
-  enum class Operation { Open, Close, Reset, Generate };
+  enum class Operation {
+    Open,
+    Close,
+    Reset,
+    Generate,
+    ExportSessionCheckpoint,
+    RestoreSessionCheckpoint
+  };
   enum class Lifecycle { Running, Stopping, Stopped };
   enum class SessionPhase { Opening, Open, Reopening, Unavailable };
 
@@ -248,6 +255,9 @@ struct ServingRuntime::Impl {
     bool processed = false;
     LifecycleResult result = std::nullopt;
     bool existed = false;
+    std::shared_ptr<SessionCheckpoint> exported;
+    std::shared_ptr<const SessionCheckpoint> restored;
+    std::optional<batching::Position> session_checkpoint_position;
   };
 
   Impl(
@@ -340,12 +350,21 @@ struct ServingRuntime::Impl {
         });
   }
 
-  void submit(Operation operation, std::string key, Completion on_complete) {
+  void submit(
+      Operation operation,
+      std::string key,
+      Completion on_complete,
+      std::shared_ptr<SessionCheckpoint> exported = {},
+      std::shared_ptr<const SessionCheckpoint> restored = {},
+      std::optional<batching::Position> position = std::nullopt) {
     Command command{
         operation,
         std::move(key),
         std::make_unique<Completion>(std::move(on_complete)),
         {}};
+    command.exported = std::move(exported);
+    command.restored = std::move(restored);
+    command.session_checkpoint_position = position;
     LifecycleResult error;
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -385,6 +404,117 @@ struct ServingRuntime::Impl {
       return ServingError{ErrorCode::NotReady, "runtime is stopping"};
     }
     auto it = sessions_.find(command.key);
+    if (command.operation == Operation::ExportSessionCheckpoint) {
+      if (it == sessions_.end()) {
+        return ServingError{
+            ErrorCode::SessionNotFound, "checkpoint session not found"};
+      }
+      if (it->second.phase != SessionPhase::Open || !it->second.session) {
+        return ServingError{
+            ErrorCode::NotReady, "checkpoint session is unavailable"};
+      }
+      auto& slot = it->second;
+      const auto upto = command.session_checkpoint_position.value_or(
+          slot.session->position());
+      if (slot.active_request) {
+        return ServingError{
+            ErrorCode::SessionBusy,
+            "checkpoint export requires an idle session"};
+      }
+      if (slot.dirty || !slot.logical_history ||
+          slot.session->position() == 0) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "checkpoint requires healthy committed history"};
+      }
+      if (upto <= 0 || upto > slot.session->position()) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "checkpoint position is outside committed history (committed " +
+                std::to_string(slot.session->position()) + ")"};
+      }
+      const auto history = slot.logical_history;
+      auto* session = &*slot.session;
+      lock.unlock();
+      auto& tokens = command.exported->tokens;
+      for (const auto& span : history->spans) {
+        const auto* raw = std::get_if<batching::TokenSpan>(&span);
+        if (!raw || !raw->tokens) {
+          return ServingError{
+              ErrorCode::InvalidArgument,
+              "checkpoint requires a token-only history"};
+        }
+        const auto count =
+            std::min(raw->size, static_cast<size_t>(upto) - tokens.size());
+        tokens.insert(
+            tokens.end(),
+            raw->tokens->begin() + raw->offset,
+            raw->tokens->begin() + raw->offset + count);
+        if (tokens.size() == static_cast<size_t>(upto)) {
+          break;
+        }
+      }
+      if (tokens.size() != static_cast<size_t>(upto)) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "checkpoint token history is incomplete"};
+      }
+      auto future = session->export_checkpoint_to_cpu_async(upto);
+      auto result = future.get();
+      if (auto* error = std::get_if<batching::CheckpointError>(&result)) {
+        return ServingError{ErrorCode::InvalidArgument, error->message};
+      }
+      command.exported->state =
+          std::get<batching::Checkpoint>(std::move(result));
+      return std::nullopt;
+    }
+    if (command.operation == Operation::RestoreSessionCheckpoint) {
+      if (it != sessions_.end()) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "checkpoint restore requires an unused session key"};
+      }
+      if (sessions_.size() == config_.max_sessions) {
+        return ServingError{
+            ErrorCode::SessionCapacityExceeded, "session limit reached"};
+      }
+      const auto& checkpoint = command.restored;
+      const auto upto = command.session_checkpoint_position.value_or(0);
+      if (!checkpoint || upto <= 0 || upto > checkpoint->state.position ||
+          checkpoint->state.position !=
+              static_cast<int64_t>(checkpoint->tokens.size()) ||
+          (config_.max_context_length &&
+           static_cast<size_t>(upto) > config_.max_context_length)) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "invalid checkpoint position or token history"};
+      }
+      lock.unlock();
+      auto tokens = std::make_shared<const std::vector<batching::Token>>(
+          checkpoint->tokens.begin(), checkpoint->tokens.begin() + upto);
+      auto history = std::make_shared<const batching::PrefixIdentity>(
+          batching::token_identity(tokens));
+      auto state = std::shared_ptr<const batching::Checkpoint>(
+          checkpoint, &checkpoint->state);
+      auto result =
+          runner_->restore_checkpoint_from_cpu_async(std::move(state), upto)
+              .get();
+      if (auto* error = std::get_if<batching::CheckpointError>(&result)) {
+        return ServingError{ErrorCode::InvalidArgument, error->message};
+      }
+      auto restored = std::get<batching::Session>(std::move(result));
+      lock.lock();
+      if (lifecycle_ != Lifecycle::Running) {
+        lock.unlock();
+        return ServingError{ErrorCode::NotReady, "runtime is stopping"};
+      }
+      auto& slot = sessions_.try_emplace(command.key).first->second;
+      slot.session = std::move(restored);
+      slot.logical_history = std::move(history);
+      slot.phase = SessionPhase::Open;
+      slot.incarnation = next_incarnation_++;
+      return std::nullopt;
+    }
     if (command.operation == Operation::Close) {
       command.existed = it != sessions_.end();
       if (it != sessions_.end()) {
@@ -2011,6 +2141,47 @@ GenerateResult ServingRuntime::generate(
 
 ServingRuntime::~ServingRuntime() {
   shutdown();
+}
+
+void ServingRuntime::export_checkpoint_to_cpu_async(
+    std::string key,
+    std::optional<batching::Position> upto,
+    CheckpointCallback on_complete) {
+  auto checkpoint = std::make_shared<SessionCheckpoint>();
+  impl_->submit(
+      Impl::Operation::ExportSessionCheckpoint,
+      std::move(key),
+      [checkpoint, callback = std::move(on_complete)](
+          LifecycleResult error, bool) {
+        if (callback) {
+          if (error) {
+            callback(std::move(*error));
+          } else {
+            callback(checkpoint);
+          }
+        }
+      },
+      checkpoint,
+      {},
+      upto);
+}
+
+void ServingRuntime::restore_checkpoint_from_cpu_async(
+    std::string key,
+    std::shared_ptr<const SessionCheckpoint> checkpoint,
+    batching::Position upto,
+    LifecycleCallback on_complete) {
+  impl_->submit(
+      Impl::Operation::RestoreSessionCheckpoint,
+      std::move(key),
+      [callback = std::move(on_complete)](LifecycleResult error, bool) {
+        if (callback) {
+          callback(std::move(error));
+        }
+      },
+      {},
+      std::move(checkpoint),
+      upto);
 }
 
 void ServingRuntime::open_session_async(

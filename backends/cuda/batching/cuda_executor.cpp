@@ -273,6 +273,7 @@ CudaExecutor::CudaExecutor(
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
       kv_(cache->as<CudaKVCache>()),
+      checkpoint_ctl_(cache->as<llm_cache::CheckpointControl>()),
       backend_id_(std::move(backend_id)),
       vocab_size_(vocab_size),
       max_session_tokens_(max_session_tokens),
@@ -649,6 +650,35 @@ void CudaExecutor::close_session(SessionId session) {
 
 std::optional<SessionId> CudaExecutor::clone(SessionId source, Position upto) {
   return sessions_.clone(source, upto);
+}
+
+llm_batching::CheckpointResult<llm_batching::Checkpoint>
+CudaExecutor::export_checkpoint_to_cpu(SessionId source, Position upto) {
+  if (!checkpoint_ctl_)
+    return llm_batching::CheckpointError{"cache does not support checkpoints"};
+  auto state = sessions_.export_checkpoint(*checkpoint_ctl_, source, upto);
+  if (auto* error = std::get_if<llm_cache::CheckpointError>(&state))
+    return *error;
+  llm_batching::Checkpoint checkpoint;
+  checkpoint.format = "cuda-target-v1";
+  checkpoint.position = upto;
+  checkpoint.caches.push_back(
+      std::get<llm_cache::SequenceCheckpoint>(std::move(state)));
+  return checkpoint;
+}
+
+llm_batching::CheckpointResult<SessionId>
+CudaExecutor::restore_checkpoint_from_cpu(
+    const llm_batching::Checkpoint& checkpoint,
+    Position upto) {
+  if (!checkpoint_ctl_ || checkpoint.format != "cuda-target-v1" ||
+      checkpoint.caches.size() != 1 ||
+      checkpoint.position != checkpoint.caches.front().position ||
+      !checkpoint.hidden.empty() || checkpoint.hidden_row_bytes) {
+    return llm_batching::CheckpointError{"incompatible checkpoint"};
+  }
+  return sessions_.restore_checkpoint(
+      *checkpoint_ctl_, checkpoint.caches.front(), upto);
 }
 
 void CudaExecutor::set_sampling(

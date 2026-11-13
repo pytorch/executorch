@@ -115,6 +115,26 @@ class LifecycleExecutor : public FakeExecutor {
     return std::nullopt;
   }
 
+  executorch::extension::llm::batching::CheckpointResult<
+      executorch::extension::llm::batching::Checkpoint>
+  export_checkpoint_to_cpu(SessionId, Position upto) override {
+    executorch::extension::llm::batching::Checkpoint state;
+    state.format = "test";
+    state.position = upto;
+    return state;
+  }
+
+  executorch::extension::llm::batching::CheckpointResult<SessionId>
+  restore_checkpoint_from_cpu(
+      const executorch::extension::llm::batching::Checkpoint&,
+      Position) override {
+    auto id = open_session();
+    if (!id) {
+      return executorch::extension::llm::batching::CheckpointError{"capacity"};
+    }
+    return *id;
+  }
+
   void release_all() {
     initializing.release();
     opening.release();
@@ -232,6 +252,85 @@ void expect_error(std::future<LifecycleResult> future, ErrorCode code) {
   ASSERT_TRUE(error);
   EXPECT_EQ(error->code, code);
   EXPECT_FALSE(error->message.empty());
+}
+
+TEST_F(
+    ServingRuntimeTest,
+    CheckpointCallbacksPreserveServingErrorsAndAllowEmpty) {
+  using executorch::extension::llm::serving::SessionCheckpointResult;
+  start();
+  ASSERT_FALSE(result(runtime->open_session_async("empty")));
+  auto export_result = [&](const std::string& key) {
+    auto promise = std::make_shared<std::promise<SessionCheckpointResult>>();
+    auto future = promise->get_future();
+    runtime->export_checkpoint_to_cpu_async(
+        key, std::nullopt, [promise](SessionCheckpointResult value) {
+          promise->set_value(std::move(value));
+        });
+    return future.get();
+  };
+  auto missing = export_result("missing");
+  ASSERT_TRUE(std::holds_alternative<ServingError>(missing));
+  EXPECT_EQ(std::get<ServingError>(missing).code, ErrorCode::SessionNotFound);
+  auto empty = export_result("empty");
+  ASSERT_TRUE(std::holds_alternative<ServingError>(empty));
+  EXPECT_EQ(std::get<ServingError>(empty).code, ErrorCode::InvalidArgument);
+  executor.refuse_next_open = true;
+  expect_error(
+      runtime->reset_session_async("empty"), ErrorCode::CapacityExceeded);
+  auto unavailable = export_result("empty");
+  ASSERT_TRUE(std::holds_alternative<ServingError>(unavailable));
+  EXPECT_EQ(std::get<ServingError>(unavailable).code, ErrorCode::NotReady);
+  runtime->export_checkpoint_to_cpu_async("missing", std::nullopt, {});
+  runtime->restore_checkpoint_from_cpu_async("invalid", nullptr, 1, {});
+  ASSERT_FALSE(result(runtime->close_session_async("empty")));
+  runtime->shutdown();
+  auto stopped = export_result("missing");
+  ASSERT_TRUE(std::holds_alternative<ServingError>(stopped));
+  EXPECT_EQ(std::get<ServingError>(stopped).code, ErrorCode::NotReady);
+}
+
+TEST_F(
+    ServingRuntimeTest,
+    RestoreCheckpointChecksKeysCapacityAndKeepsExactPrefix) {
+  using executorch::extension::llm::serving::SessionCheckpoint;
+  using executorch::extension::llm::serving::SessionCheckpointResult;
+  start({1, 128, 16});
+  auto checkpoint = std::make_shared<SessionCheckpoint>();
+  checkpoint->state.format = "test";
+  checkpoint->state.position = 4;
+  checkpoint->tokens = {10, 20, 30, 40};
+  auto restore = [&](const std::string& key, Position upto) {
+    auto promise = std::make_shared<std::promise<LifecycleResult>>();
+    auto future = promise->get_future();
+    runtime->restore_checkpoint_from_cpu_async(
+        key, checkpoint, upto, [promise](LifecycleResult value) {
+          promise->set_value(std::move(value));
+        });
+    return future;
+  };
+  expect_error(restore("chat", 5), ErrorCode::InvalidArgument);
+  ASSERT_FALSE(result(restore("chat", 3)));
+  expect_error(restore("chat", 3), ErrorCode::InvalidArgument);
+  expect_error(restore("other", 3), ErrorCode::SessionCapacityExceeded);
+  auto promise = std::make_shared<std::promise<SessionCheckpointResult>>();
+  auto future = promise->get_future();
+  runtime->export_checkpoint_to_cpu_async(
+      "chat", std::nullopt, [promise](SessionCheckpointResult value) {
+        promise->set_value(std::move(value));
+      });
+  auto exported = future.get();
+  ASSERT_TRUE(
+      std::holds_alternative<std::shared_ptr<SessionCheckpoint>>(exported));
+  auto state = std::get<std::shared_ptr<SessionCheckpoint>>(exported);
+  EXPECT_EQ(state->tokens, (decltype(state->tokens){10, 20, 30}));
+  EXPECT_EQ(state->state.position, 3);
+  runtime->export_checkpoint_to_cpu_async("chat", 3, {});
+  ASSERT_FALSE(result(runtime->close_session_async("chat")));
+  runtime->restore_checkpoint_from_cpu_async("other", checkpoint, 2, {});
+  ASSERT_FALSE(result(runtime->close_session_async("other")));
+  runtime->shutdown();
+  EXPECT_EQ(executor.open_count(), 0);
 }
 
 template <class Predicate>

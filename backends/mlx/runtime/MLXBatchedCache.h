@@ -39,6 +39,7 @@ namespace cache = ::executorch::extension::llm::cache;
 // layer-specific.
 class MLXBatchedCache : public cache::Cache,
                         public cache::BatchControl,
+                        public cache::CheckpointControl,
                         public MLXCache {
  public:
   MLXBatchedCache(
@@ -174,6 +175,49 @@ class MLXBatchedCache : public cache::Cache,
     return it == rows_.end() ? 0 : it->second.length();
   }
 
+  cache::CheckpointResult<cache::SequenceCheckpoint> export_to_cpu(
+      int32_t id,
+      int upto) override {
+    auto it = rows_.find(id);
+    if (it == rows_.end()) {
+      return cache::CheckpointError{
+          "checkpoint source sequence does not exist"};
+    }
+    auto layers = it->second.export_to_cpu(upto);
+    if (!layers) {
+      return cache::CheckpointError{
+          "checkpoint position is outside retained history"};
+    }
+    return cache::SequenceCheckpoint{
+        upto, cfg_.kv_dtype, geometry_.dflash_block_size, std::move(*layers)};
+  }
+
+  cache::CheckpointResult<int32_t> import_from_cpu(
+      const cache::SequenceCheckpoint& state,
+      int upto) override {
+    if (!cache::valid_checkpoint(state, geometry_, cfg_, upto)) {
+      return cache::CheckpointError{
+          "incompatible checkpoint or unavailable restore position"};
+    }
+    auto id = free_id();
+    if (!id || reserved_tokens() + upto > cfg_.capacity) {
+      return cache::CheckpointError{"checkpoint exceeds cache capacity"};
+    }
+    auto row = rows_.try_emplace(*id, geometry_, cfg_).first;
+    try {
+      if (!row->second.import_from_cpu(state.layers, upto)) {
+        rows_.erase(row);
+        return cache::CheckpointError{
+            "checkpoint layer history is unavailable at this position"};
+      }
+    } catch (...) {
+      rows_.erase(row);
+      throw;
+    }
+    invalidate_step();
+    return *id;
+  }
+
   Tensor attend(
       int layer,
       const std::vector<int32_t>& positions,
@@ -234,7 +278,9 @@ class MLXBatchedCache : public cache::Cache,
 
  protected:
   void* face(cache::FaceId id) override {
-    return cache::expose<cache::BatchControl, MLXCache>(this, id);
+    return cache::
+        expose<cache::BatchControl, cache::CheckpointControl, MLXCache>(
+            this, id);
   }
 
  private:

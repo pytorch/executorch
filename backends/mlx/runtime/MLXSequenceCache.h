@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -22,6 +23,7 @@
 #include "MLXCache.h"
 
 #include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 
 namespace executorch::backends::mlx {
 
@@ -102,6 +104,15 @@ class AttentionLayer {
   virtual void rewind(int position) = 0;
   virtual void clear() = 0;
   virtual std::unique_ptr<AttentionLayer> clone(int keep) const = 0;
+  virtual std::optional<cache::LayerCheckpoint> export_to_cpu(
+      int /*upto*/) const {
+    return std::nullopt;
+  }
+  virtual bool import_from_cpu(
+      const cache::LayerCheckpoint& /*state*/,
+      int /*upto*/) {
+    return false;
+  }
   virtual UpdateInfo validate(
       int position,
       int complete_prefix,
@@ -158,6 +169,7 @@ class Storage {
   Storage(const cache::LayerGeometry& geometry, const cache::CacheConfig& cfg)
       : capacity_(cfg.capacity),
         ring_(geometry.policy.kind == cache::LayerPolicy::Kind::Ring),
+        window_(geometry.policy.window),
         heads_(geometry.n_kv_heads),
         head_dim_(geometry.head_dim),
         dtype_(::mlx::core::float32) {
@@ -326,6 +338,63 @@ class Storage {
         ::mlx::core::concatenate({segments.head->v, segments.tail->v}, 2, s)};
   }
 
+  cache::LayerCheckpoint export_to_cpu(int upto) const {
+    using namespace ::mlx::core;
+    cache::LayerCheckpoint state;
+    state.begin = ring_ ? std::max(0, highwater_ - slots_) : 0;
+    state.heads = heads_;
+    state.head_dim = head_dim_;
+    state.window = window_;
+    if (upto == 0) {
+      state.begin = 0;
+      return state;
+    }
+    auto values = read(state.begin, upto, {});
+    detail::require(
+        values.has_value(), "checkpoint: cache rows are unavailable");
+    for (bool value : {false, true}) {
+      auto host =
+          contiguous(transpose(value ? values->v : values->k, {0, 2, 1, 3}));
+      host.eval();
+      auto& bytes = value ? state.value : state.key;
+      bytes.resize(host.nbytes());
+      std::memcpy(bytes.data(), host.data<uint8_t>(), bytes.size());
+    }
+    return state;
+  }
+
+  void import_from_cpu(const cache::LayerCheckpoint& state, int upto) {
+    using namespace ::mlx::core;
+    clear();
+    if (!upto) {
+      return;
+    }
+    const int begin = ring_ ? std::max(state.begin, upto - slots_) : 0;
+    const int count = upto - begin;
+    grow(ring_ && begin ? slots_ : upto, {});
+    const size_t row = size_of(dtype_) * heads_ * head_dim_;
+    for (bool value : {false, true}) {
+      const auto& bytes = value ? state.value : state.key;
+      // The iterator constructor copies; lazy device work cannot borrow the
+      // caller's checkpoint storage after this method returns.
+      auto raw = Tensor(
+          bytes.data() + (begin - state.begin) * row,
+          {count, heads_, head_dim_, static_cast<int>(size_of(dtype_))},
+          uint8);
+      auto incoming = transpose(
+          reshape(view(raw, dtype_), {1, count, heads_, head_dim_}),
+          {0, 2, 1, 3});
+      write(
+          value ? buffers_->v : buffers_->k,
+          incoming,
+          ring_ ? begin % slots_ : begin,
+          {});
+    }
+    length_ = upto;
+    highwater_ = ring_ ? std::max(upto, begin + slots_) : upto;
+    eval(buffers_->k, buffers_->v);
+  }
+
  private:
   int growth_target(int current, int needed) const {
     detail::require(
@@ -387,6 +456,7 @@ class Storage {
 
   int capacity_, max_write_, slots_;
   bool ring_;
+  int window_;
   int initial_slots_, heads_, head_dim_;
   ::mlx::core::Dtype dtype_;
   std::optional<KV> buffers_;
@@ -744,6 +814,19 @@ class KVAttentionLayer final : public AttentionLayer {
         keep, keep == 0 ? 0 : policy_->required_history_begin(keep));
     return result;
   }
+  std::optional<cache::LayerCheckpoint> export_to_cpu(int upto) const override {
+    if (!can_rewind(upto)) {
+      return std::nullopt;
+    }
+    return storage_.export_to_cpu(upto);
+  }
+  bool import_from_cpu(const cache::LayerCheckpoint& state, int upto) override {
+    if (upto && state.begin > policy_->required_history_begin(upto)) {
+      return false;
+    }
+    storage_.import_from_cpu(state, upto);
+    return true;
+  }
   UpdateInfo validate(
       int position,
       int complete_prefix,
@@ -870,6 +953,36 @@ class MLXSequenceCache final : public cache::Cache,
 
   MLXSequenceCache(const MLXSequenceCache&) = delete;
   MLXSequenceCache& operator=(const MLXSequenceCache&) = delete;
+
+  std::optional<std::vector<cache::LayerCheckpoint>> export_to_cpu(
+      int upto) const {
+    if (!can_fork(upto)) {
+      return std::nullopt;
+    }
+    std::vector<cache::LayerCheckpoint> result;
+    for (const auto& layer : layers_) {
+      auto state = layer.attention->export_to_cpu(upto);
+      if (!state) {
+        return std::nullopt;
+      }
+      result.push_back(std::move(*state));
+    }
+    return result;
+  }
+  bool import_from_cpu(
+      const std::vector<cache::LayerCheckpoint>& state,
+      int upto) {
+    if (state.size() != layers_.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < layers_.size(); ++i) {
+      if (!layers_[i].attention->import_from_cpu(state[i], upto)) {
+        return false;
+      }
+    }
+    reset_forward(upto);
+    return true;
+  }
 
   // Maximum persistent logical length of this sequence.
   int capacity() const override {

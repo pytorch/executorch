@@ -11,6 +11,7 @@
 
 // cppcheck-suppress-file syntaxError
 
+#include <executorch/examples/llm_server/cpp/checkpoint_transfer.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker_test.h>
 
@@ -44,6 +45,68 @@ using executorch::examples::llm_server::testing::run_multiplexed_worker;
 using executorch::examples::llm_server::testing::WorkerTestHooks;
 using Json = nlohmann::json;
 using namespace std::chrono_literals;
+
+TEST(SessionCheckpointTransfer, LongTokenHistoryStaysOutOfJsonFrames) {
+  namespace transfer = executorch::examples::llm_server::checkpoint_transfer;
+  struct TemporaryBuffer {
+    char path[40] = "/tmp/et-checkpoint-XXXXXX";
+    int fd = mkstemp(path);
+    ~TemporaryBuffer() {
+      if (fd >= 0)
+        close(fd);
+      unlink(path);
+    }
+  } file;
+  ASSERT_GE(file.fd, 0);
+  serving::SessionCheckpoint source;
+  source.tokens.assign(300000, 123456);
+  source.state.format = "test";
+  source.state.position = source.tokens.size();
+  source.state.caches.push_back(
+      {300000,
+       5,
+       std::nullopt,
+       {{299997, 1, 1, 3, {1, 2, 3, 4, 5, 6}, {6, 5, 4, 3, 2, 1}}}});
+  const auto manifest = transfer::export_buffers(source, file.path);
+  EXPECT_LT(manifest.dump().size(), 1024);
+  EXPECT_EQ(manifest.at("tokens"), Json::array({0, 1200000}));
+  const auto restored = transfer::import_buffers(manifest, file.path, 0);
+  EXPECT_EQ(restored->tokens, source.tokens);
+  EXPECT_EQ(
+      restored->state.caches[0].layers[0].key,
+      source.state.caches[0].layers[0].key);
+  auto old_manifest = manifest;
+  old_manifest.erase("version");
+  EXPECT_THROW(
+      transfer::import_buffers(old_manifest, file.path, 0),
+      std::invalid_argument);
+  for (const auto& descriptor :
+       {Json::array({0}),
+        Json::array({-1, 4}),
+        Json::array({0.5, 4}),
+        Json::array({uint64_t{0}, std::numeric_limits<uint64_t>::max()}),
+        Json::array({uint64_t{1}, uint64_t{1200000}})}) {
+    auto malformed = manifest;
+    malformed["tokens"] = descriptor;
+    EXPECT_THROW(
+        transfer::import_buffers(malformed, file.path, 0),
+        std::invalid_argument);
+  }
+  auto overlap = manifest;
+  overlap["caches"][0]["layers"][0]["key"][0] = uint64_t{0};
+  EXPECT_THROW(
+      transfer::import_buffers(overlap, file.path, 0), std::invalid_argument);
+  EXPECT_THROW(
+      transfer::import_buffers(
+          manifest, file.path, std::numeric_limits<uint64_t>::max()),
+      std::invalid_argument);
+  EXPECT_THROW(
+      transfer::export_buffers(source, file.path), std::invalid_argument);
+  const uint8_t invalid_token[] = {0, 0, 0, 128};
+  ASSERT_EQ(pwrite(file.fd, invalid_token, sizeof(invalid_token), 0), 4);
+  EXPECT_THROW(
+      transfer::import_buffers(manifest, file.path, 0), std::invalid_argument);
+}
 
 class Tokenizer : public tokenizers::Tokenizer {
  public:
@@ -247,6 +310,127 @@ class ProtocolTest : public ::testing::Test {
   std::future<int> result_;
   int input_[2]{-1, -1}, output_[2]{-1, -1};
 };
+
+TEST_F(ProtocolTest, FailedCheckpointHandoffReleasesAdmission) {
+  hooks_.checkpoint = [](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::SessionCheckpointAdmitted && id == 1)
+      throw std::bad_alloc();
+  };
+  start();
+  for (uint64_t id : {1, 2}) {
+    send(
+        {{"op", "export_checkpoint"},
+         {"request_id", id},
+         {"session_id", "missing"},
+         {"position", 0},
+         {"path", "/unused-checkpoint-transfer"}});
+    const auto result = receive();
+    EXPECT_EQ(result.at("request_id"), id);
+    EXPECT_EQ(
+        result.at("code"), id == 1 ? "invalid_argument" : "session_not_found");
+  }
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, RestoreFileIOReservesKeyAndReleasesItAfterFailure) {
+  auto loading = gate();
+  hooks_.checkpoint = [loading](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::SessionCheckpointIOStarted && id == 1) {
+      loading->pause();
+    }
+  };
+  start();
+  send(
+      {{"op", "restore_checkpoint"},
+       {"request_id", 1},
+       {"session_id", "restoring"},
+       {"position", 1},
+       {"path", "/unused-checkpoint-transfer"},
+       {"manifest", Json::object()},
+       {"data_offset", 0}});
+  ASSERT_TRUE(loading->wait());
+  uint64_t id = 2;
+  for (const auto* operation :
+       {"close",
+        "open",
+        "reset",
+        "generate",
+        "export_checkpoint",
+        "restore_checkpoint"}) {
+    send({{"op", operation}, {"request_id", id}, {"session_id", "restoring"}});
+    auto response = receive();
+    EXPECT_EQ(response.at("request_id"), id++);
+    EXPECT_EQ(response.at("code"), "session_busy");
+    EXPECT_EQ(response.at("admitted"), false);
+  }
+  send({{"op", "open"}, {"request_id", id}, {"session_id", "other"}});
+  EXPECT_EQ(receive().at("opened"), true);
+  send(
+      {{"op", "export_checkpoint"},
+       {"request_id", ++id},
+       {"session_id", "other"},
+       {"path", "/unused-checkpoint-transfer"}});
+  auto refused = receive();
+  EXPECT_EQ(refused.at("code"), "capacity_exhausted");
+  EXPECT_EQ(refused.at("admitted"), false);
+  loading->release();
+  auto failed = receive();
+  EXPECT_EQ(failed.at("request_id"), 1);
+  EXPECT_EQ(failed.at("code"), "checkpoint_error");
+  send({{"op", "open"}, {"request_id", ++id}, {"session_id", "restoring"}});
+  EXPECT_EQ(receive().at("opened"), true);
+  send(
+      {{"op", "export_checkpoint"},
+       {"request_id", ++id},
+       {"session_id", "missing"},
+       {"path", "/unused-checkpoint-transfer"}});
+  EXPECT_EQ(receive().at("code"), "session_not_found");
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, EOFDuringRestoreFileIOWaitsForItsTerminal) {
+  auto loading = gate();
+  hooks_.checkpoint = [loading](Checkpoint point, uint64_t) {
+    if (point == Checkpoint::SessionCheckpointIOStarted) {
+      loading->pause();
+    }
+  };
+  start();
+  send(
+      {{"op", "restore_checkpoint"},
+       {"request_id", 1},
+       {"session_id", "restoring"},
+       {"position", 1},
+       {"path", "/unused-checkpoint-transfer"},
+       {"manifest", Json::object()},
+       {"data_offset", 0}});
+  ASSERT_TRUE(loading->wait());
+  close(input_[1]);
+  input_[1] = -1;
+  EXPECT_EQ(result_.wait_for(20ms), std::future_status::timeout);
+  loading->release();
+  const auto response = receive();
+  EXPECT_EQ(response.at("request_id"), 1);
+  EXPECT_EQ(response.at("code"), "checkpoint_error");
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 0);
+}
+
+TEST_F(ProtocolTest, DeepRestoreManifestIsRejectedWithoutRecursiveCopy) {
+  start();
+  send_raw(
+      "{\"op\":\"restore_checkpoint\",\"request_id\":1,"
+      "\"session_id\":\"restoring\",\"position\":1,"
+      "\"path\":\"/unused-checkpoint-transfer\",\"data_offset\":0,"
+      "\"manifest\":{\"unused\":" +
+      std::string(15000, '[') + "0" + std::string(15000, ']') + "}}\n");
+  auto response = receive();
+  EXPECT_EQ(response.at("request_id"), 1);
+  EXPECT_EQ(response.at("code"), "checkpoint_error");
+  send({{"op", "open"}, {"request_id", 2}, {"session_id", "restoring"}});
+  EXPECT_EQ(receive().at("opened"), true);
+  EXPECT_EQ(finish(), 0);
+}
 
 TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
   auto preparing = gate();

@@ -305,7 +305,8 @@ runtime admission additionally include `"admitted":false`; clients must not infe
 that a named session was created from such a rejection. An absent `admitted`
 field leaves admission unknown. Stable error codes
 include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
-`capacity_exhausted`, `session_capacity_exhausted`, `internal`, `slow_consumer`, and `frame_too_large`.
+`capacity_exhausted`, `session_capacity_exhausted`, `internal`, `slow_consumer`,
+`frame_too_large`, and `checkpoint_error`.
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
 its own request ID. These commands do not block the input reader.
@@ -329,6 +330,49 @@ acknowledges discarding live state and history and reopening the same key; a
 failed replacement does not restore the old state. Matching shared prefix
 snapshots remain eligible for subsequent generation from its supplied full
 prompt, so open/reset does not guarantee a cold prefill.
+
+### Explicit Checkpoint Transfers
+
+`export_checkpoint` and `restore_checkpoint` transfer committed session state
+through a caller-owned local staging file. These operations are optional and
+require an executor that implements CPU checkpoint transfer. They do not save
+application messages or select files automatically. See [session checkpoint
+usage](../CHECKPOINTS.md) for the Python store and advanced CPU API.
+
+```json
+{"op":"export_checkpoint","request_id":10,"session_id":"chat","path":"/private/tmp/checkpoint-data"}
+{"request_id":10,"exported":true,"manifest":{"version":2,"...":"buffer metadata"}}
+{"op":"restore_checkpoint","request_id":11,"session_id":"resumed-chat","path":"/private/tmp/checkpoint-data","manifest":{"version":2,"...":"buffer metadata"},"data_offset":0,"position":512}
+{"request_id":11,"restored":true}
+```
+
+The abbreviated manifests above stand for the full manifest returned by export;
+clients must pass it unchanged. Token IDs and tensor bytes live in the file,
+not the JSONL records. Export's optional `position` selects an exclusive committed
+boundary; omission selects the session's current committed position. The source
+must be idle, healthy, and have nonempty token-only history. Restore requires
+`position`, `manifest`, and `data_offset`, and an unused session key. Its position
+must be restorable by the checkpoint and within the runtime context limit. It
+creates an idle session without a pending prediction or sampling state.
+
+Only one checkpoint transfer may be outstanding per worker. Another transfer
+receives `capacity_exhausted` with `admitted:false`. While restore is pending, later
+`generate`, `open`,
+`close`, `reset`, export, or restore requests for that key receive `session_busy`
+with `admitted:false`; retry after the restore terminal. This also temporarily
+blocks an existing live key when a restore incorrectly targets it, until that
+restore fails. Other keys continue.
+The reservation is released on success or failure before queuing that terminal.
+Runtime errors retain their serving codes; staging-file or manifest failures
+return `checkpoint_error`.
+
+The staging path must name a regular file; symbolic links are rejected. Export
+requires an empty file owned by the worker's user, with a single hard link.
+The caller keeps the file alive until the operation's terminal, including after
+cancellation of a Python waiter. File I/O runs on one worker-owned thread, outside
+the input reader and runtime callback threads. EOF first shuts down the runtime,
+then joins checkpoint I/O before draining wire output. The native worker does not
+provide durable-file storage or automatic recovery from process crashes.
 
 Cancellation is in-band, not the legacy worker's separate FD pipe:
 

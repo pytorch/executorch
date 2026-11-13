@@ -57,6 +57,7 @@
 #include <optional>
 #include <vector>
 
+#include <executorch/extension/llm/batching/checkpoint.h>
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
@@ -109,6 +110,20 @@ class ET_EXPERIMENTAL Executor {
       SessionId /*source*/,
       Position /*upto*/) {
     return std::nullopt;
+  }
+
+  // Explicit host transfers; called on the engine thread between forwards.
+  // Export leaves the source unchanged and excludes state past upto. Restore
+  // creates a new, independently writable session or leaves no new session.
+  virtual CheckpointResult<Checkpoint> export_checkpoint_to_cpu(
+      SessionId /*source*/,
+      Position /*upto*/) {
+    return CheckpointError{"executor does not support checkpoint export"};
+  }
+  virtual CheckpointResult<SessionId> restore_checkpoint_from_cpu(
+      const Checkpoint& /*checkpoint*/,
+      Position /*upto*/) {
+    return CheckpointError{"executor does not support checkpoint restore"};
   }
 
   // Installs the session's sampling policy, immediately before the generation's

@@ -396,6 +396,7 @@ TEST_F(
     DeferredPreparationUsesControlAndExistingPromptPaths) {
   executor.accept_opaque = true;
   start();
+  ASSERT_FALSE(runtime->open_session_async("s").get());
   for (bool prepared : {false, true}) {
     auto event = output();
     std::atomic<int> calls{0};

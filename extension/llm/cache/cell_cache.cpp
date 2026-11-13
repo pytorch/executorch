@@ -30,6 +30,41 @@ CellCache::CellCache(const CacheGeometry& geometry, const CacheConfig& cfg)
   }
 }
 
+std::optional<std::vector<int32_t>> CellCache::sequence_cells(
+    int32_t id,
+    int upto) const {
+  if (!valid_seq(id) || !live(id) || upto < 0 || upto > pos(id)) {
+    return std::nullopt;
+  }
+  std::vector<int32_t> cells(upto, -1);
+  for (int cell = 0; cell < used_end_; ++cell) {
+    if ((owners_[cell] & bit(id)) && pos_[cell] >= 0 && pos_[cell] < upto) {
+      cells[pos_[cell]] = cell;
+    }
+  }
+  if (std::find(cells.begin(), cells.end(), -1) != cells.end()) {
+    return std::nullopt;
+  }
+  return cells;
+}
+
+std::optional<int32_t> CellCache::reserve_sequence(int upto) {
+  if (upto < 0 || !has_room(upto))
+    return std::nullopt;
+  auto id = seq_new();
+  if (!id)
+    return std::nullopt;
+  int cell = 0;
+  for (int position = 0; position < upto; ++position) {
+    cell = lowest_free(cell);
+    claim(cell, position, *id);
+    ++cell;
+  }
+  rescan(*id);
+  invalidate_steps();
+  return id;
+}
+
 // -- CacheControl ------------------------------------------------------------
 
 int CellCache::capacity() const {
