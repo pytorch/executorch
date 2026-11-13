@@ -47,7 +47,11 @@ android {
         main {
             jniLibs.srcDirs = ['../../../cmake-out-android-so/']
         }
+        test {
+            java.srcDirs += ['src/sharedTest/java']
+        }
         androidTest {
+            java.srcDirs += ['src/sharedTest/java']
             resources.srcDirs += ['src/androidTest/resources']
         }
     }
