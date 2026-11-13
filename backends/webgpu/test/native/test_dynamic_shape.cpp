@@ -21,7 +21,7 @@
 //   O  ONE dyn_conv1d graph reused across live input lengths
 //   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
 //   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim   S dyn_elu_silu (reused)
-//   S2 dyn_erf_gelu (reused)
+//   S2 dyn_erf_gelu (reused)   S3 dyn_mul_scalar (reused)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -1968,6 +1968,15 @@ TEST(DynamicShape, ErfGeluReusedGraph) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_erf_gelu.pte";
   for (int s : {128, 7, 1, 125, 7}) {
     check_s(m, "dyn_erf_gelu", s);
+  }
+}
+
+// S3: aten.mul.Scalar(x, 0.125) on ONE loaded graph, shrinking and growing S.
+TEST(DynamicShape, MulScalarReusedGraph) {
+  Module m(g_dir + "/dyn_mul_scalar.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_mul_scalar.pte";
+  for (int s : {128, 7, 1, 125, 7}) {
+    check_s(m, "dyn_mul_scalar", s);
   }
 }
 
