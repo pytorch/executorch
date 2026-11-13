@@ -3,13 +3,23 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import operator
 
 import torch
 
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.backends.xnnpack._passes.constant_folding import fold_constants
+
+from executorch.exir.passes.constant_prop_pass import (
+    _nodes_written_in_place,
+    _storages,
+    constant_prop_pass,
+    get_constant_placeholder_dict,
+)
+from executorch.exir.passes.insert_write_back_for_buffers_pass import _aliasing_inputs
 from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind, OutputKind
+from torch.multiprocessing.reductions import StorageWeakRef
 
 _CONSTANT_SUBGRAPH_OPS = {
     torch.ops.aten.cat.default,
@@ -21,67 +31,57 @@ _CONSTANT_SUBGRAPH_OPS = {
 }
 
 
-def _has_unsafe_tuple_consumer(exported_program: ExportedProgram) -> bool:
-    """Avoid propagating tuple-valued chunk/split nodes, which
-    constant_prop_pass cannot replace."""
-    tuple_producer_targets = {
-        torch.ops.aten.chunk.default,
-        torch.ops.aten.split.Tensor,
-        torch.ops.aten.split_with_sizes.default,
+def _excluded_nodes(exported_program: ExportedProgram) -> set[torch.fx.Node]:
+    mutated_targets = {
+        spec.target
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind in (OutputKind.BUFFER_MUTATION, OutputKind.USER_INPUT_MUTATION)
     }
+    mutated_inputs = {
+        spec.arg.name
+        for spec in exported_program.graph_signature.input_specs
+        if spec.target in mutated_targets or spec.arg.name in mutated_targets
+    }
+    excluded = _nodes_written_in_place(exported_program.graph_module)
     for node in exported_program.graph.nodes:
         if (
-            node.op == "call_function"
-            and node.target in tuple_producer_targets
-            and any(
-                user.op != "call_function" or user.target is not operator.getitem
-                for user in node.users
-            )
+            node.name in mutated_inputs
+            or node.meta.get("custom", {}).get("delegate_constant_tag") is not None
         ):
-            return True
-    return False
+            excluded.add(node)
+        if isinstance(node.target, torch._ops.HigherOrderOperator):
+            # Unknown operand effects must not freeze data read by the region.
+            excluded.update(node.all_input_nodes)
 
+    # Writes and external tags also exclude aliases, including lifted inputs
+    # sharing storage. Independent constant branches remain eligible to fold.
+    tensors = dict(exported_program.state_dict) | exported_program.constants
+    targets = {
+        spec.arg.name: spec.target
+        for spec in exported_program.graph_signature.input_specs
+    }
+    aliases = {node: set() for node in exported_program.graph.nodes}
+    storage_owners = {}
+    for node in exported_program.graph.nodes:
+        for base in _aliasing_inputs(node):
+            aliases[node].add(base)
+            aliases[base].add(node)
+        storages = _storages(node)
+        tensor = tensors.get(targets.get(node.name))
+        if isinstance(tensor, torch.Tensor) and tensor.layout == torch.strided:
+            storages.add(StorageWeakRef(tensor.untyped_storage()))
+        for storage in storages:
+            owner = storage_owners.setdefault(storage, node)
+            aliases[node].add(owner)
+            aliases[owner].add(node)
 
-def _has_unsafe_mutation(node: torch.fx.Node, schema) -> bool:
-    for index, argument in enumerate(schema.arguments):
-        if argument.alias_info is None or not argument.alias_info.is_write:
-            continue
-        mutated = (
-            node.args[index]
-            if index < len(node.args)
-            else node.kwargs.get(argument.name)
-        )
-        producer = mutated if isinstance(mutated, torch.fx.Node) else None
-        producer_schema = (
-            getattr(producer.target, "_schema", None)
-            if producer is not None and producer.op == "call_function"
-            else None
-        )
-        if (
-            producer_schema is None
-            or producer_schema.is_mutable
-            or producer.target in _CONSTANT_SUBGRAPH_OPS
-            or any(ret.alias_info is not None for ret in producer_schema.returns)
-        ):
-            return True
-    return False
-
-
-def _has_unsafe_node_effect(node: torch.fx.Node) -> bool:
-    if isinstance(node.target, torch._ops.HigherOrderOperator):
-        return True
-    schema = getattr(node.target, "_schema", None)
-    if schema is not None and schema.is_mutable:
-        return _has_unsafe_mutation(node, schema)
-    return node.is_impure() and node.target in _CONSTANT_SUBGRAPH_OPS
-
-
-def _has_unsafe_graph_effects(exported_program: ExportedProgram) -> bool:
-    """Return whether graph effects make constant folding unsafe."""
-    return any(
-        node.op == "call_function" and _has_unsafe_node_effect(node)
-        for node in exported_program.graph.nodes
-    )
+    pending = list(excluded)
+    while pending:
+        node = pending.pop()
+        for alias in aliases[node] - excluded:
+            excluded.add(alias)
+            pending.append(alias)
+    return excluded
 
 
 class FoldConstantSubgraphsPass:
@@ -111,45 +111,52 @@ class FoldConstantSubgraphsPass:
     constant bias_1 -> addmm / linear
     constant bias_2 -> addmm / linear
 
-    Folding is skipped when mutation, aliasing, impurity, or higher-order
-    operations could make replacing a runtime value with persistent constant
-    data unsafe.
+    Mutation, aliases, higher-order operands and external storage tags exclude
+    affected paths from folding. Independent constant paths remain eligible.
     """
 
     def __call__(self, exported_program: ExportedProgram) -> ExportedProgram:
-        # This runs before functionalization, so inspect schemas as well as the
-        # graph signature for mutation.
-        if any(
-            "MUTATION" in str(spec.kind)
-            for spec in exported_program.graph_signature.output_specs
-        ):
-            return exported_program
-        if _has_unsafe_graph_effects(exported_program):
+        excluded = _excluded_nodes(exported_program)
+        constants = set(get_constant_placeholder_dict(exported_program)) - excluded
+        candidates = set()
+        for node in exported_program.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target in _CONSTANT_SUBGRAPH_OPS
+                and node not in excluded
+                and not node.is_impure()
+                and all(arg in constants for arg in node.all_input_nodes)
+            ):
+                constants.add(node)
+                candidates.add(node)
+        if not candidates:
             return exported_program
 
-        if not any(
-            node.op == "call_function" and node.target in _CONSTANT_SUBGRAPH_OPS
-            for node in exported_program.graph.nodes
-        ):
-            return exported_program
-
-        if _has_unsafe_tuple_consumer(exported_program):
-            return exported_program
-        skipped = {
-            node.target
-            for node in exported_program.graph.nodes
-            if node.op == "call_function" and node.target not in _CONSTANT_SUBGRAPH_OPS
+        candidate_names = {node.name for node in candidates}
+        excluded_names = {node.name for node in excluded}
+        exported_program = copy.deepcopy(exported_program)
+        values = {
+            node: value
+            for node, value in get_constant_placeholder_dict(exported_program).items()
+            if node.name not in excluded_names
         }
-        folded_program = constant_prop_pass(
-            exported_program, custom_skip_targets=skipped
+        # Early folding uses an allowlist before decomposition; late folding
+        # relies on GEMM eligibility established by the partitioner.
+        fold_constants(
+            exported_program,
+            {
+                node
+                for node in exported_program.graph.nodes
+                if node.name in candidate_names
+            },
+            values,
+            InputKind.CONSTANT_TENSOR,
         )
-        # Constant propagation inserts an Edge clone for constant outputs, but
-        # pre-decomposition graphs must remain entirely in the ATen dialect.
-        replaced_clone = False
-        for node in folded_program.graph.nodes:
-            if node.target == exir_ops.edge.aten.clone.default:
-                node.target = torch.ops.aten.clone.default
-                replaced_clone = True
-        if replaced_clone:
-            folded_program.graph_module.recompile()
-        return folded_program
+        return constant_prop_pass(
+            exported_program,
+            custom_skip_targets={
+                node.target
+                for node in exported_program.graph.nodes
+                if node.op == "call_function"
+            },
+        )

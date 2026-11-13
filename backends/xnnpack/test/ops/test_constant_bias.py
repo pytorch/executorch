@@ -72,6 +72,69 @@ class ProjectionBiases(torch.nn.Module):
 
 
 class TestConstantProjectionBiases(unittest.TestCase):
+    def test_shared_weight_norm_preserves_consumers_and_reference(self):
+        class SharedWeight(torch.nn.Module):
+            def __init__(self, mixed):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3), dim=2
+                )
+                self.mixed = mixed
+
+            def forward(self, value):
+                weight = self.conv.weight
+                first = F.conv1d(value, weight)
+                second = (
+                    weight + value.mean() if self.mixed else F.conv1d(value * 2, weight)
+                )
+                return first, second
+
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed):
+                model = SharedWeight(mixed).eval()
+                inputs = (torch.randn(1, 4, 12),)
+                program = torch.export.export(model, inputs)
+                graph = str(program.graph)
+                signature = str(program.graph_signature)
+                state = {
+                    key: value.clone() for key, value in program.state_dict.items()
+                }
+                edge = to_edge_transform_and_lower(
+                    program, partitioner=[XnnpackPartitioner()]
+                )
+                info = get_delegation_info(edge.exported_program().graph_module)
+                self.assertEqual(
+                    info.delegation_by_operator[
+                        "aten_convolution_default"
+                    ].non_delegated,
+                    0,
+                )
+                runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                for actual, expected in zip(runtime.forward(inputs), model(*inputs)):
+                    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+                self.assertEqual(str(program.graph), graph)
+                self.assertEqual(str(program.graph_signature), signature)
+                self.assertEqual(program.state_dict.keys(), state.keys())
+                for key, value in state.items():
+                    torch.testing.assert_close(program.state_dict[key], value)
+                for actual, expected in zip(program.module()(*inputs), model(*inputs)):
+                    torch.testing.assert_close(actual, expected)
+
+    def test_external_constants_skip_early_folding(self):
+        model = ProjectionBiases("chunk").eval()
+        inputs = (torch.randn(2, 8), torch.randn(8))
+        program = torch.export.export(model, inputs)
+        for node in program.graph.nodes:
+            if (
+                node.op == "placeholder"
+                and node.name in program.graph_signature.inputs_to_parameters
+            ):
+                node.meta["custom"] = {"delegate_constant_tag": "weights.ptd"}
+        graph = str(program.graph)
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertIs(transformed, program)
+        self.assertEqual(str(program.graph), graph)
+
     def test_split_forms_delegate_and_match_compiled_runtime(self):
         torch.manual_seed(0)
         for split in ("chunk", "split", "split_with_sizes"):
@@ -263,7 +326,7 @@ class TestConstantProjectionBiases(unittest.TestCase):
         for actual, expected in zip(runtime.forward(inputs), model(*inputs)):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
-    def test_unsafe_tuple_consumer_skips_folding(self):
+    def test_tuple_consumer_preserves_independent_folding(self):
         class MixedTupleConsumers(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -300,8 +363,70 @@ class TestConstantProjectionBiases(unittest.TestCase):
 
         before = str(program.graph)
         transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
-        self.assertIs(transformed, program)
-        self.assertEqual(str(transformed.graph), before)
+        self.assertEqual(str(program.graph), before)
+        self.assertEqual(
+            sum(
+                node.target == torch.ops.aten.chunk.default
+                for node in transformed.graph.nodes
+            ),
+            1,
+        )
+        linears = [
+            node
+            for node in transformed.graph.nodes
+            if node.target == torch.ops.aten.linear.default
+        ]
+        self.assertTrue(all(node.args[2].op == "placeholder" for node in linears))
+        inputs = (torch.randn(2, 8),)
+        for actual, expected in zip(
+            transformed.module()(*inputs), program.module()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_unrelated_runtime_tuple_does_not_block_constant_chain(self):
+        class RuntimeTuple(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bias = torch.nn.Parameter(torch.arange(8, dtype=torch.float32))
+
+            def forward(self, value):
+                runtime = value.chunk(2)
+                shifted = torch.ops.aten._foreach_add.Scalar(runtime, 1.0)
+                constant = torch.cat((self.bias, self.bias)).chunk(2)[0]
+                return runtime[0] + constant, shifted[1]
+
+        inputs = (torch.randn(16),)
+        program = torch.export.export(RuntimeTuple(), inputs)
+        chunk = next(
+            node
+            for node in program.graph.nodes
+            if node.target == torch.ops.aten.chunk.default
+        )
+        foreach = next(
+            node
+            for node in program.graph.nodes
+            if node.target == torch.ops.aten._foreach_add.Scalar
+        )
+        foreach.args = (chunk, 1.0)
+        program.graph_module.recompile()
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertFalse(
+            any(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            )
+        )
+        self.assertTrue(
+            any(
+                node.target == torch.ops.aten.chunk.default
+                for node in transformed.graph.nodes
+            )
+        )
+        for value in (inputs[0], inputs[0] + 2):
+            for actual, expected in zip(
+                transformed.module()(value), program.module()(value)
+            ):
+                torch.testing.assert_close(actual, expected)
 
     def test_mutated_cat_split_is_not_folded(self):
         class MutatedPacking(torch.nn.Module):
@@ -342,7 +467,7 @@ class TestConstantProjectionBiases(unittest.TestCase):
             edge.exported_program().module()(torch.ones(16)), torch.full((8,), 3.0)
         )
 
-    def test_higher_order_control_flow_skips_folding(self):
+    def test_unrelated_control_flow_does_not_block_folding(self):
         class Conditional(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -355,12 +480,60 @@ class TestConstantProjectionBiases(unittest.TestCase):
                 )
                 return selected + packed
 
+        model = Conditional()
         inputs = (torch.tensor(True), torch.randn(8))
-        program = torch.export.export(Conditional(), inputs)
+        program = torch.export.export(model, inputs)
         before = str(program.graph)
         transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
-        self.assertIs(transformed, program)
-        self.assertEqual(str(transformed.graph), before)
+        self.assertEqual(str(program.graph), before)
+        self.assertFalse(
+            any(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            )
+        )
+        self.assertTrue(
+            any(
+                node.target == torch.ops.higher_order.cond
+                for node in transformed.graph.nodes
+            )
+        )
+        for predicate in (True, False):
+            inputs = (torch.tensor(predicate), torch.randn(8))
+            torch.testing.assert_close(transformed.module()(*inputs), model(*inputs))
+
+    def test_higher_order_mutation_excludes_only_affected_chain(self):
+        class RegionMutation(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bias = torch.nn.Parameter(torch.ones(8))
+                self.safe = torch.nn.Parameter(torch.arange(8, dtype=torch.float32))
+
+            def forward(self, value):
+                affected = torch.cat((self.bias, self.bias))
+                with torch.no_grad():
+                    affected.add_(value)
+                safe = torch.cat((self.safe, self.safe))
+                return affected + safe
+
+        model = RegionMutation().eval()
+        program = torch.export.export(model, (torch.zeros(16),))
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertEqual(
+            sum(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            ),
+            1,
+        )
+        self.assertTrue(
+            any(
+                isinstance(node.target, torch._ops.HigherOrderOperator)
+                for node in transformed.graph.nodes
+            )
+        )
+        for value in (torch.zeros(16), torch.ones(16)):
+            torch.testing.assert_close(transformed.module()(value), model(value))
 
     def test_mutable_state_is_not_frozen(self):
         class Stateful(torch.nn.Module):
@@ -389,6 +562,167 @@ class TestConstantProjectionBiases(unittest.TestCase):
         second = runtime.forward((torch.zeros(8),))[0]
         torch.testing.assert_close(first, torch.ones(8))
         torch.testing.assert_close(second, torch.full((8,), 2.0))
+
+    def test_unrelated_state_mutation_keeps_bias_folding(self):
+        class Stateful(ProjectionBiases):
+            def __init__(self):
+                super().__init__("chunk")
+                self.register_buffer("state", torch.zeros(8))
+
+            def forward(self, value, bias):
+                self.state.add_(1)
+                return *super().forward(value, bias), self.state * 2
+
+        for functionalized in (False, True):
+            with self.subTest(functionalized=functionalized):
+                model = Stateful().eval()
+                inputs = (torch.randn(2, 8), torch.randn(8))
+                program = torch.export.export(model, inputs)
+                if functionalized:
+                    program = program.run_decompositions({})
+                before = str(program.graph)
+                transformed = XnnpackPartitioner().transform_for_pre_decomposition(
+                    program
+                )
+                self.assertEqual(str(program.graph), before)
+                self.assertFalse(
+                    any(
+                        node.target == torch.ops.aten.cat.default
+                        for node in transformed.graph.nodes
+                    )
+                )
+                edge = to_edge_transform_and_lower(
+                    transformed, partitioner=[XnnpackPartitioner()]
+                )
+                info = get_delegation_info(edge.exported_program().graph_module)
+                self.assertEqual(
+                    info.delegation_by_operator["aten_linear_default"].non_delegated, 0
+                )
+                runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                for _ in range(2):
+                    for actual, expected in zip(
+                        runtime.forward(inputs), model(*inputs)
+                    ):
+                        torch.testing.assert_close(
+                            actual, expected, atol=1e-5, rtol=1e-5
+                        )
+
+    def test_user_input_mutation_does_not_block_constant_chain(self):
+        class InputMutation(ProjectionBiases):
+            def forward(self, value, bias):
+                value.add_(1)
+                return super().forward(value, bias)
+
+        model = InputMutation("chunk").eval()
+        inputs = (torch.randn(2, 8), torch.randn(8))
+        program = torch.export.export(model, inputs).run_decompositions({})
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertFalse(
+            any(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            )
+        )
+        value = inputs[0].clone()
+        for actual, expected in zip(
+            transformed.module()(value, inputs[1]), model(inputs[0].clone(), inputs[1])
+        ):
+            torch.testing.assert_close(actual, expected)
+        torch.testing.assert_close(value, inputs[0] + 1)
+
+    def test_mutated_alias_keeps_only_affected_chain_dynamic(self):
+        class AliasedState(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(8))
+                self.register_buffer("alias", self.state[:])
+                self.register_buffer("safe", torch.arange(8, dtype=torch.float32))
+
+            def forward(self, value):
+                self.state.add_(1)
+                affected = torch.cat((self.alias, self.alias)).chunk(2)[0]
+                safe = torch.cat((self.safe, self.safe)).chunk(2)[0]
+                return value + affected + safe
+
+        model = AliasedState()
+        inputs = (torch.zeros(8),)
+        program = torch.export.export(model, inputs)
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertEqual(
+            sum(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            ),
+            1,
+        )
+        module = transformed.module()
+        for step in (1, 2):
+            torch.testing.assert_close(
+                module(*inputs), torch.arange(8, dtype=torch.float32) + step
+            )
+
+    def test_external_constants_exclude_only_dependent_chains(self):
+        class MixedStorage(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.external = torch.nn.Parameter(torch.ones(8))
+                self.internal = torch.nn.Parameter(torch.arange(8, dtype=torch.float32))
+
+            def forward(self, value):
+                external = torch.cat((self.external, self.external)).chunk(2)[0]
+                internal = torch.cat((self.internal, self.internal)).chunk(2)[0]
+                return value + external + internal
+
+        model = MixedStorage().eval()
+        inputs = (torch.randn(8),)
+        program = torch.export.export(model, inputs)
+        external = next(
+            node for node in program.graph.nodes if node.name == "p_external"
+        )
+        external.meta["custom"] = {"delegate_constant_tag": "weights.ptd"}
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        cats = [
+            node
+            for node in transformed.graph.nodes
+            if node.target == torch.ops.aten.cat.default
+        ]
+        self.assertEqual(len(cats), 1)
+        self.assertEqual(cats[0].args[0][0].name, "p_external")
+        torch.testing.assert_close(transformed.module()(*inputs), model(*inputs))
+
+    def test_external_linear_weight_keeps_storage_while_bias_folds(self):
+        class ExternalWeight(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8, 8))
+                self.bias = torch.nn.Parameter(torch.arange(8, dtype=torch.float32))
+
+            def forward(self, value):
+                bias = torch.cat((self.bias, self.bias)).chunk(2)[0]
+                return F.linear(value, self.weight, bias)
+
+        model = ExternalWeight().eval()
+        inputs = (torch.randn(2, 8),)
+        program = torch.export.export(model, inputs)
+        weight = next(node for node in program.graph.nodes if node.name == "p_weight")
+        weight.meta["custom"] = {"delegate_constant_tag": "weights.ptd"}
+        transformed = XnnpackPartitioner().transform_for_pre_decomposition(program)
+        self.assertFalse(
+            any(
+                node.target == torch.ops.aten.cat.default
+                for node in transformed.graph.nodes
+            )
+        )
+        edge = to_edge_transform_and_lower(
+            transformed, partitioner=[XnnpackPartitioner()]
+        )
+        executable = edge.to_executorch()
+        runtime = _load_for_executorch_from_buffer(
+            executable.buffer, bytes(executable._tensor_data["weights.ptd"])
+        )
+        torch.testing.assert_close(
+            runtime.forward(inputs)[0], model(*inputs), atol=1e-5, rtol=1e-5
+        )
 
     def test_constant_output_does_not_introduce_edge_op(self):
         class ConstantOutput(torch.nn.Module):

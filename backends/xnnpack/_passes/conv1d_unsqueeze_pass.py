@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +9,7 @@ from typing import Optional
 
 import torch
 from executorch.backends.transforms import get_shape
+from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
@@ -18,6 +20,7 @@ from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_n
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch._ops import OpOverload
+from torch.export.graph_signature import InputKind
 
 
 class Conv1dUnsqueezePass(XNNPACKPass):
@@ -77,7 +80,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
         # node's first use
         q.args = (anchor,) + q_params
 
-    def unsqueeze_kernel_weights(self, kernel_node):
+    def unsqueeze_kernel_weights(self, kernel_node, consumer):
         """
         Unsqueezes the weights of a conv1d to make it 4 dimensional.
 
@@ -88,39 +91,18 @@ class Conv1dUnsqueezePass(XNNPACKPass):
         if kernel_param_3d is None:
             raise AssertionError("Expected param tensor for the kernel node")
 
-        kernel_param_4d = torch.nn.Parameter(
-            data=kernel_param_3d.data.contiguous().unsqueeze(dim=-1),
-            requires_grad=False,
-        )
-
-        if torch._export.utils.is_param(self.exported_program, kernel_node):
-            parameter_name = self.exported_program.graph_signature.inputs_to_parameters[
-                kernel_node.name
-            ]
-            self.exported_program.state_dict[parameter_name] = kernel_param_4d
-            kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
-        elif torch._export.utils.is_buffer(self.exported_program, kernel_node):
-            buffer_name = self.exported_program.graph_signature.inputs_to_buffers[
-                kernel_node.name
-            ]
-            self.exported_program.state_dict[buffer_name] = kernel_param_4d
-            kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
-        elif torch._export.utils.is_lifted_tensor_constant(
-            self.exported_program, kernel_node
-        ):
-            buffer_name = (
-                self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
-                    kernel_node.name
-                ]
+        graph = kernel_node.graph
+        with graph.inserting_before(next(iter(graph.nodes))):
+            weight = create_constant_placeholder(
+                self.exported_program,
+                graph,
+                name=f"{kernel_node.name}_{consumer.name}_4d",
+                kind=InputKind.CONSTANT_TENSOR,
+                data=kernel_param_3d.detach().contiguous().unsqueeze(-1),
             )
-            self.exported_program.constants[buffer_name] = kernel_param_4d
-            kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
-        else:
-            setattr(
-                kernel_node.graph.owning_module,
-                kernel_node.target,
-                kernel_param_4d,
-            )
+        if "custom" in kernel_node.meta:
+            weight.meta["custom"] = kernel_node.meta["custom"].copy()
+        return weight
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
@@ -145,7 +127,17 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                         )
 
                     # Modify graph such that the conv changes from 1d to 2d
-                    self.unsqueeze_kernel_weights(kernel_node)
+                    weight = self.unsqueeze_kernel_weights(kernel_node, node)
+                    if is_dequant(node.args[1]):
+                        dequant = node.args[1]
+                        with graph.inserting_before(node):
+                            weight = graph.call_function(
+                                dequant.target,
+                                (weight,) + dequant.args[1:],
+                                dequant.kwargs,
+                            )
+                        weight.meta = dequant.meta.copy()
+                    node.update_arg(1, weight)
 
                     # (b) Extend stride, padding, and dilation for extra dim
                     node.args = (
