@@ -25,7 +25,6 @@
 #include "linear_fp_output_tile.glslh"
 #include "linear_fp_per_out_channel_params.glslh"
 
-#ifndef SCALAR_BUFFER
 void store_matmul_output_x4(
     const VEC4_T texel,
     const int n4,
@@ -56,35 +55,9 @@ void store_matmul_out_tile_with_checks(
     }
   }
 }
-#endif // !SCALAR_BUFFER
-
-#ifdef SCALAR_BUFFER
-void store_matmul_out_tile_scalar(
-    const FPOutTile out_tile,
-    const int n4_start,
-    const int m_start,
-    const int b,
-    const int N4,
-    const int N,
-    const int M) {
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      if (m_start + m < M && n4_start + n4 < N4) {
-        const int base = (b * M + m_start + m) * N + mul_4(n4_start + n4);
-        const VEC4_T val = out_tile.data[m][n4];
-        t_output[base] = val.x;
-        if (mul_4(n4_start + n4) + 1 < N) t_output[base + 1] = val.y;
-        if (mul_4(n4_start + n4) + 2 < N) t_output[base + 2] = val.z;
-        if (mul_4(n4_start + n4) + 3 < N) t_output[base + 3] = val.w;
-      }
-    }
-  }
-}
-#endif // SCALAR_BUFFER
 
 #ifdef HAS_BIAS
 
-#ifndef SCALAR_BUFFER
 void load_bias_params(
     out FPPerOutChannelParams params,
     const int n4_start,
@@ -101,7 +74,6 @@ void load_bias_params(
     }
   }
 }
-#endif // !SCALAR_BUFFER
 
 void apply_addmm_bias(
     inout FPOutTile out_tile,

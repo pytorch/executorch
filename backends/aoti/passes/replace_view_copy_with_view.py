@@ -33,8 +33,8 @@ _VIEW_TARGETS: Dict[
     ops.edge.aten.split_copy.Tensor: ops.edge.aten.split.Tensor,
     # Edge turns ``detach`` into ``detach_copy``, which has no c-shim either.
     # Without autograd it is ``alias_copy``, which Inductor can decompose,
-    # unlike ``detach_copy``. A view would let two outputs share one handle,
-    # and ``clone`` fails Edge verification in dim order mode.
+    # unlike ``detach_copy``. ``clone`` fails Edge verification in dim order
+    # mode.
     torch.ops.aten.detach_copy.default: torch.ops.aten.alias_copy.default,
     ops.edge.aten.detach_copy.default: ops.edge.aten.alias_copy.default,
 }

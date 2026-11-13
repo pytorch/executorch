@@ -163,7 +163,8 @@ def _hop_written_operands(
     for i, arg in enumerate(node.args):
         if not isinstance(arg, torch.fx.Node) or arg.op != "get_attr":
             continue
-        submodule = getattr(graph_module, arg.target)
+        # An unlifted graph reads a parameter through a qualified name.
+        submodule = operator.attrgetter(arg.target)(graph_module)
         if not isinstance(submodule, torch.fx.GraphModule):
             continue
         submodule_written = _nodes_written_in_place(submodule)
@@ -289,12 +290,15 @@ def get_propagated_const_tensor_dict(
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
 
             # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
-            # if it has any zero strides from broadcasting/expansion operations
+            # if it has any zero strides from broadcasting/expansion operations.
+            # contiguous() is not enough: it keeps a zero stride on a size-1 dim.
             if (
                 isinstance(prop_constant_tensor, torch.Tensor)
                 and 0 in prop_constant_tensor.stride()
             ):
-                prop_constant_tensor = prop_constant_tensor.contiguous()
+                prop_constant_tensor = prop_constant_tensor.clone(
+                    memory_format=torch.contiguous_format
+                )
 
             # A folded constant must be a plain tensor that does not require
             # grad. no_grad is not enough when the op returns a view of a
@@ -463,11 +467,12 @@ def _update_output_node_and_specs(
     output_specs = exported_program.graph_signature.output_specs
     assert len(output_nodes) == len(output_specs)
 
-    clone_op = (
-        exir_ops.edge.aten.clone.default
-        if _skip_dim_order
-        else exir_ops.edge.dim_order_ops._clone_dim_order.default
-    )
+    if exported_program.dialect != "EDGE":
+        clone_op = torch.ops.aten.clone.default
+    elif _skip_dim_order:
+        clone_op = exir_ops.edge.aten.clone.default
+    else:
+        clone_op = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
     for i in range(len(output_specs)):
         out_node = output_nodes[i]
@@ -494,6 +499,8 @@ def constant_prop_pass(
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
     as the parameters will not be shown up as `get_attr` but as `placeholder` to the graph.
+    A graph output that is a constant gets a clone in front of it: an Edge clone when
+    exported_program.dialect is "EDGE", and torch.ops.aten.clone.default otherwise.
 
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.

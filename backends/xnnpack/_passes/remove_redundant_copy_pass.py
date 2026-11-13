@@ -71,6 +71,9 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         """
         Try to remove redundant to_copy operations in quantized graphs with pattern dq1 -> to_copy1 -> q1 -> dq2 -> to_copy2 -> q2
         """
+        if is_dtype_cast(node):
+            return False
+
         # Check if this to_copy is followed by a quantize node
         if len(node.users) != 1:
             return False
@@ -97,6 +100,7 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         prev_to_copy = prev_q_node.args[0]
         if (
             prev_to_copy.target == exir_ops.edge.aten._to_copy.default
+            and not is_dtype_cast(prev_to_copy)
             and ChannelsLastTaggedReshapePass.is_nchw_node(prev_to_copy)
             != ChannelsLastTaggedReshapePass.is_nchw_node(node)
             and len(prev_to_copy.users) == 1

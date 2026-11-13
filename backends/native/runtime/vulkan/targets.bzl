@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -10,10 +10,6 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
-    # Host-only for now; Android integration is not wired up.
-    if is_xplat():
-        return
-
     runtime.cxx_library(
         name = "vulkan_passes",
         srcs = [
@@ -22,6 +18,7 @@ def define_common_targets():
             "passes/InsertPrepack.cpp",
             "passes/LowerHFAttention.cpp",
             "passes/LowerRMSNorm.cpp",
+            "passes/LowerSDPA.cpp",
             "passes/MaterializeViewCopies.cpp",
             "passes/UseReferenceGgufKQuant.cpp",
         ],
@@ -31,6 +28,7 @@ def define_common_targets():
             "passes/InsertPrepack.h",
             "passes/LowerHFAttention.h",
             "passes/LowerRMSNorm.h",
+            "passes/LowerSDPA.h",
             "passes/MaterializeViewCopies.h",
             "passes/UseReferenceGgufKQuant.h",
         ],

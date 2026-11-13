@@ -1,0 +1,90 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Element-wise ops applied to a convolution output texel before it is stored:
+ *
+ *   out = activation(residual_op(conv, residual * scale, alpha))
+ *
+ * residual_op is add, sub or mul, and activation is clamp, relu or leaky_relu.
+ * The ops compute in VEC4_T, the including shader's texel type, so that texels
+ * computed in f16 stay f16 and are stored without rounding. Where VEC4_T is
+ * f16vec4, the host rounds the uniforms to the nearest f16, so converting them
+ * is exact.
+ *
+ * The including shader binds t_residual, a texture3d with the output's sizes,
+ * and declares the specialization constants has_residual, has_scale,
+ * residual_op, has_activation and activation_op, and the uniforms
+ * residual_alpha, activation_a and activation_b. Operands that are absent are
+ * bound to other tensors of the dispatch and never read.
+ */
+
+#ifndef CONV2D_EPILOGUE_GLSLH
+#define CONV2D_EPILOGUE_GLSLH
+
+#define IN_T vec4
+#define OUT_T vec4
+#define ALPHA_T float
+#define PARAM_T float
+#define BINARY_OP_VEC4
+#define BINARY_OP_IS_FLOAT
+#define UNARY_OP_IS_FLOAT
+
+#include "binary/binary_op.glslh"
+#include "unary/unary_op.glslh"
+
+#undef IN_T
+#undef OUT_T
+#undef ALPHA_T
+#undef PARAM_T
+#undef BINARY_OP_VEC4
+#undef BINARY_OP_IS_FLOAT
+#undef UNARY_OP_IS_FLOAT
+
+// apply_binary_op() and apply_unary_op() are not reused for binary size: the
+// op is a specialization constant, so every case of their switches stays in the
+// SPIR-V, and the epilogue is inlined at each output store of every conv2d
+// shader.
+VEC4_T apply_residual_op(const VEC4_T v, const VEC4_T residual) {
+  switch (residual_op) {
+    case BINARY_OP_SUB:
+      return v - VEC4_T(residual_alpha) * residual;
+    case BINARY_OP_MUL:
+      return v * residual;
+    default: // BINARY_OP_ADD
+      return v + VEC4_T(residual_alpha) * residual;
+  }
+}
+
+VEC4_T apply_activation(const VEC4_T v) {
+  switch (activation_op) {
+    case UNARY_OP_RELU:
+      return max(v, VEC4_T(0));
+    case UNARY_OP_LEAKY_RELU:
+      return mix(v * VEC4_T(activation_a), v, greaterThan(v, VEC4_T(0)));
+    default: // UNARY_OP_CLAMP
+      return clamp(v, VEC4_T(activation_a), VEC4_T(activation_b));
+  }
+}
+
+// `scale` is the residual scale of the output channels in `pos.z`.
+VEC4_T apply_epilogue(VEC4_T v, const ivec3 pos, const vec4 scale) {
+  if (has_residual) {
+    VEC4_T residual = VEC4_T(texelFetch(t_residual, pos, 0));
+    if (has_scale) {
+      residual *= VEC4_T(scale);
+    }
+    v = apply_residual_op(v, residual);
+  }
+  if (has_activation) {
+    v = apply_activation(v);
+  }
+  return v;
+}
+
+#endif // CONV2D_EPILOGUE_GLSLH

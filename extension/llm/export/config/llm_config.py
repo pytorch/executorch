@@ -58,6 +58,8 @@ class ModelType(str, Enum):
     lfm2_5_1_2b = "lfm2_5_1_2b"
     spark_x2_5_1_7b = "spark_x2_5_1_7b"
     spark_x2_5_4b = "spark_x2_5_4b"
+    spark_x2_6_1_7b = "spark_x2_6_1_7b"
+    spark_x2_6_4b = "spark_x2_6_4b"
 
 
 class PreqMode(str, Enum):
@@ -656,6 +658,7 @@ class VgfConfig:
     compile_spec: Optional[str] = "TOSA-1.0+INT"
     compiler_flags: List[str] = field(default_factory=list)
     quantize_scope: VgfQuantizeScope = VgfQuantizeScope.full
+    alias_buffer_mutations: bool = False
 
 
 @dataclass

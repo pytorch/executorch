@@ -1,0 +1,6 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//xplat/executorch/backends/vulkan/test/op_tests:targets.bzl", "define_generator_test_targets")
+
+oncall("executorch")
+
+define_generator_test_targets(is_fbcode = is_fbcode())

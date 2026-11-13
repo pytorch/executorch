@@ -10,9 +10,11 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -251,6 +253,53 @@ void stable_topological_sort(Graph& graph) {
   }
   graph.schedule = std::move(sorted);
   graph.rebuild_def_use();
+}
+
+const Argument*
+find_arg(const Node& node, std::string_view name, size_t position) {
+  const auto found = std::ranges::find_if(
+      node.inputs,
+      [name](const NamedArgument& input) { return input.name == name; });
+  if (found != node.inputs.end()) {
+    return &found->arg;
+  }
+  return position < node.inputs.size() && node.inputs[position].name.empty()
+      ? &node.inputs[position].arg
+      : nullptr;
+}
+
+std::optional<ValueId> tensor_id(const Argument* arg) {
+  if (arg == nullptr || arg->kind() != ArgKind::Tensor ||
+      !valid(arg->as_tensor().id)) {
+    return std::nullopt;
+  }
+  return arg->as_tensor().id;
+}
+
+bool is_bool_or_absent(const Argument* arg, bool value) {
+  return arg == nullptr ||
+      (arg->kind() == ArgKind::Bool && !valid(arg->as_bool().id) &&
+       arg->as_bool().value == value);
+}
+
+std::optional<double> float_or_absent(const Argument* arg, double value) {
+  if (arg == nullptr) {
+    return value;
+  }
+  if (arg->kind() != ArgKind::Float || valid(arg->as_float().id)) {
+    return std::nullopt;
+  }
+  return arg->as_float().value;
+}
+
+bool inputs_fit_schema(
+    const Node& node,
+    std::span<const std::string_view> params) {
+  return node.inputs.size() <= params.size() &&
+      std::ranges::all_of(node.inputs, [params](const NamedArgument& input) {
+           return input.name.empty() ||
+               std::ranges::find(params, input.name) != params.end();
+         });
 }
 
 // cppcheck-suppress unusedFunction

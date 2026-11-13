@@ -43,6 +43,10 @@ void main() {
   }
 
   TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
+  if (out_of_bounds(out_tidx, outp)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
 
   // Load the index value at the same position in the index tensor
   const uint index_bufi = tensor_idx_to_linear_idx(index, out_tidx);

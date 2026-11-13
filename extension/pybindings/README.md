@@ -41,9 +41,13 @@ execution can share the caller's device allocation.
 input `i`, as `"cpu"` or `"cuda:N"`, and `output_tensor_meta(i).device()` does
 the same for its outputs.
 
-When PyTorch is available, importing `portable_lib` imports it and portable
-bindings return `torch.Tensor` outputs. When it cannot be imported, the default
-output type is `ExecuTorchResult`. Output conversion uses Python APIs and
+Unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is `torch`, importing
+`portable_lib` does not import PyTorch. When PyTorch is installed, portable
+bindings return `torch.Tensor` outputs, and the first call that returns one
+imports `torch`. When PyTorch is not installed, or importing it raises an
+`ImportError`, outputs are `ExecuTorchResult` values. Any other error from
+importing it is raised by every call that returns a tensor; set the variable
+to `executorch` to run without PyTorch. Output conversion uses Python APIs and
 DLPack; the extension does not link against PyTorch.
 `clone_outputs=True` returns storage that later executions do not overwrite,
 on the output's original device. With `clone_outputs=False`, results share
@@ -91,9 +95,17 @@ with `clone_outputs=False` lives in the method's output memory, so passing it
 back in as an input means each run reads what the run before it wrote there;
 pass a copied result instead.
 
-To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
-environment variable before importing the bindings. The setting is fixed when
-the extension loads, so importing PyTorch later does not change the output type.
+A future release will make tensor outputs follow the tensor inputs of each
+call, including inputs kept from an earlier call. A call with any torch tensor
+input will return torch tensors. A call whose tensor inputs are all NumPy
+arrays, other buffers, DLPack objects, or `ExecuTorchResult` values will return
+`ExecuTorchResult` values, even when PyTorch is installed. A call with no tensor
+inputs keeps returning torch tensors whenever `torch` can be imported. Each call
+whose outputs will change warns with a `FutureWarning`. To choose the output
+type now, set `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` to `executorch` or `torch`
+before importing the bindings. The setting is fixed when the extension loads.
+`executorch` never imports PyTorch, and `torch` requires it to import
+successfully.
 
 ```python
 import os
@@ -103,11 +115,10 @@ from executorch.extension.pybindings import portable_lib
 ```
 
 `ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
-the Python buffer protocol so NumPy can read them without another copy. Without
-the environment setting, the bindings fall back to `ExecuTorchResult` if
-PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
-successfully. ATen-mode bindings continue to return native PyTorch tensors
-directly.
+the Python buffer protocol so NumPy can read them without another copy. A result
+is not a number or a truth value: `bool()`, `int()`, and `float()` raise
+`TypeError`, so convert it first, for example with `np.asarray(output)`.
+ATen-mode bindings continue to return native PyTorch tensors directly.
 
 ```python
 output = module.forward([numpy_input])[0]
@@ -133,31 +144,59 @@ output = method([device_input])[0]
 result = np.asarray(output.to_host())
 ```
 
+The buffer protocol cannot describe dtypes such as bfloat16, so pass their data
+as unsigned integers of the same width and name the dtype. For example, with an
+`ml_dtypes.bfloat16` array:
+
+```python
+device_input = ExecuTorchResult.from_host(
+    bfloat16_input.view(np.uint16), device_index=0, dtype="bfloat16"
+)
+```
+
 Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
 of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
 Bindings built without CUDA support synchronize through Python Torch instead,
-so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
-and return borrowed CUDA results.
+and import torch to do so unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is
+`executorch`. So with torch installed, or imported by you, they still read
+CUDA inputs, torch tensors or DLPack, and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
-work has finished, so its outputs are ready on any stream. Every wait is for the
-whole device (`cudaDeviceSynchronize`), not for one stream, so it also waits for
-unrelated work queued on that device, for example by torch. Before it runs, a
-call waits once for each device that holds a non-empty CUDA input or output.
-Another library may still be writing such an input: a torch CUDA tensor, a CUDA
-DLPack input, or a result of these bindings passed back in, which can share
-memory a caller handed to that library. It may also still be reading the memory
-of an output from an earlier call, which this call writes again. After it runs,
-a call waits once for each device that holds a CUDA input or output, since the
-method may have updated an input in place. Each cloned CUDA
-output waits once more for its copy. A torch CUDA input in another layout also
-waits before torch copies it into the exported layout. Reading a CUDA result
-through `__dlpack__` or `to_host()` waits once as well. In CUDA-enabled
-bindings a wait holds the GIL, so other Python threads pause until it ends, and
-a queued CUDA host callback that needs the GIL makes the wait hang. Bindings
-built without CUDA wait through `torch.cuda.synchronize`, which releases the
-GIL. On an idle device a wait is short:
-`cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
+work has finished, so its outputs are ready on any stream. How long a call with
+only host inputs and outputs waits depends on where it runs:
+
+- Inside an `executorch.runtime.cuda.stream()` block with a non-blocking stream,
+  such as `executorch.runtime.cuda.Stream()`, it waits for that stream. A
+  blocking stream, such as a `cupy.cuda.Stream()` with default flags, also waits
+  for work on CUDA's legacy default stream, which is also the default stream of
+  torch.
+- Outside a block, a program's copies between host and GPU memory run on the
+  legacy default stream, so the call waits for work on every blocking stream of
+  the device, for example delegates running on another thread.
+
+In both cases, the CUDA delegate copies an output whose memory layout has to
+change through the legacy default stream. Loading a method's CUDA weights, which
+a first call may do, copies each one with a plain `cudaMemcpy`, so it waits for
+the legacy default stream and for blocking streams. An older export keeps its
+weights in one blob, and copying that blob waits for the whole device.
+
+The waits below, for CUDA inputs and outputs, are for the whole device
+(`cudaDeviceSynchronize`), not for one stream, so they also wait for unrelated
+work queued on that device, for example by torch. Before it runs, a call waits
+once for each device that holds a non-empty CUDA input or output. Another
+library may still be writing such an input: a torch CUDA tensor, a CUDA DLPack
+input, or a result of these bindings passed back in, which can share memory a
+caller handed to that library. It may also still be reading the memory of an
+output from an earlier call, which this call writes again. After it runs, a call
+waits once for each device that holds a CUDA input or output, since the method
+may have updated an input in place. Each cloned CUDA output waits once more for
+its copy. A torch CUDA input in another layout also waits before torch copies it
+into the exported layout. Reading a CUDA result through `__dlpack__` or
+`to_host()` waits once as well. In CUDA-enabled bindings a wait holds the GIL,
+so other Python threads pause until it ends, and a queued CUDA host callback
+that needs the GIL makes the wait hang. Bindings built without CUDA wait through
+`torch.cuda.synchronize`, which releases the GIL. On an idle device a wait is
+short: `cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
 synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
@@ -184,10 +223,7 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
-install it from the system, or the two tests that run without PyTorch fail
-under this setting.
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 
@@ -220,4 +256,50 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-Runtime logs are forwarded to Python stderr.
+Runtime logs go straight to the process's stderr as they are logged. On Windows,
+a console shows text that is not ASCII in its own code page, so such text can
+look wrong there. If Python has replaced `sys.stderr`, for example with pytest's
+`capsys`, `contextlib.redirect_stderr` or in a Jupyter notebook, the lines go to
+`sys.stderr` instead, a little later. The lines a binding call logs wait until
+the call returns. A line logged outside any binding call, for example by the LLM
+runner, goes to `sys.stderr` soon after. If Python's main thread logged it, that
+thread writes it itself, before the lines of its next binding call. But if
+earlier lines of the main thread still wait for the bindings' thread, this line
+follows them there. A line from another thread also goes to the bindings'
+thread, which the bindings start for this. It writes to whatever `sys.stderr` is
+at that moment. Outside a call, only a thread that holds the GIL can tell where
+`sys.stderr` goes, so a line from a thread that does not hold it, such as one
+the LLM runner logs while it generates, goes to the process's stderr. The lines
+wait rather than go to Python at once because a backend can log while it holds a
+lock, and writing to Python at that moment could deadlock with another thread.
+
+On Linux and macOS, a line also waits once the process's stderr is a pipe or
+socket that stays full for 100 ms, so a thread that holds the GIL does not hang
+on it while a Python thread in the same process empties it, as under
+`wurlitzer.pipes()`. The rest of a binding call's lines then wait for the call
+to return. A thread that holds the GIL and logs outside a call does not wait for
+room itself. It hands the line to the bindings' thread, which writes it a line
+at a time without the GIL. While it writes, a binding call's lines wait for the
+call to return. A terminal is written at once, since its reader is normally
+another process. The process can still hang if another writer fills the
+process's stderr right after the check for room, if a thread that does not hold
+the GIL logs outside a call while a Python thread in the same process empties a
+full stderr and a binding call holds the GIL waiting for that thread, or if a
+Python thread in the same process reads a terminal that is the process's stderr.
+On macOS, a pipe that has not grown past 16 KiB takes a line only once the line
+fits in 512 bytes beside what the pipe holds, because macOS reports room in such
+a pipe that it may not have.
+
+Up to 1 MiB of lines wait at a time; past that, about the newest 512 KiB to
+1 MiB are kept, with a note of how many earlier bytes were left out. A fatal
+line goes straight to the process's stderr while it has room, with the lines its
+binding call kept, since an abort usually follows. Any crash or hang of the
+process, including that abort, or an `os._exit()` loses the lines still waiting.
+Once Python starts to exit, the lines still waiting are written, and later lines
+logged outside a call go to the process's stderr while it has room. Lines for
+the process's stderr are left out instead if the bindings' thread is still
+writing to it then.
+
+On Linux with Python before 3.13.8, a daemon thread never writes through Python,
+because at exit Python can stop such a thread in the middle of that write, which
+crashes the process. The bindings' thread writes its lines instead.

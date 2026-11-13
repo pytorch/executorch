@@ -8,19 +8,29 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cinttypes>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#ifndef _WIN32
+#include <poll.h>
+#include <pthread.h>
+#include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <sys/stat.h>
+#endif
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -70,7 +80,7 @@
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`,
-/// followed by the errors the runtime logged during this call.
+/// followed by the errors the runtime logged during this call. Needs the GIL.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
@@ -139,9 +149,539 @@ namespace {
 constexpr size_t kRuntimeErrorsCapacity = 1024;
 thread_local char runtime_errors[kRuntimeErrorsCapacity];
 thread_local size_t runtime_errors_size = 0;
-// How many binding calls are running on this thread. Lines logged outside
-// any, such as on worker threads, are not kept, so they never linger.
-thread_local size_t runtime_error_scopes = 0;
+// The lines kept for the current binding call; emit_log_message says when a
+// line is kept. Past the capacity the oldest are counted rather than kept,
+// since the newest are the closest to a failure.
+struct PendingLogs final {
+  bool direct = false;
+  bool daemon = false;
+  std::string lines;
+  size_t dropped = 0;
+};
+constexpr size_t kPendingLogsCapacity = 1024 * 1024;
+// Null outside a binding call, so a line logged outside any is never kept here,
+// where no call would write it out. A plain pointer for the same reason as
+// above.
+thread_local PendingLogs* pending_logs = nullptr;
+
+// Lines that Python's stderr must show but that were logged where Python cannot
+// be called: outside any binding call, or on a daemon thread. Python's main
+// thread writes the lines it logged itself at its next chance. A thread of
+// their own writes the others, since the main thread may be in the middle of a
+// sys.stderr.write that holds a lock. Never freed, so that a line logged during
+// exit still finds it.
+struct DeferredLogs final {
+  std::mutex mutex;
+  std::condition_variable writer_changed;
+  PendingLogs logs;
+  PendingLogs main_thread_logs;
+  bool main_thread_write_scheduled = false;
+  // Numbers the writer's batches, so that a thread can tell whether the lines
+  // it handed over are written.
+  uint64_t batch = 1;
+  uint64_t batches_written = 0;
+  bool writer_running = false;
+  // Exit waits while the writer takes the GIL, since a Python that has
+  // finished exiting crashes on a new thread state and may have freed the
+  // writer's saved one.
+  bool writer_entering = false;
+  bool exiting = false;
+};
+
+DeferredLogs*& deferred_logs_state() {
+  static DeferredLogs* logs = new DeferredLogs();
+  return logs;
+}
+
+DeferredLogs& deferred_logs() {
+  return *deferred_logs_state();
+}
+
+// The only thread that runs Python's pending calls.
+unsigned long main_thread_id = 0;
+
+// The writer's batch that holds the newest line this thread handed over.
+thread_local uint64_t last_deferred_batch = 0;
+
+void defer_lines(const std::string& lines) noexcept;
+bool deferred_lines_wait();
+bool own_deferred_lines_wait();
+
+void write_to_stderr(const char* data, size_t size) {
+  std::fwrite(data, 1, size, stderr);
+  std::fflush(stderr);
+}
+
+// Writes to fd 2 without C stdio's lock on stderr, so that a write that waits
+// for room holds up no thread that flushes stderr, as Python does as it exits.
+void write_to_fd_2(const char* data, size_t size) {
+#ifdef _WIN32
+  write_to_stderr(data, size);
+#else
+  while (size > 0) {
+    const ssize_t written = ::write(2, data, size);
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      // fd 2 is non-blocking and full.
+      pollfd stderr_fd{2, POLLOUT, 0};
+      poll(&stderr_fd, 1, -1);
+      continue;
+    }
+    if (written <= 0) {
+      return;
+    }
+    data += written;
+    size -= static_cast<size_t>(written);
+  }
+#endif
+}
+
+// The last stream whose descriptor stderr_is_process_stderr() checked, kept
+// alive by this reference, and whether that descriptor is 2. A stream that
+// replaced sys.stderr is never kept here.
+PyObject* checked_stderr = nullptr;
+bool checked_stderr_is_fd_2 = false;
+
+// Whether sys.stderr is still the stream Python opened on file descriptor 2.
+// Runs at import and as a binding call starts, with the GIL held and no lock
+// held. Asking a stream for its descriptor costs more than a small binding
+// call, so the answer is kept for the last stream checked.
+bool stderr_is_process_stderr() noexcept {
+  PyObject* const current = PySys_GetObject("stderr");
+  if (current != nullptr && current == checked_stderr) {
+    return checked_stderr_is_fd_2;
+  }
+  if (current == nullptr || current != PySys_GetObject("__stderr__")) {
+    return false;
+  }
+  Py_INCREF(current);
+  const bool on_fd_2 = PyObject_AsFileDescriptor(current) == 2;
+  PyErr_Clear();
+  checked_stderr_is_fd_2 = on_fd_2;
+  Py_XSETREF(checked_stderr, current);
+  return on_fd_2;
+}
+
+// Whether sys.stderr is still the stream that stderr_is_process_stderr() found
+// on fd 2. Runs no Python code, so a thread that logs can ask it.
+bool sys_stderr_is_checked_fd_2() noexcept {
+  return PySys_GetObject("stderr") == checked_stderr && checked_stderr_is_fd_2;
+}
+
+// Whether this thread holds the GIL. PyGILState_Check says yes on every thread
+// once a subinterpreter exists, so this compares thread states instead.
+bool holds_gil() noexcept {
+  if (!Py_IsInitialized()) {
+    return false;
+  }
+  PyThreadState* const state = PyGILState_GetThisThreadState();
+  return state != nullptr && state == py::detail::get_thread_state_unchecked();
+}
+
+// Whether this is a daemon thread that a write through Python could crash at
+// exit. Before 3.13.8, Python ends a daemon thread with pthread_exit if it then
+// waits for the GIL, and on Linux the unwinding runs the C++ destructors on its
+// stack, which touch Python objects without the GIL. So such a thread never
+// writes its lines through Python. The flag cannot change once the thread runs.
+bool on_daemon_thread() {
+#ifdef __linux__
+  thread_local const bool daemon = Py_Version < 0x030D0800 &&
+      py::module_::import("threading")
+          .attr("current_thread")()
+          .attr("daemon")
+          .cast<bool>();
+  return daemon;
+#else
+  return false;
+#endif
+}
+
+// How long a line waits for room in a full stderr. A reader in another process
+// usually catches up within it, while a Python thread in this process never
+// does, since it needs the GIL.
+constexpr int kStderrRoomWaitMs = 100;
+
+// Whether a line of `size` bytes can go to the process's stderr, waiting up to
+// `wait_ms` for room, so that a thread that holds the GIL never waits on a full
+// pipe or socket that a Python thread in this process reads, as
+// wurlitzer.pipes() sets up. A terminal is not checked: its reader is another
+// process, and a line that waits for it must not be lost to a crash.
+bool stderr_has_room(ET_UNUSED size_t size, int wait_ms) {
+#ifdef _WIN32
+  return true;
+#else
+  if (isatty(2)) {
+    return true;
+  }
+#ifdef __APPLE__
+  // macOS reports room as if a pipe held 16 KiB, but a pipe made while pipe
+  // memory runs low holds as little as 512 bytes, and a write to it then waits.
+  // A pipe that grew past 16 KiB reports its real size. Until then, a line goes
+  // in only once it fits in 512 bytes beside what the pipe holds.
+  struct stat info;
+  if (fstat(2, &info) == 0 && S_ISFIFO(info.st_mode) &&
+      info.st_blksize <= 16 * 1024) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+    while (static_cast<size_t>(info.st_size) + size > PIPE_BUF) {
+      if (std::chrono::steady_clock::now() >= deadline || usleep(1000) != 0 ||
+          fstat(2, &info) != 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+#endif
+  pollfd stderr_fd{2, POLLOUT, 0};
+  return poll(&stderr_fd, 1, wait_ms) > 0;
+#endif
+}
+
+// Drops the oldest half of the kept lines at once when they outgrow the
+// capacity, so keeping a line stays cheap.
+void keep_line(PendingLogs& logs, const std::string& line) {
+  logs.lines += line;
+  if (logs.lines.size() > kPendingLogsCapacity) {
+    const size_t cut =
+        logs.lines.find(
+            '\n', logs.lines.size() - kPendingLogsCapacity / 2 - 1) +
+        1;
+    logs.dropped += cut;
+    logs.lines.erase(0, cut);
+  }
+}
+
+void note_left_out_bytes(PendingLogs& logs) noexcept {
+  if (logs.dropped == 0) {
+    return;
+  }
+  try {
+    logs.lines.insert(
+        0,
+        "[" + std::to_string(logs.dropped) +
+            " earlier bytes of the runtime log were left out]\n");
+    logs.dropped = 0;
+  } catch (const std::bad_alloc&) {
+  }
+}
+
+// Writes lines to fd 2, oldest first, while it has room, and returns how many
+// bytes it wrote. Whole lines only, since a pipe that a Python thread drains
+// stays full while the GIL is held.
+size_t write_lines_while_room(const std::string& lines) noexcept {
+  size_t begin = 0;
+  while (begin < lines.size()) {
+    const size_t end = lines.find('\n', begin) + 1;
+    if (!stderr_has_room(end - begin, kStderrRoomWaitMs)) {
+      break;
+    }
+    write_to_stderr(lines.data() + begin, end - begin);
+    begin = end;
+  }
+  return begin;
+}
+
+// Writes the kept lines to fd 2 while it has room, and keeps the rest.
+void write_kept_lines_while_room(PendingLogs& logs) noexcept {
+  logs.lines.erase(0, write_lines_while_room(logs.lines));
+}
+
+// Runs as the outermost binding call returns, or at exit, with the GIL held and
+// no backend lock or object lock held. An exception may be unwinding, so it
+// never throws.
+void write_logs_to_python(PendingLogs& logs) noexcept {
+  note_left_out_bytes(logs);
+  if (logs.lines.empty()) {
+    return;
+  }
+  if (PyThread_get_thread_ident() == main_thread_id) {
+    // The lines that the main thread's pending call has yet to write come
+    // first, since a call that raised runs no pending call before the next.
+    DeferredLogs& deferred = deferred_logs();
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    note_left_out_bytes(deferred.main_thread_logs);
+    try {
+      logs.lines.insert(0, deferred.main_thread_logs.lines);
+      deferred.main_thread_logs = PendingLogs();
+      deferred.main_thread_write_scheduled = false;
+    } catch (const std::bad_alloc&) {
+    }
+  }
+  // A call's lines go after the lines this thread handed over.
+  if (logs.daemon || own_deferred_lines_wait()) {
+    defer_lines(logs.lines);
+    return;
+  }
+  try {
+    // A line that is not valid UTF-8, such as one that prints raw bytes from a
+    // model file, must not keep the rest from Python.
+    const auto text = py::reinterpret_steal<py::str>(PyUnicode_DecodeUTF8(
+        logs.lines.data(), logs.lines.size(), "backslashreplace"));
+    if (!text) {
+      throw py::error_already_set();
+    }
+    py::module_::import("sys").attr("stderr").attr("write")(text);
+    return;
+  } catch (py::error_already_set& error) {
+    // Python runs a Ctrl-C's handler in the first Python code after it, which
+    // can be this write. Raise it again once the call has returned.
+    if (error.matches(PyExc_KeyboardInterrupt)) {
+      PyErr_SetInterrupt();
+    }
+  } catch (...) {
+  }
+  // A write that was cut short may have shown some lines already, but
+  // repeating them is better than losing them. stderr can be a pipe that a
+  // Python thread drains, as in Jupyter, so the GIL is released.
+  py::gil_scoped_release release;
+  write_to_stderr(logs.lines.data(), logs.lines.size());
+}
+
+// Runs on Python's main thread between two bytecodes, with the GIL held.
+int write_main_thread_logs(void*) noexcept {
+  PendingLogs logs;
+  {
+    std::lock_guard<std::mutex> lock(deferred_logs().mutex);
+    deferred_logs().main_thread_write_scheduled = false;
+    std::swap(logs, deferred_logs().main_thread_logs);
+  }
+  write_logs_to_python(logs);
+  return 0;
+}
+
+// Writes the lines to fd 2 one at a time with the GIL released, so that a line
+// no longer than PIPE_BUF stays whole beside other threads' lines. Returns
+// false, without the GIL, if Python began to exit meanwhile: Python may then
+// free this thread's state, so the thread must not touch Python again.
+bool write_lines_to_fd_2_without_gil(const std::string& lines) {
+  PyThreadState* const state = PyEval_SaveThread();
+  size_t begin = 0;
+  while (begin < lines.size()) {
+    const size_t end = lines.find('\n', begin) + 1;
+    write_to_fd_2(lines.data() + begin, end - begin);
+    begin = end;
+  }
+  DeferredLogs& deferred = deferred_logs();
+  {
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    if (deferred.exiting) {
+      return false;
+    }
+    deferred.writer_entering = true;
+  }
+  PyEval_RestoreThread(state);
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  deferred.writer_entering = false;
+  deferred.writer_changed.notify_all();
+  return true;
+}
+
+// Writes through Python's C API only, and is not noexcept, since Python may end
+// this thread while it waits for the GIL during exit, and the unwinding must
+// neither touch a Python object nor stop at a noexcept frame. Returns false as
+// write_lines_to_fd_2_without_gil does.
+bool write_lines_through_python(const PendingLogs& logs) {
+  PyObject* const text = PyUnicode_DecodeUTF8(
+      logs.lines.data(), logs.lines.size(), "backslashreplace");
+  PyObject* const stream = PySys_GetObject("stderr");
+  PyObject* const result = text == nullptr || stream == nullptr
+      ? nullptr
+      : PyObject_CallMethod(stream, "write", "O", text);
+  const bool written = result != nullptr;
+  Py_XDECREF(result);
+  Py_XDECREF(text);
+  if (written) {
+    return true;
+  }
+  PyErr_Clear();
+  return write_lines_to_fd_2_without_gil(logs.lines);
+}
+
+// Runs on a thread of its own until no line waits.
+void write_deferred_logs() {
+  DeferredLogs& deferred = deferred_logs();
+  for (;;) {
+    PendingLogs logs;
+    uint64_t batch = 0;
+    {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      if (deferred.exiting || deferred.logs.lines.empty()) {
+        deferred.writer_running = false;
+        deferred.writer_changed.notify_all();
+        return;
+      }
+      std::swap(logs, deferred.logs);
+      batch = deferred.batch++;
+      deferred.writer_entering = true;
+    }
+    const PyGILState_STATE gil = PyGILState_Ensure();
+    {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      deferred.writer_entering = false;
+      deferred.writer_changed.notify_all();
+    }
+    note_left_out_bytes(logs);
+    // Lines for the process's stderr wait for room in fd 2 without the GIL or
+    // any lock of Python's, so that a full fd 2 never holds up Python's exit.
+    const bool python_still_running = stderr_is_process_stderr()
+        ? write_lines_to_fd_2_without_gil(logs.lines)
+        : write_lines_through_python(logs);
+    if (!python_still_running) {
+      std::lock_guard<std::mutex> lock(deferred.mutex);
+      deferred.writer_running = false;
+      deferred.writer_changed.notify_all();
+      return;
+    }
+    PyGILState_Release(gil);
+    std::lock_guard<std::mutex> lock(deferred.mutex);
+    deferred.batches_written = batch;
+  }
+}
+
+// Runs with the GIL held.
+void defer_lines(const std::string& lines) noexcept {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  if (deferred.exiting) {
+    // Python's main thread may need the GIL to finish exiting, so the lines go
+    // out only while fd 2 has room, and not at all while a writer that is still
+    // writing can take that room first.
+    if (!deferred.writer_running) {
+      write_lines_while_room(lines);
+    }
+    return;
+  }
+  try {
+    // The main thread logged these lines from native code, which is inside a
+    // sys.stderr.write only if that write runs such code. So it can write them
+    // before its next bytecode, while a short redirect of sys.stderr still
+    // lasts. While the writer thread holds earlier lines of it, these follow
+    // them there instead, since keeping a thread's order beats the redirect.
+    if (PyThread_get_thread_ident() == main_thread_id &&
+        last_deferred_batch <= deferred.batches_written &&
+        (deferred.main_thread_write_scheduled ||
+         !sys_stderr_is_checked_fd_2())) {
+      keep_line(deferred.main_thread_logs, lines);
+      if (!deferred.main_thread_write_scheduled) {
+        deferred.main_thread_write_scheduled =
+            Py_AddPendingCall(&write_main_thread_logs, nullptr) == 0;
+      }
+      return;
+    }
+    keep_line(deferred.logs, lines);
+    last_deferred_batch = deferred.batch;
+    if (!deferred.writer_running) {
+      std::thread(write_deferred_logs).detach();
+      deferred.writer_running = true;
+    }
+  } catch (const std::exception&) {
+    // Lines that no thread could take wait for the exit hook.
+  }
+}
+
+// Whether lines wait for the writer thread or for Python's main thread. While
+// the writer writes to fd 2, the room that a check sees can be gone.
+bool deferred_lines_wait() {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  return (deferred.writer_running || deferred.main_thread_write_scheduled) &&
+      !deferred.exiting;
+}
+
+// Whether lines this thread handed over still wait, which its later lines must
+// not pass.
+bool own_deferred_lines_wait() {
+  DeferredLogs& deferred = deferred_logs();
+  std::lock_guard<std::mutex> lock(deferred.mutex);
+  return last_deferred_batch > deferred.batches_written && !deferred.exiting;
+}
+
+// Python stops other threads once exit begins, and later its state is gone, so
+// the waiting lines go out now and later ones go to fd 2 while it has room. A
+// writer that is taking the GIL gets it first, and one that is writing gets a
+// moment to finish, so that its stream is free for Python's last flush.
+void write_deferred_logs_at_exit() noexcept {
+  DeferredLogs& deferred = deferred_logs();
+  PendingLogs main_thread_logs;
+  PendingLogs logs;
+  bool writer_running = false;
+  {
+    py::gil_scoped_release release;
+    std::unique_lock<std::mutex> lock(deferred.mutex);
+    deferred.exiting = true;
+    std::swap(main_thread_logs, deferred.main_thread_logs);
+    std::swap(logs, deferred.logs);
+    deferred.writer_changed.wait(
+        lock, [&deferred] { return !deferred.writer_entering; });
+    deferred.writer_changed.wait_for(
+        lock, std::chrono::milliseconds(kStderrRoomWaitMs), [&deferred] {
+          return !deferred.writer_running;
+        });
+    writer_running = deferred.writer_running;
+  }
+  for (PendingLogs* waiting : {&main_thread_logs, &logs}) {
+    if (stderr_is_process_stderr()) {
+      // No Python thread may be left to read a full fd 2. A writer still
+      // writing means fd 2 stayed full, and it could take any room seen here.
+      if (!writer_running) {
+        note_left_out_bytes(*waiting);
+        write_kept_lines_while_room(*waiting);
+      }
+    } else {
+      write_logs_to_python(*waiting);
+    }
+  }
+}
+
+// Sets up what the routing of runtime logs relies on, once, with the GIL held.
+// A setup that raised runs again on the next call.
+void set_up_log_routing() {
+  static bool set_up = false;
+  if (set_up) {
+    return;
+  }
+  // The Python code below can let another thread get here meanwhile.
+  set_up = true;
+  try {
+    // A line logged outside any call compares sys.stderr with the stream
+    // checked last, so the first check cannot wait for the first call.
+    stderr_is_process_stderr();
+    main_thread_id = py::module_::import("threading")
+                         .attr("main_thread")()
+                         .attr("ident")
+                         .cast<unsigned long>();
+    py::module_::import("atexit").attr("register")(
+        py::cpp_function([]() { write_deferred_logs_at_exit(); }));
+  } catch (...) {
+    set_up = false;
+    throw;
+  }
+#ifndef _WIN32
+  // A child of fork() has no writer thread, the waiting lines are the
+  // parent's, and the thread that forked is its main thread.
+  pthread_atfork(nullptr, nullptr, [] {
+    deferred_logs_state() = new DeferredLogs();
+    main_thread_id = PyThread_get_thread_ident();
+    last_deferred_batch = 0;
+  });
+#endif
+}
+
+// Runs as a pending call on Python's main thread, which raises the error that a
+// failed setup leaves, such as a KeyboardInterrupt.
+int set_up_log_routing_after_load(void*) noexcept {
+  try {
+    set_up_log_routing();
+    return 0;
+  } catch (py::error_already_set& error) {
+    error.restore();
+  } catch (const std::exception& error) {
+    PyErr_SetString(PyExc_RuntimeError, error.what());
+  }
+  return -1;
+}
 
 std::string with_runtime_errors(const char* message) {
   std::string result(message);
@@ -149,58 +689,192 @@ std::string with_runtime_errors(const char* message) {
     result.append(": ").append(runtime_errors, runtime_errors_size);
     runtime_errors_size = 0;
   }
-  return result;
+  // Python rejects an exception message that is not valid UTF-8. The message is
+  // cut at a fixed length, which can split a character of a path, and the
+  // runtime can log raw bytes, such as a file's identifier.
+  const auto text = py::reinterpret_steal<py::str>(
+      PyUnicode_DecodeUTF8(result.data(), result.size(), "backslashreplace"));
+  if (!text) {
+    throw py::error_already_set();
+  }
+  return text.cast<std::string>();
 }
 
 // Starts every binding call with no runtime errors recorded, and gives an
-// outer call its own back when a nested call returns.
+// outer call its own back when a nested call returns. The outermost call owns
+// the lines kept during it and writes them out as it returns. They live on the
+// heap, so a pointer to them stays valid if a callback switches greenlets.
 struct RuntimeErrorScope final {
   RuntimeErrorScope() : outer_(runtime_errors, runtime_errors_size) {
     runtime_errors_size = 0;
-    ++runtime_error_scopes;
+    if (pending_logs == nullptr) {
+      logs_ = std::make_unique<PendingLogs>();
+      logs_->daemon = on_daemon_thread();
+      logs_->direct = stderr_is_process_stderr();
+      pending_logs = logs_.get();
+    }
   }
   ~RuntimeErrorScope() {
-    --runtime_error_scopes;
     std::memcpy(runtime_errors, outer_.data(), outer_.size());
     runtime_errors_size = outer_.size();
+    if (logs_ != nullptr) {
+      pending_logs = nullptr;
+      write_logs_to_python(*logs_);
+    }
   }
 
  private:
   std::string outer_;
+  std::unique_ptr<PendingLogs> logs_;
 };
+
+// The Python type of a call's tensor outputs. ATen bindings always return
+// torch tensors.
+enum class PortableTensorOutput { Torch, ExecuTorch };
 
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
 
-enum class PortableTensorOutput { Torch, ExecuTorch };
+constexpr char kTensorOutputWarning[] =
+    "ExecuTorch returns torch.Tensor outputs for a call whose tensor inputs "
+    "are not torch.Tensor. A future release will return ExecuTorchResult "
+    "outputs for such a call. To keep torch.Tensor outputs, pass torch.Tensor "
+    "inputs. To choose the type for every call, set "
+    "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT to torch or executorch before "
+    "importing ExecuTorch. With executorch, PyTorch is not loaded.";
 
-PortableTensorOutput& portable_tensor_output() {
-  static PortableTensorOutput output = PortableTensorOutput::Torch;
+// Set from EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT when the extension loads.
+std::optional<PortableTensorOutput>& tensor_output_override() {
+  static std::optional<PortableTensorOutput> output;
   return output;
 }
 
 void configure_portable_tensor_output() {
   const char* value = std::getenv(kTensorOutputEnvironmentVariable);
-  if (value != nullptr && std::strcmp(value, "executorch") == 0) {
-    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+  if (value == nullptr) {
     return;
   }
-  if (value != nullptr && std::strcmp(value, "torch") != 0) {
+  if (std::strcmp(value, "executorch") == 0) {
+    tensor_output_override() = PortableTensorOutput::ExecuTorch;
+    return;
+  }
+  if (std::strcmp(value, "torch") != 0) {
     throw py::value_error(
         std::string(kTensorOutputEnvironmentVariable) +
         " must be either 'torch' or 'executorch', but was '" + value + "'");
   }
-  try {
-    py::module_::import("torch");
-    (void)loaded_torch_module();
-    portable_tensor_output() = PortableTensorOutput::Torch;
-  } catch (py::error_already_set& error) {
-    if (value != nullptr || !error.matches(PyExc_ImportError)) {
-      throw;
-    }
-    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+  py::module_::import("torch");
+  tensor_output_override() = PortableTensorOutput::Torch;
+}
+
+// Points a warning at the code that called ExecuTorch rather than at
+// ExecuTorch's own Python wrappers, such as Method.execute.
+int caller_stacklevel() {
+  int level = 1;
+  for (auto frame = py::reinterpret_borrow<py::object>(
+           reinterpret_cast<PyObject*>(PyEval_GetFrame()));
+       frame && !frame.attr("f_back").is_none() &&
+       py::str(frame.attr("f_globals").attr("get")("__name__", ""))
+               .cast<std::string>()
+               .rfind("executorch.", 0) == 0;
+       frame = frame.attr("f_back")) {
+    ++level;
   }
+  return level;
+}
+
+// Whether torch is imported, importing it if it can be.
+bool torch_available() {
+  // Read and written with the GIL held. An import inside a function-local
+  // static's initializer could deadlock, since the import lets other threads
+  // run and one of them could then wait for that static while holding the GIL.
+  static bool torch_missing = false;
+  if (loaded_torch_module() == nullptr) {
+    // Checked only while torch is not loaded, so a torch imported after a call
+    // found it missing is used.
+    if (torch_missing) {
+      return false;
+    }
+    // A None in sys.modules blocks torch only until it is removed.
+    if (PyDict_GetItemString(PyImport_GetModuleDict(), "torch") == Py_None) {
+      return false;
+    }
+    try {
+      // Before Python 3.13, PyImport_ImportModule raises KeyError, not the
+      // ImportError, in a thread that waited for another thread's import.
+      py::module_::import("importlib").attr("import_module")("torch");
+    } catch (py::error_already_set& error) {
+      // As when torch was imported with ExecuTorch, a torch that fails with
+      // an ImportError, such as for a missing library, counts as missing.
+      // Any other error is reported.
+      if (!error.matches(PyExc_ImportError)) {
+        try {
+          error.value().attr("add_note")(
+              "ExecuTorch imports torch here to return torch.Tensor outputs "
+              "or to wait for CUDA work. Set "
+              "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch before "
+              "importing ExecuTorch to skip it.");
+        } catch (...) {
+          // add_note is best effort; never hide the original error.
+        }
+        throw;
+      }
+      torch_missing = true;
+      return false;
+    }
+  }
+  return true;
+}
+
+// Picks the type of a call's tensor outputs. A later release will follow the
+// call's tensor inputs, including inputs kept from earlier calls: torch.Tensor
+// if any of them is one, and ExecuTorchResult if all are other tensors. Until
+// then, a call whose type that rule would change keeps torch.Tensor outputs
+// whenever torch can be imported, as before, and warns. A call with no tensor
+// inputs returns torch.Tensor whenever torch can be imported, now and later,
+// so its type never depends on what imported torch first. Picking the type for
+// a call that returns no tensor never imports torch.
+PortableTensorOutput portable_tensor_output(
+    bool returns_tensor,
+    bool torch_input,
+    bool other_tensor_input) {
+  if (const auto& output = tensor_output_override()) {
+    return *output;
+  }
+  if (torch_input) {
+    return PortableTensorOutput::Torch;
+  }
+  if (!returns_tensor || !torch_available()) {
+    return PortableTensorOutput::ExecuTorch;
+  }
+  // Every call whose type will change warns, so Python's warning filters
+  // decide what shows: a warning hidden at one call still shows at a later one.
+  if (other_tensor_input &&
+      PyErr_WarnEx(
+          PyExc_FutureWarning, kTensorOutputWarning, caller_stacklevel()) !=
+          0) {
+    // An error filter made the warning an exception. A call that runs the
+    // method picks the type first, so it raises before the run.
+    throw py::error_already_set();
+  }
+  return PortableTensorOutput::Torch;
+}
+
+// From the declared outputs, so the type is picked before the method runs.
+// An output bound to a caller's tensor comes back as that tensor, so it does
+// not count.
+bool returns_tensor(
+    const MethodMeta& meta,
+    const std::vector<py::object>& bound_outputs = {}) {
+  for (size_t i = 0; i < meta.num_outputs(); ++i) {
+    const auto tag = meta.output_tag(i);
+    const bool bound = i < bound_outputs.size() && bound_outputs[i];
+    if (tag.ok() && tag.get() == Tag::Tensor && !bound) {
+      return true;
+    }
+  }
+  return false;
 }
 #endif
 
@@ -662,6 +1336,39 @@ class BufferTensor final {
   std::vector<uint8_t> dim_order_;
   executorch::aten::ScalarType scalar_type_;
 };
+
+// The dtype of host data that ExecuTorchResult.from_host() is told to read as
+// `dtype`. The data comes the way results of that dtype export it: in the
+// buffer format of that dtype, which int8 shares with qint8, or, for dtypes
+// such as bfloat16 that PEP 3118 cannot describe, as unsigned integers of the
+// same width. Any other mismatch is refused, so data is never reinterpreted
+// by mistake.
+executorch::aten::ScalarType host_data_dtype(
+    executorch::aten::ScalarType buffer_type,
+    const std::string& dtype) {
+  using executorch::aten::ScalarType;
+  const auto named = scalar_type_from_name(dtype);
+  if (!named) {
+    throw py::value_error("Unsupported dtype '" + dtype + "'");
+  }
+  const char* format = python_dtype(*named).buffer_format;
+  const bool readable = format != nullptr
+      ? std::strcmp(format, python_dtype(buffer_type).buffer_format) == 0
+      : runtime::elementSize(buffer_type) == runtime::elementSize(*named) &&
+          (buffer_type == ScalarType::Byte ||
+           buffer_type == ScalarType::UInt16 ||
+           buffer_type == ScalarType::UInt32 ||
+           buffer_type == ScalarType::UInt64);
+  if (!readable) {
+    throw py::value_error(
+        "dtype " + dtype + " cannot read a buffer of " +
+        python_dtype(buffer_type).torch_name +
+        ". Pass data in the buffer format of that dtype or, for a dtype the "
+        "buffer protocol cannot describe, unsigned integers of the same "
+        "width.");
+  }
+  return *named;
+}
 
 bool is_torch_tensor(const py::handle& value) {
   static PyObject* tensor_type = nullptr;
@@ -1520,9 +2227,9 @@ py::object dlpack_output_owner(
 py::object module_aliased_torch_output(
     const executorch::aten::Tensor& tensor,
     const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
-    const std::string& method_name) {
-  if (torch_inputs.empty() ||
-      portable_tensor_output() != PortableTensorOutput::Torch ||
+    const std::string& method_name,
+    PortableTensorOutput output) {
+  if (torch_inputs.empty() || output != PortableTensorOutput::Torch ||
       tensor.nbytes() == 0) {
     return py::none();
   }
@@ -1661,6 +2368,18 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
+// Bindings built without CUDA support wait for CUDA work through torch, which
+// used to be imported with ExecuTorch. So a wait imports it, unless the
+// setting keeps torch out.
+void synchronize_device_for_call(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (tensor_output_override() != PortableTensorOutput::ExecuTorch) {
+    torch_available();
+  }
+#endif
+  synchronize_device(index);
+}
+
 // The Python boundary is synchronous, and each wait is for the whole device,
 // so one wait per device covers every tensor of a run. Before the run, another
 // library may still be writing a CUDA input on its own streams: a torch tensor,
@@ -1689,7 +2408,7 @@ void synchronize_tensor_devices(const Method& method) {
     add(method.get_output(i));
   }
   for (const auto index : devices) {
-    synchronize_device(index);
+    synchronize_device_for_call(index);
   }
 }
 
@@ -1818,19 +2537,47 @@ class PyCallerStreamScope final {
   explicit PyCallerStreamScope(std::shared_ptr<PyCudaStream> owner)
       : owner_(std::move(owner)) {}
   explicit PyCallerStreamScope(uintptr_t stream)
-      : stream_(reinterpret_cast<cudaStream_t>(stream)) {}
+      : stream_(reinterpret_cast<cudaStream_t>(stream)) {
+    // 0 and cudaStreamLegacy (1) both name the legacy default stream, which
+    // waits for every blocking stream, so selecting it would defeat the point
+    // of choosing a stream. The CUDA delegate also refuses a null stream.
+    if (stream == 0 || stream == 1) {
+      throw std::invalid_argument(
+          "The legacy default CUDA stream (handle 0 or 1) cannot be selected; "
+          "select a stream created for this, such as cuda.Stream()");
+    }
+  }
 
-  // Losing the scope without an exit ends it at once, or, if blocks started
-  // after it are still active, when they end. Compared, never dereferenced:
-  // the starting thread may have ended.
+  // Losing the scope on the thread that entered it ends it at once, or when
+  // the blocks started after it end. Another thread cannot change the
+  // entering thread's selection, which then lasts until that thread ends.
+  // home_ is compared, never dereferenced: the entering thread may have ended.
   ~PyCallerStreamScope() {
     if (id_ != 0 && home_ == &caller_stream_scopes) {
       end(/*refuse_out_of_order=*/false);
     }
   }
 
+  // Whether enter() can check the device of a stream it did not create. Fixed
+  // when the bindings are built; see stream_device().
+  static constexpr bool kCanCheckDevice =
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+      true;
+#else
+      false;
+#endif
+
   void enter() {
     static std::atomic<uint64_t> next_id{1};
+    if (id_ != 0) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered and has not exited");
+    }
+    int device = 0;
+    if (!owner_ && stream_device(stream_, &device) && device != 0) {
+      throw std::runtime_error(
+          "Only a stream on CUDA device 0 can be selected for now");
+    }
     const cudaStream_t stream = owner_ ? owner_->select() : stream_;
     try {
       auto guard =
@@ -1848,15 +2595,52 @@ class PyCallerStreamScope final {
     }
   }
 
-  // executorch.runtime.cuda enters each scope once, and exits it only on the
-  // thread that entered it.
   void exit() {
-    if (id_ != 0) {
-      end(/*refuse_out_of_order=*/true);
+    if (id_ == 0) {
+      return;
     }
+    if (home_ != &caller_stream_scopes) {
+      throw std::runtime_error(
+          "This CUDA stream scope was entered on another thread");
+    }
+    end(/*refuse_out_of_order=*/true);
   }
 
  private:
+  // Asks CUDA for the device of a stream rather than trusting the device a
+  // wrapper reports. Returns false when it cannot ask: in a CUDA 12 build, or
+  // while the stream captures a CUDA graph.
+  static bool stream_device(cudaStream_t stream, int* device) {
+    // cudaStreamGetDevice came in CUDA 12.8, but a CUDA 12 build may load any
+    // CUDA 12 runtime, where a missing symbol would fail the import. Every
+    // CUDA 13 runtime has it, and runs only on a driver that supports it.
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+    // CUDA refuses cudaStreamGetDevice on a capturing stream, and the refusal
+    // also ends the caller's capture.
+    cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+    auto status = cudaStreamIsCapturing(stream, &capture);
+    if (status == cudaSuccess && capture != cudaStreamCaptureStatusNone) {
+      return false;
+    }
+    if (status == cudaSuccess) {
+      status = cudaStreamGetDevice(stream, device);
+    }
+    if (status != cudaSuccess) {
+      // A failed call leaves an error pending that the next CUDA call, even
+      // in another library, would report.
+      (void)cudaGetLastError();
+      throw std::runtime_error(
+          std::string("Failed to find the device of a CUDA stream: ") +
+          cudaGetErrorString(status));
+    }
+    return true;
+#else
+    (void)stream;
+    (void)device;
+    return false;
+#endif
+  }
+
   void end(bool refuse_out_of_order) {
     auto& scopes = caller_stream_scopes;
     const auto it = std::find_if(
@@ -1864,17 +2648,18 @@ class PyCallerStreamScope final {
           return e.id == id_;
         });
     if (it == scopes.active.end()) {
-      id_ = 0; // Already ended after an earlier refused exit.
+      id_ = 0; // Ended with the thread that entered it.
       return;
     }
     if (it + 1 != scopes.active.end()) {
+      // Ends with the scopes above it, so this object can be entered again.
       it->retired = true;
+      id_ = 0;
       if (refuse_out_of_order) {
         throw std::runtime_error(
             "CUDA stream scopes must end innermost first; this one ends "
             "when the scopes started after it end");
       }
-      id_ = 0;
       return;
     }
     scopes.pop_finished();
@@ -1890,9 +2675,10 @@ class PyCallerStreamScope final {
 
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
+    PortableTensorOutput output,
     bool clone = true,
     py::object owner = py::none()) {
-  if (portable_tensor_output() == PortableTensorOutput::ExecuTorch) {
+  if (output == PortableTensorOutput::ExecuTorch) {
     return py::cast(std::make_shared<PyExecuTorchResult>(
         tensor, clone, clone ? py::none() : std::move(owner)));
   }
@@ -2134,6 +2920,7 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
 
 inline py::list get_outputs_as_py_list(
     const std::vector<EValue>& outputs,
+    PortableTensorOutput output,
     bool clone_outputs = true,
     py::object owner = py::none(),
     const std::vector<py::object>& output_owners = {},
@@ -2166,9 +2953,10 @@ inline py::list get_outputs_as_py_list(
           i < handed_over.size() && handed_over[i];
       list[i] = returns_without_copy
           ? portable_tensor_result(
-                v.toTensor(), /*clone=*/false, handed_over[i])
+                v.toTensor(), output, /*clone=*/false, handed_over[i])
           : portable_tensor_result(
                 v.toTensor(),
+                output,
                 clone_outputs,
                 output_owners.empty() ? owner : output_owners[i]);
 #endif
@@ -2224,6 +3012,21 @@ struct PyBundledModule : public BundledModule {
       size_t testset_idx,
       double rtol = 1e-5,
       double atol = 1e-8) {
+    auto tensor_output = PortableTensorOutput::Torch;
+#ifndef USE_ATEN_LIB
+    {
+      const auto meta = this->method_meta(method_name);
+      THROW_IF_ERROR(
+          meta.error(),
+          "Failed to get metadata for method %s",
+          method_name.c_str());
+      // The inputs come from the bundled program, so Python passed no tensors.
+      tensor_output = portable_tensor_output(
+          returns_tensor(meta.get()),
+          /*torch_input=*/false,
+          /*other_tensor_input=*/false);
+    }
+#endif
     // Execute the method
     auto result = BundledModule::execute(method_name, testset_idx);
     if (!result.ok()) {
@@ -2232,6 +3035,7 @@ struct PyBundledModule : public BundledModule {
           "Method execution failed with status 0x%" PRIx32,
           static_cast<uint32_t>(result.error()));
     }
+    const auto& outputs = result.get();
 #ifndef USE_ATEN_LIB
     {
       const auto method = this->method(method_name);
@@ -2244,8 +3048,7 @@ struct PyBundledModule : public BundledModule {
 #endif
 
     // Convert outputs to py::list
-    const auto& outputs = result.get();
-    py::list py_outputs = get_outputs_as_py_list(outputs);
+    py::list py_outputs = get_outputs_as_py_list(outputs, tensor_output);
 
     Error status = BundledModule::verify_method_outputs(
         method_name, testset_idx, rtol, atol);
@@ -2968,9 +3771,11 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       retained[i] = std::move(new_input_owners[i]);
     }
+    auto tensor_output = PortableTensorOutput::Torch;
 #ifndef USE_ATEN_LIB
-    // The run reads inputs kept from earlier calls too, so the wait and the
-    // output owners below cover every installed input, not only this call's.
+    // The run reads inputs kept from earlier calls too, so the output type,
+    // the wait and the output owners below cover every installed input, not
+    // only this call's.
     buffer_inputs.clear();
     torch_inputs.clear();
     dlpack_inputs.clear();
@@ -2985,6 +3790,10 @@ struct PyModule final {
         dlpack_inputs.push_back(owner.dlpack);
       }
     }
+    tensor_output = portable_tensor_output(
+        returns_tensor(method_meta),
+        !torch_inputs.empty(),
+        !buffer_inputs.empty() || !dlpack_inputs.empty());
     synchronize_tensor_devices(method);
 #endif
     auto outputs = module_->execute(method_name);
@@ -3016,6 +3825,7 @@ struct PyModule final {
 #endif
     auto result = get_outputs_as_py_list(
         outputs.get(),
+        tensor_output,
         clone_outputs,
         std::move(output_owner),
         output_owners,
@@ -3027,7 +3837,7 @@ struct PyModule final {
         const auto& output = (*outputs)[i];
         if (output.isTensor()) {
           auto alias = module_aliased_torch_output(
-              output.toTensor(), torch_inputs, method_name);
+              output.toTensor(), torch_inputs, method_name, tensor_output);
           if (!alias.is_none()) {
             result[i] = std::move(alias);
           }
@@ -4008,6 +4818,18 @@ struct PyMethod final {
           "' has no outputs to return: it has not executed since its last "
           "set_inputs(), or that execution failed. Call execute() first.");
     }
+    return read_outputs(tensor_output(caller_outputs_), clone_outputs);
+  }
+
+  py::list call(const py::object& inputs, bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
+    set_inputs(inputs);
+    const auto output = tensor_output(bound_outputs_);
+    execute_installed(/*inputs_just_installed=*/true);
+    return read_outputs(output, clone_outputs);
+  }
+
+  py::list read_outputs(PortableTensorOutput output, bool clone_outputs) {
     std::vector<EValue> result(storage_->method->outputs_size());
 
     Error get_outputs_status = storage_->method->get_outputs(
@@ -4044,20 +4866,13 @@ struct PyMethod final {
     }
 
     // Retrieve outputs
-    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    py::list outputs = get_outputs_as_py_list(result, output, clone_outputs);
     for (size_t i = 0; i < caller_backed.size(); ++i) {
       if (caller_backed[i]) {
         outputs[i] = caller_backed[i];
       }
     }
     return outputs;
-  }
-
-  py::list call(const py::object& inputs, bool clone_outputs = true) {
-    ObjectLock lock(mutex_);
-    set_inputs(inputs);
-    execute_installed(/*inputs_just_installed=*/true);
-    return get_outputs(clone_outputs);
   }
 
   py::object get_attribute(const std::string& name) {
@@ -4075,18 +4890,24 @@ struct PyMethod final {
 #else
     // No execute() in this call has waited for the work that last wrote it.
     if (!attr->device().is_cpu() && attr->nbytes() != 0) {
-      synchronize_device(attr->device().index());
+      synchronize_device_for_call(attr->device().index());
     }
     // Mutable state lives in the method's planned memory. Anything else is a
     // constant, which can sit in read-only pages, so it is never returned as
     // writable: a torch tensor cannot be read-only, so torch gets a copy.
     const bool constant = attr->nbytes() != 0 &&
         !storage_->memory->owns_data(attr->const_data_ptr());
-    if (constant && portable_tensor_output() == PortableTensorOutput::Torch) {
-      return portable_tensor_result(attr.get(), /*clone=*/true);
+    // An attribute does not come from the inputs of set_inputs().
+    const auto output = portable_tensor_output(
+        /*returns_tensor=*/true,
+        /*torch_input=*/false,
+        /*other_tensor_input=*/false);
+    if (constant && output == PortableTensorOutput::Torch) {
+      return portable_tensor_result(attr.get(), output, /*clone=*/true);
     }
     auto result = portable_tensor_result(
         attr.get(),
+        output,
         /*clone=*/false,
         borrowed_output_owner(attr.get()));
     if (constant) {
@@ -4149,6 +4970,20 @@ struct PyMethod final {
 
   bool is_bound_output(size_t index) const {
     return index < bound_outputs_.size() && bool(bound_outputs_[index]);
+  }
+
+  // Uses the inputs of the last successful set_inputs(), and the outputs bound
+  // for the run that the outputs come from.
+  PortableTensorOutput tensor_output(
+      const std::vector<py::object>& bound_outputs) {
+#ifdef USE_ATEN_LIB
+    return PortableTensorOutput::Torch;
+#else
+    return portable_tensor_output(
+        returns_tensor(storage_->method->method_meta(), bound_outputs),
+        !torch_inputs_.empty(),
+        !buffer_inputs_.empty() || !dlpack_inputs_.empty());
+#endif
   }
 
   std::optional<size_t> aliased_input(size_t index) const {
@@ -4230,9 +5065,10 @@ struct PyMethod final {
     std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs;
   };
 
-  py::object aliased_torch_output(const executorch::aten::Tensor& tensor) {
-    if (torch_inputs_.empty() ||
-        portable_tensor_output() != PortableTensorOutput::Torch ||
+  py::object aliased_torch_output(
+      const executorch::aten::Tensor& tensor,
+      PortableTensorOutput output) {
+    if (torch_inputs_.empty() || output != PortableTensorOutput::Torch ||
         tensor.nbytes() == 0) {
       return py::none();
     }
@@ -4284,7 +5120,8 @@ struct PyMethod final {
   // result stays independent.
   std::optional<py::object> hand_over_device_output(
       size_t index,
-      const executorch::aten::Tensor& tensor) {
+      const executorch::aten::Tensor& tensor,
+      PortableTensorOutput output) {
     const auto slot = device_buffer_slot(tensor);
     if (!slot) {
       return std::nullopt;
@@ -4300,10 +5137,11 @@ struct PyMethod final {
         std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
     const std::shared_ptr<void> memory(holder, buffer->data());
     py::object result;
-    if (portable_tensor_output() == PortableTensorOutput::Torch) {
+    if (output == PortableTensorOutput::Torch) {
       auto* retained = new std::shared_ptr<void>(memory);
       result = portable_tensor_result(
           tensor,
+          output,
           /*clone=*/false,
           py::capsule(retained, [](void* pointer) {
             delete static_cast<std::shared_ptr<void>*>(pointer);
@@ -4484,6 +5322,7 @@ struct PyMethod final {
 
   py::list get_outputs_as_py_list(
       const std::vector<EValue>& outputs,
+      PortableTensorOutput output,
       bool clone_outputs = true) {
     const auto outputs_size = outputs.size();
     py::list list(outputs_size);
@@ -4518,13 +5357,14 @@ struct PyMethod final {
           continue;
         }
         if (clone_outputs) {
-          if (const auto handed = hand_over_device_output(i, v.toTensor())) {
+          if (const auto handed =
+                  hand_over_device_output(i, v.toTensor(), output)) {
             list[i] = *handed;
             continue;
           }
         }
         if (!clone_outputs) {
-          auto alias = aliased_torch_output(v.toTensor());
+          auto alias = aliased_torch_output(v.toTensor(), output);
           if (!alias.is_none()) {
             list[i] = std::move(alias);
             continue;
@@ -4532,6 +5372,7 @@ struct PyMethod final {
         }
         list[i] = portable_tensor_result(
             v.toTensor(),
+            output,
             clone_outputs,
             clone_outputs && v.toTensor().device().is_cpu()
                 ? py::none()
@@ -4822,14 +5663,26 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
   return result;
 }
 
+auto refuse_scalar_conversion(const char* problem) {
+  return [problem](const PyExecuTorchResult&) -> py::object {
+    throw py::type_error(
+        std::string("ExecuTorchResult ") + problem +
+        ". Convert it first, for example with numpy.asarray(result) or "
+        "torch.from_dlpack(result).");
+  };
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // Gives each call its own record of runtime errors for its exceptions.
-  // Runtime logs reach Python through emit_log_message below rather than
+  // Gives each call its own record of runtime errors for its exceptions, and
+  // decides where the call's runtime logs go. This replaces
   // scoped_ostream_redirect, which mutates process-wide stream buffers and is
   // not thread-safe when Python operations inside a binding release the GIL.
+  // It calls Python as it starts and may write to Python as it ends, so it
+  // needs the GIL and never follows a py::gil_scoped_release guard.
   auto call_guard = py::call_guard<RuntimeErrorScope>();
+  set_up_log_routing();
 
 #if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(USE_ATEN_LIB)
   // Back executorch.runtime.cuda, which keeps the runtime free of PyTorch.
@@ -4840,8 +5693,15 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly("device", &PyCudaStream::device)
       .def("close", &PyCudaStream::close);
   py::class_<PyCallerStreamScope>(m, "_CallerStreamScope", py::module_local())
-      .def(py::init<std::shared_ptr<PyCudaStream>>(), py::arg("stream"))
+      .def(
+          py::init<std::shared_ptr<PyCudaStream>>(),
+          py::arg("stream").none(false))
       .def(py::init<uintptr_t>(), py::arg("stream"))
+      .def_property_readonly_static(
+          "can_check_device",
+          [](const py::object&) {
+            return PyCallerStreamScope::kCanCheckDevice;
+          })
       .def("__enter__", &PyCallerStreamScope::enter)
       .def(
           "__exit__",
@@ -4856,9 +5716,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #else
   configure_portable_tensor_output();
   m.attr("_uses_aten") = false;
-  m.attr("_tensor_output") =
-      portable_tensor_output() == PortableTensorOutput::Torch ? "torch"
-                                                              : "executorch";
+  const auto& tensor_output = tensor_output_override();
+  m.attr("_tensor_output") = !tensor_output
+      ? py::object(py::none())
+      : py::str(
+            *tensor_output == PortableTensorOutput::Torch ? "torch"
+                                                          : "executorch");
 #endif
   py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
       m,
@@ -4924,10 +5787,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "Return a copy of this result in CPU memory.")
       .def_static(
           "from_host",
-          [](const py::object& source, int device_index) {
+          [](const py::object& source,
+             int device_index,
+             const std::optional<std::string>& dtype) {
             if (py::isinstance<PyExecuTorchResult>(source)) {
-              return source.cast<std::shared_ptr<PyExecuTorchResult>>()
-                  ->to_device(device_index);
+              const auto result =
+                  source.cast<std::shared_ptr<PyExecuTorchResult>>();
+              if (dtype && *dtype != result->dtype()) {
+                throw py::value_error(
+                    "dtype " + *dtype + " does not match the result's dtype " +
+                    result->dtype());
+              }
+              return result->to_device(device_index);
             }
             const BufferTensor host(source);
             return PyExecuTorchResult::from_host(
@@ -4936,14 +5807,26 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
                     host.sizes().begin(), host.sizes().end()),
                 std::vector<executorch::aten::StridesType>(
                     host.strides().begin(), host.strides().end()),
-                host.scalar_type(),
+                dtype ? host_data_dtype(host.scalar_type(), *dtype)
+                      : host.scalar_type(),
                 device_index);
           },
           py::arg("source"),
           py::arg("device_index") = 0,
+          py::kw_only(),
+          py::arg("dtype") = py::none(),
           "Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA "
-          "device, for use as a method input. Requires bindings built with "
-          "CUDA support.")
+          "device, for use as a method input. dtype, such as \"bfloat16\", "
+          "is the dtype of the copy, for data that comes the way results of "
+          "that dtype export it: for dtypes the buffer protocol cannot "
+          "describe, as unsigned integers of the same width. Requires "
+          "bindings built with CUDA support.")
+      // Python would otherwise treat a result as always true, and int() and
+      // float() would parse its bytes as text.
+      .def("__bool__", refuse_scalar_conversion("has no truth value"))
+      .def("__int__", refuse_scalar_conversion("cannot be converted to int"))
+      .def(
+          "__float__", refuse_scalar_conversion("cannot be converted to float"))
       .def("__repr__", &PyExecuTorchResult::repr);
 #ifndef USE_ATEN_LIB
   py::class_<
@@ -5247,8 +6130,28 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 namespace {
 
-// Forward runtime logs to Python without mutating std::cerr's process-wide
-// stream buffer.
+// Whether a line logged outside any binding call waits. Only a thread that
+// holds the GIL can see where sys.stderr goes. Such a thread hands the line
+// over when sys.stderr goes elsewhere, when fd 2 has no room, since the GIL it
+// holds may be what a thread draining it needs, or when earlier lines still
+// wait. Any other thread writes to fd 2.
+bool line_outside_a_call_waits(size_t size) {
+  return holds_gil() &&
+      (!sys_stderr_is_checked_fd_2() || deferred_lines_wait() ||
+       !stderr_has_room(size, 0));
+}
+
+// Records the runtime's errors for exceptions and routes each line without
+// calling Python: a backend can log while it holds its own lock, and a Python
+// write there can hand the GIL to a thread that then waits for that lock. A
+// line goes to the process's stderr through C stdio, since another module can
+// redirect std::cerr into Python. When Python has replaced sys.stderr, as a
+// notebook does, a line logged during a binding call waits for the call to
+// return, and a line logged outside any call by a thread that holds the GIL
+// waits for Python's main thread, if it logged the line, or for the writer
+// thread. Such lines also wait once fd 2 is a pipe or socket that stays full.
+// Even then a fatal line goes out at once while fd 2 has room, with the lines
+// its call kept, since an abort usually follows.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
@@ -5259,7 +6162,7 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
-  if (level == kError && runtime_error_scopes != 0) {
+  if (level == kError && pending_logs != nullptr) {
     // Keeps the first lines, which usually name the cause.
     const char separator[] = "; ";
     const size_t prefix = runtime_errors_size == 0 ? 0 : sizeof(separator) - 1;
@@ -5272,17 +6175,34 @@ void emit_log_message(
       runtime_errors_size += prefix + copied;
     }
   }
-  if (Py_IsInitialized() && PyGILState_Check()) {
-    try {
-      py::gil_scoped_acquire gil;
-      py::module_::import("sys").attr("stderr").attr("write")(
-          formatted_message);
-      return;
-    } catch (py::error_already_set& error) {
-      error.clear();
+  if (pending_logs == nullptr) {
+    const size_t size = formatted_message.size();
+    if (level == kFatal
+            ? holds_gil() && !stderr_has_room(size, kStderrRoomWaitMs)
+            : line_outside_a_call_waits(size)) {
+      defer_lines(formatted_message);
+    } else {
+      write_to_stderr(formatted_message.data(), size);
     }
+    return;
   }
-  std::cerr << formatted_message << std::flush;
+  // While the writer thread writes to fd 2, it can take the room seen here
+  // before this write.
+  if (pending_logs->direct && !deferred_lines_wait() &&
+      stderr_has_room(formatted_message.size(), kStderrRoomWaitMs)) {
+    write_to_stderr(formatted_message.data(), formatted_message.size());
+    return;
+  }
+  // The rest of the call's lines wait for it to return. Then they go through
+  // Python, which lets go of the GIL while it waits for room. A daemon thread
+  // leaves them to the writer thread.
+  pending_logs->direct = false;
+  keep_line(*pending_logs, formatted_message);
+  if (level == kFatal) {
+    // An abort usually follows, and the waiting lines tell what led to it.
+    note_left_out_bytes(*pending_logs);
+    write_kept_lines_while_room(*pending_logs);
+  }
 }
 
 runtime::PalImpl build_pal() {
@@ -5291,6 +6211,13 @@ runtime::PalImpl build_pal() {
 
 // Update PAL to redirect logs.
 ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+
+// The runtime logs through emit_log_message from the moment this library
+// loads, and another module, such as the LLM runner's, can load it without
+// importing this one. Python code must not run while a library loads, so
+// Python's main thread sets up the routing at its next chance.
+ET_UNUSED bool log_routing_scheduled = Py_IsInitialized() &&
+    Py_AddPendingCall(&set_up_log_routing_after_load, nullptr) == 0;
 
 } // namespace
 
