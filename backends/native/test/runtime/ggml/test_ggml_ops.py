@@ -638,6 +638,17 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_softmax_last_dim(self):
+        self._check(Lambda(lambda x: F.softmax(x, dim=-1)), (torch.randn(2, 3, 5),))
+        self._check(
+            Lambda(lambda x: torch.softmax(x * 8.0, dim=3)),
+            (torch.randn(2, 3, 7, 7),),
+        )
+
+    def test_softmax_rejects_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "only the last dim"):
+            self._check(Lambda(lambda x: F.softmax(x, dim=1)), (torch.randn(2, 3, 5),))
+
     def test_tanh(self):
         self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
 

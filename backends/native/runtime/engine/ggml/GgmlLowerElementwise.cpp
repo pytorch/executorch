@@ -22,6 +22,35 @@
 
 namespace ptn::ggml_detail {
 
+// _softmax.default and softmax.int over the last dim of an F32 tensor. ggml's
+// soft_max makes a row NaN where ATen does (a NaN or +inf in it, or all of it
+// -inf) by arithmetic alone, but asserts that rows are finite without NDEBUG.
+void GraphBuilder::lower_softmax(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  require_f32(node, input.tensor);
+  if (input.sizes.empty() || checked_numel(input.sizes) == 0) {
+    throw std::runtime_error(
+        "ggml: softmax needs a non-empty tensor of rank 1+");
+  }
+  const int64_t dim =
+      normalize_dim(int_arg(node, "dim", 1, 0), input.sizes.size());
+  if (dim != static_cast<int64_t>(input.sizes.size()) - 1) {
+    throw std::runtime_error("ggml: softmax supports only the last dim");
+  }
+  const bool internal = op_key(node.target) == "aten._softmax.default";
+  const NamedArgument* dtype = find_arg(node, "dtype", 2);
+  if (internal ? bool_arg(node, "half_to_float", 2, false)
+               : dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
+    throw std::runtime_error(
+        "ggml: softmax supports neither half_to_float nor a dtype");
+  }
+  set_single_output(
+      node,
+      TensorRef{
+          ggml_soft_max(instance_.context.get(), contiguous(input.tensor)),
+          input.sizes});
+}
+
 void GraphBuilder::lower_rms_norm(const Node& node) {
   const TensorRef input = tensor_arg(node, "input", 0);
   const std::vector<int64_t> normalized =

@@ -191,6 +191,7 @@ class GraphBuilder {
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
   void lower_gelu(const Node& node);
+  void lower_softmax(const Node& node);
   void lower_constant_pad(const Node& node);
   void lower_reshape(const Node& node);
   void lower_permute(const Node& node);

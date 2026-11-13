@@ -2098,6 +2098,155 @@ TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
       program.finish("y"), "amax supports trailing dimensions only");
 }
 
+// ATen's definition in double: exp(x - max) / sum per last-dim row, with a NaN
+// max (and so NaN outputs) when any element is NaN.
+std::vector<double> reference_softmax(
+    const std::vector<float>& x,
+    size_t width) {
+  std::vector<double> out(x.size());
+  for (size_t row = 0; row < x.size(); row += width) {
+    double max = -std::numeric_limits<double>::infinity();
+    for (size_t i = row; i < row + width; ++i) {
+      max = std::isnan(x[i]) || std::isnan(max) ? std::nan("")
+                                                : std::max<double>(max, x[i]);
+    }
+    double sum = 0.0;
+    for (size_t i = row; i < row + width; ++i) {
+      out[i] = std::exp(static_cast<double>(x[i]) - max);
+      sum += out[i];
+    }
+    for (size_t i = row; i < row + width; ++i) {
+      out[i] /= sum;
+    }
+  }
+  return out;
+}
+
+void expect_softmax(
+    const std::vector<float>& actual,
+    const std::vector<double>& expected) {
+  ASSERT_EQ(actual.size(), expected.size());
+  for (size_t i = 0; i < actual.size(); ++i) {
+    if (std::isnan(expected[i])) {
+      EXPECT_TRUE(std::isnan(actual[i])) << i << ": " << actual[i];
+    } else {
+      EXPECT_NEAR(actual[i], expected[i], 1e-6) << i;
+    }
+  }
+}
+
+std::vector<uint8_t> make_softmax_program(
+    const std::vector<int64_t>& shape,
+    const char* target = "torch.ops.aten._softmax.default",
+    int64_t dim = -1,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, shape);
+  std::vector<std::pair<std::string, TestArg>> args = {
+      {"self", std::string("x")}, {"dim", dim}};
+  if (std::string(target) == "torch.ops.aten._softmax.default") {
+    args.emplace_back("half_to_float", std::monostate{});
+  }
+  program.call("y", target, args, dtype, shape);
+  return program.finish("y");
+}
+
+TEST(GgmlEngineTest, SoftmaxMatchesADoubleReferenceOverTheLastDim) {
+  for (const std::vector<int64_t>& shape :
+       {std::vector<int64_t>{7},
+        std::vector<int64_t>{3, 5},
+        std::vector<int64_t>{2, 3, 49},
+        std::vector<int64_t>{4, 3, 7, 7}}) {
+    for (const char* target :
+         {"torch.ops.aten._softmax.default", "torch.ops.aten.softmax.int"}) {
+      for (const size_t cached : {size_t{0}, size_t{1}}) {
+        SCOPED_TRACE(
+            std::to_string(shape.size()) + target + std::to_string(cached));
+        auto host = GgmlEngineHost::create(
+            GgmlEngineOptions{.max_cached_graphs = cached});
+        auto context = make_context(*host, make_softmax_program(shape, target));
+        auto executable = context->compile("forward");
+        const size_t count = static_cast<size_t>(std::accumulate(
+            shape.begin(), shape.end(), int64_t{1}, std::multiplies<>()));
+        for (const float scale : {1.0f, -0.25f, 40.0f}) {
+          std::vector<float> x(count);
+          for (size_t i = 0; i < count; ++i) {
+            x[i] = scale * std::sin(static_cast<float>(i) * 0.7f);
+          }
+          executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+          executable->execute();
+          std::vector<float> y(count);
+          executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+          expect_softmax(y, reference_softmax(x, shape.back()));
+        }
+      }
+    }
+  }
+}
+
+std::vector<float> run_softmax_rows(const std::vector<float>& x) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(
+      *host, make_softmax_program({static_cast<int64_t>(x.size() / 4), 4}));
+  auto executable = context->compile("forward");
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  std::vector<float> y(x.size());
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  return y;
+}
+
+TEST(GgmlEngineTest, SoftmaxOfMaskedAndLargeRows) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  // Rows of 4: one finite among -inf, large values, and a huge negative
+  // spread.
+  const std::vector<float> x = {
+      -kInf,   0.5f,    -kInf,  -kInf,
+      1000.0f, 1001.0f, 999.0f, 1000.0f,
+      -1e30f,  0.0f,    -1e30f, 3.0f};
+  const std::vector<float> y = run_softmax_rows(x);
+  expect_softmax(y, reference_softmax(x, 4));
+  EXPECT_EQ(y[1], 1.0f);
+}
+
+TEST(GgmlEngineTest, SoftmaxOfNonFiniteRowsIsNaN) {
+#ifndef NDEBUG
+  GTEST_SKIP() << "ggml's soft_max asserts that rows are finite without NDEBUG";
+#endif
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const float nan = std::nanf("");
+  // Rows of 4: NaN, +inf, and all -inf.
+  const std::vector<float> x = {
+      nan, 1.0f, 2.0f, 3.0f, kInf, 0.0f, 1.0f, 2.0f, -kInf, -kInf, -kInf, -kInf};
+  expect_softmax(run_softmax_rows(x), reference_softmax(x, 4));
+}
+
+TEST(GgmlEngineTest, RejectsUnsupportedSoftmax) {
+  expect_compile_error(
+      make_softmax_program({3, 5}, "torch.ops.aten._softmax.default", 0),
+      "only the last dim");
+  expect_compile_error(
+      make_softmax_program(
+          {3, 5}, "torch.ops.aten._softmax.default", -1, fbs::ScalarType::HALF),
+      "supports F32 tensors only");
+  {
+    TestProgram program;
+    program.input("x", fbs::ScalarType::FLOAT, {3, 5});
+    program.call(
+        "y",
+        "torch.ops.aten._softmax.default",
+        {{"self", std::string("x")},
+         {"dim", int64_t{-1}},
+         {"half_to_float", BoolValue{true}}},
+        fbs::ScalarType::FLOAT,
+        {3, 5});
+    expect_compile_error(
+        program.finish("y"), "supports neither half_to_float nor a dtype");
+  }
+  expect_compile_error(
+      make_softmax_program({}, "torch.ops.aten.softmax.int", 0), "rank 1+");
+}
+
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;
