@@ -113,8 +113,8 @@ def EXIRATenDialectVerifier(  # noqa: C901
     """
     Returns a verifier class that runs ATen dialect specific checks on the graph module.
     """
-    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
-    _preserve_ops = preserve_ops or []
+    _core_aten_ops_exception_list = list(core_aten_ops_exception_list or [])
+    _preserve_ops = list(preserve_ops or [])
     # merge the exception list from edge_compile_config and exception_list
     if edge_compile_config:
         if edge_compile_config._core_aten_ops_exception_list:
@@ -269,8 +269,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
     preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
 ):
-    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
-    _preserve_ops = preserve_ops or []
+    _core_aten_ops_exception_list = list(core_aten_ops_exception_list or [])
+    _preserve_ops = list(preserve_ops or [])
     # merge the exception list from edge_compile_config and exception_list
     if edge_compile_config:
         if edge_compile_config._core_aten_ops_exception_list:
