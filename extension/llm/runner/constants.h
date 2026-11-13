@@ -14,6 +14,9 @@ inline constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
 inline constexpr auto kBosId = "get_bos_id";
 inline constexpr auto kEosIds = "get_eos_ids";
 inline constexpr auto kMaxSeqLen = "get_max_seq_len";
+// Names the I/O contract of the program's methods,
+// which selects the IOManager that drives them.
+inline constexpr auto kIoContract = "get_io_contract";
 inline constexpr auto kMaxContextLen = "get_max_context_len";
 inline constexpr auto kVocabSize = "get_vocab_size";
 inline constexpr auto kActivationDtype = "get_activation_dtype";

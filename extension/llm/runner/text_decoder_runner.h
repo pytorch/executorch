@@ -65,6 +65,13 @@ class ET_EXPERIMENTAL TextDecoderRunner {
     return module_->is_method_loaded(method_name_);
   }
 
+  /// Side-effect-free capacity for a step at start_pos; -1 means unlimited.
+  virtual int64_t max_tokens_per_step(int64_t start_pos) const {
+    return io_manager_
+        ? io_manager_->max_tokens_per_step(method_name_, start_pos)
+        : -1;
+  }
+
   /**
    * Get the method name used by this runner.
    * @return The method name.

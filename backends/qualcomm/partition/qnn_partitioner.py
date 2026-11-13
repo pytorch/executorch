@@ -5,12 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 import functools
+import inspect
 import logging
 import operator
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import torch
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
@@ -45,6 +49,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_manager import PassType
 from executorch.exir.tracer import _default_decomposition_table
 from torch.export.exported_program import ExportedProgram
 from torch.export.graph_signature import InputKind
@@ -258,6 +263,9 @@ class QnnPartitioner(Partitioner):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
         skip_mutable_buffer: bool = False,
+        dep_table: Optional[Dict] = None,
+        passes_job: Optional[OrderedDict] = None,
+        convert_linear_to_conv2d: bool = False,
     ):
         """
         Args:
@@ -265,7 +273,15 @@ class QnnPartitioner(Partitioner):
             skip_node_id_set (set, optional): Set of node IDs to exclude from partitioning.
             skip_node_op_set (set, optional): Set of OpOverload to exclude from partitioning.
             skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
+            dep_table (Dict, optional): Dependency table for the transformation passes.
+            passes_job (OrderedDict, optional): Ordered dictionary of transformation passes.
+            convert_linear_to_conv2d (bool, optional): Convert linear to conv2d where that
+                improves HTP performance.
         """
+        self.compiler_specs = compiler_specs
+        self.dep_table = dep_table
+        self.passes_job = passes_job
+        self.convert_linear_to_conv2d = convert_linear_to_conv2d
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
         self.backend = flatbuffer_to_option(
             generate_qnn_executorch_option(self.compiler_specs_snapshot)
@@ -278,6 +294,82 @@ class QnnPartitioner(Partitioner):
         self.skip_node_id_set = set() if skip_node_id_set is None else skip_node_id_set
         self.skip_node_op_set = set() if skip_node_op_set is None else skip_node_op_set
         self.skip_mutable_buffer = skip_mutable_buffer
+
+    @classmethod
+    def from_options(
+        cls,
+        soc_model: str,
+        backend: str = "htp",
+        **options: Any,
+    ) -> "QnnPartitioner":
+        """Build a QnnPartitioner from plain options, generating its compiler specs.
+
+        Lets a caller that only knows option names and values (for example an
+        exporter forwarding a ``dict`` of vendor settings) get a working
+        partitioner without importing the QNN compiler-spec builders.
+
+        Args:
+            soc_model (str): Target SoC name, e.g. ``"SM8750"``.
+            backend (str): QNN backend, one of ``"htp"``, ``"gpu"`` or ``"lpai"``.
+            **options: Each option is routed by name to the first of these that
+                accepts it: ``QnnPartitioner.__init__`` (``skip_node_id_set``,
+                ``passes_job``, ``convert_linear_to_conv2d``, ...),
+                ``generate_qnn_executorch_compiler_spec`` (``use_mha2sha``,
+                ``shared_buffer``, ...), then ``generate_<backend>_compiler_spec``
+                (``use_fp16``, ``htp_performance_mode``, ...). An option none of
+                them accepts raises ``TypeError``.
+        """
+        from executorch.backends.qualcomm.utils import utils as qnn_utils
+
+        backend_spec_fn = getattr(qnn_utils, f"generate_{backend}_compiler_spec", None)
+        if backend_spec_fn is None:
+            raise ValueError(f"Unsupported QNN backend {backend!r}.")
+
+        def accepted(fn):
+            return set(inspect.signature(fn).parameters) - {"self"}
+
+        partitioner_kwargs, compiler_spec_kwargs, backend_kwargs = {}, {}, {}
+        for name, value in options.items():
+            if name in accepted(cls.__init__) - {"compiler_specs"}:
+                partitioner_kwargs[name] = value
+            elif name in accepted(qnn_utils.generate_qnn_executorch_compiler_spec) - {
+                "soc_model",
+                "backend_options",
+            }:
+                compiler_spec_kwargs[name] = value
+            elif name in accepted(backend_spec_fn):
+                backend_kwargs[name] = value
+            else:
+                raise TypeError(
+                    f"Unknown QnnPartitioner option {name!r} for backend {backend!r}."
+                )
+
+        compiler_specs = qnn_utils.generate_qnn_executorch_compiler_spec(
+            soc_model=qnn_utils.get_soc_to_chipset_map()[soc_model],
+            backend_options=backend_spec_fn(**backend_kwargs),
+            **compiler_spec_kwargs,
+        )
+        return cls(compiler_specs, **partitioner_kwargs)
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Run the QNN ATen-level passes before default decompositions."""
+        return get_qnn_pass_manager_cls(self.backend)().transform_for_export_pipeline(
+            exported_program
+        )
+
+    def transform_passes(self, exported_program: ExportedProgram) -> List[PassType]:
+        """Run the QNN edge-level passes before partitioning."""
+        return get_qnn_pass_manager_cls(self.backend)().get_to_edge_transform_passes(
+            exported_program,
+            passes_job=self.passes_job,
+            dep_table=self.dep_table,
+            compiler_specs=self.compiler_specs,
+            skip_node_id_set=self.skip_node_id_set,
+            skip_node_op_set=self.skip_node_op_set,
+            convert_linear_to_conv2d=self.convert_linear_to_conv2d,
+        )
 
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
