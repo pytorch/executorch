@@ -51,5 +51,6 @@
     "conv",
     "full_attention",
     "conv"
-  ]
+  ],
+  "use_sandwich_norm": true
 }
