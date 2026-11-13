@@ -224,6 +224,7 @@ class GraphBuilder {
   void lower_unary(const Node& node, Unary fn);
   void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
+  void lower_elu(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,
       std::string_view name,
