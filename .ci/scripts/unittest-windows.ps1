@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 param (
     [string]$buildMode = "Release"
 )
@@ -31,7 +36,7 @@ if ($LASTEXITCODE -ne 0) {
 cd ..
 
 # Run pytest
-pytest -v -c pytest-windows.ini
+pytest -v -n 8 --durations=20 -c pytest-windows.ini
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
