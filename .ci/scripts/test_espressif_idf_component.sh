@@ -81,7 +81,8 @@ compote manifest lint "${component_dir}"
 # release in the clone only, generated without --allow-dev-stamp.
 release_version=$(cat version.txt)
 release_clone="${build_dir}/release-clone"
-rm -rf "${release_clone}" "${build_dir}/release_component" "${build_dir}/rc_component"
+rm -rf "${release_clone}" "${build_dir}/release_component" "${build_dir}/rc_component" \
+    "${build_dir}/dev_component"
 git clone -q --shared --no-checkout "${et_root}" "${release_clone}"
 git -C "${release_clone}" checkout -q --detach "$(git rev-parse HEAD)"
 git -C "${release_clone}" submodule init -q third-party/flatbuffers
@@ -92,19 +93,36 @@ git -C "${release_clone}" tag -f "v${release_version}" > /dev/null
 bash "${release_clone}/examples/espressif/build_idf_component.sh" --version-suffix "" \
     --out "${build_dir}/release_component" 2>&1 | tee "${build_dir}/generate-release.log"
 compote manifest lint "${build_dir}/release_component"
-python - "${build_dir}/release_component" "${release_version}" "$(git rev-parse HEAD)" <<'PY'
+python - "${build_dir}/release_component" "${release_version}" "$(git rev-parse HEAD)" \
+    "${release_clone}" <<'PY'
+import re
 import sys
 from pathlib import Path
 
-component, version, commit = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+component, version, commit, clone = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
 lines = (component / "VERSION").read_text().splitlines()
 for line in (f"component_version: {version}", f"executorch_commit: {commit}"):
     if line not in lines:
         sys.exit(f"FAIL: the release component's VERSION has no '{line}'")
 if not any(l.startswith("generator: ") and l.endswith(" --version-suffix ''") for l in lines):
     sys.exit("FAIL: the release component's VERSION does not record --version-suffix ''")
+sys.path.insert(0, clone)
+from install_requirements import TORCH_URL_BASE
+
+if not any(re.fullmatch(r"torch_requirement: torch==\d+\.\d+\.\d+\S*", l) for l in lines):
+    sys.exit("FAIL: the release component's VERSION has no torch_requirement: torch==X.Y.Z")
+if f"torch_index: {TORCH_URL_BASE}/cpu" not in lines:
+    sys.exit(f"FAIL: the release component's VERSION has no torch_index: {TORCH_URL_BASE}/cpu")
 if f'version: "{version}"' not in (component / "idf_component.yml").read_text().splitlines():
     sys.exit(f"FAIL: the release component's idf_component.yml is not version {version}")
+readme = (component / "README.md").read_text().splitlines()
+torch = next(l.split(": ", 1)[1] for l in lines if l.startswith("torch_requirement: "))
+for line in (
+    f'pip install "{torch}" --index-url {TORCH_URL_BASE}/cpu',
+    f'pip install "executorch=={version}"',
+):
+    if line not in readme:
+        sys.exit(f"FAIL: the release component's README.md has no '{line}'")
 print(f"OK: a clean checkout tagged v{version} generates release {version}")
 PY
 # An RC at the same commit, which a release commit can also be.
@@ -116,6 +134,27 @@ if ! grep -qxF "component_version: ${release_version}-rc.1" "${build_dir}/rc_com
     echo "FAIL: the RC component's VERSION is not ${release_version}-rc.1" >&2
     exit 1
 fi
+rc_install="pip install \"executorch==${release_version}\" --extra-index-url https://download.pytorch.org/whl/test/cpu"
+if ! grep -qxF "${rc_install}" "${build_dir}/rc_component/README.md"; then
+    echo "FAIL: the RC component's README.md has no '${rc_install}'" >&2
+    exit 1
+fi
+# A dev version from a local nightly branch at the same commit.
+git -C "${release_clone}" branch -f nightly HEAD
+bash "${release_clone}/examples/espressif/build_idf_component.sh" --version-suffix -dev \
+    --out "${build_dir}/dev_component" 2>&1 | tee "${build_dir}/generate-dev.log"
+dev_date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d HEAD)
+if ! grep -qxF "component_version: ${release_version}-dev.${dev_date}" \
+    "${build_dir}/dev_component/VERSION"; then
+    echo "FAIL: the dev component's VERSION is not ${release_version}-dev.${dev_date}" >&2
+    exit 1
+fi
+dev_install="pip install \"executorch==${release_version}.dev${dev_date}\" --extra-index-url https://download.pytorch.org/whl/nightly/cpu"
+if ! grep -qxF "${dev_install}" "${build_dir}/dev_component/README.md"; then
+    echo "FAIL: the dev component's README.md has no '${dev_install}'" >&2
+    exit 1
+fi
+echo "OK: the clone's local nightly branch generates dev ${release_version}-dev.${dev_date}"
 echo "OK: the clean checkout tagged v${release_version}-rc1 generates RC ${release_version}-rc.1"
 gen_kernels() {
     local out=$1

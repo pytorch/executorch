@@ -380,10 +380,29 @@ class GgmlOpsTest(unittest.TestCase):
         raw[:, 209] = 0x3C
         return ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
 
+    @staticmethod
+    def _q5_k_weights(rows, cols):
+        # Random Q5_K blocks under an FP16 super-block scale of 2^-10 and min
+        # of 2^-6, so sub-block scales, mins and fifth bits vary by row and
+        # block.
+        raw = torch.randint(0, 256, (rows, cols // 256, 176), dtype=torch.uint8)
+        raw[..., 0:2] = torch.tensor([2**-10], dtype=torch.float16).view(torch.uint8)
+        raw[..., 2:4] = torch.tensor([2**-6], dtype=torch.float16).view(torch.uint8)
+        return ExportableGGUFTensor.from_raw(
+            raw.reshape(rows, -1), "q5_k", torch.float32
+        )
+
+    def test_gguf_q5_k_linear(self):
+        self._check_gguf_linear(self._q5_k_weights(8, 512))
+
     def test_gguf_q6_k_linear(self):
-        model = torch.nn.Linear(256, 8, bias=False)
-        model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
-        representable = torch.full((2, 256), 0.125)
+        self._check_gguf_linear(self._q6_k_weights(8))
+
+    def _check_gguf_linear(self, weight):
+        rows, cols = weight.shape
+        model = torch.nn.Linear(cols, rows, bias=False)
+        model.weight = torch.nn.Parameter(weight, requires_grad=False)
+        representable = torch.full((2, cols), 0.125)
         representable[1, ::2] = -0.125
         # GGML requantizes F32 activations before the dot product: to Q8_K on
         # CPU, which these values survive exactly, and to Q8_1 with an FP16
@@ -399,7 +418,7 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(
             model,
-            (torch.randn(2, 256) / 8,),
+            (torch.randn(2, cols) / 8,),
             atol=0.35,
             rtol=0.02,
             allow_activation_quant_for_weight_only=True,
