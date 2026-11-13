@@ -40,6 +40,7 @@ fbcode_target(
         "ops/test_conv_transpose1d.py",
         "ops/test_elu_silu.py",
         "ops/test_erf.py",
+        "ops/test_mul.py",
         "test_webgpu_partitioner.py",
     ],
     deps = [

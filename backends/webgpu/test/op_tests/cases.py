@@ -111,6 +111,8 @@ from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
+    MulScalarModule,
+    SCALAR_CONFIGS as _MUL_SCALAR_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
@@ -327,6 +329,27 @@ def _mul_suite() -> WebGPUTestSuite:
         cases=[
             Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _MUL_CONFIGS.items()
         ],
+    )
+
+
+@register_op_test("mul_scalar")
+def _mul_scalar_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=MulScalarModule,
+        cases=[
+            Case(name=name, construct={"scalar": scalar}, inputs=((4, 257),))
+            for name, scalar in _MUL_SCALAR_CONFIGS.items()
+        ]
+        + [
+            Case(name="rank4", construct={"scalar": 0.125}, inputs=((S1, S2, S2, M2),)),
+            Case(
+                name="param_input",
+                construct={"scalar": -1.5, "param_shape": (4, 257)},
+                inputs=((4, 257),),
+            ),
+        ],
+        atol=1e-6,
+        rtol=1e-6,
     )
 
 
