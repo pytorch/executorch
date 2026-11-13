@@ -167,6 +167,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
+  // Outlives module_: a delegate may hold the I/O buffers it allocated (e.g.
+  // registered shared memory) until the module is destroyed.
+  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<::executorch::extension::Module>
       module_; // Manage module's lifecycle, make sure it outlives
                // text_decoder_runner_.
@@ -179,7 +182,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
                                    // decode method, in which case
                                    // text_decoder_runner_ drives prefill only.
   std::unique_ptr<TextPrefiller> text_prefiller_;
-  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
 
   // Stats
