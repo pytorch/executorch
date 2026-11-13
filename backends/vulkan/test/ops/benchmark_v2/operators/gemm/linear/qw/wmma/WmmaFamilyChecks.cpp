@@ -136,7 +136,12 @@ uint64_t workgroup_bytes(const vkapi::ShaderInfo& shader) {
 // operator_dynamic_resize, plus the kernel each step dispatches on this
 // device. A step's "expected_kernels" maps a family name (CoopmatFamily.h) to
 // the prefix of the kernel it must dispatch; a family without an entry, and
-// every device that matches no family, must dispatch no family kernel.
+// every device that matches no family, must dispatch no family kernel. A
+// step's "family_validation_method" maps a family to the validation method of
+// its kernel there (e.g. a tighter atol than the existing kernels of other
+// devices need), and validates the output there even if the step sets
+// "validate_output" to false (e.g. for a shape the existing kernels get
+// wrong); without an entry the case's method applies.
 Json check_wmma_family_route(const Json& spec, ComputeGraph& graph) {
   const RouteExpectation expectation = route_expectation();
   const std::string family =
@@ -145,6 +150,15 @@ Json check_wmma_family_route(const Json& spec, ComputeGraph& graph) {
       expectation.family.empty() || family == expectation.family,
       "Device matches family " + family +
           "; ETVK_WMMA_EXPECTED_FAMILY expects " + expectation.family);
+  Json routed = spec;
+  for (Json& step : routed.at("validation_steps")) {
+    if (step.contains("family_validation_method") &&
+        step.at("family_validation_method").contains(family)) {
+      step["validation_method"] =
+          step.at("family_validation_method").at(family);
+      step["validate_output"] = true;
+    }
+  }
   bool asserted = false;
   const auto check_step = [&](const Json& step, ComputeGraph& step_graph) {
     const std::vector<std::string> kernels = dispatched_kernels(step_graph);
@@ -159,7 +173,11 @@ Json check_wmma_family_route(const Json& spec, ComputeGraph& graph) {
           "No shader profiling records to check the dispatched kernels; on a "
           "device without timestamp queries set "
           "ETVK_WMMA_EXPECTED_FAMILY=software");
-      return Json{{"kernels", kernels}, {"expected", expected}};
+      return Json{
+          {"kernels", kernels},
+          {"expected", expected},
+          {"validation_method",
+           step.value("validation_method", Json(nullptr))}};
     }
     asserted = true;
     bool found = false;
@@ -177,11 +195,14 @@ Json check_wmma_family_route(const Json& spec, ComputeGraph& graph) {
         !expected.is_string() || found,
         "Family " + family + " did not dispatch " + expected.dump() +
             "; dispatched: " + Json(kernels).dump());
-    return Json{{"kernels", kernels}, {"expected", expected}};
+    return Json{
+        {"kernels", kernels},
+        {"expected", expected},
+        {"validation_method", step.value("validation_method", Json(nullptr))}};
   };
   Json result;
   try {
-    result = validate_operator_dynamic_resize(spec, graph, check_step);
+    result = validate_operator_dynamic_resize(routed, graph, check_step);
   } catch (const vkapi::ShaderNotSupportedError& error) {
     if (!expectation.strict) {
       throw;

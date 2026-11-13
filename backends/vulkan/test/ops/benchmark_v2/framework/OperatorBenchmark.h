@@ -25,7 +25,8 @@ Report benchmark_operator(
     bool validation_only = false);
 
 // Case check that builds `parameters.operator_case` once, then resizes its
-// staged inputs per `validation_steps` entry and validates the output.
+// staged inputs per `validation_steps` entry and validates the output, with the
+// step's `validation_method` if it has one.
 Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph);
 
 // Runs after each validation step has executed and validated; its results are
