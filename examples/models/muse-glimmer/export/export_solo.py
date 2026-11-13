@@ -769,6 +769,7 @@ def _export_cuda(
     # the global KV caches for TurboQuant TQ4.
 
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
+    model.set_max_prefill_chunk(max_prefill)
     cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     has_vision = vision_model is not None

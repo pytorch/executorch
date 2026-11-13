@@ -62,8 +62,9 @@ Tensor& view_copy_out(
     auto* output_data = out.mutable_data_ptr<uint8_t>();
     const auto element_size = self.element_size();
     // Iterate the input's logical shape; the output may have a different rank.
-    for (const auto [output_index, input_index] :
-         BroadcastIndexesRange<1, /*support_noncontiguous_input_tensors=*/true>(
+    for (const auto [output_index, input_index] : BroadcastIndexesShapeRange<
+             1,
+             /*support_noncontiguous_input_tensors=*/true>(
              self.sizes(), self)) {
       memcpy(
           output_data + output_index * element_size,

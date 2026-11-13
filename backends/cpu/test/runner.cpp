@@ -11,6 +11,7 @@
 #include <executorch/extension/threadpool/threadpool_guard.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -40,8 +41,29 @@ int run_against_golden(
     data[index] = static_cast<float>(index % 251) / 250.0f;
   }
   auto input = executorch::extension::from_blob(data.data(), sizes);
-  for (int run = 0; run < 2; ++run) {
+  const int warmup_runs = std::getenv("ET_CPU_WARMUP_RUNS")
+      ? std::max(0, std::atoi(std::getenv("ET_CPU_WARMUP_RUNS")))
+      : 1;
+  const int timed_runs = std::getenv("ET_CPU_TIMED_RUNS")
+      ? std::max(1, std::atoi(std::getenv("ET_CPU_TIMED_RUNS")))
+      : 1;
+  const float atol = std::getenv("ET_CPU_ATOL")
+      ? std::max(0.0f, std::strtof(std::getenv("ET_CPU_ATOL"), nullptr))
+      : 1e-4f;
+  const float rtol = std::getenv("ET_CPU_RTOL")
+      ? std::max(0.0f, std::strtof(std::getenv("ET_CPU_RTOL"), nullptr))
+      : 1e-4f;
+  if (module.load_method("forward") != executorch::runtime::Error::Ok) {
+    fprintf(stderr, "Failed to load forward\n");
+    return 1;
+  }
+  std::vector<double> latencies;
+  for (int run = 0; run < warmup_runs + timed_runs; ++run) {
+    const auto start = std::chrono::steady_clock::now();
     auto outputs = module.forward(executorch::runtime::EValue(*input));
+    const double latency_ms = std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - start)
+                                  .count();
     if (!outputs.ok()) {
       fprintf(
           stderr,
@@ -65,7 +87,7 @@ int run_against_golden(
       const float error = std::abs(actual[index] - golden[index]);
       max_error = std::max(max_error, error);
       if (!std::isfinite(actual[index]) || !std::isfinite(golden[index]) ||
-          error > 1e-4f + 1e-4f * std::abs(golden[index])) {
+          error > atol + rtol * std::abs(golden[index])) {
         fprintf(
             stderr,
             "Mismatch at %zu: actual=%g golden=%g\n",
@@ -80,7 +102,21 @@ int run_against_golden(
         run,
         golden.size(),
         max_error);
+    printf("Inference: run=%d latency_ms=%.9g\n", run, latency_ms);
+    if (run >= warmup_runs) {
+      latencies.push_back(latency_ms);
+    }
   }
+  std::sort(latencies.begin(), latencies.end());
+  const size_t middle = latencies.size() / 2;
+  printf(
+      "Latency: median_ms=%g min_ms=%g max_ms=%g warmup=%d iterations=%d\n",
+      latencies.size() % 2 ? latencies[middle]
+                           : (latencies[middle - 1] + latencies[middle]) / 2,
+      latencies.front(),
+      latencies.back(),
+      warmup_runs,
+      timed_runs);
   return 0;
 }
 
