@@ -7,7 +7,10 @@
 #include <executorch/backends/native/runtime/engine/ggml/GgmlGraphBuilder.h>
 
 #include <algorithm>
+#include <array>
+#include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -211,6 +214,35 @@ void GraphBuilder::lower_sqrt(const Node& node) {
           input.sizes});
 }
 
+// ATen computes x ** 2 as x * x and x ** 0.5 as sqrt(x), so sqrt(-0) is -0.
+void GraphBuilder::lower_pow(const Node& node) {
+  const double exponent = float_arg(node, "exponent", 1, 0);
+  if (exponent != 2.0 && exponent != 0.5) {
+    // Not format_double: floating-point to_chars needs macOS 13.3.
+    std::array<char, 32> text{};
+    std::snprintf(text.data(), text.size(), "%.*g", DBL_DIG, exponent);
+    throw std::runtime_error(
+        "ggml: op '" + node.target +
+        "' supports the exponents 2 and 0.5 only, not " + text.data());
+  }
+  const ValueId input_id = tensor_arg_id(node, "self", 0);
+  // Integer and Bool values carried as F32 would pass require_f32.
+  const ScalarType dtype = method_.graph.value(input_id).tensor_meta().dtype;
+  if (dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        "ggml: op '" + node.target + "' supports Float tensors only, not " +
+        scalar_type_name(dtype));
+  }
+  const TensorRef input = tensor(input_id);
+  require_f32(node, input.tensor);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(input.tensor);
+  set_single_output(
+      node,
+      TensorRef{
+          exponent == 2.0 ? ggml_sqr(ctx, x) : ggml_sqrt(ctx, x), input.sizes});
+}
+
 void GraphBuilder::lower_hardtanh(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
   require_float(node, input.tensor);
@@ -305,6 +337,56 @@ void GraphBuilder::lower_amax(const Node& node) {
   ggml_tensor* values =
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
   ggml_tensor* result = reshape(ctx, values, sizes);
+  set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+void GraphBuilder::lower_where(const Node& node) {
+  const ValueId condition_id = tensor_arg_id(node, "condition", 0);
+  if (method_.graph.value(condition_id).tensor_meta().dtype !=
+      ScalarType::Bool) {
+    throw std::runtime_error("ggml: where requires a Bool condition");
+  }
+  const TensorRef condition = tensor(condition_id);
+  require_f32(node, condition.tensor);
+  const TensorRef left = tensor_arg(node, "self", 1);
+  const TensorRef right = tensor_arg(node, "other", 2);
+  const ScalarType dtype =
+      method_.graph.value(output_ids(node).at(0)).tensor_meta().dtype;
+  const bool integer = dtype == ScalarType::Int || dtype == ScalarType::Long;
+  if (!integer && dtype != ScalarType::Float) {
+    throw std::runtime_error("ggml: where supports F32 and I32 results only");
+  }
+  std::vector<int64_t> sizes = broadcast_shape(
+      broadcast_shape(left.sizes, right.sizes), condition.sizes);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* sources[] = {condition.tensor, left.tensor, right.tensor};
+  for (size_t i = 1; i < 3; ++i) {
+    if (sources[i]->type != GGML_TYPE_I32 &&
+        sources[i]->type != GGML_TYPE_F32) {
+      throw std::runtime_error(
+          "ggml: where supports F32 and I32 branches only");
+    }
+    sources[i] = integer ? as_i32(sources[i]) : as_f32(sources[i]);
+  }
+  // CUDA's repeat takes F32 only, so operands already at full shape skip it,
+  // keeping I32 branches on the GPU.
+  for (ggml_tensor*& source : sources) {
+    ggml_tensor* shape = new_tensor(ctx, source->type, sizes);
+    source = contiguous(
+        ggml_are_same_shape(source, shape) ? source
+                                           : ggml_repeat(ctx, source, shape));
+  }
+  // get_rows copies each element's `other` (row 0) or `self` (row 1) by the
+  // condition, so non-finite values and signed zeros pass through.
+  const auto count = static_cast<int64_t>(checked_numel(sizes));
+  ggml_tensor* pairs = ggml_concat(
+      ctx,
+      ggml_reshape_3d(ctx, sources[2], 1, 1, count),
+      ggml_reshape_3d(ctx, sources[1], 1, 1, count),
+      1);
+  ggml_tensor* picks =
+      ggml_reshape_2d(ctx, ggml_cast(ctx, sources[0], GGML_TYPE_I32), 1, count);
+  ggml_tensor* result = reshape(ctx, ggml_get_rows(ctx, pairs, picks), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
