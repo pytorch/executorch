@@ -24,10 +24,16 @@ namespace vkcompute {
 namespace vkapi {
 
 // Pipelines with a required subgroup size can be created with
-// REQUIRE_FULL_SUBGROUPS.
+// REQUIRE_FULL_SUBGROUPS. Off under ETVK_FORCE_NO_EXTENSIONS, like
+// Adapter::supports_compute_full_subgroups().
 inline bool full_subgroups_enabled(
     const executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures& f) {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+  (void)f;
+  return false;
+#else
   return f.subgroup_size_control && f.compute_full_subgroups;
+#endif /* ETVK_FORCE_NO_EXTENSIONS */
 }
 
 // Shaders that declare the VulkanMemoryModel capability can run: the
