@@ -41,6 +41,12 @@ bool subgroup_size_available(
 // Intel Xe2 rows. MMA 8x16x16 / 8x16x32 (the only fp16 / int8 cooperative
 // matrix shapes Xe2 exposes), subgroup 16.
 //
+// The 4w rows accumulate in fp16 at every K. Max |error| against the CPU
+// reference (M = 256, 5 seeds, Arc B580): 0.12 at K = 8192, 0.13 at K = 9216
+// and 0.23 at K = 14336 (Llama 3.1 8B down projection), vs. 0.008 for the
+// NVIDIA fp32-accumulation row below and 0.77 for main's q4gsw GEMM on the
+// same device at K = 14336.
+//
 
 // Weight-heavy projections run their workgroups in blocks of N tiles. The
 // threshold lies between the largest shape where the blocked order is slower
@@ -92,6 +98,8 @@ const std::vector<WmmaRow>& xe2_rows() {
 //
 
 // fp16 accumulation loses accuracy beyond K = 8192: fp32 accumulation there.
+// Max |error| as for the Xe2 rows (Jetson Orin): 0.14 for the fp16 row at
+// K = 8192; 0.008 for the fp32 row at K = 9216 and 14336.
 bool nv_large_k(const WmmaShape& s) {
   return s.K > 8192;
 }

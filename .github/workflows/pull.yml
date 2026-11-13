@@ -2096,7 +2096,8 @@ jobs:
         done
         # Cooperative-matrix family kernels. SwiftShader matches no family and has no
         # timestamp queries: every case must run and validate, but the dispatched
-        # kernels are not checked.
+        # kernels are not checked. The xe2 rows have no CI coverage (no runner has
+        # an Intel Xe2 GPU); the nvidia rows run in vulkan.yml.
         ETVK_WMMA_EXPECTED_FAMILY=software \
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
           --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json

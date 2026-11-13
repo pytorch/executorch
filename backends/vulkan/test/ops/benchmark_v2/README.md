@@ -1097,6 +1097,10 @@ no `_wmma` kernel. `ETVK_WMMA_EXPECTED_FAMILY` states the device's family
 independently of the selector under test: with `xe2`, `nvidia` or `none` the
 device must match that family, every step must have profiling records, and a
 case whose shader or route is unsupported fails instead of reporting `SKIP`.
+A step's `family_validation_method` replaces the case's `validation_method` on
+devices of that family, so a family kernel is held to its own measured
+tolerance while other devices validate the existing kernels at the case's; it
+also validates the output there when the step sets `validate_output` to false.
 `software` is for devices without timestamp queries, such as SwiftShader: no
 family, a case that does not run fails as well, and kernels are checked only
 where records exist (`route_asserted: false` otherwise). Unset, the selector's

@@ -211,6 +211,8 @@ Json validate_operator_dynamic_resize(
   Json step_checks = Json::array();
   for (const Json& step : spec.at("validation_steps")) {
     Json resized = operator_spec;
+    if (step.contains("validation_method"))
+      resized["validation_method"] = step.at("validation_method");
     auto data = host_data;
     const Json& sizes = step.at("tensor_sizes");
     reference::require(
