@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -129,17 +130,19 @@ fi
 # separate copy from PyPI. sccache is initialized above so source-build
 # cache misses still hit the cache.
 print_cmake_info
-install_pytorch_and_domains
+bash .ci/scripts/install_pinned_pytorch.sh
 
 install_pip_dependencies
 
 # install_executorch's --use-pt-pinned-commit skips re-installing torch since
-# install_pytorch_and_domains already installed the pinned build above.
+# install_pinned_pytorch.sh already installed the pinned build above.
 if [[ "$EDITABLE" == "true" ]]; then
   install_executorch --use-pt-pinned-commit --editable
 else
   install_executorch --use-pt-pinned-commit
 fi
+# Dependency installation must preserve the pinned PyTorch build.
+bash .ci/scripts/install_pinned_pytorch.sh --verify-only
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
 if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
