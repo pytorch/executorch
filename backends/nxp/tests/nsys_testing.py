@@ -64,6 +64,8 @@ from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
 
+_USE_RECIPE_EXPORT = environ.get("NXP_USE_RECIPE_EXPORT", "0") == "1"
+
 logger = logging.getLogger(__name__)
 
 OUTPUTS_DIR = outputs_dir.OUTPUTS_DIR
@@ -118,6 +120,7 @@ def _run_delegated_executorch_program(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ) -> tuple[ExportedProgram, str, list[InputQuantizationSpec] | None]:
     input_quant_spec = None
     try:
@@ -149,6 +152,7 @@ def _run_delegated_executorch_program(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
+            use_recipe_export=use_recipe_export,
         )
 
     except RuntimeError as e:
@@ -211,6 +215,7 @@ def _run_non_delegated_executorch_program(
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ) -> ExportedProgram:
     dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
         input_spec, testing_dataset_dir
@@ -224,6 +229,7 @@ def _run_non_delegated_executorch_program(
         use_qat=use_qat,
         train_fn=train_fn,
         remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
     )
 
     assert not graph_contains_any_of_ops(
@@ -405,6 +411,7 @@ def lower_run_compare(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -412,7 +419,7 @@ def lower_run_compare(
     (some nodes run on Neutron NPU).
 
     :param model: Executed PyTorch model.
-    :param input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
+    :param model_input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
         of ModelInputSpec.
     :param dlg_model_verifier: Graph verifier instance.
     :param request: PyTest request needed for correct test name extraction.
@@ -430,6 +437,7 @@ def lower_run_compare(
     :param operators_not_to_delegate: list of operators not to delegate.
     :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
         version of dataset (quantized INT8 input samples).
+    :param use_recipe_export: If True, the applicable models will be exported and lowered using the Neutron recipes.
 
     """
     assert_NSYS()
@@ -507,6 +515,7 @@ def lower_run_compare(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
+            use_recipe_export=use_recipe_export,
         )
     )
 
@@ -537,6 +546,7 @@ def lower_run_compare(
         use_qat=use_qat,
         train_fn=train_fn,
         remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
     )
 
     if logging.root.isEnabledFor(logging.DEBUG):
@@ -569,6 +579,7 @@ def _run_reference_model(
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ):
     """
     Run the selected reference model variant to produce the reference output data
@@ -588,6 +599,7 @@ def _run_reference_model(
     :param train_fn: Train/finetune function for QAT training. Used only when `use_qat=True`.
     :param remove_quant_io_ops: If True, IO q-ops are removed and verification is done on quantized
         version of dataset (quantized INT8 input samples).
+    :param use_recipe_export: If True, the applicable models will be exported and lowered using the Neutron recipes.
     """
     match reference_runner:
         case ReferenceRunner.QUANTIZED_EXECUTORCH_CPP:
@@ -604,6 +616,7 @@ def _run_reference_model(
                 use_qat=use_qat,
                 train_fn=train_fn,
                 remove_quant_io_ops=remove_quant_io_ops,
+                use_recipe_export=use_recipe_export,
             )
 
             # The C++ runner dumps raw output memory in the reference program's dim order, so reorder it to the NPU
@@ -627,6 +640,7 @@ def _run_reference_model(
                     use_qat=use_qat,
                     train_fn=train_fn,
                     remove_quant_io_ops=remove_quant_io_ops,
+                    use_recipe_export=use_recipe_export,
                 )
                 .exported_program()
                 .module()
@@ -716,9 +730,10 @@ def lower_run_compare_ptq_qat(
     output_comparator=None,
     mocker: MockerFixture = None,
     operators_not_to_delegate: list[str] = None,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ):
     """
-    Run provided program twice and compare it's results.
+    Run provided program twice and compare its results.
     The model is once quantized with PTQ and with QAT.
 
     :param model: Executed PyTorch model.
@@ -731,6 +746,7 @@ def lower_run_compare_ptq_qat(
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param mocker: Mocker instance used by visualizer.
     :param operators_not_to_delegate: list of operators not to delegate.
+    :param use_recipe_export: If True, the models will be exported and lowered using the Neutron recipes.
     """
     assert_NSYS()
 
@@ -772,6 +788,7 @@ def lower_run_compare_ptq_qat(
         mocker,
         use_qat=False,
         operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
     )
 
     _ = _run_delegated_executorch_program(
@@ -787,6 +804,7 @@ def lower_run_compare_ptq_qat(
         use_qat=True,
         train_fn=train_fn,
         operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
     )
 
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
