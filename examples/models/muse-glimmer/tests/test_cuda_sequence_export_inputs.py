@@ -49,6 +49,8 @@ class SequenceExportInputsTest(unittest.TestCase):
         target = MuseGlimmerModel(config).to(torch.bfloat16).eval()
         target.activation_dtype = torch.bfloat16
         reference = copy.deepcopy(target)
+        # The reference takes all 32 tokens in one write, so its ring must fit them.
+        reference.set_max_prefill_chunk(32)
         captured = {}
 
         def capture(programs, **kwargs):
