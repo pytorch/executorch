@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 name: pull
 
 on:
@@ -1050,6 +1055,27 @@ jobs:
           echo "::error::Arm documentation is outdated. Run docgen.py and commit the generated changes."
           exit 1
         fi
+
+  test-arm-backend-buck-declarations:
+    # Changes outside Arm can remove providers or dependencies used by Arm tests.
+    name: test-arm-backend-buck-declarations
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Buck CI scripts
+        run: python -m unittest discover -s .ci/scripts/tests -p 'test_arm_buck_*.py'
+      - name: Check changed Arm Python declarations
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: backends/arm/test/test_arm_backend.sh test_buck_declarations
 
   test-arm-backend-no-driver:
     needs: [docker-image, changed-files]
