@@ -212,6 +212,15 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_embedding_bag",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:op_embedding_bag",
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
         name = "op_exp",
         deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",

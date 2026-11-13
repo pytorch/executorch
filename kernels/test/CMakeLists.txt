@@ -356,6 +356,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_bmm_test.cpp"
       "op_div_test.cpp"
       "op_elu_test.cpp"
+      "op_embedding_bag_test.cpp"
       "op_exp_test.cpp"
       "op_fft_c2r_test.cpp"
       "op_fft_r2c_test.cpp"

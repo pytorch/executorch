@@ -66,7 +66,7 @@ aten::ScalarType to_aten(ptn::ScalarType dtype) {
   throw std::invalid_argument("Unsupported CPU scalar type");
 }
 
-// One route per linked portable kernel. Targets pair functional overloads
+// One route per linked kernel. Targets pair functional overloads
 // with their out-variant kernels; arities come from the ATen schemas and
 // factory arg maps from the kernel implementations.
 constexpr auto kKernels = std::to_array<KernelSpec>({
@@ -86,6 +86,11 @@ constexpr auto kKernels = std::to_array<KernelSpec>({
      "aten::_conj_physical.out",
      1,
      1,
+     nullptr},
+    {"torch.ops.aten._embedding_bag.default",
+     "aten::_embedding_bag.out",
+     9,
+     4,
      nullptr},
     {"torch.ops.aten._log_softmax.default",
      "aten::_log_softmax.out",

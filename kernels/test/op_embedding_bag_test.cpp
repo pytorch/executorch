@@ -16,6 +16,15 @@
 
 #include <gtest/gtest.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -24,6 +33,40 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using std::optional;
 using torch::executor::testing::TensorFactory;
+
+namespace {
+
+// Widens the threadpool so parallel_for splits work into several tasks even on
+// single-core runners, and restores the previous size afterwards.
+class ScopedMinThreadCount {
+ public:
+  explicit ScopedMinThreadCount(uint32_t threads) {
+#ifdef ET_USE_THREADPOOL
+    auto* pool = ::executorch::extension::threadpool::get_threadpool();
+    if (pool != nullptr && pool->get_thread_count() < threads) {
+      previous_ = static_cast<uint32_t>(pool->get_thread_count());
+      pool->_unsafe_reset_threadpool(threads);
+    }
+#else
+    (void)threads;
+#endif
+  }
+  ~ScopedMinThreadCount() {
+#ifdef ET_USE_THREADPOOL
+    if (previous_ != 0) {
+      ::executorch::extension::threadpool::get_threadpool()
+          ->_unsafe_reset_threadpool(previous_);
+    }
+#endif
+  }
+  ScopedMinThreadCount(const ScopedMinThreadCount&) = delete;
+  ScopedMinThreadCount& operator=(const ScopedMinThreadCount&) = delete;
+
+ private:
+  uint32_t previous_ = 0;
+};
+
+} // namespace
 
 class OpEmbeddingBagOutTest : public OperatorTest {
  protected:
@@ -134,28 +177,36 @@ class OpEmbeddingBagOutTest : public OperatorTest {
     }
   }
 
-  void expect_invalid(
+  // Index outputs use the offsets dtype, as export allocates them, so the
+  // optimized kernel takes its fast path whenever the weight allows it.
+  template <ScalarType Index, ScalarType Offset>
+  void expect_invalid_with_dtypes(
       const std::vector<int64_t>& index_values,
       const std::vector<int64_t>& offset_values,
-      int64_t mode = 0,
-      int64_t dim = 1,
-      bool include_last = false,
-      const optional<Tensor>& psw = std::nullopt) {
+      int64_t mode,
+      int64_t dim,
+      bool include_last,
+      const optional<Tensor>& psw) {
+    using IndexType = typename TensorFactory<Index>::ctype;
+    using OffsetType = typename TensorFactory<Offset>::ctype;
     TensorFactory<ScalarType::Float> tf;
-    TensorFactory<ScalarType::Long> ti;
+    TensorFactory<Index> ti;
+    TensorFactory<Offset> to;
     auto weight = tf.ones({2, static_cast<int32_t>(dim)});
-    auto indices =
-        ti.make({static_cast<int32_t>(index_values.size())}, index_values);
-    auto offsets =
-        ti.make({static_cast<int32_t>(offset_values.size())}, offset_values);
+    auto indices = ti.make(
+        {static_cast<int32_t>(index_values.size())},
+        std::vector<IndexType>(index_values.begin(), index_values.end()));
+    auto offsets = to.make(
+        {static_cast<int32_t>(offset_values.size())},
+        std::vector<OffsetType>(offset_values.begin(), offset_values.end()));
     int32_t bags =
         static_cast<int32_t>(offset_values.size()) - (include_last ? 1 : 0);
     auto out = tf.zeros({bags, static_cast<int32_t>(dim)});
     auto offset2bag =
-        ti.zeros({mode == 0 ? 0 : static_cast<int32_t>(index_values.size())});
-    auto bag_size = ti.zeros({bags});
-    auto max_indices = mode == 2 ? ti.zeros({bags, static_cast<int32_t>(dim)})
-                                 : ti.zeros({bags});
+        to.zeros({mode == 0 ? 0 : static_cast<int32_t>(index_values.size())});
+    auto bag_size = to.zeros({bags});
+    auto max_indices = mode == 2 ? to.zeros({bags, static_cast<int32_t>(dim)})
+                                 : to.zeros({bags});
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_embedding_bag_out(
@@ -170,6 +221,39 @@ class OpEmbeddingBagOutTest : public OperatorTest {
             offset2bag,
             bag_size,
             max_indices));
+  }
+
+  void expect_invalid(
+      const std::vector<int64_t>& index_values,
+      const std::vector<int64_t>& offset_values,
+      int64_t mode = 0,
+      int64_t dim = 1,
+      bool include_last = false,
+      const optional<Tensor>& psw = std::nullopt) {
+    {
+      SCOPED_TRACE("Long indices, Long offsets");
+      expect_invalid_with_dtypes<ScalarType::Long, ScalarType::Long>(
+          index_values, offset_values, mode, dim, include_last, psw);
+    }
+    context_.fail(torch::executor::Error::Ok);
+    {
+      SCOPED_TRACE("Int indices, Int offsets");
+      expect_invalid_with_dtypes<ScalarType::Int, ScalarType::Int>(
+          index_values, offset_values, mode, dim, include_last, psw);
+    }
+    context_.fail(torch::executor::Error::Ok);
+    {
+      SCOPED_TRACE("Int indices, Long offsets");
+      expect_invalid_with_dtypes<ScalarType::Int, ScalarType::Long>(
+          index_values, offset_values, mode, dim, include_last, psw);
+    }
+    // ATen requires the promoted Long dtype for the index outputs.
+    if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      context_.fail(torch::executor::Error::Ok);
+      SCOPED_TRACE("Long indices, Int offsets");
+      expect_invalid_with_dtypes<ScalarType::Long, ScalarType::Int>(
+          index_values, offset_values, mode, dim, include_last, psw);
+    }
   }
 
   template <ScalarType DTYPE>
@@ -252,6 +336,125 @@ class OpEmbeddingBagOutTest : public OperatorTest {
     EXPECT_TENSOR_EQ(offset2bag, ti.make({3}, {0, 1, 1}));
     EXPECT_TENSOR_EQ(bag_size, ti.zeros({2}));
     EXPECT_TENSOR_EQ(max_indices, ti.zeros({2}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_reductions(
+      int32_t width,
+      int64_t mode,
+      bool last,
+      bool padding,
+      bool weighted = false) {
+    TensorFactory<ScalarType::Float> tf;
+    TensorFactory<DTYPE> ti;
+    const std::array<std::array<float, 3>, 4> rows = {
+        {{1, -2, 3}, {4, 5, -6}, {7, 8, 9}, {10, -11, 12}}};
+    // Exact in float, so fused and unfused multiply-adds agree.
+    const std::array<float, 4> scales = {0.5, -1, 2, 3};
+    std::vector<float> weights;
+    for (const auto& row : rows) {
+      for (int32_t d = 0; d < width; ++d) {
+        weights.push_back(row[d % 3]);
+      }
+    }
+    auto weight = tf.make({4, width}, weights);
+    auto indices = ti.make({4}, {1, 2, 1, 3});
+    auto offsets = last ? ti.make({4}, {0, 2, 2, 4}) : ti.make({3}, {0, 2, 2});
+    auto out = tf.zeros({3, width});
+    auto offset2bag = ti.zeros({mode == 0 && !padding ? 0 : 4});
+    auto bag_size = ti.zeros({3});
+    auto max_indices = mode == 2 ? ti.zeros({3, width}) : ti.zeros({3});
+    optional<Tensor> psw;
+    if (weighted) {
+      psw = tf.make({4}, std::vector<float>(scales.begin(), scales.end()));
+    }
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        mode,
+        psw,
+        last,
+        padding ? 1 : -1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    std::vector<float> expected;
+    for (int32_t bag = 0; bag < 3; ++bag) {
+      // Bags 0 and 2 hold positions {0, 1} and {2, 3}; row 1 comes first.
+      const size_t first = bag == 0 ? 0 : 2;
+      const float scale_a = weighted ? scales[first] : 1;
+      const float scale_b = weighted ? scales[first + 1] : 1;
+      for (int32_t d = 0; d < width; ++d) {
+        const float a = rows[1][d % 3];
+        const float b = rows[bag == 0 ? 2 : 3][d % 3];
+        float value = 0;
+        if (bag == 1) {
+          value = 0;
+        } else if (padding) {
+          value = b * scale_b;
+        } else if (mode == 2) {
+          value = std::max(a, b);
+        } else {
+          value = (a * scale_a + b * scale_b) / (mode == 1 ? 2 : 1);
+        }
+        expected.push_back(value);
+      }
+    }
+    EXPECT_TENSOR_EQ(out, tf.make({3, width}, expected));
+    if (offset2bag.numel() != 0) {
+      EXPECT_TENSOR_EQ(offset2bag, ti.make({4}, {0, 0, 2, 2}));
+    }
+    EXPECT_TENSOR_EQ(
+        bag_size,
+        mode == 0     ? ti.zeros({3})
+            : padding ? ti.make({3}, {1, 0, 1})
+                      : ti.make({3}, {2, 0, 2}));
+    if (mode != 2) {
+      EXPECT_TENSOR_EQ(max_indices, bag_size);
+    } else {
+      const auto* actual =
+          max_indices.template const_data_ptr<typename decltype(ti)::ctype>();
+      for (int32_t d = 0; d < width; ++d) {
+        EXPECT_EQ(actual[d], 2);
+        EXPECT_EQ(actual[width + d], 0);
+        EXPECT_EQ(actual[2 * width + d], padding || d % 3 != 1 ? 3 : 1);
+      }
+    }
+  }
+
+  template <ScalarType Index, ScalarType Offset>
+  void test_weighted_sum_mixed_index_types() {
+    TensorFactory<ScalarType::Float> tf;
+    TensorFactory<Index> ti;
+    TensorFactory<Offset> to;
+    auto weight = tf.make({3, 2}, {1, 2, 3, 4, 5, 6});
+    auto indices = ti.make({4}, {0, 1, 1, 2});
+    auto offsets = to.make({3}, {0, 2, 4});
+    auto scales = tf.make({4}, {0.5, -1, 2, 3});
+    auto out = tf.zeros({2, 2});
+    auto offset2bag = to.zeros({4});
+    auto bag_size = to.zeros({2});
+    auto max_indices = to.zeros({2});
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        0,
+        scales,
+        true,
+        1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {0.5, 1, 15, 18}));
+    EXPECT_TENSOR_EQ(offset2bag, to.make({4}, {0, 0, 1, 1}));
+    EXPECT_TENSOR_EQ(bag_size, to.zeros({2}));
+    EXPECT_TENSOR_EQ(max_indices, to.zeros({2}));
   }
 
   // weight[r][c] = r * 3 + c, so a row is identifiable from its values.
@@ -637,6 +840,17 @@ TEST_F(OpEmbeddingBagOutTest, WrongPerSampleWeightsRankRejected) {
   TensorFactory<ScalarType::Float> tf;
   expect_invalid({0, 1}, {0}, 0, 1, false, tf.ones({1, 2}));
 }
+TEST_F(OpEmbeddingBagOutTest, WrongIndicesDtypeRejected) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen promotes Short indices to the offsets dtype");
+  expect_invalid_with_dtypes<ScalarType::Short, ScalarType::Long>(
+      {0}, {0}, 0, 1, false, std::nullopt);
+}
+TEST_F(OpEmbeddingBagOutTest, WrongOffsetsDtypeRejected) {
+  expect_invalid_with_dtypes<ScalarType::Long, ScalarType::Short>(
+      {0}, {0}, 0, 1, false, std::nullopt);
+}
 
 TEST_F(OpEmbeddingBagOutTest, WrongAuxiliaryDtypeRejected) {
   TensorFactory<ScalarType::Float> tf;
@@ -944,5 +1158,424 @@ TEST_F(OpEmbeddingBagOutTest, OffsetsDtypeAuxiliaryOutputs) {
     if (mode == 2) {
       EXPECT_TENSOR_EQ(max_indices, to.make({2, 2}, {0, 0, 1, 1}));
     }
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, ReductionsAcrossVectorWidths) {
+  for (int32_t width : {0, 1, 3, 4, 7, 8, 9, 16, 17, 65}) {
+    // ATen's FBGEMM path raises a spurious index error for zero-width weights.
+    if (width == 0 &&
+        torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      continue;
+    }
+    for (int64_t mode = 0; mode < 3; ++mode) {
+      for (bool last : {false, true}) {
+        for (bool padding : {false, true}) {
+          SCOPED_TRACE(
+              ::testing::Message()
+              << width << "," << mode << "," << last << "," << padding);
+          test_reductions<ScalarType::Int>(width, mode, last, padding);
+          test_reductions<ScalarType::Long>(width, mode, last, padding);
+          if (mode == 0) {
+            SCOPED_TRACE("weighted");
+            test_reductions<ScalarType::Int>(width, mode, last, padding, true);
+            test_reductions<ScalarType::Long>(width, mode, last, padding, true);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, WeightedSumMixedIndexTypes) {
+  test_weighted_sum_mixed_index_types<ScalarType::Int, ScalarType::Long>();
+  // ATen requires the promoted Long dtype for these outputs.
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    test_weighted_sum_mixed_index_types<ScalarType::Long, ScalarType::Int>();
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, PaddingOnlyAndEmptyBags) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.ones({2, 9});
+  for (int64_t mode = 0; mode < 3; ++mode) {
+    for (bool empty : {false, true}) {
+      SCOPED_TRACE(::testing::Message() << mode << "," << empty);
+      auto indices = empty ? ti.zeros({0}) : ti.make({2}, {1, 1});
+      auto offsets = ti.make({2}, {0, 0});
+      auto out = tf.ones({2, 9});
+      auto offset2bag = ti.zeros({empty ? 0 : 2});
+      auto bag_size = ti.ones({2});
+      auto max_indices = mode == 2 ? ti.ones({2, 9}) : ti.ones({2});
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          mode,
+          {},
+          false,
+          1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices);
+      ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+      EXPECT_TENSOR_EQ(out, tf.zeros({2, 9}));
+      EXPECT_TENSOR_EQ(bag_size, ti.zeros({2}));
+      EXPECT_TENSOR_EQ(
+          max_indices, mode == 2 ? ti.zeros({2, 9}) : ti.zeros({2}));
+    }
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, MaxPreservesFirstTieAndNan) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  std::vector<float> values(18, 2);
+  values[0] = nan;
+  values[10] = nan;
+  auto weight = tf.make({2, 9}, values);
+  auto indices = ti.make({2}, {0, 1});
+  auto offsets = ti.make({1}, {0});
+  auto out = tf.zeros({1, 9});
+  auto offset2bag = ti.zeros({2});
+  auto bag_size = ti.zeros({1});
+  auto max_indices = ti.ones({1, 9});
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      2,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+  EXPECT_TRUE(std::isnan(out.const_data_ptr<float>()[0]));
+  for (int d = 1; d < 9; ++d) {
+    EXPECT_EQ(out.const_data_ptr<float>()[d], 2);
+  }
+  EXPECT_TENSOR_EQ(max_indices, ti.zeros({1, 9}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, DynamicBoundOutputsResize) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  const auto bounded = torch::executor::TensorShapeDynamism::DYNAMIC_BOUND;
+  auto weight = tf.make({2, 2}, {1, 4, 3, 2});
+  auto indices = ti.make({2}, {0, 1});
+  auto offsets = ti.make({1}, {0});
+  auto out = tf.zeros({3, 3}, bounded);
+  auto offset2bag = ti.zeros({4}, bounded);
+  auto bag_size = ti.zeros({3}, bounded);
+  auto max_indices = ti.zeros({3, 3}, bounded);
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      2,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+  EXPECT_TENSOR_EQ(out, tf.make({1, 2}, {3, 4}));
+  EXPECT_TENSOR_EQ(offset2bag, ti.make({2}, {0, 0}));
+  EXPECT_TENSOR_EQ(bag_size, ti.make({1}, {2}));
+  EXPECT_TENSOR_EQ(max_indices, ti.make({1, 2}, {1, 0}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, TransposedMaxIndices) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.make({3, 2}, {1, 4, 3, 2, 0, 5});
+  auto indices = ti.make({4}, {0, 1, 1, 2});
+  auto offsets = ti.make({2}, {0, 2});
+  auto out = tf.zeros({2, 2});
+  auto offset2bag = ti.zeros({4});
+  auto bag_size = ti.zeros({2});
+  // Strides (1, 2), like a transposed contiguous tensor.
+  auto max_indices = ti.make_with_dimorder({2, 2}, {0, 0, 0, 0}, {1, 0});
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      2,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {3, 4, 3, 5}));
+  // Equivalent to tensor([[1, 0], [1, 2]]).
+  EXPECT_TENSOR_EQ(
+      max_indices, ti.make_with_dimorder({2, 2}, {1, 1, 0, 2}, {1, 0}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, ManyBagsAllModes) {
+  ScopedMinThreadCount threads(4);
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  constexpr int32_t kRows = 7;
+  constexpr int32_t kWidth = 65;
+  // Enough work to split the bags across parallel tasks.
+  constexpr int32_t kBags = 512;
+  std::vector<float> weights;
+  for (int32_t row = 0; row < kRows; ++row) {
+    for (int32_t d = 0; d < kWidth; ++d) {
+      weights.push_back(static_cast<float>(row * 100 + d - 50));
+    }
+  }
+  auto weight = tf.make({kRows, kWidth}, weights);
+  // Bag b repeats row b % kRows (b % 4 + 1) times.
+  std::vector<int64_t> indices_data;
+  std::vector<int64_t> offsets_data;
+  std::vector<int64_t> offset2bag_data;
+  std::vector<int64_t> counts;
+  for (int32_t bag = 0; bag < kBags; ++bag) {
+    offsets_data.push_back(static_cast<int64_t>(indices_data.size()));
+    counts.push_back(bag % 4 + 1);
+    for (int32_t i = 0; i < counts.back(); ++i) {
+      indices_data.push_back(bag % kRows);
+      offset2bag_data.push_back(bag);
+    }
+  }
+  const auto num_indices = static_cast<int32_t>(indices_data.size());
+  auto indices = ti.make({num_indices}, indices_data);
+  auto offsets = ti.make({kBags}, offsets_data);
+  for (int64_t mode = 0; mode < 3; ++mode) {
+    SCOPED_TRACE(mode);
+    auto out = tf.zeros({kBags, kWidth});
+    auto offset2bag = ti.zeros({mode == 0 ? 0 : num_indices});
+    auto bag_size = ti.zeros({kBags});
+    auto max_indices =
+        mode == 2 ? ti.zeros({kBags, kWidth}) : ti.zeros({kBags});
+    op_embedding_bag_out(
+        weight,
+        indices,
+        offsets,
+        mode,
+        {},
+        false,
+        -1,
+        out,
+        offset2bag,
+        bag_size,
+        max_indices);
+    ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+    std::vector<float> expected_out;
+    std::vector<int64_t> expected_winners;
+    for (int32_t bag = 0; bag < kBags; ++bag) {
+      for (int32_t d = 0; d < kWidth; ++d) {
+        const float value = weights[(bag % kRows) * kWidth + d];
+        expected_out.push_back(
+            mode == 0 ? value * static_cast<float>(counts[bag]) : value);
+        expected_winners.push_back(bag % kRows);
+      }
+    }
+    EXPECT_TENSOR_EQ(out, tf.make({kBags, kWidth}, expected_out));
+    if (mode != 0) {
+      EXPECT_TENSOR_EQ(offset2bag, ti.make({num_indices}, offset2bag_data));
+    }
+    EXPECT_TENSOR_EQ(
+        bag_size, mode == 0 ? ti.zeros({kBags}) : ti.make({kBags}, counts));
+    EXPECT_TENSOR_EQ(
+        max_indices,
+        mode == 0       ? ti.zeros({kBags})
+            : mode == 1 ? ti.make({kBags}, counts)
+                        : ti.make({kBags, kWidth}, expected_winners));
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, ManyBagsPartialFinalOffset) {
+  // Four threads split the bags below into four tasks, so the last bag and
+  // its partial final offset are handled away from the first task.
+  ScopedMinThreadCount threads(4);
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  constexpr int32_t kRows = 7;
+  constexpr int32_t kWidth = 64;
+  constexpr int32_t kBags = 1024;
+  // Indices past the final offset.
+  constexpr int32_t kTail = 3;
+  constexpr int64_t kPaddingRow = 3;
+  std::vector<float> weights;
+  for (int32_t row = 0; row < kRows; ++row) {
+    for (int32_t d = 0; d < kWidth; ++d) {
+      weights.push_back(static_cast<float>(row * 100 + d - 50));
+    }
+  }
+  auto weight = tf.make({kRows, kWidth}, weights);
+  // Bag b holds rows (b + j) % kRows for j < b % 4 + 1.
+  std::vector<int64_t> indices_data;
+  std::vector<int64_t> offsets_data;
+  for (int32_t bag = 0; bag < kBags; ++bag) {
+    offsets_data.push_back(static_cast<int64_t>(indices_data.size()));
+    for (int32_t j = 0; j <= bag % 4; ++j) {
+      indices_data.push_back((bag + j) % kRows);
+    }
+  }
+  offsets_data.push_back(static_cast<int64_t>(indices_data.size()));
+  for (int32_t j = 0; j < kTail; ++j) {
+    indices_data.push_back((j * 2) % kRows);
+  }
+  const auto num_indices = static_cast<int32_t>(indices_data.size());
+  // Multiples of 0.5, so every weighted sum is exact.
+  std::vector<float> scales_data;
+  for (int32_t i = 0; i < num_indices; ++i) {
+    scales_data.push_back(static_cast<float>(i % 5 - 2) * 0.5f);
+  }
+  auto indices = ti.make({num_indices}, indices_data);
+  auto offsets = ti.make({kBags + 1}, offsets_data);
+  auto scales = tf.make({num_indices}, scales_data);
+
+  for (int64_t mode = 0; mode < 3; ++mode) {
+    for (bool padded : {false, true}) {
+      for (bool weighted : {false, true}) {
+        if (weighted && mode != 0) {
+          continue;
+        }
+        SCOPED_TRACE(
+            ::testing::Message() << mode << "," << padded << "," << weighted);
+        const int64_t padding_idx = padded ? kPaddingRow : -1;
+        // ATen's FP32 fast path (no padding) stops the last sum/mean bag at
+        // the final offset; otherwise it takes every remaining index.
+        const bool truncate = !padded && mode != 2;
+        std::vector<float> expected_out(kBags * kWidth, 0);
+        std::vector<int64_t> expected_offset2bag(num_indices);
+        std::vector<int64_t> expected_counts(kBags);
+        std::vector<int64_t> expected_winners(kBags * kWidth, 0);
+        for (int32_t bag = 0; bag < kBags; ++bag) {
+          const int64_t begin = offsets_data[bag];
+          const int64_t end =
+              bag + 1 < kBags ? offsets_data[bag + 1] : num_indices;
+          const int64_t reduce_end = truncate ? offsets_data[bag + 1] : end;
+          int64_t count = 0;
+          for (int64_t i = begin; i < end; ++i) {
+            expected_offset2bag[i] = bag;
+            const int64_t row = indices_data[i];
+            if (row == padding_idx) {
+              continue;
+            }
+            ++count;
+            if (i >= reduce_end) {
+              continue;
+            }
+            for (int32_t d = 0; d < kWidth; ++d) {
+              const float value = weights[row * kWidth + d];
+              float& acc = expected_out[bag * kWidth + d];
+              if (mode == 2) {
+                if (count == 1 || value > acc) {
+                  acc = value;
+                  expected_winners[bag * kWidth + d] = row;
+                }
+              } else {
+                acc += value * (weighted ? scales_data[i] : 1.0f);
+              }
+            }
+          }
+          expected_counts[bag] = count;
+          if (mode == 1 && count != 0) {
+            for (int32_t d = 0; d < kWidth; ++d) {
+              expected_out[bag * kWidth + d] /= static_cast<float>(count);
+            }
+          }
+        }
+
+        auto out = tf.zeros({kBags, kWidth});
+        auto offset2bag =
+            ti.full({mode == 0 && !padded ? 0 : num_indices}, -99);
+        auto bag_size = ti.full({kBags}, -99);
+        auto max_indices =
+            mode == 2 ? ti.full({kBags, kWidth}, -99) : ti.full({kBags}, -99);
+        op_embedding_bag_out(
+            weight,
+            indices,
+            offsets,
+            mode,
+            weighted ? optional<Tensor>(scales) : std::nullopt,
+            true,
+            padding_idx,
+            out,
+            offset2bag,
+            bag_size,
+            max_indices);
+        ASSERT_EQ(context_.failure_state(), torch::executor::Error::Ok);
+        EXPECT_TENSOR_CLOSE(out, tf.make({kBags, kWidth}, expected_out));
+        if (offset2bag.numel() != 0) {
+          EXPECT_TENSOR_EQ(
+              offset2bag, ti.make({num_indices}, expected_offset2bag));
+        }
+        EXPECT_TENSOR_EQ(
+            bag_size,
+            mode == 0 ? ti.zeros({kBags}) : ti.make({kBags}, expected_counts));
+        EXPECT_TENSOR_EQ(
+            max_indices,
+            mode == 0       ? ti.zeros({kBags})
+                : mode == 1 ? ti.make({kBags}, expected_counts)
+                            : ti.make({kBags, kWidth}, expected_winners));
+      }
+    }
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, RejectedInputsLeaveDynamicOutputsUnresized) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen tensors have no dynamic-bound shape");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  TensorFactory<ScalarType::Short> ts;
+  const auto bounded = torch::executor::TensorShapeDynamism::DYNAMIC_BOUND;
+  auto weight = tf.ones({2, 2});
+  struct Case {
+    const char* name;
+    Tensor indices;
+    Tensor offsets;
+  };
+  const std::vector<Case> cases = {
+      {"index past the last row", ti.make({1}, {5}), ti.make({1}, {0})},
+      {"offset past the last index",
+       ti.make({4}, {0, 1, 0, 1}),
+       ti.make({2}, {0, 5})},
+      {"Short indices", ts.make({1}, {0}), ti.make({1}, {0})},
+  };
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c.name);
+    context_.fail(torch::executor::Error::Ok);
+    auto out = tf.zeros({3, 3}, bounded);
+    auto offset2bag = ti.zeros({4}, bounded);
+    auto bag_size = ti.zeros({3}, bounded);
+    auto max_indices = ti.zeros({3}, bounded);
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        op_embedding_bag_out(
+            weight,
+            c.indices,
+            c.offsets,
+            1,
+            {},
+            false,
+            -1,
+            out,
+            offset2bag,
+            bag_size,
+            max_indices));
+    EXPECT_EQ(out.size(0), 3);
+    EXPECT_EQ(out.size(1), 3);
+    EXPECT_EQ(offset2bag.size(0), 4);
+    EXPECT_EQ(bag_size.size(0), 3);
+    EXPECT_EQ(max_indices.size(0), 3);
   }
 }
