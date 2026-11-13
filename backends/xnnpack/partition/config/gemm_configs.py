@@ -458,6 +458,10 @@ class ConvolutionConfig(GEMMConfig):
         groups = cast(int, node.args[8])
         is_transpose = node.args[6]
 
+        if weight_quant_params is not None and weight_quant_params.is_qc2w:
+            why(node, "XNNPACK only supports 2-bit weights in fully connected layers")
+            return False
+
         # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
         if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
             conv_dim != 2 or is_depthwise_conv(kernel_shape, groups, is_transpose)

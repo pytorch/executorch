@@ -38,6 +38,8 @@ enum XNNDatatype : short {
   xnn_datatype_pfp32 = 13,
   /// BFloat16, i.e. the upper 16 bits of a float32.
   xnn_datatype_bf16 = 14,
+  /// Quantized 2-bit signed integer with shared per-channel quantization parameters.
+  xnn_datatype_qcint2 = 15,
 }
 
 // type of quantization
