@@ -71,6 +71,8 @@ void add_embedding_q4gsw_node(
   VK_CHECK_COND(graph.packed_dim_of(indices) == WHCN::kWidthDim);
   if (graph.is_buffer_storage(indices)) {
     VK_CHECK_COND(graph.is_contiguous(indices));
+  } else {
+    VK_CHECK_COND(graph.has_standard_axis_map(indices));
   }
   VK_CHECK_COND(graph.dim_of(indices) <= 3);
   VK_CHECK_COND(
