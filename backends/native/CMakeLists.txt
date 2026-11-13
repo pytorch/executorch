@@ -35,6 +35,11 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_subdirectory(runtime/engine/ggml)
 endif()
 
+# The batching executor implements extension/llm/batching's executor seam.
+if(EXECUTORCH_BUILD_NATIVE AND TARGET extension_llm_batching_util)
+  add_subdirectory(batching)
+endif()
+
 install(
   DIRECTORY runtime/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/native/runtime

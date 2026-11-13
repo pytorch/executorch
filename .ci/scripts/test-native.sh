@@ -40,9 +40,15 @@ case "${component}" in
       -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON
       -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
       -DGGML_NATIVE=OFF
+      # native_batching_test links extension/llm/batching.
+      -DEXECUTORCH_BUILD_EXTENSION_LLM=ON
+      -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON
+      -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+      -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON
+      -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON
     )
     # TODO: run the other sample tests once they pass.
-    targets+=(run_hf_llm_ggml run_whisper_ggml_cpu native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test)
+    targets+=(run_hf_llm_ggml run_whisper_ggml_cpu native_ggml_engine_test native_llm_runner_utils_test run_classification_ggml_cpu native_output_check_test native_ggml_sample_test native_batching_test)
     test_regex='^native_(ggml_engine|llm_runner_utils|output_check)_test$|^native_ggml_sample_test_(act_quant|no_linear)$'
     ;;
   vulkan)
@@ -81,6 +87,17 @@ if [[ "${component}" == "ggml" ]]; then
   export FLATC_EXECUTABLE="${FLATC_EXECUTABLE:-${PWD}/${build_dir}/third-party/flatc_ep/bin/flatc}"
   python .ci/scripts/test_native_llm_runner.py \
     --runner "${build_dir}/backends/native/examples/hf_llm/runtime/run_hf_llm_ggml"
+  # native_batching_test skips without a package, so export one and fail if any
+  # case still skips.
+  toy_package="${PWD}/${build_dir}/native_batching_toy.ptn"
+  python backends/native/batching/test/export_toy_llm.py "${toy_package}"
+  ET_NATIVE_BATCHING_PTN="${toy_package}" \
+    "${build_dir}/backends/native/batching/native_batching_test" \
+    | tee "${build_dir}/native_batching_test.log"
+  if grep -q "SKIPPED" "${build_dir}/native_batching_test.log"; then
+    echo "native_batching_test skipped a case" >&2
+    exit 1
+  fi
   NATIVE_WHISPER_RUNNER="${PWD}/${build_dir}/backends/native/examples/audio/run_whisper_ggml_cpu" \
     python -m pytest \
     backends/native/test/test_hf_whisper.py::WhisperNativeExportTest::test_ggml_runner_matches_eager
