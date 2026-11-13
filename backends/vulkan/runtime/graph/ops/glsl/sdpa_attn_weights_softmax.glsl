@@ -183,6 +183,17 @@ void main() {
 
   const SOFTMAX_ACC_T global_max = shared_max[0];
 
+#ifndef HAS_INPUT_POS
+  // ATen's safe softmax returns zero for rows masked entirely with -inf.
+  if (global_max == SOFTMAX_ACC_T(-1.0 / 0.0)) {
+    for (int c4 = worker_id; c4 < context_texel_len; c4 += NUM_WORKERS_PER_WG) {
+      store_attn_weights_softmax_c4(
+          VEC4_T(0), c4, s, q_h, context_texel_len, attn_S, Q_H);
+    }
+    return;
+  }
+#endif
+
   // =========================================================================
   // Pass 2: Compute sum(exp(x - max)) using the global max for stability
   // =========================================================================

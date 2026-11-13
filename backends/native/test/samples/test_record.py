@@ -230,7 +230,15 @@ class RecordTest(unittest.TestCase):
         model = torch.nn.Embedding(8, 256)
         fitting = {name for name, scheme in schemes().items() if scheme.fits(model)}
         self.assertEqual(
-            fitting, {"float", "int4wo_g32", "int4wo_g128", "gguf_q4_k", "gguf_q6_k"}
+            fitting,
+            {
+                "float",
+                "int4wo_g32",
+                "int4wo_g128",
+                "gguf_q4_k",
+                "gguf_q5_k",
+                "gguf_q6_k",
+            },
         )
         ids = torch.tensor([[0, 7], [3, 3]])
         for name in sorted(fitting - {"float"}):

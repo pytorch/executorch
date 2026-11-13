@@ -46,7 +46,7 @@ class Scheme:
         """Whether `record` adds `golden-int8_act` for `model`: the scheme
         quantizes only weights and `model` has inputs int8_activations
         quantizes."""
-        return self.weight_only and bool(_targets(model, _ACTIVATED))
+        return self.weight_only and bool(_targets(model, _DQA_QSCHEME_MODULES))
 
     def fits(self, model: torch.nn.Module) -> bool:
         return True
@@ -63,9 +63,9 @@ class Scheme:
 
 # Modules whose weight a weight-only scheme quantizes, each grouped along its
 # rows: an nn.Linear's in_features, an nn.Embedding's embedding_dim.
-_WEIGHTS = (torch.nn.Linear, torch.nn.Embedding)
+_WO_QSCHEME_MODULES = (torch.nn.Linear, torch.nn.Embedding)
 # Modules whose inputs the int8 dynamic activation schemes quantize.
-_ACTIVATED = (torch.nn.Linear,)
+_DQA_QSCHEME_MODULES = (torch.nn.Linear,)
 
 
 def _targets(model: torch.nn.Module, types: tuple[type, ...]) -> list[torch.nn.Module]:
@@ -98,7 +98,7 @@ class Torchao(Scheme):
 
     @property
     def _types(self) -> tuple[type, ...]:
-        return _WEIGHTS if self.weight_only else _ACTIVATED
+        return _WO_QSCHEME_MODULES if self.weight_only else _DQA_QSCHEME_MODULES
 
     def fits(self, model: torch.nn.Module) -> bool:
         granularity = (
@@ -126,9 +126,10 @@ class Torchao(Scheme):
 
 
 # Families of fp16 super-block scales by byte offset in each block: powers of
-# two, where q4_k's dmin of 8 d centers random weights near zero, then negative,
-# rounded and subnormal ones. A model's i-th quantized module takes the i-th
-# family, so one module per family isolates each in its own output.
+# two, where a dmin of 8 d (q4_k) or 16 d (q5_k) centers random weights near
+# zero, then negative, rounded and subnormal ones. A model's i-th quantized
+# module takes the i-th family, so one module per family isolates each in its
+# own output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
@@ -137,6 +138,12 @@ GGUF_SUPER_SCALES = {
         {0: -(2**-12), 2: -(2**-9)},
         {0: 3.1e-4, 2: 2.3e-3},
         {0: 3 * 2**-21, 2: 3 * 2**-18},
+    ],
+    "q5_k": [
+        {0: 2**-12, 2: 2**-8},
+        {0: -(2**-12), 2: -(2**-8)},
+        {0: 3.1e-4, 2: 4.8e-3},
+        {0: 3 * 2**-21, 2: 3 * 2**-17},
     ],
     "q6_k": [
         {208: 2**-12},
@@ -166,7 +173,7 @@ def _random_blocks(
 def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
     """Writes random `ggml_type` weights for every nn.Linear and nn.Embedding to
     a .gguf file and loads them back as a GGUF checkpoint would be."""
-    targets = _targets(model, _WEIGHTS)
+    targets = _targets(model, _WO_QSCHEME_MODULES)
     rng = np.random.default_rng(0)
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/weights.gguf"
@@ -194,8 +201,8 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
 
 @dataclass(frozen=True)
 class Gguf(Scheme):
-    """Weight-only GGUF k-quant blocks (`q4_k` or `q6_k`) for every nn.Linear and
-    nn.Embedding, loaded from a .gguf file."""
+    """Weight-only GGUF k-quant blocks (`q4_k`, `q5_k` or `q6_k`) for every
+    nn.Linear and nn.Embedding, loaded from a .gguf file."""
 
     ggml_type: str
 
@@ -206,7 +213,8 @@ class Gguf(Scheme):
     def fits(self, model: torch.nn.Module) -> bool:
         families = len(GGUF_SUPER_SCALES[self.ggml_type])
         return (
-            _fits(model, _WEIGHTS, QK_K) and len(_targets(model, _WEIGHTS)) <= families
+            _fits(model, _WO_QSCHEME_MODULES, QK_K)
+            and len(_targets(model, _WO_QSCHEME_MODULES)) <= families
         )
 
     def quantize(self, model: torch.nn.Module) -> None:
@@ -220,14 +228,14 @@ class Gguf(Scheme):
 
 @contextlib.contextmanager
 def int8_activations(model: torch.nn.Module) -> Iterator[None]:
-    """Quantizes the inputs of every `_ACTIVATED` module as torchao's int8
-    dynamic activation schemes do: int8, asymmetric, per token."""
+    """Quantizes the inputs of every `_DQA_QSCHEME_MODULES` module as torchao's
+    int8 dynamic activation schemes do: int8, asymmetric, per token."""
     hooks = [
         m.register_forward_pre_hook(
             lambda _, args: (_apply_int8_act_asym_per_token_quant_dequant(args[0]),)
         )
         for m in model.modules()
-        if isinstance(m, _ACTIVATED)
+        if isinstance(m, _DQA_QSCHEME_MODULES)
     ]
     try:
         yield
@@ -256,5 +264,6 @@ def schemes() -> dict[str, Scheme]:
             )
         ),
         "gguf_q4_k": Gguf("q4_k"),
+        "gguf_q5_k": Gguf("q5_k"),
         "gguf_q6_k": Gguf("q6_k"),
     }
