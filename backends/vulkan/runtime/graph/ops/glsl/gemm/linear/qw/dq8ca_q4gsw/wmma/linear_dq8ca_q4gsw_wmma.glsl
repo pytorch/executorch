@@ -40,7 +40,9 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_control_flow_attributes : enable
 
-#define PRECISION ${PRECISION}
+// highp regardless of --auto-use-mediump (a DTYPE of half would select
+// mediump): the kernels are validated at highp.
+#define PRECISION highp
 
 // When the A staging thread map exactly covers the workgroup
 // (A_ACTIVE_THREADS == WG_SIZE) the `a_active` guard is always true, but the
@@ -63,20 +65,20 @@ layout(std430) buffer;
 //   output(0), fp_input(1), packed_int8_input(2), int_input_sums(3),
 //   input_scales(4), input_zps(5), packed_weight(6), weight_sums(7),
 //   weight_scales(8), bias(9).
-${layout_declare_tensor(B, "w", "t_output",              "half", IO_STORAGE, is_scalar_array=True)}
+${layout_declare_tensor(B, "w", "t_output",              DTYPE, IO_STORAGE, is_scalar_array=True)}
 // t_input is unread here -- the activations arrive already quantized in
 // t_packed_int8_input -- but stays declared so the binding layout matches the
 // dispatch site.
-${layout_declare_tensor(B, "r", "t_input",               "half", IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_input",               DTYPE, IO_STORAGE, is_scalar_array=False)}
 // ROWMAJOR_A: row-major (row stride = K int8), read as 16-byte vectors.
 ${layout_declare_tensor(B, "r", "t_packed_int8_input",   "uint" if ROWMAJOR_A else "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_sums",     "int",  "buffer", is_scalar_array=True)}
-${layout_declare_tensor(B, "r", "t_int8_input_scales",   "half", "texture3d")}
+${layout_declare_tensor(B, "r", "t_int8_input_scales",   DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_int8_input_zps",      "int8" if ZP_DTYPE_MODE == "zpint8" else "half", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_packed_weight",       "int",  WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_sums",         "int",  "buffer", is_scalar_array=True)}
-${layout_declare_tensor(B, "r", "t_weight_scales",       "half", "buffer", is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_bias",                "half", "buffer", is_scalar_array=True)}
+${layout_declare_tensor(B, "r", "t_weight_scales",       DTYPE, "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_bias",                DTYPE, "buffer", is_scalar_array=True)}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}

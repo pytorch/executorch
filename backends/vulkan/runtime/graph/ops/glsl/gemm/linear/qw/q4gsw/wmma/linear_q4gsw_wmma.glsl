@@ -45,7 +45,9 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_control_flow_attributes : enable
 
-#define PRECISION ${PRECISION}
+// highp regardless of --auto-use-mediump (a DTYPE of half would select
+// mediump): the kernels are validated at highp.
+#define PRECISION highp
 
 $if IO_STORAGE == "texture3d":
   #define IO_TEXTURE
@@ -54,14 +56,14 @@ layout(std430) buffer;
 
 #include "common.glslh"
 
-${layout_declare_tensor(B, "w", "t_output",         "half", IO_STORAGE, is_scalar_array=True)}
+${layout_declare_tensor(B, "w", "t_output",         DTYPE, IO_STORAGE, is_scalar_array=True)}
 $if IMG_A and IO_STORAGE == "texture3d":
-  ${layout_declare_image(B, "r", "t_input", "half")}
+  ${layout_declare_image(B, "r", "t_input", DTYPE)}
 $else:
-  ${layout_declare_tensor(B, "r", "t_input",          "half", IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_input",          DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_packed_weight",  "int",  WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight_scales",  "half", "buffer", is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_bias",           "half", "buffer", is_scalar_array=True)}
+${layout_declare_tensor(B, "r", "t_weight_scales",  DTYPE, "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_bias",           DTYPE, "buffer", is_scalar_array=True)}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
