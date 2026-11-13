@@ -110,7 +110,7 @@ var pathtoroot = "../../../";
 public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a></span>
 
                     </pre>
-                    <div class="block"><p>Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects.</p><p>Most tensors will be constructed as <code>Tensor.fromBlob(data, shape)</code>, where <code>data</code> can be an array or a direct <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a> (of the proper subclass). Helper methods are provided to allocate buffers properly.</p><p>To access Tensor data, see <a href=Tensor.html#dtype()>dtype</a>, <a href=Tensor.html#shape()>shape</a>, and various <code>dataAs*</code> properties.</p><p>When constructing <code>Tensor</code> objects with <code>data</code> as an array, it is not specified whether this data is copied or retained as a reference so it is recommended not to modify it after constructing. <code>data</code> passed as a <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a> is not copied, so it can be modified between <a href=Module.html>Module</a> calls to avoid reallocation. Data retrieved from <code>Tensor</code> objects may be copied or may be a reference to the <code>Tensor</code>'s internal data buffer. <code>shape</code> is always copied.</p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
+                    <div class="block"><p>Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects.</p><p>Most tensors will be constructed as <code>Tensor.fromBlob(data, shape)</code>, where <code>data</code> can be an array or a direct <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> (of the proper subclass). Helper methods are provided to allocate buffers properly.</p><p>To access Tensor data, see <a href=Tensor.html#dtype()>dtype</a>, <a href=Tensor.html#shape()>shape</a>, and various <code>dataAs*</code> properties.</p><p>When constructing <code>Tensor</code> objects with <code>data</code> as an array, it is not specified whether this data is copied or retained as a reference so it is recommended not to modify it after constructing. <code>data</code> passed as a <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> is not copied, so it can be modified between <a href=Module.html>Module</a> calls to avoid reallocation. Data retrieved from <code>Tensor</code> objects may be copied or may be a reference to the <code>Tensor</code>'s internal data buffer. <code>shape</code> is always copied.</p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
                 </li>
             </ul>
         </div>
@@ -294,7 +294,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         </tr>
                                         
                                         <tr id="i7" class="rowColor">
-                                            <td class="colFirst"><code>final <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/Long.html>Long</a></code>
+                                            <td class="colFirst"><code>final <a href=https://developer.android.com/reference/kotlin/java/lang/Long.html>Long</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#numel()>numel</a>() </code>
                                             </th>
@@ -326,7 +326,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         </tr>
                                         
                                         <tr id="i11" class="rowColor">
-                                            <td class="colFirst"><code>final <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/Integer.html>Integer</a></code>
+                                            <td class="colFirst"><code>final <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#dtypeJniCode()>dtypeJniCode</a>() </code>
                                             </th>
@@ -336,15 +336,15 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i12" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> dst) </code>
                                             </th>
-                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call allocation that <a href=Tensor.html#dataAsFloatArray>dataAsFloatArray</a> performs.</td>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call allocation that <a href=Tensor.html#dataAsFloatArray>dataAsFloatArray</a> performs.</td>
                                         </tr>
                                         
                                         <tr id="i13" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
@@ -352,7 +352,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i14" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
@@ -360,7 +360,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i15" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
@@ -368,7 +368,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i16" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
@@ -376,7 +376,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i17" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
@@ -384,13 +384,13 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <tr id="i18" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
                                             </th>
                                             <td class="colLast"></td>
                                         </tr>
                                         
                                         <tr id="i19" class="rowColor">
-                                            <td class="colFirst"><code><a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a></code>
+                                            <td class="colFirst"><code><a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getRawDataBuffer()>getRawDataBuffer</a>() </code>
                                             </th>
@@ -551,7 +551,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>numel</h4>
-                                        <pre class="methodSignature"> final <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/Long.html>Long</a> <a href=Tensor.html#numel()>numel</a>()</pre>
+                                        <pre class="methodSignature"> final <a href=https://developer.android.com/reference/kotlin/java/lang/Long.html>Long</a> <a href=Tensor.html#numel()>numel</a>()</pre>
                                         <div class="block"><p>Returns the number of elements in this tensor.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -611,7 +611,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>dtypeJniCode</h4>
-                                        <pre class="methodSignature"> final <a href=https://docs.oracle.com/javase/8/docs/api/java/lang/Integer.html>Integer</a> <a href=Tensor.html#dtypeJniCode()>dtypeJniCode</a>()</pre>
+                                        <pre class="methodSignature"> final <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> <a href=Tensor.html#dtypeJniCode()>dtypeJniCode</a>()</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -626,8 +626,8 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a> dst)</pre>
-                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call allocation that <a href=Tensor.html#dataAsFloatArray>dataAsFloatArray</a> performs.</p><p>Supported by float32 (zero-copy bulk put) and float16 (per-element half-to-float widening). For raw fp16 bits without widening, use <a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto(ShortBuffer)</a>.</p></div>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call allocation that <a href=Tensor.html#dataAsFloatArray>dataAsFloatArray</a> performs.</p><p>Supported by float32 (zero-copy bulk put) and float16 (per-element half-to-float widening). For raw fp16 bits without widening, use <a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto(ShortBuffer)</a>.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
@@ -641,7 +641,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -656,7 +656,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/IntBuffer.html>IntBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -671,7 +671,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/LongBuffer.html>LongBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -686,7 +686,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -701,7 +701,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataInto</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ShortBuffer.html>ShortBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -716,7 +716,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>copyDataIntoUnsigned</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -731,7 +731,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                           >
                                     <li class="blockList">
                                         <h4>getRawDataBuffer</h4>
-                                        <pre class="methodSignature"> <a href=https://docs.oracle.com/javase/8/docs/api/java/nio/Buffer.html>Buffer</a> <a href=Tensor.html#getRawDataBuffer()>getRawDataBuffer</a>()</pre>
+                                        <pre class="methodSignature"> <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> <a href=Tensor.html#getRawDataBuffer()>getRawDataBuffer</a>()</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
