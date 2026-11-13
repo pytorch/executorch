@@ -38,6 +38,12 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * the runtime environment and pass it in. To copy CPU data to a device, use
  * `clone_tensor_ptr_to` instead.
  *
+ * Aborts if `dim_order` or `strides` are invalid for `sizes`. Dense strides
+ * that do not fit in `StridesType` are not an error here: they wrap around, as
+ * in tensors the runtime builds. To reject a layout that comes from outside
+ * the program instead, including such strides, check it with
+ * `validate_tensor_layout` first.
+ *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A pointer to the data buffer (CPU or device, see device).
  * @param dim_order A vector specifying the order of dimensions.
@@ -105,7 +111,9 @@ inline TensorPtr make_tensor_ptr(
  * Overload for a typed data pointer. The scalar type is deduced from the
  * pointer's element type, the same way the vector overload deduces it from the
  * vector's element type, so a buffer of one type does not become a Tensor of
- * another. Pass `type` explicitly to reinterpret the buffer as a different
+ * another. The exception is `uint8_t`: a `uint8_t*` gives a Byte tensor, but
+ * `make_tensor_ptr(sizes, std::vector<uint8_t>)` takes raw bytes and defaults
+ * to Float. Pass `type` explicitly to reinterpret the buffer as a different
  * type.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the pointer.
@@ -413,6 +421,10 @@ inline TensorPtr make_tensor_ptr(T value) {
  * memory's lifetime is tied to the TensorImpl. The result is always a CPU
  * tensor.
  *
+ * The bytes are not Byte elements: like a `void*` passed to `from_blob`, they
+ * are read as `type`, which defaults to Float. To get a Byte tensor of the
+ * same values, pass `ScalarType::Byte`.
+ *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the raw memory for the tensor's data.
  * @param dim_order A vector specifying the order of dimensions.
@@ -617,6 +629,38 @@ ET_NODISCARD
 runtime::Error resize_tensor_ptr(
     TensorPtr& tensor,
     const std::vector<executorch::aten::SizesType>& sizes);
+
+/**
+ * Checks a tensor layout without creating a tensor. It returns an error for
+ * every layout that the `make_tensor_ptr` overloads taking sizes and data
+ * abort on. It also rejects negative sizes, sizes whose product overflows, and
+ * dense strides that do not fit in `StridesType` (`int32_t`, or `int64_t` in
+ * ATen mode).
+ *
+ * A layout has at most `kTensorDimensionLimit` (16) dimensions. The dim
+ * order and strides must each be empty or have one entry per dimension. A
+ * non-empty dim order must be a permutation of the dimensions. An empty dim
+ * order follows the strides from largest to smallest, or is the default order
+ * when the strides are empty too. If two strides are equal, pass the dim order
+ * to set their order. Non-empty strides must be the dense strides for that dim
+ * order, except in dimensions of size 1.
+ *
+ * It takes no data and no scalar type, so it cannot check the data or its
+ * size in bytes. The vector overloads of `make_tensor_ptr` also need exactly
+ * as many elements, or bytes for raw bytes, as the sizes and scalar type
+ * describe.
+ *
+ * @param sizes A vector specifying the size of each dimension.
+ * @param dim_order A vector specifying the order of dimensions, or empty.
+ * @param strides A vector specifying the strides of each dimension, or empty.
+ * @return Error::Ok if the layout is valid, or Error::InvalidArgument
+ * otherwise.
+ */
+ET_NODISCARD
+runtime::Error validate_tensor_layout(
+    const std::vector<executorch::aten::SizesType>& sizes,
+    const std::vector<executorch::aten::DimOrderType>& dim_order,
+    const std::vector<executorch::aten::StridesType>& strides);
 
 /**
  * Clones a TensorPtr's data onto the given target device, allocating and
