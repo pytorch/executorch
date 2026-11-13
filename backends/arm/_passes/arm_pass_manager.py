@@ -99,7 +99,6 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeRollPass,
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
-    DecomposeSDPAWithRegularSoftmaxPass,
     DecomposeSelectPass,
     DecomposeSelectScatterPass,
     DecomposeSignPass,
@@ -485,7 +484,9 @@ class ArmPassManager(ExportedProgramPassManager):
         passes: list[ExportPass] = []
 
         if config.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.AUTO:
-            passes.append(DecomposeSDPAWithRegularSoftmaxPass())
+            passes.append(
+                DecomposeScaledDotProductAttentionPass(skip_safe_softmax_guard=True)
+            )
 
         convert_pass = ConvertInt64OutputOpsToInt32Pass(
             convert_cast_ops=False, tosa_spec=self.tosa_spec

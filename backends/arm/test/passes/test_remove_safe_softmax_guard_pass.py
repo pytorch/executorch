@@ -294,7 +294,7 @@ def test_sdpa_safe_softmax_guard_auto_keeps_dynamic_mask_guard():
     assert counts["SELECT"] >= 1
 
 
-def test_sdpa_safe_softmax_guard_auto_keeps_causal_guard():
+def test_sdpa_safe_softmax_guard_auto_removes_causal_guard():
     compile_spec = common.get_tosa_compile_spec("TOSA-1.0+FP")
     compile_spec.set_pass_pipeline_config(
         ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
@@ -309,10 +309,10 @@ def test_sdpa_safe_softmax_guard_auto_keeps_causal_guard():
     )
     counts = dict(_get_tosa_operator_distribution(graph_module))
 
-    assert counts["EQUAL"] == 1
-    assert counts["LOGICAL_NOT"] == 2
-    assert counts["REDUCE_ANY"] == 1
-    assert counts["SELECT"] >= 1
+    assert counts.get("REDUCE_ANY", 0) == 0
+    assert counts["REDUCE_MAX"] == 1
+    assert counts["EXP"] == 1
+    assert counts["REDUCE_SUM"] == 1
 
 
 def test_sdpa_safe_softmax_guard_auto_keeps_dropout_guard():
