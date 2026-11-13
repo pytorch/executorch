@@ -28,6 +28,14 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_io_manager",
+        srcs = ["test_io_manager.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner/io_manager:io_manager",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "test_text_prefiller",
         srcs = ["test_text_prefiller.cpp"],
         deps = [

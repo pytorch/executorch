@@ -8,6 +8,13 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
@@ -236,12 +243,161 @@ class ET_EXPERIMENTAL IOManager {
     return update_decode(model_outputs, "forward");
   }
 
+  /**
+   * @brief The logits among a method's outputs, as the sampler reads them.
+   *
+   * The default takes a method that returns only its logits. An IOManager for
+   * a model that returns more (e.g. its updated cache) picks them out, and may
+   * hand back a converted copy (e.g. dequantized).
+   *
+   * @param model_outputs The outputs of the method just executed.
+   * @param method The method that produced them.
+   * @return The logits tensor.
+   */
+  virtual runtime::Result<executorch::aten::Tensor> logits(
+      const std::vector<runtime::EValue>& model_outputs,
+      const std::string& method) {
+    (void)method;
+    if (model_outputs.size() != 1 || !model_outputs[0].isTensor()) {
+      ET_LOG(
+          Error,
+          "Expected the method to return only its logits tensor, got %zu outputs.",
+          model_outputs.size());
+      return runtime::Error::InvalidState;
+    }
+    return model_outputs[0].toTensor();
+  }
+
+  /**
+   * @brief The most tokens one call of `method` takes, or -1 for no limit of
+   * the IOManager's own (e.g. a fixed-size prompt step).
+   */
+  virtual int64_t max_tokens_per_step(const std::string& method) const {
+    (void)method;
+    return -1;
+  }
+
+  virtual int64_t max_tokens_per_step(
+      const std::string& method,
+      int64_t start_pos) const {
+    (void)start_pos;
+    return max_tokens_per_step(method);
+  }
+
+  /**
+   * @brief For an encoder-decoder contract: route `encoder_method`'s outputs
+   * into the decode step's fixed inputs. Call once after loading, then after
+   * each run of the encoder pass its outputs to `update_encoder`.
+   */
+  ET_NODISCARD virtual runtime::Error load_encoder(
+      const std::string& encoder_method) {
+    (void)encoder_method;
+    return runtime::Error::NotSupported;
+  }
+
+  ET_NODISCARD virtual runtime::Error update_encoder(
+      const std::vector<runtime::EValue>& encoder_outputs) {
+    (void)encoder_outputs;
+    return runtime::Error::NotSupported;
+  }
+
+  /**
+   * @brief The prefill and decode method names this IOManager drives, given
+   * the methods the program has. Empty strings leave the runner's defaults.
+   */
+  virtual std::pair<std::string, std::string> method_names(
+      const std::unordered_set<std::string>& available) const {
+    (void)available;
+    return {"", ""};
+  }
+
  private:
   /**
    * @brief Reference to the Module used for method metadata and execution.
    */
   ET_MODULE_NAMESPACE::Module& module_;
 };
+
+using IOManagerFactory =
+    std::function<std::unique_ptr<IOManager>(ET_MODULE_NAMESPACE::Module&)>;
+
+/**
+ * @brief IOManagers by the I/O contract they speak.
+ *
+ * A program names its contract in the `get_io_contract` constant method; the
+ * runner builds the IOManager registered for it, or the default IOManager when
+ * the program names none.
+ */
+inline std::unordered_map<std::string, IOManagerFactory>&
+io_manager_registry() {
+  static std::unordered_map<std::string, IOManagerFactory> registry;
+  return registry;
+}
+
+inline bool register_io_manager(
+    const std::string& contract,
+    IOManagerFactory factory) {
+  return io_manager_registry().emplace(contract, std::move(factory)).second;
+}
+
+inline runtime::Result<std::unique_ptr<IOManager>> make_io_manager(
+    ET_MODULE_NAMESPACE::Module& module,
+    const std::string& contract) {
+  if (!contract.empty()) {
+    auto it = io_manager_registry().find(contract);
+    if (it != io_manager_registry().end()) {
+      auto manager = it->second(module);
+      if (!manager) {
+        return runtime::Error::InvalidState;
+      }
+      return manager;
+    }
+    ET_LOG(
+        Error,
+        "No IOManager registered for I/O contract '%s'.",
+        contract.c_str());
+    return runtime::Error::NotSupported;
+  }
+  return std::make_unique<IOManager>(module);
+}
+
+/// Registers the IOManagers this library implements. Idempotent.
+void register_builtin_io_managers();
+
+/**
+ * @brief Memory for the I/O buffers an IOManager owns.
+ *
+ * A backend whose device reads graph I/O from memory it can map (for example
+ * QNN's rpcmem) registers an allocator, so the device uses these buffers in
+ * place instead of copying them on every call. Without one, buffers come from
+ * the heap.
+ */
+class ET_EXPERIMENTAL IOBufferAllocator {
+ public:
+  virtual ~IOBufferAllocator() = default;
+  /// A block of at least `nbytes`, or nullptr to fall back to the heap.
+  virtual void* allocate(size_t nbytes, size_t alignment) = 0;
+  virtual void deallocate(void* block) = 0;
+  /// Declares a tensor whose data starts at `tensor_data` inside `block`.
+  virtual void bind(void* block, void* tensor_data) {
+    (void)block;
+    (void)tensor_data;
+  }
+};
+
+using IOBufferAllocatorFactory =
+    std::function<std::unique_ptr<IOBufferAllocator>()>;
+
+inline IOBufferAllocatorFactory& io_buffer_allocator_factory() {
+  static IOBufferAllocatorFactory factory;
+  return factory;
+}
+
+/// Sets the allocator IOManagers use for their I/O buffers. The last call wins.
+inline bool set_io_buffer_allocator(IOBufferAllocatorFactory factory) {
+  io_buffer_allocator_factory() = std::move(factory);
+  return true;
+}
 
 } // namespace llm
 } // namespace extension
