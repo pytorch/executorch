@@ -86,6 +86,22 @@ bool fp32(const Kernel& node, const ptn::Graph& graph) {
   });
 }
 
+bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound) {
+  switch (argument.kind()) {
+    case ptn::ArgKind::None:
+      bound = fallback;
+      return true;
+    case ptn::ArgKind::Int:
+      bound = static_cast<float>(argument.as_int().value);
+      return argument.as_int().id == ptn::kInvalid;
+    case ptn::ArgKind::Float:
+      bound = static_cast<float>(argument.as_float().value);
+      return argument.as_float().id == ptn::kInvalid;
+    default:
+      return false;
+  }
+}
+
 struct MaxPool2d {
   ptn::ValueId input;
   ptn::ValueId output;
@@ -801,7 +817,11 @@ class XNNExecutable final : public Executable {
   }
 
   static bool supports_activation(const Kernel& node, const ptn::Graph& graph) {
-    if (node.inputs.size() != 1 || node.outputs.size() != 1 ||
+    return node.inputs.size() == 1 && elementwise_unary(node, graph);
+  }
+
+  static bool elementwise_unary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 ||
         arg(node, 0).kind() != ptn::ArgKind::Tensor ||
         node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
         !fp32(node, graph)) {
@@ -1063,18 +1083,44 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  static bool supports_add(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 3 &&
-        node.outputs.size() == 1 &&
-        ((arg(node, 2).kind() == ptn::ArgKind::Int &&
-          arg(node, 2).as_int().value == 1) ||
-         (arg(node, 2).kind() == ptn::ArgKind::Float &&
-          arg(node, 2).as_float().value == 1));
+  static bool supports_clamp(const Kernel& node, const ptn::Graph& graph) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    float min = 0;
+    float max = 0;
+    return node.inputs.size() == 3 && elementwise_unary(node, graph) &&
+        (arg(node, 1).kind() != ptn::ArgKind::None ||
+         arg(node, 2).kind() != ptn::ArgKind::None) &&
+        clamp_bound(arg(node, 1), -infinity, min) &&
+        clamp_bound(arg(node, 2), infinity, max) && min <= max;
   }
 
-  static bool supports_mul(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 2 &&
-        node.outputs.size() == 1;
+  Error clamp(const Kernel& node) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    xnn_unary_params params{};
+    clamp_bound(arg(node, 1), -infinity, params.clamp.min);
+    clamp_bound(arg(node, 2), infinity, params.clamp.max);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_clamp,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
+  static bool supports_binary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 || node.inputs.size() < 2 ||
+        node.inputs.size() > 3 || arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        arg(node, 1).kind() != ptn::ArgKind::Tensor || !fp32(node, graph)) {
+      return false;
+    }
+    if (node.inputs.size() == 2) {
+      return true;
+    }
+    const auto& alpha = arg(node, 2);
+    return (alpha.kind() == ptn::ArgKind::Int && alpha.as_int().value == 1) ||
+        (alpha.kind() == ptn::ArgKind::Float && alpha.as_float().value == 1);
   }
 
   template <xnn_binary_operator Operator>
@@ -1215,18 +1261,22 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 15> kOps{{
+  static constexpr std::array<XNNOp, 17> kOps{{
       {"torch.ops.aten.add.Tensor",
-       &E::supports_add,
+       &E::supports_binary,
        &E::binary<xnn_binary_add>},
       {"torch.ops.aten.as_strided_copy.default",
        &E::supports_as_strided,
        &E::static_reshape},
       {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
       {"torch.ops.aten.bmm.default", &E::supports_bmm, &E::bmm},
+      {"torch.ops.aten.clamp.default", &E::supports_clamp, &E::clamp},
       {"torch.ops.aten.convolution.default",
        &E::supports_convolution,
        &E::convolution},
+      {"torch.ops.aten.div.Tensor",
+       &E::supports_binary,
+       &E::binary<xnn_binary_divide>},
       {"torch.ops.aten.gelu.default",
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
@@ -1236,7 +1286,7 @@ const XNNOp* find_op(std::string_view target) {
        &E::max_pool},
       {"torch.ops.aten.mean.dim", &E::supports_mean, &E::mean},
       {"torch.ops.aten.mul.Tensor",
-       &E::supports_mul,
+       &E::supports_binary,
        &E::binary<xnn_binary_multiply>},
       {"torch.ops.aten.native_layer_norm.default",
        &E::supports_layer_norm,
