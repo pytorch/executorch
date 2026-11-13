@@ -801,6 +801,62 @@ TEST(CoopmatFamilyTest, EveryRowHasShaderVariants) {
     }
   }
 }
+
+// The tile geometry and layout flags a row selects with and dispatches by
+// (WmmaTile, rowmajor_a, image_a) equal the parameters every variant of the
+// row is built with. A mismatched SG_GRID_* gives a wrong workgroup size; a
+// mismatched tile, a wrong grid and wrong outputs.
+TEST(CoopmatFamilyTest, RowTilesMatchShaderVariants) {
+  const auto variants = family_variants();
+  ASSERT_FALSE(variants.empty());
+  const auto u32 = [](const std::map<std::string, std::string>& p,
+                      const char* key) -> uint32_t {
+    const auto it = p.find(key);
+    EXPECT_NE(it, p.end()) << key;
+    return it == p.end() ? 0u : static_cast<uint32_t>(std::stoul(it->second));
+  };
+  const auto flag = [](const std::map<std::string, std::string>& p,
+                       const char* key) {
+    const auto it = p.find(key);
+    return it != p.end() && it->second == "true";
+  };
+  size_t checked = 0;
+  for (const CoopmatFamily f : {CoopmatFamily::kXe2, CoopmatFamily::kNvidia}) {
+    for (const WmmaRow& row : coopmat_family_rows(f)) {
+      for (const auto& [name, io] : row_kernel_names(row)) {
+        const auto it = variants.find(name);
+        if (it == variants.end()) {
+          ADD_FAILURE() << "no shader variant " << name;
+          continue;
+        }
+        const auto& p = it->second;
+        const WmmaTile& t = row.tile;
+        EXPECT_EQ(u32(p, "WG_TILE_M"), t.m) << name;
+        EXPECT_EQ(u32(p, "WG_TILE_N"), t.n) << name;
+        EXPECT_EQ(u32(p, "WG_TILE_K"), t.k) << name;
+        EXPECT_EQ(u32(p, "SG_GRID_X"), t.sg_grid_x) << name;
+        EXPECT_EQ(u32(p, "SG_GRID_Y"), t.sg_grid_y) << name;
+        EXPECT_EQ(u32(p, "SUBGROUP_SIZE"), t.subgroup_size) << name;
+        EXPECT_EQ(u32(p, "MMA_M"), t.mma_m) << name;
+        EXPECT_EQ(p.at("IO_STORAGE"), io) << name;
+        EXPECT_EQ(p.at("WEIGHT_STORAGE"), "texture2d") << name;
+        EXPECT_EQ(p.at("DTYPE"), "half") << name;
+        if (row.op == WmmaOp::kQ4gsw) {
+          EXPECT_EQ(
+              flag(p, "IMG_A") && p.at("IO_STORAGE") == "texture3d",
+              row.image_a && std::string(io) == "texture3d")
+              << name;
+        } else {
+          EXPECT_EQ(flag(p, "ROWMAJOR_A"), row.rowmajor_a) << name;
+        }
+        ++checked;
+      }
+    }
+  }
+  // 4 Xe2 rows (2 q4gsw, 2 dq8ca on both IO storages) and 4 NVIDIA rows, the
+  // dq8ca ones in two zero-point dtypes.
+  EXPECT_EQ(checked, 2u + 2u * 2u * 2u + 3u + 2u);
+}
 #endif // COOPMAT_FAMILY_TEST_GLSL_DIR
 
 } // namespace
