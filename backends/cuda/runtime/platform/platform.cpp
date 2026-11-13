@@ -209,17 +209,24 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     err = GetLastError();
   }
   if (err != ERROR_SUCCESS) {
+    DeleteFileW(path.c_str());
     ET_LOG(
         Error,
         "Failed to write %s with error %lu: %s",
         utf8.c_str(),
         err,
         format_win_error(err).c_str());
-    DeleteFileW(path.c_str());
     return executorch::runtime::Error::AccessFailed;
   }
   ET_LOG(Info, "Wrote %zu bytes to %s", size, utf8.c_str());
-  return path;
+  // The caller only takes over the file once this returns, so remove it here
+  // if copying the path throws.
+  try {
+    return path;
+  } catch (...) {
+    DeleteFileW(path.c_str());
+    throw;
+  }
 #else
   // mkostemps replaces the Xs with random characters and creates the file with
   // O_EXCL and mode 0600, retrying if the name is taken.
@@ -250,7 +257,14 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     return executorch::runtime::Error::AccessFailed;
   }
   ET_LOG(Info, "Wrote %zu bytes to %s", size, path.c_str());
-  return std::filesystem::path(path);
+  // The caller only takes over the file once this returns, so remove it here
+  // if building the path throws.
+  try {
+    return std::filesystem::path(path);
+  } catch (...) {
+    unlink(path.c_str());
+    throw;
+  }
 #endif
 }
 
