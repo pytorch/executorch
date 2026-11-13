@@ -25,6 +25,7 @@
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
 # - gemma3:   Text generation model (CPU, CUDA)
+# - diffusers: Image generation from Diffusers exports (MLX)
 #
 # USAGE:
 # ------
@@ -93,7 +94,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan diffusers-mlx dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 .PHONY: llama-vulkan
 
@@ -122,6 +123,7 @@ help:
 	@echo "  parakeet-vulkan     - Build Parakeet runner with Vulkan backend"
 	@echo "  dinov2-cuda         - Build DINOv2 runner with CUDA backend"
 	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
+	@echo "  diffusers-mlx       - Build the Diffusers image generation runner with MLX backend"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  nemotron3-diarization-mlx - Build Nemotron 3 Diarization runner with MLX backend"
@@ -274,6 +276,15 @@ parakeet-vulkan:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+diffusers-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Diffusers runner with MLX..."
+	cd examples/models/diffusers && cmake --workflow --preset diffusers-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/diffusers/diffusion_runner"
 
 dinov2-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
