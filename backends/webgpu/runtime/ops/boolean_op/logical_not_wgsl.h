@@ -13,16 +13,19 @@
 namespace executorch::backends::webgpu {
 
 // @generated from boolean_op.wgsl - DO NOT EDIT.
-// wgsl-sha256: 06dc55c61e55c35eb12abf548fafb495097fa8d22daea930af6a32ed724a5b6a
+// wgsl-sha256: a5d08fe5cc37b8d6d43f8892b13ad6cfd908c488afc9186aaf244f7a5ecd82e0
 inline constexpr const char* kLogicalNotWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
+// int_scalar / float_compare are read by the *_int variants only: an Int
+// scalar compares in int32, a Double one in fp32 (PyTorch promotes an integer
+// tensor against a float scalar to the default float dtype).
 struct Params {
   num_elements: u32,
   scalar: f32,
-  _pad1: u32,
-  _pad2: u32,
+  int_scalar: i32,
+  float_compare: u32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 

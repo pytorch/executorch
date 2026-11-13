@@ -13,6 +13,8 @@ Two suites share this file:
   is exact in fp32 and straddles (and hits) the scalar, so fp32/fp64 agree
   bit-for-bit and every op has mixed True/False cases; a non-multiple-of-4 numel
   exercises the kernel tail (4 elems per u32 word).
+  `int_ramp` feeds the int32-input variants (an Int scalar compares in int32, a
+  Double one in fp32).
 - `aten.{eq,lt,le,gt,ge}.Tensor` (`CompareModule` / `CompareTest`, imported by
   `cases.py`): elementwise fp32 tensor comparison -> bool. Inputs come from a small
   discrete range so `eq`/`le`/`ge` see genuine ties and `lt`/`gt` are a real
@@ -70,6 +72,15 @@ def _det_input(shape: tuple[int, ...]) -> torch.Tensor:
         n *= d
     flat = torch.arange(n, dtype=torch.float32)
     return (((flat % 17) - 8) / 16.0).reshape(shape)
+
+
+def int_ramp(shape: tuple[int, ...]) -> torch.Tensor:
+    """Deterministic int32 over [-8, 40], hitting and straddling the int scalars
+    (3 and the ESM-2 mask token id 32)."""
+    n = 1
+    for d in shape:
+        n *= d
+    return ((torch.arange(n, dtype=torch.int32) * 5) % 49 - 8).reshape(shape)
 
 
 def _export(m: torch.nn.Module, x: torch.Tensor):

@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""`aten.mul.Tensor` (full broadcast) module + configs for the WebGPU op-test framework.
+"""`aten.mul.Tensor` (full broadcast) and `aten.mul.Scalar` modules + configs for the
+WebGPU op-test framework.
 
 `MulModule` + `CONFIGS` are imported by `cases.py` to drive the declarative op-test
 suite (export via VulkanPartitioner + fp64 torch golden, run on Dawn). `MulTest` is
@@ -33,6 +34,39 @@ CONFIGS = {
 class MulModule(torch.nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return a * b
+
+
+# name -> scalar for `aten.mul.Scalar`, which SDPA's math decomposition emits
+# with 1.0 (and which survives to Edge, unlike `x * 2.0`).
+SCALAR_CONFIGS = {
+    "one": 1.0,
+    "negative": -2.5,
+    "int": 3,
+    "zero": 0.0,
+}
+
+
+class MulScalarModule(torch.nn.Module):
+    """`aten.mul.Scalar`; with `param_shape`, on a parameter added to the input."""
+
+    def __init__(self, scalar: float = 1.0, param_shape=None) -> None:
+        super().__init__()
+        self.scalar = scalar
+        self.param = (
+            torch.nn.Parameter(
+                torch.linspace(-4.0, 4.0, param_shape[0] * param_shape[1]).reshape(
+                    param_shape
+                ),
+                requires_grad=False,
+            )
+            if param_shape is not None
+            else None
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.param is not None:
+            return torch.ops.aten.mul.Scalar(self.param, self.scalar) + x
+        return torch.ops.aten.mul.Scalar(x, self.scalar)
 
 
 def _det_inputs(shape_a, shape_b):

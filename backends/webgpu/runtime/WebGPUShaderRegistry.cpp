@@ -27,11 +27,17 @@
 #include <executorch/backends/webgpu/runtime/ops/bitwise_not/bitwise_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_tiled_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_vec4_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_eq_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_eq_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ge_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ge_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_gt_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_gt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_le_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_le_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_lt_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_lt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ne_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ne_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/logical_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/cat/cat_wgsl.h>
@@ -139,6 +145,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/erf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/mul_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
@@ -160,7 +167,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 149> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -344,11 +351,25 @@ constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
         kCompareEqWorkgroupSizeZ,
     },
     {
+        "compare_eq_int",
+        kCompareEqIntWGSL,
+        kCompareEqIntWorkgroupSizeX,
+        kCompareEqIntWorkgroupSizeY,
+        kCompareEqIntWorkgroupSizeZ,
+    },
+    {
         "compare_ge",
         kCompareGeWGSL,
         kCompareGeWorkgroupSizeX,
         kCompareGeWorkgroupSizeY,
         kCompareGeWorkgroupSizeZ,
+    },
+    {
+        "compare_ge_int",
+        kCompareGeIntWGSL,
+        kCompareGeIntWorkgroupSizeX,
+        kCompareGeIntWorkgroupSizeY,
+        kCompareGeIntWorkgroupSizeZ,
     },
     {
         "compare_gt",
@@ -358,11 +379,25 @@ constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
         kCompareGtWorkgroupSizeZ,
     },
     {
+        "compare_gt_int",
+        kCompareGtIntWGSL,
+        kCompareGtIntWorkgroupSizeX,
+        kCompareGtIntWorkgroupSizeY,
+        kCompareGtIntWorkgroupSizeZ,
+    },
+    {
         "compare_le",
         kCompareLeWGSL,
         kCompareLeWorkgroupSizeX,
         kCompareLeWorkgroupSizeY,
         kCompareLeWorkgroupSizeZ,
+    },
+    {
+        "compare_le_int",
+        kCompareLeIntWGSL,
+        kCompareLeIntWorkgroupSizeX,
+        kCompareLeIntWorkgroupSizeY,
+        kCompareLeIntWorkgroupSizeZ,
     },
     {
         "compare_lt",
@@ -372,11 +407,25 @@ constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
         kCompareLtWorkgroupSizeZ,
     },
     {
+        "compare_lt_int",
+        kCompareLtIntWGSL,
+        kCompareLtIntWorkgroupSizeX,
+        kCompareLtIntWorkgroupSizeY,
+        kCompareLtIntWorkgroupSizeZ,
+    },
+    {
         "compare_ne",
         kCompareNeWGSL,
         kCompareNeWorkgroupSizeX,
         kCompareNeWorkgroupSizeY,
         kCompareNeWorkgroupSizeZ,
+    },
+    {
+        "compare_ne_int",
+        kCompareNeIntWGSL,
+        kCompareNeIntWorkgroupSizeX,
+        kCompareNeIntWorkgroupSizeY,
+        kCompareNeIntWorkgroupSizeZ,
     },
     {
         "constant_pad_nd",
@@ -713,6 +762,13 @@ constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
         kMmVec4WorkgroupSizeX,
         kMmVec4WorkgroupSizeY,
         kMmVec4WorkgroupSizeZ,
+    },
+    {
+        "mul_scalar",
+        kMulScalarWGSL,
+        kMulScalarWorkgroupSizeX,
+        kMulScalarWorkgroupSizeY,
+        kMulScalarWorkgroupSizeZ,
     },
     {
         "native_layer_norm",

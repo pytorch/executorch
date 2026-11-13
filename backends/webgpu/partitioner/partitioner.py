@@ -115,6 +115,11 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
         _convolution_check,
         dtypes={torch.float32},
     ),
+    exir_ops.edge.aten.mul.Scalar: _webgpu_features(
+        exir_ops.edge.aten.mul.Scalar,
+        lambda node, vulkan_check: vulkan_check(node),
+        dtypes={torch.float32},
+    ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.erf.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),

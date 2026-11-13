@@ -49,9 +49,13 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_compare import (
+    _det_input as _compare_scalar_input,
     compare_gen_a,
     compare_gen_b,
     CompareModule,
+    int_ramp as _compare_int_ramp,
+    SCALAR_OPS as _COMPARE_SCALAR_OPS,
+    ScalarCompareModule,
 )
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
@@ -111,6 +115,8 @@ from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
+    MulScalarModule,
+    SCALAR_CONFIGS as _MUL_SCALAR_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
@@ -330,6 +336,27 @@ def _mul_suite() -> WebGPUTestSuite:
     )
 
 
+@register_op_test("mul_scalar")
+def _mul_scalar_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=MulScalarModule,
+        cases=[
+            Case(name=name, construct={"scalar": scalar}, inputs=((4, 257),))
+            for name, scalar in _MUL_SCALAR_CONFIGS.items()
+        ]
+        + [
+            Case(name="rank4", construct={"scalar": 0.125}, inputs=((S1, S2, S2, M2),)),
+            Case(
+                name="param_input",
+                construct={"scalar": -1.5, "param_shape": (4, 257)},
+                inputs=((4, 257),),
+            ),
+        ],
+        atol=1e-6,
+        rtol=1e-6,
+    )
+
+
 def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
     """Builder for ops whose per-case spec is a (shape, fn) pair (view/select/slice).
     The fn is a `construct` kwarg baked into the .pte module, never a serialized input.
@@ -360,6 +387,32 @@ def _minimum_suite() -> WebGPUTestSuite:
                 ),
             ),
         ],
+    )
+
+
+@register_op_test("compare_scalar")
+def _compare_scalar_suite() -> WebGPUTestSuite:
+    # aten.<op>.Scalar on fp32 and int32 inputs (int64 inputs, e.g. token ids,
+    # are downcast to int32 on device) -> byte-packed bool.
+    cases = []
+    for op in _COMPARE_SCALAR_OPS:
+        cases.append(
+            Case(
+                name=f"{op}_fp32",
+                construct={"op": op, "scalar": 0.0},
+                inputs=(InputSpec(shape=(3, 5), gen=_compare_scalar_input),),
+            )
+        )
+        for label, scalar in (("int", 3), ("token", 32), ("float", 2.5)):
+            cases.append(
+                Case(
+                    name=f"{op}_int32_{label}_scalar",
+                    construct={"op": op, "scalar": scalar},
+                    inputs=(InputSpec(shape=(2, 37), gen=_compare_int_ramp),),
+                )
+            )
+    return WebGPUTestSuite(
+        module_factory=ScalarCompareModule, cases=cases, golden_dtype="float32"
     )
 
 
