@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "diffusers-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/diffusers",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+      }
+    },
+    {
+      "name": "diffusers-mlx",
+      "displayName": "Diffusion runner (MLX)",
+      "inherits": ["diffusers-base"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "diffusers-mlx",
+      "displayName": "Build diffusion runner (MLX)",
+      "configurePreset": "diffusers-mlx",
+      "targets": ["diffusion_runner"]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "diffusers-mlx",
+      "displayName": "Configure and build diffusion runner (MLX)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "diffusers-mlx"
+        },
+        {
+          "type": "build",
+          "name": "diffusers-mlx"
+        }
+      ]
+    }
+  ]
+}
