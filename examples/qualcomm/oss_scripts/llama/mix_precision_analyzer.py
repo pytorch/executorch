@@ -67,11 +67,13 @@ class PerLayerSqnrAnalyzer:
         }
         self.q_ops = {
             torch.ops.torchao.quantize_affine,
+            torch.ops.torchao.quantize_affine.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
         }
         self.dq_ops = {
             torch.ops.torchao.dequantize_affine,
+            torch.ops.torchao.dequantize_affine.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         }
