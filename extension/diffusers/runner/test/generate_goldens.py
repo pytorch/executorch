@@ -4,9 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Writes goldens.json for the C++ scheduler and RNG tests.
+"""Writes goldens.json for the C++ scheduler, RNG, pipeline and runner tests.
 
-Run from the repository root with torch, diffusers and executorch installed:
+Run from the repository root with torch, diffusers, transformers and executorch
+installed:
 
     python extension/diffusers/runner/test/generate_goldens.py
 """
@@ -14,6 +15,7 @@ Run from the repository root with torch, diffusers and executorch installed:
 import json
 import math
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import diffusers
 import torch
@@ -201,6 +203,134 @@ def bits(tensor):
     return [value & 0xFFFF for value in tensor.view(torch.int16).tolist()]
 
 
+def pipeline_goldens():
+    from executorch.extension.diffusers.pipeline_behaviors import (
+        FluxPipelineBehavior,
+        SDXLPipelineBehavior,
+    )
+
+    flux = FluxPipelineBehavior()
+    flux_latents = flux.create_latents(
+        (1, 16, 64),
+        height=64,
+        width=64,
+        vae_scale_factor=8,
+        generator=torch.Generator().manual_seed(5),
+        dtype=torch.bfloat16,
+        scheduler=None,
+    )
+    flux_scheduler = diffusers.FlowMatchEulerDiscreteScheduler.from_config(FLUX_DEV)
+    flux_timesteps = flux.prepare_schedule(
+        flux_scheduler, 4, height=1024, width=768, vae_scale_factor=8
+    )
+    flux_inputs = flux.prepare_denoiser_inputs(
+        flux_latents,
+        flux_timesteps[1].reshape(1).to(torch.float32),
+        (torch.zeros(1, 7, 8, dtype=torch.bfloat16), torch.zeros(1, 4)),
+        height=64,
+        width=64,
+        vae_scale_factor=8,
+        dtype=torch.bfloat16,
+        guidance_scale=3.5,
+    )
+
+    sdxl = SDXLPipelineBehavior()
+    euler = diffusers.EulerDiscreteScheduler.from_config(SDXL_EULER)
+    euler.set_timesteps(5)
+    sd_latents = sdxl.create_latents(
+        (1, 4, 8, 8),
+        height=64,
+        width=64,
+        vae_scale_factor=8,
+        generator=torch.Generator().manual_seed(3),
+        dtype=torch.float16,
+        scheduler=euler,
+    )
+    return {
+        "flux_latents": {
+            "seed": 5,
+            "sizes": list(flux_latents.shape),
+            "values": flux_latents.float().flatten().tolist(),
+        },
+        "flux_schedule": {
+            "config": FLUX_DEV,
+            "steps": 4,
+            "height": 1024,
+            "width": 768,
+            "timesteps": flux_timesteps.tolist(),
+        },
+        "flux_denoiser_inputs": {
+            "timestep": float(flux_timesteps[1]),
+            "scaled_timestep": flux_inputs[1].float().tolist(),
+            "text_ids_sizes": list(flux_inputs[4].shape),
+            "image_ids": flux_inputs[5].tolist(),
+            "guidance": flux_inputs[6].float().tolist(),
+        },
+        "sd_latents": {
+            "seed": 3,
+            "steps": 5,
+            "config": SDXL_EULER,
+            "sizes": list(sd_latents.shape),
+            "values": sd_latents.float().flatten().tolist(),
+        },
+    }
+
+
+# Generations the C++ runner test repeats on the programs of
+# export_test_programs.py; img2img starts from RUNNER_IMAGE.
+RUNNER_CASES = [
+    {
+        "program": "tiny_sd15",
+        "prompt": "a b c",
+        "negative_prompt": "b",
+        "steps": 3,
+        "cfg_scale": 2.0,
+        "seed": 9,
+    },
+    {
+        "program": "tiny_sd15",
+        "prompt": "c a",
+        "steps": 4,
+        "cfg_scale": 1.0,
+        "seed": 3,
+        "strength": 0.5,
+    },
+    {
+        "program": "tiny_flux",
+        "prompt": "a c",
+        "steps": 2,
+        "guidance_scale": 3.5,
+        "seed": 5,
+    },
+]
+RUNNER_IMAGE = torch.linspace(0, 1, 3 * 16 * 16).reshape(1, 3, 16, 16)
+
+
+def runner_goldens():
+    from executorch.extension.diffusers.runner import DiffusionRunner
+    from executorch.runtime import Runtime, Verification
+    from export_test_programs import write_runner_programs
+
+    cases = []
+    with TemporaryDirectory() as directory:
+        write_runner_programs(Path(directory))
+        for case in RUNNER_CASES:
+            program = Runtime.get().load_program(
+                str(Path(directory) / f"{case['program']}.pte"),
+                verification=Verification.Minimal,
+            )
+            runner = DiffusionRunner.from_huggingface(
+                program, str(Path(directory) / case["program"])
+            )
+            options = {key: value for key, value in case.items() if key != "program"}
+            image = RUNNER_IMAGE if "strength" in case else None
+            output = runner.generate(**options, image=image)
+            del runner, program
+            pixels = output[0].permute(1, 2, 0).clamp(0, 1).mul(255).byte()
+            cases.append({**case, "pixels": pixels.flatten().tolist()})
+    return {"image": RUNNER_IMAGE.flatten().tolist(), "cases": cases}
+
+
 def main():
     schedulers = []
     for name, class_name, config, runs in SCHEDULER_CASES:
@@ -238,6 +368,8 @@ def main():
         "noise": NOISE,
         "schedulers": schedulers,
         "rng": rng,
+        "pipelines": pipeline_goldens(),
+        "runner": runner_goldens(),
     }
     path = Path(__file__).with_name("goldens.json")
     path.write_text(json.dumps(goldens, separators=(",", ":")) + "\n")

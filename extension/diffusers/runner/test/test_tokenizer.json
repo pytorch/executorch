@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "model": {
+    "type": "BPE",
+    "vocab": {"<pad>": 0, "<s>": 1, "</s>": 2, "a": 3, "b": 4, "c": 5},
+    "merges": []
+  },
+  "normalizer": null,
+  "pre_tokenizer": {
+    "type": "Split",
+    "pattern": {"Regex": "\\S+"},
+    "behavior": "Removed",
+    "invert": true
+  },
+  "post_processor": {
+    "type": "TemplateProcessing",
+    "single": [
+      {"SpecialToken": {"id": "<s>", "type_id": 0}},
+      {"Sequence": {"id": "A", "type_id": 0}},
+      {"SpecialToken": {"id": "</s>", "type_id": 0}}
+    ],
+    "pair": [],
+    "special_tokens": {
+      "<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]},
+      "</s>": {"id": "</s>", "ids": [2], "tokens": ["</s>"]}
+    }
+  },
+  "added_tokens": [
+    {"id": 0, "content": "<pad>", "single_word": false, "lstrip": false,
+     "rstrip": false, "normalized": false, "special": true},
+    {"id": 1, "content": "<s>", "single_word": false, "lstrip": false,
+     "rstrip": false, "normalized": false, "special": true},
+    {"id": 2, "content": "</s>", "single_word": false, "lstrip": false,
+     "rstrip": false, "normalized": false, "special": true}
+  ]
+}

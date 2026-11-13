@@ -340,6 +340,9 @@ class DiffusionRunner:
             width=output_width,
             vae_scale_factor=self.metadata.vae_scale_factor,
         )
+        # Calls that do not complete a step on their own, such as the trial
+        # evaluation that starts PLMS.
+        warmup_calls = len(timesteps) - steps
         dtype = getattr(torch, self.metadata.denoiser_dtype)
         vae_dtype = getattr(torch, self.metadata.vae_dtype)
         if image is None:
@@ -386,8 +389,9 @@ class DiffusionRunner:
             if "generator" in inspect.signature(self.scheduler.step).parameters
             else {}
         )
-        for step_index, timestep in enumerate(timesteps, start=1):
-            print(f"Step {step_index}/{len(timesteps)}")
+        warmup_calls = min(warmup_calls, len(timesteps) - 1)
+        total_steps = len(timesteps) - warmup_calls
+        for call, timestep in enumerate(timesteps, start=1):
             model_input = self.pipeline_behavior.prepare_model_input(
                 self.scheduler, latents, timestep
             )
@@ -418,6 +422,8 @@ class DiffusionRunner:
                 return_dict=False,
                 **step_kwargs,
             )[0]
+            if call > warmup_calls:
+                print(f"Step {call - warmup_calls}/{total_steps}")
         decode_latents = self.pipeline_behavior.prepare_decode_latents(
             latents,
             height=output_height,
