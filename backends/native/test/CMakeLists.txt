@@ -162,20 +162,13 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
   # native_ggml_sample_test_no_linear judges the other ops without it.
-  #
-  # TODO: Drop the int4wo f32 embedding filters once ggml keeps their float
-  # scales exact (next diff).
-  add_test(
-    NAME native_ggml_sample_test_act_quant
-    COMMAND
-      native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
-      --allow_activation_quant_for_weight_only
-      --gtest_filter=-embedding_int4wo_*.*_f32
+  add_test(NAME native_ggml_sample_test_act_quant
+           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+                   --device=cpu --allow_activation_quant_for_weight_only
   )
-  add_test(
-    NAME native_ggml_sample_test_no_linear
-    COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-            --device=cpu --gtest_filter=-linear_*:embedding_int4wo_*.*_f32
+  add_test(NAME native_ggml_sample_test_no_linear
+           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+                   --device=cpu --gtest_filter=-linear_*
   )
   target_compile_options(
     native_ggml_sample_test
