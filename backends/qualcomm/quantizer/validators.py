@@ -104,7 +104,7 @@ def _get_qnn_datatype(node: Node, qspec: QuantizationSpecBase):
             ):
                 torch_dtype = torch.uint16 if unsigned else torch.int16
 
-    return QNN_QUANT_TYPE_MAP.get(torch_dtype, QNN_TENSOR_TYPE_MAP[torch_dtype])
+    return QNN_QUANT_TYPE_MAP.get(torch_dtype, QNN_TENSOR_TYPE_MAP.get(torch_dtype))
 
 
 def _resolve_shared_qspec(

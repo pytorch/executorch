@@ -115,9 +115,8 @@ class To(NodeVisitor):
         # in preprocess stage.
         # HTP casts uint8 to float32 as if the input were bool, while uint8 to
         # int32 and int32 to float32 are right, so on HTP a plain uint8 to
-        # float32 cast goes through int32 too, as does float64, which is built
-        # as float32. Here the step is needed for the values, and nothing fuses
-        # it away.
+        # float32 cast goes through int32 too. Here the step is needed for the
+        # values, and nothing fuses it away.
         ops = []
         if (
             (
@@ -130,7 +129,7 @@ class To(NodeVisitor):
             )
             or (
                 input_node.meta["val"].dtype == torch.uint8
-                and node.meta["val"].dtype in (torch.float32, torch.float64)
+                and node.meta["val"].dtype == torch.float32
                 and not node.meta.get(QCOM_QUANT_ATTRS)
                 and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
             )

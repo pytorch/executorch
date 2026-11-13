@@ -7,7 +7,7 @@
 import functools
 import inspect
 from collections import OrderedDict
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
@@ -18,6 +18,7 @@ from executorch.backends.qualcomm._passes import (
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertComplexStft,
+    ConvertFullLikeToFull,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -134,6 +135,7 @@ class QnnPassManager(PassManager):
             (AnnotateUnbind, True),
             (CanonicalizeConv, True),
             (ConvertBmmToMatmul, False),
+            (ConvertFullLikeToFull, True),
             (ConvertLinearToConv2d, False),
             (DecomposeAcos, True),
             (DecomposeAddmm, True),
@@ -409,19 +411,17 @@ class QnnPassManager(PassManager):
             if dep_table is not None
             else self.get_passes_dependency_for_capture_program()
         )
-        for that, these in dep_table.items():
+        fixed_dep_table = self._get_fixed_passes_dependency(list(passes_job))
+        for that, these in (*dep_table.items(), *fixed_dep_table.items()):
             for this in these:
                 self.add_constraint(this_before_that_pass_constraint(this, that))
         for p in passes_job:
             self.add_pass(p)
         self.solve_constraints()
 
-        sorted_passes = self._move_terminal_passes_to_end(self.passes)
+        active_passes = self._get_active_edge_passes(passes_job)
         self._reset()
-        for p in sorted_passes:
-            if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:
-                continue
-
+        for p in active_passes:
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
@@ -435,13 +435,54 @@ class QnnPassManager(PassManager):
             if "skip_node_op_set" in kwargs:
                 kwargs["skip_node_op_set"] = skip_node_op_set
             self.add_pass(p(**kwargs))
-        self._validate_edge_passes()
         return self.passes
 
-    def _validate_edge_passes(self) -> None:
-        assert isinstance(
-            self.passes[-1], ResolveDebugHandle
-        ), "Please ensure ResolveDebugHandle is the last executed edge pass."
+    @classmethod
+    def _get_fixed_passes_dependency(cls, passes: List[type]) -> Dict:
+        """
+        Pass order that a backend needs whatever dep_table the caller gives,
+        in the same form as get_passes_dependency_for_capture_program().
+        """
+        return {}
+
+    def _invalid_passes_job(self, problem: str) -> ValueError:
+        # Only the active passes listed in passes_job run, so this is most
+        # often a job that lists only the passes to change.
+        return ValueError(
+            f"{problem} Start passes_job from "
+            f"{type(self).__name__}.get_capture_program_passes() and edit it "
+            "in place."
+        )
+
+    def _get_active_edge_passes(self, passes_job: OrderedDict) -> List[type]:
+        # Check the job before building any pass, since building reads the
+        # rest of each active entry.
+        for p in self.passes:
+            if not isinstance(p, type):
+                raise self._invalid_passes_job(
+                    f"passes_job is keyed by pass class, not by {p!r}."
+                )
+            if (
+                not isinstance(passes_job[p], dict)
+                or QCOM_PASS_ACTIVATE_KEY not in passes_job[p]
+            ):
+                raise self._invalid_passes_job(
+                    f"The entry of {p.__name__} is not a dict with the "
+                    f"{QCOM_PASS_ACTIVATE_KEY} key."
+                )
+        passes = [p for p in self.passes if passes_job[p][QCOM_PASS_ACTIVATE_KEY]]
+        missing = [p.__name__ for p in self._get_terminal_passes() if p not in passes]
+        if missing:
+            raise self._invalid_passes_job(
+                f"passes_job must turn on {' and '.join(missing)}."
+            )
+        for p in passes:
+            if QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY not in passes_job[p]:
+                raise self._invalid_passes_job(
+                    f"The entry of {p.__name__} has no "
+                    f"{QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY} to build it from."
+                )
+        return self._move_terminal_passes_to_end(passes)
 
     def _instantiate_passes(self, pass_classes, **available_kwargs):
         """Instantiate pass classes, injecting only kwargs each __init__ accepts."""
@@ -489,11 +530,17 @@ class QnnPassManager(PassManager):
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
         convert_linear_to_conv2d: bool = False,
+        compiler_specs=None,
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
     ):
         transform_passes = self.get_to_edge_transform_passes(
             exported_program,
             passes_job=passes_job,
             dep_table=dep_table,
+            compiler_specs=compiler_specs,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
             convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
         for p in transform_passes:

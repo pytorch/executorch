@@ -60,14 +60,6 @@ class QnnLpaiPassManager(QnnPassManager):
     def _get_terminal_passes(cls):
         return [ResolveDebugHandle, LpaiPartitionFallbackSupport]
 
-    def _validate_edge_passes(self) -> None:
-        assert isinstance(
-            self.passes[-2], ResolveDebugHandle
-        ), "Please ensure ResolveDebugHandle is the last edge pass before LpaiPartitionFallbackSupport."
-        assert isinstance(
-            self.passes[-1], LpaiPartitionFallbackSupport
-        ), "Please ensure LpaiPartitionFallbackSupport is the last pass."
-
     @classmethod
     def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         passes = [DecomposeHardsigmoid, DecomposeReciprocal]

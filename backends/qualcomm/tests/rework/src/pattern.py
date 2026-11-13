@@ -34,6 +34,7 @@ from executorch.backends.qualcomm.utils.check_qnn_version import (
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
+    QCOM_FALLBACK_NODE,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
@@ -5006,7 +5007,8 @@ class ResolveDebugHandle:
     intermediate-tensor debugging can key on it. getitem nodes inherit the
     handle from their producing tuple-output node.
 
-    Runs as the last edge pass (required — validated by _validate_edge_passes).
+    The pass manager runs it last, before only LpaiPartitionFallbackSupport on
+    LPAI.
 
     Handle numbering is assigned by graph traversal order. The quantized flow
     prepends a dequantize node that takes handle 1, shifting every subsequent
@@ -5034,14 +5036,16 @@ class ResolveDebugHandle:
         from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 
         # Base fp map. Extra DQ node for quantized flow due to self.idx_source.
+        # I64toI32 casts the topk indices to int32 before the index.
         offset = 0 if quantizer is None else 1
         name_handle_map = {
             "aten_topk_default": 1 + offset,
             "getitem": 1 + offset,
             "getitem_1": 1 + offset,
             "aten_view_copy_default": 2 + offset,
-            "aten_index_tensor": 3 + offset,
-            "aten_add_tensor": 4 + offset,
+            "aten__to_copy_default": 3 + offset,
+            "aten_index_tensor": 4 + offset,
+            "aten_add_tensor": 5 + offset,
         }
         if quantizer is not None:
             name_handle_map["quantized_decomposed_dequantize_per_tensor_default"] = 1
@@ -5151,6 +5155,44 @@ class SeqMSE:
         )
         # convert_pt2e to ensure it doesn't break the module.
         convert_pt2e(prepared)
+
+
+class TagPositionalSinCos:
+    class _TimestepEmbedding(torch.nn.Module):
+        def forward(self, t):
+            angles = t[:, None] * torch.linspace(1, 1000, 8)
+            return torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        gm = pass_pipeline.lower_edge_ep(
+            module=TagPositionalSinCos._TimestepEmbedding(),
+            sample_input=(torch.tensor([1.0, 500.0]),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.TagPositionalSinCos,
+            quantizer=quantizer,
+        ).graph_module
+        tagged = {
+            node.target for node in gm.graph.nodes if node.meta.get(QCOM_FALLBACK_NODE)
+        }
+        # Only float16 HTP computes the angle in float16, so only it moves the
+        # sin, the cos and the ops of their angle to CPU.
+        if quantizer is None:
+            assert {
+                exir_ops.edge.aten.sin.default,
+                exir_ops.edge.aten.cos.default,
+                exir_ops.edge.aten.mul.Tensor,
+            } <= tagged, tagged
+            assert exir_ops.edge.aten.cat.default not in tagged
+        else:
+            assert not tagged, tagged
 
 
 class TagQuantIO:

@@ -437,6 +437,12 @@ def test_seq_mse(request, kwargs):
     SeqMSE.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
+@repack_pass_fixtures
+def test_tag_positional_sin_cos(request, kwargs):
+    TagPositionalSinCos.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends_quantized()
 @repack_pass_fixtures
 def test_tag_quant_io(request, kwargs):
