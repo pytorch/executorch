@@ -819,6 +819,17 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+set(EXECUTORCH_VULKAN_SHARED_RUNTIME_REQUIRED
+    OFF
+    CACHE INTERNAL "Vulkan or VGF requires the shared registry DSO" FORCE
+)
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  set(EXECUTORCH_VULKAN_SHARED_RUNTIME_REQUIRED
+      ON
+      CACHE INTERNAL "Vulkan or VGF requires the shared registry DSO" FORCE
+  )
+endif()
+
 if(EXECUTORCH_BUILD_VULKAN
    OR EXECUTORCH_BUILD_VGF
    OR EXECUTORCH_BUILD_NATIVE_VULKAN
@@ -1666,6 +1677,12 @@ endif()
 
 if(EXECUTORCH_BUILD_VGF)
   list(APPEND _executorch_backends vgf_backend)
+endif()
+
+# The example links the Vulkan backend and extension/module targets; these
+# targets are all available here, unlike inside backends/arm.
+if(EXECUTORCH_BUILD_VGF_SHARED_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/arm/vgf_vulkan_shared)
 endif()
 
 # Added after the backends so EXECUTORCH_BUILD_WASM_WEBGPU can link

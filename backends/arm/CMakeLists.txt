@@ -278,7 +278,9 @@ if(EXECUTORCH_BUILD_VGF)
 
   # Add backend delegate for VGF
   set(_vgf_backend_sources
-      backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFBackend.cpp
+      backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFSharedDevice.cpp
       backends/arm/runtime/VGFZeroCopy.cpp
       backends/arm/runtime/VGFNeuralStatistics.cpp
   )
@@ -348,6 +350,23 @@ if(EXECUTORCH_BUILD_VGF)
 
   target_link_libraries(vgf_backend PRIVATE executorch_core)
   target_link_libraries(vgf_backend PRIVATE vgf)
+
+  target_compile_features(vgf_backend PUBLIC cxx_std_17)
+  target_link_libraries(vgf_backend PUBLIC executorch_vulkan_shared_runtime)
+  target_compile_options(
+    vgf_backend PRIVATE "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>"
+                        "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+  )
+  if(EXECUTORCH_BUILD_VULKAN)
+    target_compile_definitions(
+      vgf_backend PUBLIC EXECUTORCH_VGF_SHARED_DEVICE=1
+    )
+    target_link_libraries(vgf_backend PRIVATE vulkan_backend)
+  else()
+    target_compile_definitions(
+      vgf_backend PUBLIC EXECUTORCH_VGF_SHARED_DEVICE=0
+    )
+  endif()
 
   # When VGF compiles volk.c itself, link libdl for dlopen/dlsym
   if(NOT EXECUTORCH_BUILD_VULKAN)
@@ -435,6 +454,30 @@ if(EXECUTORCH_BUILD_VGF)
     endif()
     add_test(NAME vgf_zero_copy_test COMMAND vgf_zero_copy_test)
   endif()
+
+  if(EXECUTORCH_BUILD_TESTS)
+    add_executable(
+      vgf_shared_device_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_shared_device_test.cpp
+    )
+    target_include_directories(
+      vgf_shared_device_test
+      PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+              ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_shared_device_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    target_link_libraries(vgf_shared_device_test PRIVATE vgf_backend)
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_shared_device_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_shared_device_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_shared_device_test COMMAND vgf_shared_device_test)
+  endif()
+
+  # The mixed example is configured at the root after dependencies exist.
 
   # end config for VGF builds
 endif()
