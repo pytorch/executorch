@@ -54,6 +54,10 @@ class CudaSortRandTest : public testing::Test {
     }
   }
 
+  void TearDown() override {
+    cudaSetDevice(0);
+  }
+
   Tensor* float_tensor(const std::vector<int64_t>& sizes) {
     Tensor* tensor = nullptr;
     EXPECT_EQ(
@@ -172,4 +176,40 @@ TEST_F(CudaSortRandTest, RandProducesUnitInterval) {
     ASSERT_LT(value, 1.0f);
   }
   EXPECT_EQ(aoti_torch_delete_tensor_object(out), Error::Ok);
+}
+
+// rand runs on the current device, which the delegate sets to the method's,
+// with an RNG state of that device. device_index_ can name the device the
+// program was traced on, so a stale value must not move the output.
+TEST_F(CudaSortRandTest, RandFollowsTheCurrentDevice) {
+  int count = 0;
+  ASSERT_EQ(cudaGetDeviceCount(&count), cudaSuccess);
+  if (count < 2) {
+    GTEST_SKIP() << "needs two CUDA devices";
+  }
+  std::vector<int64_t> sizes = {64};
+  int32_t dtype = static_cast<int32_t>(slim_c10::ScalarType::Float);
+  for (const int device : {1, 0, 1}) {
+    ASSERT_EQ(cudaSetDevice(device), cudaSuccess);
+    Tensor* out = nullptr;
+    ASSERT_EQ(
+        aoti_torch_cuda_rand(
+            sizes.data(),
+            static_cast<int64_t>(sizes.size()),
+            &dtype,
+            /*layout=*/nullptr,
+            /*device=*/nullptr,
+            /*device_index_=*/1 - device,
+            /*pin_memory=*/nullptr,
+            &out),
+        Error::Ok);
+    ASSERT_NE(out, nullptr);
+    EXPECT_EQ(out->device_index(), device);
+    for (float value : to_host<float>(out)) {
+      ASSERT_GE(value, 0.0f);
+      ASSERT_LT(value, 1.0f);
+    }
+    EXPECT_EQ(aoti_torch_delete_tensor_object(out), Error::Ok);
+  }
+  ASSERT_EQ(cudaSetDevice(0), cudaSuccess);
 }

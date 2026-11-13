@@ -15,6 +15,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 
 #include <array>
@@ -87,6 +88,108 @@ constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
+// Written by CudaPartitioner; the planned IO buffers live on this device.
+constexpr char kTargetDeviceSpec[] = "target_device";
+
+std::string_view trim(std::string_view s) {
+  size_t start = 0;
+  while (start < s.size() &&
+         std::isspace(static_cast<unsigned char>(s[start]))) {
+    ++start;
+  }
+  size_t end = s.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) {
+    --end;
+  }
+  return s.substr(start, end - start);
+}
+
+// The CUDA device index named by the target_device compile spec, in the
+// "cuda" or "cuda:N" form CudaPartitioner writes, or -1 without one.
+Result<int> parse_cuda_target_device(ArrayRef<CompileSpec> compile_specs) {
+  for (const CompileSpec& spec : compile_specs) {
+    if (std::strcmp(spec.key, kTargetDeviceSpec) != 0) {
+      continue;
+    }
+    std::string_view value;
+    if (spec.value.buffer != nullptr) {
+      value = std::string_view(
+          static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
+    }
+    while (!value.empty() && value.back() == '\0') {
+      value.remove_suffix(1);
+    }
+    value = trim(value);
+    constexpr std::string_view kCuda = "cuda";
+    if (value == kCuda) {
+      return 0;
+    }
+    const bool has_prefix = value.size() > kCuda.size() + 1 &&
+        value.substr(0, kCuda.size()) == kCuda && value[kCuda.size()] == ':';
+    int index = -1;
+    bool parsed = false;
+    if (has_prefix) {
+      const std::string_view digits = value.substr(kCuda.size() + 1);
+      const auto result =
+          std::from_chars(digits.data(), digits.data() + digits.size(), index);
+      parsed = result.ec == std::errc() &&
+          result.ptr == digits.data() + digits.size() && index >= 0;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed,
+        InvalidArgument,
+        "init: target_device '%.*s' is not of the form cuda[:N]",
+        static_cast<int>(value.size()),
+        value.data());
+    return index;
+  }
+  return -1;
+}
+
+// Work on a stream runs on the stream's device, so a caller stream from another
+// device would run this method's kernels against memory they cannot reach.
+Error check_caller_stream_device(
+    cudaStream_t stream,
+    int device_index,
+    const std::string& method_name) {
+// cudaStreamGetDevice came in CUDA 12.8, and a CUDA 12 build may load an
+// older CUDA 12 runtime, so only a CUDA 13 build calls it.
+#if !defined(EXECUTORCH_USE_HIP) && defined(CUDART_VERSION) && \
+    CUDART_VERSION >= 13000
+  // CUDA refuses to report the device of a capturing stream, and the refusal
+  // also ends the capture.
+  cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamIsCapturing(stream, &capture));
+  if (capture != cudaStreamCaptureStatusNone) {
+    return Error::Ok;
+  }
+  int stream_device = -1;
+  const cudaError_t err = cudaStreamGetDevice(stream, &stream_device);
+  if (err != cudaSuccess) {
+    // Leaves no error pending for the next, unrelated CUDA call.
+    (void)cudaGetLastError();
+    ET_LOG(
+        Error,
+        "Method '%s': cannot find the device of the caller CUDA stream: %s",
+        method_name.c_str(),
+        cudaGetErrorString(err));
+    return Error::Internal;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      stream_device == device_index,
+      InvalidArgument,
+      "Method '%s' runs on cuda:%d, but the caller CUDA stream is on cuda:%d.",
+      method_name.c_str(),
+      device_index,
+      stream_device);
+#else
+  // Without cudaStreamGetDevice the stream's device is unknown, as before.
+  (void)stream;
+  (void)device_index;
+  (void)method_name;
+#endif
+  return Error::Ok;
+}
 } // anonymous namespace
 
 bool CudaGraphState::start_warmup() {
@@ -167,21 +270,6 @@ Result<std::string> resolve_cuda_cache_key(
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
-  // Trim leading/trailing whitespace from a view of the string.
-  static std::string_view trim(std::string_view s) {
-    size_t start = 0;
-    while (start < s.size() &&
-           std::isspace(static_cast<unsigned char>(s[start]))) {
-      ++start;
-    }
-    size_t end = s.size();
-    while (end > start &&
-           std::isspace(static_cast<unsigned char>(s[end - 1]))) {
-      --end;
-    }
-    return s.substr(start, end - start);
-  }
-
   // Check if method_name appears in a comma-separated list.
   static bool method_in_csv(
       const std::string& method_name,
@@ -414,6 +502,34 @@ class ET_EXPERIMENTAL CudaBackend final
         resolve_cuda_cache_key(context, compile_specs);
     ET_CHECK_OK_OR_RETURN_ERROR(resolved_cache_key.error());
 
+    // Each delegate runs on exactly one CUDA device: the target_device that
+    // CudaPartitioner wrote at export (cuda:0 by default). The current device
+    // does not choose it; to run on cuda:1, export for cuda:1. The runtime
+    // places the method's planned IO buffers on that device, so the container,
+    // its weights and every launch must be there too. A method whose delegates
+    // span several devices is not supported. Separate methods or programs may
+    // each target a different device. A program lowered without the spec runs
+    // on the device that is current when it loads.
+    const auto target_device = parse_cuda_target_device(compile_specs);
+    ET_CHECK_OK_OR_RETURN_ERROR(target_device.error());
+    int device_index = target_device.get();
+    if (device_index < 0) {
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&device_index));
+    } else {
+      int device_count = 0;
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDeviceCount(&device_count));
+      ET_CHECK_OR_RETURN_ERROR(
+          device_index < device_count,
+          InvalidArgument,
+          "init: method '%s' was lowered for cuda:%d, but this process sees "
+          "%d CUDA device(s)",
+          method_name.c_str(),
+          device_index,
+          device_count);
+    }
+    const auto device_guard = CUDAGuard::create(device_index);
+    ET_CHECK_OK_OR_RETURN_ERROR(device_guard.error());
+
     std::string so_blob_key;
     std::string weights_blob_key;
     CudaWeightCache::Metadata fqn_weights;
@@ -435,9 +551,7 @@ class ET_EXPERIMENTAL CudaBackend final
             "Multi-SM CUDA AOTI metadata is not supported by the ROCm runtime");
         return Error::NotSupported;
 #else
-        int device_index = 0;
         cudaDeviceProp device_properties{};
-        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&device_index));
         ET_CUDA_CHECK_OR_RETURN_ERROR(
             cudaGetDeviceProperties(&device_properties, device_index));
         current_sm = static_cast<uint32_t>(
@@ -545,6 +659,7 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
     handle->method_name = method_name;
+    handle->device_index = device_index;
 
     // Load function pointers specific to this handle's shared library
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -552,8 +667,9 @@ class ET_EXPERIMENTAL CudaBackend final
 
     AOTInductorModelContainerHandle container_handle = nullptr;
 
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        handle->create_with_device(&container_handle, 1, "cuda", nullptr));
+    const std::string device_str = "cuda:" + std::to_string(device_index);
+    ET_CHECK_OK_OR_RETURN_ERROR(handle->create_with_device(
+        &container_handle, 1, device_str.c_str(), nullptr));
 
     ET_LOG(Info, "container_handle = %p", container_handle);
 
@@ -658,7 +774,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_note_handle(handle);
 
-    live_handles_.fetch_add(1, std::memory_order_acq_rel);
+    {
+      std::lock_guard<std::mutex> guard(live_handles_mutex_);
+      ++live_handles_[device_index];
+    }
 
     keep_so_file = true;
     return (DelegateHandle*)handle; // Return the handle post-processing
@@ -670,6 +789,11 @@ class ET_EXPERIMENTAL CudaBackend final
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
+    const int device_index = handle->device_index;
+
+    // Restores the caller's current device on return.
+    const auto device_guard = CUDAGuard::create(device_index);
+    ET_CHECK_OK_OR_RETURN_ERROR(device_guard.error());
 
     size_t n_inputs;
     handle->get_num_inputs(handle->container_handle, &n_inputs);
@@ -695,20 +819,26 @@ class ET_EXPERIMENTAL CudaBackend final
         NotSupported,
         "CUDA graph is not supported together with a caller-provided CUDA stream.");
 
+    if (caller_stream) {
+      ET_CHECK_OK_OR_RETURN_ERROR(check_caller_stream_device(
+          *caller_stream, device_index, handle->method_name));
+    }
+
     // Snapshot the prior selection with peek, not get, so the restore is exact.
     std::optional<cudaStream_t> prev_stream;
     if (caller_stream) {
-      prev_stream = peekCurrentCUDAStream(0);
+      prev_stream = peekCurrentCUDAStream(device_index);
     }
-    setCurrentCUDAStream(caller_stream.value_or(handle->get_cuda_stream()), 0);
+    setCurrentCUDAStream(
+        caller_stream.value_or(handle->get_cuda_stream()), device_index);
     executorch::backends::aoti::ScopeGuard restore_stream([&]() noexcept {
       if (!caller_stream) {
         return;
       }
       if (prev_stream) {
-        setCurrentCUDAStream(*prev_stream, 0);
+        setCurrentCUDAStream(*prev_stream, device_index);
       } else {
-        clearCurrentCUDAStream(0);
+        clearCurrentCUDAStream(device_index);
       }
     });
 
@@ -776,6 +906,18 @@ class ET_EXPERIMENTAL CudaBackend final
           data_ptr,
           static_cast<int>(attr_err),
           static_cast<int>(attributes.type));
+      // Kernels on this method's device cannot read another device's memory.
+      ET_CHECK_OR_RETURN_ERROR(
+          attributes.type != cudaMemoryTypeDevice ||
+              attributes.device == device_index,
+          InvalidArgument,
+          "Method '%s': CUDA delegate %s %zu is in the memory of cuda:%d, but "
+          "the method was lowered for cuda:%d.",
+          handle->method_name.c_str(),
+          i < n_inputs ? "input" : "output",
+          i < n_inputs ? i : i - n_inputs,
+          attributes.device,
+          device_index);
     }
 
     // The cache has to grow, and its storage be rebound, before the compiled
@@ -789,7 +931,8 @@ class ET_EXPERIMENTAL CudaBackend final
       kv_step_width = step_width.get();
       // Growth is ordered on the stream this step runs on, which was just
       // installed as current above.
-      const Result<cudaStream_t> step_stream = getCurrentCUDAStream(0);
+      const Result<cudaStream_t> step_stream =
+          getCurrentCUDAStream(device_index);
       ET_CHECK_OK_OR_RETURN_ERROR(step_stream.error());
       ET_CHECK_OK_OR_RETURN_ERROR(
           handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
@@ -801,7 +944,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // CUDA graph REPLAY path — skip all tensor setup and just replay
     // ---------------------------------------------------------------
     if (handle->cuda_graph_state.phase == CudaGraphPhase::Replay) {
-      Result<cudaStream_t> csr = getCurrentCUDAStream(0);
+      Result<cudaStream_t> csr = getCurrentCUDAStream(device_index);
       ET_CHECK_OK_OR_RETURN_ERROR(csr.error());
       cudaStream_t cs = csr.get();
 
@@ -896,6 +1039,11 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
+    // The synchronize below waits for this handle's device. A failure is
+    // logged by the guard, and teardown goes on either way.
+    const auto device_guard = CUDAGuard::create(handle->device_index);
+    (void)device_guard;
+
     mutable_state_forget_handle(handle);
     if (handle->kv_cache != nullptr) {
       handle->kv_cache->forget_handle(handle);
@@ -923,13 +1071,23 @@ class ET_EXPERIMENTAL CudaBackend final
           remove_error.message().c_str());
     }
 
+    const int device_index = handle->device_index;
     delete handle;
 
     // The allocator lets the device pool keep freed memory so that repeated
     // delegate execution does not pay to map it again. Nothing is running on
-    // this backend once the last handle is gone, so hand that memory back
+    // this device once its last handle is gone, so hand that memory back
     // rather than hold it for the life of the process.
-    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    bool last_on_device = false;
+    {
+      std::lock_guard<std::mutex> guard(live_handles_mutex_);
+      const auto it = live_handles_.find(device_index);
+      if (it != live_handles_.end() && --it->second == 0) {
+        live_handles_.erase(it);
+        last_on_device = true;
+      }
+    }
+    if (last_on_device) {
       // Only frees the driver has already observed can be released, so without
       // this the trim gives back nothing rather than less. A device wait rather
       // than a stream wait because the frees went to whichever stream was
@@ -945,7 +1103,8 @@ class ET_EXPERIMENTAL CudaBackend final
         (void)cudaGetLastError();
       }
       // This also releases unused blocks cached by other allocator users.
-      CudaAllocator::release_cached_memory(-1);
+      CudaAllocator::release_cached_memory(
+          static_cast<slim::c10::DeviceIndex>(device_index));
     }
   }
 
@@ -987,6 +1146,9 @@ class ET_EXPERIMENTAL CudaBackend final
     // copies.
     std::vector<SlimTensor*> slim_inputs(n_inputs);
     std::vector<SlimTensor*> slim_outputs(n_outputs);
+    const Device device(
+        slim::c10::DeviceType::CUDA,
+        static_cast<slim::c10::DeviceIndex>(handle->device_index));
 
     // Undoes a capture attempt that an early return would otherwise abandon.
     //
@@ -1066,13 +1228,13 @@ class ET_EXPERIMENTAL CudaBackend final
             cudaMemcpyDeviceToDevice));
 
         slim_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
-            static_ptr, et_input);
+            static_ptr, et_input, device);
         continue;
       }
 
       // Normal path: wrap the GPU buffer in place (zero-copy, non-owning).
       slim_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
-          const_cast<void*>(et_input->const_data_ptr()), et_input);
+          const_cast<void*>(et_input->const_data_ptr()), et_input, device);
     }
 
     // Process output tensors: wrap the GPU-resident ET output buffers as
@@ -1083,7 +1245,7 @@ class ET_EXPERIMENTAL CudaBackend final
     for (size_t i = 0; i < n_outputs; i++) {
       auto* et_output = &(args[i + n_inputs]->toTensor());
       slim_outputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
-          const_cast<void*>(et_output->const_data_ptr()), et_output);
+          const_cast<void*>(et_output->const_data_ptr()), et_output, device);
       pre_run_outputs[i] = slim_outputs[i];
     }
 
@@ -1156,7 +1318,8 @@ class ET_EXPERIMENTAL CudaBackend final
     // Run the AOTI container.
     // NOTE: run() steals input handles (RAII wraps them at the start of
     // run_impl) and may replace output handles with its own.
-    Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
+    Result<cudaStream_t> cuda_stream_ret =
+        getCurrentCUDAStream(handle->device_index);
     ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
     cudaStream_t cuda_stream = cuda_stream_ret.get();
 
@@ -1384,9 +1547,10 @@ class ET_EXPERIMENTAL CudaBackend final
   // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
 
-  // Delegates alive right now. The device memory pool is shared, so it can only
-  // be released once none of them are left.
-  mutable std::atomic<size_t> live_handles_{0};
+  // Delegates alive right now, by device. A device's memory pool is shared, so
+  // it can only be released once none of them are left on that device.
+  mutable std::mutex live_handles_mutex_;
+  mutable std::unordered_map<int, size_t> live_handles_;
 
   // ---------------------------------------------------------------
   // Per-weight constant cache.
@@ -1563,7 +1727,7 @@ class ET_EXPERIMENTAL CudaBackend final
     {
       std::lock_guard<std::mutex> guard(shared_constants_mutex_);
       for (const auto& [fqn, _] : fqn_to_name) {
-        if (shared_constant_tensors_.find(fqn) ==
+        if (shared_constant_tensors_.find(shared_key(handle, fqn)) ==
             shared_constant_tensors_.end()) {
           uncached_fqns.push_back(fqn);
         }
@@ -1628,10 +1792,11 @@ class ET_EXPERIMENTAL CudaBackend final
             // pair build below will simply omit it.
             continue;
           }
-          auto cached_it = shared_constant_tensors_.find(fqn);
+          const std::string key = shared_key(handle, fqn);
+          auto cached_it = shared_constant_tensors_.find(key);
           if (cached_it == shared_constant_tensors_.end()) {
             // New constant — add to cache.
-            shared_constant_tensors_[fqn] = extracted_it->second;
+            shared_constant_tensors_[key] = extracted_it->second;
           } else if (
               check_cached_constant_match(
                   fqn, cached_it->second, extracted_it->second) != Error::Ok) {
@@ -1679,7 +1844,7 @@ class ET_EXPERIMENTAL CudaBackend final
           if (not_shared.count(fqn) != 0) {
             continue;
           }
-          auto it = shared_constant_tensors_.find(fqn);
+          auto it = shared_constant_tensors_.find(shared_key(handle, fqn));
           if (it != shared_constant_tensors_.end()) {
             pairs.push_back({internal_name.c_str(), it->second});
           }
@@ -1788,11 +1953,19 @@ class ET_EXPERIMENTAL CudaBackend final
   // which is negligible.
   mutable std::mutex shared_constants_mutex_;
 
-  // FQN → AtenTensorHandle from the source (first) container.
+  // (device, FQN) → AtenTensorHandle from the source (first) container.
   // The tensor handles are owned by the source container (which is never
   // explicitly deleted — see destroy() comment).
   mutable std::unordered_map<std::string, AtenTensorHandle>
       shared_constant_tensors_;
+
+  // A kernel cannot read a constant from another device, so methods on
+  // different devices never share one.
+  static std::string shared_key(
+      const cuda::CudaDelegateHandle* handle,
+      const std::string& fqn) {
+    return std::to_string(handle->device_index) + "@" + fqn;
+  }
 
   mutable CudaWeightCache fqn_weight_cache_;
 };

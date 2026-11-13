@@ -8,6 +8,8 @@
 
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
 
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
+
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -94,24 +96,44 @@ CudaKVPool::~CudaKVPool() {
 }
 
 runtime::Result<bool> CudaKVPool::note_handle(CudaDelegateHandle* handle) {
-  if (!device_known_) {
-    ET_CHECK_OR_RETURN_ERROR(
-        cudaGetDevice(&device_) == cudaSuccess,
-        Internal,
-        "offgraph_kv: cannot query the current CUDA device");
-    device_known_ = true;
-  }
   ET_CHECK_OK_OR_RETURN_ERROR(build_descriptors(handle));
   if (descriptors_[handle].empty()) {
     descriptors_.erase(handle);
     return false;
   }
+  if (!device_known_) {
+    device_ = handle->device_index;
+    device_known_ = true;
+  }
   return true;
+}
+
+Error CudaKVPool::check_device(CudaDelegateHandle* handle) const {
+  // Only a method that reads the pool must match its device; one without KV
+  // storage, such as a vision encoder, may run anywhere.
+  if (!device_known_ || handle->device_index == device_) {
+    return Error::Ok;
+  }
+  const auto needs = requires_offgraph_kv_storage(*handle);
+  ET_CHECK_OK_OR_RETURN_ERROR(needs.error());
+  ET_CHECK_OR_RETURN_ERROR(
+      !needs.get(),
+      InvalidArgument,
+      "offgraph_kv: method '%s' runs on cuda:%d, but its cache is on cuda:%d",
+      handle->method_name.c_str(),
+      handle->device_index,
+      device_);
+  return Error::Ok;
 }
 
 void CudaKVPool::forget_handle(CudaDelegateHandle* handle) {
   descriptors_.erase(handle);
   bound_.erase(handle);
+  // Nothing on the device yet, so the next method to read the pool may pick
+  // its device again; a failed init must not pin it.
+  if (descriptors_.empty() && !allocated_ && last_step_done_ == nullptr) {
+    device_known_ = false;
+  }
 }
 
 bool CudaKVPool::serves(CudaDelegateHandle* handle) const {

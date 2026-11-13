@@ -807,6 +807,67 @@ jobs:
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
 
+  unittest-cuda-multi-gpu:
+    name: unittest-cuda-multi-gpu
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      # 4x A10G (sm_86), the GPU of the single-GPU CUDA jobs, so every kernel
+      # that runs there, int4 tinygemm included, runs here too.
+      runner: mt-l-x86aavx2-45-167-a10g-4
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        nvidia-smi -L
+
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        # Every test below needs a second device, and with fewer they would all
+        # skip and pass, which is what this job exists to rule out.
+        python -c "import torch; n = torch.cuda.device_count(); assert n >= 2, f'expected at least 2 CUDA devices, got {n}'"
+
+        # A method runs on the one device it was lowered for, whichever device
+        # is current (#24887).
+        set +e
+        python -m pytest backends/cuda/tests/test_target_device.py -v -rs -o "addopts=" \
+          2>&1 | tee /tmp/target_device_test.log
+        target_device_status=${PIPESTATUS[0]}
+        set -e
+        if [ "${target_device_status}" -ne 0 ]; then
+          echo "::error::a target device test failed"
+          exit "${target_device_status}"
+        fi
+        if grep -qE "[0-9]+ skipped" /tmp/target_device_test.log; then
+          echo "::error::a target device test skipped on the multi-GPU runner"
+          exit 1
+        fi
+
+        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
+        cmake --build cmake-out --target test_cuda_backend_execute test_cuda_sort_rand test_cuda_kv_cache -j$(nproc)
+        for t in test_cuda_backend_execute test_cuda_sort_rand test_cuda_kv_cache; do
+          ctest --test-dir cmake-out -R "^${t}$" --output-on-failure -V > "/tmp/${t}.log" 2>&1 || { cat "/tmp/${t}.log"; exit 1; }
+          cat "/tmp/${t}.log"
+          if grep -q "needs two CUDA devices" "/tmp/${t}.log"; then
+            echo "::error::${t} skipped a 2-GPU test on the multi-GPU runner"
+            exit 1
+          fi
+        done
+
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).

@@ -326,6 +326,9 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
     return cuda_stream;
   }
 
+  // The CUDA device the container, its weights and its IO buffers live on.
+  int device_index{0};
+
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
 

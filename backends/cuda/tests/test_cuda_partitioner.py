@@ -40,11 +40,21 @@ from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
 from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.passes.propagate_device_pass import TARGET_DEVICE_COMPILE_SPEC_KEY
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch._inductor.compile_fx import clone_preserve_strides
 from torch.export import export
 from torch.export.pt2_archive._package_weights import TensorProperties, Weights
 from torch.fx.passes.utils.fuser_utils import validate_partition
+
+
+class TestCudaPartitionerTargetDevice(unittest.TestCase):
+    def test_target_device_must_be_cuda_or_cuda_n(self) -> None:
+        for value in (b"cuda", b"cuda:0", b"cuda:1"):
+            CudaPartitioner([CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, value)])
+        for value in (b"CUDA:0", b"cuda: 1", b"cuda:+1", b"cuda:", b"cpu"):
+            with self.assertRaisesRegex(ValueError, "target_device"):
+                CudaPartitioner([CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, value)])
 
 
 class TestCudaLowMemoryExport(unittest.TestCase):
