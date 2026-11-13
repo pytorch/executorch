@@ -15,6 +15,24 @@ boolean_op:
       OP_EXPR: input[i] < params.scalar
     - NAME: compare_gt
       OP_EXPR: input[i] > params.scalar
+    - NAME: compare_eq_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] == params.int_scalar, f32(input[i]) == params.scalar, params.float_compare != 0u)
+    - NAME: compare_ne_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] != params.int_scalar, f32(input[i]) != params.scalar, params.float_compare != 0u)
+    - NAME: compare_le_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] <= params.int_scalar, f32(input[i]) <= params.scalar, params.float_compare != 0u)
+    - NAME: compare_ge_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] >= params.int_scalar, f32(input[i]) >= params.scalar, params.float_compare != 0u)
+    - NAME: compare_lt_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] < params.int_scalar, f32(input[i]) < params.scalar, params.float_compare != 0u)
+    - NAME: compare_gt_int
+      IN_TYPE: i32
+      OP_EXPR: select(input[i] > params.int_scalar, f32(input[i]) > params.scalar, params.float_compare != 0u)
     - NAME: logical_not
       IN_TYPE: u32
       OP_EXPR: ((input[i >> 2u] >> ((i & 3u) * 8u)) & 0xFFu) == 0u
