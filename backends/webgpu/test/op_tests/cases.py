@@ -72,6 +72,12 @@ from executorch.backends.webgpu.test.ops.test_elu_silu import (
     signed_ramp,
     SiluModule,
 )
+from executorch.backends.webgpu.test.ops.test_erf import (
+    ErfGeluModule,
+    ErfModule,
+    signed_small,
+    wide_ramp,
+)
 from executorch.backends.webgpu.test.ops.test_expand_copy import (
     CONFIGS as _EXPAND_COPY_CONFIGS,
     ExpandCopyModule,
@@ -2626,6 +2632,49 @@ def _silu_suite() -> WebGPUTestSuite:
                 inputs=(InputSpec(shape=(4, 10), gen=extreme_values),),
                 equal_nan=True,
             ),
+        ],
+        atol=1e-5,
+        rtol=1e-4,
+    )
+
+
+@register_op_test("erf")
+def _erf_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=ErfModule,
+        cases=[
+            Case(name="wide", inputs=(InputSpec(shape=(4, 257), gen=wide_ramp),)),
+            # atol=0: near 0 only a relative-accurate kernel passes.
+            Case(
+                name="small_relative",
+                inputs=(InputSpec(shape=(2, 300), gen=signed_small),),
+                atol=0.0,
+            ),
+            Case(name="rank4_randn", inputs=((S1, S2, S2, M2),)),
+            Case(
+                name="param_input",
+                construct={"param_shape": (4, 257)},
+                inputs=((4, 257),),
+            ),
+            Case(
+                name="extreme_values",
+                inputs=(InputSpec(shape=(4, 10), gen=extreme_values),),
+                equal_nan=True,
+            ),
+        ],
+        atol=1e-6,
+        rtol=1e-5,
+    )
+
+
+@register_op_test("erf_gelu")
+def _erf_gelu_suite() -> WebGPUTestSuite:
+    # The hand-written exact GELU of HF ESM-2 / BERT: div, erf, add, mul, mul.
+    return WebGPUTestSuite(
+        module_factory=ErfGeluModule,
+        cases=[
+            Case(name="range", inputs=(InputSpec(shape=(3, 480), gen=wide_ramp),)),
+            Case(name="randn", inputs=((1, 37, 480),)),
         ],
         atol=1e-5,
         rtol=1e-4,

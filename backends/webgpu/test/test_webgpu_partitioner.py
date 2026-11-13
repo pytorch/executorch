@@ -28,6 +28,7 @@ from executorch.backends.webgpu.test.ops.test_elu_silu import (
     SiluModule,
     SiluMulModule,
 )
+from executorch.backends.webgpu.test.ops.test_erf import ErfGeluModule, ErfModule
 from executorch.backends.webgpu.test.tester import Partition, ToEdgeTransformAndLower
 from executorch.exir import (
     ExecutorchProgramManager,
@@ -355,6 +356,31 @@ class TestWebGPUPartitioner(unittest.TestCase):
                 )
                 self.assertEqual(non_lowered, [])
                 self.assertIn(target, delegated)
+
+    def test_erf_is_delegated(self) -> None:
+        cases = {
+            "erf": ErfModule(),
+            "erf_param_input": ErfModule(param_shape=(4, 16)),
+            "hand_written_gelu": ErfGeluModule(),
+        }
+        x = torch.linspace(-4.0, 4.0, 64).reshape(4, 16)
+        for name, module in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(exir_ops.edge.aten.erf.default, delegated)
+
+    def test_dynamic_erf_is_delegated(self) -> None:
+        non_lowered, delegated = self._lower_split(
+            WebGPUPartitioner({"require_dynamic_shapes": True}),
+            ErfGeluModule(),
+            (torch.randn(1, 8, 16),),
+            {"x": {1: torch.export.Dim("s", min=1, max=8)}},
+        )
+        self.assertEqual(non_lowered, [])
+        self.assertIn(exir_ops.edge.aten.erf.default, delegated)
 
     def test_dynamic_silu_is_delegated(self) -> None:
         non_lowered, delegated = self._lower_split(
