@@ -15,7 +15,7 @@ def define_common_targets():
             "runtime_api.h",
         ],
         visibility = ["PUBLIC"],
-        external_deps = [
+        exported_external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
     )

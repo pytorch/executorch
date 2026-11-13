@@ -2,40 +2,8 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
-    if not is_fbcode():
-        return
-
-    runtime.python_library(
-        name = "aoti_partitioner",
-        srcs = [
-            "aoti_partitioner.py",
-        ],
-        visibility = [
-            "//executorch/...",
-        ],
-        deps = [
-            "//caffe2:torch",
-            "//executorch/exir/backend:partitioner",
-            "//executorch/exir/backend:utils",
-        ],
-    )
-
-    runtime.python_library(
-        name = "aoti_backend",
-        srcs = [
-            "aoti_backend.py",
-        ],
-        visibility = [
-            "//executorch/...",
-        ],
-        deps = [
-            "//caffe2:torch",
-            "//executorch/backends/aoti/passes:passes",
-            "//executorch/exir/_serialize:lib",
-            "//executorch/exir/backend:backend_details",
-            "//executorch/exir/backend:compile_spec_schema",
-        ],
-    )
+    if is_fbcode():
+        _define_python_targets()
 
     # AOTI common shims functionality using ETensor
     # TODO(gasoonjia): Remove this after metal migration
@@ -44,7 +12,7 @@ def define_common_targets():
         srcs = [
             "common_shims.cpp",
         ],
-        headers = [
+        exported_headers = [
             "common_shims.h",
             "export.h",
             "utils.h",
@@ -64,7 +32,7 @@ def define_common_targets():
     # AOTI model container functionality
     runtime.cxx_library(
         name = "delegate_handle",
-        headers = [
+        exported_headers = [
             "aoti_delegate_handle.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -106,7 +74,7 @@ def define_common_targets():
         srcs = [
             "common_shims_slim.cpp",
         ],
-        headers = [
+        exported_headers = [
             "common_shims_slim.h",
             "export.h",
             "utils.h",
@@ -131,5 +99,30 @@ def define_common_targets():
         exported_deps = [
             ":common_shims_slim",
             ":delegate_handle",
+        ],
+    )
+
+def _define_python_targets():
+    runtime.python_library(
+        name = "aoti_partitioner",
+        srcs = ["aoti_partitioner.py"],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/backend:partitioner",
+            "//executorch/exir/backend:utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "aoti_backend",
+        srcs = ["aoti_backend.py"],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/aoti/passes:passes",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
         ],
     )

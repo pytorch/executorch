@@ -356,6 +356,35 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   std::unordered_map<std::string, std::vector<int64_t>> offgraph_kv_sizes;
 };
 
+// An unknown or host-resident constant prevents safe CUDA graph capture.
+// Compiled plugins return flat entries so C++ containers stay host-owned.
+inline std::string describe_host_constants_for_graph(
+    const CudaDelegateHandle& handle) {
+  const char* unlisted = "its constants could not be listed";
+  if (handle.extract_constants_map_entries == nullptr) {
+    return unlisted;
+  }
+  const aoti::AOTInductorConstantMapEntry* entries = nullptr;
+  size_t count = 0;
+  if (handle.extract_constants_map_entries(
+          handle.container_handle, &entries, &count, /*use_inactive=*/false) !=
+          executorch::runtime::Error::Ok ||
+      (entries == nullptr && count != 0)) {
+    return unlisted;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    if (entries[i].name == nullptr || entries[i].handle == nullptr) {
+      return unlisted;
+    }
+    if (reinterpret_cast<aoti::slim::SlimTensor*>(entries[i].handle)
+            ->is_cpu()) {
+      return std::string("constant '") + entries[i].name +
+          "' is in host memory";
+    }
+  }
+  return "";
+}
+
 } // namespace cuda
 } // namespace backends
 } // namespace executorch

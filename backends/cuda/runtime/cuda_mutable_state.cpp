@@ -101,8 +101,8 @@ thread_local MutableStateContext tl_active_ctx = kInvalidMutableContext;
 thread_local int tl_active_token = kNoMutableSession;
 
 bool handle_has_symbols(CudaDelegateHandle* h) {
-  return h->get_num_constants && h->get_constant_name &&
-      h->get_constant_original_fqn && h->extract_constants_map &&
+  return h != nullptr && h->get_num_constants && h->get_constant_name &&
+      h->get_constant_original_fqn && h->extract_constants_map_entries &&
       h->update_user_managed_constant_buffer_pairs;
 }
 
@@ -255,6 +255,13 @@ Error validate_coverage_locked(Context& c) {
 // Captures descriptors and initial templates while the container still owns its
 // default mutable buffers.
 Error build_descriptors(Context& c, CudaDelegateHandle* h) {
+  if (h == nullptr) {
+    return Error::InvalidArgument;
+  }
+  const auto extract = h->extract_constants_map_entries;
+  if (extract == nullptr) {
+    return Error::NotSupported;
+  }
   auto container = h->container_handle;
 
   size_t n = 0;
@@ -278,12 +285,27 @@ Error build_descriptors(Context& c, CudaDelegateHandle* h) {
   }
 
   std::unordered_map<std::string, aoti::AtenTensorHandle> extracted;
+  const aoti::AOTInductorConstantMapEntry* entries = nullptr;
+  size_t num_entries = 0;
   ET_CHECK_OK_OR_RETURN_ERROR(
-      h->extract_constants_map(
-          container,
-          reinterpret_cast<aoti::AOTInductorConstantMapHandle>(&extracted),
-          /*use_inactive=*/false),
-      "mutable_state: extract_constants_map failed");
+      extract(container, &entries, &num_entries, /*use_inactive=*/false),
+      "mutable_state: extract_constants_map_entries failed");
+  if (entries == nullptr && num_entries != 0) {
+    ET_LOG(
+        Error,
+        "mutable_state: constants extraction returned a null entries array");
+    return Error::InvalidProgram;
+  }
+  if (entries != nullptr) {
+    for (size_t i = 0; i < num_entries; ++i) {
+      const auto entry = entries[i];
+      if (entry.name == nullptr || entry.handle == nullptr) {
+        ET_LOG(Error, "mutable_state: null constant name or tensor handle");
+        return Error::InvalidProgram;
+      }
+      extracted.emplace(entry.name, entry.handle);
+    }
+  }
 
   auto& table = c.desc[h];
   for (const auto& fqn : c.fqns) {

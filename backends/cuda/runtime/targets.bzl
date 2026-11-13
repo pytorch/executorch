@@ -1,18 +1,29 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbcode//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 
 def define_common_targets(is_fbcode = False):
-    if not is_fbcode:
+    if not is_fbcode and runtime.is_oss:
         return
+
+    cuda_kwargs = {} if is_fbcode else {
+        "platforms": [CXX],
+        "compatible_with": ["ovr_config//cuda:has_cuda"],
+    }
+    if is_fbcode:
+        cuda_kwargs["nvcc_flags"] = get_nvcc_arch_args() + [
+            "-_NVCC_HOST_COMPILER_FLAG_",
+            "gcc",
+        ]
 
     runtime.cxx_library(
         name = "cuda_platform",
         srcs = [
             "platform/platform.cpp",
         ],
-        headers = [
+        exported_headers = [
             "platform/platform.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -22,14 +33,18 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//executorch/runtime/core:core",
         ],
-        nvcc_flags = get_nvcc_arch_args() + [
-            "-_NVCC_HOST_COMPILER_FLAG_",
-            "gcc",
-        ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
+
+    shims_kwargs = dict(cuda_kwargs)
+    if not is_fbcode:
+        # CUDA translation units use scalar Half conversions, not host SIMD.
+        shims_kwargs["lang_preprocessor_flags"] = {
+            "cuda": ["-UCPU_CAPABILITY_AVX2", "-UCPU_CAPABILITY_AVX512"],
+        }
 
     runtime.cxx_library(
         name = "runtime_shims",
@@ -41,7 +56,7 @@ def define_common_targets(is_fbcode = False):
             "shims/rand.cu",
             "shims/sort.cu",
         ],
-        headers = [
+        exported_headers = [
             "shims/cuda_guard.h",
             "shims/index.h",
             "shims/int4mm.cuh",
@@ -70,20 +85,22 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/platform:platform",
         ],
-        nvcc_flags = get_nvcc_arch_args() + [
-            "-_NVCC_HOST_COMPILER_FLAG_",
-            "gcc",
+        xplat_deps = [
+            "fbsource//third-party/cuda:libcuda",
+            "fbsource//third-party/cuda:libcurand",
+            "fbsource//third-party/cuda:libthrust",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **shims_kwargs
     )
 
     # Deprecated stub left behind after the move to extension/cuda; depend on
     # //executorch/extension/cuda:cuda_allocator directly instead.
     runtime.cxx_library(
         name = "cuda_allocator",
-        headers = [
+        exported_headers = [
             "cuda_allocator.h",
         ],
         visibility = ["PUBLIC"],
@@ -96,12 +113,10 @@ def define_common_targets(is_fbcode = False):
         name = "cuda_backend",
         srcs = [
             "cuda_backend.cpp",
-            "cuda_kv_cache.cpp",
-            "cuda_kv_pool.cpp",
             "cuda_mutable_state.cpp",
             "cuda_weight_cache.cpp",
-        ],
-        headers = [
+        ] + (["cuda_kv_cache.cpp", "cuda_kv_pool.cpp"] if is_fbcode else []),
+        exported_headers = [
             "backend_options.h",
             "cuda_delegate_handle.h",
             "cuda_kv_cache.h",
@@ -114,24 +129,21 @@ def define_common_targets(is_fbcode = False):
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = [
-            "-DCUDA_AVAILABLE=1",
-            # Always built with the LLM extension's cache here.
-            "-DEXECUTORCH_BUILD_EXTENSION_LLM",
-        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        exported_preprocessor_flags = (
+            ["-DEXECUTORCH_BUILD_EXTENSION_LLM"] if is_fbcode else []
+        ),
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/backends/aoti:delegate_handle",
             "//executorch/backends/aoti/slim/core:slimtensor",
             "//executorch/extension/cuda:runtime_api",
-            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
-        ],
+        ] + (["//executorch/extension/llm/cache:kv_cache"] if is_fbcode else []),
         deps = [
             ":cuda_platform",
             ":runtime_shims",
-            ":cuda_platform",
             "//executorch/backends/aoti:aoti_common_slim",
             "//executorch/backends/aoti/slim/factory:empty",
             "//executorch/backends/aoti/slim/factory:from_blob",
@@ -148,7 +160,36 @@ def define_common_targets(is_fbcode = False):
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
+
+    if not is_fbcode:
+        runtime.genrule(
+            name = "test_cuda_runtime_libraries",
+            out = "libs",
+            platforms = [CXX],
+            compatible_with = ["ovr_config//cuda:has_cuda"],
+            cmd = """
+                mkdir -p "$OUT"
+                cp $(location fbsource//third-party/cuda:cublas) "$OUT/"
+                cp $(location fbsource//third-party/cuda:cublasLt) "$OUT/"
+                cp $(location fbsource//third-party/cuda:cudart) "$OUT/"
+                cp $(location fbsource//third-party/cuda:curand) "$OUT/"
+            """,
+        )
+        runtime.cxx_test(
+            name = "test_cuda_mutable_state_native",
+            srcs = ["test/test_cuda_mutable_state.cpp"],
+            env = {"LD_LIBRARY_PATH": "$(location :test_cuda_runtime_libraries)"},
+            platforms = [CXX],
+            compatible_with = ["ovr_config//cuda:has_cuda"],
+            deps = [
+                ":cuda_backend",
+                "//executorch/backends/aoti/slim/factory:from_blob",
+                "fbsource//third-party/googletest:gtest_main",
+            ],
+        )
+        return
 
     cpp_unittest(
         name = "test_cuda_mutable_state",

@@ -114,6 +114,14 @@ using AOTInductorModelContainerExtractConstantsMapFunc = AOTIRuntimeError (*)(
     AOTInductorConstantMapHandle constant_map_handle,
     bool use_inactive);
 
+// Extracts borrowed entries through a flat C ABI; the container owns the array.
+using AOTInductorModelContainerExtractConstantsMapEntriesFunc =
+    AOTIRuntimeError (*)(
+        AOTInductorModelContainerHandle container_handle,
+        const AOTInductorConstantMapEntry** entries,
+        size_t* num_entries,
+        bool use_inactive);
+
 // Updates the container's constants with user-managed tensor handles.
 // DLL-boundary safe — uses a flat C array instead of std::unordered_map.
 using AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc =
@@ -146,6 +154,8 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetConstantNameFunc get_constant_name;
   AOTInductorModelContainerGetConstantOriginalFQNFunc get_constant_original_fqn;
   AOTInductorModelContainerExtractConstantsMapFunc extract_constants_map;
+  AOTInductorModelContainerExtractConstantsMapEntriesFunc
+      extract_constants_map_entries{nullptr};
   AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc
       update_user_managed_constant_buffer_pairs;
 };
