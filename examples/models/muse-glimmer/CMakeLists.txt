@@ -50,7 +50,9 @@ list(
   extension_flat_tensor
 )
 
-# Backend: CUDA or MLX (exactly one required)
+# Backend: CUDA or MLX for every runner. The batching runner can also serve on
+# the native ggml engine, from an installation with
+# EXECUTORCH_BUILD_NATIVE_GGML.
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   list(APPEND link_libraries aoti_cuda_backend)
@@ -60,13 +62,22 @@ elseif(TARGET mlxdelegate)
   list(APPEND link_libraries mlxdelegate mlx)
   executorch_target_link_options_shared_lib(mlxdelegate)
   add_compile_definitions(EXECUTORCH_BUILD_MLX)
-else()
-  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON")
+elseif(NOT TARGET native_ggml_engine)
+  message(
+    FATAL_ERROR
+      "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON, or use an ExecuTorch installation with EXECUTORCH_BUILD_NATIVE_GGML=ON"
+  )
+endif()
+if(TARGET native_ggml_engine)
+  add_compile_definitions(EXECUTORCH_BUILD_NATIVE)
 endif()
 
 # Use a supplied or local stb checkout before fetching it. The resize header is
 # under deprecated/ in the pinned revision.
-if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
+if(EXECUTORCH_BUILD_CUDA
+   OR TARGET mlxdelegate
+   OR TARGET native_ggml_engine
+)
   if(NOT MUSE_GLIMMER_STB_INCLUDE_DIR
      AND EXISTS "${EXECUTORCH_ROOT}/third-party/stb/stb_image.h"
   )
@@ -98,100 +109,106 @@ endif()
 # Tokenizer (tiktoken via pytorch/tokenizers)
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(
-  solo_runner runtime/runners/solo.cpp runtime/engine/muse_glimmer_engine.cpp
-              runtime/engine/dflash_session.cpp
-)
+# The other runners and the legacy worker run on CUDA or MLX.
 if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
-  target_sources(
-    solo_runner PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+  add_executable(
+    solo_runner runtime/runners/solo.cpp runtime/engine/muse_glimmer_engine.cpp
+                runtime/engine/dflash_session.cpp
   )
-endif()
-target_include_directories(
-  solo_runner PUBLIC ${_common_include_directories} ${_json_include}
-)
-target_link_libraries(solo_runner PUBLIC ${link_libraries})
-
-# Export symbols required by the dynamically loaded AOTI CUDA blob.
-if(EXECUTORCH_BUILD_CUDA
-   AND NOT APPLE
-   AND NOT MSVC
-)
-  target_link_options(solo_runner PRIVATE "LINKER:--export-dynamic")
-endif()
-
-add_executable(
-  dflash_runner
-  runtime/runners/dflash.cpp runtime/engine/muse_glimmer_engine.cpp
-  runtime/engine/dflash_session.cpp
-)
-if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
-  target_sources(
-    dflash_runner PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+  if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
+    target_sources(
+      solo_runner PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+    )
+  endif()
+  target_include_directories(
+    solo_runner PUBLIC ${_common_include_directories} ${_json_include}
   )
-endif()
-target_include_directories(
-  dflash_runner PUBLIC ${_common_include_directories} ${_json_include}
-)
-target_link_libraries(dflash_runner PUBLIC ${link_libraries})
+  target_link_libraries(solo_runner PUBLIC ${link_libraries})
 
-add_executable(sampling_test tests/sampling_test.cpp)
-target_include_directories(sampling_test PUBLIC ${_common_include_directories})
-target_link_libraries(sampling_test PUBLIC extension_tensor executorch)
-
-add_executable(dflash_timing_test tests/dflash_timing_test.cpp)
-target_include_directories(
-  dflash_timing_test PUBLIC ${_common_include_directories}
-)
-
-# Worker used by the OpenAI-compatible serving harness.
-add_executable(
-  muse_glimmer_worker
-  runtime/runners/muse_glimmer_worker.cpp
-  runtime/engine/muse_glimmer_engine.cpp runtime/engine/dflash_session.cpp
-)
-if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
-  target_sources(
-    muse_glimmer_worker PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+  # Export symbols required by the dynamically loaded AOTI CUDA blob.
+  if(EXECUTORCH_BUILD_CUDA
+     AND NOT APPLE
+     AND NOT MSVC
   )
-endif()
-target_include_directories(
-  muse_glimmer_worker PUBLIC ${_common_include_directories} ${_json_include}
-)
-target_link_libraries(
-  muse_glimmer_worker PUBLIC ${link_libraries} Threads::Threads
-)
+    target_link_options(solo_runner PRIVATE "LINKER:--export-dynamic")
+  endif()
 
-if(EXECUTORCH_BUILD_CUDA
-   AND NOT APPLE
-   AND NOT MSVC
-)
-  target_link_options(dflash_runner PRIVATE "LINKER:--export-dynamic")
-  target_link_options(muse_glimmer_worker PRIVATE "LINKER:--export-dynamic")
-endif()
+  add_executable(
+    dflash_runner
+    runtime/runners/dflash.cpp runtime/engine/muse_glimmer_engine.cpp
+    runtime/engine/dflash_session.cpp
+  )
+  if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
+    target_sources(
+      dflash_runner PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+    )
+  endif()
+  target_include_directories(
+    dflash_runner PUBLIC ${_common_include_directories} ${_json_include}
+  )
+  target_link_libraries(dflash_runner PUBLIC ${link_libraries})
 
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(solo_runner)
-  target_link_options_gc_sections(dflash_runner)
-  target_link_options_gc_sections(muse_glimmer_worker)
-  if(NOT APPLE AND NOT MSVC)
-    # CUDA AOTI blobs resolve symbols from the host executable.
-    if(NOT EXECUTORCH_BUILD_CUDA)
-      target_link_options(solo_runner PRIVATE "LINKER:-s")
-      target_link_options(dflash_runner PRIVATE "LINKER:-s")
-      target_link_options(muse_glimmer_worker PRIVATE "LINKER:-s")
+  add_executable(sampling_test tests/sampling_test.cpp)
+  target_include_directories(
+    sampling_test PUBLIC ${_common_include_directories}
+  )
+  target_link_libraries(sampling_test PUBLIC extension_tensor executorch)
+
+  add_executable(dflash_timing_test tests/dflash_timing_test.cpp)
+  target_include_directories(
+    dflash_timing_test PUBLIC ${_common_include_directories}
+  )
+
+  # Worker used by the OpenAI-compatible serving harness.
+  add_executable(
+    muse_glimmer_worker
+    runtime/runners/muse_glimmer_worker.cpp
+    runtime/engine/muse_glimmer_engine.cpp runtime/engine/dflash_session.cpp
+  )
+  if(EXECUTORCH_BUILD_CUDA OR TARGET mlxdelegate)
+    target_sources(
+      muse_glimmer_worker
+      PRIVATE runtime/engine/muse_glimmer_vision_runtime.cpp
+    )
+  endif()
+  target_include_directories(
+    muse_glimmer_worker PUBLIC ${_common_include_directories} ${_json_include}
+  )
+  target_link_libraries(
+    muse_glimmer_worker PUBLIC ${link_libraries} Threads::Threads
+  )
+
+  if(EXECUTORCH_BUILD_CUDA
+     AND NOT APPLE
+     AND NOT MSVC
+  )
+    target_link_options(dflash_runner PRIVATE "LINKER:--export-dynamic")
+    target_link_options(muse_glimmer_worker PRIVATE "LINKER:--export-dynamic")
+  endif()
+
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(solo_runner)
+    target_link_options_gc_sections(dflash_runner)
+    target_link_options_gc_sections(muse_glimmer_worker)
+    if(NOT APPLE AND NOT MSVC)
+      # CUDA AOTI blobs resolve symbols from the host executable.
+      if(NOT EXECUTORCH_BUILD_CUDA)
+        target_link_options(solo_runner PRIVATE "LINKER:-s")
+        target_link_options(dflash_runner PRIVATE "LINKER:-s")
+        target_link_options(muse_glimmer_worker PRIVATE "LINKER:-s")
+      endif()
     endif()
+  endif()
+
+  if(TARGET mlxdelegate)
+    executorch_target_copy_mlx_metallib(solo_runner)
+    executorch_target_copy_mlx_metallib(dflash_runner)
+    executorch_target_copy_mlx_metallib(muse_glimmer_worker)
   endif()
 endif()
 
-if(TARGET mlxdelegate)
-  executorch_target_copy_mlx_metallib(solo_runner)
-  executorch_target_copy_mlx_metallib(dflash_runner)
-  executorch_target_copy_mlx_metallib(muse_glimmer_worker)
-endif()
-
 option(MUSE_GLIMMER_BUILD_BATCHING
-       "Build the batching runner and worker (MLX or CUDA)" OFF
+       "Build the batching runner and worker (MLX, CUDA or native)" OFF
 )
 option(MUSE_GLIMMER_BUILD_BATCHING_TESTS
        "Build preparation/materialization tests without the batching executor"
@@ -208,10 +225,12 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
     set(_batching_backend cuda)
   elseif(EXECUTORCH_BUILD_MLX AND TARGET mlxdelegate)
     set(_batching_backend mlx)
+  elseif(TARGET native_ggml_engine)
+    set(_batching_backend native)
   else()
     message(
       FATAL_ERROR
-        "Muse Glimmer batching targets require EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON with an MLX-enabled ExecuTorch installation"
+        "Muse Glimmer batching targets require EXECUTORCH_BUILD_CUDA=ON, EXECUTORCH_BUILD_MLX=ON with an MLX-enabled ExecuTorch installation, or an installation with EXECUTORCH_BUILD_NATIVE_GGML=ON"
     )
   endif()
   foreach(_dependency extension_module extension_tensor tokenizers::tokenizers)
@@ -244,9 +263,13 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
     if(_batching_backend STREQUAL "cuda")
       set(_batching_executor runtime/cuda_dflash_executor.cpp)
       set(_batching_backend_library cuda_batching)
-    else()
+    elseif(_batching_backend STREQUAL "mlx")
       set(_batching_executor runtime/mlx_executor.cpp)
       set(_batching_backend_library mlx)
+    endif()
+    # The factory offers the native engine wherever it is installed.
+    if(TARGET native_ggml_engine)
+      list(APPEND _batching_backend_library native_batching native_ggml_engine)
     endif()
     set(_batching_dependencies
         extension_llm_batching
@@ -321,7 +344,7 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
           muse_glimmer_batching_worker PRIVATE "LINKER:--export-dynamic"
         )
       endif()
-    else()
+    elseif(_batching_backend STREQUAL "mlx")
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
     endif()
@@ -339,7 +362,7 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
             muse_glimmer_batching_smoke PRIVATE "LINKER:--export-dynamic"
           )
         endif()
-      else()
+      elseif(_batching_backend STREQUAL "mlx")
         executorch_target_copy_mlx_metallib(muse_glimmer_batching_smoke)
       endif()
     endif()

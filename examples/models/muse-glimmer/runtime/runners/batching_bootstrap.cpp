@@ -22,9 +22,13 @@ DEFINE_string(data_path, "", "Optional external weights file");
 DEFINE_string(pos_embed_path, "", "Optional vision positional table path");
 #if defined(EXECUTORCH_BUILD_CUDA)
 DEFINE_string(backend, "cuda", "Executor backend");
-#else
+#elif defined(EXECUTORCH_BUILD_MLX)
 DEFINE_string(backend, "mlx", "Executor backend");
+#else
+DEFINE_string(backend, "native", "Executor backend");
 #endif
+DEFINE_string(native_device, "gpu", "Native backend ggml device: cpu or gpu");
+DEFINE_string(native_kv_dtype, "fp32", "Native backend KV cache: fp32 or fp16");
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
 DEFINE_int32(
     max_session_tokens,
@@ -111,6 +115,8 @@ create_muse_glimmer_batching_runtime() {
   backend.bos_id = FLAGS_bos_id;
   backend.use_dflash = FLAGS_dflash;
   backend.dflash_n_draft = FLAGS_dflash_n_draft;
+  backend.native_device = FLAGS_native_device;
+  backend.native_kv_dtype = FLAGS_native_kv_dtype;
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(
