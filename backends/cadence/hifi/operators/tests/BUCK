@@ -2,6 +2,8 @@ load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//arvr/firmware/ar/build_defs:xtensa.bzl", "XTENSA_TEST_REMOTE_EXECUTION_ASIC")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbcode//on_device_ai/Assistant/Jarvis/build:cxx_wrapper.bzl", "jarvis_wrapper")
+load("@fbsource//tools/build_defs/testinfra:network_access_utils.bzl", "network_access_utils")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 oncall("odai_jarvis")
 
@@ -13,6 +15,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -35,6 +38,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -56,6 +60,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -77,6 +82,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -98,6 +104,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -119,6 +126,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -140,6 +148,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -161,6 +170,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -181,6 +191,7 @@ jarvis_wrapper.cxx_test(
     ],
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     platforms = CXX,
     visibility = [
@@ -203,6 +214,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -226,6 +238,7 @@ jarvis_wrapper.cxx_test(
         ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev")),
     ],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -250,6 +263,7 @@ jarvis_wrapper.cxx_test(
         ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev")),
     ],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -271,6 +285,7 @@ jarvis_wrapper.cxx_test(
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
     platforms = CXX,
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     visibility = [
         "fbsource//xplat/executorch/backends/cadence/...",
@@ -291,6 +306,7 @@ jarvis_wrapper.cxx_test(
     ],
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     platforms = CXX,
     visibility = [
@@ -312,6 +328,7 @@ jarvis_wrapper.cxx_test(
     ],
     compatible_backends = ["hifi"],
     labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    network_access = network_access_utils.private() if is_fbcode() else None,
     remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
     platforms = CXX,
     visibility = [

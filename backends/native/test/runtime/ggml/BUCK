@@ -4,6 +4,7 @@ load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs/testinfra:network_access_utils.bzl", "network_access_utils")
 
 oncall("executorch")
 
@@ -107,6 +108,7 @@ _VARIANTS = [
             "--device=" + v["device"],
         ] + flags,
         env = v.get("env", {}) | v.get("sample_env", {}),
+        network_access = network_access_utils.private() if v.get("remote_execution") else None,
         remote_execution = v.get("remote_execution"),
         # TODO: run the others in CI once they pass.
         labels = [] if v["suffix"] + name == "_act_quant" else ci.labels(ci.map(ci.skip_test())),
