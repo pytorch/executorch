@@ -156,6 +156,154 @@ class TestReplaceKVCache(unittest.TestCase):
         self.assertIsNone(cache.k_calibration_cache)
         self.assertIsNone(cache.v_calibration_cache)
 
+    def test_replace_static_quantized_kv_cache_with_int16_storage(self):
+        attention = self._create_attention_with_kv_cache()
+        model = self._create_mock_model([attention])
+
+        replace_kv_cache_with_static_quantized_kv_cache(
+            model,
+            scale=1.0 / 32767.0,
+            use_custom_update_cache_op=False,
+            use_per_channel=False,
+            quantized_cache_dtype=torch.int16,
+        )
+
+        cache = model.layers[0].attention.kv_cache
+        self.assertIsInstance(cache, StaticQuantizedKVCache)
+        self.assertEqual(cache.k_cache.dtype, torch.int16)
+        self.assertEqual(cache.v_cache.dtype, torch.int16)
+        self.assertTrue(cache.return_float_values)
+        self.assertFalse(cache.use_per_channel)
+
+    def test_calibrate_static_quantized_int16_kv_cache(self):
+        attention = self._create_attention_with_kv_cache()
+        model = self._create_mock_model([attention])
+        replace_kv_cache_with_static_quantized_kv_cache(
+            model,
+            scale=1.0 / 32767.0,
+            use_custom_update_cache_op=False,
+            use_per_channel=False,
+            quantized_cache_dtype=torch.int16,
+        )
+        cache = model.layers[0].attention.kv_cache
+        cache.enable_calibration()
+
+        input_pos = torch.tensor([0, 1])
+        shape = (self.batch_size, self.n_kv_heads, 2, self.head_dim)
+        k_val = torch.arange(torch.tensor(shape).prod(), dtype=torch.float32).reshape(
+            shape
+        )
+        v_val = -2.0 * k_val
+        cache.update(input_pos, k_val, v_val)
+        cache.finalize_calibration()
+
+        self.assertAlmostEqual(
+            cache.k_cache_scales.item(),
+            k_val.abs().amax().item() / 32767.0,
+            places=8,
+        )
+        self.assertAlmostEqual(
+            cache.v_cache_scales.item(),
+            v_val.abs().amax().item() / 32767.0,
+            places=8,
+        )
+
+    def test_static_quantized_int16_cache_round_trip_after_calibration(self):
+        for per_channel in (False, True):
+            with self.subTest(per_channel=per_channel):
+                cache = StaticQuantizedKVCache(
+                    1,
+                    4,
+                    1,
+                    4,
+                    use_custom_update_cache_op=False,
+                    return_float_values=False,
+                    use_per_channel=per_channel,
+                    quantized_cache_dtype=torch.int16,
+                )
+                k_val = torch.tensor([[[[-4.0, -0.5, 0.5, 4.0]]]])
+                v_val = 0.5 * k_val
+                cache.enable_calibration()
+                cache.update(torch.tensor([0]), k_val, v_val)
+                cache.finalize_calibration()
+
+                k_val = torch.cat((k_val, 0.5 * k_val), dim=2)
+                v_val = torch.cat((v_val, 0.5 * v_val), dim=2)
+                k_out, v_out = cache.update(torch.tensor([1, 2]), k_val, v_val)
+
+                self.assertEqual(k_out.dtype, torch.int16)
+                self.assertEqual(v_out.dtype, torch.int16)
+                for stored, scales, expected in (
+                    (cache.k_cache, cache.k_cache_scales, k_val),
+                    (cache.v_cache, cache.v_cache_scales, v_val),
+                ):
+                    values = stored[:, 1:3]
+                    self.assertEqual(values.abs().max().item(), 32767)
+                    torch.testing.assert_close(
+                        values.to(torch.float32) * scales,
+                        expected.transpose(1, 2),
+                        rtol=0,
+                        atol=scales.max().item(),
+                    )
+
+    def test_static_quantized_cache_uses_initial_scale(self):
+        for per_channel in (False, True):
+            with self.subTest(per_channel=per_channel):
+                cache = StaticQuantizedKVCache(
+                    1,
+                    4,
+                    2,
+                    4,
+                    scale=0.25,
+                    use_custom_update_cache_op=False,
+                    return_float_values=False,
+                    use_per_channel=per_channel,
+                )
+                for scales in (cache.k_cache_scales, cache.v_cache_scales):
+                    torch.testing.assert_close(scales, torch.full_like(scales, 0.25))
+
+                k_val = torch.full((1, 2, 1, 4), 0.5)
+                v_val = torch.full_like(k_val, -1.0)
+                cache.update(torch.tensor([0]), k_val, v_val)
+                k_out, v_out = cache.update(
+                    torch.tensor([1]), 2.0 * k_val, -1.5 * v_val
+                )
+
+                for output, expected in (
+                    (k_out[:, :, 0], 2),
+                    (v_out[:, :, 0], -4),
+                    (k_out[:, :, 1], 4),
+                    (v_out[:, :, 1], 6),
+                ):
+                    self.assertEqual(output.dtype, torch.int8)
+                    torch.testing.assert_close(
+                        output, torch.full_like(output, expected)
+                    )
+
+    def test_static_quantized_cache_scalar_calibration(self):
+        attention = self._create_attention_with_kv_cache()
+        model = self._create_mock_model([attention])
+        replace_kv_cache_with_static_quantized_kv_cache(
+            model,
+            use_custom_update_cache_op=False,
+            use_per_channel=False,
+        )
+        cache = model.layers[0].attention.kv_cache
+        cache.enable_calibration()
+        k_val = torch.randn(self.batch_size, self.n_kv_heads, 1, self.head_dim)
+        v_val = torch.randn_like(k_val)
+        cache.update(torch.tensor([0]), k_val, v_val)
+        cache.finalize_calibration()
+
+        self.assertEqual(cache.k_cache_scales.shape, (1,))
+        self.assertEqual(cache.v_cache_scales.shape, (1,))
+        torch.testing.assert_close(
+            cache.k_cache_scales, k_val.abs().amax().reshape(1) / 127.0
+        )
+        torch.testing.assert_close(
+            cache.v_cache_scales, v_val.abs().amax().reshape(1) / 127.0
+        )
+
     def test_calibrate_static_quantized_kv_cache(self):
         attention = self._create_attention_with_kv_cache()
         model = self._create_mock_model([attention])
@@ -278,6 +426,20 @@ class TestReplaceKVCache(unittest.TestCase):
 
                     self.assertEqual(k_out.dtype, dtype)
                     self.assertEqual(v_out.dtype, dtype)
+
+    def test_replace_static_quantized_cache_preserves_sdpa(self):
+        for cache_dtype in (torch.int8, torch.int16):
+            with self.subTest(cache_dtype=cache_dtype):
+                attention = self._create_attention_with_kv_cache()
+                model = self._create_mock_model([attention])
+                original_sdpa = attention.SDPA
+                replace_kv_cache_with_static_quantized_kv_cache(
+                    model,
+                    use_custom_update_cache_op=False,
+                    quantized_cache_dtype=cache_dtype,
+                )
+                self.assertIs(attention.SDPA, original_sdpa)
+                self.assertTrue(attention.kv_cache.return_float_values)
 
     def test_static_quantized_kv_cache_rejects_specialized_cache(self):
         attention = self._create_attention_with_kv_cache()
