@@ -716,9 +716,11 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       # executor drives, plus the vision encoder and forward_from_embeddings.
       OFFGRAPH_FLAG=""
       if [ "$MODE" = "dflash-image-batching" ]; then
-        # Each static forward size is a separate AOTI compile; the default
-        # seven sizes add about an hour on the 11-vCPU CI runner.
-        OFFGRAPH_FLAG="--use-offgraph-kv-cache --forward-sizes 1,4,16,64"
+        # Every static forward_{N} and draft_forward_{N} is its own AOTI
+        # compile and autotune, which the 11-vCPU runner cannot fit in the
+        # job timeout at the default sizes; these still cover static and
+        # dynamic target steps and DFlash drafting.
+        OFFGRAPH_FLAG="--use-offgraph-kv-cache --forward-sizes 1,4 --max-draft-owners 1"
       fi
       EXPORT_START_SECONDS=$SECONDS
       TMPDIR="$INDUCTOR_TMPDIR" \
