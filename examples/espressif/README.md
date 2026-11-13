@@ -36,9 +36,9 @@ examples/espressif/
 
 ## Prerequisites
 
-1. **ESP-IDF v5.1+**: install it with the
-   [official guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/),
-   or with `setup.sh` (see [Emulator Smoke Test](#emulator-smoke-test)).
+1. **ESP-IDF 6.0 or newer**: `setup.sh` installs 6.1 (see
+   [Emulator Smoke Test](#emulator-smoke-test)); for another release, follow the
+   [official guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/).
 2. **ExecuTorch**:
    ```bash
    git clone https://github.com/pytorch/executorch.git
@@ -153,17 +153,17 @@ bash examples/espressif/setup.sh
 source ~/.cache/executorch-espressif/setup_path.sh
 ```
 
-[setup.sh](setup.sh) installs a pinned ESP-IDF (6.1 by default) and
-esp-emulator, and installs ESP-IDF's Python dependencies into your active
-environment. In a new shell, activate the same environment and source
-`setup_path.sh` again. Options:
+[setup.sh](setup.sh) installs ESP-IDF 6.1 and esp-emulator at pinned versions,
+and installs ESP-IDF's Python dependencies into your active environment. In a
+new shell, activate the same environment and source `setup_path.sh` again.
+Options:
 
 - `--minimal`: only the Xtensa compiler, the SDK's Python packages and the
   emulator, as CI uses. The full install also needs your platform's USB
   libraries (`libusb-1.0-0` on Ubuntu) for OpenOCD.
 - `--skip-idf`, `--skip-emulator`: install only one of them.
 - `--targets=<chip>,...`: compilers for other targets.
-- `--idf-version=v6.0.1`: another ESP-IDF release; use a separate
+- `--idf-version=<tag>`: another ESP-IDF release, such as `v6.0.1`; use a separate
   `ESPRESSIF_TOOLS_DIR` for it.
 - `ESPRESSIF_TOOLS_DIR` picks the install directory; `IDF_PATH` and
   `IDF_TOOLS_PATH` reuse an existing ESP-IDF.
