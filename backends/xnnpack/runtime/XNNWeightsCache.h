@@ -47,6 +47,11 @@ struct PackedDataMeta {
   // and then save_packed_index-ed). delete_packed_data preserves these
   // entries so the next init reuses the saved file instead of re-packing.
   bool from_load{false};
+  // True once a second kernel packed under this name with different bytes:
+  // the name does not tell the two apart, so look_up treats it as a miss
+  // from then on and save_packed_index leaves it out of the file. Nodes
+  // under a conflicted name pack unnamed, outside the cache.
+  bool conflicted{false};
   // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
   // guarantees this is consistent across runs of the same ukernel; when
   // XNNPACK upgrades and a ukernel implementation changes, the seed
@@ -163,6 +168,23 @@ class XNNWeightsCache {
   Result<const uint8_t*> load_unpacked_data(const std::string& name);
 
   /**
+   * Appends `suffix` to the cache name of a buffer returned by
+   * load_unpacked_data. XNNPACK folds quantization parameters (scales, zero
+   * points) into the packed weights, but the cache identifies packed data by
+   * the unpacked kernel's name alone, so two weights with identical bytes and
+   * different scales would share one entry and the second would run with the
+   * first's scales. No-op for pointers the cache did not load (inline
+   * constants), which never hit the cache.
+   *
+   * Call it once per node that packs the buffer, with that node's full
+   * suffix. The same suffix again is a no-op: those nodes share one packing.
+   * A different suffix means the nodes need different packings of one
+   * pointer, which the cache cannot key apart, so it forgets the buffer's
+   * name and every node that packs it does so outside the cache.
+   */
+  void qualify_unpacked_name(const void* data_ptr, const std::string& suffix);
+
+  /**
    * Deletes the packed data associated with the names given.
    * Decrements the ref_count if the packed data is used by other
    * models
@@ -242,7 +264,10 @@ class XNNWeightsCache {
   // v2: per-entry seed added — old v1 files don't carry seeds and would
   // load with seed=0, mismatching every fresh look_up with a non-zero
   // seed, causing a stampede of re-packs. Reject v1 outright.
-  static constexpr uint32_t kCacheVersion = 2;
+  // v3: entry names carry the kernel's quantization parameters. A v2 file
+  // names the same kernels without them, so none of its entries would ever
+  // hit again and every kernel would be re-packed and appended to it.
+  static constexpr uint32_t kCacheVersion = 3;
   bool load_packed_cache();
   void reset_for_fresh_write();
   void release_entry(void* packed_data_ptr);
@@ -255,6 +280,11 @@ class XNNWeightsCache {
 
   // Map of unpacked pointers to the data name
   std::unordered_map<const void*, std::string> unpacked_data_to_name_;
+  // Map of unpacked pointers to the suffix qualify_unpacked_name applied in
+  // the current compile; a pointer stays here after a conflict dropped its
+  // name, so a later load_unpacked_data of the same pointer cannot bring the
+  // bare name back
+  std::unordered_map<const void*, std::string> unpacked_data_to_qualifier_;
   // Map of data names to offset into the packed data
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
