@@ -125,8 +125,9 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
-  // VK_KHR_vulkan_memory_model is enabled on the logical device. Known only
-  // for a device this Adapter created.
+  // VK_KHR_vulkan_memory_model and vulkanMemoryModel are enabled on the
+  // logical device: known for a device this Adapter created or borrows through
+  // a shared device, false for an external VkDevice.
   bool vulkan_memory_model_enabled_ = false;
   // Test-only capability overrides; empty unless a ScopedCapabilityOverride
   // is live.
@@ -559,8 +560,8 @@ class Adapter final {
     return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
   }
 
-  // vulkanMemoryModel is enabled on the logical device (false for a device
-  // this Adapter did not create).
+  // vulkanMemoryModel is enabled on the logical device (false for an external
+  // VkDevice).
   inline bool supports_vulkan_memory_model() const {
     return vulkan_memory_model_enabled_;
   }

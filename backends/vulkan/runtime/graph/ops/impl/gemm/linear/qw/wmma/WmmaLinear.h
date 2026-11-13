@@ -16,7 +16,8 @@
 
 namespace vkcompute {
 
-// The family key inputs of the graph's device.
+// The family key inputs of an Adapter's device, and of the graph's.
+CoopmatDeviceKey coopmat_device_key(vkapi::Adapter* adapter);
 CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph);
 
 WmmaStorage to_wmma_storage(utils::StorageType storage);

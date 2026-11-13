@@ -12,6 +12,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/EnabledDeviceState.h>
+
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -339,6 +341,12 @@ VkDevice create_logical_device(
   f.cooperative_matrix2_tensor_addressing =
       cooperative_matrix2_features.cooperativeMatrixTensorAddressing == VK_TRUE;
 #endif
+#ifdef VK_KHR_vulkan_memory_model
+  f.vulkan_memory_model =
+      vulkan_memory_model_features.vulkanMemoryModel == VK_TRUE;
+  f.vulkan_memory_model_device_scope =
+      vulkan_memory_model_features.vulkanMemoryModelDeviceScope == VK_TRUE;
+#endif
 #ifdef VK_EXT_subgroup_size_control
   f.subgroup_size_control =
       subgroup_size_control_features.subgroupSizeControl == VK_TRUE &&
@@ -462,6 +470,12 @@ PhysicalDevice shared_physical_device(
 #endif
   physical.supports_subgroup_size_control &= f.subgroup_size_control;
   physical.supports_compute_full_subgroups &= f.compute_full_subgroups;
+#ifdef VK_KHR_vulkan_memory_model
+  physical.vulkan_memory_model_features.vulkanMemoryModel &=
+      f.vulkan_memory_model ? VK_TRUE : VK_FALSE;
+  physical.vulkan_memory_model_features.vulkanMemoryModelDeviceScope &=
+      f.vulkan_memory_model_device_scope ? VK_TRUE : VK_FALSE;
+#endif
   return physical;
 }
 
@@ -495,22 +509,16 @@ Adapter::Adapter(
       compute_pipeline_cache_(
           device_.handle,
           cache_data_path,
-          // Full subgroups: what create_logical_device enabled
-          supports_subgroup_size_control() &&
-              supports_compute_full_subgroups()),
+          full_subgroups_enabled(enabled_device_features_)),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
       linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
           device_.handle,
           physical_device_.handle)},
-      owns_device_{true} {
-#ifdef VK_KHR_vulkan_memory_model
-  for (const std::string& extension : enabled_device_extensions_) {
-    vulkan_memory_model_enabled_ |=
-        extension == VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME;
-  }
-#endif /* VK_KHR_vulkan_memory_model */
-}
+      owns_device_{true},
+      vulkan_memory_model_enabled_{vulkan_memory_model_enabled(
+          enabled_device_extensions_,
+          enabled_device_features_)} {}
 
 Adapter::Adapter(
     VkInstance instance,
@@ -528,7 +536,8 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
-      // Full subgroups only on a device this Adapter created.
+      // The enabled features of an external VkDevice are unknown: no full
+      // subgroups (and no Vulkan memory model).
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
@@ -575,14 +584,19 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
-      // Full subgroups only on a device this Adapter created.
-      compute_pipeline_cache_(device_.handle, cache_data_path),
+      compute_pipeline_cache_(
+          device_.handle,
+          cache_data_path,
+          full_subgroups_enabled(enabled_device_features_)),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
       linear_tiling_3d_enabled_(test_linear_tiling_3d_image_support(
           device_.handle,
           physical_device_.handle)),
-      owns_device_(false) {}
+      owns_device_(false),
+      vulkan_memory_model_enabled_(vulkan_memory_model_enabled(
+          enabled_device_extensions_,
+          enabled_device_features_)) {}
 
 void Adapter::wait_idle(const Queue& queue) {
   if (shared_device_) {

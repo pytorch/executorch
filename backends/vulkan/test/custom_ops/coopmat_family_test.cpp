@@ -8,6 +8,7 @@
 // selection (CoopmatFamily.h). No GPU needed.
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/CoopmatFamily.h>
+#include <executorch/backends/vulkan/runtime/vk_api/EnabledDeviceState.h>
 
 #include <gtest/gtest.h>
 
@@ -252,6 +253,66 @@ TEST(CoopmatFamilyTest, LogicalDevicePrerequisites) {
       EXPECT_EQ(selected(key, q4), "") << what;
       EXPECT_EQ(selected(key, dq8ca), "") << what;
     }
+  }
+}
+
+// The logical-device part of the key as an Adapter derives it from what the
+// VkDevice was created with (vk_api/EnabledDeviceState.h): the same for a
+// device the Adapter creates and for one it borrows through a shared device
+// the backend created; an externally registered shared device that declares
+// no features gets no family.
+TEST(CoopmatFamilyTest, EnabledDeviceState) {
+  using executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures;
+  const auto key_with = [](CoopmatDeviceKey d,
+                           const std::vector<std::string>& extensions,
+                           const SharedVulkanDeviceFeatures& f) {
+    d.full_subgroups = vkapi::full_subgroups_enabled(f);
+    d.vulkan_memory_model = vkapi::vulkan_memory_model_enabled(extensions, f);
+    return d;
+  };
+  // What create_logical_device enables on an Xe2 or NVIDIA device.
+  SharedVulkanDeviceFeatures created;
+  created.cooperative_matrix = true;
+  created.subgroup_size_control = true;
+  created.compute_full_subgroups = true;
+  created.vulkan_memory_model = true;
+  created.vulkan_memory_model_device_scope = true;
+  const std::vector<std::string> extensions = {
+      "VK_KHR_cooperative_matrix",
+      "VK_EXT_subgroup_size_control",
+      "VK_KHR_vulkan_memory_model"};
+  EXPECT_EQ(
+      coopmat_family(key_with(xe2_key(), extensions, created)),
+      CoopmatFamily::kXe2);
+  EXPECT_EQ(
+      coopmat_family(key_with(nvidia_key(), extensions, created)),
+      CoopmatFamily::kNvidia);
+
+  std::vector<std::pair<const char*, CoopmatDeviceKey>> missing;
+  missing.emplace_back(
+      "no declared features",
+      key_with(xe2_key(), extensions, SharedVulkanDeviceFeatures{}));
+  SharedVulkanDeviceFeatures f = created;
+  f.compute_full_subgroups = false;
+  missing.emplace_back(
+      "computeFullSubgroups not enabled", key_with(xe2_key(), extensions, f));
+  f = created;
+  f.subgroup_size_control = false;
+  missing.emplace_back(
+      "subgroup size control not enabled", key_with(xe2_key(), extensions, f));
+  f = created;
+  f.vulkan_memory_model = false;
+  missing.emplace_back(
+      "memory model extension without the feature",
+      key_with(xe2_key(), extensions, f));
+  missing.emplace_back(
+      "memory model feature without the extension",
+      key_with(
+          xe2_key(),
+          {"VK_KHR_cooperative_matrix", "VK_EXT_subgroup_size_control"},
+          created));
+  for (const auto& [what, key] : missing) {
+    EXPECT_EQ(coopmat_family(key), CoopmatFamily::kNone) << what;
   }
 }
 

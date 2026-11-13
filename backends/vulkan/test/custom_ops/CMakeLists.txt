@@ -39,8 +39,11 @@ add_executable(
   ${CMAKE_CURRENT_SOURCE_DIR}/coopmat_family_test.cpp
   ${VULKAN_OPS_PATH}/impl/gemm/linear/qw/wmma/CoopmatFamily.cpp
 )
+# EnabledDeviceState.h needs the Vulkan headers only (no Vulkan calls).
 target_include_directories(
-  vulkan_coopmat_family_test PRIVATE ${EXECUTORCH_ROOT}/..
+  vulkan_coopmat_family_test
+  PRIVATE ${EXECUTORCH_ROOT}/..
+          ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
 )
 target_compile_definitions(
   vulkan_coopmat_family_test
