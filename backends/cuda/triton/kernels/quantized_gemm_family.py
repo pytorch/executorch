@@ -179,8 +179,30 @@ def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
     return _tuning_key(kernel, args, kwargs) not in kernel.cache
 
 
+def _cgroup_cpu_limit() -> Optional[int]:
+    """CPUs allowed by a cgroup v2 quota (as on Kubernetes CI runners), which
+    neither os.cpu_count() nor the affinity mask reflects."""
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as f:
+            quota, period = f.read().split()
+    except (OSError, ValueError):
+        return None
+    if quota == "max":
+        return None
+    return max(1, int(quota) // int(period))
+
+
+def _available_cpus() -> int:
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:
+        cpus = os.cpu_count() or 1
+    limit = _cgroup_cpu_limit()
+    return min(cpus, limit) if limit is not None else cpus
+
+
 def _compile_workers() -> int:
-    return min(_MAX_COMPILE_THREADS, os.cpu_count() or 1)
+    return min(_MAX_COMPILE_THREADS, _available_cpus())
 
 
 _PROCESS_POOL_LOCK = threading.Lock()
