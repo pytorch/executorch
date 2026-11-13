@@ -6,7 +6,7 @@ def define_common_targets():
     # Header-only library for empty tensor factory functions
     runtime.cxx_library(
         name = "empty",
-        headers = [
+        exported_headers = [
             "empty.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -19,7 +19,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "from_blob",
-        headers = [
+        exported_headers = [
             "from_blob.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -32,7 +32,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "from_etensor",
-        headers = [
+        exported_headers = [
             "from_etensor.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
