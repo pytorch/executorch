@@ -116,6 +116,7 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
         dtypes={torch.float32},
     ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
+    exir_ops.edge.aten.erf.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),
 }
 
