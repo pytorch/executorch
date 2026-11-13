@@ -101,6 +101,7 @@ if(EXECUTORCH_BUILD_NATIVE_VULKAN)
     runtime/vulkan/test_insert_prepack.cpp
     runtime/vulkan/test_lower_hf_attention.cpp
     runtime/vulkan/test_lower_rms_norm.cpp
+    runtime/vulkan/test_lower_sdpa.cpp
     runtime/vulkan/test_materialize_view_copies.cpp
     runtime/vulkan/test_vulkan_constant_materialization_tracker.cpp
     ../runtime/vulkan/VulkanConstantMaterializationTracker.cpp

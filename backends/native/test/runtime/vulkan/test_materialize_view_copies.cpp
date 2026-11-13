@@ -90,6 +90,18 @@ TEST(MaterializeViewCopiesTest, LeavesUnselectedViewAsAlias) {
   EXPECT_EQ(graph.value(1).alias_id, 0);
 }
 
+TEST(MaterializeViewCopiesTest, CopiesSelectedStaticPermuteWithNegativeDims) {
+  Graph graph = make_permute_graph(/*dynamic_source=*/false);
+  graph.node(0).inputs[1].arg = IntListArg{.values = {-1, 0}};
+
+  EXPECT_EQ(materialize_view_copies(graph, {1}), 1);
+  EXPECT_EQ(graph.node(0).target, "torch.ops.aten.permute_copy.default");
+  EXPECT_EQ(graph.value(1).alias_id, kInvalid);
+  EXPECT_EQ(
+      graph.node(0).inputs[1].arg.as_int_list().values,
+      (std::vector<int64_t>{1, 0}));
+}
+
 TEST(MaterializeViewCopiesTest, LeavesMutatedViewAsAlias) {
   Graph graph = make_view_graph();
   graph.values.emplace_back(

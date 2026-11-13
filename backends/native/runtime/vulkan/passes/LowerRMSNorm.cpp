@@ -23,17 +23,6 @@ namespace {
 constexpr std::string_view kAtenRMSNorm = "torch.ops.aten.rms_norm.default";
 constexpr const char* kVulkanRMSNorm = "torch.ops.et_vk.rms_norm.default";
 
-const Argument*
-get_arg(const Node& node, std::string_view name, size_t position) {
-  const auto found = std::ranges::find_if(
-      node.inputs,
-      [name](const NamedArgument& input) { return input.name == name; });
-  if (found != node.inputs.end()) {
-    return &found->arg;
-  }
-  return position < node.inputs.size() ? &node.inputs[position].arg : nullptr;
-}
-
 bool is_constant(const Value& value) {
   return value.role == ValueRole::Parameter ||
       value.role == ValueRole::ConstantTensor;
@@ -50,10 +39,10 @@ size_t lower_rms_norms(Graph& graph) {
       continue;
     }
 
-    const Argument* input = get_arg(node, "input", 0);
-    const Argument* normalized_shape = get_arg(node, "normalized_shape", 1);
-    const Argument* weight = get_arg(node, "weight", 2);
-    const Argument* eps = get_arg(node, "eps", 3);
+    const Argument* input = find_arg(node, "input", 0);
+    const Argument* normalized_shape = find_arg(node, "normalized_shape", 1);
+    const Argument* weight = find_arg(node, "weight", 2);
+    const Argument* eps = find_arg(node, "eps", 3);
     if (input == nullptr || input->kind() != ArgKind::Tensor ||
         normalized_shape == nullptr ||
         normalized_shape->kind() != ArgKind::IntList || weight == nullptr ||

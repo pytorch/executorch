@@ -884,8 +884,7 @@ class GgmlExecutable final : public EngineExecutable {
       return;
     }
     ggml_init_params params{
-        .mem_size =
-            ggml_tensor_overhead() * (count + float_scales.size() + 16),
+        .mem_size = ggml_tensor_overhead() * (count + float_scales.size() + 16),
         .mem_buffer = nullptr,
         .no_alloc = true,
     };
@@ -988,10 +987,10 @@ class GgmlExecutable final : public EngineExecutable {
         } else {
           converted = affine_int4_to_q4_0(
               meta, span, std::vector<float>(entry->second.size(), 1.0f));
-          ggml_tensor* scales = row_scales_.at(binding.value_id);
+          ggml_tensor* row_scales = row_scales_.at(binding.value_id);
           ggml_backend_tensor_set(
-              scales, entry->second.data(), 0, ggml_nbytes(scales));
-          loaded += ggml_nbytes(scales);
+              row_scales, entry->second.data(), 0, ggml_nbytes(row_scales));
+          loaded += ggml_nbytes(row_scales);
         }
         span = converted;
       } else if (narrow) {
