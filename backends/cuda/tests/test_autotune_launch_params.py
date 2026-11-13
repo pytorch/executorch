@@ -138,6 +138,16 @@ class AutotuneLaunchParamTest(unittest.TestCase):
         )
         self.assertEqual(weight.untyped_storage().nbytes(), 4096)
 
+    def test_out_of_memory_with_nothing_to_park_skips_the_parked_retry(self) -> None:
+        emptied = torch.empty(1024, device="cuda")
+        emptied.untyped_storage().resize_(0)
+        with mock.patch.object(
+            launch_params, "_time_candidates", side_effect=torch.OutOfMemoryError("oom")
+        ) as timing, autotune_launch_params(offload=lambda: [emptied]) as stats:
+            _toy_launch(self.x, 16)
+        self.assertEqual(timing.call_count, 2)
+        self.assertEqual((stats.offloads, stats.out_of_memory), (0, 1))
+
     def test_overlapping_input_layouts_are_timed(self) -> None:
         expanded = torch.randn(1, 1024, device="cuda").expand(1024, 1024)
         with autotune_launch_params() as stats:

@@ -108,6 +108,20 @@ class CudaGraphTimingTest(unittest.TestCase):
         torch.testing.assert_close(weights, expected)
         self.assertEqual(alias.data_ptr(), weights.data_ptr())
 
+    def test_oom_with_nothing_to_park_falls_back_without_parking(self) -> None:
+        def oom(fn):
+            raise torch.OutOfMemoryError("simulated")
+
+        emptied = torch.empty(16, device="cuda")
+        emptied.untyped_storage().resize_(0)
+        y = torch.zeros(16, device="cuda")
+        with mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=oom):
+            with cgt.cuda_graph_timing(offload=lambda: [emptied]) as stats:
+                benchmarking.benchmarker.benchmark(lambda: y.add_(1), device="cuda")
+        self.assertEqual(
+            (stats.oom_retries, stats.offloads, stats.fallbacks), (2, 0, 1)
+        )
+
     def test_a_failed_restore_stops_the_compile(self) -> None:
         for error in (torch.OutOfMemoryError("simulated"), RuntimeError("simulated")):
             with self.subTest(error=type(error).__name__):

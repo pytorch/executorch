@@ -24,6 +24,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.graph_module import contains_any_call_fn_target_op
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
+from torch.multiprocessing.reductions import StorageWeakRef
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -67,6 +68,15 @@ def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
     if program.graph_signature.buffers_to_mutate:
         return {"joint_graph_constant_folding": False}
     return {}
+
+
+def _tensor_storages(program: ExportedProgram) -> Set[StorageWeakRef]:
+    tensors = (*program.state_dict.values(), *program.constants.values())
+    return {
+        StorageWeakRef(t.untyped_storage())
+        for t in tensors
+        if isinstance(t, torch.Tensor)
+    }
 
 
 @experimental(
@@ -190,6 +200,7 @@ class AotiBackend(ABC):
         cls,
         device_edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
+        caller_storages: Set[StorageWeakRef],
     ) -> None:
         """Release device memory held by tensors that ``move_to_device_pass``
         placed on the target device.
@@ -197,7 +208,9 @@ class AotiBackend(ABC):
         Called at the end of ``preprocess`` so that the next ``preprocess``
         call (e.g. for the next method in a multi-method export) can reuse
         the freed memory. Override in concrete backends (e.g. ``CudaBackend``)
-        to actually free device memory.
+        to actually free device memory. ``caller_storages`` holds the storages
+        of the program's tensors before the move; they may be the caller's
+        own tensors, so an override must not free them.
 
         Default: no-op.
         """
@@ -310,6 +323,8 @@ class AotiBackend(ABC):
         options = cls.get_aoti_compile_options(compile_specs)
         options.update(_written_buffer_options(edge_program))
 
+        # Taken before the move, which may change edge_program in place.
+        caller_storages = _tensor_storages(edge_program)
         # Move the edge_program to the target device. Routed through a hook so
         # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
         # off the device during a low-memory export.
@@ -421,7 +436,7 @@ class AotiBackend(ABC):
         # placed on the target device. Default impl is a no-op; concrete
         # backends (e.g. CudaBackend) override this to free GPU memory before
         # the next preprocess call (e.g. for the next method).
-        cls.release_moved_tensors(device_edge_program, compile_specs)
+        cls.release_moved_tensors(device_edge_program, compile_specs, caller_storages)
 
         # The runtime cannot recompute these hash keys, so carry them (one per line).
         processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
