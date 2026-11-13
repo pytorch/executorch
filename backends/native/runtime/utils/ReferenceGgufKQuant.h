@@ -10,10 +10,10 @@
 #include <cstdint>
 #include <string_view>
 
-// REFERENCE decoder for the GGUF K-quant PackedQuant codecs "gguf:q4_k" and
-// "gguf:q6_k" (super-blocks of 256 weights in ggml's block_q4_K and
-// block_q6_K layouts), producing the fp32 value a PackedQuant constant
-// denotes.
+// REFERENCE decoder for the GGUF K-quant PackedQuant codecs "gguf:q4_k",
+// "gguf:q5_k" and "gguf:q6_k" (super-blocks of 256 weights in ggml's
+// block_q4_K, block_q5_K and block_q6_K layouts), producing the fp32 value a
+// PackedQuant constant denotes.
 //
 // It decodes as ggml's dequantization does, and is a temporary fallback for
 // engines that cannot lower a codec yet. It is not a performance path and may

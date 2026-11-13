@@ -32,7 +32,7 @@ void add_prepack_int8x4_buffer_node(
   // (e.g., kPackedInt8_4C with C=3 pads to C=4).
   uint32_t num_texels =
       utils::safe_downcast<uint32_t>(graph.padded_numel_of(tensor) / 4);
-  const GlobalWorkGrid gwg({num_texels, 1u, 1u}, kTiledWorkGrid);
+  const GlobalWorkGrid gwg = graph.create_linear_gwg(num_texels);
   const LocalWorkGroup lwg = graph.create_lwg(gwg);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(

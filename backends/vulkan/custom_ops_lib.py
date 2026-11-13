@@ -1196,7 +1196,9 @@ def sdpa_impl(
     attn = torch.matmul(q, k.transpose(-2, -1)) * scale
     if attn_mask is not None:
         attn = attn + attn_mask
-    attn = torch.softmax(attn, dim=-1)
+    # Like ATen's SDPA, rows masked entirely with -inf attend to nothing.
+    fully_masked = (attn == float("-inf")).all(dim=-1, keepdim=True)
+    attn = torch.softmax(attn, dim=-1).masked_fill(fully_masked, 0.0)
     return torch.matmul(attn, v)
 
 
