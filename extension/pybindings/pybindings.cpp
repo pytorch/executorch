@@ -4218,6 +4218,24 @@ class ProgramMemory {
   ProgramMemory& operator=(const ProgramMemory&) = delete;
 
  private:
+  // One planned host buffer. Pinned when the program also has device
+  // buffers, so the boundary copies between the planned host buffers and
+  // the device buffers transfer at pinned rather than pageable speed;
+  // ordinary zero-filled memory otherwise, and when pinning fails.
+  struct HostBuffer {
+    std::shared_ptr<void> pinned;
+    std::vector<uint8_t> pageable;
+    size_t nbytes = 0;
+
+    uint8_t* data() {
+      return pinned != nullptr ? static_cast<uint8_t*>(pinned.get())
+                               : pageable.data();
+    }
+    size_t size() const {
+      return nbytes;
+    }
+  };
+
   MemoryAllocator const_allocator_{MemoryAllocator(0, nullptr)};
 
   MallocMemoryAllocator runtime_allocator_;
@@ -4234,7 +4252,7 @@ class ProgramMemory {
   std::vector<DeviceMemoryBuffer> device_buffers_;
 
   // Backs CPU-tagged buffers; the entry is empty for a device-tagged buffer.
-  std::vector<std::vector<uint8_t>> non_const_buffers_;
+  std::vector<HostBuffer> non_const_buffers_;
 
   std::vector<Span<uint8_t>> non_const_spans_;
 
@@ -4246,15 +4264,30 @@ class ProgramMemory {
     return index < planned_devices_.size() && !planned_devices_[index].is_cpu();
   }
 
-  std::vector<std::vector<uint8_t>> allocate_host_buffers() {
-    std::vector<std::vector<uint8_t>> result;
+  std::vector<HostBuffer> allocate_host_buffers() {
+    bool has_device_buffer = false;
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
+      has_device_buffer = has_device_buffer || is_device_buffer(i);
+    }
+    std::vector<HostBuffer> result;
     result.reserve(planned_sizes_.size());
     for (size_t i = 0; i < planned_sizes_.size(); ++i) {
       if (is_device_buffer(i)) {
         result.emplace_back();
-      } else {
-        result.emplace_back(planned_sizes_[i]);
+        continue;
       }
+      HostBuffer buffer;
+      buffer.nbytes = static_cast<size_t>(planned_sizes_[i]);
+      if (has_device_buffer && buffer.nbytes > 0) {
+        buffer.pinned = allocate_pinned_host_buffer(buffer.nbytes);
+      }
+      if (buffer.pinned != nullptr) {
+        // Planned buffers start zeroed, as the pageable ones below do.
+        std::memset(buffer.data(), 0, buffer.nbytes);
+      } else {
+        buffer.pageable.resize(buffer.nbytes);
+      }
+      result.push_back(std::move(buffer));
     }
     return result;
   }
