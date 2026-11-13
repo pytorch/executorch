@@ -8,7 +8,7 @@
 # pyre-ignore-all-errors
 
 import math
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Type
 
 import scipy
 import torch
@@ -295,7 +295,12 @@ class LlamaAttention(nn.Module):
             self.q_norm_fn = torch.nn.RMSNorm(q_norm_dim, eps=config.norm_eps)
             self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
 
-        if config.partial_rotary_factor < 1:
+        partial_rotary_factor = config.partial_rotary_factor
+        if config.rope_parameters and config.layer_types:
+            partial_rotary_factor = config.rope_parameters[
+                config.layer_types[layer_idx]
+            ].get("partial_rotary_factor", 1.0)
+        if partial_rotary_factor < 1:
             self.apply_rope_emb = ROTARY_EMB_REGISTRY["partial"]
         else:
             self.apply_rope_emb = ROTARY_EMB_REGISTRY["default"]
@@ -316,6 +321,9 @@ class LlamaAttention(nn.Module):
             bias=getattr(config, "attention_qkv_bias", False),
         )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.headwise_attn_output_gate = config.headwise_attn_output_gate
+        if self.headwise_attn_output_gate:
+            self.og = nn.Linear(self.dim, self.n_heads, bias=False)
 
         self.attn_softmax = torch.nn.Softmax(dim=-1)
 
@@ -390,6 +398,8 @@ class LlamaAttention(nn.Module):
         v_caches: List[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsz, seq_len, _ = hidden_states.shape
+        if self.headwise_attn_output_gate:
+            gate = torch.sigmoid(self.og(hidden_states)).unsqueeze(-1)
         hidden_states = torch.reshape(
             hidden_states, (bsz, seq_len, 1, self.dim)
         ).transpose(1, 3)
@@ -444,6 +454,8 @@ class LlamaAttention(nn.Module):
         attn = self.attn_softmax(attn)
         y = attn @ vh
         y = y.transpose(1, 2)
+        if self.headwise_attn_output_gate:
+            y = y * gate
         y = y.reshape(bsz, seq_len, 1, -1).transpose(1, 3)
         y = self.wo_conv(y)
         y = y.transpose(1, 3)
@@ -464,6 +476,8 @@ class LlamaAttention(nn.Module):
         v_caches: List[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsz, seq_len, _ = hidden_states.shape
+        if self.headwise_attn_output_gate:
+            gate = torch.sigmoid(self.og(hidden_states)).unsqueeze(-1)
 
         q = self.wq(hidden_states)
         k = self.wk(hidden_states)
@@ -516,7 +530,10 @@ class LlamaAttention(nn.Module):
             attn = attn + atten_mask
         attn = self.attn_softmax(attn)
         y = attn @ vh
-        y = y.transpose(1, 2).reshape(bsz, seq_len, -1)
+        y = y.transpose(1, 2)
+        if self.headwise_attn_output_gate:
+            y = y * gate
+        y = y.reshape(bsz, seq_len, -1)
         y = self.wo(y)
 
         if self.output_new_cache_only:
@@ -637,6 +654,89 @@ class LlamaDecoderLayer(nn.Module):
         return output, k_cache, v_cache
 
 
+DECODER_LAYER_REGISTRY: Dict[str, Type[nn.Module]] = {}
+
+
+def register_decoder_layer(layer_type: str):
+    """Register a decoder layer class for a `layer_types` entry."""
+
+    def decorator(cls: Type[nn.Module]):
+        DECODER_LAYER_REGISTRY[layer_type] = cls
+        return cls
+
+    return decorator
+
+
+class ShortConv(nn.Module):
+    """LFM2/LFM3 gated depthwise causal conv over the last `conv_L_cache` inputs."""
+
+    def __init__(self, config: ModelArgs):
+        super().__init__()
+        self.dim = config.dim
+        self.L_cache = config.conv_L_cache
+        self.B_proj = nn.Linear(self.dim, self.dim, bias=False)
+        self.C_proj = nn.Linear(self.dim, self.dim, bias=False)
+        self.x_proj = nn.Linear(self.dim, self.dim, bias=False)
+        self.out_proj = nn.Linear(self.dim, self.dim, bias=False)
+        # Only holds the depthwise weight [dim, 1, L_cache]; each tap is applied as a
+        # broadcast multiply over [bsz, seq, dim].
+        self.conv = nn.Conv1d(
+            self.dim, self.dim, self.L_cache, groups=self.dim, bias=False
+        )
+
+    def forward(
+        self, x: torch.Tensor, conv_state: torch.Tensor, window_mask: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        seq_len = x.shape[1]
+        conv_in = self.B_proj(x) * self.x_proj(x)
+
+        # window_mask zeroes state rows that precede position 0, so a fresh
+        # sequence needs no knowledge of the state's quantized zero point.
+        window = torch.cat([conv_state, conv_in], dim=1) * window_mask
+        weight = self.conv.weight
+        y = window[:, 0:seq_len, :] * weight[:, 0, 0]
+        for k in range(1, self.L_cache):
+            y = y + window[:, k : k + seq_len, :] * weight[:, 0, k]
+
+        return self.out_proj(self.C_proj(x) * y), conv_in
+
+
+@register_decoder_layer("conv")
+class ShortConvDecoderLayer(nn.Module):
+    def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
+        super().__init__()
+        self.conv = ShortConv(config)
+        self.feed_forward = FeedForward_REGISTRY.get(
+            config.model_architecture, FeedForward
+        )(config)
+        self.attention_norm = NORM_REGISTRY[config.norm_type](
+            config.dim, eps=config.norm_eps
+        )
+        self.ffn_norm = NORM_REGISTRY[config.norm_type](config.dim, eps=config.norm_eps)
+        self.post_attention_norm = (
+            torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+            if config.post_attention_norm
+            else None
+        )
+        self.post_ffn_norm = (
+            torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+            if config.post_ffn_norm
+            else None
+        )
+
+    def forward(
+        self, x: torch.Tensor, conv_state: torch.Tensor, window_mask: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        h, conv_in = self.conv(self.attention_norm(x), conv_state, window_mask)
+        if self.post_attention_norm:
+            h = self.post_attention_norm(h)
+        h = x + h
+        out = self.feed_forward(self.ffn_norm(h))
+        if self.post_ffn_norm:
+            out = self.post_ffn_norm(out)
+        return h + out, conv_in
+
+
 class LlamaModel(nn.Module):
     def __init__(
         self,
@@ -667,9 +767,12 @@ class LlamaModel(nn.Module):
         self.kv_io_bit_width = config.kv_io_bit_width
         self.logits_scaling = config.logits_scaling
 
+        layer_types = config.layer_types or [None] * config.n_layers
         self.layers = nn.ModuleList(
             [
-                LlamaDecoderLayer(i, config, self.output_new_cache_only)
+                DECODER_LAYER_REGISTRY.get(layer_types[i], LlamaDecoderLayer)(
+                    i, config, self.output_new_cache_only
+                )
                 for i in range(config.n_layers)
             ]
         )
@@ -1091,3 +1194,186 @@ class MultiScopeAwareLlamaModel(LlamaModel):
         meta_data = super().get_metadata()
         meta_data["get_sliding_window"] = self.sliding_window
         return meta_data
+
+
+class ShortConvHybridLlamaModel(LlamaModel):
+    """Decoder mixing short-conv layers with full and sliding-window attention.
+
+    forward(tokens, atten_mask, window_atten_mask, input_pos,
+            *k_caches[n_attn], *v_caches[n_attn], *conv_states[n_conv])
+        -> (logits, new_k[n_attn], new_v[n_attn] + new_conv_inputs[n_conv])
+
+    Conv layers return the conv inputs of the current tokens; the runner keeps the
+    last `conv_L_cache - 1` valid rows as the next conv state. They ride along with
+    the V caches so the decoder plumbing (calibration, export flattening) sees the
+    usual (tokens, masks, pos, k_caches, v_caches) signature.
+    """
+
+    def __init__(
+        self,
+        config: ModelArgs,
+        ar_len=1,
+        output_new_cache_only=True,
+        output_cache=True,
+        use_i64_token=False,
+        **kwargs,
+    ):
+        super().__init__(
+            config=config,
+            ar_len=ar_len,
+            output_new_cache_only=output_new_cache_only,
+            output_cache=output_cache,
+            use_i64_token=use_i64_token,
+            **kwargs,
+        )
+        if not output_new_cache_only or not self.use_kv_cache:
+            raise ValueError(
+                "LFM3 requires KV caching and new-cache outputs; "
+                "prefill_ar_len must be smaller than max_context_len"
+            )
+        self.layer_types = config.layer_types
+        self.sliding_window = config.sliding_window
+        self.attention_layers = [
+            i for i, t in enumerate(self.layer_types) if t != "conv"
+        ]
+        self.conv_layers = [i for i, t in enumerate(self.layer_types) if t == "conv"]
+        self.conv_state_len = config.conv_L_cache - 1
+
+        # Row r of a conv state holds position input_pos[0] - conv_state_len + r.
+        # Kept independent of ar_len: hybrid export copies buffers from the
+        # calibration graph into the prefill/decode graphs.
+        offsets = torch.arange(-self.conv_state_len, 0)
+        positions = torch.arange(self.max_context_len)[:, None] + offsets[None, :]
+        self.register_buffer(
+            "conv_state_mask",
+            (positions >= 0).float().unsqueeze(-1),
+            persistent=False,
+        )
+
+        # Full-attention theta in the shared config is HF theta ** partial_rotary_factor.
+        for prefix, layer_type in (
+            ("", "full_attention"),
+            ("local_", "sliding_attention"),
+        ):
+            rope = config.rope_parameters[layer_type]
+            freqs_cos, freqs_sin = hf_precompute_freqs_cis(
+                config.head_dim,
+                self.max_context_len,
+                rope["rope_theta"],
+                rope.get("partial_rotary_factor", 1.0),
+            )
+            self.register_buffer(
+                f"{prefix}freqs_cos",
+                freqs_cos[:, : freqs_cos.shape[-1] // 2],
+                persistent=False,
+            )
+            self.register_buffer(
+                f"{prefix}freqs_sin",
+                freqs_sin[:, : freqs_sin.shape[-1] // 2],
+                persistent=False,
+            )
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        atten_mask: torch.Tensor,
+        window_atten_mask: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
+        *args,
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+        n_attn = len(self.attention_layers)
+        k_caches = args[:n_attn]
+        v_caches = args[n_attn : 2 * n_attn]
+        conv_states = args[2 * n_attn :]
+
+        freqs_cos = self.freqs_cos[input_pos][0]
+        freqs_sin = self.freqs_sin[input_pos][0]
+        local_freqs_cos = self.local_freqs_cos[input_pos][0]
+        local_freqs_sin = self.local_freqs_sin[input_pos][0]
+
+        hidden_states = self.tok_embeddings(tokens)
+
+        # select, not slice: a [:, :1] slice is a no-op alias when ar_len == 1,
+        # which breaks the graph matching used to share encodings across graphs.
+        conv_window_mask = torch.cat(
+            [
+                self.conv_state_mask[input_pos[:, 0]],
+                torch.ones_like(hidden_states[:, :, 0:1]),
+            ],
+            dim=1,
+        )
+        output_k_cache, output_v_cache, output_conv = [], [], []
+        attn_idx, conv_idx = 0, 0
+        for layer_type, decoder_layer in zip(self.layer_types, self.layers):
+            if layer_type == "conv":
+                hidden_states, conv_in = decoder_layer(
+                    hidden_states, conv_states[conv_idx], conv_window_mask
+                )
+                output_conv.append(conv_in)
+                conv_idx += 1
+                continue
+            if layer_type == "sliding_attention":
+                cos, sin, mask = local_freqs_cos, local_freqs_sin, window_atten_mask
+            else:
+                cos, sin, mask = freqs_cos, freqs_sin, atten_mask
+            hidden_states, k, v = decoder_layer(
+                hidden_states,
+                freqs_cos=cos,
+                freqs_sin=sin,
+                atten_mask=mask,
+                k_caches=k_caches[attn_idx],
+                v_caches=v_caches[attn_idx],
+            )
+            output_k_cache.extend(k)
+            output_v_cache.extend(v)
+            attn_idx += 1
+
+        hidden_states = self.norm(hidden_states)
+        logits = self.output(hidden_states)
+
+        if self.output_cache:
+            return logits, output_k_cache, output_v_cache + output_conv
+        return logits
+
+    def get_example_inputs(self):
+        dtype = torch.int64 if self.use_i64_token else torch.int32
+        tokens = torch.randint(
+            self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
+        )
+        atten_mask = AttentionMask(
+            [
+                CausalAttentionMask(
+                    self.max_batch_size, self.ar_len, self.max_context_len
+                ),
+                SlidingWindowAttentionMask(
+                    self.max_batch_size,
+                    self.ar_len,
+                    self.max_context_len,
+                    sliding_window=self.sliding_window,
+                ),
+            ]
+        )
+        pos_ids = torch.zeros((self.max_batch_size, self.ar_len), dtype=torch.int32)
+        cache_len = self.max_context_len - self.ar_len
+        k_caches = [
+            torch.zeros(self.max_batch_size, self.n_kv_heads, self.head_dim, cache_len)
+            for _ in self.attention_layers
+        ]
+        v_caches = [
+            torch.zeros(self.max_batch_size, self.n_kv_heads, cache_len, self.head_dim)
+            for _ in self.attention_layers
+        ]
+        conv_states = [
+            torch.zeros(self.max_batch_size, self.conv_state_len, self.dim)
+            for _ in self.conv_layers
+        ]
+        return (tokens, atten_mask, pos_ids, k_caches, v_caches + conv_states)
+
+    def get_metadata(self):
+        return {
+            **super().get_metadata(),
+            "get_n_self_layers": len(self.attention_layers),
+            "get_n_conv_layers": len(self.conv_layers),
+            "get_conv_state_len": self.conv_state_len,
+            "get_sliding_window": self.sliding_window,
+        }

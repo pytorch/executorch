@@ -17,6 +17,7 @@ This file provides you the instructions to run LLM Decoder model, VLM model, and
  1. Gemma4 E2B
  1. GLM 1.5B
  1. Granite3.3 2B
+ 1. LFM3 1.7B
  1. Phi4-mini-instruct
  1. QWEN2.5 0.5B / 1.5B
  1. QWEN3 0.6B / 1.7B
@@ -174,6 +175,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android
 Default example using hybrid mode
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model granite_3_3-2b_instruct --prompt "I would like to learn python, could you teach me with a simple example?" --eval_methods tasks_eval --eval_tasks hellaswag --eval_limit 10 --calib_tasks hellaswag --calib_limit 10
+```
+
+#### LFM3 1.7B
+Default example using hybrid mode. Use `--decoder_model lfm3-1_7b_base` for the base model. Short-convolution layers carry their rolling state as graph IO after the V caches, and the runner keeps the last `conv_L_cache - 1` valid rows between steps; lookahead decoding, attention sink and sharding are not supported for this model.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model lfm3-1_7b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### Phi4-mini-instruct
