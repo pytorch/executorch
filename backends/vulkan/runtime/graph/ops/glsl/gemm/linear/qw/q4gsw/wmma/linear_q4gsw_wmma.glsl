@@ -19,8 +19,14 @@
  * store(next).
  *
  * Feature defines (yaml parameters, all default off):
+ *   ACC_FP32     fp32 accumulator (long K, where fp16 accumulation loses
+ *                accuracy)
  *   B_COLMAJOR   B staged N-major in shared memory, ColumnMajor B coopMatLoad
+ *   B_TEXEL      texel-wise B staging: one packed-weight texel feeds every B
+ *                pass of a thread
  *   CSH_BAND     texture3d drain one SG_GRID_Y band at a time
+ *   CSH_IN_ASH   texture3d drain staged in the A shared-memory tile, which is
+ *                dead after the last MMA
  *   FRAG_LAYOUT  fragment-contiguous shared memory, no padding
  *   IMG_A        storage-image loads for A (texture3d IO only)
  *   MMA_M = 8    for devices whose fp16 cooperative matrix is 8x16x16 only
@@ -67,10 +73,19 @@ ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
 ${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
-#define ACC_T float16_t
+$if ACC_FP32:
+  #define ACC_T float
+$else:
+  #define ACC_T float16_t
 
 $if B_COLMAJOR:
   #define B_COLMAJOR
+
+$if B_TEXEL:
+  #define B_TEXEL
+
+$if CSH_IN_ASH:
+  #define CSH_IN_ASH
 
 $if CSH_BAND:
   #define CSH_BAND
