@@ -8,6 +8,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = glob(["*.py"]),
     visibility = ["PUBLIC"],
     deps = [
+        "//executorch/backends/xnnpack:custom_ops_lib",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir/backend:backend_details",
