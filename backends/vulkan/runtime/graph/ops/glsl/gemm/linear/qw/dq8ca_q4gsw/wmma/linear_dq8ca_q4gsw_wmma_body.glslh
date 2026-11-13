@@ -14,6 +14,13 @@
 // coopmats; each group adds float(acc) * weight_scale into an fp32 total. The
 // activation zero point and scale are applied once at the end:
 //   out = input_scale * (total - input_zp * SUM_g weight_scale_g * weight_sum_g)
+//
+// ROWMAJOR_A reads row-major int8 activations (utils::kPackedInt8_4W) instead
+// of 4h4w blocks: A is staged as raw 16-byte vectors, one thread stages a
+// whole weight texel, and the texture3d drain band is staged in the A tile.
+// Its last M tile may be partial: rows at or past M read row M - 1 of the
+// activations and their params (each output row depends only on its own
+// activation row) and are not stored, so no buffer is read past M rows.
 
 #ifndef LINEAR_DQ8CA_Q4GSW_WMMA_BODY_GLSLH
 #define LINEAR_DQ8CA_Q4GSW_WMMA_BODY_GLSLH
@@ -41,9 +48,17 @@ const uint A_STRIDE_U32    = MMA_K / 4u;
 const uint ASH_SLICE_U32 = NUM_K_SLABS * A_SLAB_U32;
 const uint BSH_SLICE_U32 = NUM_K_SLABS * B_SLAB_U32;
 
+#ifdef ROWMAJOR_A
+// MMA operand staging in two ping-pong slices.
+const uint SLICES = 2u;
+shared uvec4 Ash_int8[SLICES * ASH_SLICE_U32 / 4u];
+const uint ASH_UNIT = 4u;  // u32 per Ash_int8 element
+shared uint Bsh_int8[SLICES * BSH_SLICE_U32];
+#else // !ROWMAJOR_A
 // Double-buffered MMA operand staging.
 shared uint Ash_int8[2u * ASH_SLICE_U32];
 shared uint Bsh_int8[2u * BSH_SLICE_U32];
+#endif // ROWMAJOR_A
 
 // Per-WG-tile-row activation params (loaded ONCE at WG start; constant
 // across groups).
@@ -61,10 +76,16 @@ shared float wcorr_sh[WG_TILE_N];
 #ifdef IO_TEXTURE
 // Result staging for the imageStore epilogue: SG_GRID_Y bands of MMA_M rows,
 // each WG_TILE_N wide, row-major. A full WG_TILE_M x WG_TILE_N buffer would
-// cost SG_GRID_Y/MMAS_PER_SG_M x more shared memory. float16_t-typed because
-// coopMatStore needs it.
+// cost SG_GRID_Y/MMAS_PER_SG_M x more shared memory.
 const uint CSH_ROWS = SG_GRID_Y * MMA_M;
+#ifdef ROWMAJOR_A
+// Staged in Ash_int8, which is dead after the last MMA (every drain iteration
+// starts with a barrier). Compile-time check: the drain band (in u32) fits.
+const int kCshFitsInAsh[(CSH_ROWS * WG_TILE_N / 2u <= SLICES * ASH_SLICE_U32) ? 1 : -1] = int[](0);
+#else // !ROWMAJOR_A
+// float16_t-typed because coopMatStore needs it.
 shared float16_t Csh_out[CSH_ROWS * WG_TILE_N];
+#endif // ROWMAJOR_A
 #endif
 
 // Running fp32 accumulator (across all groups).
@@ -101,6 +122,7 @@ uint widen_nibbles(const uint w, const uint parity) {
   return p | (sgn * 0x1Eu);
 }
 
+#ifndef ROWMAJOR_A
 // All four components of a packed-weight texel at once: `shift` is 0 or 4
 // (nibble parity). Same arithmetic as widen_nibbles, per component.
 uvec4 widen_nibbles4(const uvec4 w, const uint shift) {
@@ -109,8 +131,12 @@ uvec4 widen_nibbles4(const uvec4 w, const uint shift) {
   const uvec4 sgn = p & uvec4(0x08080808u);
   return p | (sgn * 0x1Eu);
 }
+#endif // !ROWMAJOR_A
 
 void main() {
+#ifdef ROWMAJOR_A
+  const uvec2 tileID = uvec2(gl_WorkGroupID.xy);
+#else // !ROWMAJOR_A
   // The tile this workgroup computes is a remap of its launch index (the grid
   // is (N tiles, M tiles), launched x-fastest). ORDER_NB_MAX == 0: dispatch
   // order. ORDER_NB_MAX > 0: blocks of at most ORDER_NB_MAX N tiles, evened
@@ -131,6 +157,7 @@ void main() {
 #else
   const uvec2 tileID = uvec2(ord_lin % ord_nx, ord_lin / ord_nx);
 #endif
+#endif // ROWMAJOR_A
   const uvec2 warpInTile = uvec2(
       gl_SubgroupID % SG_GRID_X,
       gl_SubgroupID / SG_GRID_X);
@@ -139,6 +166,12 @@ void main() {
   const uint N = uint(output_sizes.x);
   const uint N4 = (N + 3u) / 4u;
   const uint nblocks_x_A = (K + 3u) >> 2u;
+#ifdef ROWMAJOR_A
+  // A row stride in int8 elements (the binding is row-major int8), derived
+  // from nblocks_x_A so it matches the packer's `m_row * K4 + k4` addressing
+  // exactly (K % 4 == 0 makes it equal to K).
+  const uint a_row_stride_i8 = nblocks_x_A * 4u;
+#endif // ROWMAJOR_A
 
   const uint num_groups = uint(num_groups_arg);
   const uint CHUNKS_PER_GROUP = uint(K4_per_group) * 4u / WG_TILE_K;
@@ -146,6 +179,9 @@ void main() {
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
   const uint tile_n_start = WG_TILE_N * tileID.x;
+#ifdef ROWMAJOR_A
+  const uint M_rows = uint(input_sizes.y);
+#endif // ROWMAJOR_A
 
   [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
@@ -154,6 +190,69 @@ void main() {
     }
   }
 
+#ifdef ROWMAJOR_A
+  const uint K_BLOCKS_PER_CHUNK = WG_TILE_K >> 2u;
+
+  // --- A tile counts (MMA_M x MMA_K tiles per chunk) ---
+  const uint A_TILES_M      = WG_TILE_M / MMA_M;
+  const uint A_TILES_K      = WG_TILE_K / MMA_K;  // == NUM_K_SLABS
+  const uint NUM_A_TILES    = A_TILES_M * A_TILES_K;
+  const uint A_TILES_PER_SG = (NUM_A_TILES + NUM_SUBGROUPS - 1u) / NUM_SUBGROUPS;
+
+  // --- B staging thread map: (block, col) slots; each slot extracts one
+  //     ColumnMajor shared uint (4 K-contiguous sign-extended int8) ---
+  const uint B_TOTAL_SLOTS = K_BLOCKS_PER_CHUNK * WG_TILE_N;
+  // A slot is a whole texel (k4, n8) producing eight shared uints. Threads
+  // beyond the texel count of a chunk have no slot (b_on).
+  const uint B_TEXELS = B_TOTAL_SLOTS / 8u;
+  const uint B_SLOTS_PER_THREAD = (B_TEXELS + WG_SIZE - 1u) / WG_SIZE;
+  const uint N8_PER_TILE = WG_TILE_N >> 3u;
+
+  // Loop-invariant B staging index math, hoisted out of the chunk loop.
+  uint b_lds_off[B_SLOTS_PER_THREAD];  // shared store offset within a slice
+  uint b_comp[B_SLOTS_PER_THREAD];     // which ivec4 component feeds this slot
+  uint b_par[B_SLOTS_PER_THREAD];      // nibble parity for this slot
+  uint b_n8blk[B_SLOTS_PER_THREAD];    // global texel column (N/8 blocks)
+  uint b_k4off[B_SLOTS_PER_THREAD];    // k4 offset of this slot within a chunk
+  bool b_on[B_SLOTS_PER_THREAD];       // this thread owns a texel in this slot
+  [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
+    const uint q           = gl_LocalInvocationID.x + si * WG_SIZE;
+    const uint K4_PER_SLAB = MMA_K >> 2u;
+    const uint k4_in_slab  = q % K4_PER_SLAB;
+    // Lanes run over k4 within a slab fastest, then slab, then the texel
+    // column block.
+    const uint slab_idx    = (q / K4_PER_SLAB) % NUM_K_SLABS;
+    const uint n8_in_tile  = (q / (K4_PER_SLAB * NUM_K_SLABS)) % N8_PER_TILE;
+    const uint k4_in_chunk = slab_idx * K4_PER_SLAB + k4_in_slab;
+    const uint n_col       = n8_in_tile * 8u;  // component c is column n_col + c, parity 1 is + 4
+    b_lds_off[si] = slab_idx * B_SLAB_U32 + n_col * B_STRIDE_U32 + k4_in_slab;
+    b_comp[si]    = 0u;
+    b_on[si]      = q < B_TEXELS;
+    b_par[si]     = 0u;
+    b_n8blk[si]   = (tile_n_start >> 3u) + n8_in_tile;
+    b_k4off[si]   = k4_in_chunk;
+  }
+
+  // A staging thread map: 16-byte part fastest, then row, then K slab, so 8
+  // lanes write 128 contiguous shared bytes and a subgroup reads whole
+  // 32-byte global sectors.
+  const uint A_PARTS = MMA_K / 16u;
+  const uint A_VECS = WG_TILE_M * WG_TILE_K / 16u;
+  const uint A_VECS_PER_THREAD = A_VECS / WG_SIZE;
+  const int kAVecsDivide[(A_VECS % WG_SIZE == 0u && A_VECS >= WG_SIZE) ? 1 : -1] = int[](0);
+  uint a_lds[A_VECS_PER_THREAD];  // Ash_int8 u32 offset within a slice
+  uint a_gv4[A_VECS_PER_THREAD];  // uvec4 index of this thread's chunk-0 data
+  [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
+    const uint q    = gl_LocalInvocationID.x + v * WG_SIZE;
+    const uint part = q % A_PARTS;
+    const uint row  = (q / A_PARTS) % WG_TILE_M;
+    const uint slab = q / (A_PARTS * WG_TILE_M);
+    a_lds[v] = slab * A_SLAB_U32 + row * A_STRIDE_U32 + part * 4u;
+    const uint m_row = min(tile_m_start + row, M_rows - 1u);
+    a_gv4[v] = (m_row * a_row_stride_i8 + slab * MMA_K + part * 16u) / 16u;
+  }
+  uvec4 temp_Av[A_VECS_PER_THREAD];
+#else // !ROWMAJOR_A
   // --- A staging thread map: one (m4, k4) ivec4 block per active thread ---
   const uint K_BLOCKS_PER_CHUNK = WG_TILE_K >> 2u;
   const uint A_ACTIVE_THREADS = (WG_TILE_M >> 2u) * K_BLOCKS_PER_CHUNK;
@@ -231,6 +330,7 @@ void main() {
   // Prefetch temp registers.
   ivec4 temp_A;
 #endif
+#endif // ROWMAJOR_A
   ivec4 temp_B[B_SLOTS_PER_THREAD];
   float temp_wsc;
 
@@ -238,7 +338,12 @@ void main() {
   // PROLOGUE
   // =========================================================
   if (gl_LocalInvocationID.x < (WG_TILE_M >> 2u)) {
+#ifdef ROWMAJOR_A
+    const uint m4 = min(
+        (tile_m_start >> 2u) + gl_LocalInvocationID.x, (M_rows + 3u) / 4u - 1u);
+#else // !ROWMAJOR_A
     const uint m4 = (tile_m_start >> 2u) + gl_LocalInvocationID.x;
+#endif // ROWMAJOR_A
     const vec4  sc = vec4(texelFetch(t_int8_input_scales, ivec3(m4, 0, 0), 0));
     const ivec4 zp = ivec4(texelFetch(t_int8_input_zps,   ivec3(m4, 0, 0), 0));
     const uint base = gl_LocalInvocationID.x * 4u;
@@ -270,6 +375,31 @@ void main() {
 
   // Prefetch chunk 0 into temp registers, then store to slice 0 (no barrier
   // here -- the main loop's first iteration barriers before reading slice 0).
+#ifdef ROWMAJOR_A
+  [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
+    temp_Av[v] = t_packed_int8_input[a_gv4[v]];
+  }
+  [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
+    if (b_on[si]) {
+      temp_B[si] = texelFetch(t_packed_weight, ivec2(b_k4off[si], b_n8blk[si]), 0);
+    }
+  }
+  {
+    // store chunk 0 -> slice 0
+    [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
+      Ash_int8[a_lds[v] / 4u] = temp_Av[v];
+    }
+    [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
+      if (b_on[si]) {
+        Bsh_int8[b_lds_off[si] + 0u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][0]), 0u);
+        Bsh_int8[b_lds_off[si] + 4u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][0]), 1u);
+        Bsh_int8[b_lds_off[si] + 1u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][1]), 0u);
+        Bsh_int8[b_lds_off[si] + 5u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][1]), 1u);
+        Bsh_int8[b_lds_off[si] + 2u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][2]), 0u);
+        Bsh_int8[b_lds_off[si] + 6u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][2]), 1u);
+        Bsh_int8[b_lds_off[si] + 3u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][3]), 0u);
+        Bsh_int8[b_lds_off[si] + 7u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][3]), 1u);
+#else // !ROWMAJOR_A
   if (a_active) {
 #ifdef A_MULTI_BLOCK
     [[unroll]] for (uint ai = 0; ai < A_BLOCKS; ++ai) {
@@ -305,6 +435,7 @@ void main() {
       const uvec4 bw = widen_nibbles4(uvec4(temp_B[si]), b_par[si]);
       [[unroll]] for (uint c = 0; c < 4u; ++c) {
         Bsh_int8[b_lds_off[si] + c * B_STRIDE_U32] = bw[c];
+#endif // ROWMAJOR_A
       }
     }
   }
@@ -343,6 +474,16 @@ void main() {
       // --- 2. prefetch chunk+1 -> temp ---
       if (has_next) {
         const uint chunkK_nxt = (chunk + 1u) * WG_TILE_K;
+#ifdef ROWMAJOR_A
+        [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
+          temp_Av[v] = t_packed_int8_input[a_gv4[v] + chunkK_nxt / 16u];
+        }
+        [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
+          const uint k4_blk = (chunkK_nxt >> 2u) + b_k4off[si];
+          if (b_on[si]) {
+            temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, b_n8blk[si]), 0);
+          }
+#else // !ROWMAJOR_A
 #ifndef A_ALWAYS_ACTIVE
         if (a_active)
 #endif
@@ -358,6 +499,7 @@ void main() {
         [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) if (B_SLOT_ACTIVE(si)) {
           const uint k4_blk = (chunkK_nxt >> 2u) + b_k4off[si];
           temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, b_n8blk[si]), 0);
+#endif // ROWMAJOR_A
         }
         if (group_crossing && gl_LocalInvocationID.x < WG_TILE_N) {
           const uint n_idx = tile_n_start + gl_LocalInvocationID.x;
@@ -376,8 +518,13 @@ void main() {
           const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
           coopMatLoad(
               matA[i], Ash_int8,
+#ifdef ROWMAJOR_A
+              (slab_a_base_u32 + row_a * A_STRIDE_U32) / ASH_UNIT,
+              A_STRIDE_U32 / ASH_UNIT,
+#else // !ROWMAJOR_A
               slab_a_base_u32 + row_a * A_STRIDE_U32,
               A_STRIDE_U32,
+#endif // ROWMAJOR_A
               gl_CooperativeMatrixLayoutRowMajor);
         }
 
@@ -397,6 +544,21 @@ void main() {
 
       // --- 4. store temp (chunk+1) -> nxt slice ---
       if (has_next) {
+#ifdef ROWMAJOR_A
+        [[unroll]] for (uint v = 0; v < A_VECS_PER_THREAD; ++v) {
+          Ash_int8[(nxt_a + a_lds[v]) / 4u] = temp_Av[v];
+        }
+        [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
+          if (b_on[si]) {
+            Bsh_int8[nxt_b + b_lds_off[si] + 0u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][0]), 0u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 4u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][0]), 1u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 1u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][1]), 0u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 5u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][1]), 1u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 2u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][2]), 0u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 6u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][2]), 1u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 3u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][3]), 0u);
+            Bsh_int8[nxt_b + b_lds_off[si] + 7u * B_STRIDE_U32] = widen_nibbles(uint(temp_B[si][3]), 1u);
+#else // !ROWMAJOR_A
 #ifndef A_ALWAYS_ACTIVE
         if (a_active)
 #endif
@@ -417,6 +579,7 @@ void main() {
           const uvec4 bw = widen_nibbles4(uvec4(temp_B[si]), b_par[si]);
           [[unroll]] for (uint c = 0; c < 4u; ++c) {
             Bsh_int8[nxt_b + b_lds_off[si] + c * B_STRIDE_U32] = bw[c];
+#endif // ROWMAJOR_A
           }
         }
         if (group_crossing && gl_LocalInvocationID.x < WG_TILE_N) {
@@ -512,10 +675,17 @@ void main() {
       coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator> out_tile =
           coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]);
       coopMatStore(
+#ifdef ROWMAJOR_A
+          out_tile, Ash_int8,
+          (warpInTile.y * MMA_M * WG_TILE_N +
+              MMA_N * (MMAS_PER_SG_N * warpInTile.x + j)) / (2u * ASH_UNIT),
+          WG_TILE_N / (2u * ASH_UNIT),
+#else // !ROWMAJOR_A
           out_tile, Csh_out,
           warpInTile.y * MMA_M * WG_TILE_N +
               MMA_N * (MMAS_PER_SG_N * warpInTile.x + j),
           WG_TILE_N,
+#endif // ROWMAJOR_A
           gl_CooperativeMatrixLayoutRowMajor);
     }
     memoryBarrierShared();
@@ -527,6 +697,18 @@ void main() {
       const uint m =
           tile_m_start + (lr / MMA_M) * SG_TILE_M + i * MMA_M + (lr % MMA_M);
       const uint base = lr * WG_TILE_N + lc4 * 4u;
+#ifdef ROWMAJOR_A
+      // The last M tile may be partial: rows at or past M are computed but
+      // not stored.
+      if (m >= uint(output_sizes.y)) {
+        continue;
+      }
+      imageStore(
+          t_output,
+          ivec3(tile_n_start / 4u + lc4, m, 0),
+          vec4(unpackHalf2x16((base % 8u) != 0u ? Ash_int8[base / 8u].z : Ash_int8[base / 8u].x),
+               unpackHalf2x16((base % 8u) != 0u ? Ash_int8[base / 8u].w : Ash_int8[base / 8u].y)));
+#else // !ROWMAJOR_A
       imageStore(
           t_output,
           ivec3(tile_n_start / 4u + lc4, m, 0),
@@ -535,6 +717,7 @@ void main() {
               float(Csh_out[base + 1u]),
               float(Csh_out[base + 2u]),
               float(Csh_out[base + 3u])));
+#endif // ROWMAJOR_A
     }
   }
 #else
