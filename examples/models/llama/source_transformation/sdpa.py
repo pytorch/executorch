@@ -209,9 +209,18 @@ def _update_attention_module_with_quantized_sdpa(
 ):
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
-    # TODO: add support for SDPA with attention mask
-    # pyre-ignore
-    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
+    # Ring and sink caches hold keys out of position order and build an
+    # additive float mask, which they need. Other caches keep causal attention.
+    # TODO: honor the float SDPA's use_attention_mask for full-context caches.
+    setattr(  # noqa: B010
+        module,
+        "SDPA",
+        QuantizedSDPA(
+            sdpa.dim,
+            kv_cache,
+            use_attention_mask=getattr(kv_cache, "is_ring_buffer", False),
+        ),
+    )
 
 
 def _replace_sdpa_with_quantized_sdpa(module: torch.nn.Module):

@@ -536,7 +536,38 @@ def replace_kv_cache_with_quantized_kv_cache(module):
 
 def _replace_kv_cache_with_quantized_kv_cache(module):
     for name, child in module.named_children():
-        if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
+        # The ring and sink caches subclass the plain caches matched last, and
+        # a plain quantized cache would silently drop their ring and mask.
+        if isinstance(child, QuantizedKVCache):
+            continue
+        elif isinstance(child, CustomKVCacheWithAttentionSink):
+            setattr(
+                module,
+                name,
+                QuantizedKVCacheWithAttentionSink.from_custom_kv_cache_with_attention_sink(
+                    child,
+                    QuantizedCacheType.AffineAsymmetric,
+                    use_custom_update_cache_op=True,
+                ),
+            )
+        elif isinstance(child, (CustomRingKVCache, RingKVCache)):
+            setattr(
+                module,
+                name,
+                QuantizedRingKVCache.from_float(
+                    child,
+                    QuantizedCacheType.AffineAsymmetric,
+                    use_custom_update_cache_op=True,
+                ),
+            )
+        elif getattr(child, "is_ring_buffer", False):
+            raise NotImplementedError(
+                f"{type(child).__name__} is a ring buffer with no quantized "
+                "counterpart, and quantizing it as a plain cache would drop its "
+                "ring and mask. Apply replace_kv_cache_with_custom_kv_cache "
+                "first, or leave the KV cache in float."
+            )
+        elif isinstance(child, KVCache) or isinstance(child, CustomKVCache):
             setattr(
                 module,
                 name,
@@ -799,6 +830,30 @@ class QuantizedRingKVCache(QuantizedKVCache):
         return super().update(input_pos, k_val, v_val, indices)
 
     @classmethod
+    def from_float(
+        cls,
+        kv_cache,
+        cache_type: QuantizedCacheType,
+        use_custom_update_cache_op: bool = False,
+    ):
+        if isinstance(kv_cache, CustomKVCache):
+            max_batch_size, cache_size, n_heads, head_dim = kv_cache.k_cache.shape
+        else:
+            max_batch_size, n_heads, cache_size, head_dim = kv_cache.k_cache.shape
+        assert cache_size == 2 * kv_cache.window_size, (
+            f"Expected a ring of 2 * window_size={2 * kv_cache.window_size} "
+            f"slots, got {cache_size}"
+        )
+        return cls(
+            max_batch_size,
+            kv_cache.window_size,
+            n_heads,
+            head_dim,
+            cache_type,
+            use_custom_update_cache_op,
+        )
+
+    @classmethod
     def from_quantized_kv_cache(
         cls,
         kv_cache,
@@ -816,6 +871,114 @@ class QuantizedRingKVCache(QuantizedKVCache):
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
+        )
+
+
+class QuantizedKVCacheWithAttentionSink(QuantizedKVCache):
+    """Quantized counterpart of CustomKVCacheWithAttentionSink.
+
+    Same slot layout, ring and mask. Entries are int8, quantized per token and
+    head (affine asymmetric), with float32 scales and int8 zero points. Writes
+    land at arbitrary slots through update_cache_with_indices.
+    """
+
+    def __init__(
+        self,
+        max_batch_size,
+        max_context_length,
+        n_heads,
+        head_dim,
+        window_size,
+        sink_size,
+        cache_type: QuantizedCacheType = QuantizedCacheType.AffineAsymmetric,
+        use_custom_update_cache_op: bool = True,
+        return_float_values: bool = True,
+    ):
+        if cache_type != QuantizedCacheType.AffineAsymmetric:
+            raise ValueError(
+                f"QuantizedKVCacheWithAttentionSink stores zero points, so it "
+                f"needs AffineAsymmetric, got {cache_type}"
+            )
+        if not use_custom_update_cache_op:
+            raise ValueError(
+                "Attention sink writes to arbitrary slots, which needs "
+                "use_custom_update_cache_op for update_cache_with_indices"
+            )
+        super().__init__(
+            max_batch_size,
+            max_context_length,
+            n_heads,
+            head_dim,
+            cache_type,
+            use_custom_update_cache_op,
+            return_float_values,
+        )
+        from executorch.examples.models.llama.source_transformation.attention_sink import (
+            CachePositionsManagerWithSink,
+        )
+
+        self.cache_positions_manager = CachePositionsManagerWithSink(
+            max_context_length, sink_size
+        )
+        self.is_ring_buffer = True
+        self.window_size = window_size
+        self.sink_size = sink_size
+
+    def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
+        cache_positions = self.cache_positions_manager.cache_positions
+        if self.sink_size > 0:
+            from executorch.examples.models.llama.source_transformation.attention_sink import (
+                _create_causal_mask_for_attention_sink,
+            )
+
+            return _create_causal_mask_for_attention_sink(
+                cache_positions, self.window_size, self.sink_size, start_pos, seq_len
+            )
+        else:
+            return _create_causal_mask_for_ring_buffer(
+                cache_positions, self.window_size, start_pos, seq_len
+            )
+
+    def update(self, input_pos, k_val, v_val):
+        seq_len = k_val.transpose(1, 2).size(1)
+        assert seq_len <= self.k_cache.size(
+            1
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(1)})"
+        # Window tokens exceeding the ring would give update_cache_with_indices
+        # duplicate indices; see CustomKVCacheWithAttentionSink.update.
+        start_pos = input_pos[0].item()
+        num_sink_tokens = max(0, min(seq_len, self.sink_size - start_pos))
+        num_window_tokens = seq_len - num_sink_tokens
+        assert num_window_tokens <= self.cache_positions_manager.ring_size, (
+            f"Window tokens ({num_window_tokens}) exceed ring buffer capacity "
+            f"({self.cache_positions_manager.ring_size}), which would cause "
+            f"non-deterministic behavior with update_cache_with_indices"
+        )
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        indices = indices.unsqueeze(0)
+
+        return super().update(input_pos, k_val, v_val, indices)
+
+    @classmethod
+    def from_custom_kv_cache_with_attention_sink(
+        cls,
+        kv_cache,
+        cache_type: QuantizedCacheType = QuantizedCacheType.AffineAsymmetric,
+        use_custom_update_cache_op: bool = True,
+    ):
+        # Sized from the source cache, so the slot layout carries over exactly.
+        max_batch_size, max_context_length, n_heads, head_dim = kv_cache.k_cache.shape
+        return cls(
+            max_batch_size,
+            max_context_length,
+            n_heads,
+            head_dim,
+            kv_cache.window_size,
+            kv_cache.sink_size,
+            cache_type,
+            use_custom_update_cache_op,
         )
 
 
