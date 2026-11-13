@@ -751,6 +751,65 @@ def _is_min_max_of_bool(node: torch.fx.Node) -> bool:
     return isinstance(val, torch.Tensor) and val.dtype == torch.bool
 
 
+_MM_TARGETS = (
+    torch.ops.aten.mm.default,
+    exir_ops.edge.aten.mm.default,
+)
+
+
+def _is_integer_tensor(node: torch.fx.Node) -> bool:
+    val = node.meta.get("val")
+    return (
+        isinstance(val, torch.Tensor)
+        and not val.dtype.is_floating_point
+        and not val.dtype.is_complex
+        and val.dtype != torch.bool
+    )
+
+
+def _find_integer_mm_with_constant_weight(
+    graph_module: torch.fx.GraphModule, weights_and_constants: Collection[str]
+) -> Set[torch.fx.Node]:
+    """The ``mm`` calls coremltools 9.0 cannot load, and the constant-only ops
+    that would be left delegated alone once they run outside of Core ML.
+
+    coremltools 9.0 lowers ``mm`` with a constant weight to ``linear``, which
+    only takes floating point inputs, so an integer ``mm`` against a weight
+    computed from the constants the partitioner moves into Core ML lowers fine
+    and then fails to load.  An integer ``mm`` of two runtime inputs becomes
+    ``matmul`` and runs.  See pytorch/executorch#11691.
+
+    An op computed from those constants alone, such as the transpose of a
+    buffer, that only feeds such an ``mm`` or is returned, runs outside of
+    Core ML too: delegated on its own, it would be a partition without inputs,
+    which Core ML rejects below iOS 18.
+
+    TODO: remove once ExecuTorch consumes a coremltools release that includes
+    apple/coremltools#2719, which keeps integer ``mm`` on ``matmul``.
+    """
+    constant = _computed_from_kept_inside(graph_module, weights_and_constants)
+    found = {
+        node
+        for node in graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target in _MM_TARGETS
+        and len(node.args) >= 2
+        and isinstance(node.args[1], torch.fx.Node)
+        and node.args[1] in constant
+        and _is_integer_tensor(node.args[1])
+    }
+    if not found:
+        return found
+    for node in reversed(graph_module.graph.nodes):
+        if node.op != "call_function" or node not in constant or node in found:
+            continue
+        if any(user in found for user in node.users) and all(
+            user in found or user.op == "output" for user in node.users
+        ):
+            found.add(node)
+    return found
+
+
 _INDEX_PUT_TARGETS = (
     torch.ops.aten.index_put.default,
     exir_ops.edge.aten.index_put.default,
@@ -840,13 +899,19 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         lower_full_graph: bool = False,
         log: bool = False,
         minimum_deployment_target: Optional[ct.target] = None,
+        weights_and_constants: Collection[str] = (),
     ) -> None:
+        """weights_and_constants names the placeholders the partitioner moves
+        into Core ML as constants, which coremltools folds into the ops that
+        read them."""
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
         self.minimum_deployment_target = minimum_deployment_target
+        self.weights_and_constants = weights_and_constants
+        self._integer_mm_fallbacks: Dict[torch.fx.Graph, Set[torch.fx.Node]] = {}
         self._logged_msgs = set()
         self._log = log
 
@@ -867,6 +932,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
         return False
+
+    def _runs_integer_mm_with_constant_weight(self, node: torch.fx.Node) -> bool:
+        graph = node.graph
+        if graph not in self._integer_mm_fallbacks:
+            self._integer_mm_fallbacks[graph] = _find_integer_mm_with_constant_weight(
+                graph.owning_module, self.weights_and_constants
+            )
+        return node in self._integer_mm_fallbacks[graph]
 
     def override_reason(self, node) -> Optional[str]:
         """Why CoreML cannot take node, even when coremltools converts its op."""
@@ -914,6 +987,18 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 
         if _is_min_max_of_bool(node):
             return f"{name} on bool tensors is not supported by CoreML."
+
+        if self._runs_integer_mm_with_constant_weight(node):
+            if node.target in _MM_TARGETS:
+                return (
+                    "torch.ops.aten.mm.default with an integer constant weight "
+                    "is not supported by CoreML."
+                )
+            return (
+                f"{name} only computes, from constants, the weight of an mm "
+                "CoreML cannot take, so alone it would be a CoreML partition "
+                "without inputs."
+            )
 
         refusal = _index_put_refusal(node, self.minimum_deployment_target)
         if refusal is not None:
@@ -1069,6 +1154,9 @@ class CoreMLPartitioner(Partitioner):
                 self.lower_full_graph,
                 log=True,
                 minimum_deployment_target=self._minimum_deployment_target,
+                weights_and_constants=self._weights_and_constants(
+                    kept_inside, state_writers
+                ),
             ),
             kept_inside,
             sizes,
@@ -1194,6 +1282,15 @@ class CoreMLPartitioner(Partitioner):
             }
         return kept
 
+    def _weights_and_constants(
+        self,
+        kept_inside: Collection[str],
+        state_writers: Dict[torch.fx.Node, List[torch.fx.Node]],
+    ) -> Set[str]:
+        """The weights and constants this partitioner moves into Core ML, which
+        coremltools folds into the ops that read them, unlike state."""
+        return set(kept_inside).difference(state.name for state in state_writers)
+
     def _state_writers(
         self, ep: ExportedProgram
     ) -> Dict[torch.fx.Node, List[torch.fx.Node]]:
@@ -1230,11 +1327,15 @@ class CoreMLPartitioner(Partitioner):
         if cached is not None and cached[0]() is ep:
             return list(cached[1]), None
         do_not_decompose = []
+        states = self._state_writers(ep)
         op_support = _OperatorsSupportedForCoreMLBackend(
             self.skip_ops_for_coreml_delegation,
             self.lower_full_graph,
             log=False,
             minimum_deployment_target=self._minimum_deployment_target,
+            weights_and_constants=self._weights_and_constants(
+                self._placeholders_kept_inside(ep, states), states
+            ),
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
