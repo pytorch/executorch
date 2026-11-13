@@ -793,7 +793,7 @@ endif()
 if(EXECUTORCH_BUILD_NATIVE_GGML)
   string(
     APPEND _executorch_backend_dependencies
-    "find_dependency(ggml 0.27 CONFIG)\n" "if(NOT TARGET executorch_ggml)\n"
+    "find_dependency(ggml 1.0 CONFIG)\n" "if(NOT TARGET executorch_ggml)\n"
     "  add_library(executorch_ggml ALIAS ggml::ggml)\n" "endif()\n"
   )
 endif()
