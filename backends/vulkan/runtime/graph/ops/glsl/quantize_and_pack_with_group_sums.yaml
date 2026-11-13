@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-quantize_and_pack_4h4w_with_group_sums:
+# Variants: quantize_and_pack_4h4w_with_group_sums_* (OUTPUT_LAYOUT 4h4w) and
+# quantize_and_pack_4w_with_group_sums_* (4w).
+quantize_and_pack_with_group_sums:
   parameter_names_with_default_values:
     DTYPE: float
     OUTPUT_STORAGE: buffer
