@@ -22,9 +22,19 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-add_library(extension_diffusers_runner STATIC schedulers.cpp torch_rng.cpp)
+add_library(
+  extension_diffusers_runner STATIC
+  diffusion_runner.cpp
+  metadata.cpp
+  pipelines.cpp
+  schedulers.cpp
+  tensor_util.cpp
+  text_inputs.cpp
+  torch_rng.cpp
+)
 target_link_libraries(
-  extension_diffusers_runner PUBLIC executorch_core tokenizers::tokenizers
+  extension_diffusers_runner PUBLIC executorch_core extension_module
+                                    extension_tensor tokenizers::tokenizers
 )
 target_include_directories(
   extension_diffusers_runner INTERFACE ${_common_include_directories}
