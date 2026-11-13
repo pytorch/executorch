@@ -560,6 +560,26 @@ TEST_F(XNNLayoutTest, BmmReleasesOnlyAConstantRightHandSide) {
   }
 }
 
+TEST_F(XNNLayoutTest, DecomposedHardswishStaysInOneRegion) {
+  const std::vector<int64_t> shape{2, 3, 4};
+  const auto input = tensor(shape, ptn::ValueRole::UserInput);
+  const auto three =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto six =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto shifted = binary("torch.ops.aten.add.Tensor", input, three, shape);
+  const auto lower = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{shifted}, ptn::IntArg{0}, ptn::NoneArg{}},
+      shape);
+  const auto upper = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{lower}, ptn::NoneArg{}, ptn::IntArg{6}},
+      shape);
+  const auto product = binary("torch.ops.aten.mul.Tensor", input, upper, shape);
+  check({binary("torch.ops.aten.div.Tensor", product, six, shape)});
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
