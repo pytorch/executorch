@@ -51,8 +51,7 @@ void add_coopmat_shapes(
 
 } // namespace
 
-CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph) {
-  vkapi::Adapter* adapter = graph->context()->adapter_ptr();
+CoopmatDeviceKey coopmat_device_key(vkapi::Adapter* adapter) {
   CoopmatDeviceKey key;
   key.vendor_id = adapter->vendor_id();
   key.driver_id = adapter->driver_id();
@@ -70,6 +69,10 @@ CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph) {
   add_coopmat_shapes(key, adapter->cooperative_matrix_properties());
 #endif /* VK_KHR_cooperative_matrix */
   return key;
+}
+
+CoopmatDeviceKey coopmat_device_key(ComputeGraph* graph) {
+  return coopmat_device_key(graph->context()->adapter_ptr());
 }
 
 WmmaStorage to_wmma_storage(const utils::StorageType storage) {
