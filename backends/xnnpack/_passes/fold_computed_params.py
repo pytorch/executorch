@@ -61,6 +61,13 @@ class FoldComputedParamsPass(XNNPACKPass):
         for node, value in values.items():
             if all(user in values for user in node.users):
                 continue
+            if not isinstance(value, torch.Tensor):
+                raise RuntimeError(
+                    f"Cannot fold {node} into a param, as it has more than one "
+                    "output and is used outside of the folded nodes. A GEMM that "
+                    "takes one of its outputs was delegated without the GEMMs "
+                    "that take the others."
+                )
             name = f"{node.name}_folded"
             while name in taken:
                 name += "_"

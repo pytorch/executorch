@@ -5,10 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from unittest import mock
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.xnnpack.partition.config.gemm_configs import AddmmConfig
+from executorch.backends.xnnpack.partition.config.gemm_configs import (
+    AddmmConfig,
+    GEMMConfig,
+)
 from executorch.backends.xnnpack.partition.config.generic_node_configs import MulConfig
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
@@ -478,6 +482,43 @@ class TestFoldComputedParams(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    def test_fp32_gemm_delegated_without_its_group_fails_clearly(self):
+        # With each GEMM checked on its own, the second conv1d is delegated with
+        # the split, and the first one, rejected for its two dynamic dims, takes
+        # the other part of the weight from the delegate.
+        dims = {
+            0: torch.export.Dim("batch", min=1, max=4),
+            2: torch.export.Dim("length", min=4, max=16),
+        }
+        tester = Tester(
+            self.PackedWeightConv1ds().eval(),
+            (torch.randn(2, 3, 8), torch.randn(1, 3, 8)),
+            dynamic_shapes=(dims, None),
+        ).export()
+        with mock.patch.object(
+            GEMMConfig,
+            "check_constraints",
+            lambda config, node, ep: config._check_gemm(node, ep),
+        ):
+            with self.assertRaisesRegex(Exception, "FoldComputedParamsPass") as caught:
+                tester.to_edge_transform_and_lower()
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+        self.assertRegex(
+            str(caught.exception.__cause__),
+            "more than one output.*delegated without the GEMMs",
+        )
+
+    def test_gemm_configs_do_not_override_check_constraints(self):
+        # check_constraints checks the other GEMMs of a group only with
+        # _check_gemm, so they would skip checks added in an override.
+        pending, overriding = [GEMMConfig], []
+        while pending:
+            for config in pending.pop().__subclasses__():
+                pending.append(config)
+                if "check_constraints" in vars(config):
+                    overriding.append(config.__name__)
+        self.assertEqual(overriding, [])
 
     def test_fp32_computed_weight_of_rejected_gemm_not_folded(self):
         # Conv1d with two dynamic dims is rejected after its weight was checked,

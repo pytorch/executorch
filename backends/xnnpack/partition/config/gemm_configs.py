@@ -6,7 +6,7 @@
 
 import logging
 from itertools import chain
-from typing import cast, Dict, List, Optional, Set, Tuple
+from typing import cast, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -160,70 +160,41 @@ class GEMMConfig(XNNPartitionerConfig):
         self.bias_idx = bias_idx
         self.act_idx = act_idx
         self.fused_acts = fused_acts
-        # GEMMs being checked together because they share a weight or bias computation.
-        self.gemms_in_group_check: Set[torch.fx.Node] = set()
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        if not self.check_common_constraints(node, ep):
-            # short circuit if we don't pass common constraints
-            return False
-
-        is_valid, deps = self.get_deps(node, ep)
-        return is_valid and self._check_gemms_sharing_deps(node, ep, deps)
-
-    def _get_gemms_sharing_deps(
-        self, node: torch.fx.Node, ep: ExportedProgram, deps: List[torch.fx.Node]
-    ) -> Dict[torch.fx.Node, List[torch.fx.Node]]:
-        """
-        Returns node and the GEMMs like it that take another output of a
-        multi-output op in its deps, directly or through each other, each
-        mapped to its deps.
-        """
-        group = {node: deps}
-        pending = [node]
-        while pending:
-            gemm_deps = set(group[pending.pop()])
-            for dep in gemm_deps:
-                for item in dep.users:
-                    if not is_getitem(item) or item in gemm_deps:
-                        continue
-                    for gemm in item.users:
-                        if (
-                            gemm.op == "call_function"
-                            and format_target_name(gemm.target.__name__)
-                            == self.target_name
-                            and gemm not in group
-                        ):
-                            group[gemm] = self.get_deps(gemm, ep)[1]
-                            pending.append(gemm)
-        return group
-
-    def _check_gemms_sharing_deps(
-        self, node: torch.fx.Node, ep: ExportedProgram, deps: List[torch.fx.Node]
-    ) -> bool:
         """
         GEMMs whose weights or biases are outputs of one multi-output op end up
         in one partition, where preprocess folds the op. So node is accepted
         only together with all of them, and only if that partition has no node
         with too many dims and creates no cycle.
         """
-        if node in self.gemms_in_group_check:
-            return True
-        group = self._get_gemms_sharing_deps(node, ep, deps)
-        if len(group) == 1:
-            return True
-
-        self.gemms_in_group_check.update(group)
-        try:
-            for gemm in group:
-                if gemm is not node and not self.check_constraints(gemm, ep):
+        group: Dict[torch.fx.Node, List[torch.fx.Node]] = {}
+        pending = [node]
+        while pending:
+            gemm = pending.pop()
+            if gemm in group:
+                continue
+            if not self._check_gemm(gemm, ep):
+                if gemm is not node:
                     why(
                         node,
                         f"{gemm}, which shares a weight or bias computation with it, is not partitioned",
                     )
-                    return False
-        finally:
-            self.gemms_in_group_check.difference_update(group)
+                return False
+            deps = self.get_deps(gemm, ep)[1]
+            group[gemm] = deps
+            for dep in deps:
+                for item in dep.users:
+                    if is_getitem(item) and item not in deps:
+                        pending.extend(
+                            user
+                            for user in item.users
+                            if user.op == "call_function"
+                            and format_target_name(user.target.__name__)
+                            == self.target_name
+                        )
+        if len(group) == 1:
+            return True
 
         partition = list(chain(group, *group.values()))
         # get_partition rejects a GEMM whose partition has a node with too many dims.
@@ -241,6 +212,18 @@ class GEMMConfig(XNNPartitionerConfig):
             )
             return False
         return True
+
+    def _check_gemm(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Checks node on its own. check_constraints runs this on every GEMM of a
+        group, so subclasses add their checks here.
+        """
+        if not self.check_common_constraints(node, ep):
+            # short circuit if we don't pass common constraints
+            return False
+
+        is_valid, _ = self.get_deps(node, ep)
+        return is_valid
 
     def get_node_and_deps(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -522,11 +505,11 @@ class ConvolutionConfig(GEMMConfig):
             **kwargs,
         )
 
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+    def _check_gemm(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
         Currently we have no support for convolution 3d
         """
-        if not super().check_constraints(node, ep):
+        if not super()._check_gemm(node, ep):
             return False
 
         kernel_node = get_input_node(node, 1)
@@ -653,7 +636,7 @@ class AddmmConfig(GEMMConfig):
 
         return super()._get_weight_deps(node, ep, precision)
 
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+    def _check_gemm(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         # XNNPACK's fully connected op cannot scale the bias or the product.
         if node.kwargs.get("beta", 1) != 1 or node.kwargs.get("alpha", 1) != 1:
             why(node, "Addmm with beta or alpha other than 1 is not supported")
@@ -669,7 +652,7 @@ class AddmmConfig(GEMMConfig):
             ):
                 why(node, "Addmm bias must have 1 value per output channel")
                 return False
-        return super().check_constraints(node, ep)
+        return super()._check_gemm(node, ep)
 
     def get_deps(
         self,
