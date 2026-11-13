@@ -284,6 +284,20 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "test_partitioner_transform_passes",
+        srcs = [
+            "test_partitioner_transform_passes.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:pass_manager",
+            "//executorch/exir/backend:partitioner",
+        ],
+    )
+
+    python_unittest(
         name = "common",
         srcs = [
             "test_common.py",

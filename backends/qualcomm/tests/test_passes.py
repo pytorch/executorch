@@ -2086,6 +2086,93 @@ class TestPasses(unittest.TestCase):
                 skip_without_qnn_sdk(self, e)
             raise
 
+    def test_partitioner_carries_qnn_edge_pass_pipeline(self):
+        """QnnPartitioner.transform_passes must reproduce the edge pass list that
+        to_edge_transform_and_lower_to_qnn previously built by hand, so a plain
+        to_edge_transform_and_lower(partitioner=[QnnPartitioner(...)]) lowers
+        through the same pipeline.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.linear(x))
+
+        sample_input = (torch.randn(1, 4),)
+        exported = torch.export.export(Model().eval(), sample_input, strict=True)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+
+        partitioner = QnnPartitioner(compiler_specs)
+        expected = get_qnn_pass_manager_cls(
+            partitioner.backend
+        )().get_to_edge_transform_passes(exported, compiler_specs=compiler_specs)
+        actual = partitioner.transform_passes(exported)
+
+        self.assertTrue(expected, "expected a non-empty QNN edge pass pipeline")
+        self.assertEqual([type(p) for p in actual], [type(p) for p in expected])
+
+    def test_partitioner_runs_qnn_aten_passes_pre_decomposition(self):
+        """transform_for_pre_decomposition must run the QNN ATen pipeline.
+
+        DecomposeScaledDotProductAttention is part of that pipeline, so an SDPA
+        node must be gone after the hook runs.
+        """
+
+        class Sdpa(torch.nn.Module):
+            def forward(self, q, k, v):
+                return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+        sample_input = tuple(torch.randn(1, 2, 4, 8) for _ in range(3))
+        exported = torch.export.export(Sdpa().eval(), sample_input, strict=True)
+
+        def has_sdpa(program):
+            return any(
+                node.op == "call_function"
+                and "scaled_dot_product_attention" in str(node.target)
+                for node in program.graph.nodes
+            )
+
+        # Guard against a vacuous test.
+        self.assertTrue(has_sdpa(exported), "expected SDPA in the traced graph")
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        transformed = QnnPartitioner(compiler_specs).transform_for_pre_decomposition(
+            exported
+        )
+        self.assertFalse(has_sdpa(transformed))
+
+    def test_partitioner_from_options_matches_explicit_compiler_specs(self):
+        """from_options must build the same compiler specs a caller would
+        assemble by hand, and route partitioner-level options to __init__."""
+        explicit = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8750,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+            use_mha2sha=True,
+        )
+        partitioner = QnnPartitioner.from_options(
+            soc_model="SM8750",
+            use_fp16=True,
+            use_mha2sha=True,
+            convert_linear_to_conv2d=True,
+        )
+        self.assertEqual(
+            [(s.key, s.value) for s in partitioner.compiler_specs],
+            [(s.key, s.value) for s in explicit],
+        )
+        self.assertTrue(partitioner.convert_linear_to_conv2d)
+
+        with self.assertRaises(TypeError):
+            QnnPartitioner.from_options(soc_model="SM8750", not_an_option=1)
+
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
 
