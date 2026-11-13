@@ -13,6 +13,7 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <xnnpack.h>
 #include <cinttypes>
+#include <initializer_list>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -2286,34 +2287,212 @@ uint32_t getSerializedValueId(ValuePtr value) noexcept {
 /*
 Serialized ids of the values that XNNPACK copies into its own packed storage
 while the runtime is created. Every other constant value is referenced by raw
-pointer for the lifetime of the runtime.
+pointer for the lifetime of the runtime, including a packed weight or bias that
+another node also reads (a bias reused by a subtract, for example).
 */
 std::unordered_set<uint32_t> getPackedValueIds(GraphPtr flatbuffer_graph) {
+  using fb_xnnpack::XNodeUnion;
+  static_assert(
+      XNodeUnion::MAX == XNodeUnion::XNNStaticMean,
+      "Handle the new XNodeUnion member in the switch below");
   std::unordered_set<uint32_t> packed_ids;
-  auto insert_weights = [&packed_ids](uint32_t filter_id, uint32_t bias_id) {
-    packed_ids.insert(filter_id);
-    if (bias_id != XNN_INVALID_VALUE_ID) {
-      packed_ids.insert(bias_id);
+  std::vector<uint32_t> read_ids;
+  auto reads = [&read_ids](std::initializer_list<uint32_t> ids) {
+    read_ids.insert(read_ids.end(), ids);
+  };
+  auto unary = [&reads](auto n) { reads({n->input_id()}); };
+  auto binary = [&reads](auto n) { reads({n->input1_id(), n->input2_id()}); };
+  auto concat = [&reads](auto n) {
+    reads(
+        {n->input1_id(),
+         n->input2_id(),
+         n->input3_id(),
+         n->input4_id(),
+         n->input5_id()});
+  };
+  auto sdpa = [&reads](auto n) {
+    reads(
+        {n->query_id(),
+         n->key_id(),
+         n->value_id(),
+         n->scale_id(),
+         n->mask_id()});
+  };
+  auto packs = [&reads, &packed_ids](auto n) {
+    reads({n->input1_id()});
+    packed_ids.insert(n->filter_id());
+    if (n->bias_id() != XNN_INVALID_VALUE_ID) {
+      packed_ids.insert(n->bias_id());
     }
   };
 
-  // Deliberately an if-chain rather than a switch: XNodeUnion has ~50
-  // enumerators and -Wswitch-enum requires every one of them to be listed.
   for (auto node : *flatbuffer_graph->xnodes()) {
-    auto type = node->xnode_union_type();
-    if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-      auto n = node->xnode_union_as_XNNFullyConnected();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
-      auto n = node->xnode_union_as_XNNConv2d();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
-      auto n = node->xnode_union_as_XNNDepthwiseConv2d();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
-      auto n = node->xnode_union_as_XNNConvTranspose2d();
-      insert_weights(n->filter_id(), n->bias_id());
+    const XNodeUnion type = node->xnode_union_type();
+    if (node->xnode_union() != nullptr) {
+      switch (type) {
+        case XNodeUnion::XNNAdd:
+          binary(node->xnode_union_as_XNNAdd());
+          continue;
+        case XNodeUnion::XNNDiv:
+          binary(node->xnode_union_as_XNNDiv());
+          continue;
+        case XNodeUnion::XNNMinimum:
+          binary(node->xnode_union_as_XNNMinimum());
+          continue;
+        case XNodeUnion::XNNMultiply:
+          binary(node->xnode_union_as_XNNMultiply());
+          continue;
+        case XNodeUnion::XNNSubtract:
+          binary(node->xnode_union_as_XNNSubtract());
+          continue;
+        case XNodeUnion::XNNMaximum:
+          binary(node->xnode_union_as_XNNMaximum());
+          continue;
+        case XNodeUnion::XNNPReLU:
+          binary(node->xnode_union_as_XNNPReLU());
+          continue;
+        case XNodeUnion::XNNBatchMatrixMultiply:
+          binary(node->xnode_union_as_XNNBatchMatrixMultiply());
+          continue;
+        case XNodeUnion::XNNSoftmax:
+          unary(node->xnode_union_as_XNNSoftmax());
+          continue;
+        case XNodeUnion::XNNSigmoid:
+          unary(node->xnode_union_as_XNNSigmoid());
+          continue;
+        case XNodeUnion::XNNClamp:
+          unary(node->xnode_union_as_XNNClamp());
+          continue;
+        case XNodeUnion::XNNFloor:
+          unary(node->xnode_union_as_XNNFloor());
+          continue;
+        case XNodeUnion::XNNConvert:
+          unary(node->xnode_union_as_XNNConvert());
+          continue;
+        case XNodeUnion::XNNGlobalAvgPooling2d:
+          unary(node->xnode_union_as_XNNGlobalAvgPooling2d());
+          continue;
+        case XNodeUnion::XNNSquareRoot:
+          unary(node->xnode_union_as_XNNSquareRoot());
+          continue;
+        case XNodeUnion::XNNCeiling:
+          unary(node->xnode_union_as_XNNCeiling());
+          continue;
+        case XNodeUnion::XNNHardswish:
+          unary(node->xnode_union_as_XNNHardswish());
+          continue;
+        case XNodeUnion::XNNNegate:
+          unary(node->xnode_union_as_XNNNegate());
+          continue;
+        case XNodeUnion::XNNSquare:
+          unary(node->xnode_union_as_XNNSquare());
+          continue;
+        case XNodeUnion::XNNAbs:
+          unary(node->xnode_union_as_XNNAbs());
+          continue;
+        case XNodeUnion::XNNReciprocalSquareRoot:
+          unary(node->xnode_union_as_XNNReciprocalSquareRoot());
+          continue;
+        case XNodeUnion::XNNLog:
+          unary(node->xnode_union_as_XNNLog());
+          continue;
+        case XNodeUnion::XNNGelu:
+          unary(node->xnode_union_as_XNNGelu());
+          continue;
+        case XNodeUnion::XNNTanh:
+          unary(node->xnode_union_as_XNNTanh());
+          continue;
+        case XNodeUnion::XNNExp:
+          unary(node->xnode_union_as_XNNExp());
+          continue;
+        case XNodeUnion::XNNSin:
+          unary(node->xnode_union_as_XNNSin());
+          continue;
+        case XNodeUnion::XNNCopy:
+          unary(node->xnode_union_as_XNNCopy());
+          continue;
+        case XNodeUnion::XNNCos:
+          unary(node->xnode_union_as_XNNCos());
+          continue;
+        case XNodeUnion::XNNApproxGelu:
+          unary(node->xnode_union_as_XNNApproxGelu());
+          continue;
+        case XNodeUnion::XNNStaticTranspose:
+          unary(node->xnode_union_as_XNNStaticTranspose());
+          continue;
+        case XNodeUnion::XNNStaticResizeBilinear2D:
+          unary(node->xnode_union_as_XNNStaticResizeBilinear2D());
+          continue;
+        case XNodeUnion::XNNStaticConstantPad:
+          unary(node->xnode_union_as_XNNStaticConstantPad());
+          continue;
+        case XNodeUnion::XNNAvgPooling2d:
+          unary(node->xnode_union_as_XNNAvgPooling2d());
+          continue;
+        case XNodeUnion::XNNMaxPooling2d:
+          unary(node->xnode_union_as_XNNMaxPooling2d());
+          continue;
+        case XNodeUnion::XNNStaticReshape:
+          unary(node->xnode_union_as_XNNStaticReshape());
+          continue;
+        case XNodeUnion::XNNArgMaxPooling2d:
+          unary(node->xnode_union_as_XNNArgMaxPooling2d());
+          continue;
+        case XNodeUnion::XNNLeakyReLU:
+          unary(node->xnode_union_as_XNNLeakyReLU());
+          continue;
+        case XNodeUnion::XNNELU:
+          unary(node->xnode_union_as_XNNELU());
+          continue;
+        case XNodeUnion::XNNStaticSlice:
+          unary(node->xnode_union_as_XNNStaticSlice());
+          continue;
+        case XNodeUnion::XNNDepthToSpace2d:
+          unary(node->xnode_union_as_XNNDepthToSpace2d());
+          continue;
+        case XNodeUnion::XNNStaticMean:
+          unary(node->xnode_union_as_XNNStaticMean());
+          continue;
+        case XNodeUnion::XNNConcatenate2:
+          concat(node->xnode_union_as_XNNConcatenate2());
+          continue;
+        case XNodeUnion::XNNConcatenate3:
+          concat(node->xnode_union_as_XNNConcatenate3());
+          continue;
+        case XNodeUnion::XNNConcatenate4:
+          concat(node->xnode_union_as_XNNConcatenate4());
+          continue;
+        case XNodeUnion::XNNConcatenate5:
+          concat(node->xnode_union_as_XNNConcatenate5());
+          continue;
+        case XNodeUnion::XNNFullyConnected:
+          packs(node->xnode_union_as_XNNFullyConnected());
+          continue;
+        case XNodeUnion::XNNConv2d:
+          packs(node->xnode_union_as_XNNConv2d());
+          continue;
+        case XNodeUnion::XNNDepthwiseConv2d:
+          packs(node->xnode_union_as_XNNDepthwiseConv2d());
+          continue;
+        case XNodeUnion::XNNConvTranspose2d:
+          packs(node->xnode_union_as_XNNConvTranspose2d());
+          continue;
+        case XNodeUnion::XNNScaledDotProductAttention:
+          sdpa(node->xnode_union_as_XNNScaledDotProductAttention());
+          continue;
+        case XNodeUnion::NONE:
+          break;
+      }
     }
+    ET_LOG(
+        Error,
+        "Unknown XNNPACK node type %u: keeping every constant alive after init",
+        static_cast<uint32_t>(type));
+    return {};
+  }
+
+  for (uint32_t id : read_ids) {
+    packed_ids.erase(id);
   }
   return packed_ids;
 }
