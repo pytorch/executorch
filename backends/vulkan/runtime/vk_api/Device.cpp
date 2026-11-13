@@ -401,33 +401,32 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   properties_list_top = &subgroup_size_control_properties;
 #endif /* VK_EXT_subgroup_size_control */
 
-  // VkPhysicalDeviceDriverProperties is core in Vulkan 1.2; on a 1.1 device it
-  // needs VK_KHR_driver_properties.
-  VkPhysicalDeviceDriverProperties driver_properties{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
-  bool query_driver_properties = properties.apiVersion >= VK_API_VERSION_1_2;
 #ifdef VK_KHR_driver_properties
-  if (!query_driver_properties) {
-    std::vector<const char*> driver_properties_extensions;
-    find_requested_device_extensions(
-        handle,
-        driver_properties_extensions,
-        {VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME});
-    query_driver_properties = !driver_properties_extensions.empty();
-  }
-#endif /* VK_KHR_driver_properties */
+  // The runtime requests Vulkan 1.1, so the struct needs the extension even
+  // on a 1.2+ device (VUID-VkPhysicalDeviceProperties2-pNext-pNext).
+  VkPhysicalDeviceDriverPropertiesKHR driver_properties{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR};
+  std::vector<const char*> driver_properties_extensions;
+  find_requested_device_extensions(
+      handle,
+      driver_properties_extensions,
+      {VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME});
+  const bool query_driver_properties = !driver_properties_extensions.empty();
   if (query_driver_properties) {
     driver_properties.pNext = properties_list_top;
     properties_list_top = &driver_properties;
   }
+#endif /* VK_KHR_driver_properties */
 
   properties2.pNext = properties_list_top;
 
   vkGetPhysicalDeviceProperties2(handle, &properties2);
 
+#ifdef VK_KHR_driver_properties
   if (query_driver_properties) {
     driver_id = static_cast<uint32_t>(driver_properties.driverID);
   }
+#endif /* VK_KHR_driver_properties */
 
   subgroup_size = subgroup_properties.subgroupSize;
   supported_subgroup_ops = subgroup_properties.supportedOperations;

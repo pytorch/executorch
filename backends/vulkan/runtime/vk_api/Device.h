@@ -111,8 +111,8 @@ struct PhysicalDevice final {
   // Device identity
   std::string device_name;
   DeviceType device_type;
-  // VkDriverId from VkPhysicalDeviceDriverProperties (Vulkan 1.2 or
-  // VK_KHR_driver_properties); 0 when the device does not report it.
+  // VkDriverId from VkPhysicalDeviceDriverProperties
+  // (VK_KHR_driver_properties); 0 when the device does not advertise it.
   uint32_t driver_id;
 
   explicit PhysicalDevice(VkInstance instance, VkPhysicalDevice);
