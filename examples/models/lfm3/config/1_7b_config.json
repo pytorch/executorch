@@ -1,0 +1,55 @@
+{
+  "dim": 2048,
+  "hidden_dim": 7680,
+  "n_heads": 16,
+  "n_kv_heads": 4,
+  "head_dim": 128,
+  "n_layers": 24,
+  "norm_eps": 1e-05,
+  "vocab_size": 128000,
+  "rope_theta": 10000.0,
+  "use_scaled_rope": false,
+  "use_hf_rope": true,
+  "use_qk_norm": true,
+  "qk_norm_before_rope": true,
+  "headwise_attn_output_gate": true,
+  "post_attention_norm": true,
+  "post_ffn_norm": true,
+  "conv_L_cache": 7,
+  "sliding_window": 256,
+  "rope_parameters": {
+    "full_attention": {
+      "rope_theta": 1000.0,
+      "partial_rotary_factor": 0.5
+    },
+    "sliding_attention": {
+      "rope_theta": 10000.0
+    }
+  },
+  "layer_types": [
+    "conv",
+    "conv",
+    "full_attention",
+    "conv",
+    "sliding_attention",
+    "conv",
+    "full_attention",
+    "conv",
+    "sliding_attention",
+    "conv",
+    "full_attention",
+    "conv",
+    "sliding_attention",
+    "conv",
+    "full_attention",
+    "conv",
+    "sliding_attention",
+    "conv",
+    "full_attention",
+    "conv",
+    "sliding_attention",
+    "conv",
+    "full_attention",
+    "conv"
+  ]
+}

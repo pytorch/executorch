@@ -58,6 +58,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
+    LFM3_DECODER_MODELS,
     TEXT_DECODER,
     TEXT_ENCODER,
     TOK_EMBEDDING,
@@ -378,7 +379,9 @@ class TextDecoder(Component):
 
         # perform model transformation
         for layer in decoder.layers:
-            if getattr(layer.attention, "prepare_attention_conv", None):
+            if hasattr(layer, "attention") and getattr(
+                layer.attention, "prepare_attention_conv", None
+            ):
                 layer.attention.prepare_attention_conv()
             if getattr(layer.feed_forward, "prepare_feedforward_conv", None):
                 layer.feed_forward.prepare_feedforward_conv()
@@ -562,6 +565,28 @@ class TextDecoder(Component):
                 ]
                 kv_idx += 1
 
+    def _tag_conv_state_ios(self, node, fixed_point_type):
+        n_attn = self.meta["get_n_self_layers"]
+        n_conv = self.meta["get_n_conv_layers"]
+        if node.op == "placeholder" and node.name.startswith("args_"):
+            argument = int(node.name.removeprefix("args_"))
+            if 2 * n_attn <= argument < 2 * n_attn + n_conv:
+                return fixed_point_type["io_type"]
+        if not is_graph_output(node):
+            return None
+        first_state = 1 + int(self.meta.get("get_output_hidden", 0)) + 2 * n_attn
+        output = next(n for n in node.graph.nodes if n.op == "output")
+        outputs = torch.utils._pytree.tree_leaves(output.args[0])
+        for index in range(first_state, min(first_state + n_conv, len(outputs))):
+            source = outputs[index]
+            while isinstance(source, torch.fx.Node):
+                if source is node:
+                    return fixed_point_type["io_type"]
+                if getattr(source.target, "__name__", "") != "getitem":
+                    break
+                source = source.args[0]
+        return None
+
     def _tag_ios(self, node, fixed_point_type):  # noqa: C901
         atten_mask_shape = {
             (
@@ -594,6 +619,11 @@ class TextDecoder(Component):
                 quant_io_type = fixed_point_type["io_type"]
             elif node.meta["val"].size() in atten_mask_shape:
                 quant_io_type = fixed_point_type["io_type"]
+
+        if self.control_args.decoder_model in LFM3_DECODER_MODELS:
+            conv_type = self._tag_conv_state_ios(node, fixed_point_type)
+            if conv_type is not None:
+                return conv_type
 
         if is_graph_output(node):
             if node.meta["val"].size()[-2:] in self.kv_cache_shape:
@@ -1017,8 +1047,12 @@ class HybridTextDecoder(Component):
                     n_cache_layers = (
                         self.decode.meta["get_n_self_layers"]
                         if self.control_args.decoder_model == "gemma4-e2b"
+                        or self.control_args.decoder_model in LFM3_DECODER_MODELS
                         else self.decode.meta["get_n_layers"]
                     )
+                    if args_idx >= 2 * n_cache_layers:
+                        # Extra recurrent state (e.g. conv state), not a KV cache.
+                        continue
                     if args_idx >= n_cache_layers:
                         v_input_cache_nodes.append(node)
                     else:
