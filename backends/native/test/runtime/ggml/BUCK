@@ -116,12 +116,10 @@ _VARIANTS = [
         **v.get("compat", {})
     )
     for v in _VARIANTS
-    # TODO: drop the int4wo f32 embedding filters once ggml keeps their float
-    # scales exact (next diff).
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-embedding_int4wo_*.*_f32"]),
-        ("_no_linear", ["--gtest_filter=-linear_*:embedding_int4wo_*.*_f32"]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only"]),
+        ("_no_linear", ["--gtest_filter=-linear_*"]),
     ]
 ]
 

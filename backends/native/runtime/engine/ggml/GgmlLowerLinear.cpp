@@ -48,7 +48,8 @@ void GraphBuilder::lower_linear(const Node& node) {
 }
 
 void GraphBuilder::lower_row_gather(const Node& node) {
-  const TensorRef weight = tensor_arg(node, "weight", 0);
+  const ValueId weight_id = tensor_arg_id(node, "weight", 0);
+  const TensorRef weight = tensor(weight_id);
   const Argument& arg = require_arg(node, "indices", 1).arg;
   ValueId indices_id = kInvalid;
   if (op_key(node.target) == "aten.embedding.default") {
@@ -79,8 +80,18 @@ void GraphBuilder::lower_row_gather(const Node& node) {
       reshape(ctx, indices.tensor, {ggml_nelements(indices.tensor)});
   std::vector<int64_t> sizes = indices.sizes;
   sizes.push_back(weight.sizes.at(1));
-  ggml_tensor* result =
-      reshape(ctx, ggml_get_rows(ctx, weight.tensor, flat), sizes);
+  ggml_tensor* rows = ggml_get_rows(ctx, weight.tensor, flat);
+  const auto found = row_scales_.find(weight_id);
+  if (found != row_scales_.end()) {
+    const int64_t groups = found->second->ne[0];
+    const int64_t count = ggml_nelements(flat);
+    rows = ggml_mul(
+        ctx,
+        ggml_reshape_3d(ctx, rows, weight.sizes[1] / groups, groups, count),
+        ggml_reshape_3d(
+            ctx, ggml_get_rows(ctx, found->second, flat), 1, groups, count));
+  }
+  ggml_tensor* result = reshape(ctx, rows, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
