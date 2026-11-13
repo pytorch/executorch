@@ -558,6 +558,7 @@ ATEN_OPS = (
     op_target(
         name = "op_embedding_bag",
         deps = [
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

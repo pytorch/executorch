@@ -37,6 +37,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:upsample_util",
             "//executorch/kernels/portable/cpu/util:vectorized_math",
             "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
         ],
         visibility = ["PUBLIC"],
     )
@@ -410,6 +411,20 @@ def define_common_targets():
         srcs = ["grid_sampler_2d_util.cpp"],
         exported_headers = ["grid_sampler_2d_util.h"],
         deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "embedding_bag_util",
+        srcs = ["embedding_bag_util.cpp"],
+        exported_headers = ["embedding_bag_util.h"],
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],

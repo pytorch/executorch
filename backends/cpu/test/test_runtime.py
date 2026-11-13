@@ -56,6 +56,64 @@ class CPURuntimeTest(unittest.TestCase):
         # The runtime borrows the serialized program buffer.
         yield _load_for_executorch_from_buffer(program.buffer)
 
+    def test_embedding_bag_all_outputs(self):
+        class EmbeddingBag(torch.nn.Module):
+            def __init__(self, mode, weighted, last, padding):
+                super().__init__()
+                self.mode = mode
+                self.weighted = weighted
+                self.last = last
+                self.padding = padding
+
+            def forward(self, weight, indices, offsets, scales):
+                return torch.ops.aten._embedding_bag.default(
+                    weight,
+                    indices,
+                    offsets,
+                    False,
+                    self.mode,
+                    False,
+                    scales if self.weighted else None,
+                    self.last,
+                    self.padding,
+                )
+
+        weight = torch.arange(4 * 17, dtype=torch.float32).reshape(4, 17) - 20
+        scales = torch.tensor([0.5, -1.0, 2.0, 3.0])
+        i32, i64 = torch.int32, torch.int64
+        cases = (
+            # indices dtype, offsets dtype, mode, weighted, offsets, last, padding
+            (i64, i64, 0, False, [0, 2, 2], False, -1),
+            (i64, i64, 0, True, [0, 2, 2, 4], True, 1),
+            (i64, i64, 0, False, [0, 2, 2, 3], True, -1),
+            (i64, i64, 1, False, [0, 2, 2, 3], True, -1),
+            (i64, i64, 1, False, [0, 2, 2], False, 1),
+            (i64, i64, 2, False, [0, 2, 2, 4], True, 1),
+            (i32, i64, 2, False, [0, 2, 2], False, -1),
+            (i64, i32, 0, True, [0, 2, 2], False, -1),
+            (i32, i32, 1, False, [0, 2, 2, 4], True, 1),
+        )
+        for case in cases:
+            index_dtype, offset_dtype, mode, weighted, offsets, last, padding = case
+            with self.subTest(case=case):
+                model = EmbeddingBag(mode, weighted, last, padding)
+                indices = torch.tensor([1, 2, 1, 3], dtype=index_dtype)
+                offsets = torch.tensor(offsets, dtype=offset_dtype)
+                inputs = (weight, indices, offsets, scales)
+                with self._lower(model, inputs) as runtime:
+                    for current in (indices, indices.flip(0)):
+                        inputs = (weight, current, offsets, scales)
+                        actual = runtime.forward(inputs)
+                        for position, (output, expected) in enumerate(
+                            zip(actual, model(*inputs), strict=True)
+                        ):
+                            # Export types the three index outputs like
+                            # offsets; eager promotes them. The float output
+                            # (position 0) must keep its dtype.
+                            torch.testing.assert_close(
+                                output, expected, check_dtype=position == 0
+                            )
+
     def test_integer_inputs_and_outputs_preserve_precision(self):
         class Add(torch.nn.Module):
             def forward(self, x, y):
