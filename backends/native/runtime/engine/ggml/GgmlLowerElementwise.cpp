@@ -225,6 +225,28 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
+// ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x), and
+// ggml's x > 0 ? x : expm1(x), so only scale can differ from 1. ggml_scale
+// reads F32 and BF16 only.
+void GraphBuilder::lower_elu(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  require_float(node, input.tensor);
+  const double alpha = float_arg(node, "alpha", 1, 1.0, true);
+  const double scale = float_arg(node, "scale", 2, 1.0, true);
+  const double input_scale = float_arg(node, "input_scale", 3, 1.0, true);
+  if (alpha != 1.0 || input_scale != 1.0) {
+    throw std::runtime_error(
+        "ggml: elu supports only alpha = 1 and input_scale = 1");
+  }
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* result = ggml_elu(ctx, input.tensor);
+  if (scale != 1.0) {
+    require_f32(node, input.tensor);
+    result = ggml_scale(ctx, result, static_cast<float>(scale));
+  }
+  set_single_output(node, TensorRef{result, input.sizes});
+}
+
 // Reduces a run of trailing dimensions, which ggml sees as one row.
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
