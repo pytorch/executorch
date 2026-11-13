@@ -57,8 +57,14 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "cpu_xnnpack",
-        srcs = ["runtime/providers/xnnpack/XNNPACKProvider.cpp"],
-        exported_headers = ["runtime/providers/xnnpack/XNNPACKProvider.h"],
+        srcs = [
+            "runtime/providers/xnnpack/XNNPACKPasses.cpp",
+            "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+        ],
+        exported_headers = [
+            "runtime/providers/xnnpack/XNNPACKPasses.h",
+            "runtime/providers/xnnpack/XNNPACKProvider.h",
+        ],
         exported_deps = [":cpu_runtime"],
         preprocessor_flags = _if_operator_shapes(["-DENABLE_CPU_XNNPACK_OPERATOR_SHAPES"]),
         deps = [
@@ -133,6 +139,12 @@ def define_common_targets():
                 deps = plan_test_deps,
                 modifiers = modifiers,
             )
+
+    runtime.cxx_test(
+        name = "xnnpack_passes_test",
+        srcs = ["runtime/test/XNNPACKPassesTest.cpp"],
+        deps = [":cpu_xnnpack"],
+    )
 
     runtime.cxx_test(
         name = "provider_test",
