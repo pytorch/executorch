@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os.path
 import shutil
 from pathlib import Path
 from random import sample
@@ -26,11 +25,8 @@ class CopyDatasetCreator(BaseDatasetCreator):
     def create_calibration_dataset(
         self, calibration_dir_path: str | Path, input_spec: list[ModelInputSpec]
     ) -> None:
-        # Copy all source files into the calibration directory (always contiguous).
-        for example_name in os.listdir(self._source_dir):
-            shutil.copy(
-                os.path.join(self._source_dir, example_name), calibration_dir_path
-            )
+        # Copy all source files/folders into the calibration directory (always contiguous).
+        shutil.copytree(self._source_dir, calibration_dir_path, dirs_exist_ok=True)
 
 
 class FromCalibrationDataDatasetCreator(BaseDatasetCreator):

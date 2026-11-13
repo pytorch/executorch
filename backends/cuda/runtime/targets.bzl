@@ -40,7 +40,6 @@ def define_common_targets(is_fbcode = False):
             "shims/memory.cpp",
             "shims/rand.cu",
             "shims/sort.cu",
-            "shims/tensor_attribute.cpp",
         ],
         headers = [
             "shims/cuda_guard.h",
@@ -50,7 +49,6 @@ def define_common_targets(is_fbcode = False):
             "shims/memory.h",
             "shims/rand.h",
             "shims/sort.h",
-            "shims/tensor_attribute.h",
             "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

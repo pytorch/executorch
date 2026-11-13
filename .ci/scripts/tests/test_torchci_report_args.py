@@ -39,6 +39,12 @@ exec(sys.argv[2])
 
 
 class TorchciReportArgumentsTest(unittest.TestCase):
+    ARGS_THEN_TESTS = (
+        "printf 'ARG <%s>\\n' "
+        '${TORCHCI_REPORT_ARGS[@]+"${TORCHCI_REPORT_ARGS[@]}"}; '
+        "echo TESTS_STARTED"
+    )
+
     def run_helper(self, extra=None, command=None):
         with tempfile.TemporaryDirectory(dir=ROOT, prefix="torchci-test-") as tmp:
             probe = Path(tmp) / "probe.py"
@@ -109,7 +115,15 @@ class TorchciReportArgumentsTest(unittest.TestCase):
             ],
         )
 
-    def test_invalid_preflight_stops_before_the_next_command(self):
+    def assert_reporting_disabled(self, result, message):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(message, result.stderr)
+        self.assertIn("::warning::torchci: test-run reports disabled", result.stdout)
+        self.assertNotIn("torchci.plugin", result.stdout)
+        self.assertNotIn("--torchci-report-prefix", result.stdout)
+        self.assertIn("TESTS_STARTED", result.stdout)
+
+    def test_invalid_preflight_disables_reporting_and_runs_the_tests(self):
         cases = (
             ({"PROBE_PYTEST": "7.2.0"}, "pytest >= 7.3"),
             ({"PROBE_SCHEMA": "2.0"}, "schema 1.0"),
@@ -120,21 +134,23 @@ class TorchciReportArgumentsTest(unittest.TestCase):
             ({"GITHUB_REPOSITORY": ""}, "GITHUB_REPOSITORY"),
             ({"PROBE_MISSING_PLUGIN": "1"}, "plugin"),
             ({"PROBE_CAPTURE_ERROR": "1"}, "capture failed"),
+            ({"TORCHCI_PYTHON": "/missing/python"}, "/missing/python"),
         )
         for extra, message in cases:
             with self.subTest(extra=extra):
-                result = self.run_helper(self.opted_env(**extra), "echo TESTS_STARTED")
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(message, result.stderr)
-                self.assertNotIn("TESTS_STARTED", result.stdout)
+                result = self.run_helper(self.opted_env(**extra), self.ARGS_THEN_TESTS)
+                self.assert_reporting_disabled(result, message)
 
     def test_python_optimization_cannot_bypass_preflight(self):
-        result = self.run_helper(self.opted_env(JOB_ID="0", PYTHONOPTIMIZE="1"))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("positive JOB_ID", result.stderr)
-        result = self.run_helper(self.opted_env(PROBE_SCHEMA="2.0", PYTHONOPTIMIZE="1"))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("schema 1.0", result.stderr)
+        for extra, message in (
+            ({"JOB_ID": "0"}, "positive JOB_ID"),
+            ({"PROBE_SCHEMA": "2.0"}, "schema 1.0"),
+        ):
+            with self.subTest(extra=extra):
+                result = self.run_helper(
+                    self.opted_env(PYTHONOPTIMIZE="1", **extra), self.ARGS_THEN_TESTS
+                )
+                self.assert_reporting_disabled(result, message)
 
     def test_linux_invocation_preserves_coverage_and_cpp_failure_order(self):
         script = (ROOT / ".ci/scripts/unittest-linux-cmake.sh").read_text()
