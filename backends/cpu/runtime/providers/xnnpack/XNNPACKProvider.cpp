@@ -88,22 +88,6 @@ bool fp32(const Kernel& node, const ptn::Graph& graph) {
   });
 }
 
-bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound) {
-  switch (argument.kind()) {
-    case ptn::ArgKind::None:
-      bound = fallback;
-      return true;
-    case ptn::ArgKind::Int:
-      bound = static_cast<float>(argument.as_int().value);
-      return argument.as_int().id == ptn::kInvalid;
-    case ptn::ArgKind::Float:
-      bound = static_cast<float>(argument.as_float().value);
-      return argument.as_float().id == ptn::kInvalid;
-    default:
-      return false;
-  }
-}
-
 struct MaxPool2d {
   ptn::ValueId input;
   ptn::ValueId output;
