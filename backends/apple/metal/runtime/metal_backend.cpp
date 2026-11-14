@@ -363,6 +363,18 @@ class ET_EXPERIMENTAL MetalBackend final
     handle->so_handle = so_handle;
     handle->so_path = so_path.string();
 
+    // The shims record what this delegate creates while it loads, so that
+    // destroy() frees only this delegate's memory. If loading fails, what it
+    // made so far is freed here, since destroy() will not be called.
+    metal_begin_delegate(handle);
+    MetalDelegateScope delegate_scope(handle, /*loading=*/true);
+    bool initialized = false;
+    executorch::backends::aoti::ScopeGuard release_on_failure([&]() noexcept {
+      if (!initialized) {
+        metal_release_delegate(handle);
+      }
+    });
+
     // Load function pointers specific to this handle's shared library
     ET_CHECK_OK_OR_RETURN_ERROR(
         load_function_pointers_into_handle(so_handle, handle));
@@ -393,6 +405,7 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
+    initialized = true;
 
 #ifdef EXECUTORCH_METAL_COLLECT_STATS
     // Accumulate init timing statistics
@@ -447,6 +460,9 @@ class ET_EXPERIMENTAL MetalBackend final
     });
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    // Handles created by this run, e.g. folded constants that outlive it,
+    // belong to this delegate.
+    MetalDelegateScope delegate_scope(handle, /*loading=*/false);
 
     ET_LOG(Debug, "MetalBackend Handle generated");
 
@@ -679,9 +695,14 @@ class ET_EXPERIMENTAL MetalBackend final
       }
     }
 
+    // Free this delegate's handles and constants. The shim state, including
+    // the buffer pool its recycled buffers went to, is shared by every
+    // delegate in the process, so it is only reset once none is left.
+    if (metal_release_delegate(handle)) {
+      cleanup_memory();
+      executorch::backends::aoti::cleanup_tensor_metadata();
+    }
     delete handle;
-    cleanup_memory();
-    executorch::backends::aoti::cleanup_tensor_metadata();
     ET_LOG(Debug, "MetalBackend handle %p destroy", handle_);
   }
 };
