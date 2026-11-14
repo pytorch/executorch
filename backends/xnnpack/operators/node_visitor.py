@@ -416,10 +416,16 @@ class NodeVisitor:
             swap_in_out_for_weights or groups == 1
         ), "groups is option for swap_in_out_for_weights"
 
-        if tensor in vals_to_ids:
+        # A statically quantized bias is scaled by the input and weight scales of
+        # the node that consumes it, so a bias shared by several nodes needs one
+        # value per consumer.
+        is_quantized_bias = (
+            quant_params is not None and quant_params.dtype == torch.int32
+        )
+        if tensor in vals_to_ids and not is_quantized_bias:
             return
 
-        if quant_params is not None:
+        if quant_params is not None and not is_quantized_bias:
             if quant_params.q_input in vals_to_ids:
                 vals_to_ids[tensor] = vals_to_ids[quant_params.q_input]
                 return
