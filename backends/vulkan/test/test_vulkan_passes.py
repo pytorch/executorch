@@ -794,6 +794,17 @@ class TestVulkanPasses(unittest.TestCase):
                 True,
             )
 
+    def test_rms_norm_reference_matches_aten(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        x = torch.arange(48, dtype=torch.float32).reshape(2, 3, 8).sub(24)
+        for weight in (torch.linspace(-1, 1, 8), None):
+            with self.subTest(weight=weight is not None):
+                torch.testing.assert_close(
+                    torch.ops.et_vk.rms_norm.default(x, weight, 1e-5),
+                    torch.nn.functional.rms_norm(x, (8,), weight, 1e-5),
+                )
+
     def test_fuse_quantized_embedding_with_per_row_scales(self):
         import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 

@@ -22,14 +22,14 @@
 namespace ptn::vulkan {
 namespace {
 
-Method make_rms_norm() {
+Method make_rms_norm(ScalarType dtype = ScalarType::Float) {
   Method method;
   method.name = "forward";
   Graph& graph = method.graph;
   graph.values = {
-      Value("input", ScalarType::Float, {2, 4}),
-      Value("weight", ScalarType::Float, {4}),
-      Value("output", ScalarType::Float, {2, 4}),
+      Value("input", dtype, {2, 4}),
+      Value("weight", dtype, {4}),
+      Value("output", dtype, {2, 4}),
   };
   graph.value(1).role = ValueRole::Parameter;
   graph.nodes = {
@@ -89,6 +89,19 @@ TEST(LowerRMSNormTest, ReadsUnnamedInputsByPosition) {
   }
 
   EXPECT_EQ(lower_rms_norms(method.graph), 1);
+}
+
+TEST(LowerRMSNormTest, RewritesBFloat16Norm) {
+  Method method = make_rms_norm(ScalarType::BFloat16);
+
+  EXPECT_EQ(lower_rms_norms(method.graph), 1);
+
+  const Node& norm = method.graph.node(2);
+  EXPECT_EQ(norm.target, "torch.ops.et_vk.rms_norm.default");
+  ASSERT_EQ(norm.inputs.size(), 3);
+  EXPECT_EQ(norm.inputs[0].arg.as_tensor().id, 0);
+  EXPECT_EQ(norm.inputs[1].arg.as_tensor().id, 1);
+  EXPECT_NO_THROW(validate_graph(method.graph));
 }
 
 TEST(LowerRMSNormTest, RejectsMismatchedNormalizedShape) {

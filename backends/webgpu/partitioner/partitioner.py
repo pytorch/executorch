@@ -89,6 +89,13 @@ def _convolution_check(
     return vulkan_check(node)
 
 
+def _rms_norm_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # The WebGPU kernel always binds a weight buffer.
+    return node.args[1] is not None and vulkan_check(node)
+
+
 def _fp32_unary_features() -> OpFeatures:
     return OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
@@ -114,6 +121,9 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
         exir_ops.edge.aten.convolution.default,
         _convolution_check,
         dtypes={torch.float32},
+    ),
+    exir_ops.edge.et_vk.rms_norm.default: _webgpu_features(
+        exir_ops.edge.et_vk.rms_norm.default, _rms_norm_check
     ),
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.erf.default: _fp32_unary_features(),

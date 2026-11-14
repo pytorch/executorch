@@ -16,6 +16,9 @@ ${define_required_extensions("buffer", DTYPE)}
 
 ${define_active_storage_type("buffer")}
 
+$if HAS_WEIGHT:
+  #define HAS_WEIGHT
+
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
@@ -24,7 +27,8 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, "buffer")}
-${layout_declare_tensor(B, "r", "t_weight", DTYPE, "buffer")}
+$if HAS_WEIGHT:
+  ${layout_declare_tensor(B, "r", "t_weight", DTYPE, "buffer")}
 
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
@@ -99,8 +103,10 @@ void main() {
   // Phase 2: Normalize and write output
   for (uint x = worker_id; x < row_width; x += NUM_WORKERS) {
     const uint in_bufi = base_bufi + x * width_stride;
-    const float val = float(t_in[in_bufi]);
-    const float w = float(t_weight[x]);
-    t_out[in_bufi] = T(val * rstd * w);
+    float out_val = float(t_in[in_bufi]) * rstd;
+#ifdef HAS_WEIGHT
+    out_val *= float(t_weight[x]);
+#endif
+    t_out[in_bufi] = T(out_val);
   }
 }
