@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import logging
+import math
 from typing import cast, List, Optional
 
 import numpy as np
@@ -533,6 +534,26 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         if is_shape_dynamic(node):
             why(node, reason="dynamic output sizes are not supported")
             return False
+
+        # XNNPACK samples with input_size / output_size. Without align_corners,
+        # ATen samples with 1 / scale_factor when one is given, which differs
+        # unless input_size * scale_factor is an integer.
+        align_corners = cast(bool, node.args[2])
+        scale_factors = node.args[3] if len(node.args) > 3 else None
+        if not align_corners and scale_factors is not None:
+            input_sizes = get_input_node(node, 0).meta["val"].shape[-2:]
+            output_sizes = node.meta["val"].shape[-2:]
+            if any(
+                not math.isclose(in_size * scale, out_size, abs_tol=1e-6)
+                for in_size, out_size, scale in zip(
+                    input_sizes, output_sizes, scale_factors
+                )
+            ):
+                why(
+                    node,
+                    reason=f"input size * scale_factors {scale_factors} is not an integer",
+                )
+                return False
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:

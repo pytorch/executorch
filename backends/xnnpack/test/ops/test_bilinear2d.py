@@ -125,6 +125,24 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
+    def test_fp32_static_resize_bilinear2d_fractional_scale_factor(self):
+        # XNNPACK samples with input_size / output_size and ATen with
+        # 1 / scale_factor, which differ when 9 * 0.5 is rounded down to 4.
+        class Downscale(torch.nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.interpolate(
+                    x, scale_factor=0.5, mode="bilinear", align_corners=False
+                )
+
+        (
+            Tester(Downscale(), (torch.randn(1, 3, 9, 9),))
+            .export()
+            .to_edge_transform_and_lower()
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_bilinear2d_dynamic_bilinear2d_not_partitioned(self):
         """
         Verify that upsample_bilinear2d ops with dynamic output sizes are not partitioned.
