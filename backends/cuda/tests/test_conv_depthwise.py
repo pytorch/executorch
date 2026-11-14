@@ -9,6 +9,7 @@ with few channels per group: every schedule of the direct-stencil template
 against an FP64 reference, and models lowered through the CUDA backend."""
 
 import glob
+import itertools
 import os
 import tempfile
 import unittest
@@ -17,9 +18,19 @@ from unittest import mock
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
 _TOLERANCE = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 1.6e-2}
+
+
+def _dense_strides(shape, order):
+    """Dense strides of ``shape`` with the dims in ``order``, outermost first."""
+    strides, running = [0] * len(shape), 1
+    for d in reversed(order):
+        strides[d] = running
+        running *= shape[d]
+    return strides
 
 
 def _reference(x, w, b, stride, before, after):
@@ -34,7 +45,7 @@ class DepthwiseScheduleTest(unittest.TestCase):
             self.skipTest("CUDA required")
         torch.manual_seed(0)
 
-    def convolution(self, x, w, b, stride, before, after):
+    def convolution(self, x, w, b, stride, before, after, output_strides=None):
         from executorch.backends.cuda.triton.kernels.conv.conv import convolution
 
         return convolution(
@@ -48,11 +59,15 @@ class DepthwiseScheduleTest(unittest.TestCase):
             False,
             [0, 0],
             x.shape[1] // w.shape[1],
+            output_strides,
         )
 
-    def check(self, x, w, b, stride, before, after, every_config=False):
+    def check(
+        self, x, w, b, stride, before, after, every_config=False, output_strides=None
+    ):
         """Runs every schedule that supports the call, with its first config or
-        every config, and checks the result and the layout."""
+        every config, and checks the result and the layout (the fake
+        implementation's, and ``output_strides`` if given)."""
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
@@ -72,10 +87,23 @@ class DepthwiseScheduleTest(unittest.TestCase):
             (0, 0),
             x.shape[1] // w.shape[1],
         )
-        call = ConvCall(x, w, b, params)
+        call = ConvCall(
+            x, w, b, params, None if output_strides is None else tuple(output_strides)
+        )
         self.assertIsNone(direct.supports(call))
         expected = _reference(x, w, b, stride, before, after).to(x.dtype)
         layout = out_shape_and_stride(call)
+        with FakeTensorMode() as mode:
+            fake = self.convolution(
+                *(None if t is None else mode.from_tensor(t) for t in (x, w, b)),
+                stride,
+                before,
+                after,
+                output_strides,
+            )
+        self.assertEqual((tuple(fake.shape), fake.stride()), layout)
+        if output_strides is not None:
+            self.assertEqual(layout[1], tuple(output_strides))
         ran = []
         for schedule, all_configs in (
             ("dw_flat", direct.FLAT_CONFIGS),
@@ -86,11 +114,13 @@ class DepthwiseScheduleTest(unittest.TestCase):
         ):
             if direct.schedule_supports(schedule, call) is not None:
                 with force_conv_candidate(schedule), self.assertRaises(ValueError):
-                    self.convolution(x, w, b, stride, before, after)
+                    self.convolution(x, w, b, stride, before, after, output_strides)
                 continue
             for config in all_configs if every_config else all_configs[:1]:
                 with force_conv_candidate(schedule, config):
-                    out = self.convolution(x, w, b, stride, before, after)
+                    out = self.convolution(
+                        x, w, b, stride, before, after, output_strides
+                    )
                 self.assertEqual((tuple(out.shape), out.stride()), layout)
                 tolerance = _TOLERANCE[x.dtype]
                 torch.testing.assert_close(
@@ -293,6 +323,31 @@ class DepthwiseScheduleTest(unittest.TestCase):
             )
             with self.subTest(groups=groups):
                 self.assertIn(reason, direct.supports(call))
+    def test_output_layouts(self):
+        # Every schedule writes the output strides the graph recorded, whatever
+        # the input layout; dims of size 1 keep their recorded strides.
+        for shape, kernel, stride, padding in (
+            ((2, 24, 11, 13), (3, 3), (1, 1), (1, 1)),
+            ((1, 16, 9, 1), (5, 1), (2, 1), (2, 0)),
+        ):
+            x, w, b = self.tensors(*shape, *kernel)
+            out_shape = (
+                shape[0],
+                shape[1],
+                (shape[2] + 2 * padding[0] - kernel[0]) // stride[0] + 1,
+                (shape[3] + 2 * padding[1] - kernel[1]) // stride[1] + 1,
+            )
+            orders = [(0, 1, 2, 3), (0, 2, 3, 1), (1, 0, 2, 3), (2, 3, 1, 0)]
+            inputs = (x, x.to(memory_format=torch.channels_last))
+            for x, order in itertools.product(inputs, orders):
+                strides = [
+                    12345 if n == 1 else s
+                    for n, s in zip(out_shape, _dense_strides(out_shape, order))
+                ]
+                with self.subTest(shape=shape, input=x.stride(), strides=strides):
+                    self.check(
+                        x, w, b, stride, padding, padding, output_strides=strides
+                    )
 
     def test_sliced_inputs_with_storage_offset(self):
         base = torch.randn(2, 20, 15, 18, device="cuda")

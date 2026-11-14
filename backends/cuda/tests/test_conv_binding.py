@@ -19,6 +19,8 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     ConvBindingError,
     ConvCall,
     ConvParams,
+    dense_strides,
+    memory_formats,
     out_shape_and_stride,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -393,3 +395,99 @@ class OutShapeAndStrideTest(unittest.TestCase):
         shape, _ = out_shape_and_stride(ConvCall(x, w, None, params))
         full = [(6 - 1) * 2 + 1 * (3 - 1) + 1, (5 - 1) * 3 + 2 * (4 - 1) + 1]
         self.assertEqual(shape, (2, 3, full[0] + 1 - 1 - 2, full[1] + 2 - 0 - 3))
+
+
+class OutputStridesTest(unittest.TestCase):
+    """Explicit ``output_strides``: the output follows the strides the graph
+    recorded, which must be dense."""
+
+    def test_dense_strides(self):
+        self.assertTrue(dense_strides((2, 3, 4, 5), (60, 20, 5, 1)))
+        self.assertTrue(dense_strides((2, 3, 4, 5), (60, 1, 15, 3)))
+        self.assertTrue(dense_strides((2, 3, 4, 5), (5, 40, 10, 1)))
+        # Size-1 dims may have any stride.
+        self.assertTrue(dense_strides((1, 3, 1, 5), (7, 5, 999, 1)))
+        self.assertFalse(dense_strides((2, 3, 4, 5), (61, 20, 5, 1)))
+        self.assertFalse(dense_strides((2, 3, 4, 5), (60, 20, 0, 1)))
+        self.assertFalse(dense_strides((2, 3, 4, 5), (60, 20, 5, 2)))
+        self.assertFalse(dense_strides((1, 3, 1, 5), (7, 5, -1, 1)))
+        self.assertFalse(dense_strides((2, 3), (3,)))
+
+    def test_memory_formats(self):
+        both = {"contiguous", "channels_last"}
+        for shape, strides, formats in (
+            ((2, 3, 4, 5), (60, 20, 5, 1), {"contiguous"}),
+            ((2, 3, 4, 5), (60, 1, 15, 3), {"channels_last"}),
+            ((2, 3, 4, 5, 6), (360, 1, 90, 18, 3), {"channels_last"}),
+            ((2, 3, 4, 5), (5, 40, 10, 1), set()),
+            ((2, 3, 4, 5), (60, 20, 5, 2), set()),
+            ((8, 1, 3, 3), (9, 9, 3, 1), both),
+            ((2, 3, 1, 1), (3, 1, 1, 1), both),
+            ((1, 3, 4, 5), (999, 20, 5, 1), {"contiguous"}),
+            ((2, 3, 4), (12, 4, 1), {"contiguous"}),
+        ):
+            with self.subTest(shape=shape, strides=strides):
+                self.assertEqual(memory_formats(shape, strides), formats)
+
+    def setUp(self):
+        import executorch.backends.cuda.triton.kernels  # noqa: F401
+
+        self.mode = FakeTensorMode()
+
+    def call(self, x_shape, w_shape, output_strides, channels_last=False):
+        with self.mode:
+            x = torch.empty(x_shape, device="cuda")
+            w = torch.empty(w_shape, device="cuda")
+            if channels_last:
+                x = _channels_last(x)
+        params = ConvParams((1, 1), (1, 1), (1, 1), (1, 1), False, (0, 0), 1)
+        return ConvCall(x, w, None, params, output_strides)
+
+    def test_output_follows_the_strides(self):
+        for x_shape, strides in (
+            ((2, 3, 4, 5), (120, 20, 5, 1)),
+            ((2, 3, 4, 5), (120, 1, 30, 6)),
+            ((2, 3, 4, 5), (20, 40, 5, 1)),
+            ((2, 3, 4, 5), (1, 2, 60, 12)),
+            ((1, 3, 1, 5), (4321, 5, 77, 1)),
+            ((1, 3, 1, 5), (0, 1, 0, 6)),
+        ):
+            for channels_last in (False, True):
+                call = self.call(x_shape, (6, 3, 3, 3), strides, channels_last)
+                shape = (x_shape[0], 6, *x_shape[2:])
+                with self.subTest(x=x_shape, strides=strides, cl=channels_last):
+                    self.assertEqual(out_shape_and_stride(call), (shape, strides))
+                    with self.mode:
+                        out = torch.ops.triton.convolution(
+                            call.input,
+                            call.weight,
+                            None,
+                            [1, 1],
+                            [1, 1],
+                            [1, 1],
+                            [1, 1],
+                            False,
+                            [0, 0],
+                            1,
+                            list(strides),
+                        )
+                    self.assertEqual((tuple(out.shape), out.stride()), (shape, strides))
+
+    def test_non_dense_strides_are_rejected(self):
+        call = self.call((2, 3, 4, 5), (6, 3, 3, 3), (121, 20, 5, 1))
+        with self.assertRaisesRegex(ConvBindingError, "not a dense layout"):
+            out_shape_and_stride(call)
+        with self.mode, self.assertRaisesRegex(ConvBindingError, "not a dense layout"):
+            torch.ops.triton.convolution(
+                call.input,
+                call.weight,
+                None,
+                [1, 1],
+                [1, 1],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+                [121, 20, 5, 1],
+            )
