@@ -302,6 +302,30 @@ class FuseRopePassTest(unittest.TestCase):
                     actual[..., rotary:], x[..., rotary:], rtol=0, atol=0
                 )
 
+    def test_broadcast_frequency_product_fuses(self):
+        # Muse Glimmer builds the angles as position_ids[..., None] * inv_freq.
+        class BroadcastRoPE(nn.Module):
+            def forward(self, x, position_ids, inv_freq):
+                freqs = position_ids[..., None].float() * inv_freq.float()
+                emb = torch.cat((freqs, freqs), dim=-1)
+                cos = emb.cos().to(x.dtype).unsqueeze(1)
+                sin = emb.sin().to(x.dtype).unsqueeze(1)
+                return _apply_rope_tables(x, cos, sin)
+
+        torch.manual_seed(0)
+        for dtype, rotary in itertools.product((torch.float32, torch.float16), (4, 8)):
+            with self.subTest(dtype=dtype, rotary=rotary):
+                inputs = (
+                    torch.randn(1, 3, 4, 8, dtype=dtype),
+                    torch.arange(4).reshape(1, 4) + 2049,
+                    torch.linspace(0.01, 0.9, rotary // 2),
+                )
+                model = BroadcastRoPE().eval()
+                ep = _transformed(model, inputs, [FuseRoPEPass()])
+                targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+                self.assertEqual(targets, [torch.ops.native.rope.default])
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
     def test_hf_rope_serializes_five_arguments(self):
         for rotary, scale in ((8, 1.0), (4, 1.25)):
             with self.subTest(rotary=rotary, scale=scale):

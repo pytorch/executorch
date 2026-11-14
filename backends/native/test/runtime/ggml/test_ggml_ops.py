@@ -620,6 +620,9 @@ class GgmlOpsTest(unittest.TestCase):
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
+    def test_tanh(self):
+        self._check(Lambda(torch.tanh), (torch.randn(2, 3, 4) * 3,))
+
     def test_relu(self):
         self._check(Lambda(F.relu), (torch.randn(2, 3, 4),))
 
