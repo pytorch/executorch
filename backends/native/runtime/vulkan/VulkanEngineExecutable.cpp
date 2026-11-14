@@ -51,6 +51,8 @@
 #include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
+#include <c10/util/BFloat16.h>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -116,8 +118,66 @@ vkapi::ScalarType to_vk_dtype(ScalarType t) {
       std::string("vulkan: unsupported dtype ") + scalar_type_name(t));
 }
 
+// ET-VK lacks int64 and bf16 storage, so int64 values run as int32 and bf16
+// values as f32 on the device.
 ScalarType device_dtype(ScalarType dtype) {
-  return dtype == ScalarType::Long ? ScalarType::Int : dtype;
+  if (dtype == ScalarType::Long) {
+    return ScalarType::Int;
+  }
+  if (dtype == ScalarType::BFloat16) {
+    return ScalarType::Float;
+  }
+  return dtype;
+}
+
+template <typename T>
+T load_element(const void* data, size_t i) {
+  T value;
+  std::memcpy(
+      &value, static_cast<const uint8_t*>(data) + i * sizeof(T), sizeof(T));
+  return value;
+}
+
+template <typename T>
+void store_element(void* data, size_t i, T value) {
+  std::memcpy(static_cast<uint8_t*>(data) + i * sizeof(T), &value, sizeof(T));
+}
+
+// Host copies into or out of bf16 go through f32 values rounded to bf16, so a
+// bf16 tensor holds bf16 values at the host boundary whatever the host dtype.
+void check_bf16_host_dtype(ScalarType dtype) {
+  if (dtype != ScalarType::BFloat16 && dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        std::string("vulkan: bf16 copies need BFloat16 or Float host data, ") +
+        "not " + scalar_type_name(dtype));
+  }
+}
+
+std::vector<float>
+bf16_values_from_host(const void* data, size_t numel, ScalarType dtype) {
+  check_bf16_host_dtype(dtype);
+  std::vector<float> values(numel);
+  for (size_t i = 0; i < numel; ++i) {
+    values[i] = dtype == ScalarType::BFloat16
+        ? load_element<c10::BFloat16>(data, i)
+        : c10::BFloat16(load_element<float>(data, i));
+  }
+  return values;
+}
+
+void bf16_values_to_host(
+    const std::vector<float>& values,
+    void* data,
+    ScalarType dtype) {
+  check_bf16_host_dtype(dtype);
+  for (size_t i = 0; i < values.size(); ++i) {
+    const c10::BFloat16 value(values[i]);
+    if (dtype == ScalarType::BFloat16) {
+      store_element(data, i, value);
+    } else {
+      store_element(data, i, static_cast<float>(value));
+    }
+  }
 }
 
 size_t logical_numel(const TensorMeta& meta) {
@@ -649,7 +709,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
   std::vector<uint8_t> zero_state_;
   // Bytes shared by tensor references until ET-VK consumes and releases them
   // during prepack: raw package bytes by canonical owner, and bytes computed
-  // from them (int32-narrowed Long constants, q4 repacks) by derivation key.
+  // from them (int32-narrowed Long constants, f32-widened bf16 constants, q4
+  // repacks) by derivation key.
   std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
       source_constants_;
   std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
@@ -792,8 +853,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
       check_cache_position_input(data, numel, src_dtype, *bound, rows_written);
       pending_cache_rows_written_.at(i) = rows_written;
     }
+    const VkRef staging = input_staging_.at(i);
+    if (meta.dtype == ScalarType::BFloat16 ||
+        src_dtype == ScalarType::BFloat16) {
+      const std::vector<float> values =
+          bf16_values_from_host(data, numel, src_dtype);
+      graph_->maybe_cast_and_copy_into_staging(
+          staging, values.data(), numel, vkapi::kFloat);
+      return;
+    }
     graph_->maybe_cast_and_copy_into_staging(
-        input_staging_.at(i), data, numel, to_vk_dtype(src_dtype));
+        staging, data, numel, to_vk_dtype(src_dtype));
   }
 
   void execute() override {
@@ -815,11 +885,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
     if (data == nullptr) {
       throw std::runtime_error("vulkan: output data is null");
     }
+    const VkRef staging = output_staging_.at(output_position);
+    if (output_dtype(i) == ScalarType::BFloat16 ||
+        dst_dtype == ScalarType::BFloat16) {
+      std::vector<float> values(numel);
+      graph_->maybe_cast_and_copy_from_staging(
+          staging, values.data(), numel, vkapi::kFloat);
+      bf16_values_to_host(values, data, dst_dtype);
+      return;
+    }
     graph_->maybe_cast_and_copy_from_staging(
-        output_staging_.at(output_position),
-        data,
-        numel,
-        to_vk_dtype(dst_dtype));
+        staging, data, numel, to_vk_dtype(dst_dtype));
   }
 
  private:
@@ -857,7 +933,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
     const auto align4 = [](int64_t v) { return (v + 3) / 4 * 4; };
     const int64_t limit = graph_->max_buffer_numel();
-    const int64_t elem = static_cast<int64_t>(element_size(query->dtype));
+    const int64_t elem =
+        static_cast<int64_t>(element_size(device_dtype(query->dtype)));
     int64_t weights = 0;
     if (__builtin_mul_overflow(
             query->sizes[2] * align4(query->sizes[1]),
@@ -1255,8 +1332,29 @@ class VulkanEngineExecutable final : public EngineExecutable {
             OwnedBytes::from_vector(std::move(converted)));
       }
       storage = narrowed;
+    } else if (info->dtype == ScalarType::BFloat16) {
+      std::shared_ptr<OwnedBytes>& widened = derived_constants_
+          [std::to_string(info->owner.size()) + ":" + info->owner + ":f32"];
+      if (!widened) {
+        const size_t numel = source.size() / sizeof(c10::BFloat16);
+        std::vector<uint8_t> converted(numel * sizeof(float));
+        for (size_t i = 0; i < numel; ++i) {
+          store_element(
+              converted.data(),
+              i,
+              static_cast<float>(
+                  load_element<c10::BFloat16>(source.data(), i)));
+        }
+        widened = std::make_shared<OwnedBytes>(
+            OwnedBytes::from_vector(std::move(converted)));
+      }
+      storage = widened;
     }
     const ByteSpan bytes = storage->span();
+    if (bytes.size() != logical_nbytes(device_meta(b.value_id))) {
+      throw std::runtime_error(
+          "vulkan: constant '" + b.key + "' does not match its device size");
+    }
     auto* context = new std::shared_ptr<OwnedBytes>(storage);
     return executorch::runtime::FreeableBuffer(
         bytes.data(), bytes.size(), release_owned_bytes, context);
@@ -2171,7 +2269,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
       requests.push_back(AllocationRequest{
           .value_id = id,
-          .size_bytes = logical_nbytes(value.tensor_meta()),
+          .size_bytes = logical_nbytes(device_meta(id)),
           .memory_kind = memory_kind(storage_at(id)),
       });
     }

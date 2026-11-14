@@ -2833,6 +2833,81 @@ std::vector<uint8_t> stored_floats(const std::vector<StoredFloats>& constants) {
   return tensors;
 }
 
+// aten.rms_norm over the last dim of a [2, 4] input with a stored weight.
+std::vector<uint8_t> make_rms_norm_program(fbs::ScalarType dtype) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto meta = create_tensor_meta(builder, dtype, {2, 4});
+  const auto weight_meta = create_tensor_meta(builder, dtype, {4});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", meta),
+      fbs::CreateTensorValueDirect(builder, "weight", weight_meta),
+      fbs::CreateTensorValueDirect(builder, "normed", meta),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
+      fbs::CreateOutputDirect(builder, "weight")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> norm_outputs = {
+      fbs::CreateOutputDirect(builder, "normed")};
+  const auto eps = fbs::CreateFloatArg(builder, 1e-5);
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> norm_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "input", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "normalized_shape", create_int_list_arg(builder, {4})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "weight", create_tensor_arg(builder, "weight")),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "eps",
+          fbs::CreateArgument(
+              builder, fbs::ArgumentValue::FloatArg, eps.Union())),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "normed"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "weight",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &weight_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "rms_norm",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.rms_norm.default",
+          &norm_inputs,
+          &norm_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"normed"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
+  };
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, "normed")},
+      constants);
+}
+
 constexpr int64_t kHfTokens = 4;
 constexpr int64_t kHfHeads = 4;
 constexpr int64_t kHfKvHeads = 2;
@@ -3437,6 +3512,79 @@ TEST(VulkanEngineTest, PreservesLogicalLongDtypeAndChecksNarrowing) {
       compiled.executable->set_input(
           0, out_of_range.data(), out_of_range.size(), ScalarType::Long),
       std::runtime_error);
+}
+
+TEST(VulkanEngineTest, RunsBFloat16AddInFloatAndRoundsOutputToNearestEven) {
+  CompiledProgram compiled =
+      compile_program(make_add_program(fbs::ScalarType::BFLOAT16));
+  EXPECT_EQ(compiled.executable->input_dtype(0), ScalarType::BFloat16);
+  EXPECT_EQ(compiled.executable->output_dtype(0), ScalarType::BFloat16);
+
+  // bf16 bits: {1, 2, 3, 1} + {10, 20, 30, 2^-8}.
+  const std::vector<uint16_t> left = {0x3F80, 0x4000, 0x4040, 0x3F80};
+  const std::vector<uint16_t> right = {0x4120, 0x41A0, 0x41F0, 0x3B80};
+  compiled.executable->set_input(
+      0, left.data(), left.size(), ScalarType::BFloat16);
+  compiled.executable->set_input(
+      1, right.data(), right.size(), ScalarType::BFloat16);
+  compiled.executable->execute();
+  std::vector<uint16_t> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::BFloat16);
+  // {11, 22, 33, 1}: the f32 sum 1 + 2^-8 is a tie and rounds to even.
+  EXPECT_EQ(output, (std::vector<uint16_t>{0x4130, 0x41B0, 0x4204, 0x3F80}));
+}
+
+TEST(VulkanEngineTest, RoundsFloatHostDataOfBFloat16TensorsToBFloat16) {
+  CompiledProgram compiled =
+      compile_program(make_add_program(fbs::ScalarType::BFLOAT16));
+  // 1 + 2^-9 rounds to 1 on input, and the sum 1 + 2^-8 rounds to even on
+  // output.
+  const std::vector<float> left = {1.0f + 0x1p-9f, 1.0f, 3.0f, 1.0f};
+  const std::vector<float> right = {-1.0f, 0x1p-8f, 30.0f, 0.5f};
+  compiled.executable->set_input(
+      0, left.data(), left.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, right.data(), right.size(), ScalarType::Float);
+  compiled.executable->execute();
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{0.0f, 1.0f, 33.0f, 1.5f}));
+  std::vector<int32_t> ints(4);
+  EXPECT_THROW(
+      compiled.executable->get_output(
+          0, ints.data(), ints.size(), ScalarType::Int),
+      std::runtime_error);
+}
+
+TEST(VulkanEngineTest, ExecutesBFloat16RMSNormWithStoredWeight) {
+  const std::string header =
+      R"({"weight":{"dtype":"BF16","shape":[4],"data_offsets":[0,8]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 8);
+  // bf16 bits: {0.5, 1.5, -2, 3}.
+  const std::vector<uint16_t> weight = {0x3F00, 0x3FC0, 0xC000, 0x4040};
+  std::memcpy(
+      tensors.data() + sizeof(uint64_t) + header.size(),
+      weight.data(),
+      weight.size() * sizeof(uint16_t));
+  CompiledProgram compiled = compile_program(
+      make_rms_norm_program(fbs::ScalarType::BFLOAT16), std::move(tensors));
+  // bf16 bits: rows {2, -2, 2, -2} and {4, 4, -4, 4}, each with an RMS that
+  // normalizes it to +-1.
+  const std::vector<uint16_t> input = {
+      0x4000, 0xC000, 0x4000, 0xC000, 0x4080, 0x4080, 0xC080, 0x4080};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::BFloat16);
+  compiled.executable->execute();
+  std::vector<uint16_t> output(8);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::BFloat16);
+  // {0.5, -1.5, -2, -3} and {0.5, 1.5, 2, 3}.
+  EXPECT_EQ(
+      output,
+      (std::vector<uint16_t>{
+          0x3F00, 0xBFC0, 0xC000, 0xC040, 0x3F00, 0x3FC0, 0x4000, 0x4040}));
 }
 
 TEST(VulkanEngineTest, ExecutesMetadataOnlyAliasAfterAliasLowering) {
