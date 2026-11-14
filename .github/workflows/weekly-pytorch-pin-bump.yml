@@ -86,7 +86,7 @@ jobs:
 
           This PR was created automatically. If CI fails, Claude will attempt to fix issues (up to 3 attempts). If CI still fails, human review will be requested.
 
-          cc @jakeszwe
+          cc @JacobSzwejbka
           EOF
           PR_BODY=$(echo "${PR_BODY}" | sed 's/^          //')
 

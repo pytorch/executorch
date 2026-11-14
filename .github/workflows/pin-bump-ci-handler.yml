@@ -60,7 +60,7 @@ jobs:
 
               await github.rest.issues.createComment({
                 owner, repo, issue_number: prNumber,
-                body: `## CI Passed\n\nAll trunk CI checks have passed on this pin bump PR. ${note}\n\n**This PR is ready for human review and merge.**\n\ncc @jakeszwe`
+                body: `## CI Passed\n\nAll trunk CI checks have passed on this pin bump PR. ${note}\n\n**This PR is ready for human review and merge.**\n\ncc @JacobSzwejbka`
               });
               return;
             }
@@ -84,7 +84,7 @@ jobs:
                   '- New dependencies or build system changes',
                   '- Test infrastructure issues unrelated to the pin bump',
                   '',
-                  'cc @jakeszwe'
+                  'cc @JacobSzwejbka'
                 ].join('\n')
               });
               return;
