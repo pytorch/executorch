@@ -15,6 +15,7 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
+#include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
@@ -78,7 +79,8 @@ std::vector<uint8_t> CreateTestProgram(
     const std::vector<int32_t>& input_indices = {},
     // If true, emit a chain of two KernelCalls: the first's op_index is out of
     // range so resolve_operator() fails on a non-final instruction.
-    bool with_out_of_range_kernel_call = false) {
+    bool with_out_of_range_kernel_call = false,
+    bool with_failing_kernel_no_overload = false) {
   flatbuffers::FlatBufferBuilder builder(1024);
 
   std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>> evalues;
@@ -161,12 +163,31 @@ std::vector<uint8_t> CreateTestProgram(
         /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
         builder.CreateVector(instructions),
         /*stacktrace=*/0));
+  } else if (with_failing_kernel_no_overload) {
+    auto kernel_call = executorch_flatbuffer::CreateKernelCall(
+        builder, /*op_index=*/0, builder.CreateVector(std::vector<int32_t>{}));
+    std::vector<flatbuffers::Offset<executorch_flatbuffer::Instruction>>
+        instructions{executorch_flatbuffer::CreateInstruction(
+            builder,
+            executorch_flatbuffer::InstructionArguments::KernelCall,
+            kernel_call.Union())};
+    chains.push_back(executorch_flatbuffer::CreateChain(
+        builder,
+        /*inputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        builder.CreateVector(instructions),
+        /*stacktrace=*/0));
   }
   auto chain_vec = builder.CreateVector(chains);
   std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>> operators;
   if (with_out_of_range_kernel_call) {
     operators.push_back(executorch_flatbuffer::CreateOperator(
         builder, builder.CreateString("test::noop"), builder.CreateString("")));
+  } else if (with_failing_kernel_no_overload) {
+    operators.push_back(executorch_flatbuffer::CreateOperator(
+        builder,
+        builder.CreateString("test::failing_no_overload"),
+        /*overload=*/0));
   }
   auto operators_vec = builder.CreateVector(operators);
   auto empty_delegates_vec = builder.CreateVector(
@@ -189,6 +210,11 @@ std::vector<uint8_t> CreateTestProgram(
   plans.push_back(execution_plan);
   auto plans_vec = builder.CreateVector(plans);
 
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
   auto program = executorch_flatbuffer::CreateProgram(
       builder,
       /*version=*/0,
@@ -196,7 +222,7 @@ std::vector<uint8_t> CreateTestProgram(
       /*constant_buffer=*/0,
       /*backend_delegate_data=*/0,
       /*segments=*/0,
-      /*constant_segment=*/0,
+      constant_segment,
       /*mutable_data_segments=*/0,
       /*named_data=*/0);
 
@@ -403,4 +429,37 @@ TEST_F(ProgramValidationTest, ResolveOperatorFailureSurfacesFromInit) {
   Result<executorch::runtime::Method> method =
       program->load_method("forward", &mmm.get());
   EXPECT_EQ(method.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramValidationTest, KernelCallFailureWithNullOverloadDoesNotCrash) {
+  static const auto fail_kernel = executorch::runtime::Kernel(
+      "test::failing_no_overload",
+      [](executorch::runtime::KernelRuntimeContext& context,
+         executorch::runtime::Span<executorch::runtime::EValue*>) {
+        context.fail(Error::Internal);
+      });
+  ASSERT_EQ(executorch::runtime::register_kernel(fail_kernel), Error::Ok);
+
+  AlignedBuffer buf(CreateTestProgram(
+      /*configs=*/{},
+      /*input_indices=*/{},
+      /*with_out_of_range_kernel_call=*/false,
+      /*with_failing_kernel_no_overload=*/true));
+  auto loader = buf.loader();
+
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  executorch::runtime::testing::ManagedMemoryManager mmm(
+      /*planned_memory_bytes=*/32 * 1024U,
+      /*method_allocator_bytes=*/32 * 1024U);
+  Result<executorch::runtime::Method> method =
+      program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // KernelCall failure logs operator overload. With a null overload in the
+  // flatbuffer operator table, this previously segfaulted (#23955).
+  Error err = method->execute();
+  EXPECT_EQ(err, Error::Internal);
 }

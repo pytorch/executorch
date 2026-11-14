@@ -216,6 +216,19 @@ target_include_directories(
 )
 
 et_cxx_test(
+  program_validation_test SOURCES program_validation_test.cpp EXTRA_LIBS
+  extension_data_loader program_schema
+)
+add_dependencies(program_validation_test generated_pte_files)
+set_property(TEST program_validation_test PROPERTY ENVIRONMENT ${test_env})
+
+target_include_directories(
+  program_validation_test
+  PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
+          "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+)
+
+et_cxx_test(
   kernel_resolution_test SOURCES kernel_resolution_test.cpp EXTRA_LIBS
   extension_data_loader
 )
