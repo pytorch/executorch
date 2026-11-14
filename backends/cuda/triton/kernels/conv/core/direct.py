@@ -54,6 +54,7 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     max_offset,
     Schedule,
     SUPPORTED_DTYPES,
+    unbenchmarked_layout,
 )
 from executorch.backends.cuda.triton.routing import device_supports
 from torch.library import wrap_triton
@@ -151,6 +152,24 @@ MAX_ROUTED_GROUPED_KERNEL = 7
 MAX_ROUTED_GROUPED_STRIDE = 2
 MIN_TEMPLATE_GROUP_CHANNELS = 4
 MIN_TEMPLATE_HALF_REDUCTION = 4 * 7 * 7
+# The (input, weight, output) memory formats measured. A depthwise weight has
+# one input channel, so it matches both formats.
+SAME_ORDER_LAYOUTS = frozenset(
+    {
+        ("contiguous", "contiguous", "contiguous"),
+        ("contiguous", "channels_last", "channels_last"),
+        ("channels_last", "contiguous", "channels_last"),
+        ("channels_last", "channels_last", "channels_last"),
+    }
+)
+ROUTED_LAYOUTS = SAME_ORDER_LAYOUTS | {
+    ("channels_last", "contiguous", "contiguous"),
+    ("channels_last", "channels_last", "contiguous"),
+}
+# A channels-last input written to a contiguous output (what an export on CUDA
+# records) loses to Inductor on the smallest, launch-bound inputs; it is
+# measured faster from this many input elements on.
+MIN_ROUTED_REORDERING_ELEMENTS = 2 * 8 * 28 * 28
 
 
 def worth_routing(call: ConvCall) -> Optional[str]:
@@ -173,6 +192,17 @@ def worth_routing(call: ConvCall) -> Optional[str]:
         return f"direct stencil: spatial size {list(x.shape[2:])} is not benchmarked"
     if x.numel() > MAX_ROUTED_INPUT_ELEMENTS:
         return f"direct stencil: a {x.numel()}-element input is not benchmarked"
+    reason = unbenchmarked_layout(call, ROUTED_LAYOUTS)
+    if reason is not None:
+        return f"direct stencil: {reason}"
+    if (
+        x.numel() < MIN_ROUTED_REORDERING_ELEMENTS
+        and unbenchmarked_layout(call, SAME_ORDER_LAYOUTS) is not None
+    ):
+        return (
+            f"direct stencil: a {x.numel()}-element channels-last input with a "
+            "contiguous output is not benchmarked faster"
+        )
     if w.shape[1] == 1 and w.shape[0] == p.groups:
         return None
     group_channels, multiplier = w.shape[1], w.shape[0] // p.groups

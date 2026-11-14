@@ -9,6 +9,7 @@ the implicit-GEMM template against an FP64 reference, and models lowered
 through the CUDA backend."""
 
 import glob
+import itertools
 import os
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from unittest import mock
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
 _TOLERANCE = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 1.6e-2}
@@ -29,6 +31,15 @@ def _reference(x, w, b, stride, before, after):
     conv = F.conv2d if x.dim() == 4 else F.conv3d
     bias = None if b is None else b.double()
     return conv(F.pad(x.double(), pad), w.double(), bias, stride)
+
+
+def _dense_strides(shape, order):
+    """Dense strides of ``shape`` with the dims in ``order``, outermost first."""
+    strides, running = [0] * len(shape), 1
+    for d in reversed(order):
+        strides[d] = running
+        running *= shape[d]
+    return strides
 
 
 def _channels_last(t):
@@ -44,7 +55,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         torch.manual_seed(0)
         self.tensor_cores = torch.cuda.get_device_capability() >= (8, 0)
 
-    def convolution(self, x, w, b, stride, before, after):
+    def convolution(self, x, w, b, stride, before, after, output_strides=None):
         from executorch.backends.cuda.triton.kernels.conv.conv import convolution
 
         rank = x.dim() - 2
@@ -59,12 +70,16 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             False,
             [0] * rank,
             1,
+            output_strides,
         )
 
-    def check(self, x, w, b, stride, before, after, every_config=False):
+    def check(
+        self, x, w, b, stride, before, after, every_config=False, output_strides=None
+    ):
         """Runs every schedule and K order on the call, with the first config of
-        each or every config, and checks the result and the layout; the
-        tensor-core schedule runs FP32 operands in TF32."""
+        each or every config, and checks the result and the layout (the fake
+        implementation's, and ``output_strides`` if given); the tensor-core
+        schedule runs FP32 operands in TF32."""
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
@@ -85,11 +100,24 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             (0,) * rank,
             1,
         )
-        call = ConvCall(x, w, b, params)
+        call = ConvCall(
+            x, w, b, params, None if output_strides is None else tuple(output_strides)
+        )
         tf32 = mock.patch.object(implicit_gemm, "conv_allows_tf32", return_value=True)
         self.assertIsNone(implicit_gemm.supports(call))
         expected = _reference(x, w, b, stride, before, after)
         layout = out_shape_and_stride(call)
+        with FakeTensorMode() as mode:
+            fake = self.convolution(
+                *(None if t is None else mode.from_tensor(t) for t in (x, w, b)),
+                stride,
+                before,
+                after,
+                output_strides,
+            )
+        self.assertEqual((tuple(fake.shape), fake.stride()), layout)
+        if output_strides is not None:
+            self.assertEqual(layout[1], tuple(output_strides))
         schedules = ["igemm_ffma"] + (["igemm_tc"] if self.tensor_cores else [])
         for (schedule, _), configs in implicit_gemm.CONFIGS.items():
             if schedule not in schedules:
@@ -101,7 +129,9 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 tolerance = _TF32_TOLERANCE
             for config in configs if every_config else configs[:1]:
                 with tf32, force_conv_candidate(schedule, config):
-                    out = self.convolution(x, w, b, stride, before, after)
+                    out = self.convolution(
+                        x, w, b, stride, before, after, output_strides
+                    )
                 self.assertEqual((tuple(out.shape), out.stride()), layout)
                 torch.testing.assert_close(
                     out.double(),
@@ -184,6 +214,48 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
 
     def test_geometries_bf16(self):
         self.check_geometries(torch.bfloat16)
+
+    def test_output_layouts(self):
+        # Every schedule writes the output strides the graph recorded, whatever
+        # the input layout; dims of size 1 keep their recorded strides.
+        for shape, c_out, kernel, stride, padding, orders in (
+            (
+                (2, 3, 30, 26),
+                40,
+                (7, 7),
+                (2, 2),
+                (3, 3),
+                [(0, 1, 2, 3), (0, 2, 3, 1), (1, 0, 2, 3), (2, 3, 1, 0)],
+            ),
+            ((1, 3, 56, 14), 48, (14, 14), (14, 14), (0, 0), [(0, 1, 2, 3)]),
+            (
+                (2, 3, 2, 28, 32),
+                32,
+                (2, 16, 16),
+                (2, 16, 16),
+                (0, 0, 0),
+                [(0, 1, 2, 3, 4), (0, 2, 3, 4, 1), (1, 0, 2, 3, 4)],
+            ),
+        ):
+            x, w, b = self.tensors(shape, c_out, kernel)
+            out_shape = (
+                shape[0],
+                c_out,
+                *(
+                    (e + 2 * p - k) // s + 1
+                    for e, k, s, p in zip(shape[2:], kernel, stride, padding)
+                ),
+            )
+            inputs = (x, _channels_last(x))
+            for x, order in itertools.product(inputs, orders):
+                strides = [
+                    12345 if n == 1 else s
+                    for n, s in zip(out_shape, _dense_strides(out_shape, order))
+                ]
+                with self.subTest(shape=shape, input=x.stride(), strides=strides):
+                    self.check(
+                        x, w, b, stride, padding, padding, output_strides=strides
+                    )
 
     def test_sliced_inputs_with_storage_offset(self):
         base = torch.randn(2, 20, 15, 18, device="cuda")

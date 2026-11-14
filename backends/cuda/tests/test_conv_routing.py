@@ -129,8 +129,11 @@ class _PassTest(unittest.TestCase):
         *inputs,
         template,
         canonical_args=None,
+        output_strides=None,
         device="cuda",
     ):
+        """Routed, with the output strides the conv node recorded (and, if
+        given, ``output_strides``)."""
         for api, graph_module in _backend_graphs(model, *inputs, device=device).items():
             with self.subTest(api=api):
                 targets, logs = self.run_pass(graph_module)
@@ -142,8 +145,11 @@ class _PassTest(unittest.TestCase):
                     for n in graph_module.graph.nodes
                     if n.target == torch.ops.triton.convolution.default
                 )
+                self.assertEqual(node.args[-1], list(node.meta["val"].stride()))
+                if output_strides is not None:
+                    self.assertEqual(node.args[-1], output_strides)
                 if canonical_args is not None and api == _APIS[0]:
-                    self.assertEqual(node.args[3:], canonical_args)
+                    self.assertEqual(node.args[3:-1], canonical_args)
 
     def assertKept(self, model, *inputs, reason, **export_kwargs):
         for api, graph_module in _backend_graphs(
@@ -205,12 +211,13 @@ class ConvRoutingTest(_PassTest):
             device="cpu",
         )
 
-    def test_channels_last_cuda_export_is_kept(self):
+    def test_channels_last_cuda_export_follows_the_graph(self):
         # On CUDA, with cuDNN off, the export records a contiguous output.
-        self.assertKept(
+        self.assertRouted(
             _depthwise(),
             lambda: torch.randn(1, 8, 9, 9).to(memory_format=torch.channels_last),
-            reason="differs from the node's",
+            template="permissive",
+            output_strides=[648, 81, 9, 1],
         )
 
     def test_rocm_is_kept(self):
@@ -232,16 +239,42 @@ class ConvRoutingTest(_PassTest):
             dynamic_shapes=({0: batch},),
         )
 
-    def test_output_layout_mismatch_is_kept(self):
-        for graph_module in _backend_graphs(
-            _depthwise(), lambda: torch.randn(1, 8, 9, 9)
-        ).values():
-            conv = next(n for n in graph_module.graph.nodes if "conv" in str(n.target))
-            val = conv.meta["val"]
-            conv.meta["val"] = val.as_strided(val.shape, (648, 1, 72, 8))
-            targets, logs = self.run_pass(graph_module)
-            self.assertNotIn(torch.ops.triton.convolution.default, targets)
-            self.assertIn("differs from the node's", logs)
+    def test_recorded_output_layout(self):
+        # (size, strides) recorded for the [2, 8, 9, 9] output, and why the
+        # node is kept; every dense layout is followed.
+        for size, strides, reason in (
+            ((2, 8, 9, 9), (648, 81, 9, 1), None),
+            ((2, 8, 9, 9), (648, 1, 72, 8), None),
+            ((2, 8, 9, 9), (81, 162, 9, 1), None),
+            ((2, 8, 9, 9), (700, 81, 9, 1), "are not a dense layout"),
+            ((2, 8, 9, 9), (648, 81, 9, 2), "are not a dense layout"),
+            ((2, 8, 9, 8), (576, 72, 8, 1), "differs from the node's"),
+        ):
+            for graph_module in _backend_graphs(
+                _depthwise(), lambda: torch.randn(2, 8, 9, 9)
+            ).values():
+                conv = next(
+                    n
+                    for n in graph_module.graph.nodes
+                    if n.op == "call_function" and "conv" in str(n.target)
+                )
+                val = conv.meta["val"]
+                with val.fake_mode:
+                    conv.meta["val"] = torch.empty_strided(
+                        size, strides, dtype=val.dtype, device=val.device
+                    )
+                with self.subTest(size=size, strides=strides):
+                    targets, logs = self.run_pass(graph_module)
+                    if reason is None:
+                        (node,) = [
+                            n
+                            for n in graph_module.graph.nodes
+                            if n.target == torch.ops.triton.convolution.default
+                        ]
+                        self.assertEqual(node.args[-1], list(strides))
+                    else:
+                        self.assertNotIn(torch.ops.triton.convolution.default, targets)
+                        self.assertIn(reason, logs)
 
     def test_worth_routing_gates_only_optional_calls(self):
         from executorch.backends.cuda.triton.kernels.conv import routing
@@ -447,6 +480,97 @@ class DirectTemplateRoutingTest(_PassTest):
                     lambda channels=channels: torch.randn(2, channels, 12, 10),
                     template="direct",
                 )
+    def test_channels_last_cuda_export_is_routed(self):
+        # The export on CUDA records a contiguous output for a channels-last
+        # input; the converted conv writes exactly that layout.
+        for dtype in (torch.float32, torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                self.assertRouted(
+                    _depthwise(channels=64, dtype=dtype),
+                    lambda dtype=dtype: torch.randn(2, 64, 28, 28, dtype=dtype).to(
+                        memory_format=torch.channels_last
+                    ),
+                    template="direct",
+                    output_strides=[50176, 784, 28, 1],
+                )
+
+    def test_reordering_size_edge(self):
+        # Channels-last input, contiguous output: routed from the smallest
+        # measured input that wins on; the same-order layouts are not limited.
+        from executorch.backends.cuda.triton.kernels.conv.core import direct
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        params = ConvParams((1, 1), (1, 1), (1, 1), (1, 1), False, (0, 0), 8)
+        for batch, output, routed in (
+            (2, "contiguous", True),
+            (1, "contiguous", False),
+            (1, "channels_last", True),
+        ):
+            with FakeTensorMode():
+                x = torch.empty(batch, 8, 28, 28, device="cuda").contiguous(
+                    memory_format=torch.channels_last
+                )
+                w = torch.empty(8, 1, 3, 3, device="cuda")
+                out = torch.empty(batch, 8, 28, 28, device="cuda")
+                if output == "channels_last":
+                    out = out.contiguous(memory_format=torch.channels_last)
+            self.assertEqual(2 * 8 * 28 * 28, direct.MIN_ROUTED_REORDERING_ELEMENTS)
+            reason = direct.worth_routing(
+                ConvCall(x, w, None, params, tuple(out.stride()))
+            )
+            with self.subTest(batch=batch, output=output):
+                if routed:
+                    self.assertIsNone(reason)
+                else:
+                    self.assertIn("contiguous output is not benchmarked", reason)
+        self.assertKept(
+            _depthwise(),
+            lambda: torch.randn(1, 8, 9, 9).to(memory_format=torch.channels_last),
+            reason="contiguous output is not benchmarked faster",
+        )
+
+    def test_only_benchmarked_layouts_are_routed(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import direct
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        params = ConvParams((1, 1), (1, 1), (1, 1), (1, 1), False, (0, 0), 64)
+        shape = (2, 64, 28, 28)
+        contiguous, channels_last = (50176, 784, 28, 1), (50176, 1, 1792, 64)
+        channel_outermost = (784, 1568, 28, 1)
+        with FakeTensorMode():
+            x = torch.empty(shape, device="cuda")
+            w = torch.empty(64, 1, 3, 3, device="cuda")
+            x_cl = x.contiguous(memory_format=torch.channels_last)
+            w_cl = w.contiguous(memory_format=torch.channels_last)
+            sliced = x.as_strided(shape, x.stride(), 1)
+            padded = x.as_strided(shape, (64 * 785, 785, 28, 1))
+        # (input, weight, output strides, routed); a depthwise weight matches
+        # both memory formats.
+        for x_, w_, out, routed in (
+            (x, w, contiguous, True),
+            (x, w, channels_last, True),
+            (x, w_cl, channels_last, True),
+            (x_cl, w, channels_last, True),
+            (x_cl, w_cl, contiguous, True),
+            (x_cl, w, contiguous, True),
+            (x, w, channel_outermost, False),
+            (x_cl, w, channel_outermost, False),
+            (sliced, w, contiguous, False),
+            (padded, w, contiguous, False),
+        ):
+            call = ConvCall(x_, w_, None, params, out)
+            with self.subTest(input=x_.stride(), weight=w_.stride(), output=out):
+                reason = direct.worth_routing(call)
+                if routed:
+                    self.assertIsNone(reason)
+                else:
+                    self.assertIn("not a benchmarked layout", reason)
 
     def test_other_convolutions_are_kept(self):
         x = lambda: torch.randn(1, 8, 9, 9)  # noqa: E731
@@ -705,6 +829,88 @@ _KEPT_ROWS = (
 )
 
 
+def _layout_variants(routed_layouts):  # noqa: C901
+    """(layout, whether ``routed_layouts`` admits it): functions that give a
+    dense NCHW call with a contiguous weight and the default output another
+    input, weight or output layout. Where size-1 dims make the output strides
+    match another format too, whether that one is admitted decides."""
+    from executorch.backends.cuda.triton.kernels.conv.core.common import (
+        memory_formats,
+        out_shape_and_stride,
+    )
+
+    def output_in(*formats):
+        def routed(call):
+            return bool(memory_formats(*out_shape_and_stride(call)) & set(formats))
+
+        return routed
+
+    def channels_last(t):
+        fmt = torch.channels_last if t.dim() == 4 else torch.channels_last_3d
+        return t.contiguous(memory_format=fmt)
+
+    def output(call, order):
+        shape, _ = out_shape_and_stride(call)
+        strides, running = [0] * len(shape), 1
+        for d in reversed(order(len(shape))):
+            strides[d] = running
+            running *= shape[d]
+        return dataclasses.replace(call, output_strides=tuple(strides))
+
+    def nchw(call):
+        return call
+
+    def channels_last_input(call):
+        return dataclasses.replace(call, input=channels_last(call.input))
+
+    def channels_last_input_contiguous_output(call):
+        return output(channels_last_input(call), lambda n: range(n))
+
+    def contiguous_input_channels_last_output(call):
+        return output(call, lambda n: (0, *range(2, n), 1))
+
+    def channels_last_input_channel_outermost_output(call):
+        return output(channels_last_input(call), lambda n: (1, 0, *range(2, n)))
+
+    def sliced_input(call):
+        x = call.input
+        return dataclasses.replace(call, input=x.as_strided(x.shape, x.stride(), 1))
+
+    def padded_input(call):
+        x = call.input
+        n, c, *spatial = x.shape
+        plane = math.prod(spatial) + 1
+        strides = (c * plane, plane, *x.stride()[2:])
+        return dataclasses.replace(call, input=x.as_strided(x.shape, strides))
+
+    def channels_last_weight(call):
+        return dataclasses.replace(call, weight=channels_last(call.weight))
+
+    def sliced_weight(call):
+        w = call.weight
+        return dataclasses.replace(call, weight=w.as_strided(w.shape, w.stride(), 1))
+
+    contiguous, cl = "contiguous", "channels_last"
+
+    def admitted(input):
+        return [o for i, w, o in routed_layouts if (i, w) == (input, contiguous)]
+
+    return (
+        (nchw, True),
+        (channels_last_input, (cl, contiguous, cl) in routed_layouts),
+        (
+            channels_last_input_contiguous_output,
+            (cl, contiguous, contiguous) in routed_layouts,
+        ),
+        (contiguous_input_channels_last_output, output_in(*admitted(contiguous))),
+        (channels_last_input_channel_outermost_output, output_in(*admitted(cl))),
+        (sliced_input, False),
+        (padded_input, False),
+        (channels_last_weight, False),
+        (sliced_weight, False),
+    )
+
+
 def _steps_past(families, shape, c_out, kernel, stride, padding):
     """The calls one step past each limit a benchmarked corner sits on."""
     from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
@@ -790,6 +996,23 @@ class ImplicitGemmRoutingTest(_PassTest):
                         reason=reason,
                     )
 
+    def test_channels_last_cuda_export_is_routed(self):
+        # The export on CUDA records a contiguous output for a channels-last
+        # input; the converted conv writes exactly that layout.
+        for (row, model, shape), strides in (
+            (_ROUTED_ROWS[6], [4915200, 76800, 320, 1]),
+            (_ROUTED_ROWS[7], [48672, 1521, 39, 1]),
+        ):
+            with self.subTest(row=row):
+                self.assertRouted(
+                    model(torch.float32),
+                    lambda shape=shape: torch.randn(shape).to(
+                        memory_format=torch.channels_last
+                    ),
+                    template="implicit_gemm",
+                    output_strides=strides,
+                )
+
     def test_canonical_arguments(self):
         # padding="valid" binds to zero padding on both sides.
         self.assertRouted(
@@ -817,19 +1040,18 @@ class ImplicitGemmRoutingTest(_PassTest):
                 template="implicit_gemm",
             )
 
-    def worth_routing(self, shape, out_channels, kernel, stride, before, after, **kw):
+    def worth_routing(self, *call, dtype, tf32, layout=None):
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        with self.tf32(tf32):
+            return implicit_gemm.worth_routing(self.call(*call, dtype, layout))
+
+    def call(self, shape, out_channels, kernel, stride, before, after, dtype, layout):
         from executorch.backends.cuda.triton.kernels.conv.core.common import (
             ConvCall,
             ConvParams,
         )
 
-        with FakeTensorMode():
-            x = torch.empty(shape, dtype=kw["dtype"], device="cuda")
-            w = torch.empty(
-                out_channels, shape[1], *kernel, dtype=kw["dtype"], device="cuda"
-            )
-            x, w = kw.get("layout", lambda x, w: (x, w))(x, w)
         rank = len(kernel)
         params = ConvParams(
             tuple(stride),
@@ -840,8 +1062,11 @@ class ImplicitGemmRoutingTest(_PassTest):
             (0,) * rank,
             1,
         )
-        with self.tf32(kw["tf32"]):
-            return implicit_gemm.worth_routing(ConvCall(x, w, None, params))
+        with FakeTensorMode():
+            x = torch.empty(shape, dtype=dtype, device="cuda")
+            w = torch.empty(out_channels, shape[1], *kernel, dtype=dtype, device="cuda")
+            call = ConvCall(x, w, None, params)
+            return call if layout is None else layout(call)
 
     def precisions(self):
         """(dtype, TF32 allowed) of the FMA and tensor-core cases."""
@@ -911,41 +1136,15 @@ class ImplicitGemmRoutingTest(_PassTest):
                         )
 
     def test_only_benchmarked_layouts_are_routed(self):
-        """The benchmark measures dense NCHW and channels-last inputs with
-        contiguous weights; sliced or padded inputs and channels-last or sliced
-        weights keep the regular lowering."""
+        """The (input, weight, output) memory formats the benchmark measures are
+        routed; sliced or padded inputs, channels-last or sliced weights and
+        other output layouts keep the regular lowering."""
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
-
-        def channels_last(x, w):
-            fmt = torch.channels_last if x.dim() == 4 else torch.channels_last_3d
-            return x.contiguous(memory_format=fmt), w
-
-        def sliced_input(x, w):
-            return x.as_strided(x.shape, x.stride(), 1), w
-
-        def padded_input(x, w):
-            n, c, *spatial = x.shape
-            plane = math.prod(spatial) + 1
-            strides = (c * plane, plane, *x.stride()[2:])
-            return x.as_strided(x.shape, strides), w
-
-        def channels_last_weight(x, w):
-            fmt = torch.channels_last if w.dim() == 4 else torch.channels_last_3d
-            return x, w.contiguous(memory_format=fmt)
-
-        def sliced_weight(x, w):
-            return x, w.as_strided(w.shape, w.stride(), 1)
 
         for dtype, tf32 in self.precisions():
             for call in implicit_gemm.boundary_calls():
                 shape, c_out, kernel, stride, padding = call
-                for layout, routed in (
-                    (channels_last, True),
-                    (sliced_input, False),
-                    (padded_input, False),
-                    (channels_last_weight, False),
-                    (sliced_weight, False),
-                ):
+                for layout, routed in _layout_variants(implicit_gemm.ROUTED_LAYOUTS):
                     with self.subTest(
                         call=call, layout=layout.__name__, dtype=dtype, tf32=tf32
                     ):
@@ -960,6 +1159,10 @@ class ImplicitGemmRoutingTest(_PassTest):
                             tf32=tf32,
                             layout=layout,
                         )
+                        if callable(routed):
+                            routed = routed(
+                                self.call(*call[:4], padding, padding, dtype, layout)
+                            )
                         if routed:
                             self.assertIsNone(reason)
                         else:
