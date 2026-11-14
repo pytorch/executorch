@@ -16,7 +16,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -29,6 +32,7 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
     QCOM_FALLBACK_NODE,
+    QCOM_INSERTED_CAST,
 )
 
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
@@ -92,6 +96,7 @@ class QnnOperatorSupport(OperatorSupportBase):
     ):
         option = generate_qnn_executorch_option(compiler_specs)
         python_options = flatbuffer_to_option(option)
+        self.edge_program = edge_program
         self.node_visitors = node_visitor_manager.get_node_visitors(
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
@@ -108,12 +113,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.soc_info = python_options.soc_info
         self.backend_type = python_options.backend_options.backend_type
         htp_options = python_options.backend_options.htp_options
-        # Gate for the VTCM diagnostic in is_node_supported. Only fp16 HTP: the
-        # quantized path rejects an untileable dilated conv at finalize, so it
-        # needs no warning. Not gated on log level, unlike the backend's other
-        # diagnostics -- the failure it points at is a silent unresponsive DSP
-        # with no other clue in the log, so it has to be visible by default.
-        self.warn_dilated_conv_vtcm = (
+        self.is_htp_fp16 = (
             self.backend_type == QnnExecuTorchBackendType.kHtpBackend
             and htp_options is not None
             and htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
@@ -162,6 +162,28 @@ class QnnOperatorSupport(OperatorSupportBase):
 
         return True
 
+    def _is_bool_cat_of_static_tensor(self, node: torch.fx.Node) -> bool:
+        """
+        In fp16, HTP Concat can read a static bool input of all True as False,
+        with no error, for example torch.cat([x > 0, torch.full((2, 2), True)], 1).
+        Whether it does also depends on the shapes, so every such cat stays on
+        CPU. Quantized HTP graphs read it right.
+        """
+        if (
+            not self.is_htp_fp16
+            or node.target != exir_ops.edge.aten.cat.default
+            or node.meta["val"].dtype != torch.bool
+        ):
+            return False
+        return any(
+            arg.target in constant_operator
+            or (
+                is_parameter(arg, self.edge_program)
+                and not is_mutable_buffer_input(arg, self.edge_program)
+            )
+            for arg in node.args[0]
+        )
+
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:  # noqa: C901
         if node.op != "call_function" or node.target in not_supported_operator:
             return False
@@ -208,10 +230,25 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
             return False
 
+        # TODO: https://github.com/pytorch/executorch/issues/24750, seen on the
+        # x86 simulator of QNN SDK 2.51, not checked on a device. Remove this
+        # once HTP fp16 Concat reads a static bool input right, which
+        # CatBoolConstant in test_qnn_backend_cat checks.
+        if self._is_bool_cat_of_static_tensor(node):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, bool concat of a static tensor"
+            )
+            return False
+
         # TODO: workaround for https://github.com/pytorch/executorch/issues/23096.
         # Remove this once the fp16 path performs the TCM-fit check the quantized
         # path does.
-        if self.warn_dilated_conv_vtcm:
+        # Only fp16 HTP: the quantized path rejects an untileable dilated conv
+        # at finalize, so it needs no warning. Not gated on log level, unlike
+        # the backend's other diagnostics -- the failure it points at is a
+        # silent unresponsive DSP with no other clue in the log, so it has to
+        # be visible by default.
+        if self.is_htp_fp16:
             warn_if_dilated_conv_may_not_fit_vtcm(
                 node, self.soc_info.htp_info.vtcm_size_in_mb, self.phase
             )
@@ -226,6 +263,16 @@ class QnnOperatorSupport(OperatorSupportBase):
             node, self.nodes_to_wrappers
         )
         if node.target in constant_operator:
+            # Constant ops skip the QNN op check, but HTP cannot build one of
+            # more than 5 dims as a partition output (see define_constant).
+            if (
+                self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+                and node.meta["val"].dim() > 5
+            ):
+                logger.info(
+                    f"[{self.phase}] {node.target.__name__} | Skipped, more than 5 dims"
+                )
+                return False
             return True
 
         op_wrapper_list = []
@@ -299,7 +346,7 @@ class QnnPartitioner(Partitioner):
             partitions = self._drop_partitions_without_runtime_inputs(
                 partitions, edge_program
             )
-        return partitions
+        return self._drop_partitions_of_inserted_casts(partitions)
 
     @staticmethod
     def _drop_orphaned_parameter_dequants(
@@ -331,6 +378,21 @@ class QnnPartitioner(Partitioner):
                     and arg.meta.get(QCOM_BYPASS_NODE, False)
                 )
         return [partition for partition in partitions if partition.nodes]
+
+    @staticmethod
+    def _drop_partitions_of_inserted_casts(
+        partitions: List[Partition],
+    ) -> List[Partition]:
+        """
+        I64toI32 casts int64 inputs and results to int32, and int64 outputs
+        back. When the ops around such a cast stay on CPU, the casts alone
+        would make a delegate that only converts dtypes, so they stay on CPU.
+        """
+        return [
+            partition
+            for partition in partitions
+            if not all(node.meta.get(QCOM_INSERTED_CAST) for node in partition.nodes)
+        ]
 
     @staticmethod
     def _constant_inputs(edge_program: torch.export.ExportedProgram) -> Set[str]:
@@ -510,12 +572,27 @@ class QnnPartitioner(Partitioner):
         if not self.skip_mutable_buffer:
             logger.info(
                 "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
+                "except integer buffers, which stay on CPU, "
                 "so if your model contains mutable buffer, "
                 "then you can get the better performance with skip_mutable_buffer=False. "
                 "If you encounter accuracy issue during the runtime, "
                 "then please set `skip_mutable_buffer=True` and try again."
             )
             tag_mutated_buffer(edge_program)
+            # The QNN runtime does not load the starting value of a buffer that
+            # a delegate owns, so the buffer starts from leftover memory.
+            # Integer buffers, whose updates I64toI32 can make delegable, and
+            # other buffers that are not floating point stay on CPU and start
+            # like any other ExecuTorch buffer.
+            # TODO: https://github.com/pytorch/executorch/issues/24749, a
+            # delegated floating-point buffer still starts from leftover memory
+            # unless skip_mutable_buffer=True. Remove this special case once the
+            # QNN runtime initializes the buffers it owns.
+            for node in edge_program.graph.nodes:
+                if is_mutable_buffer_input(node, edge_program) and not (
+                    node.meta["val"].is_floating_point()
+                ):
+                    node.meta.pop("delegation_tag", None)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

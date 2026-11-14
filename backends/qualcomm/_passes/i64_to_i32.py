@@ -5,36 +5,42 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor_manager import (
+    _node_visitor_dict,
+)
 from executorch.backends.qualcomm.builders.utils import (
     get_parameter,
     is_constant,
     is_graph_output,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_ORIG_DTYPE
+from executorch.backends.qualcomm.partition.utils import must_stay_on_cpu
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_INDEX_CAST,
+    QCOM_INSERTED_CAST,
+    QCOM_KEEP_INT64,
+    QCOM_ORIG_DTYPE,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
 from torch._subclasses.fake_tensor import FakeTensor
+from torch.utils import _pytree as pytree
 
 
 class I64toI32(ExportPass):
     """
     Insert a cast node to cast dtype from int64 to int32.
     This will be applied on operator and constant nodes such as weights.
+    Every cast it inserts is marked with QCOM_INSERTED_CAST.
+    An ATen or quantized_decomposed op that QNN has no builder for runs on
+    CPU, and so do an op the partitioner skips and an op whose data types or
+    shapes keep it off QNN. Their int64 results stay int64, and a QNN op
+    reads them through an int32 cast.
     """
 
-    I64_OPS = {
-        exir_ops.edge.aten.argmax.default,
-        exir_ops.edge.aten.argmin.default,
-        exir_ops.edge.aten.arange.start_step,
-        exir_ops.edge.aten.cumsum.default,
-        exir_ops.edge.aten.full.default,
-        exir_ops.edge.aten.scalar_tensor.default,
-        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-    }
-    # This dict is to ensure that the input of the OPs are int64 due to Pytorch restrictions.
+    # This dict is to ensure that the input of the OPs are int64 due to PyTorch and CPU kernel restrictions.
     # For example, scatter op can only accept args[2], the index, as int64.
     # Key: Ops to cast input to i64
     # Value: The args' indices to add casting op
@@ -44,6 +50,9 @@ class I64toI32(ExportPass):
         exir_ops.edge.aten.scatter.value: [2],
         exir_ops.edge.aten.scatter_add.default: [2],
         exir_ops.edge.aten.scatter_reduce.two: [2],
+        exir_ops.edge.quantized_decomposed.embedding_byte.default: [5],
+        exir_ops.edge.quantized_decomposed.embedding_byte.dtype: [5],
+        exir_ops.edge.aten.max_pool2d_with_indices_backward.default: [7],
     }
     copy_op = exir_ops.edge.aten._to_copy.default
 
@@ -51,22 +60,89 @@ class I64toI32(ExportPass):
         self,
         edge_program,
         skip_node: FrozenSet[str] = frozenset(),
+        skip_node_id_set: Optional[set] = None,
+        skip_node_op_set: Optional[set] = None,
     ):
         super(I64toI32, self).__init__()
         self.edge_program = edge_program
         self.skip_node = skip_node
+        self.skip_node_id_set = skip_node_id_set or set()
+        self.skip_node_op_set = skip_node_op_set or set()
 
     # pyre-ignore[2]
     def _is_tensor_of_dtype(self, node_val, dtype: torch.dtype) -> bool:
         return isinstance(node_val, FakeTensor) and node_val.dtype == dtype
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op in self.I64_OPS and self._is_tensor_of_dtype(meta["val"], torch.int64):
-            res = super().call_operator(op, args, kwargs, meta)
+    @staticmethod
+    def _runs_on_cpu(op, meta) -> bool:
+        return QCOM_KEEP_INT64 in meta or (
+            getattr(op, "namespace", None) in ("aten", "quantized_decomposed")
+            and op.__name__ not in _node_visitor_dict
+        )
+
+    def _mark_ops_kept_on_cpu(self, graph_module: torch.fx.GraphModule):
+        # The partitioner leaves these ops on CPU even when QNN has a builder.
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and (
+                node.name in self.skip_node_id_set
+                or getattr(node.target, "__name__", None) in self.skip_node_op_set
+                or must_stay_on_cpu(node)
+            ):
+                node.meta[QCOM_KEEP_INT64] = True
+
+    def _cast_to_int32(self, res, meta):
+        # QNN builders handle integer tensors such as indices as int32, so no
+        # int64 result may reach them: argmax, a sum of bools or topk indices.
+        if self._is_tensor_of_dtype(res.data, torch.int64):
             return super().call_operator(
-                self.copy_op, (res,), {"dtype": torch.int32}, meta
+                self.copy_op,
+                (res,),
+                {"dtype": torch.int32},
+                NodeMetadata({**meta.data, QCOM_INSERTED_CAST: True}),
             )
-        return super().call_operator(op, args, kwargs, meta)
+        return res
+
+    def _read_int32(self, arg, meta):
+        if arg.node in self.cpu_results:
+            if self.cpu_results[arg.node] is None:
+                self.cpu_results[arg.node] = self._cast_to_int32(arg, meta)
+            return self.cpu_results[arg.node]
+        return arg
+
+    def _keep_cpu_result(self, res):
+        if self._is_tensor_of_dtype(res.data, torch.int64):
+            self.cpu_results[res.node] = None
+        return res
+
+    def call_operator(self, op, args, kwargs, meta):
+        if self._runs_on_cpu(op, meta):
+            # Casting a product, for example, to int32 would wrap it, and some
+            # CPU kernels need int64, like the zero point of quantize_per_token.
+            # An op that also reads an int32 tensor reads these results cast too,
+            # so that ops like masked_scatter get matching dtypes.
+            if any(
+                isinstance(arg, ProxyValue)
+                and self._is_tensor_of_dtype(arg.data, torch.int32)
+                for arg in pytree.tree_leaves((args, kwargs))
+            ):
+                args, kwargs = pytree.tree_map_only(
+                    ProxyValue, lambda arg: self._read_int32(arg, meta), (args, kwargs)
+                )
+            return self._keep_cpu_result(super().call_operator(op, args, kwargs, meta))
+        args, kwargs = pytree.tree_map_only(
+            ProxyValue, lambda arg: self._read_int32(arg, meta), (args, kwargs)
+        )
+        res = super().call_operator(op, args, kwargs, meta)
+        # The index casts added for I64_IN_OPS must stay int64.
+        if QCOM_INDEX_CAST in meta:
+            return res
+        return self._cast_to_int32(res, meta)
+
+    def call_getitem(self, value, key, meta):
+        res = super().call_getitem(value, key, meta)
+        if self._runs_on_cpu(value.node.target, value.node.meta):
+            return self._keep_cpu_result(res)
+        return self._cast_to_int32(res, meta)
 
     def _record_original_output_dtype(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
@@ -84,16 +160,11 @@ class I64toI32(ExportPass):
     def _preserve_output_dtype(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
             if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
+                # The getitems of a multi-output node, such as topk, are graph
+                # outputs too, and each output is cast back there.
                 if isinstance(n.meta["val"], (tuple, list)):
-                    for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
-                        # TODO: Enable this in future to support OP such as topK
-                        if n.meta["val"][i] is None or dtype is None:
-                            continue
-                        if n.meta["val"][i].dtype != dtype:
-                            raise AssertionError(
-                                "Multi output nodes currently don't support casting dtype back."
-                            )
-                elif n.meta["val"].dtype != n.meta[QCOM_ORIG_DTYPE]:
+                    continue
+                if n.meta["val"].dtype != n.meta[QCOM_ORIG_DTYPE]:
                     if n.meta[QCOM_ORIG_DTYPE] != torch.int64:
                         logging.warning(
                             "This pass is intended to maintain output as int64 when nn.Module outputs int64. Other dtype modification is detected. Please ensure this is desired."
@@ -113,6 +184,7 @@ class I64toI32(ExportPass):
                             {"dtype": orig_dtype},
                         )
                         cast_node.meta["val"] = node_val.to(orig_dtype)
+                        cast_node.meta[QCOM_INSERTED_CAST] = True
                         cast_node.args = args
                         for user in output_users:
                             user.replace_input_with(n, cast_node)
@@ -165,6 +237,7 @@ class I64toI32(ExportPass):
                             {"dtype": torch.int32},
                         )
                         to_dst_node.meta["val"] = node_val.to(torch.int32)
+                        to_dst_node.meta[QCOM_INSERTED_CAST] = True
 
                         # Replace usage of the src dtype result with the dst dtype result.
                         n.replace_all_uses_with(to_dst_node)
@@ -179,12 +252,17 @@ class I64toI32(ExportPass):
                     arg_indices = self.I64_IN_OPS[node.target]
                     for arg_index in arg_indices:
                         input_node = node.args[arg_index]
+                        # A skipped input is never cast, so it is still int64.
+                        if input_node.target in self.skip_node:
+                            continue
                         cast_i64_node = graph_module.graph.create_node(
                             "call_function",
                             self.copy_op,
                             (input_node,),
                             {"dtype": torch.int64},
                         )
+                        cast_i64_node.meta[QCOM_INDEX_CAST] = True
+                        cast_i64_node.meta[QCOM_INSERTED_CAST] = True
                         # This cast produces the *index* tensor, so its
                         # FakeTensor must be derived from the argument being
                         # cast, not from the op output: index.shape ==
@@ -203,6 +281,10 @@ class I64toI32(ExportPass):
         self._record_original_output_dtype(graph_module)
         self._cast_constant_to_int32(graph_module)
         self._cast_op_args_to_i64(graph_module)
+        self._mark_ops_kept_on_cpu(graph_module)
+        # The int32 cast of each int64 result of a CPU op, made when a QNN op
+        # first reads it.
+        self.cpu_results = {}
         graph_module = super().call(graph_module).graph_module
         self._preserve_output_dtype(graph_module)
         graph_module.recompile()
