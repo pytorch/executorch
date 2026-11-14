@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -72,6 +73,42 @@ std::unordered_map<std::string, std::string> parse_aliases(
   return aliases;
 }
 
+Json parse_metadata(std::string_view text) {
+  Json doc;
+  try {
+    doc = parse_json(text);
+  } catch (const Json::exception& error) {
+    throw std::runtime_error(
+        "package: invalid metadata.json: " + std::string(error.what()));
+  }
+  if (!doc.is_object()) {
+    throw std::runtime_error("package: metadata.json is not a JSON object");
+  }
+  for (auto entry = doc.begin(); entry != doc.end(); ++entry) {
+    const Json& value = entry.value();
+    const auto scalar = [](const Json& v) {
+      return v.is_boolean() || v.is_number() || v.is_string();
+    };
+    if (entry.key().empty() ||
+        !(scalar(value) ||
+          (value.is_array() &&
+           std::all_of(value.begin(), value.end(), scalar)))) {
+      throw std::runtime_error(
+          "package: metadata '" + entry.key() +
+          "' must be a JSON scalar or a list of scalars");
+    }
+  }
+  return doc;
+}
+
+// nlohmann parses an integer past int64_t's range as unsigned.
+bool is_metadata_int(const Json& value) {
+  return value.is_number_integer() &&
+      (!value.is_number_unsigned() ||
+       value.get<uint64_t>() <=
+           static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+}
+
 } // namespace
 
 bool Package::looks_like_package(ByteSpan bytes) {
@@ -124,6 +161,7 @@ Package& Package::operator=(Package&& other) noexcept {
     tensors_ = std::move(other.tensors_);
     tensor_data_offset_ = other.tensor_data_offset_;
     aliases_ = std::move(other.aliases_);
+    metadata_ = std::move(other.metadata_);
   }
   return *this;
 }
@@ -179,6 +217,50 @@ void Package::load_metadata() {
     const std::vector<uint8_t> aliases = zip_->read(kAliasesEntry);
     aliases_ = parse_aliases(ByteSpan(aliases), *tensors_);
   }
+
+  const std::optional<size_t> metadata_size = zip_->member_size(kMetadataEntry);
+  if (metadata_size) {
+    if (*metadata_size > detail::kMaxJsonBytes) {
+      throw ResourceLimitError("package: metadata exceeds size limit");
+    }
+    const std::vector<uint8_t> metadata = zip_->read(kMetadataEntry);
+    metadata_.assign(metadata.begin(), metadata.end());
+    parse_metadata(metadata_);
+  }
+}
+
+std::optional<int64_t> Package::metadata_int(const std::string& name) const {
+  if (metadata_.empty()) {
+    return std::nullopt;
+  }
+  const Json doc = parse_metadata(metadata_);
+  const auto found = doc.find(name);
+  if (found == doc.end()) {
+    return std::nullopt;
+  }
+  if (!is_metadata_int(*found)) {
+    throw std::runtime_error(
+        "package: metadata '" + name + "' is not an integer");
+  }
+  return found->get<int64_t>();
+}
+
+std::optional<std::vector<int64_t>> Package::metadata_ints(
+    const std::string& name) const {
+  if (metadata_.empty()) {
+    return std::nullopt;
+  }
+  const Json doc = parse_metadata(metadata_);
+  const auto found = doc.find(name);
+  if (found == doc.end()) {
+    return std::nullopt;
+  }
+  if (!found->is_array() ||
+      !std::all_of(found->begin(), found->end(), is_metadata_int)) {
+    throw std::runtime_error(
+        "package: metadata '" + name + "' is not a list of integers");
+  }
+  return found->get<std::vector<int64_t>>();
 }
 
 std::optional<ConstantInfo> Package::constant_info(
@@ -254,8 +336,10 @@ void Package::verify() const {
   if (tensors_) {
     zip_->verify(kSafeTensorsEntry);
   }
-  if (zip_->member_size(kAliasesEntry)) {
-    zip_->verify(kAliasesEntry);
+  for (const char* member : {kAliasesEntry, kMetadataEntry}) {
+    if (zip_->member_size(member)) {
+      zip_->verify(member);
+    }
   }
 }
 

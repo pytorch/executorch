@@ -29,6 +29,7 @@ from executorch.backends.native.serialization.schema import (
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._ptn import (
     ALIASES_ENTRY,
+    METADATA_ENTRY,
     PTG_ENTRY,
     read_ptn,
     SAFETENSORS_ENTRY,
@@ -39,6 +40,7 @@ from executorch.exir.lowered_backend_module import (
 )
 from executorch.exir.native import (
     Call,
+    read_metadata,
     read_samples,
     Sample,
     SampleSet,
@@ -742,6 +744,46 @@ class SamplesTest(unittest.TestCase):
                     torch.testing.assert_close(
                         got_call.outputs, want_call.outputs, rtol=0, atol=0
                     )
+
+
+class MetadataTest(unittest.TestCase):
+    def _save(self, td: str, metadata) -> str:
+        path = os.path.join(td, "m.ptn")
+        model = nn.Linear(8, 4)
+        program = torch.export.export(model, (torch.randn(2, 8),))
+        to_native(program, metadata=metadata).save(path)
+        return path
+
+    def test_metadata_round_trips(self):
+        metadata = {
+            "get_n_caches": 2,
+            "get_windows": [0, 4096],
+            "rope_theta": 5e5,
+            "tied": True,
+            "arch": "llama",
+        }
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(read_metadata(self._save(td, metadata)), metadata)
+
+    def test_no_metadata_writes_no_member(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._save(td, None)
+            with zipfile.ZipFile(path) as pkg:
+                self.assertNotIn(METADATA_ENTRY, pkg.namelist())
+            self.assertEqual(read_metadata(path), {})
+
+    def test_invalid_metadata_is_rejected(self):
+        program = torch.export.export(nn.Linear(8, 4), (torch.randn(2, 8),))
+        for metadata in (
+            {"": 1},
+            {"nested": [[1]]},
+            {"tensor": torch.tensor([1])},
+            {"none": None},
+        ):
+            with self.subTest(metadata=metadata), self.assertRaises(TypeError):
+                to_native(program, metadata=metadata)
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            to_native(program, metadata={"nan": float("nan")})
 
 
 if __name__ == "__main__":

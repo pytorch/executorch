@@ -16,6 +16,7 @@ so renaming the package does not break it:
     program.ptg           native Program flatbuffer (file identifier "NPTG")
     program.safetensors   referenced constants, content-deduped (owners only)
     aliases.json          duplicate data_key -> owner key, only when duplicates exist
+    metadata.json         producer-defined name -> JSON scalar or list, when given
 
 Byte-identical *immutable* tensors (same dtype, shape, and content) are stored
 once: the first key owns the safetensors entry and the rest alias to it. An owner
@@ -50,6 +51,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import zipfile
@@ -59,6 +61,7 @@ import torch
 PTG_ENTRY = "program.ptg"
 SAFETENSORS_ENTRY = "program.safetensors"
 ALIASES_ENTRY = "aliases.json"
+METADATA_ENTRY = "metadata.json"
 _SAFETENSORS_METADATA_KEY = "__metadata__"
 
 # Tensor data starts on this boundary in the file, and each tensor is naturally
@@ -276,11 +279,39 @@ def _write_safetensors(
             stream.write(_raw(owners[key]))
 
 
+MetadataValue = bool | int | float | str | list[bool | int | float | str]
+
+
+def _check_metadata(metadata: dict[str, MetadataValue], where: str) -> None:
+    """Names are non-empty strings; values are JSON scalars or flat lists of them.
+
+    Floats must be finite: JSON has no infinity or NaN.
+    """
+    if not isinstance(metadata, dict):
+        raise TypeError(f"{where}: metadata must be a dict.")
+
+    def check_scalar(name: str, value: object) -> None:
+        if not isinstance(value, (bool, int, float, str)):
+            raise TypeError(
+                f"{where}: metadata {name!r} holds a {type(value).__name__}; "
+                "values are bool, int, float, str, or a list of those."
+            )
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError(f"{where}: metadata {name!r} holds a non-finite float.")
+
+    for name, value in metadata.items():
+        if not isinstance(name, str) or not name:
+            raise TypeError(f"{where}: metadata names must be non-empty strings.")
+        for item in value if isinstance(value, list) else [value]:
+            check_scalar(name, item)
+
+
 def write_ptn(
     path: str,
     ptg: bytes,
     constants: dict[str, torch.Tensor],
     mutable_keys: frozenset[str] = frozenset(),
+    metadata: dict[str, MetadataValue] | None = None,
 ) -> None:
     """Write a .ptn package, streaming the constants a tensor at a time.
 
@@ -293,15 +324,21 @@ def write_ptn(
             dedup, since equal bytes do not make two mutable buffers the same
             state. Passed in rather than derived here, so this stays independent of
             the graph format. Every mutable key must occur in ``constants``.
+        metadata: Producer-defined values a runtime reads by name, such as an
+            LLM's cache geometry; written as metadata.json when non-empty.
 
     Raises:
         KeyError: If a constant has a dtype safetensors cannot represent.
-        TypeError: If a data key is not a string or a value is not a tensor.
-        ValueError: If mutable-key policy is inconsistent or a data key is reserved.
+        TypeError: If a data key is not a string, a value is not a tensor, or
+            metadata is not a name -> scalar-or-list dict.
+        ValueError: If mutable-key policy is inconsistent, a data key is reserved,
+            or a metadata float is not finite.
     """
     # TODO: save atomically. This opens the destination directly, so a failure
     # part way through truncates an existing valid package. Write to a temporary
     # file beside the destination and os.replace it once complete.
+    metadata = metadata or {}
+    _check_metadata(metadata, "write_ptn")
     owners, aliases = _dedup(constants, mutable_keys)
     parent = os.path.dirname(path)
     if parent:
@@ -317,6 +354,26 @@ def write_ptn(
                 pkg.writestr(
                     ALIASES_ENTRY, json.dumps(aliases, indent=2, sort_keys=True)
                 )
+        if metadata:
+            pkg.writestr(
+                METADATA_ENTRY,
+                json.dumps(metadata, indent=2, sort_keys=True, allow_nan=False),
+            )
+
+
+def read_metadata(path: str) -> dict[str, MetadataValue]:
+    """The package's metadata.json, or an empty dict when it has none.
+
+    Raises:
+        TypeError: If metadata.json is not a name -> scalar-or-list object.
+        ValueError: If metadata.json is not valid JSON.
+    """
+    with zipfile.ZipFile(path) as pkg:
+        if METADATA_ENTRY not in pkg.namelist():
+            return {}
+        metadata = json.loads(pkg.read(METADATA_ENTRY))
+    _check_metadata(metadata, "read_metadata")
+    return metadata
 
 
 def read_ptn(path: str) -> tuple[bytes, dict[str, torch.Tensor]]:
@@ -371,4 +428,12 @@ def read_ptn(path: str) -> tuple[bytes, dict[str, torch.Tensor]]:
     return ptg, constants
 
 
-__all__ = ["ALIASES_ENTRY", "PTG_ENTRY", "SAFETENSORS_ENTRY", "read_ptn", "write_ptn"]
+__all__ = [
+    "ALIASES_ENTRY",
+    "METADATA_ENTRY",
+    "PTG_ENTRY",
+    "SAFETENSORS_ENTRY",
+    "read_metadata",
+    "read_ptn",
+    "write_ptn",
+]
