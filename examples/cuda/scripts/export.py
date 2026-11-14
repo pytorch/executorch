@@ -62,6 +62,13 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Seed model initialization and example input generation",
     )
+    parser.add_argument(
+        "--save_example_io",
+        action="store_true",
+        help="Also write the example inputs and the eager outputs as raw files "
+        "(<model>_input_<i>.bin, <model>_expected_<i>.bin) for executor_runner "
+        "--inputs and --output_file",
+    )
 
     args = parser.parse_args()
     return args
@@ -73,6 +80,25 @@ def save_processed_bytes(processed_bytes, base_name: str):
     with open(filename, "wb") as file:
         file.write(processed_bytes)
     return
+
+
+def save_example_io(model, example_args, base_name: str, output_dir: pathlib.Path):
+    with torch.no_grad():
+        outputs = model(*example_args)
+    if isinstance(outputs, torch.Tensor):
+        outputs = (outputs,)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for kind, tensors in (("input", example_args), ("expected", outputs)):
+        if not all(isinstance(t, torch.Tensor) for t in tensors):
+            raise TypeError(
+                f"--save_example_io writes tensors only; {base_name} has {kind}s of "
+                f"types {[type(t).__name__ for t in tensors]}"
+            )
+        for i, tensor in enumerate(tensors):
+            path = output_dir / f"{base_name}_{kind}_{i}.bin"
+            path.write_bytes(
+                tensor.contiguous().view(-1).view(torch.uint8).numpy().tobytes()
+            )
 
 
 def main():
@@ -94,6 +120,8 @@ def main():
         dynamic_shapes,
     ) = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[args.model_name])
     model = model.eval()
+    if args.save_example_io:
+        save_example_io(model, example_args, args.model_name, args.output_dir)
     exported_programs = torch.export.export(
         model,
         args=example_args,

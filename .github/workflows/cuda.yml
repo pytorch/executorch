@@ -236,7 +236,7 @@ jobs:
             -Bcmake-out .
         cmake --build cmake-out -j4
 
-        for model in linear add add_mul resnet18 conv1d sdpa mv2 mv3; do
+        for model in linear add add_mul resnet18 conv1d depthwise_conv sdpa mv2 mv3; do
           python -m examples.cuda.scripts.export --model_name="$model" --output_dir "./"
           ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
         done
@@ -292,7 +292,9 @@ jobs:
 
         # Export the explicit PTX fallback separately. A10G supports 99 KiB of
         # opt-in shared memory per block, so constrain the A100 export to it.
-        for model in linear sdpa; do
+        # depthwise_conv also carries its example input and eager output, for
+        # the clean-environment runs of the consuming jobs.
+        for model in linear sdpa depthwise_conv; do
           model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           mkdir -p "${model_dir}"
           ET_CUDA_TARGET_SMEM_BYTES=101376 \
@@ -301,8 +303,12 @@ jobs:
             --model_name="${model}" \
             --output_dir="${model_dir}" \
             --cuda_include_ptx=ON \
-            --seed=0
+            --seed=0 \
+            --save_example_io
         done
+        # The depthwise convolution must run as the backend's Triton kernel.
+        grep -aqE "_(flat|row8)_kernel" \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv/depthwise_conv.pte"
 
   test-cuda-target-smem-cross-arch:
     name: merge-and-test-cuda-multi-arch-a10g
@@ -380,12 +386,17 @@ jobs:
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
 
-        for model in linear sdpa; do
+        for model in linear sdpa depthwise_conv; do
           model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           ./cmake-out/executor_runner \
             --model_path "${model_dir}/${model}.pte" \
             --data_path "${model_dir}/aoti_cuda_blob.ptd"
         done
+
+        # The A100 export runs here from its PTX, twice, with only the runner
+        # and its libraries in an empty environment.
+        bash .ci/scripts/test_cuda_clean_runtime.sh ./cmake-out/executor_runner \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv" depthwise_conv
 
         # The local native PTE and merged PTE must run on sm86.
         ./cmake-out/executor_runner \
@@ -452,6 +463,11 @@ jobs:
         cmp "${sm80_ptd}" "${sm86_ptd}"
         cmp "${sm80_ptd}" "${fallback_ptd}"
         cmp "${sm80_ptd}" "${merged_ptd}"
+
+        # The A100 export runs natively on this fresh runner, twice, with only
+        # the runner and its libraries in an empty environment.
+        bash .ci/scripts/test_cuda_clean_runtime.sh ./cmake-out/executor_runner \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv" depthwise_conv
 
         # The local native PTE and merged PTE must run on sm80.
         ./cmake-out/executor_runner \
