@@ -27,10 +27,17 @@ _TOLERANCE = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 1.6e-2}
 _TF32_TOLERANCE = 5e-3
 
 
-def _reference(x, w, b, stride, before, after):
+def _reference(x, w, b, stride, before, after, output_padding=None):
+    """The convolution in FP64; transposed if ``output_padding`` is given, as
+    the full transposed convolution cropped by ``before`` and ``after``."""
+    bias = None if b is None else b.double()
+    if output_padding is not None:
+        conv = {3: F.conv_transpose1d, 4: F.conv_transpose2d, 5: F.conv_transpose3d}
+        full = conv[x.dim()](x.double(), w.double(), bias, stride, 0, output_padding)
+        crop = [slice(s, n - a) for s, n, a in zip(before, full.shape[2:], after)]
+        return full[(..., *crop)]
     pad = [p for pair in zip(reversed(before), reversed(after)) for p in pair]
     conv = {3: F.conv1d, 4: F.conv2d, 5: F.conv3d}[x.dim()]
-    bias = None if b is None else b.double()
     return conv(F.pad(x.double(), pad), w.double(), bias, stride)
 
 
@@ -58,7 +65,18 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         torch.manual_seed(0)
         self.tensor_cores = torch.cuda.get_device_capability() >= (8, 0)
 
-    def convolution(self, x, w, b, stride, before, after, output_strides=None):
+    def convolution(
+        self,
+        x,
+        w,
+        b,
+        stride,
+        before,
+        after,
+        output_strides=None,
+        output_padding=None,
+    ):
+        """triton::convolution; transposed if ``output_padding`` is given."""
         from executorch.backends.cuda.triton.kernels.conv.conv import convolution
 
         rank = x.dim() - 2
@@ -70,19 +88,29 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             list(before),
             list(after),
             [1] * rank,
-            False,
-            [0] * rank,
+            output_padding is not None,
+            [0] * rank if output_padding is None else list(output_padding),
             1,
             output_strides,
         )
 
     def check(
-        self, x, w, b, stride, before, after, every_config=False, output_strides=None
+        self,
+        x,
+        w,
+        b,
+        stride,
+        before,
+        after,
+        every_config=False,
+        output_strides=None,
+        output_padding=None,
     ):
         """Runs every schedule and K order on the call, with the first config of
         each or every config, and checks the result and the layout (the fake
         implementation's, and ``output_strides`` if given); the tensor-core
-        schedule runs FP32 operands in TF32."""
+        schedule runs FP32 operands in TF32. Transposed if ``output_padding`` is
+        given."""
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
@@ -99,8 +127,8 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             tuple(before),
             tuple(after),
             (1,) * rank,
-            False,
-            (0,) * rank,
+            output_padding is not None,
+            (0,) * rank if output_padding is None else tuple(output_padding),
             1,
         )
         call = ConvCall(
@@ -108,7 +136,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         )
         tf32 = mock.patch.object(implicit_gemm, "conv_allows_tf32", return_value=True)
         self.assertIsNone(implicit_gemm.supports(call))
-        expected = _reference(x, w, b, stride, before, after)
+        expected = _reference(x, w, b, stride, before, after, output_padding)
         layout = out_shape_and_stride(call)
         with FakeTensorMode() as mode:
             fake = self.convolution(
@@ -117,6 +145,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 before,
                 after,
                 output_strides,
+                output_padding,
             )
         self.assertEqual((tuple(fake.shape), fake.stride()), layout)
         if output_strides is not None:
@@ -133,7 +162,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             for config in configs if every_config else configs[:1]:
                 with tf32, force_conv_candidate(schedule, config):
                     out = self.convolution(
-                        x, w, b, stride, before, after, output_strides
+                        x, w, b, stride, before, after, output_strides, output_padding
                     )
                 self.assertEqual((tuple(out.shape), out.stride()), layout)
                 torch.testing.assert_close(
@@ -145,13 +174,20 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                     msg=lambda m, s=schedule, c=config: f"{s} {c}: {m}",
                 )
 
-    def tensors(self, shape, out_channels, kernel, dtype=torch.float32, bias=True):
+    def tensors(
+        self,
+        shape,
+        out_channels,
+        kernel,
+        dtype=torch.float32,
+        bias=True,
+        transposed=False,
+    ):
         channels = shape[1]
         x = torch.randn(shape, device="cuda", dtype=dtype)
         fan_in = channels * torch.Size(kernel).numel()
-        w = torch.randn(out_channels, channels, *kernel, device="cuda", dtype=dtype) / (
-            fan_in**0.5
-        )
+        w_shape = (channels, out_channels) if transposed else (out_channels, channels)
+        w = torch.randn(*w_shape, *kernel, device="cuda", dtype=dtype) / fan_in**0.5
         b = torch.randn(out_channels, device="cuda", dtype=dtype) if bias else None
         return x, w, b
 
@@ -271,6 +307,55 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                     self.check(
                         x, w, b, stride, padding, padding, output_strides=strides
                     )
+
+    def test_transposed(self):
+        geometries = (
+            # input, C_out, kernel, stride, before, after, output_padding: a
+            # kernel-4 stride-2 1-D upsample, then edge cases; an asymmetric crop
+            # only the canonical op can express; 16+ channels walk K tap-major.
+            ((1, 32, 8), 16, (4,), (2,), (1,), (1,), (0,)),
+            ((2, 8, 5, 6), 12, (3, 3), (2, 2), (1, 1), (1, 1), (1, 1)),
+            (
+                (1, 6, 3, 4, 5),
+                10,
+                (2, 3, 3),
+                (2, 1, 3),
+                (0, 1, 1),
+                (0, 1, 1),
+                (1, 0, 2),
+            ),
+            ((1, 20, 7), 9, (5,), (3,), (3,), (1,), (0,)),
+            ((1, 4, 9), 4, (3,), (1,), (1,), (1,), (0,)),
+            ((2, 24, 6, 7), 16, (4, 4), (2, 2), (1, 1), (1, 1), (0, 0)),
+        )
+        cases = itertools.product(
+            geometries,
+            (torch.float32, torch.float16, torch.bfloat16),
+            ("contiguous", "channels_last"),
+        )
+        for geometry, dtype, layout in cases:
+            shape, c_out, kernel, stride, before, after, output_padding = geometry
+            x, w, b = self.tensors(shape, c_out, kernel, dtype=dtype, transposed=True)
+            if layout == "channels_last":
+                x = _channels_last(x)
+            with self.subTest(shape=shape, kernel=kernel, dtype=dtype, layout=layout):
+                self.check(
+                    x, w, b, stride, before, after, output_padding=output_padding
+                )
+        x, w, b = self.tensors((1, 32, 8), 16, (4,), transposed=True)
+        with self.subTest(every_config=True):
+            self.check(x, w, b, (2,), (1,), (1,), True, output_padding=(0,))
+        with self.subTest(output_strides=(256, 1, 16)):
+            self.check(
+                x,
+                w,
+                b,
+                (2,),
+                (1,),
+                (1,),
+                output_strides=(256, 1, 16),
+                output_padding=(0,),
+            )
 
     def test_sliced_inputs_with_storage_offset(self):
         base = torch.randn(2, 20, 15, 18, device="cuda")
@@ -476,6 +561,19 @@ class _ExplicitPadConv3dBlock(nn.Module):
         return self.time(y)
 
 
+class _Upsample(nn.Module):
+    """A transposed 1-D upsample, and a transposed
+    3-D one."""
+
+    def __init__(self):
+        super().__init__()
+        self.up1d = nn.ConvTranspose1d(32, 32, 4, stride=2, padding=1)
+        self.up3d = nn.ConvTranspose3d(8, 4, 3, stride=2, padding=1, output_padding=1)
+
+    def forward(self, x, y):
+        return self.up1d(x), self.up3d(y)
+
+
 class ImplicitGemmLoweringTest(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
@@ -605,3 +703,19 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
         )
         with mock.patch.object(routing, "TEMPLATES", take_all):
             self.lower_and_run(model, inputs, 3, 3e-2)
+
+    def test_transposed_lowers_and_runs(self):
+        torch.manual_seed(0)
+        model = _Upsample().to("cuda").eval()
+        inputs = (
+            torch.randn(1, 32, 8, device="cuda"),
+            torch.randn(1, 8, 3, 4, 5, device="cuda"),
+        )
+        # Inductor has no transposed template on CUDA. to_edge keeps both as
+        # aten.convolution; to_edge_transform_and_lower keeps conv_transpose1d,
+        # which the backend rewrites as a convolution, and conv_transpose3d.
+        self.lower_and_run(model, inputs, 2, 1e-4, route="required", to_backend=True)
+        output = self.lower_and_run(
+            model, inputs, 1, self.fp32_tolerance(), route="required"
+        )
+        self.assertIn("transposed convolution is not benchmarked faster", output)

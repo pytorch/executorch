@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Implicit-GEMM template: dense (groups 1) 1-D, 2-D and 3-D forward convolution.
+"""Implicit-GEMM template: dense (groups 1) 1-D, 2-D and 3-D forward and
+transposed convolution.
 
 The convolution is a GEMM of the output pixels (``M = N * OD * OH * OW``) by the
 output channels, reducing over ``K = C_in * KD * KH * KW``; input tiles are
@@ -20,6 +21,11 @@ one of two orders:
   channels.
 - flat: one index over (channel, tap), decoded per element, which wastes no
   lanes on inputs with few channels, such as 3.
+
+A transposed convolution is the same GEMM over its output pixels: output index
+``o`` reads, at tap ``k``, input index ``(o + padding_before - k) / stride``
+when that is an integer inside the input, and its ``[C_in, C_out, ...]``
+weight is read with its first two strides swapped.
 
 Two schedules write the same output layout, accumulating in FP32 and adding
 the bias in FP32 before the single store:
@@ -70,6 +76,18 @@ _INT32_MAX = 2**31 - 1
 
 def _output_size(call: ConvCall) -> list[int]:
     x, w, p = call.input, call.weight, call.params
+    if p.transposed:
+        return [
+            (i - 1) * s - b - a + k + o
+            for i, k, s, b, a, o in zip(
+                x.shape[2:],
+                w.shape[2:],
+                p.stride,
+                p.padding_before,
+                p.padding_after,
+                p.output_padding,
+            )
+        ]
     return [
         (i + b + a - k) // s + 1
         for i, k, s, b, a in zip(
@@ -78,13 +96,16 @@ def _output_size(call: ConvCall) -> list[int]:
     ]
 
 
+def _out_channels(call: ConvCall) -> int:
+    return call.weight.shape[1 if call.params.transposed else 0]
+
+
 def _geometry_reason(call: ConvCall) -> Optional[str]:
     x, w, p = call.input, call.weight, call.params
-    if p.transposed:
-        return "implicit GEMM: transposed convolution"
     if any(d != 1 for d in p.dilation):
         return f"implicit GEMM: dilation {list(p.dilation)}"
-    if p.groups != 1 or w.shape[1] != x.shape[1]:
+    in_channels = w.shape[0] if p.transposed else w.shape[1]
+    if p.groups != 1 or in_channels != x.shape[1]:
         return (
             f"implicit GEMM: grouped convolution (groups {p.groups}, input "
             f"{list(x.shape)}, weight {list(w.shape)})"
@@ -105,7 +126,9 @@ def supports(call: ConvCall) -> Optional[str]:
         return f"implicit GEMM: dtype {x.dtype}"
     if w.dtype != x.dtype or (b is not None and b.dtype != x.dtype):
         return "implicit GEMM: input, weight and bias dtypes differ"
-    if b is not None and (tuple(b.shape) != (w.shape[0],) or not b.is_contiguous()):
+    if b is not None and (
+        tuple(b.shape) != (_out_channels(call),) or not b.is_contiguous()
+    ):
         return "implicit GEMM: bias is not a contiguous [C_out] tensor"
     return None
 
@@ -181,6 +204,8 @@ def _family(call: ConvCall) -> Optional[RoutedFamily]:
 def worth_routing(call: ConvCall) -> Optional[str]:
     """Why a call ``supports`` accepts is left to the regular lowering, or None."""
     x, w, p = call.input, call.weight, call.params
+    if p.transposed:
+        return "implicit GEMM: a transposed convolution is not benchmarked faster"
     if all(k == 1 for k in w.shape[2:]):
         return "implicit GEMM: a 1x1 convolution keeps the regular lowering"
     tensor_cores = x.dtype != torch.float32 or conv_allows_tf32()
@@ -308,6 +333,16 @@ def _bound(ok, i, SIZE: tl.constexpr, LOW: tl.constexpr, HIGH: tl.constexpr):
 
 
 @triton.jit
+def _source(o, k, PAD: tl.constexpr, STRIDE: tl.constexpr, SIZE: tl.constexpr):
+    """The input index a transposed convolution reads for output index ``o`` and
+    tap ``k``, and whether it exists: ``o + PAD - k`` must be a multiple of the
+    stride inside the input."""
+    q = o + PAD - k
+    i = q // STRIDE
+    return i, (q >= 0) & (i * STRIDE == q) & (i < SIZE)
+
+
+@triton.jit
 def _dot(a, b, acc, FFMA: tl.constexpr, CHANNEL_MAJOR: tl.constexpr):
     if CHANNEL_MAJOR:
         a, b = tl.trans(b), tl.trans(a)
@@ -390,6 +425,7 @@ def _kernel(
     INDEX_64: tl.constexpr,
     PIXEL_TILES: tl.constexpr,
     CHANNEL_MAJOR: tl.constexpr,
+    TRANSPOSED: tl.constexpr,
     TAP_MAJOR: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -437,7 +473,8 @@ def _kernel(
     d0 = od * STRIDE_D - PAD_D
     h0 = oh * STRIDE_H - PAD_H
     w0 = ow * STRIDE_W - PAD_W
-    x_rows = x_ptr + n * SX_N + d0 * SX_D + h0 * SX_H + w0 * SX_W
+    x_images = x_ptr + n * SX_N
+    x_rows = x_images + d0 * SX_D + h0 * SX_H + w0 * SX_W
     w_cols = w_ptr + offs_n * SW_O
     if CHANNEL_MAJOR:
         acc = tl.zeros((BLOCK_N, BLOCK_M), dtype=tl.float32)
@@ -453,14 +490,20 @@ def _kernel(
             kd = tap // (KH * KW)
             kh = tap // KW % KH
             kw = tap % KW
-            ok = _bound(m_mask, d0 + kd, D, LOW_D, HIGH_D)
-            ok = _bound(ok, h0 + kh, H, LOW_H, HIGH_H)
-            ok = _bound(ok, w0 + kw, W, LOW_W, HIGH_W)
+            if TRANSPOSED:
+                i_d, ok_d = _source(od, kd, PAD_D, STRIDE_D, D)
+                i_h, ok_h = _source(oh, kh, PAD_H, STRIDE_H, H)
+                i_w, ok_w = _source(ow, kw, PAD_W, STRIDE_W, W)
+                ok = m_mask & ok_d & ok_h & ok_w
+                taps = x_images + i_d * SX_D + i_h * SX_H + i_w * SX_W
+            else:
+                ok = _bound(m_mask, d0 + kd, D, LOW_D, HIGH_D)
+                ok = _bound(ok, h0 + kh, H, LOW_H, HIGH_H)
+                ok = _bound(ok, w0 + kw, W, LOW_W, HIGH_W)
+                taps = x_rows + (kd * SX_D + kh * SX_H + kw * SX_W)
             c_ok = c < C
             a = tl.load(
-                x_rows[:, None]
-                + (kd * SX_D + kh * SX_H + kw * SX_W)
-                + c[None, :] * SX_C,
+                taps[:, None] + c[None, :] * SX_C,
                 mask=ok[:, None] & c_ok[None, :],
                 other=0.0,
             )
@@ -484,21 +527,26 @@ def _kernel(
             kh = tap // KW % KH
             kw = tap % KW
             k_ok = k < K
-            ok = _bound(
-                m_mask[:, None] & k_ok[None, :],
-                d0[:, None] + kd[None, :],
-                D,
-                LOW_D,
-                HIGH_D,
-            )
-            ok = _bound(ok, h0[:, None] + kh[None, :], H, LOW_H, HIGH_H)
-            ok = _bound(ok, w0[:, None] + kw[None, :], W, LOW_W, HIGH_W)
-            a = tl.load(
-                x_rows[:, None]
-                + (c * SX_C + kd * SX_D + kh * SX_H + kw * SX_W)[None, :],
-                mask=ok,
-                other=0.0,
-            )
+            if TRANSPOSED:
+                i_d, ok_d = _source(od[:, None], kd[None, :], PAD_D, STRIDE_D, D)
+                i_h, ok_h = _source(oh[:, None], kh[None, :], PAD_H, STRIDE_H, H)
+                i_w, ok_w = _source(ow[:, None], kw[None, :], PAD_W, STRIDE_W, W)
+                ok = m_mask[:, None] & k_ok[None, :] & ok_d & ok_h & ok_w
+                # With pixel tiles the image (and its base pointer) is a scalar.
+                images = x_images if PIXEL_TILES else x_images[:, None]
+                taps = images + i_d * SX_D + i_h * SX_H + i_w * SX_W
+            else:
+                ok = _bound(
+                    m_mask[:, None] & k_ok[None, :],
+                    d0[:, None] + kd[None, :],
+                    D,
+                    LOW_D,
+                    HIGH_D,
+                )
+                ok = _bound(ok, h0[:, None] + kh[None, :], H, LOW_H, HIGH_H)
+                ok = _bound(ok, w0[:, None] + kw[None, :], W, LOW_W, HIGH_W)
+                taps = x_rows[:, None] + (kd * SX_D + kh * SX_H + kw * SX_W)[None, :]
+            a = tl.load(taps + (c * SX_C)[None, :], mask=ok, other=0.0)
             b = tl.load(
                 w_cols[None, :]
                 + (c * SW_C + kd * SW_D + kh * SW_H + kw * SW_W)[:, None],
@@ -604,7 +652,12 @@ def run_schedule(
     """Launches schedule ``name``; ``config`` replaces its autotuned config
     (and the K order, if it sets ``TAP_MAJOR``)."""
     n, c = x.shape[:2]
-    co = weight.shape[0]
+    co = out.shape[1]
+    # A transposed weight is [C_in, C_out, ...]: the kernel indexes it by
+    # (output channel, input channel) strides.
+    w_strides = weight.stride()[:2]
+    if params.transposed:
+        w_strides = w_strides[::-1]
     out_size = _as_3d(out.shape[2:], 1)
     tap_major = c >= TAP_MAJOR_MIN_CHANNELS
     options = {}
@@ -648,7 +701,7 @@ def run_schedule(
         *_as_3d(params.padding_before, 0),
         *x.stride()[:2],
         *_as_3d(x.stride()[2:], 0),
-        *weight.stride()[:2],
+        *w_strides,
         *_as_3d(weight.stride()[2:], 0),
         *out.stride()[:2],
         *out_strides,
@@ -658,6 +711,7 @@ def run_schedule(
         or n * pixels * co > _INT32_MAX,
         PIXEL_TILES=pixel_tiles,
         CHANNEL_MAJOR=name == "igemm_tc" and out.stride(1) != 1,
+        TRANSPOSED=params.transposed,
         **options,
     )
 
