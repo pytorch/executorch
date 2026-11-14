@@ -46,6 +46,7 @@ from executorch.exir.passes import (
     EdgeToBackendOpsPass,
     LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
+    NonzeroDimOrderPass,
     OpReplacePass,
     remove_unused_parameters_pass,
     ReplaceEmptyLikePass,
@@ -698,9 +699,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     assert new_gm_res is not None
     new_gm = new_gm_res.graph_module
     if not config._skip_dim_order:
-        new_gm_res = MemoryFormatOpsPass()(new_gm)
-        assert new_gm_res is not None
-        new_gm = new_gm_res.graph_module
+        for dim_order_pass in (NonzeroDimOrderPass(), MemoryFormatOpsPass()):
+            new_gm_res = dim_order_pass(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -851,6 +853,7 @@ def _generate_edge_program(
         passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
     if not config._skip_dim_order:
+        passes.append(NonzeroDimOrderPass())
         passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module

@@ -132,6 +132,64 @@ TEST(Index, N4Rep) {
   run_case("index_n4_rep");
 }
 
+// The index input is stored column by column, like the result of nonzero, so
+// the runtime must read it in its dim order.
+TEST(Index, ColumnMajorGatherIndex) {
+  const std::string base = g_dir + "/gather_column_major";
+  std::vector<float> self_data = read_f32_bin(base + ".self.bin");
+  std::vector<int32_t> idx32 = read_i32_bin(base + ".idx.bin");
+  std::vector<float> golden = read_f32_bin(base + ".golden.bin");
+  ASSERT_TRUE(
+      self_data.size() == 15 && idx32.size() == 10 && golden.size() == 10)
+      << "could not read self/idx/golden for gather_column_major";
+
+  Module module(base + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load gather_column_major.pte";
+
+  auto x = make_tensor_ptr({5, 3}, std::vector<float>(self_data));
+  auto idx = make_tensor_ptr(
+      {5, 2},
+      std::vector<int64_t>(idx32.begin(), idx32.end()),
+      /*dim_order=*/{1, 0});
+  auto result = module.forward({EValue(x), EValue(idx)});
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
+  const auto& out = result.get()[0].toTensor();
+  ASSERT_EQ(static_cast<size_t>(out.numel()), golden.size());
+  const float* out_data = out.const_data_ptr<float>();
+  for (size_t i = 0; i < golden.size(); i++) {
+    EXPECT_NEAR(out_data[i], golden[i], 1e-3f) << "element " << i;
+  }
+}
+
+// The input and the result are channels-last, so the runtime must read and
+// write them in that dim order.
+TEST(DimOrder, ChannelsLastInputAndOutput) {
+  const std::string base = g_dir + "/scale_channels_last";
+  std::vector<float> x_data = read_f32_bin(base + ".x.bin");
+  std::vector<float> golden = read_f32_bin(base + ".golden.bin");
+  ASSERT_TRUE(x_data.size() == 120 && golden.size() == 120)
+      << "could not read x/golden for scale_channels_last";
+
+  Module module(base + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load scale_channels_last.pte";
+
+  auto x = make_tensor_ptr(
+      {2, 3, 4, 5}, std::vector<float>(x_data), /*dim_order=*/{0, 2, 3, 1});
+  auto scale = make_tensor_ptr({1, 3, 1, 1}, std::vector<float>{1, 2, 3});
+  auto result = module.forward({EValue(x), EValue(scale)});
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
+  const auto& out = result.get()[0].toTensor();
+  ASSERT_EQ(static_cast<size_t>(out.numel()), golden.size());
+  const float* out_data = out.const_data_ptr<float>();
+  for (size_t i = 0; i < golden.size(); i++) {
+    EXPECT_NEAR(out_data[i], golden[i], 1e-3f) << "element " << i;
+  }
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
 

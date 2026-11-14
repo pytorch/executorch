@@ -15,6 +15,7 @@
 #include <cinttypes> // PRId64
 #include <cmath>
 #include <cstddef> // size_t
+#include <cstring> // std::memcpy
 
 #include <limits>
 
@@ -1050,6 +1051,153 @@ inline void indexToCoordinate(
     coordinate[dim] = index % dim_size;
     index /= dim_size;
   }
+}
+
+/**
+ * Returns true if every element of a tensor is stored where the default dim
+ * order puts it, so its data can be read and written as if the tensor were in
+ * the default dim order. Besides the default dim order, this holds for a dim
+ * order that differs from it only in dims of size 1, such as channels last
+ * with a height and a width of 1, and for a tensor with no elements.
+ *
+ * @param[in] tensor The tensor to check.
+ * @returns Whether the data of the tensor is laid out as in the default dim
+ * order.
+ */
+inline bool tensor_data_is_in_default_dim_order(
+    const executorch::aten::Tensor& tensor) {
+  if (tensor.numel() == 0) {
+    return true;
+  }
+  size_t default_stride = 1;
+  for (const auto i : c10::irange(tensor.dim())) {
+    const auto dim = tensor.dim() - 1 - i;
+    const size_t size = tensor.size(dim);
+    // A dim of size 1 moves no element, whatever its stride.
+    if (size != 1 &&
+        static_cast<size_t>(tensor.strides()[dim]) != default_stride) {
+      return false;
+    }
+    default_stride *= size;
+  }
+  return true;
+}
+
+namespace internal {
+
+/**
+ * Copies between the data of a tensor and a buffer that holds its elements in
+ * the default dim order: into the buffer when kToBuffer is true, and out of it
+ * otherwise. kElementSize is the element size in bytes, or 0 when it is known
+ * only at run time. The tensor must have at least one dim and one element.
+ */
+template <bool kToBuffer, size_t kElementSize>
+void copy_with_default_dim_order_impl(
+    const executorch::aten::Tensor& tensor,
+    const char* src,
+    char* dst) {
+  const size_t element_size =
+      kElementSize != 0 ? kElementSize : tensor.element_size();
+  const auto dims = tensor.dim();
+  size_t sizes[kTensorDimensionLimit];
+  size_t strides[kTensorDimensionLimit];
+  for (const auto d : c10::irange(dims)) {
+    sizes[d] = tensor.size(d);
+    strides[d] = tensor.strides()[d] * element_size;
+  }
+  // Visit the elements in the default dim order: a loop over the last dim,
+  // and an odometer over the other dims that tracks the offset in the data.
+  const size_t inner_size = sizes[dims - 1];
+  const size_t inner_stride = strides[dims - 1];
+  const size_t rows = tensor.numel() / inner_size;
+  size_t coordinate[kTensorDimensionLimit] = {};
+  size_t row_offset = 0;
+  size_t buffer_offset = 0;
+  for (size_t row = 0; row < rows; ++row) {
+    size_t offset = row_offset;
+    for (size_t i = 0; i < inner_size; ++i) {
+      if constexpr (kToBuffer) {
+        std::memcpy(dst + buffer_offset, src + offset, element_size);
+      } else {
+        std::memcpy(dst + offset, src + buffer_offset, element_size);
+      }
+      offset += inner_stride;
+      buffer_offset += element_size;
+    }
+    for (auto d = dims - 2; d >= 0; --d) {
+      row_offset += strides[d];
+      if (++coordinate[d] < sizes[d]) {
+        break;
+      }
+      row_offset -= sizes[d] * strides[d];
+      coordinate[d] = 0;
+    }
+  }
+}
+
+template <bool kToBuffer>
+void copy_with_default_dim_order(
+    const executorch::aten::Tensor& tensor,
+    const void* src,
+    void* dst) {
+  if (tensor_data_is_in_default_dim_order(tensor)) {
+    if (tensor.nbytes() > 0) {
+      std::memcpy(dst, src, tensor.nbytes());
+    }
+    return;
+  }
+  const char* from = static_cast<const char*>(src);
+  char* to = static_cast<char*>(dst);
+  // A fixed element size lets the compiler turn each copy into a single move.
+  switch (tensor.element_size()) {
+    case 1:
+      copy_with_default_dim_order_impl<kToBuffer, 1>(tensor, from, to);
+      break;
+    case 2:
+      copy_with_default_dim_order_impl<kToBuffer, 2>(tensor, from, to);
+      break;
+    case 4:
+      copy_with_default_dim_order_impl<kToBuffer, 4>(tensor, from, to);
+      break;
+    case 8:
+      copy_with_default_dim_order_impl<kToBuffer, 8>(tensor, from, to);
+      break;
+    default:
+      copy_with_default_dim_order_impl<kToBuffer, 0>(tensor, from, to);
+      break;
+  }
+}
+
+} // namespace internal
+
+/**
+ * Copies the elements of a tensor into a buffer in the default dim order,
+ * whatever dim order the tensor is stored in.
+ *
+ * @param[in] tensor The tensor to read.
+ * @param[out] buffer A buffer of tensor.nbytes() bytes that does not overlap
+ * the data of the tensor.
+ */
+inline void copy_to_default_dim_order(
+    const executorch::aten::Tensor& tensor,
+    void* buffer) {
+  internal::copy_with_default_dim_order</*kToBuffer=*/true>(
+      tensor, tensor.const_data_ptr(), buffer);
+}
+
+/**
+ * Copies a buffer that holds the elements of a tensor in the default dim order
+ * into the tensor, in the dim order the tensor is stored in.
+ *
+ * @param[in] buffer A buffer of tensor.nbytes() bytes that does not overlap
+ * the data of the tensor.
+ * @param[in] tensor The tensor to write.
+ */
+inline void copy_from_default_dim_order(
+    const void* buffer,
+    const executorch::aten::Tensor& tensor) {
+  internal::copy_with_default_dim_order</*kToBuffer=*/false>(
+      tensor, buffer, tensor.mutable_data_ptr());
 }
 
 /**

@@ -661,10 +661,11 @@ class TestEmit(unittest.TestCase):
             .executorch_program
         )
         self.assertTrue(
-            isinstance(program.execution_plan[0].values[3].val, OptionalTensorList)
+            isinstance(program.execution_plan[0].values[8].val, OptionalTensorList)
         )
         self._assertCallLength(program, 0, 3)
-        self._assertCallLength(program, 1, 4)
+        # The nonzero result is copied into the default dim order before index.
+        self._assertCallLength(program, 2, 4)
 
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):

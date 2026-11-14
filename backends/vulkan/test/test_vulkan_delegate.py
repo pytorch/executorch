@@ -2082,6 +2082,29 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_input_in_another_dim_order(self):
+        class GatherModule(torch.nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x, 0, index)
+
+        # index is stored column by column, like the result of torch.nonzero.
+        index = torch.tensor([[0, 1, 1, 2, 4], [1, 2, 0, 1, 2]]).t()
+        self.assertEqual(index.stride(), (1, 5))
+        self.lower_module_and_test_output(
+            GatherModule(), (torch.arange(15.0).reshape(5, 3), index)
+        )
+
+    def test_vulkan_backend_channels_last_input_and_output(self):
+        class ScaleChannels(torch.nn.Module):
+            def forward(self, x, scale):
+                return x * scale
+
+        x = torch.arange(120.0).reshape(2, 3, 4, 5)
+        x = x.to(memory_format=torch.channels_last)
+        scale = torch.tensor([1.0, 2.0, 3.0]).reshape(1, 3, 1, 1)
+        self.assertTrue((x * scale).is_contiguous(memory_format=torch.channels_last))
+        self.lower_module_and_test_output(ScaleChannels(), (x, scale))
+
     def test_vulkan_backend_index_select_batch_dynamic_channels(self):
         # Selecting along the batch dim walks the z axis in units of channel
         # texels, so the step depends on the channel count. Vary the channels

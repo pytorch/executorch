@@ -1005,6 +1005,25 @@ class TestPasses(unittest.TestCase):
                 )
                 self.assertTrue(torch.equal(ep.module()(x), model(x)))
 
+    def test_remove_redundancy_keeps_copy_of_nonzero_result(self):
+        class NonzeroAndClone(torch.nn.Module):
+            def forward(self, x):
+                return torch.nonzero(x), x.clone() * 2
+
+        x = torch.tensor([[0.0, 1.0], [2.0, 0.0]])
+        ep = to_edge(torch.export.export(NonzeroAndClone(), (x,), strict=True))
+        ep = ep.exported_program()
+        RemoveRedundancy(quantization_capture=False)(ep.graph_module)
+        # The clone of x goes, and the copy of the nonzero result stays.
+        self.assertEqual(
+            [
+                n.args[0].target
+                for n in ep.graph.nodes
+                if n.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+            ],
+            [exir_ops.edge.aten.nonzero.default],
+        )
+
     def test_recompose_rms_norm_only_takes_last_dim_with_weight(self):
         class ScaledNorm(torch.nn.Module):
             def __init__(self, dim, scale, keepdim=True):

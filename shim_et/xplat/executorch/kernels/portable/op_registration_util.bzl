@@ -1175,6 +1175,7 @@ ATEN_OPS = (
         name = "op_scatter",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
             "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),

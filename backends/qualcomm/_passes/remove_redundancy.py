@@ -19,7 +19,7 @@ class RemoveRedundancy(ExportPass):
         self.redundant_ops_general = {
             torch.clone: self._default_condition,
             torch.ops.aten.clone.default: self._default_condition,
-            exir_ops.edge.dim_order_ops._clone_dim_order.default: self._default_condition,
+            exir_ops.edge.dim_order_ops._clone_dim_order.default: self._clone_dim_order_condition,
             torch.ops.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias_copy.default: self._default_condition,
@@ -41,6 +41,12 @@ class RemoveRedundancy(ExportPass):
             if quantization_capture
             else self.redundant_ops_general
         )
+
+    def _clone_dim_order_condition(self, node):
+        # Keep the copy of a nonzero result. nonzero always runs on the CPU, so
+        # the copy splits no partition, and it gives the CPU ops that read the
+        # result, and the caller, the default dim order.
+        return node.args[0].target != exir_ops.edge.aten.nonzero.default
 
     def _dim_order_op_condition(self, node):
         return node.meta["val"].dtype == node.args[0].meta["val"].dtype

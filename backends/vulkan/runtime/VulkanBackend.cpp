@@ -721,6 +721,19 @@ class GraphBuilder {
 // Execution tools
 //
 
+// The graph reads and writes every tensor in the default dim order, so a
+// tensor stored in another dim order goes through a buffer in the default one.
+const void* default_dim_order_data(
+    const executorch::aten::Tensor& t,
+    std::vector<uint8_t>& scratch) {
+  if (executorch::runtime::tensor_data_is_in_default_dim_order(t)) {
+    return t.const_data_ptr();
+  }
+  scratch.resize(t.nbytes());
+  executorch::runtime::copy_to_default_dim_order(t, scratch.data());
+  return scratch.data();
+}
+
 bool maybe_resize_input(
     ComputeGraph* graph,
     const size_t input_i,
@@ -1059,6 +1072,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             "ETVK_COPY_INPUTS",
             /* delegate_debug_id = */ -1);
 #endif // ET_EVENT_TRACER_ENABLED
+    std::vector<uint8_t> input_scratch;
     for (size_t i = 0; i < num_inputs; i++) {
       const ValueRef iref = compute_graph->inputs()[i].value;
       if (compute_graph->val_is_tensor(iref)) {
@@ -1075,7 +1089,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         }
         compute_graph->maybe_cast_and_copy_into_staging(
             staging,
-            args[i]->toTensor().const_data_ptr(),
+            default_dim_order_data(args[i]->toTensor(), input_scratch),
             args[i]->toTensor().numel(),
             equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
@@ -1170,12 +1184,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             /* delegate_debug_id = */ -1);
 #endif // ET_EVENT_TRACER_ENABLED
     const size_t output_offset = args.size() - num_outputs;
+    std::vector<uint8_t> output_scratch;
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t o = output_offset + i;
       const ValueRef oref = compute_graph->outputs()[i].value;
       if (compute_graph->val_is_tensor(oref)) {
         VK_CHECK_COND(args[o]->isTensor());
-        maybe_resize_output(compute_graph, i, args[o]->toTensor());
+        executorch::aten::Tensor& out = args[o]->toTensor();
+        maybe_resize_output(compute_graph, i, out);
         // External I/O: the app reads the output on the GPU.
         const ValueRef staging = compute_graph->outputs()[i].staging;
         if (has_external_memory &&
@@ -1183,11 +1199,20 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
              compute_graph->get_staging(staging)->is_external())) {
           continue;
         }
+        const bool reorder =
+            !executorch::runtime::tensor_data_is_in_default_dim_order(out);
+        if (reorder) {
+          output_scratch.resize(out.nbytes());
+        }
         compute_graph->maybe_cast_and_copy_from_staging(
             staging,
-            args[o]->toTensor().mutable_data_ptr(),
-            args[o]->toTensor().numel(),
-            equivalent_scalar_type(args[o]->toTensor().scalar_type()));
+            reorder ? output_scratch.data() : out.mutable_data_ptr(),
+            out.numel(),
+            equivalent_scalar_type(out.scalar_type()));
+        if (reorder) {
+          executorch::runtime::copy_from_default_dim_order(
+              output_scratch.data(), out);
+        }
       } else if (compute_graph->val_is_symint(oref)) {
         // Mirror of the input path: write the graph's current SymInt value
         // into the caller's slot, which may be either a scalar tensor or a

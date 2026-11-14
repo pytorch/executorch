@@ -13,7 +13,12 @@ from unittest.mock import patch
 import torch
 
 import torchvision
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExirExportedProgram,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -24,6 +29,7 @@ from executorch.exir.dim_order_utils import (
     is_contiguous_dim_order,
 )
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.passes import NonzeroDimOrderPass
 
 from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     AmbiguousDimOrderError,
@@ -473,6 +479,75 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             AssertionError("Should have raised AmbiguousDimOrderError")
         except AmbiguousDimOrderError:
             pass  # Expected error
+
+    def test_nonzero_result_copied_into_default_dim_order(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return x[indices[:, 0], indices[:, 1]], indices.float() / 2
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = to_edge(export(model, (x,), strict=True))
+        (copy,) = [
+            node
+            for node in edge.exported_program().graph.nodes
+            if node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        ]
+        self.assertEqual(copy.args[0].target, exir_ops.edge.aten.nonzero.default)
+        # Only nonzero binds the size that depends on the data. A delegate that
+        # takes the copy without nonzero fails to lower otherwise.
+        self.assertNotIn("unbacked_bindings", copy.meta)
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        for sample in (x, torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]])):
+            outputs = module.run_method("forward", (sample,))
+            for output, expected in zip(outputs, model(sample), strict=True):
+                torch.testing.assert_close(output, expected)
+
+    def test_legacy_to_edge_copies_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.nonzero(x)
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = ExirExportedProgram(export(Model(), (x,), strict=True), False).to_edge()
+        (copy,) = [
+            node
+            for node in edge.exported_program.graph.nodes
+            if node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        ]
+        self.assertEqual(copy.args[0].target, exir_ops.edge.aten.nonzero.default)
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        # A caller that reads the data row by row gets the right indices.
+        self.assertTrue(output.is_contiguous())
+        torch.testing.assert_close(output, torch.nonzero(x))
+
+    def test_nonzero_dim_order_pass_skips_graph_without_nonzero(self) -> None:
+        graph_module = (
+            to_edge(export(torch.nn.ReLU(), (torch.randn(2, 3),), strict=True))
+            .exported_program()
+            .graph_module
+        )
+        result = NonzeroDimOrderPass()(graph_module)
+        self.assertFalse(result.modified)
+        self.assertIs(result.graph_module, graph_module)
+
+    def test_as_strided_reads_nonzero_result_itself(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(indices, (2, 2), (1, 3)), indices + 1
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        graph = to_edge(export(Model(), (x,), strict=True)).exported_program().graph
+        (as_strided,) = [
+            node
+            for node in graph.nodes
+            if node.target == exir_ops.edge.aten.as_strided_copy.default
+        ]
+        self.assertEqual(as_strided.args[0].target, exir_ops.edge.aten.nonzero.default)
 
     # Only test dim order replacement result in lean mode test.
     # This test is irrelevant with operator mode.

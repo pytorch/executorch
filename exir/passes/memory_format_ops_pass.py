@@ -6,12 +6,14 @@
 
 import copy
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import torch
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dim_order_utils import get_dim_order, get_memory_format
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.graph_module import contains_any_call_fn_target_op
+from executorch.exir.pass_base import ExportPass, PassResult, ProxyValue
 from executorch.exir.passes.dim_order_ops_registry import (
     DimOrderOpsMap,
     MemoryFormatOpsMap,
@@ -67,6 +69,53 @@ class ReplaceEmptyLikePass(ExportPass):
         return super().call_operator(
             torch.ops.aten.empty.memory_format, (sizes,), new_kwargs, meta
         )
+
+
+class NonzeroDimOrderPass(ExportPass):
+    """
+    Copies the result of nonzero into the default dim order.
+
+    ATen returns that result column by column, in dim order (1, 0), which most
+    portable kernels cannot read and the dim order ops cannot express. The pass
+    runs before partitioning, so every op and every delegate is compiled for the
+    layout it reads at run time.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Maps each copy to the nonzero result it copies.
+        self._results: Dict[ProxyValue, ProxyValue] = {}
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Retracing the whole graph is the costly part, so skip it without nonzero.
+        if not contains_any_call_fn_target_op(
+            graph_module, [torch.ops.aten.nonzero.default]
+        ):
+            return PassResult(graph_module, False)
+        return super().call(graph_module)
+
+    def call_operator(self, op, args, kwargs, meta):
+        if (
+            op == exir_ops.edge.aten.as_strided_copy.default
+            and args[0] in self._results
+        ):
+            # as_strided reads its input through explicit strides, so it reads
+            # the result in the layout that ATen gave it.
+            args = (self._results[args[0]], *args[1:])
+        result = super().call_operator(op, args, kwargs, meta)
+        if op != exir_ops.edge.aten.nonzero.default:
+            return result
+        # Only nonzero binds the size that depends on the data; the copy reads it.
+        copy_meta = meta.copy()
+        copy_meta.data.pop("unbacked_bindings", None)
+        copy = super().call_operator(
+            exir_ops.edge.dim_order_ops._clone_dim_order.default,
+            (result,),
+            {"dim_order": get_dim_order(torch.contiguous_format, 2)},
+            copy_meta,
+        )
+        self._results[copy] = result
+        return copy
 
 
 class MemoryFormatOpsPass(ExportPass):
