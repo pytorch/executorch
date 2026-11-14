@@ -27,6 +27,7 @@ from collections.abc import Iterator
 import torch
 import torch.nn as nn
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
+    check_config_tensors,
     gguf_architecture,
     gguf_to_hf,
 )
@@ -39,6 +40,7 @@ from executorch.extension.llm.cache.reference_cache import (
     SequenceReferenceCache,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
+from executorch.extension.llm.export.gguf import iter_gguf
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.export import Dim, export
@@ -130,9 +132,9 @@ def load_gguf(
     ``ExportableGGUFTensor`` so the PTN carries the GGUF blocks. ``architecture``
     defaults to the file's ``general.architecture``. ``truncated`` loads a model
     built with fewer layers from the file's first blocks."""
-    key_map, convert = gguf_to_hf(
-        model, architecture or gguf_architecture(path), truncated
-    )
+    architecture = architecture or gguf_architecture(path)
+    key_map, convert = gguf_to_hf(model, architecture, truncated)
+    read = raw_iter or iter_gguf
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
     loaded = set()
@@ -142,7 +144,7 @@ def load_gguf(
         convert=convert,
         tie_map={"model.embed_tokens.weight": ("lm_head.weight", False)},
         dtype=torch.float32,
-        raw_iter=raw_iter,
+        raw_iter=lambda p: check_config_tensors(model, architecture, read(p)),
     ):
         if fqn not in expected:
             raise ValueError(f"GGUF tensor maps to unknown parameter {fqn!r}")
