@@ -110,6 +110,14 @@ test_modules = {
         AvgPool2d(3, 2, 1, True, True, divisor_override=2),
         (torch.rand(1, 1, 14, 14),),
     ),
+    "divisor_override_ceil_mode_no_padding": lambda: (
+        AvgPool2d(3, 2, 0, True, False, divisor_override=2),
+        (torch.rand(1, 1, 15, 14),),
+    ),
+    "divisor_override_ceil_mode_no_padding_count_include_pad": lambda: (
+        AvgPool2d(3, 2, 0, True, True, divisor_override=4),
+        (torch.rand(1, 1, 14, 14),),
+    ),
     "non_divisible_no_padding": lambda: (
         AvgPool2d(3, 2, 0),
         (torch.rand(1, 16, 56, 56),),
