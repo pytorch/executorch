@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -59,22 +60,18 @@ def test_a_model_runs_through_the_openvino_delegate(required: bool = False) -> N
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.runtime import Runtime
 
-    # One guard around the whole chain rather than around openvino alone. Importing the
-    # partitioner reaches the quantizer, which requires nncf, so a check that only looked for
-    # openvino would still fail on the import it cannot satisfy. Measured on a default install
-    # with openvino present and nncf absent.
-    try:
-        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-    except ImportError as error:
+    # Only a missing runtime skips; any other import failure is a real one.
+    if importlib.util.find_spec("openvino") is None:
         if required:
-            raise
+            raise ImportError("the openvino runtime is not installed")
         print(
-            f"SKIP: the OpenVINO export stack is not installed, so the delegate cannot "
-            f"execute here ({error}). The wheel ships the adapter only; the runtime and the "
-            f"quantizer dependencies come from backends/openvino/requirements.txt. This row "
-            f"still verifies the shipped library, its owner and its registration."
+            "SKIP: the OpenVINO runtime is not installed, so the delegate cannot execute "
+            "here. The wheel ships the adapter only; the runtime comes from the openvino "
+            "extra. This row still verifies the shipped library, its owner and its "
+            "registration."
         )
         return
+    from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 
     class Add(torch.nn.Module):
         def forward(self, x, y):

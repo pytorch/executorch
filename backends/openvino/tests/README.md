@@ -12,7 +12,8 @@ backends/openvino/tests
 ├── models                              # Directory with model test scripts.
     └── test_classification.py          # Test script for classification models.
 ├── quantizer                           # Directory with quantizer test scripts.
-    └── test_llm_compression.py         # Test script for llm compression using NNCF algorithms.
+    ├── test_llm_compression.py         # Test script for llm compression using NNCF algorithms.
+    └── test_nncf_import.py             # Test that the partitioner imports without nncf installed.
 ├── README.md                           # Documentation for unit tests (this file)
 └── test_runner.py                      # Script to execute unit tests.
 ```

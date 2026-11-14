@@ -16,4 +16,5 @@ cd backends/openvino/tests
 status=0
 python test_runner.py --test_type ops || status=1
 python test_runner.py --test_type models || status=1
+python test_runner.py --test_type quantizer --pattern test_nncf_import.py || status=1
 exit "${status}"
