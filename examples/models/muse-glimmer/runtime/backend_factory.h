@@ -24,6 +24,8 @@ struct MuseGlimmerBackendConfig {
   batching::Token bos_id = 200000;
   bool use_dflash = false;
   int dflash_n_draft = 0; // zero uses the exported maximum minus one
+  std::string native_device = "gpu"; // native: ggml "cpu" or "gpu"
+  std::string native_kv_dtype = "fp32"; // native: "fp32" or "fp16"
 };
 
 struct MuseGlimmerBackend {

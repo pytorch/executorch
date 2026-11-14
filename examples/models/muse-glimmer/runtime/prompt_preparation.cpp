@@ -15,7 +15,9 @@
 #include <limits>
 #include <utility>
 
-#if defined(EXECUTORCH_BUILD_MLX)
+// CommonCrypto where Apple provides it; the portable digest elsewhere.
+#if defined(__APPLE__) && !defined(EXECUTORCH_BUILD_CUDA)
+#define MUSE_GLIMMER_COMMON_CRYPTO
 #include <CommonCrypto/CommonDigest.h>
 #endif
 
@@ -49,8 +51,8 @@ bool valid_image(
       bytes == static_cast<size_t>(pixels) * 3;
 }
 
-#if defined(EXECUTORCH_BUILD_CUDA)
-// FIPS 180-4 SHA-256 for CUDA builds without a platform crypto library.
+#if !defined(MUSE_GLIMMER_COMMON_CRYPTO)
+// FIPS 180-4 SHA-256 for builds without a platform crypto library.
 class Sha256 {
  public:
   void update(const void* data, size_t size) {
@@ -149,7 +151,7 @@ class Sha256 {
   size_t buffered_ = 0;
   uint64_t length_ = 0;
 };
-#elif defined(EXECUTORCH_BUILD_MLX)
+#else
 class Sha256 {
  public:
   Sha256() {
@@ -176,8 +178,6 @@ class Sha256 {
  private:
   CC_SHA256_CTX context_;
 };
-#else
-#error "Muse Glimmer preparation requires a CUDA or MLX build"
 #endif
 
 batching::ContentKey image_key(

@@ -144,6 +144,7 @@ help:
 	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
 	@echo "  muse-glimmer-batching-mlx - Build batching Muse Glimmer runner and worker with MLX"
 	@echo "  muse-glimmer-batching-cuda - Build batching Muse Glimmer runner and worker with CUDA"
+	@echo "  muse-glimmer-batching-native - Build batching Muse Glimmer runner and worker on the native ggml engine"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
@@ -557,6 +558,24 @@ muse-glimmer-batching-cuda:
 	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
 		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
 		--parallel "$(nproc)"
+	@echo ""
+	@echo "Build complete!"
+	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
+	@echo "  Worker:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker"
+
+.PHONY: muse-glimmer-batching-native
+muse-glimmer-batching-native:
+	@echo "==> Building and installing ExecuTorch with the native ggml engine..."
+	cmake --preset llm-release -DEXECUTORCH_BUILD_NATIVE=ON \
+		-DEXECUTORCH_BUILD_NATIVE_GGML=ON -DGGML_OPENMP=OFF
+	cmake --build cmake-out --target install \
+		--parallel "$${CMAKE_BUILD_PARALLEL_LEVEL:-$$(sysctl -n hw.ncpu 2>/dev/null || nproc)}"
+	@echo "==> Configuring batching Muse Glimmer runners on the native engine..."
+	cd examples/models/muse-glimmer && cmake --preset muse-glimmer-native \
+		-B "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching"
+	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+		--parallel "$${CMAKE_BUILD_PARALLEL_LEVEL:-$$(sysctl -n hw.ncpu 2>/dev/null || nproc)}"
 	@echo ""
 	@echo "Build complete!"
 	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
