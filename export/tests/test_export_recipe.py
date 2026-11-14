@@ -676,6 +676,47 @@ class TestCombineRecipesQuantization(unittest.TestCase):
         result = ExportRecipe.combine([r1, r2])
         self.assertIs(result.quantization_recipe.train_fn, fn)
 
+    def test_preserve_ops_are_combined(self) -> None:
+        linear = torch.ops.aten.linear.default
+        convolution = torch.ops.aten.convolution.default
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], preserve_ops=[linear]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], preserve_ops=[convolution, linear]
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.preserve_ops, [linear, convolution])
+
+    def test_preserve_ops_from_one_recipe_decomposes(self) -> None:
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], preserve_ops=[]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.preserve_ops, [])
+
+    def test_preserve_ops_unset_does_not_decompose(self) -> None:
+        r1 = ExportRecipe(
+            name="a", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNone(result.quantization_recipe.preserve_ops)
+
     def test_single_calibration_inputs_fn_preserved(self) -> None:
         fn = Mock(return_value=[(1,), (2,)])
         r1 = ExportRecipe(

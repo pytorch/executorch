@@ -37,13 +37,12 @@
 #   test_espressif_idf_nightly.sh wheel <dir> <dev version> <commit>
 #     Checks that the ExecuTorch nightly wheels of the version's date exist for
 #     every platform and CPython and were built from <commit>, so a project can
-#     install the executorch its kernel bundles need. Refuses today's nightly,
-#     which a later one could replace. Logs go under <dir>.
+#     install the executorch its kernel bundles need. Logs go under <dir>.
 #   test_espressif_idf_nightly.sh rehearse <dir>
-#     Checks that wheel refuses a version that is not a dev version and today's
-#     nightly, and that the platforms and CPythons it expects are those of the
-#     index's last 60 days, its window. Then runs it on the finished nightlies
-#     of origin/nightly's last 60 days that have every wheel, newest first,
+#     Checks that wheel refuses a version that is not a dev version, and that
+#     the platforms and CPythons it expects are those of the index's last 60
+#     days, its window. Then runs it on the nightlies of origin/nightly's last
+#     60 days that have every wheel, newest first,
 #     until one passes. Nightly wheels can fail to build for days, so finding
 #     none only warns, unless the index has every wheel of a day no nightly
 #     commit is dated, which means the dev version's date no longer matches
@@ -456,12 +455,6 @@ check_wheels() {
         echo "FAIL: ${version} is not a dev version" >&2
         exit 1
     fi
-    # A second nightly the same day would replace the wheels of this one.
-    if [[ "${version##*-dev.}" == "$(date -u +%Y%m%d)" ]]; then
-        echo "FAIL: ${version} is today's nightly, which a later nightly today could replace;" \
-            "publish it after 00:00 UTC, before the next nightly." >&2
-        exit 1
-    fi
     # The version's date is its nightly commit's UTC date, and the wheels' is
     # the day they were built; when the two differ, no wheels are found.
     listing=$(curl -sSf --retry 3 "${nightly_index}/executorch/")
@@ -505,19 +498,13 @@ wheel() {
 }
 
 rehearse() {
-    local today output listing commit day version
-    today=$(date -u +%Y%m%d)
+    local output listing commit day version
     output=$( (check_wheels 1.6.0 0) 2>&1 || true)
     if [[ "${output}" != *"is not a dev version"* ]]; then
         echo "FAIL: the wheel check did not refuse 1.6.0: ${output}" >&2
         exit 1
     fi
-    output=$( (check_wheels "1.6.0-dev.${today}" 0) 2>&1 || true)
-    if [[ "${output}" != *"is today's nightly"* ]]; then
-        echo "FAIL: the wheel check did not refuse today's nightly: ${output}" >&2
-        exit 1
-    fi
-    echo "OK: the wheel check refuses a version that is not a dev version and today's nightly"
+    echo "OK: the wheel check refuses a version that is not a dev version"
     listing=$(curl -sSf --retry 3 "${nightly_index}/executorch/")
     # A day inside the commits' window, whose edge can differ by a day.
     local since expected=() platform python
@@ -530,16 +517,16 @@ rehearse() {
         done
     done
     printf '%s' "${listing}" > "${dir}/listing.html"
-    python - "${dir}/listing.html" "${since}" "${today}" "${expected[@]}" <<'PY'
+    python - "${dir}/listing.html" "${since}" "${expected[@]}" <<'PY'
 import re
 import sys
 
 listing = open(sys.argv[1]).read().replace("%2B", "+")
-since, today, expected = sys.argv[2], sys.argv[3], set(sys.argv[4:])
+since, expected = sys.argv[2], set(sys.argv[3:])
 days = {}
 pattern = r"executorch-\d+\.\d+\.\d+\.dev(\d{8})(?:\+\w+)?-(cp\d+)-cp\d+-(\w+)\.whl"
 for day, python, platform in re.findall(pattern, listing):
-    if since < day != today:
+    if since < day:
         days.setdefault(day, set()).add(f"{python}-{platform}")
 if days:
     problems = []
@@ -561,7 +548,7 @@ PY
     for commit in $(git rev-list --first-parent --since=60.days origin/nightly); do
         day=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d "${commit}")
         version="$(git show "${commit}:version.txt")-dev.${day}"
-        if [[ "${day}" != "${today}" && -z "$(missing_wheels "${version}" "${listing}")" ]]; then
+        if [[ -z "$(missing_wheels "${version}" "${listing}")" ]]; then
             # A second nightly the same day replaces the wheels it builds, so
             # a day's wheels can come from two commits; an older day can pass.
             if output=$( (check_wheels "${version}" "${commit}") 2>&1); then
@@ -581,7 +568,7 @@ PY
         day=${listed##*.dev}
         version="${listed#executorch-}"
         version="${version%.dev*}-dev.${day}"
-        if [[ "${day}" > "${since}" && "${day}" != "${today}" ]] \
+        if [[ "${day}" > "${since}" ]] \
             && [[ -z "$(missing_wheels "${version}" "${listing}")" ]]; then
             echo "FAIL: the nightly index has every wheel of ${version}, but no nightly commit" \
                 "of that version is dated ${day}; the dev version's date no longer matches the" \

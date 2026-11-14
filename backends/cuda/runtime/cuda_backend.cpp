@@ -43,15 +43,18 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
-#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/extension/cuda/cuda_allocator.h>
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
+#endif
 
 namespace executorch::backends::cuda {
 
@@ -103,12 +106,18 @@ bool CudaGraphState::start_warmup() {
 // tokens, and committing them would desynchronise the cache's length from the
 // history the kernels actually hold.
 Error commit_offgraph_kv_step(CudaDelegateHandle* handle, int64_t width) {
-  if (handle->kv_cache == nullptr) {
-    return Error::Ok;
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+  if (handle->kv_cache != nullptr) {
+    return handle->kv_cache->commit_step(width);
   }
-  return handle->kv_cache->commit_step(width);
+#else
+  (void)handle;
+  (void)width;
+#endif
+  return Error::Ok;
 }
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
 // A per-method actual key overrides the artifact's logical role. Without that
 // override, the logical role names a load-time option containing the actual
 // key; it is never itself used as a process-global registry ID.
@@ -163,6 +172,7 @@ Result<std::string> resolve_cuda_cache_key(
       logical->c_str());
   return std::string(mapped.get());
 }
+#endif
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -395,14 +405,23 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     std::optional<OffGraphKVStepWidth> kv_step_width;
+#else
+    constexpr const char* cache_key_option = "llm_cache_registry_key";
+    bool has_cache_key_spec = false;
+#endif
     for (const CompileSpec& spec : compile_specs) {
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
       if (std::strcmp(spec.key, kOffGraphKVStepWidthSpec) == 0) {
         auto parsed = parse_offgraph_kv_step_width(std::string_view(
             static_cast<const char*>(spec.value.buffer), spec.value.nbytes));
         ET_CHECK_OK_OR_RETURN_ERROR(parsed.error());
         kv_step_width = parsed.get();
       }
+#else
+      has_cache_key_spec |= std::strcmp(spec.key, cache_key_option) == 0;
+#endif
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
@@ -410,9 +429,22 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     const auto resolved_cache_key =
         resolve_cuda_cache_key(context, compile_specs);
     ET_CHECK_OK_OR_RETURN_ERROR(resolved_cache_key.error());
+#else
+    if (has_cache_key_spec ||
+        context.get_runtime_spec<const char*>(cache_key_option).error() !=
+            Error::NotFound) {
+      ET_LOG(
+          Info,
+          "Ignoring '%s' for method '%s': this CUDA backend is built without "
+          "EXECUTORCH_BUILD_EXTENSION_LLM",
+          cache_key_option,
+          method_name.c_str());
+    }
+#endif
 
     std::string so_blob_key;
     std::string weights_blob_key;
@@ -574,30 +606,32 @@ class ET_EXPERIMENTAL CudaBackend final
     // lowered off-graph carries no bytes for it, so running one without a cache
     // would hand its kernels unbound memory. That requirement is read from the
     // program's own constants and checked whether or not a key was passed.
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     const char* cache_key =
         resolved_cache_key->empty() ? nullptr : resolved_cache_key->c_str();
-    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
-    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
     if (cache_key != nullptr) {
-#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
       ET_CHECK_OK_OR_RETURN_ERROR(
           attach_offgraph_kv_cache(*handle, cache_key, kv_step_width));
-#else
-      ET_LOG(
-          Error,
-          "init: an off-graph KV cache was supplied, but this CUDA backend was "
-          "built without EXECUTORCH_BUILD_EXTENSION_LLM");
-      return Error::NotSupported;
-#endif
     }
+#endif
+    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
+    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     ET_CHECK_OR_RETURN_ERROR(
         !needs_offgraph_kv.get() || handle->kv_cache != nullptr,
         InvalidArgument,
         "init: method '%s' keeps its KV cache off-graph but no cache was "
-        "installed under the '%s' backend option (a CUDA backend built without "
-        "EXECUTORCH_BUILD_EXTENSION_LLM cannot run it)",
+        "installed under the '%s' backend option",
         method_name.c_str(),
         ::executorch::extension::llm::cache::kCacheKeyOption);
+#else
+    ET_CHECK_OR_RETURN_ERROR(
+        !needs_offgraph_kv.get(),
+        NotSupported,
+        "init: method '%s' keeps its KV cache off-graph, which needs a CUDA "
+        "backend built with EXECUTORCH_BUILD_EXTENSION_LLM",
+        method_name.c_str());
+#endif
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
@@ -782,6 +816,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // program reads it -- and nothing inside that program can call back out, so
     // the step is driven from here rather than by the runner.
     int64_t kv_step_width = 0;
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     if (handle->kv_cache != nullptr) {
       const auto step_width = read_offgraph_kv_step_width(
           handle->kv_step_width, Span<EValue*>(args.data(), n_inputs));
@@ -795,6 +830,7 @@ class ET_EXPERIMENTAL CudaBackend final
           handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
       ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
     }
+#endif
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
@@ -897,9 +933,11 @@ class ET_EXPERIMENTAL CudaBackend final
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     mutable_state_forget_handle(handle);
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
     if (handle->kv_cache != nullptr) {
       handle->kv_cache->forget_handle(handle);
     }
+#endif
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,

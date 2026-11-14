@@ -6,7 +6,7 @@ def define_common_targets():
     # Header-only library for Macros
     runtime.cxx_library(
         name = "macros",
-        headers = [
+        exported_headers = [
             "Macros.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],

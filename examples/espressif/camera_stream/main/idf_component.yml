@@ -8,5 +8,5 @@
 
 dependencies:
   idf:
-    version: ">=5.1"
+    version: ">=6.0"
   espressif/esp32-camera: "^2.1.8"

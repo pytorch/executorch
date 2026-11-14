@@ -1,16 +1,12 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
     """Define targets for SlimTensor c10 core module."""
 
-    if not is_fbcode():
-        return
-
     # Header-only library for DeviceType
     runtime.cxx_library(
         name = "device_type",
-        headers = [
+        exported_headers = [
             "DeviceType.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -22,7 +18,7 @@ def define_common_targets():
     # Header-only library for Device
     runtime.cxx_library(
         name = "device",
-        headers = [
+        exported_headers = [
             "Device.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -35,7 +31,7 @@ def define_common_targets():
     # Header-only library for ScalarType
     runtime.cxx_library(
         name = "scalar_type",
-        headers = [
+        exported_headers = [
             "ScalarType.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -48,7 +44,7 @@ def define_common_targets():
     # Header-only library for SizesAndStrides
     runtime.cxx_library(
         name = "sizes_and_strides",
-        headers = [
+        exported_headers = [
             "SizesAndStrides.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -62,7 +58,7 @@ def define_common_targets():
     # Header-only library for Contiguity
     runtime.cxx_library(
         name = "contiguity",
-        headers = [
+        exported_headers = [
             "Contiguity.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -74,7 +70,7 @@ def define_common_targets():
     # Header-only library for WrapDimMinimal
     runtime.cxx_library(
         name = "wrap_dim_minimal",
-        headers = [
+        exported_headers = [
             "WrapDimMinimal.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],

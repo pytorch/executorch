@@ -12,6 +12,7 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <executorch/runtime/core/result.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -355,6 +356,30 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // rounded up to 64, which cannot tell two nearby geometries apart.
   std::unordered_map<std::string, std::vector<int64_t>> offgraph_kv_sizes;
 };
+
+// Whether the program's constants include off-graph KV storage, which only a
+// runtime cache can supply. Read from the program itself, so it holds whether
+// or not the caller passed a cache.
+inline runtime::Result<bool> requires_offgraph_kv_storage(
+    const CudaDelegateHandle& handle) {
+  if (!handle.get_num_constants || !handle.get_constant_original_fqn) {
+    return false;
+  }
+  size_t count = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      handle.get_num_constants(handle.container_handle, &count));
+  for (size_t index = 0; index < count; ++index) {
+    const char* fqn = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_original_fqn(handle.container_handle, index, &fqn));
+    if (fqn != nullptr &&
+        std::string_view(fqn).substr(0, kOffGraphKVFqnPrefix.size()) ==
+            kOffGraphKVFqnPrefix) {
+      return true;
+    }
+  }
+  return false;
+}
 
 } // namespace cuda
 } // namespace backends

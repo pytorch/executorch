@@ -51,6 +51,11 @@ on:
         required: false
         type: boolean
         default: false
+      upload-test-run-reports:
+        description: 'Upload torchci test-run reports from the Linux jobs'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   docker-image:
@@ -78,6 +83,7 @@ jobs:
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
+      upload-test-run-reports: ${{ inputs.upload-test-run-reports }}
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
