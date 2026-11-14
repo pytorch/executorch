@@ -137,6 +137,7 @@ jobs:
           examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_offgraph.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py \
+          examples/models/spark_x2_5/test_spark_x2_5_mlx.py \
           -v
         echo "::endgroup::"
 

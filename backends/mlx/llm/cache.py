@@ -292,7 +292,9 @@ class RingBufferKVCache(nn.Module):
     ``max_write_len`` bounds the largest single ``update`` write and sets the
     buffer slack beyond the window (buffer_size = window_size + max_write_len -
     1). It defaults to the full context length, i.e. ``2 * window_size - 1``; pass the chunk size when doing
-    chunked prefill to shrink it further.
+    chunked prefill to shrink it further. A single ``update`` writing more than
+    ``max_write_len`` tokens raises: prompts longer than the window must be
+    prefilled in chunks of at most the window size.
 
     Example:
         >>> cache = RingBufferKVCache(
@@ -364,12 +366,19 @@ class RingBufferKVCache(nn.Module):
         """
         if isinstance(input_pos, torch.Tensor):
             start_pos = input_pos[0].item()
-            seq_len = k_val.size(2)
-            torch._check(seq_len == v_val.size(2))
             torch._check(start_pos >= 0)
-            torch._check(seq_len <= self.max_write_len)
         else:
             start_pos = input_pos
+        seq_len = k_val.size(2)
+        torch._check(seq_len == v_val.size(2))
+        torch._check(
+            seq_len <= self.max_write_len,
+            lambda: (
+                f"single update writes {seq_len} tokens but the ring buffer "
+                f"max_write_len is {self.max_write_len}; chunk prefill to at "
+                f"most the sliding window size"
+            ),
+        )
 
         torch.ops.mlx.kv_cache_update(
             self.k_cache, k_val, start_pos, ring_size=self.buffer_size
