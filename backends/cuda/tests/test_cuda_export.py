@@ -908,8 +908,6 @@ class TestCudaExport(unittest.TestCase):
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_sdpa_head_sizes(self):
-        from executorch.runtime import Runtime
-
         class Attention(torch.nn.Module):
             def forward(self, *qkv):
                 return tuple(
@@ -927,6 +925,11 @@ class TestCudaExport(unittest.TestCase):
         )
         model = Attention()
         edge = self._export_to_cuda_with_lower(model, inputs)
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
