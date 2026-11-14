@@ -1558,12 +1558,15 @@ class CudaBackend(AotiBackend, BackendDetails):
             moved = move_to_device_pass(edge_program, device)
             _track_moved_tensors(moved)
             return moved
-        # Only parameters reach AOTI's weights as the moved storage: low-memory
-        # compilation hands AOTI CPU clones of buffers (_compile_time_cpu_clones).
-        sources = dict(edge_program.state_dict)
+        # Only parameters are recorded: low-memory compilation can hand AOTI CPU
+        # clones of buffers (_compile_time_cpu_clones).
+        sources = {
+            name: edge_program.state_dict[name]
+            for name in edge_program.graph_signature.parameters
+        }
         moved = _move_to_device_resize_kv(edge_program, device)
         _track_moved_tensors(moved)
-        CudaWeightCollector.current_capture().track_moved_tensors(
+        CudaWeightCollector.current_capture().record_moved_sources(
             sources, dict(moved.state_dict)
         )
         return moved

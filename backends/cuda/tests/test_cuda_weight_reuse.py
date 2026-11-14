@@ -7,6 +7,7 @@
 """CudaWeightCollector writes a weight storage the methods share only once."""
 
 import contextlib
+import gc
 import tempfile
 import unittest
 from unittest import mock
@@ -177,27 +178,32 @@ class CudaWeightReuseTest(unittest.TestCase):
         empty = torch.empty(0, dtype=torch.uint8, device="cuda")
         self.assertTrue(same(empty, empty.clone()))
 
-    def _moved_method(self, collector, so_key, sources, replace=None):
+    def _moved_method(self, collector, so_key, sources, replace=None, update=None):
         """A method whose weights are moved from ``sources`` and freed after it.
 
-        ``replace`` frees the moved copies before AOTI sees them (as a pass
+        ``replace`` drops the moved copies before AOTI sees them (as a pass
         replacing them would) and returns the tensors to materialize instead.
+        ``update`` writes to the moved copies before AOTI sees them.
         """
         moved = {name: tensor.to("cuda") for name, tensor in sources.items()}
         with collector.capture(lambda _: AOTI_DEVICE_TYPE_CUDA) as capture:
-            capture.track_moved_tensors(sources, moved)
-            weights = moved
+            capture.record_moved_sources(sources, moved)
+            if update is not None:
+                with torch.no_grad():
+                    for tensor in moved.values():
+                        update(tensor)
             if replace is not None:
                 shapes = {name: tensor.shape for name, tensor in moved.items()}
-                for tensor in moved.values():
-                    tensor.untyped_storage().resize_(0)
-                weights = replace(shapes)
+                # Only the capture's records may keep the storages alive.
+                moved.clear()
+                gc.collect()
+                moved = replace(shapes)
             artifact = collector.materialize(
-                _weights(**weights), self.directory.name, capture
+                _weights(**moved), self.directory.name, capture
             )
         result = _parent_result(so_key)
         collector.add_preprocess_result(result, artifact, "cuda")
-        for tensor in [*moved.values(), *weights.values()]:
+        for tensor in moved.values():
             tensor.untyped_storage().resize_(0)
         return artifact, result
 
@@ -260,12 +266,22 @@ class CudaWeightReuseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "with different data"):
             self._moved_method(collector, "so-1", sources)
 
+    def test_a_moved_copy_written_before_materialize_is_checked(self) -> None:
+        sources = {"w": torch.randn(256, 8)}
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", sources)
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(
+                collector, "so-1", sources, update=lambda tensor: tensor.add_(1)
+            )
+
     def test_a_storage_freed_before_materialize_is_not_matched(self) -> None:
         sources = {"w": torch.randn(256, 8)}
         collector = CudaWeightCollector()
         self._moved_method(collector, "so-0", sources)
         # Same source, but the moved copy is freed before AOTI sees it and a
-        # storage with other bytes takes its place: it must be read and checked.
+        # storage with other bytes is allocated, possibly at its old address:
+        # it must be read and checked.
         with self.assertRaisesRegex(ValueError, "with different data"):
             self._moved_method(
                 collector,
@@ -293,9 +309,11 @@ class _TwoMethodLinear(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.linear = torch.nn.Linear(64, 48)
+        # A persistent buffer keeps the per-method handling.
+        self.register_buffer("scale", (torch.rand(48) + 0.5).to(torch.bfloat16))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x)
+        return self.linear(x) * self.scale
 
 
 class CudaWeightReuseExportTest(unittest.TestCase):
@@ -331,13 +349,13 @@ class CudaWeightReuseExportTest(unittest.TestCase):
             )
         return writes
 
-    # The linear weight and its bias.
-    _SIZES = (64 * 48 * 4, 48 * 4)
+    # The linear weight, its bias and the bf16 buffer.
+    _SIZES = (64 * 48 * 4, 48 * 4, 48 * 2)
 
     def test_low_memory_methods_write_shared_weights_once(self) -> None:
         writes = self._lower(low_memory=True)
-        self.assertEqual([writes.count(size) for size in self._SIZES], [1, 1])
+        self.assertEqual([writes.count(size) for size in self._SIZES], [1, 1, 2])
 
     def test_default_mode_writes_each_methods_own_copy(self) -> None:
         writes = self._lower(low_memory=False)
-        self.assertEqual([writes.count(size) for size in self._SIZES], [2, 2])
+        self.assertEqual([writes.count(size) for size in self._SIZES[:2]], [2, 2])
