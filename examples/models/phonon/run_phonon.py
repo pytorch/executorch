@@ -172,8 +172,9 @@ class PhononRunner:
         self.run = programs
         self.tokenize = tokenize
         c = programs.constant
-        if c("format_version") != 1:
+        if c("format_version") != 2:
             raise ValueError("Unsupported Phonon program; re-export it")
+        self.mimi_state_in_program = bool(c("mimi_state_in_program"))
         self.sample_rate = c("sample_rate")
         self.frame_samples = c("frame_samples")
         self.frame_rate = c("frame_rate")
@@ -213,7 +214,10 @@ class PhononRunner:
         if voice_len > self.max_prefill:
             raise ValueError("Voice prompt is longer than max_prefill")
         self._flow(voice_embeds, 0, torch.zeros(1, self.latent_dim))
-        mimi_state = self.run.mimi_zero_state()
+        # The inputs of mimi_decode after the latent: the state, or reset = 1
+        # then 0 when the program keeps the state.
+        stateful = self.mimi_state_in_program
+        mimi_state = [torch.ones(1)] if stateful else self.run.mimi_zero_state()
         prepared, _ = prepare_text(text)
         chunks = split_sentences(
             prepared, lambda s: len(self.tokenize(s)), MAX_CHUNK_TOKENS
@@ -237,7 +241,7 @@ class PhononRunner:
                 pos, step, frames = pos + 1, step + 1, frames + 1
                 out = self.run("mimi_decode", [latent.reshape(1, 1, -1), *mimi_state])
                 pcm.append(out[0].reshape(-1).numpy().copy())
-                mimi_state = out[1:]
+                mimi_state = [torch.zeros(1)] if stateful else out[1:]
                 info["latents"].append(latent.reshape(-1).numpy().copy())
                 info["eos_logits"].append(eos_logit)
                 if eos_logit > self.eos_threshold and countdown is None:
