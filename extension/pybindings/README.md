@@ -206,10 +206,11 @@ Other dtypes NumPy lacks, such as float8, are shown the same way, as integers of
 the same width. NumPy converts that view as integers, so
 `np.asarray(out, dtype=np.float32)` gives the bit patterns as numbers, not the
 bfloat16 values. DLPack consumers, such as `torch.from_dlpack(out)`, receive the
-original bfloat16 dtype. A bfloat16 result passed back in is read through DLPack
-too, so it keeps its dtype, shape, and dim order. A bfloat16 input does not
-accept 16-bit integers, so that integer data is never read as bfloat16 by
-mistake; pass the result itself or raw bytes.
+original bfloat16 or float8 dtype. A bfloat16 or float8 result passed back in is
+read through DLPack too, so it keeps its dtype, shape, and dim order. A bfloat16
+input does not accept 16-bit integers, so that integer data is never read as
+bfloat16 by mistake; pass the result itself or raw bytes. A float8 input does not
+accept 8-bit integers either; pass the result itself or a float8 tensor.
 
 ```python
 import cupy as cp

@@ -1709,8 +1709,8 @@ class BorrowedInput final {
 };
 
 #ifndef USE_ATEN_LIB
-// Asks for a DLPack 1.0 capsule, which can mark memory read-only, and falls
-// back to a legacy capsule for producers that predate it.
+// Asks for a versioned DLPack capsule, which can mark memory read-only, and
+// falls back to a legacy capsule for producers that predate versioned capsules.
 py::object dlpack_capsule(
     const py::object& producer,
     const py::object& stream) {
@@ -1720,7 +1720,8 @@ py::object dlpack_capsule(
       arguments["stream"] = stream;
     }
     if (versioned) {
-      arguments["max_version"] = py::make_tuple(1, 0);
+      arguments["max_version"] =
+          py::make_tuple(dlpack::kVersion.major, dlpack::kVersion.minor);
     }
     return producer.attr("__dlpack__")(**arguments);
   };
@@ -1889,7 +1890,7 @@ class DLPackTensorView final {
   }
 
  private:
-  // The tensor in capsule_, legacy or DLPack 1.0. The capsule keeps owning it
+  // The tensor in capsule_, legacy or versioned. The capsule keeps owning it
   // until mark_used(), so a failure before then lets the capsule free it.
   const dlpack::Tensor& take_capsule() {
     if (PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
@@ -1989,6 +1990,20 @@ class DLPackTensorView final {
     }
     if (dtype.code == dlpack::DataTypeCode::BFloat && dtype.bits == 16) {
       return ScalarType::BFloat16;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e4m3fn && dtype.bits == 8) {
+      return ScalarType::Float8_e4m3fn;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e4m3fnuz &&
+        dtype.bits == 8) {
+      return ScalarType::Float8_e4m3fnuz;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e5m2 && dtype.bits == 8) {
+      return ScalarType::Float8_e5m2;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e5m2fnuz &&
+        dtype.bits == 8) {
+      return ScalarType::Float8_e5m2fnuz;
     }
     if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 32) {
       return ScalarType::ComplexHalf;
