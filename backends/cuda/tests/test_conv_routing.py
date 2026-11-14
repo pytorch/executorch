@@ -14,11 +14,13 @@ exported on fake CUDA tensors, so no GPU is needed.
 import contextlib
 import dataclasses
 import importlib.util
+import math
 import unittest
 from unittest import mock
 
 import torch
 import torch.nn as nn
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
 _APIS = ("to_edge_transform_and_lower", "to_edge_to_backend")
@@ -122,7 +124,12 @@ class _PassTest(unittest.TestCase):
         return _targets(graph_module), "\n".join(logs.output)
 
     def assertRouted(
-        self, model, *inputs, template, canonical_args=None, device="cuda"
+        self,
+        model,
+        *inputs,
+        template,
+        canonical_args=None,
+        device="cuda",
     ):
         for api, graph_module in _backend_graphs(model, *inputs, device=device).items():
             with self.subTest(api=api):
@@ -494,7 +501,7 @@ class DirectTemplateRoutingTest(_PassTest):
         class Dense(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.conv = nn.Conv2d(8, 4, 3)
+                self.conv = nn.Conv2d(8, 4, 1)
 
             def forward(self, x):
                 return self.conv(x)
@@ -578,3 +585,382 @@ class DirectTemplateRoutingTest(_PassTest):
                         self.assertKept(
                             model, lambda shape=shape: torch.randn(shape), reason=reason
                         )
+
+
+def _dense(conv, in_channels, out_channels, kernel, dtype, view=None, **kwargs):
+    class Dense(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = conv(in_channels, out_channels, kernel, dtype=dtype, **kwargs)
+
+        def forward(self, x):
+            return self.conv(x if view is None else x.view(view))
+
+    return Dense
+
+
+# Benchmarked convolutions in the patterns models write them: (row, model,
+# input shape). The 3-input-channel ones are routed; the rest
+# keep the regular lowering, and the reason.
+_ROUTED_ROWS = (
+    (
+        "2x14x14 kernel == stride",
+        lambda dtype: _dense(
+            nn.Conv3d,
+            3,
+            1280,
+            (2, 14, 14),
+            dtype,
+            view=(-1, 3, 2, 14, 14),
+            stride=(2, 14, 14),
+            bias=False,
+        ),
+        (256, 3 * 2 * 14 * 14),
+    ),
+    (
+        "2x16x16 kernel == stride",
+        lambda dtype: _dense(
+            nn.Conv3d,
+            3,
+            1024,
+            (2, 16, 16),
+            dtype,
+            view=(-1, 3, 2, 16, 16),
+            stride=(2, 16, 16),
+        ),
+        (512, 3 * 2 * 16 * 16),
+    ),
+    (
+        "1x4x4 kernel == stride",
+        lambda dtype: _dense(nn.Conv3d, 3, 256, (1, 4, 4), dtype, stride=(1, 4, 4)),
+        (1, 3, 2, 544, 736),
+    ),
+    (
+        "14x14 kernel == stride",
+        lambda dtype: _dense(nn.Conv2d, 3, 1152, 14, dtype, stride=14, padding="valid"),
+        (1, 3, 224, 224),
+    ),
+    (
+        "16x16 kernel == stride",
+        lambda dtype: _dense(nn.Conv2d, 3, 768, 16, dtype, stride=16, bias=False),
+        (2, 3, 224, 224),
+    ),
+    (
+        "7x7 s4, 3 channels",
+        lambda dtype: _dense(nn.Conv2d, 3, 256, 7, dtype, stride=4, padding=3),
+        (3, 3, 224, 224),
+    ),
+    (
+        "7x7 s2 p3, 3 channels",
+        lambda dtype: _dense(
+            nn.Conv2d, 3, 64, 7, dtype, stride=2, padding=3, bias=False
+        ),
+        (1, 3, 480, 640),
+    ),
+    (
+        "7x7 s2, 3 to 32 channels",
+        lambda dtype: _dense(nn.Conv2d, 3, 32, 7, dtype, stride=2),
+        (1, 3, 84, 84),
+    ),
+)
+_KEPT_ROWS = (
+    (
+        "1x2x2 kernel == stride, 48 channels",
+        lambda dtype: _dense(nn.Conv3d, 48, 3072, (1, 2, 2), dtype, stride=(1, 2, 2)),
+        (1, 48, 1, 14, 28),
+        "48 input channels",
+    ),
+    (
+        "3x3",
+        lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, padding=1, bias=False),
+        (1, 64, 120, 160),
+        "64 input channels",
+    ),
+    (
+        "3x3 s2",
+        lambda dtype: _dense(
+            nn.Conv2d, 256, 512, 3, dtype, stride=2, padding=1, bias=False
+        ),
+        (1, 256, 30, 40),
+        "256 input channels",
+    ),
+    (
+        "1x1",
+        lambda dtype: _dense(nn.Conv2d, 512, 512, 1, dtype),
+        (1, 512, 15, 20),
+        "1x1 convolution",
+    ),
+    (
+        "1x1 s2",
+        lambda dtype: _dense(nn.Conv2d, 64, 128, 1, dtype, stride=2, bias=False),
+        (1, 64, 120, 160),
+        "1x1 convolution",
+    ),
+    (
+        "5x5 s2, 32 channels",
+        lambda dtype: _dense(nn.Conv2d, 32, 32, 5, dtype, stride=2),
+        (1, 32, 39, 39),
+        "32 input channels",
+    ),
+)
+
+
+def _steps_past(families, shape, c_out, kernel, stride, padding):
+    """The calls one step past each limit a benchmarked corner sits on."""
+    from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+    family = families[(kernel, stride, padding)]
+    batch, channels, *extent = shape
+    yield (batch, channels - 1, *extent), c_out, kernel, stride, padding
+    yield (batch, channels + 1, *extent), c_out, kernel, stride, padding
+    per_image = implicit_gemm._outputs(1, extent, kernel, stride, padding)
+    if batch > 1 and (batch - 1) * per_image < implicit_gemm.MIN_ROUTED_OUTPUT_PIXELS:
+        yield (batch - 1, channels, *extent), c_out, kernel, stride, padding
+    pixels = batch * math.prod(extent)
+    if (
+        batch == family.max_batch
+        or pixels + math.prod(extent) > implicit_gemm.MAX_ROUTED_INPUT_PIXELS
+    ):
+        yield (batch + 1, channels, *extent), c_out, kernel, stride, padding
+    for i, e in enumerate(extent):
+        grown = [*extent[:i], e + 1, *extent[i + 1 :]]
+        if (
+            e == family.max_spatial[i]
+            or batch * math.prod(grown) > implicit_gemm.MAX_ROUTED_INPUT_PIXELS
+        ):
+            yield (batch, channels, *grown), c_out, kernel, stride, padding
+    outputs = implicit_gemm._outputs(batch, extent, kernel, stride, padding)
+    most = min(
+        implicit_gemm.MAX_ROUTED_OUT_CHANNELS,
+        implicit_gemm.MAX_ROUTED_OUTPUT_ELEMENTS // outputs,
+    )
+    if c_out == most:
+        yield shape, c_out + 1, kernel, stride, padding
+    if c_out == implicit_gemm.MIN_ROUTED_OUT_CHANNELS > 1:
+        yield shape, c_out - 1, kernel, stride, padding
+    for geometry in (
+        (kernel, tuple(s + 1 for s in stride), padding),
+        (tuple(k + 2 for k in kernel), stride, padding),
+        (kernel, stride, tuple(p + 1 for p in padding)),
+    ):
+        if geometry not in families:
+            yield (shape, c_out, *geometry)
+
+
+class ImplicitGemmRoutingTest(_PassTest):
+    """Which dense convolutions the implicit-GEMM template takes."""
+
+    def setUp(self):
+        super().setUp()
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        # Exported on an A100, FP32 without TF32 unless a test allows it.
+        for patch in (
+            mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
+            mock.patch.object(implicit_gemm, "conv_allows_tf32", return_value=False),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def tf32(self, allowed):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        return mock.patch.object(
+            implicit_gemm, "conv_allows_tf32", return_value=allowed
+        )
+
+    def test_benchmarked_rows(self):
+        for dtype in (torch.float32, torch.bfloat16):
+            for row, model, shape in _ROUTED_ROWS:
+                with self.subTest(row=row, dtype=dtype):
+                    self.assertRouted(
+                        model(dtype),
+                        lambda shape=shape, dtype=dtype: torch.randn(
+                            shape, dtype=dtype
+                        ),
+                        template="implicit_gemm",
+                    )
+            for row, model, shape, reason in _KEPT_ROWS:
+                with self.subTest(row=row, dtype=dtype):
+                    self.assertKept(
+                        model(dtype),
+                        lambda shape=shape, dtype=dtype: torch.randn(
+                            shape, dtype=dtype
+                        ),
+                        reason=reason,
+                    )
+
+    def test_canonical_arguments(self):
+        # padding="valid" binds to zero padding on both sides.
+        self.assertRouted(
+            _ROUTED_ROWS[3][1](torch.float32),
+            lambda: torch.randn(1, 3, 224, 224),
+            template="implicit_gemm",
+            canonical_args=([14, 14], [0, 0], [0, 0], [1, 1], False, [0, 0], 1),
+        )
+
+    def test_precision_without_tensor_cores_is_kept(self):
+        _, model, shape = _ROUTED_ROWS[6]
+        with mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(7, 5)
+        ):
+            for dtype, tf32 in ((torch.bfloat16, False), (torch.float32, True)):
+                with self.subTest(dtype=dtype, tf32=tf32), self.tf32(tf32):
+                    self.assertKept(
+                        model(dtype),
+                        lambda dtype=dtype: torch.randn(shape, dtype=dtype),
+                        reason="without tensor cores",
+                    )
+            self.assertRouted(
+                model(torch.float32),
+                lambda: torch.randn(shape),
+                template="implicit_gemm",
+            )
+
+    def worth_routing(self, shape, out_channels, kernel, stride, before, after, **kw):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        with FakeTensorMode():
+            x = torch.empty(shape, dtype=kw["dtype"], device="cuda")
+            w = torch.empty(
+                out_channels, shape[1], *kernel, dtype=kw["dtype"], device="cuda"
+            )
+            x, w = kw.get("layout", lambda x, w: (x, w))(x, w)
+        rank = len(kernel)
+        params = ConvParams(
+            tuple(stride),
+            tuple(before),
+            tuple(after),
+            (1,) * rank,
+            False,
+            (0,) * rank,
+            1,
+        )
+        with self.tf32(kw["tf32"]):
+            return implicit_gemm.worth_routing(ConvCall(x, w, None, params))
+
+    def precisions(self):
+        """(dtype, TF32 allowed) of the FMA and tensor-core cases."""
+        return (
+            (torch.float32, False),
+            (torch.bfloat16, False),
+            (torch.float16, False),
+            (torch.float32, True),
+        )
+
+    def test_benchmarked_calls_are_routed(self):
+        # Every call the benchmark's boundary suite measures.
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for dtype, tf32 in self.precisions():
+            for shape, c_out, kernel, stride, padding in implicit_gemm.boundary_calls():
+                with self.subTest(
+                    shape=shape, c_out=c_out, kernel=kernel, dtype=dtype, tf32=tf32
+                ):
+                    self.assertIsNone(
+                        self.worth_routing(
+                            shape,
+                            c_out,
+                            kernel,
+                            stride,
+                            padding,
+                            padding,
+                            dtype=dtype,
+                            tf32=tf32,
+                        )
+                    )
+
+    def test_one_step_past_the_benchmarked_calls_is_kept(self):
+        """Each benchmarked corner moved one step past a limit it sits on: one
+        input channel more or less, one image, pixel or output channel more,
+        one image fewer below the output-pixel minimum, or a stride, kernel or
+        padding outside the benchmarked geometries."""
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        families = {
+            geometry: family
+            for family in implicit_gemm.ROUTED_FAMILIES
+            for geometry in family.geometries
+        }
+
+        for dtype, tf32 in self.precisions():
+            for call in implicit_gemm.boundary_calls():
+                padding = call[4]
+                outside = [(*step, step[-1]) for step in _steps_past(families, *call)]
+                # Asymmetric padding: one more element after.
+                outside.append((*call[:4], padding, tuple(p + 1 for p in padding)))
+                for shape, c_out, kernel, stride, before, after in outside:
+                    with self.subTest(
+                        call=call, outside=(shape, c_out, kernel, stride, before, after)
+                    ):
+                        self.assertIsNotNone(
+                            self.worth_routing(
+                                shape,
+                                c_out,
+                                kernel,
+                                stride,
+                                before,
+                                after,
+                                dtype=dtype,
+                                tf32=tf32,
+                            )
+                        )
+
+    def test_only_benchmarked_layouts_are_routed(self):
+        """The benchmark measures dense NCHW and channels-last inputs with
+        contiguous weights; sliced or padded inputs and channels-last or sliced
+        weights keep the regular lowering."""
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        def channels_last(x, w):
+            fmt = torch.channels_last if x.dim() == 4 else torch.channels_last_3d
+            return x.contiguous(memory_format=fmt), w
+
+        def sliced_input(x, w):
+            return x.as_strided(x.shape, x.stride(), 1), w
+
+        def padded_input(x, w):
+            n, c, *spatial = x.shape
+            plane = math.prod(spatial) + 1
+            strides = (c * plane, plane, *x.stride()[2:])
+            return x.as_strided(x.shape, strides), w
+
+        def channels_last_weight(x, w):
+            fmt = torch.channels_last if w.dim() == 4 else torch.channels_last_3d
+            return x, w.contiguous(memory_format=fmt)
+
+        def sliced_weight(x, w):
+            return x, w.as_strided(w.shape, w.stride(), 1)
+
+        for dtype, tf32 in self.precisions():
+            for call in implicit_gemm.boundary_calls():
+                shape, c_out, kernel, stride, padding = call
+                for layout, routed in (
+                    (channels_last, True),
+                    (sliced_input, False),
+                    (padded_input, False),
+                    (channels_last_weight, False),
+                    (sliced_weight, False),
+                ):
+                    with self.subTest(
+                        call=call, layout=layout.__name__, dtype=dtype, tf32=tf32
+                    ):
+                        reason = self.worth_routing(
+                            shape,
+                            c_out,
+                            kernel,
+                            stride,
+                            padding,
+                            padding,
+                            dtype=dtype,
+                            tf32=tf32,
+                            layout=layout,
+                        )
+                        if routed:
+                            self.assertIsNone(reason)
+                        else:
+                            self.assertIn("not a benchmarked layout", reason)
