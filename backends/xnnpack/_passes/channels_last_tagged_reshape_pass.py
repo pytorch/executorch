@@ -82,6 +82,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.linear.default,
+        # XNNPACK softmax normalizes over the innermost dim, which is C in NHWC.
+        exir_ops.edge.aten._softmax.default,
     }
 
     # Broadcasting binary ops whose operands must share one memory format.
