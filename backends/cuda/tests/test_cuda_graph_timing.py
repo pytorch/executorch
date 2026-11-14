@@ -156,9 +156,10 @@ class CudaGraphTimingTest(unittest.TestCase):
 
     def test_cached_memory_check_matches_the_flattened_counters(self) -> None:
         x = torch.zeros(1 << 16, device="cuda")
-        with cgt.cuda_graph_timing():
+        with cgt.cuda_graph_timing() as stats:
             for _ in range(8):
                 benchmarking.benchmarker.benchmark(lambda: x.add_(1), device="cuda")
+        self.assertEqual(stats.captured, 8)
         # Free what earlier tests' mock reference cycles still hold, so no block
         # is released between reading the counters and the zero-margin check.
         gc.collect()
@@ -171,6 +172,10 @@ class CudaGraphTimingTest(unittest.TestCase):
             ) as empty_cache, mock.patch.object(
                 # memory_reserved() and memory_allocated() flatten through this.
                 torch.cuda.memory,
+                "memory_stats",
+                side_effect=AssertionError("flattened the allocator stats"),
+            ), mock.patch.object(
+                torch.cuda,
                 "memory_stats",
                 side_effect=AssertionError("flattened the allocator stats"),
             ):
