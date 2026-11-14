@@ -654,6 +654,14 @@ class PyExecuTorchResult final
         return {dlpack::DataTypeCode::UInt, 32, 1};
       case ScalarType::UInt64:
         return {dlpack::DataTypeCode::UInt, 64, 1};
+      case ScalarType::Float8_e4m3fn:
+        return {dlpack::DataTypeCode::Float8_e4m3fn, 8, 1};
+      case ScalarType::Float8_e4m3fnuz:
+        return {dlpack::DataTypeCode::Float8_e4m3fnuz, 8, 1};
+      case ScalarType::Float8_e5m2:
+        return {dlpack::DataTypeCode::Float8_e5m2, 8, 1};
+      case ScalarType::Float8_e5m2fnuz:
+        return {dlpack::DataTypeCode::Float8_e5m2fnuz, 8, 1};
       default:
         throw py::value_error(
             "ExecuTorch result dtype cannot be represented by DLPack");

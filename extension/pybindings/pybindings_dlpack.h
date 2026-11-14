@@ -31,6 +31,11 @@ enum DataTypeCode : uint8_t {
   Complex = 5,
   BFloat = 4,
   Bool = 6,
+  // Since DLPack 1.1.
+  Float8_e4m3fn = 10,
+  Float8_e4m3fnuz = 11,
+  Float8_e5m2 = 12,
+  Float8_e5m2fnuz = 13,
 };
 
 struct Device {
