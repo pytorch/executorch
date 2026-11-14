@@ -23,6 +23,7 @@ from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
+from torch._decomp import remove_decompositions
 from torch._export.pass_base import PassType
 from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
@@ -598,18 +599,22 @@ class QuantizeStage(Stage):
                     {0: batch} if isinstance(t, torch.Tensor) else None for t in inputs
                 )
 
-            # QAT requires the model to be in training mode at capture time so
-            # that batch_norm and dropout decompose with training-mode semantics.
-            if recipe.is_qat:
-                model.train()
+            # batch_norm and dropout are captured with the mode's semantics: QAT
+            # trains the captured graph, PTQ calibrates the graph as it will run.
+            model.train(recipe.is_qat)
 
             with torch.no_grad():
                 for hook in self._pre_trace_hooks or []:
                     hook(method_name, model)
 
-            captured_graph = torch.export.export(
+            program = torch.export.export(
                 model, inputs, dynamic_shapes=export_dynamic_shapes, strict=True
-            ).module()
+            )
+            if recipe.preserve_ops is not None:
+                decomp_table = torch.export.default_decompositions()
+                remove_decompositions(decomp_table, recipe.preserve_ops)
+                program = program.run_decompositions(decomp_table)
+            captured_graph = program.module()
 
             # Pass 1: pre-prepare passes.
             captured_graph = self._apply_passes(
