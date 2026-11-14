@@ -1,0 +1,9 @@
+dataset_id: lerobot/libero
+
+task_id: 9
+
+max_episodes: 5
+
+observation_interval: 20
+
+seed: 0
