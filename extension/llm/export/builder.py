@@ -552,9 +552,6 @@ class LLMEdgeManager:
         # If there are Linear operations left in the graph, let's execute
         # them with the optimized op_linear rather than materializing a
         # transpose followed by a regular op_mm.
-        # TODO: ConvertToLinearPass is not a sound pass and must be called before
-        # const propagation.  It requires fixing:
-        # https://github.com/pytorch/executorch/issues/10499
         self.edge_manager.transform([ConvertToLinearPass()])
 
         self.export_program = self.edge_manager.to_executorch(

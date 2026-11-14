@@ -12,6 +12,7 @@ import torch
 from executorch.backends.transforms import get_shape
 from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
+    is_transpose,
 )
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -73,6 +74,33 @@ class ConvertToLinearPass(ExportPass):
         else:
             map_ = {"input": 0, "weight": 1}
             return None if arg == "bias" else node.args[map_[arg]]
+
+    @staticmethod
+    def can_convert(node: torch.fx.Node, src_partition: SourcePartition) -> bool:
+        """
+        Whether a linear can be rebuilt from node. A transpose must lie between
+        the weight that find() resolves to and the node, within the partition.
+        A bmm with a bias is left alone: the bias add that follows it is not
+        part of the bmm's linear (find_bias_for_mm is not used for bmm), so
+        rebuilding would drop the bias.
+        """
+        if node.target == exir_ops.edge.aten.bmm.default and any(
+            n.target == exir_ops.edge.aten.add.Tensor for n in src_partition.nodes
+        ):
+            return False
+        # Stop where find() stops, so the walk does not leave the partition.
+        boundary = src_partition.input_nodes + src_partition.params
+        weight = ConvertToLinearPass.get_arg(node, "weight")
+        while (
+            isinstance(weight, torch.fx.Node)
+            and weight not in boundary
+            and weight.op == "call_function"
+            and not is_dequant(weight)
+        ):
+            if is_transpose(weight):
+                return True
+            weight = weight.args[0]
+        return False
 
     def find_bias_for_mm(self, src_partition: SourcePartition, mm_node: torch.fx.Node):
         """
@@ -165,7 +193,7 @@ class ConvertToLinearPass(ExportPass):
                 for src_partitions in src_partition_dict.values()
                 for src_partition in src_partitions
                 for node in src_partition.nodes
-                if node.target in self.targets
+                if node.target in self.targets and self.can_convert(node, src_partition)
             }
 
             # No more [add]mm target in source partitions
