@@ -58,13 +58,18 @@ Tensor& div_out(
   ET_DEFINE_OPERATOR_NAME(op_name, "div.out");
 
   if (executorch::runtime::isComplexType(common_type)) {
-    ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
-      const CTYPE* a_data = a.const_data_ptr<CTYPE>();
-      const CTYPE* b_data = b.const_data_ptr<CTYPE>();
-      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-      for (ssize_t i = 0; i < out.numel(); ++i) {
-        out_data[i] = a_data[i] / b_data[i];
-      }
+    ET_KERNEL_CHECK(
+        ctx,
+        a.scalar_type() == b.scalar_type() &&
+            a.scalar_type() == out.scalar_type(),
+        InvalidArgument,
+        out);
+    ET_SWITCH_COMPLEX_TYPES(out.scalar_type(), ctx, op_name, CTYPE, [&]() {
+      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+          [](const CTYPE val_a, const CTYPE val_b) { return val_a / val_b; },
+          a,
+          b,
+          out);
     });
   } else {
     // Compute Dtype for real types
