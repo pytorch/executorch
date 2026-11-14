@@ -6,7 +6,7 @@
 
 import logging
 from itertools import chain
-from typing import cast, List, Optional, Tuple
+from typing import cast, Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -42,6 +42,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
 from torch.fx.experimental.symbolic_shapes import free_symbols, statically_known_true
+from torch.fx.passes.utils.fuser_utils import validate_partition
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -63,6 +64,11 @@ def get_static_param_deps(  # noqa: C901
     have users outside of the computation, and only user, and node may not be
     larger than the params it frees. The computing nodes add user's name to
     their COMPUTED_PARAM_TAG set.
+
+    The other outputs of a multi-output op in the computation, such as the
+    split of nn.MultiheadAttention's packed in_proj_weight, may also be used,
+    as the same argument of GEMMs like user. They count toward the size, and
+    GEMMConfig.check_constraints accepts user only together with those GEMMs.
     """
     if is_param_node(ep, node):
         return [node]
@@ -104,15 +110,32 @@ def get_static_param_deps(  # noqa: C901
             return None
         pending.extend(dep.all_input_nodes)
 
+    # By name, as to_edge_transform_and_lower renames the GEMMs it keeps from
+    # decomposing while it checks them.
+    kind = format_target_name(user.target.__name__)
+    positions = [arg is node for arg in user.args]
+    shared = []
     for dep in deps:
         for u in dep.users:
-            if u not in deps and not (
-                u is user and (dep is node or dep.op == "placeholder")
+            if u in deps or (u is user and (dep is node or dep.op == "placeholder")):
+                continue
+            if (
+                is_getitem(u)
+                and u.users
+                and all(
+                    gemm.op == "call_function"
+                    and format_target_name(gemm.target.__name__) == kind
+                    and [arg is u for arg in gemm.args] == positions
+                    for gemm in u.users
+                )
             ):
-                why(user, f"{dep} is also used by {u}")
-                return None
+                shared.append(u)
+                continue
+            why(user, f"{dep} is also used by {u}")
+            return None
     removed = [dep for dep in deps if dep.op == "placeholder" and user not in dep.users]
-    if node.meta["val"].nbytes > sum(param.meta["val"].nbytes for param in removed):
+    folded = sum(n.meta["val"].nbytes for n in [node, *shared])
+    if folded > sum(param.meta["val"].nbytes for param in removed):
         why(user, f"folding {node} would grow the program")
         return None
 
@@ -137,14 +160,87 @@ class GEMMConfig(XNNPartitionerConfig):
         self.bias_idx = bias_idx
         self.act_idx = act_idx
         self.fused_acts = fused_acts
+        # GEMMs being checked together because they share a weight or bias computation.
+        self.gemms_in_group_check: Set[torch.fx.Node] = set()
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         if not self.check_common_constraints(node, ep):
             # short circuit if we don't pass common constraints
             return False
 
-        is_valid, _ = self.get_deps(node, ep)
-        return is_valid
+        is_valid, deps = self.get_deps(node, ep)
+        return is_valid and self._check_gemms_sharing_deps(node, ep, deps)
+
+    def _get_gemms_sharing_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, deps: List[torch.fx.Node]
+    ) -> Dict[torch.fx.Node, List[torch.fx.Node]]:
+        """
+        Returns node and the GEMMs like it that take another output of a
+        multi-output op in its deps, directly or through each other, each
+        mapped to its deps.
+        """
+        group = {node: deps}
+        pending = [node]
+        while pending:
+            gemm_deps = set(group[pending.pop()])
+            for dep in gemm_deps:
+                for item in dep.users:
+                    if not is_getitem(item) or item in gemm_deps:
+                        continue
+                    for gemm in item.users:
+                        if (
+                            gemm.op == "call_function"
+                            and format_target_name(gemm.target.__name__)
+                            == self.target_name
+                            and gemm not in group
+                        ):
+                            group[gemm] = self.get_deps(gemm, ep)[1]
+                            pending.append(gemm)
+        return group
+
+    def _check_gemms_sharing_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, deps: List[torch.fx.Node]
+    ) -> bool:
+        """
+        GEMMs whose weights or biases are outputs of one multi-output op end up
+        in one partition, where preprocess folds the op. So node is accepted
+        only together with all of them, and only if that partition has no node
+        with too many dims and creates no cycle.
+        """
+        if node in self.gemms_in_group_check:
+            return True
+        group = self._get_gemms_sharing_deps(node, ep, deps)
+        if len(group) == 1:
+            return True
+
+        self.gemms_in_group_check.update(group)
+        try:
+            for gemm in group:
+                if gemm is not node and not self.check_constraints(gemm, ep):
+                    why(
+                        node,
+                        f"{gemm}, which shares a weight or bias computation with it, is not partitioned",
+                    )
+                    return False
+        finally:
+            self.gemms_in_group_check.difference_update(group)
+
+        partition = list(chain(group, *group.values()))
+        # get_partition rejects a GEMM whose partition has a node with too many dims.
+        for n in partition:
+            if not self._check_tensor_ranks(n):
+                why(
+                    node,
+                    f"merged with the GEMMs that share its weight or bias computation, its partition takes {n}, which has too many dims",
+                )
+                return False
+        if not validate_partition([n for n in partition if n.op != "placeholder"]):
+            why(
+                node,
+                "merging it with the GEMMs that share its weight or bias computation creates a cycle",
+            )
+            return False
+        return True
 
     def get_node_and_deps(
         self, node: torch.fx.Node, ep: ExportedProgram
