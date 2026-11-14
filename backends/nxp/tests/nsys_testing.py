@@ -81,6 +81,7 @@ class ReferenceRunner(Enum):
     # FLOAT_ATEN_PYTHON = 3  # Not implemented.
     FLOAT_PYTORCH_PYTHON = 4
     QUANTIZED_CORTEX_M = 5
+    NON_QUANTIZED_EXECUTORCH_CPP = 6
 
 
 def _get_dataset_cli_args(input_spec: list[ModelInputSpec], testing_dataset_dir):
@@ -244,21 +245,65 @@ def _run_non_delegated_executorch_program(
     return non_delegated_program.exported_program()
 
 
+def _run_non_quantized_fp32_executorch_program(
+    non_quantized_model_path,
+    testing_dataset_dir,
+    input_spec: list[ModelInputSpec],
+    cpu_results_dir,
+):
+    """
+    Run non quantized FP32 CPP model on NSYS. Non quantized model is always saved before this function by
+    `_save_non_quantized_fp32_executorch_program()`.
+
+    :param non_quantized_model_path: Path to non quantized FP32 model.
+    :param testing_dataset_dir: Directory containing testing data. The samples can be channels last (NHWC) or channels
+                                 first (NCHW). The format must match the input_spec.dim_order. The data will be
+                                 converted to channels first if needed.
+    :param input_spec: List of ModelInputSpec defining the shape, type, and dimension order of each input.
+    :param cpu_results_dir: Directory where CPU results will be stored. The structure will match the existing structure
+                             of `npu_results_dir`.
+    """
+    dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
+        input_spec, testing_dataset_dir
+    )
+    if any(spec.dim_order == torch.channels_last for spec in input_spec):
+        logging.info(
+            "Some portable ops doesn't support channels last dim order format, e.g. "
+            "`aten::_native_batch_norm_legit_no_training.out`. The run may fail."
+        )
+
+    # Run program via nxp_executor_runner on CPU
+    non_quantized_cmd = f"{NEUTRON_TEST_PATH} --model {non_quantized_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
+    execute_cmd(non_quantized_cmd)
+
+
 def _save_non_quantized_fp32_executorch_program(
-    model,
+    model: torch.nn.Module | GraphModule,
     test_dir,
-    test_name,
-    input_spec,
-) -> ExportedProgram:
+    test_name: str,
+    input_spec: list[ModelInputSpec],
+) -> str:
+    """
+    Save non quantized FP32 model.
+
+    :param model: Any PyTorch/ExecuTorch model runnable directly in Python.
+    :param test_dir: Directory for saving test artifacts.
+    :param test_name: Test name.
+    :param input_spec: List of ModelInputSpec defining the shape, type, and dimension order of each input.
+    :return: Path to non quantized FP32 model.
+    """
     non_quantized_program = to_edge_program(model, input_spec).to_executorch()
 
     assert not graph_contains_any_of_ops(
         non_quantized_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in non-quantized FP32 program!"
 
-    save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
+    non_quantized_model_path = save_pte_program(
+        non_quantized_program, test_name + "_non_quantized", test_dir
+    )
 
-    return non_quantized_program.exported_program()
+    return non_quantized_model_path
 
 
 def _run_python_program(
@@ -271,7 +316,7 @@ def _run_python_program(
 ):
     """Run a model in Python with channels first (contiguous) inputs.
 
-    :param model: Any PyTorch/ExecuTorch model runnable directly in python with channels first (contiguous) inputs.
+    :param model: Any PyTorch/ExecuTorch model runnable directly in Python with channels first (contiguous) inputs.
     :param testing_dataset_dir: Directory containing testing data. The samples can be channels last (NHWC) or channels
                                  first (NCHW). The format must match the input_spec.dim_order. The data will be
                                  converted to channels first if needed.
@@ -441,7 +486,6 @@ def lower_run_compare(
 
     model_to_delegate = model
     reference_model = deepcopy(model)
-    model_to_export_fp32 = deepcopy(model)
 
     test_name = get_test_name(request)
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
@@ -483,11 +527,11 @@ def lower_run_compare(
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
-    _save_non_quantized_fp32_executorch_program(
-        model_to_export_fp32,
+    non_quantized_model_path = _save_non_quantized_fp32_executorch_program(
+        reference_model,
         test_dir,
         test_name,
-        model_input_spec,
+        reference_input_spec,
     )
 
     delegated_program, model_testing_dataset_dir, model_input_quant_spec = (
@@ -534,6 +578,7 @@ def lower_run_compare(
         output_spec,
         cpu_results_dir,
         npu_results_dir,
+        non_quantized_model_path,
         use_qat=use_qat,
         train_fn=train_fn,
         remove_quant_io_ops=remove_quant_io_ops,
@@ -566,6 +611,7 @@ def _run_reference_model(
     output_spec: list[torch.Tensor],
     cpu_results_dir,
     npu_results_dir,
+    non_quantized_model_path,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     remove_quant_io_ops: bool = False,
@@ -584,6 +630,7 @@ def _run_reference_model(
     :param output_spec: List of output tensor specifications.
     :param cpu_results_dir: Directory where reference (CPU) results will be stored.
     :param npu_results_dir: Directory where NPU results are already stored.
+    :param non_quantized_model_path: Path to non quantized FP32 model.
     :param use_qat: If True, applies quantization-aware training before conversion.
     :param train_fn: Train/finetune function for QAT training. Used only when `use_qat=True`.
     :param remove_quant_io_ops: If True, IO q-ops are removed and verification is done on quantized
@@ -591,7 +638,7 @@ def _run_reference_model(
     """
     match reference_runner:
         case ReferenceRunner.QUANTIZED_EXECUTORCH_CPP:
-            # Lower to quantized executorch program, export to `.pte` file and run in c++ using
+            # Lower to quantized executorch program, export to `.pte` file and run in C++ using
             #  examples/nxp/executor_runner/nxp_executor_runner.cpp
             non_delegated_program = _run_non_delegated_executorch_program(
                 reference_model,
@@ -700,6 +747,22 @@ def _run_reference_model(
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
+            )
+
+        case ReferenceRunner.NON_QUANTIZED_EXECUTORCH_CPP:
+            if remove_quant_io_ops:
+                raise ValueError(
+                    "Flag remove_quant_io_ops is not applicable to NON_QUANTIZED_EXECUTORCH_CPP reference model "
+                    "as it works with float data only. Run with remove_quant_io_ops=False."
+                )
+
+            # Use exported`.pte` file with non quantized model and run in C++ using
+            #  examples/nxp/executor_runner/nxp_executor_runner.cpp
+            _run_non_quantized_fp32_executorch_program(
+                non_quantized_model_path,
+                testing_dataset_dir,
+                reference_input_spec,
+                cpu_results_dir,
             )
 
         case _:
