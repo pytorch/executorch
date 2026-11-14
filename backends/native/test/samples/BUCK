@@ -12,6 +12,7 @@ fbcode_target(
         "linear.py",
         "ops.py",
         "record.py",
+        "rms_norm.py",
         "schemes.py",
     ],
     deps = [
