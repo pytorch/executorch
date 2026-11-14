@@ -7,6 +7,12 @@
 """
 Script to combine multiple selected_prim_ops.h header files into a single header.
 This is used by selected_prim_operators_genrule to merge prim ops headers from dependencies.
+
+The combiner only runs for a build that asked for a selected primitive-operator
+set, so the union it produces is that set, and an empty union means the build
+selected none of them. Two cases are errors instead, because neither is a
+selection this tool may silently narrow: a dependency that reports no selection
+at all, or one that does not enumerate required operator overloads.
 """
 
 import argparse
@@ -14,6 +20,12 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Set
+
+# Written into a dependency's selected_prim_ops.h by
+# executorch/codegen/tools/gen_selected_prim_ops.py when a dependency does not
+# enumerate every required operator overload. Kept as a literal so this tool needs
+# none of that one's dependencies; the agreement is pinned by its test.
+UNBOUNDED_SELECTION_MACRO = "EXECUTORCH_PRIM_OPS_SELECTION_UNBOUNDED"
 
 
 def read_header_file(file_path: Path) -> Set[str]:
@@ -25,23 +37,34 @@ def read_header_file(file_path: Path) -> Set[str]:
 
     Returns:
         macros_set where macros_set contains unique macro defines
+
+    Raises:
+        OSError: the header is missing or cannot be read. It carries this
+            dependency's selection, so skipping it would silently narrow the
+            combined set.
+        ValueError: the dependency does not enumerate all required overloads,
+            so no selected primitive-operator set can be derived from it.
     """
     macros = set()
 
-    try:
-        with open(file_path, "r") as f:
-            for line in f:
-                line = line.strip()
+    with open(file_path, "r") as f:
+        for line in f:
+            line = line.strip()
 
-                # Extract #define statements for prim ops
-                if line.startswith("#define INCLUDE_") and not line.startswith(
-                    "#define EXECUTORCH_ENABLE"
-                ):
-                    macros.add(line)
-    except FileNotFoundError:
-        print(f"Warning: Header file not found: {file_path}", file=sys.stderr)
-    except Exception as e:
-        print(f"Error reading {file_path}: {e}", file=sys.stderr)
+            if line == f"#define {UNBOUNDED_SELECTION_MACRO}":
+                raise ValueError(
+                    f"{file_path} selects all operators or unenumerated operator "
+                    "overloads, so a selected primitive-operator set cannot be "
+                    "derived from it. List exact overloads or build "
+                    "the full primitive-operator registry instead, by passing "
+                    "include_all_prim_ops = True."
+                )
+
+            # Extract #define statements for prim ops
+            if line.startswith("#define INCLUDE_") and not line.startswith(
+                "#define EXECUTORCH_ENABLE"
+            ):
+                macros.add(line)
 
     return macros
 
@@ -55,20 +78,13 @@ def combine_prim_ops_headers(header_file_paths: List[str], output_path: str) -> 
         output_path: Path to output the combined header
     """
     all_macros = set()
-    has_selective_build = False
 
     # Read all header files and collect unique macros
     for header_file_path in header_file_paths:
         header_file = Path(header_file_path) / "selected_prim_ops.h"
-        if os.path.exists(header_file):
-            macros = read_header_file(header_file)
-            all_macros.update(macros)
-            if len(all_macros) > 0:
-                has_selective_build = True
-        else:
-            print(
-                f"Warning: Header file does not exist: {header_file}", file=sys.stderr
-            )
+        if not header_file.exists():
+            raise FileNotFoundError(header_file)
+        all_macros.update(read_header_file(header_file))
 
     # Generate combined header
     header_content = [
@@ -78,28 +94,14 @@ def combine_prim_ops_headers(header_file_paths: List[str], output_path: str) -> 
         "",
         "#pragma once",
         "",
+        "// Enable selective build for prim ops",
+        "#define EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD",
+        "",
+        "// Combined prim ops macros from all dependencies",
     ]
 
-    if all_macros and has_selective_build:
-        header_content.extend(
-            [
-                "// Enable selective build for prim ops",
-                "#define EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD",
-                "",
-                "// Combined prim ops macros from all dependencies",
-            ]
-        )
-
-        # Sort macros for deterministic output
-        sorted_macros = sorted(all_macros)
-        header_content.extend(sorted_macros)
-    else:
-        header_content.extend(
-            [
-                "// No prim ops found in dependencies - all prim ops will be included",
-                "// Selective build is disabled",
-            ]
-        )
+    # Sort macros for deterministic output
+    header_content.extend(sorted(all_macros))
 
     header_content.append("")
 
@@ -146,7 +148,6 @@ def main():
     )
 
     args = parser.parse_args()
-    import os
 
     header_file_paths = _get_header_file_paths_from_query_output(args.header_files)
 

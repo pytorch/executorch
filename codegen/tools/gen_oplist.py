@@ -229,7 +229,7 @@ def gen_oplist(
         or include_all_operators
     ):
         # dump empty yaml file
-        _dump_yaml([], output_path)
+        _dump_yaml([], output_path, include_all_operators=include_all_operators)
         return
 
     assert output_path, "Need to provide output_path for dumped yaml file."
