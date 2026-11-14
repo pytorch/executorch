@@ -57,4 +57,16 @@ std::unique_ptr<EngineExecutable> EngineContext::compile(
 
 EngineHost::~EngineHost() = default;
 
+std::unique_ptr<EngineContext> EngineHost::create_context_with_options(
+    std::shared_ptr<const Program> program,
+    std::shared_ptr<const Package> package,
+    const EngineOptions& options) {
+  if (!options.empty()) {
+    throw std::invalid_argument(
+        name() + ": unsupported context option '" + options.begin()->first +
+        "'");
+  }
+  return create_context(std::move(program), std::move(package));
+}
+
 } // namespace ptn
