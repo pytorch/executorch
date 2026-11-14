@@ -1293,3 +1293,84 @@ class ImplicitGemmRoutingTest(_PassTest):
                     )
                     rank = len(shape) - 2
                     self.assertEqual(conv.args[4:6], ([0] * rank, [0] * rank))
+
+    def test_transposed(self):
+        # (model, input shape, dtype, whether each API's graph needs the
+        # template): to_edge keeps aten.convolution, which Inductor cannot lower
+        # transposed on CUDA; to_edge_transform_and_lower keeps
+        # conv_transpose1d/2d, which the backend rewrites as convolutions, and
+        # conv_transpose3d, which it cannot lower.
+        cases = (
+            (
+                "k4 s2 upsample",
+                _dense(
+                    nn.ConvTranspose1d,
+                    1024,
+                    1024,
+                    4,
+                    torch.float32,
+                    stride=2,
+                    padding=1,
+                ),
+                (1, 1024, 4),
+                torch.float32,
+                {"to_edge_transform_and_lower": False, "to_edge_to_backend": True},
+            ),
+            (
+                "3-channel 2-D",
+                _dense(
+                    nn.ConvTranspose2d, 3, 64, 3, torch.bfloat16, stride=2, padding=1
+                ),
+                (1, 3, 56, 56),
+                torch.bfloat16,
+                {"to_edge_transform_and_lower": False, "to_edge_to_backend": True},
+            ),
+            (
+                "3-D",
+                _dense(
+                    nn.ConvTranspose3d,
+                    8,
+                    4,
+                    3,
+                    torch.float32,
+                    stride=2,
+                    output_padding=1,
+                ),
+                (1, 8, 3, 4, 5),
+                torch.float32,
+                {"to_edge_transform_and_lower": True, "to_edge_to_backend": True},
+            ),
+        )
+        for row, model, shape, dtype, required in cases:
+            graphs = _backend_graphs(
+                model, lambda shape=shape, dtype=dtype: torch.randn(shape, dtype=dtype)
+            )
+            for api, graph_module in graphs.items():
+                with self.subTest(row=row, api=api):
+                    targets, logs = self.run_pass(graph_module)
+                    if required[api]:
+                        (node,) = [
+                            n
+                            for n in graph_module.graph.nodes
+                            if n.target == torch.ops.triton.convolution.default
+                        ]
+                        self.assertIn("required, implicit_gemm template", logs)
+                        self.assertTrue(node.args[7])
+                        self.assertEqual(node.args[-1], list(node.meta["val"].stride()))
+                    else:
+                        self.assertNotIn(torch.ops.triton.convolution.default, targets)
+                        self.assertIn("transposed convolution is not benchmarked", logs)
+
+    def test_unsupported_transposed_is_kept(self):
+        for model, reason in (
+            (
+                _dense(nn.ConvTranspose1d, 8, 8, 3, torch.float32, dilation=2),
+                "implicit GEMM: dilation [2]",
+            ),
+            (
+                _dense(nn.ConvTranspose1d, 8, 8, 3, torch.float32, groups=2),
+                "implicit GEMM: grouped convolution",
+            ),
+        ):
+            with self.subTest(reason=reason):
+                self.assertKept(model, lambda: torch.randn(1, 8, 9), reason=reason)
