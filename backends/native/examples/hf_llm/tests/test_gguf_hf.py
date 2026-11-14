@@ -85,6 +85,16 @@ class GgufHfTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
                 key_map(name)
 
+    def test_truncated_model_skips_later_blocks(self) -> None:
+        key_map, _ = gguf_to_hf(_tiny(LlamaConfig), "llama", truncated=True)
+
+        self.assertIsNone(key_map("blk.2.attn_q.weight"))
+        self.assertEqual(
+            key_map("blk.1.attn_q.weight"), "model.layers.1.self_attn.q_proj.weight"
+        )
+        with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
+            key_map("blk.0.attn_qkv.weight")
+
     def test_checks_the_architecture_against_the_model(self) -> None:
         gguf_to_hf(_tiny(MistralConfig), "llama")
         with self.assertRaisesRegex(ValueError, "cannot load a 'qwen2' model"):
