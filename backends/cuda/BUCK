@@ -169,6 +169,12 @@ fbcode_target(
     name = "triton_kernels",
     srcs = [
         "triton/kernels/__init__.py",
+        "triton/kernels/conv/__init__.py",
+        "triton/kernels/conv/conv.py",
+        "triton/kernels/conv/core/__init__.py",
+        "triton/kernels/conv/core/common.py",
+        "triton/kernels/conv/core/direct.py",
+        "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_quantized_gemm.py",
         "triton/kernels/int5_quantized_gemm.py",
@@ -188,6 +194,21 @@ fbcode_target(
     ],
     deps = [
         ":autotune",
+        ":triton_routing",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "triton_routing",
+    srcs = [
+        "triton/routing.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
         "//caffe2:torch",
     ],
 )
@@ -204,6 +225,7 @@ fbcode_target(
     ],
     deps = [
         ":triton_kernels",
+        ":triton_routing",
         "//caffe2:torch",
         "//executorch/exir/dialects:lib",
     ],
