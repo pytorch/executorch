@@ -28,6 +28,24 @@ bool is_constant(const Value& value) {
       value.role == ValueRole::ConstantTensor;
 }
 
+// A None weight scales by one; a present weight must be a constant that matches
+// the normalized shape and the input dtype.
+bool is_valid_weight(
+    const Graph& graph,
+    const Argument& weight,
+    const std::vector<int64_t>& shape,
+    ScalarType dtype) {
+  if (weight.kind() == ArgKind::None) {
+    return true;
+  }
+  if (weight.kind() != ArgKind::Tensor || !valid(weight.as_tensor().id)) {
+    return false;
+  }
+  const Value& value = graph.value(weight.as_tensor().id);
+  return value.is_tensor() && is_constant(value) &&
+      value.tensor_meta().sizes == shape && value.tensor_meta().dtype == dtype;
+}
+
 } // namespace
 
 size_t lower_rms_norms(Graph& graph) {
@@ -46,37 +64,33 @@ size_t lower_rms_norms(Graph& graph) {
     if (input == nullptr || input->kind() != ArgKind::Tensor ||
         normalized_shape == nullptr ||
         normalized_shape->kind() != ArgKind::IntList || weight == nullptr ||
-        weight->kind() != ArgKind::Tensor || eps == nullptr ||
-        eps->kind() != ArgKind::Float || valid(eps->as_float().id) ||
-        !std::isfinite(eps->as_float().value) || eps->as_float().value < 0) {
+        eps == nullptr || eps->kind() != ArgKind::Float ||
+        valid(eps->as_float().id) || !std::isfinite(eps->as_float().value) ||
+        eps->as_float().value < 0) {
       continue;
     }
 
     const ValueId input_id = input->as_tensor().id;
-    const ValueId weight_id = weight->as_tensor().id;
     const ValueId output_id = node.outputs[0].value_id;
-    if (!valid(input_id) || !valid(weight_id)) {
+    if (!valid(input_id)) {
       continue;
     }
     const Value& input_value = graph.value(input_id);
-    const Value& weight_value = graph.value(weight_id);
     const Value& output_value = graph.value(output_id);
-    if (!input_value.is_tensor() || !weight_value.is_tensor() ||
-        !output_value.is_tensor() || !is_constant(weight_value)) {
+    if (!input_value.is_tensor() || !output_value.is_tensor()) {
       continue;
     }
 
     const TensorMeta& input_meta = input_value.tensor_meta();
-    const TensorMeta& weight_meta = weight_value.tensor_meta();
     const TensorMeta& output_meta = output_value.tensor_meta();
     const IntListArg& shape = normalized_shape->as_int_list();
-    if (input_meta.sizes.empty() || !shape.ids.empty() ||
+    if (input_meta.sizes.empty() || input_meta.sizes.back() < 1 ||
+        !shape.ids.empty() ||
         shape.values != std::vector<int64_t>{input_meta.sizes.back()} ||
-        weight_meta.sizes != shape.values ||
         (input_meta.dtype != ScalarType::Float &&
          input_meta.dtype != ScalarType::Half &&
          input_meta.dtype != ScalarType::BFloat16) ||
-        weight_meta.dtype != input_meta.dtype ||
+        !is_valid_weight(graph, *weight, shape.values, input_meta.dtype) ||
         output_meta.dtype != input_meta.dtype ||
         output_meta.sizes != input_meta.sizes) {
       continue;
