@@ -321,3 +321,20 @@ TEST_F(OpAminOutTest, InfinityAndNANTest) {
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+
+TEST_F(OpAminOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  // Reducing a non-empty dim of an empty input gives an empty output.
+  Tensor out = tf.zeros({0});
+  op_amin_out(tf.zeros({0, 5}), dim_list, /*keepdim=*/false, out);
+  EXPECT_EQ(out.numel(), 0);
+
+  // Reducing an empty dim is an error.
+  out = tf.zeros({5});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amin_out(tf.zeros({5, 0}), dim_list, /*keepdim=*/false, out));
+}
