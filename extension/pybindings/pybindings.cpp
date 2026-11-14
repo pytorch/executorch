@@ -1990,6 +1990,20 @@ class DLPackTensorView final {
     if (dtype.code == dlpack::DataTypeCode::BFloat && dtype.bits == 16) {
       return ScalarType::BFloat16;
     }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e4m3fn && dtype.bits == 8) {
+      return ScalarType::Float8_e4m3fn;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e4m3fnuz &&
+        dtype.bits == 8) {
+      return ScalarType::Float8_e4m3fnuz;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e5m2 && dtype.bits == 8) {
+      return ScalarType::Float8_e5m2;
+    }
+    if (dtype.code == dlpack::DataTypeCode::Float8_e5m2fnuz &&
+        dtype.bits == 8) {
+      return ScalarType::Float8_e5m2fnuz;
+    }
     if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 32) {
       return ScalarType::ComplexHalf;
     }

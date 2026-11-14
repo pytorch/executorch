@@ -1188,6 +1188,27 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def test_float8_host_bits_run_through_a_method(self):
+        # Float8 values come as bytes, and an uploaded float8 input and the
+        # method's float8 output pass through DLPack.
+        value = torch.tensor([[1.0, -2.0, 0.5], [3.0, 0.0, -0.25]]).to(
+            torch.float8_e4m3fn
+        )
+        host = memoryview(bytes(value.view(torch.uint8).flatten().tolist())).cast(
+            "B", value.shape
+        )
+        uploaded = self.bindings.ExecuTorchResult.from_host(
+            host, self.device.index, dtype="float8_e4m3fn"
+        )
+        self.assertEqual(uploaded.dtype, "float8_e4m3fn")
+        data = self._device_identity(self.device.index, value)
+        method = self.bindings._load_program_from_buffer(data).load_method("forward")
+        output = self._tensor(method(uploaded)[0])
+        self.assertEqual(output.dtype, torch.float8_e4m3fn)
+        torch.testing.assert_close(
+            output.view(torch.uint8), value.to(self.device).view(torch.uint8)
+        )
+
     def test_bfloat16_host_bits_move_to_the_device(self):
         # Host data without torch has no bfloat16 buffer format, so it comes as
         # 16-bit unsigned integers and from_host is told the dtype.

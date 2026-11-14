@@ -2291,6 +2291,31 @@ print("CUDA DLPack roundtrip preserved device storage")
             torch.equal(output.view(torch.float16), value.view(torch.float16))
         )
 
+    def test_float8_dlpack_input(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings read DLPack inputs themselves")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        for dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            with self.subTest(dtype=dtype):
+                value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+                program = to_edge(export(Identity(), (value,))).to_executorch(
+                    ExecutorchBackendConfig(
+                        memory_planning_pass=MemoryPlanningPass(
+                            alloc_graph_input=False, alloc_graph_output=False
+                        )
+                    )
+                )
+                method = self.load_prog_fn(program.buffer).load_method("forward")
+                output = torch.from_dlpack(method(DLPackOnly(value))[0])
+                self.assertEqual(output.dtype, dtype)
+                self.assertTrue(
+                    torch.equal(output.view(torch.uint8), value.view(torch.uint8))
+                )
+
     def test_unsupported_buffer_format_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
