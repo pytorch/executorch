@@ -20,7 +20,7 @@ from typing import Callable, Iterator, Optional
 
 import torch
 import triton
-from executorch.backends.cuda.triton.kernels.conv.core import direct
+from executorch.backends.cuda.triton.kernels.conv.core import direct, implicit_gemm
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     check_params,
     ConvCall,
@@ -52,6 +52,15 @@ TEMPLATES = (
         direct.launch,
         direct.run_schedule,
         direct.worth_routing,
+    ),
+    ConvTemplate(
+        "implicit_gemm",
+        implicit_gemm.supports,
+        tuple(s.name for s in implicit_gemm.SCHEDULES),
+        implicit_gemm.schedule_supports,
+        implicit_gemm.launch,
+        implicit_gemm.run_schedule,
+        implicit_gemm.worth_routing,
     ),
 )
 

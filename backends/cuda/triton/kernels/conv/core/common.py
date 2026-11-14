@@ -26,7 +26,7 @@ Canonical arguments. Every spatial argument has one entry per spatial dim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, NamedTuple, Optional, Sequence
 
 import torch
 
@@ -45,6 +45,25 @@ CONV_OVERLOADS = {
     ("aten::conv_transpose3d", "input"): 3,
     ("aten::convolution", ""): None,
 }
+
+
+class Schedule(NamedTuple):
+    name: str
+    # The compute capability the export GPU needs; 0: every NVIDIA GPU.
+    min_capability: int
+
+
+def conv_allows_tf32() -> bool:
+    """Whether FP32 convolutions may compute in TF32: the setting Inductor's
+    Triton conv templates follow, so a convolution keeps its precision whether
+    it is routed or not."""
+    from torch._dynamo.device_interface import get_interface_for_device
+
+    interface = get_interface_for_device("cuda")
+    # Older PyTorch releases read the cuDNN-wide setting directly.
+    if not hasattr(interface, "conv_allow_tf32"):
+        return torch.backends.cudnn.fp32_precision == "tf32"
+    return bool(interface.conv_allow_tf32())
 
 
 class ConvBindingError(ValueError):
