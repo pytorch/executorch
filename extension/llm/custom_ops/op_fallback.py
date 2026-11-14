@@ -1,5 +1,6 @@
 # Copyright (c) Qualcomm Innovation Center, Inc.
 # All rights reserved
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +10,7 @@ import torch
 
 from torch.library import impl, Library
 
-fallback_op_lib = Library("llama", "DEF")
+fallback_op_lib = Library("llama", "FRAGMENT")
 # registering an operator.
 fallback_op_lib.define("fallback(Tensor input) -> Tensor")
 

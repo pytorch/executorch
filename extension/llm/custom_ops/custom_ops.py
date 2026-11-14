@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,22 +17,54 @@ from typing import Tuple
 
 import torch
 
+from executorch.extension.llm.custom_ops.custom_sdpa_schema import (
+    CustomSDPANativeOpUnavailable,
+    register_custom_sdpa_fake,
+)
 from torch._inductor.lowering import lowerings as L, register_lowering
 
 from torch.library import impl
 
 aten = torch.ops.aten
 
-try:
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-    op3 = torch.ops.llama.quantized_moe_ffn.default
-    assert op3 is not None
-except:
-    # This is needed to ensure that custom ops are registered
-    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+def _has_native_custom_sdpa_kernel() -> bool:
+    try:
+        return torch._C._dispatch_has_kernel_for_dispatch_key(
+            "llama::custom_sdpa",
+            "CompositeExplicitAutograd",
+        )
+    except RuntimeError:
+        return False
+
+
+def _native_custom_ops_are_registered() -> bool:
+    try:
+        return (
+            all(
+                op is not None
+                for op in (
+                    torch.ops.llama.sdpa_with_kv_cache.default,
+                    torch.ops.llama.fast_hadamard_transform.default,
+                    torch.ops.llama.quantized_moe_ffn.default,
+                )
+            )
+            and _has_native_custom_sdpa_kernel()
+        )
+    except (AttributeError, RuntimeError):
+        return False
+
+
+def _ensure_native_custom_ops_loaded() -> None:
+    if _native_custom_ops_are_registered():
+        return
+
+    try:
+        import executorch.extension.pybindings.portable_lib  # noqa: F401  # usort: skip
+    except ImportError as exc:
+        raise CustomSDPANativeOpUnavailable(
+            "portable_lib is unavailable, so native LLM custom ops cannot be loaded"
+        ) from exc
 
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
@@ -42,18 +75,23 @@ except:
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
     libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
+    if not libs:
+        raise CustomSDPANativeOpUnavailable(
+            f"custom_ops_aot_lib was not found under {package_path}"
+        )
+    if len(libs) != 1:
+        raise RuntimeError(f"Expected 1 library but got {len(libs)}")
 
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-    op3 = torch.ops.llama.quantized_moe_ffn.default
-    assert op3 is not None
+    if not _native_custom_ops_are_registered():
+        raise RuntimeError("Native LLM custom op registration is incomplete")
+
+
+_ensure_native_custom_ops_loaded()
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
+register_custom_sdpa_fake()
 
 
 def _validate_params(
@@ -107,6 +145,19 @@ def _validate_params(
     assert (
         key_cache.size() == value_cache.size()
     ), f"Key cache and value cache must have same size but got {key_cache.size()} and {value_cache.size()}"
+    assert query.size(0) == key_cache.size(0) == value_cache.size(0), (
+        "Query, key cache, and value cache must have matching batch sizes but got "
+        f"{query.size(0)}, {key_cache.size(0)}, and {value_cache.size(0)}"
+    )
+    assert query.size(3) == key_cache.size(3) == value_cache.size(3), (
+        "Query, key cache, and value cache must have matching head dimensions "
+        f"but got {query.size(3)}, {key_cache.size(3)}, and {value_cache.size(3)}"
+    )
+    assert key_cache.size(2) > 0, "Expected key/value cache to have at least one head."
+    assert query.size(2) % key_cache.size(2) == 0, (
+        "Query head count must match the KV head count or be divisible by it, "
+        f"but got {query.size(2)} and {key_cache.size(2)}"
+    )
 
     # These asserts are real but they require me to add constrain_as_size/value calls to the model and I dont want to do that right now
     # assert start_pos < key_cache.size(
@@ -263,35 +314,6 @@ def quantized_moe_ffn_meta(
         route_scale,
     )
     return torch.empty((x.size(0), dim), dtype=torch.float32, device=x.device)
-
-
-@impl(custom_ops_lib, "custom_sdpa", "Meta")
-def custom_sdpa(
-    query,
-    key_cache,
-    value_cache,
-    start_pos,
-    attn_mask=None,
-    drpout_p=0.0,
-    is_causal=False,
-    scale=None,
-):
-    seq_len = query.size(1)
-    _validate_params(
-        query,
-        key_cache,
-        value_cache,
-        key_cache,
-        value_cache,
-        start_pos,
-        seq_len,
-        attn_mask,
-        drpout_p,
-        is_causal,
-        scale,
-    )
-
-    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 def _validate_update_cache_params(

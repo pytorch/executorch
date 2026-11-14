@@ -1,8 +1,15 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 
 import torch
-
 from executorch.exir.pass_base import ExportPass
+from executorch.extension.llm.custom_ops.custom_sdpa_schema import (
+    ensure_custom_sdpa_registered,
+)
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -111,30 +118,24 @@ class ReplaceSDPAWithCustomSDPAPass(ExportPass):
         self.assume_causal_mask = assume_causal_mask
 
     def call_operator(self, op, args, kwargs, meta):
-        from executorch.extension.llm.custom_ops import custom_ops  # noqa
-
         if op != torch.ops.aten.scaled_dot_product_attention.default:
             return super().call_operator(op, args, kwargs, meta)
 
-        q, k, v, mask, dropout, is_causal, scale = self._extract_args(args, kwargs)
+        ensure_custom_sdpa_registered()
+        q, k, v, mask, dropout, is_causal, scale, enable_gqa = self._extract_args(
+            args, kwargs
+        )
+
+        if self.assume_causal_mask:
+            mask = None
+            is_causal = True
+
+        if not self._can_rewrite_sdpa(q, k, v, mask, dropout, is_causal, enable_gqa):
+            return super().call_operator(op, args, kwargs, meta)
 
         qT = self._transpose(q, meta)
         kT = self._transpose(k, meta)
         vT = self._transpose(v, meta)
-
-        if not (
-            q.node.meta["val"].dim()
-            == k.node.meta["val"].dim()
-            == v.node.meta["val"].dim()
-            == 4
-        ):
-            logging.info("ReplaceSDPAWithCustomSDPAPass only supports 4D QKV inputs.")
-            return super().call_operator(op, args, kwargs, meta)
-
-        if self.assume_causal_mask:
-            # Ignore specified mask simply set the is_causal flag.
-            mask = None
-            is_causal = True
 
         if mask is not None:
             mask_fake_tensor = mask.node.meta["val"]
@@ -169,12 +170,66 @@ class ReplaceSDPAWithCustomSDPAPass(ExportPass):
         )
         return self._transpose(custom_sdpa, meta)
 
+    def _can_rewrite_sdpa(self, q, k, v, mask, dropout, is_causal, enable_gqa):
+        if not (
+            q.node.meta["val"].dim()
+            == k.node.meta["val"].dim()
+            == v.node.meta["val"].dim()
+            == 4
+        ):
+            logging.info("ReplaceSDPAWithCustomSDPAPass only supports 4D QKV inputs.")
+            return False
+
+        if not self._supports_head_layout(q, k, v, enable_gqa):
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass requires matching heads or "
+                "enable_gqa=True with compatible query/KV heads."
+            )
+            return False
+        if not self._supports_native_shape_contract(q, k, v):
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass requires matching batch shapes "
+                "and Q/K/V head dimensions."
+            )
+            return False
+        if dropout != 0.0:
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass does not rewrite SDPA with "
+                "non-zero dropout."
+            )
+            return False
+        if q.node.meta["val"].dtype not in (
+            torch.float32,
+            torch.bfloat16,
+            torch.float16,
+        ):
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass only rewrites float32, "
+                "bfloat16, or float16 SDPA inputs."
+            )
+            return False
+        if not self._supports_unmasked_attention_contract(q, k, v, mask, is_causal):
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass does not rewrite unmasked SDPA "
+                "when the native custom-op KV-prefix contract would change "
+                "aten semantics."
+            )
+            return False
+        if not self._supports_custom_mask_contract(q, k, mask):
+            logging.info(
+                "ReplaceSDPAWithCustomSDPAPass only rewrites attention masks "
+                "that already match the custom SDPA contract."
+            )
+            return False
+        return True
+
     def _extract_args(self, args, kwargs):
         q, k, v, *rest = args
         mask = None
         dropout = 0.0
         is_causal = False
         scale = None
+        enable_gqa = False
         if len(rest) > 0:
             mask = rest[0]
         if len(rest) > 1:
@@ -183,8 +238,88 @@ class ReplaceSDPAWithCustomSDPAPass(ExportPass):
             is_causal = rest[2]
         if "scale" in kwargs:
             scale = kwargs["scale"]
+        if "enable_gqa" in kwargs:
+            enable_gqa = kwargs["enable_gqa"]
 
-        return q, k, v, mask, dropout, is_causal, scale
+        return q, k, v, mask, dropout, is_causal, scale, enable_gqa
+
+    @staticmethod
+    def _supports_head_layout(q, k, v, enable_gqa):
+        def _heads(x):
+            if hasattr(x, "node"):
+                return x.node.meta["val"].shape[1]
+            return x.shape[1]
+
+        q_heads = _heads(q)
+        k_heads = _heads(k)
+        v_heads = _heads(v)
+
+        if k_heads != v_heads:
+            return False
+        if q_heads == k_heads:
+            return True
+        if k_heads == 1:
+            return True
+        if not enable_gqa:
+            return False
+        return q_heads % k_heads == 0
+
+    @staticmethod
+    def _supports_native_shape_contract(q, k, v):
+        def _shape(x):
+            if hasattr(x, "node"):
+                return x.node.meta["val"].shape
+            return x.shape
+
+        q_shape = _shape(q)
+        k_shape = _shape(k)
+        v_shape = _shape(v)
+        return (
+            tuple(q_shape[:-3]) == tuple(k_shape[:-3]) == tuple(v_shape[:-3])
+            and q_shape[-1] == k_shape[-1] == v_shape[-1]
+        )
+
+    @staticmethod
+    def _supports_unmasked_attention_contract(q, k, v, mask, is_causal):
+        if mask is not None:
+            return True
+
+        def _shape(x):
+            if hasattr(x, "node"):
+                return x.node.meta["val"].shape
+            return x.shape
+
+        q_shape = _shape(q)
+        k_shape = _shape(k)
+        v_shape = _shape(v)
+        q_seq_len = q_shape[2]
+        k_seq_len = k_shape[2]
+        v_seq_len = v_shape[2]
+
+        if is_causal:
+            return q_seq_len <= k_seq_len and q_seq_len <= v_seq_len
+
+        return q_seq_len == k_seq_len == v_seq_len
+
+    @staticmethod
+    def _supports_custom_mask_contract(q, k, mask):
+        if mask is None:
+            return True
+
+        mask_fake_tensor = mask.node.meta["val"]
+        if mask_fake_tensor.dim() < 2:
+            return False
+        if mask_fake_tensor.dim() > 2 and any(
+            d != 1 for d in mask_fake_tensor.size()[:-2]
+        ):
+            return False
+
+        if mask_fake_tensor.dtype not in (torch.bool, torch.float32):
+            return False
+
+        q_seq_len = q.node.meta["val"].shape[2]
+        k_seq_len = k.node.meta["val"].shape[2]
+        return tuple(mask_fake_tensor.shape[-2:]) == (q_seq_len, k_seq_len)
 
     def _transpose(self, x, meta):
         transpose = super().call_operator(
