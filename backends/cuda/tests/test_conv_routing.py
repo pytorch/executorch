@@ -20,6 +20,7 @@ from unittest import mock
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
@@ -711,14 +712,17 @@ class DirectTemplateRoutingTest(_PassTest):
                         )
 
 
-def _dense(conv, in_channels, out_channels, kernel, dtype, view=None, **kwargs):
+def _dense(
+    conv, in_channels, out_channels, kernel, dtype, view=None, pad=None, **kwargs
+):
     class Dense(nn.Module):
         def __init__(self):
             super().__init__()
             self.conv = conv(in_channels, out_channels, kernel, dtype=dtype, **kwargs)
 
         def forward(self, x):
-            return self.conv(x if view is None else x.view(view))
+            x = x if view is None else x.view(view)
+            return self.conv(x if pad is None else F.pad(x, pad))
 
     return Dense
 
@@ -911,8 +915,33 @@ def _layout_variants(routed_layouts):  # noqa: C901
     )
 
 
-# 1-D convolutions over short sequences: (row, model, input shape, dtype,
-# why Inductor keeps them).
+# 3-D convolutions: a causal 3x3x3 after an explicit pad, a 1x1x1 and a
+# (3,1,1) stride (2,1,1): (row, model, input shape, dtype, why Inductor
+# keeps them).
+_CONV3D_ROWS = (
+    (
+        "causal 3x3x3",
+        _dense(nn.Conv3d, 160, 160, 3, torch.bfloat16, pad=(1, 1, 1, 1, 2, 0)),
+        (1, 160, 1, 112, 224),
+        torch.bfloat16,
+        "160 input channels",
+    ),
+    (
+        "1x1x1",
+        _dense(nn.Conv3d, 160, 320, 1, torch.bfloat16),
+        (2, 160, 16, 32, 32),
+        torch.bfloat16,
+        "1x1 convolution",
+    ),
+    (
+        "3x1x1 s2",
+        _dense(nn.Conv3d, 320, 320, (3, 1, 1), torch.bfloat16, stride=(2, 1, 1)),
+        (2, 320, 17, 16, 16),
+        torch.bfloat16,
+        "320 input channels",
+    ),
+)
+# 1-D convolutions over short sequences, likewise.
 _CONV1D_ROWS = (
     (
         "k5",
@@ -1195,6 +1224,16 @@ class ImplicitGemmRoutingTest(_PassTest):
                         else:
                             self.assertIn("not a benchmarked layout", reason)
 
+    def test_conv3d_rows(self):
+        # Inductor keeps every row: none is benchmarked faster.
+        for row, model, shape, dtype, reason in _CONV3D_ROWS:
+            with self.subTest(row=row):
+                self.assertKept(
+                    model,
+                    lambda shape=shape, dtype=dtype: torch.randn(shape, dtype=dtype),
+                    reason=reason,
+                )
+
     def test_conv1d_rows(self):
         # to_edge leaves a 1-D convolution as aten.convolution, which Inductor
         # cannot lower, so the template takes it. to_edge_transform_and_lower
@@ -1227,3 +1266,30 @@ class ImplicitGemmRoutingTest(_PassTest):
                 targets, logs = self.run_pass(graph_module)
                 self.assertEqual(targets.count(torch.ops.triton.convolution.default), 1)
                 self.assertIn("required, implicit_gemm template", logs)
+
+    def test_explicit_pad_stays_its_own_node(self):
+        from executorch.backends.cuda.triton.kernels.conv import routing
+
+        take_all = tuple(
+            dataclasses.replace(t, worth_routing=lambda call: None)
+            for t in routing.TEMPLATES
+        )
+        for row, model, shape, dtype, _ in _CONV3D_ROWS[:1]:
+            graphs = _backend_graphs(
+                model, lambda shape=shape, dtype=dtype: torch.randn(shape, dtype=dtype)
+            )
+            for api, graph_module in graphs.items():
+                with self.subTest(row=row, api=api), mock.patch.object(
+                    routing, "TEMPLATES", take_all
+                ):
+                    self.run_pass(graph_module)
+                    (conv,) = [
+                        n
+                        for n in graph_module.graph.nodes
+                        if n.target == torch.ops.triton.convolution.default
+                    ]
+                    self.assertRegex(
+                        str(conv.args[0].target), r"aten\.(constant_pad_nd|pad)\."
+                    )
+                    rank = len(shape) - 2
+                    self.assertEqual(conv.args[4:6], ([0] * rank, [0] * rank))
