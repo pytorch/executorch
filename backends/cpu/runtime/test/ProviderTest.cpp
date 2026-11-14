@@ -1700,6 +1700,79 @@ TEST_F(ProviderTest, XNNPACKMaxPool2dRejectsUnsupportedSchemas) {
   graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {1, 2, 8});
   EXPECT_FALSE(supported());
 }
+TEST_F(ProviderTest, XNNPACKAveragePoolRejectsUnsupportedSchemas) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 8, 8});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 4, 4});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  ptn::Node node;
+  node.name = "avg_pool2d";
+  node.target = "torch.ops.aten.avg_pool2d.default";
+  node.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"kernel_size", ptn::IntListArg{{3, 3}, {}}},
+      {"stride", ptn::IntListArg{{2, 2}, {}}},
+      {"padding", ptn::IntListArg{{1, 1}, {}}},
+      {"ceil_mode", ptn::BoolArg{false}},
+      {"count_include_pad", ptn::BoolArg{true}},
+      {"divisor_override", ptn::NoneArg{}}};
+  node.outputs = {{ptn::OutputValueKind::Tensor, 1, {}}};
+  graph.nodes.push_back(node);
+  graph.input_ids = {0};
+  graph.output_ids = {1};
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  auto supported = [&] {
+    return implementation->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  ASSERT_TRUE(supported());
+  struct InvalidArgument {
+    size_t index;
+    ptn::Argument argument;
+  };
+  const InvalidArgument invalid[] = {
+      {1, ptn::IntListArg{{}, {}}},
+      {1, ptn::IntListArg{{0, 3}, {}}},
+      {1, ptn::IntListArg{{3, 3, 3}, {}}},
+      {1, ptn::IntListArg{{3, 3}, {0, 1}}},
+      {1, ptn::IntListArg{{65536, 65536}, {}}},
+      {1, ptn::IntListArg{{std::numeric_limits<int64_t>::max(), 3}, {}}},
+      {2, ptn::IntListArg{{0, 2}, {}}},
+      {2, ptn::IntListArg{{int64_t{1} << 32, 2}, {}}},
+      {3, ptn::IntListArg{{}, {}}},
+      {3, ptn::IntListArg{{-1, 1}, {}}},
+      {3, ptn::IntListArg{{2, 1}, {}}},
+      {4, ptn::IntArg{0}},
+      {4, ptn::BoolArg{false, 0}},
+      {5, ptn::BoolArg{true, 0}},
+      {6, ptn::IntArg{9}}};
+  for (const auto& [index, argument] : invalid) {
+    SCOPED_TRACE(index);
+    graph.node(0).inputs[index].arg = argument;
+    EXPECT_FALSE(supported());
+    graph.nodes[0] = node;
+  }
+  graph.node(0).inputs[0].mutated = true;
+  EXPECT_FALSE(supported());
+  graph.nodes[0] = node;
+  graph.node(0).inputs.pop_back();
+  EXPECT_FALSE(supported());
+  graph.nodes[0] = node;
+  for (const auto& shape :
+       {std::vector<int64_t>{1, 2, 5, 4},
+        std::vector<int64_t>{1, 3, 4, 4},
+        std::vector<int64_t>{1, 2, 4}}) {
+    graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, shape);
+    EXPECT_FALSE(supported());
+  }
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Half, {1, 2, 4, 4});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {1, 2, 8});
+  EXPECT_FALSE(supported());
+}
 // cppcheck-suppress-end syntaxError
 } // namespace
 } // namespace executorch::backends::cpu
