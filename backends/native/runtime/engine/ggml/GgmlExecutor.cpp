@@ -1293,19 +1293,22 @@ class GgmlExecutable final : public EngineExecutable {
   // the graphs built over the old storage, which this executable keeps alive
   // until then.
   void bind_offgraph(int64_t rows) {
-    kv_cache_->reserve(primary_backend_, static_cast<int>(rows));
-    if (kv_cache_->storage() == offgraph_storage_) {
+    kv_cache_->pool().reserve(primary_backend_, static_cast<int>(rows));
+    if (kv_cache_->pool().storage() == offgraph_storage_) {
       return;
     }
     for (CachedGraph& cached : cached_graphs_) {
       ggml_backend_sched_synchronize(cached.scheduler.get());
     }
     cached_graphs_.clear();
-    offgraph_storage_ = kv_cache_->storage();
+    offgraph_storage_ = kv_cache_->pool().storage();
     offgraph_cache_.layers.clear();
-    for (const GgmlSequenceCache::Layer& layer : offgraph_storage_->layers) {
+    for (const GgmlKvPool::Layer& layer : offgraph_storage_->layers) {
       offgraph_cache_.layers.push_back(
-          {.k = layer.k, .v = layer.v, .window = layer.window});
+          {.k = layer.k,
+           .v = layer.v,
+           .window = layer.window,
+           .ring = layer.ring});
     }
   }
 
@@ -1509,7 +1512,7 @@ class GgmlExecutable final : public EngineExecutable {
   OffGraphCacheBinding offgraph_cache_;
   // The storage offgraph_cache_ and cached graphs point into. Declared before
   // cached_graphs_ so it outlives them.
-  std::shared_ptr<const GgmlSequenceCache::Storage> offgraph_storage_;
+  std::shared_ptr<const GgmlKvPool::Storage> offgraph_storage_;
   // The step execute() is running, checked once.
   std::optional<OffGraphStep> offgraph_step_;
   std::vector<InputSlot> inputs_;
