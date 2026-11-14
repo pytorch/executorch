@@ -53,10 +53,14 @@ def _compute_post_pad(
     if ceil_mode and divisor_override is None and pad_adjust > pad:
         return pad
 
-    # Padding must never be below 0; the above adjustment may return -1.
+    # Padding must never be below 0; the above adjustment is negative when the
+    # last window ends before the end of the input. No post padding is needed
+    # then, SizeAdjustInputPass truncates the unused input instead. Padding
+    # with ``pad`` would make ceil_mode keep a last window that PyTorch drops
+    # because it starts in the padding.
     if pad_adjust >= 0:
         return pad_adjust
-    return pad
+    return 0
 
 
 def _get_avgpool_post_pad(
