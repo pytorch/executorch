@@ -48,11 +48,34 @@ the same program (`python -m executorch.examples.models.phonon.run_phonon
 --model phonon_exports/$BACKEND/phonon.pte --text "Hello from ExecuTorch."
 --output hello_py.wav`, plus `--data-path` for CUDA).
 
+`--stream` writes 16-bit mono PCM to stdout as each 80 ms frame is decoded,
+instead of the WAV file, so playback starts after the first frame:
+
+```bash
+cmake-out/examples/models/phonon/phonon_runner --model_path=... --text="..." --stream |
+  aplay -q -f S16_LE -r 24000 -c 1     # macOS: play -q -t raw -r 24000 -e signed -b 16 -c 1 -
+```
+
 XNNPACK delegates the linear and convolution ops; the flow LM's attention runs
 as the ExecuTorch custom op `llama::sdpa_with_kv_cache`.
-`--quantize 4bit` (8-bit dynamic activations, 4-bit weights) or `--quantize 8bit`
-quantizes the flow LM's linear layers on XNNPACK. A backend without a kernel for
-the level fails before the download and names the options that work.
+
+`--quantize 4bit` or `--quantize 8bit` quantizes the linear layers of the flow
+LM's transformer and flow net with the scheme of the backend; the codec stays in
+the export dtype. Without `--quantize`, the export is full precision.
+
+| Backend | `--quantize 4bit` | `--quantize 8bit` | Size of phonon.pte (FP32: about 155 MiB) |
+|---------|-------------------|-------------------|------------------------------------------|
+| XNNPACK | 8-bit dynamic activations, 4-bit weights | 8-bit dynamic activations, 8-bit weights | 64, 75 MiB |
+| CUDA    | 4-bit weights, BF16 | 8-bit weights | 64, 62 MiB with BF16 |
+| Vulkan, WebGPU | 4-bit weights | not available | 66 MiB |
+| MLX     | asymmetric 4-bit weights | 8-bit weights | 68, 76 MiB; 41, 51 MiB with BF16 |
+
+`--backend cuda --quantize 4bit` exports with `--dtype bf16`, which the int4
+kernel needs. A level without a kernel on the backend fails before the download
+and names the options that work. 8-bit and the asymmetric 4-bit of CUDA and MLX
+keep the timing of FP32. The symmetric 4-bit of XNNPACK, Vulkan and WebGPU
+keeps the words but can hold the silence at the end of a sentence for up to two
+seconds.
 
 Vulkan and MLX run each method in one partition. Vulkan needs `glslc`, for
 example from the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (on Linux,

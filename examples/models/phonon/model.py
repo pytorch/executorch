@@ -736,12 +736,12 @@ class FlowLMStep(nn.Module):
     def _attend_sdpa(self, i, q, k, v, input_pos):
         cfg = self.cfg
         seq = q.shape[1]
-        pos = input_pos + torch.arange(seq, dtype=torch.long)
+        pos = input_pos + torch.arange(seq, dtype=torch.long, device=input_pos.device)
         q, k = hf_apply_rotary_emb(q, k, self.rope_cos[pos], self.rope_sin[pos])
         k_cache, v_cache = getattr(self, f"k_cache_{i}"), getattr(self, f"v_cache_{i}")
         k_cache.index_copy_(2, pos, k.transpose(1, 2))
         v_cache.index_copy_(2, pos, v.transpose(1, 2))
-        keys = torch.arange(cfg.max_context, dtype=torch.long)
+        keys = torch.arange(cfg.max_context, dtype=torch.long, device=pos.device)
         mask = torch.where(keys[None, :] <= pos[:, None], 0.0, float("-inf"))
         o = F.scaled_dot_product_attention(
             q.transpose(1, 2), k_cache, v_cache, attn_mask=mask

@@ -20,6 +20,7 @@ import torch
 
 from executorch.examples.models.phonon.export_phonon import (
     lower_phonon,
+    quantize_asymmetric_int4,
     quantize_scheme,
     source_transforms_for,
 )
@@ -341,11 +342,32 @@ class TestExport(unittest.TestCase):
         with self.assertRaises(ValueError):
             lower_phonon(random_model().to_half_split_rope(), "vulkan", dtype="bf16")
 
+    def test_quantize_picks_the_scheme_of_the_backend(self):
+        self.assertEqual(quantize_scheme("xnnpack", "4bit", None), ("8da4w", "fp32"))
+        self.assertEqual(quantize_scheme("vulkan", "4bit", None), ("4w", "fp32"))
+        self.assertEqual(quantize_scheme("cuda", "4bit", None), ("4w", "bf16"))
+        self.assertEqual(quantize_scheme("mlx", "8bit", "bf16"), ("8w", "bf16"))
+        self.assertEqual(quantize_scheme("vulkan", None, None), (None, "fp32"))
+
     def test_quantize_only_with_a_kernel(self):
-        self.assertEqual(quantize_scheme("xnnpack", "4bit"), "8da4w")
-        self.assertIsNone(quantize_scheme("vulkan", None))
-        with self.assertRaises(ValueError):
-            quantize_scheme("vulkan", "4bit")
+        for backend, quantize, dtype in (
+            ("vulkan", "8bit", None),
+            ("portable", "4bit", None),
+            ("cuda", "4bit", "fp32"),
+            ("xnnpack", None, "bf16"),
+        ):
+            with self.assertRaises(ValueError, msg=f"{backend} {quantize}"):
+                quantize_scheme(backend, quantize, dtype)
+
+    def test_asymmetric_int4_skips_incompatible_linears(self):
+        torch.manual_seed(0)
+        module = torch.nn.Sequential(torch.nn.Linear(64, 16), torch.nn.Linear(16, 8))
+        x = torch.randn(4, 64)
+        want = module(x)
+        quantize_asymmetric_int4(module, 32)
+        self.assertIsNot(type(module[0].weight), torch.nn.Parameter)
+        self.assertIs(type(module[1].weight), torch.nn.Parameter)
+        self.assertLess(max_diff(module(x), want), 0.1)
 
     def test_xnnpack_lowering_delegates(self):
         _, _, delegation, _ = self._lower("xnnpack")

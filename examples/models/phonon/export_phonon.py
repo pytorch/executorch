@@ -54,8 +54,16 @@ DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16}
 # Backends that support --dtype bf16.
 BF16_BACKENDS = ("portable", "cuda", "mlx")
 # The linear quantization scheme of each --quantize level, per backend: 8da is
-# dynamically quantized 8-bit activations with 4- or 8-bit weights.
-QUANTIZE_SCHEMES = {"xnnpack": {"4bit": "8da4w", "8bit": "8da8w"}}
+# dynamically quantized 8-bit activations, 4w and 8w quantize the weights only.
+# CUDA 4w is the packed int4 kernel, which takes BF16 weights; MLX 4w is
+# asymmetric (see quantize_asymmetric_int4).
+QUANTIZE_SCHEMES = {
+    "xnnpack": {"4bit": "8da4w", "8bit": "8da8w"},
+    "cuda": {"4bit": "4w", "8bit": "8w"},
+    "vulkan": {"4bit": "4w"},
+    "webgpu": {"4bit": "4w"},
+    "mlx": {"4bit": "4w", "8bit": "8w"},
+}
 
 
 def attention_for(backend: str) -> str:
@@ -83,12 +91,19 @@ def source_transforms_for(backend: str, webgpu_compat_ops: bool):
     }.get(backend, [])
 
 
-def quantize_scheme(backend: str, quantize: str | None) -> str | None:
-    """The linear quantization scheme for `--quantize` on `backend`. Raises
-    ValueError with what to run instead when the backend has no kernel for the
-    level."""
+def quantize_scheme(
+    backend: str, quantize: str | None, dtype: str | None
+) -> tuple[str | None, str]:
+    """The linear quantization scheme and the dtype for `--quantize` and
+    `--dtype` on `backend`. Raises ValueError with what to run instead when the
+    backend has no kernel for them."""
+    if dtype == "bf16" and backend not in BF16_BACKENDS:
+        raise ValueError(
+            f"--dtype bf16 is available for --backend {', '.join(BF16_BACKENDS)}. "
+            f"Export --backend {backend} without --dtype (FP32)."
+        )
     if quantize is None:
-        return None
+        return None, dtype or "fp32"
     schemes = QUANTIZE_SCHEMES.get(backend, {})
     if quantize not in schemes:
         options = [f"with --quantize {q}" for q in schemes]
@@ -97,7 +112,35 @@ def quantize_scheme(backend: str, quantize: str | None) -> str | None:
             f"--backend {backend} has no {quantize} linear kernel. Export "
             f"{' or '.join(options)} instead."
         )
-    return schemes[quantize]
+    scheme = schemes[quantize]
+    if backend == "cuda" and scheme == "4w":
+        if dtype == "fp32":
+            raise ValueError(
+                "--backend cuda --quantize 4bit needs BF16 weights (the int4 "
+                "kernel takes BF16). Drop --dtype fp32 and it uses BF16, or "
+                "export without --quantize for FP32."
+            )
+        if dtype is None:
+            print("--backend cuda --quantize 4bit: using --dtype bf16")
+        dtype = "bf16"
+    return scheme, dtype or "fp32"
+
+
+def quantize_asymmetric_int4(module: torch.nn.Module, group_size: int) -> None:
+    from torchao.quantization.granularity import PerGroup
+    from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+    from torchao.quantization.quant_primitives import MappingType
+
+    quantize_(
+        module,
+        IntxWeightOnlyConfig(
+            weight_dtype=torch.int4,
+            granularity=PerGroup(group_size),
+            mapping_type=MappingType.ASYMMETRIC,
+        ),
+        filter_fn=lambda m, _: isinstance(m, torch.nn.Linear)
+        and m.in_features % group_size == 0,
+    )
 
 
 def partitioners_for(backend: str, methods, quantized: bool):
@@ -192,7 +235,7 @@ def lower_phonon(
     quantize: str | None = None,
     quantize_group_size: int | None = None,
     webgpu_compat_ops: bool = False,
-    dtype: str = "fp32",
+    dtype: str | None = None,
 ):
     """Export and lower the four programs of `model` for `backend`.
     Returns (ExecutorchProgramManager, delegation summary, metadata)."""
@@ -201,12 +244,8 @@ def lower_phonon(
     )
 
     cfg = model.cfg
-    qlinear = quantize_scheme(backend, quantize)
-    if dtype == "bf16" and (backend not in BF16_BACKENDS or qlinear):
-        raise ValueError(
-            f"--dtype bf16 is available for --backend {', '.join(BF16_BACKENDS)} "
-            "without --quantize. Export without --dtype (FP32)."
-        )
+    qlinear, dtype = quantize_scheme(backend, quantize, dtype)
+    packing = "tile_packed_to_4d" if backend == "cuda" and qlinear == "4w" else None
     # Before the module swaps, which change the model's modules in place.
     metadata = program_metadata(model)
     programs = build_programs(model, attention_for(backend))
@@ -219,15 +258,27 @@ def lower_phonon(
     if qlinear:
         from executorch.extension.llm.export.quantize import quantize_model_
 
-        # Weight quantization applies to the flow LM; the codec stays in fp32.
-        quantize_model_(
-            programs["flow_lm"],
-            qlinear_config=qlinear,
-            qlinear_group_size=quantize_group_size,
-            skip_incompatible_shapes=True,
-        )
+        # Weight quantization applies to the transformer and flow net of the
+        # flow LM. The codec, the input projection and the one-output EOS head
+        # are not quantized. The int4 packing for CUDA runs on the GPU.
+        flow_lm = programs["flow_lm"].to("cuda" if packing else "cpu")
+        for module in (flow_lm.layers, flow_lm.flow_net):
+            if backend == "mlx" and qlinear == "4w":
+                # Symmetric int4 delays the end-of-speech decision (long
+                # pauses); asymmetric int4 keeps the timing of FP32.
+                quantize_asymmetric_int4(module, quantize_group_size or 32)
+                continue
+            quantize_model_(
+                module,
+                qlinear_config=qlinear,
+                qlinear_group_size=quantize_group_size,
+                qlinear_packing_format=packing,
+                skip_incompatible_shapes=True,
+            )
 
     inputs, shapes = example_inputs(cfg), dynamic_shapes(cfg)
+    if packing:
+        inputs["flow_lm"] = tuple(t.to("cuda") for t in inputs["flow_lm"])
     partitioners, passes, decompositions = partitioners_for(
         backend, list(programs), quantized=bool(qlinear)
     )
@@ -266,11 +317,12 @@ def export_phonon(
     quantize: str | None = None,
     quantize_group_size: int | None = None,
     webgpu_compat_ops: bool = False,
-    dtype: str = "fp32",
+    dtype: str | None = None,
 ) -> Path:
     """Export a checkpoint directory to output_dir/phonon.pte (plus
     aoti_cuda_blob.ptd for CUDA), phonon.json, the tokenizer and the default
     voice."""
+    qlinear, dtype = quantize_scheme(backend, quantize, dtype)
     model = Phonon.from_checkpoint(checkpoint_dir / "model.safetensors")
     cfg = model.cfg
     program, delegation, metadata = lower_phonon(
@@ -294,7 +346,7 @@ def export_phonon(
         "backend": backend,
         "dtype": dtype,
         "quantize": quantize,
-        "qlinear": quantize_scheme(backend, quantize),
+        "qlinear": qlinear,
         "webgpu_compat_ops": webgpu_compat_ops,
         "files": {
             "program": pte.name,
@@ -336,8 +388,8 @@ def main():
     parser.add_argument(
         "--dtype",
         choices=tuple(DTYPES),
-        default="fp32",
-        help="Weight and matmul dtype; inputs, outputs and state stay float32",
+        help="Weight and matmul dtype (default: fp32, or bf16 for --backend cuda "
+        "--quantize 4bit); inputs, outputs and state stay float32",
     )
     parser.add_argument(
         "--webgpu-compat-ops",
@@ -348,7 +400,7 @@ def main():
     args = parser.parse_args()
     # Before the download, so that an unsupported combination fails first.
     try:
-        quantize_scheme(args.backend, args.quantize)
+        _, dtype = quantize_scheme(args.backend, args.quantize, args.dtype)
     except ValueError as e:
         parser.error(str(e))
     export_phonon(
@@ -358,7 +410,7 @@ def main():
         quantize=args.quantize,
         quantize_group_size=args.quantize_group_size,
         webgpu_compat_ops=args.webgpu_compat_ops,
-        dtype=args.dtype,
+        dtype=dtype,
     )
 
 
