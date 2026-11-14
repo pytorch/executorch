@@ -13,16 +13,19 @@ per backend:
 
   decompose_elu           MLX and Vulkan have no aten.elu kernel; without it
                           the Mimi decoder splits at every ELU.
-  conv_transpose1d_as_2d  Vulkan runs transposed convolution on 4-D inputs only.
+  conv_transpose1d_as_2d  Older WebGPU runtimes have no 1-D transposed
+                          convolution (use_webgpu_compat_ops).
   conv_transpose1d_as_conv1d
-                          XNNPACK's deconvolution is slow; this runs the Mimi
-                          decoder's transposed convolutions (kernel =
-                          2 * stride) as a convolution and an interleave.
+                          Runs the Mimi decoder's transposed convolutions
+                          (kernel = 2 * stride) as a convolution and an
+                          interleave, which XNNPACK, Vulkan, MLX and CUDA run
+                          faster than their transposed convolution.
   depthwise_conv_transpose_as_mul
                           Vulkan computes the Mimi upsampler (depthwise,
                           kernel = 2 * stride) incorrectly; this runs it as a
-                          multiply and an overlap-add. XNNPACK also runs it
-                          faster this way.
+                          multiply and an overlap-add. XNNPACK, MLX and CUDA
+                          use it for the upsampler too, which
+                          conv_transpose1d_as_conv1d skips.
   use_webgpu_compat_ops   WebGPU runtimes built before these runtime fixes
                           (off by default; --webgpu-compat-ops):
                             * native_layer_norm resize hook (the flow LM's
@@ -171,7 +174,7 @@ class DepthwiseConvTranspose1dAsMul(nn.Module):
         y = x.unsqueeze(3) * self.weight  # [b, c, n, 2s]
         head = y[..., :s].reshape(b, c, n * s)
         tail = y[..., s:].reshape(b, c, n * s)
-        zeros = torch.zeros(b, c, s, dtype=x.dtype)
+        zeros = x.new_zeros(b, c, s)
         return torch.cat([head, zeros], 2) + torch.cat([zeros, tail], 2)
 
 
@@ -262,6 +265,8 @@ WEIGHT_MODULES = (
     nn.ConvTranspose1d,
     nn.Embedding,
     ConvTranspose1dAs2d,
+    ConvTranspose1dAsConv1d,
+    DepthwiseConvTranspose1dAsMul,
 )
 
 

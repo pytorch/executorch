@@ -32,6 +32,7 @@ from executorch.examples.models.phonon.model import (
     Phonon,
     PhononConfig,
     program_metadata,
+    StreamingConvTranspose1d,
 )
 from executorch.examples.models.phonon.run_phonon import (
     EagerPrograms,
@@ -43,6 +44,7 @@ from executorch.examples.models.phonon.run_phonon import (
 )
 from executorch.examples.models.phonon.source_transformations import (
     compute_weights_in,
+    ComputeIn,
     ConvTranspose1dAsConv1d,
     use_webgpu_compat_ops,
 )
@@ -213,6 +215,8 @@ class TestPrograms(unittest.TestCase):
     def test_weight_names_are_unique_across_programs(self):
         # The CUDA backend shares a weight between methods when the names match.
         programs = build_programs(self.model, "sdpa")
+        for transform in source_transforms_for("cuda", False):
+            transform(programs)
         compute_weights_in(programs, torch.bfloat16)
         owner = {}
         for name, program in programs.items():
@@ -258,6 +262,13 @@ class TestPrograms(unittest.TestCase):
         # The depthwise upsampler, 2 decoder transposed convs.
         self._check_swaps("xnnpack", [1, 2])
 
+    def test_cuda_swaps_preserve_outputs(self):
+        self._check_swaps("cuda", [1, 2])
+
+    def test_mlx_swaps_preserve_outputs(self):
+        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("mlx", [7, 1, 2])
+
     def test_conv_transpose_as_conv_matches(self):
         torch.manual_seed(0)
         for stride, steps, bias in (
@@ -275,13 +286,23 @@ class TestPrograms(unittest.TestCase):
                 self.assertLess(max_diff(got, convtr(x)), 1e-5, stride)
 
     def test_compute_weights_in_keeps_float32_io(self):
+        # --dtype bf16 is for CUDA and MLX, which apply the Mimi swaps first.
         inputs = example_inputs(TINY)
         programs = build_programs(self.model)
         with torch.no_grad():
             before = programs["mimi_decode"](*inputs["mimi_decode"])
+        for transform in source_transforms_for("cuda", False):
+            transform(programs)
         self.assertGreater(compute_weights_in(programs, torch.bfloat16), 0)
+        mimi = programs["mimi_decode"]
+        convtrs = [
+            m.convtr for m in mimi.modules() if isinstance(m, StreamingConvTranspose1d)
+        ]
+        self.assertEqual(len(convtrs), 3)
+        for convtr in convtrs:
+            self.assertIsInstance(convtr, ComputeIn)
         with torch.no_grad():
-            after = programs["mimi_decode"](*inputs["mimi_decode"])
+            after = mimi(*inputs["mimi_decode"])
         for a, b in zip(before, after):
             self.assertEqual(b.dtype, torch.float32)
             self.assertLess(max_diff(a, b), 0.05 * (a.abs().max().item() + 1e-6))
