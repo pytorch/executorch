@@ -1,3 +1,2 @@
-# Newer releases break the portable export of this model, see #23453.
-ultralytics==8.4.14
+ultralytics==8.4.185
 opencv-python
