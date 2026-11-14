@@ -207,18 +207,10 @@ def export_model(model_id, output_dir, revision=None, dtype=None, backend="mlx")
     elif backend == "cuda":
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-        # The custom Triton SDPA kernel supports BF16 only.
-        triton_mode = b"ON" if dtype == torch.bfloat16 else b"OFF"
         partitioners = {
             name: [
-                CudaPartitioner(
-                    [
-                        CudaBackend.generate_method_name_compile_spec(name),
-                        CompileSpec("triton_kernel_mode", triton_mode),
-                    ]
-                )
+                CudaPartitioner([CudaBackend.generate_method_name_compile_spec(name)])
             ]
             for name in ("pre_encode", "encode")
         }
