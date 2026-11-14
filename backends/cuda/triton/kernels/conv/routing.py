@@ -55,17 +55,18 @@ def regular_lowering_gap(target: Any, call: ConvCall) -> Optional[str]:
     """Why the backend's regular lowering cannot compile this conv, or None.
 
     Inductor's Triton templates need dilation 1 and a forward convolution of
-    rank 2 or 3 (rank 1 only for depthwise). The backend decomposes ``conv1d``,
-    ``conv_transpose1d`` and ``conv_transpose2d`` into 2-D forward convolutions
-    before Inductor sees them.
+    rank 2 or 3 (rank 1 only for depthwise). The backend decomposes
+    ``conv1d.default``, ``conv_transpose1d.default`` and
+    ``conv_transpose2d.input`` into 2-D forward convolutions before Inductor
+    sees them; ``conv1d.padding`` stays a 1-D convolution.
     """
     p, w = call.params, call.weight
     if any(d != 1 for d in p.dilation):
         return f"dilation {list(p.dilation)} has no Inductor template"
-    decomposed = target._schema.name in (
-        "aten::conv1d",
-        "aten::conv_transpose1d",
-        "aten::conv_transpose2d",
+    decomposed = (target._schema.name, target._schema.overload_name) in (
+        ("aten::conv1d", ""),
+        ("aten::conv_transpose1d", ""),
+        ("aten::conv_transpose2d", "input"),
     )
     if p.transposed and not decomposed:
         return f"{p.rank}-D transposed convolution has no Inductor template"
