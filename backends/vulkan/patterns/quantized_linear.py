@@ -157,6 +157,7 @@ class QuantizedLinearMatch(PatternMatch):
                 self.input_scales_node
             ):
                 self.quantize_input_node = input_to_dq_node
+                self.all_nodes.append(self.quantize_input_node)
                 self.pattern_input_node = self.quantize_input_node.args[0]
 
         # The implementation has a limitation that input channels must be a
@@ -267,6 +268,39 @@ class QuantizedLinearMatch(PatternMatch):
         # scales should have same size as weight's output channels dim
         return scales_shape[0] == weight_shape[-2]
 
+    def is_weight_4bit_quantized(self) -> bool:
+        # Read the quant range from the dequantize node's arguments, since the
+        # detector has no access to the weight data.
+        node = self.dequantize_weight_node
+        arg_names = [arg.name for arg in node.target._schema.arguments]
+        args = {**dict(zip(arg_names, node.args)), **node.kwargs}
+        quant_min, quant_max = args.get("quant_min"), args.get("quant_max")
+        if quant_min is None or quant_max is None:
+            return False
+        return quant_min >= -8 and quant_max <= 7
+
+    def has_fused_op(self) -> bool:
+        """Whether this match becomes an op the runtime can run, through
+        replace_quantized_linear_patterns or FuseQuantizedOpsTransform. The
+        partitioner delegates every node of a match, so a match without one
+        would leave its dequantize nodes, which have no Vulkan implementation,
+        in the delegate."""
+        if self.is_input_static_per_tensor_quantized():
+            return self.is_weight_perchannel_quantized()
+        if self.is_weight_only_quantized() and utils.is_dequant_per_channel_node(
+            self.dequantize_weight_node
+        ):
+            # FuseQuantizedOpsTransform: _weight_int8pack_mm or linear_qcs4w.
+            return self.is_weight_perchannel_quantized()
+        if not (
+            self.is_weight_pergroup_quantized() and self.is_weight_4bit_quantized()
+        ):
+            return False
+        if self.is_weight_only_quantized():
+            # linear_q4gsw packs the weights in blocks of 4 output channels.
+            return self.weight_node.meta["val"].shape[-2] % 4 == 0
+        return self.is_input_dynamic_perchannel_quantized()
+
     def is_input_static_per_tensor_quantized(self) -> bool:
         if self.dequantize_input_node is None:
             return False
@@ -313,7 +347,7 @@ def find_quantized_linear_patterns(
         return None
 
     matched_pattern = QuantizedLinearMatch(node)
-    if matched_pattern.match_found:
+    if matched_pattern.match_found and matched_pattern.has_fused_op():
         return matched_pattern
 
     return None
