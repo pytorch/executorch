@@ -42,7 +42,10 @@ from executorch.extension.llm.cache.reference_cache import (
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from executorch.extension.llm.export.gguf import iter_gguf
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
-from executorch.extension.llm.export.model_metadata import write_cache_geometry
+from executorch.extension.llm.export.model_metadata import (
+    write_cache_geometry,
+    write_max_context_len,
+)
 from torch.export import Dim, export
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -319,7 +322,7 @@ class OffGraphLastTokenLM(nn.Module):
 
     Each attention layer emits ``kvcache::update_and_attend`` over this step's
     K/V; the cache, not the graph, applies a sliding layer's window, so the
-    runner learns the windows from ``cache_metadata()``. Eager calls (golden
+    runner learns the windows from ``metadata()``. Eager calls (golden
     samples) run inside ``cache_scope()``, which makes a reference cache of
     ``capacity`` positions the active one.
     """
@@ -334,6 +337,10 @@ class OffGraphLastTokenLM(nn.Module):
             or config.hidden_size // config.num_attention_heads
         )
         self._kv_heads = config.num_key_value_heads
+        # The longest context the model supports, else the reference cache's.
+        self._max_context_len = (
+            getattr(config, "max_position_embeddings", None) or capacity
+        )
         self._reference = SequenceReferenceCache(
             CacheConfig(
                 n_layers=config.num_hidden_layers,
@@ -348,8 +355,9 @@ class OffGraphLastTokenLM(nn.Module):
         )
         self._key = f"export_hf_llm/{id(self)}"
 
-    def cache_metadata(self) -> dict[str, int | list[int]]:
-        """The cache geometry, under the names LLM runners read it by."""
+    def metadata(self) -> dict[str, int | list[int]]:
+        """The cache geometry and the model's context length, under the names
+        LLM runners read them by."""
         n = len(self._windows)
         geometry = write_cache_geometry(
             [self._kv_heads] * n, [self._head_dim] * n, self._windows
@@ -357,7 +365,7 @@ class OffGraphLastTokenLM(nn.Module):
         return {
             name: value.tolist() if isinstance(value, torch.Tensor) else value
             for name, value in geometry.items()
-        }
+        } | write_max_context_len(self._max_context_len)
 
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
@@ -572,7 +580,7 @@ def main() -> None:
     report_lowering(ep, "forward")
 
     if args.output:
-        metadata = wrapper.cache_metadata() if args.offgraph_cache else None
+        metadata = wrapper.metadata() if args.offgraph_cache else None
         to_native(ep, metadata=metadata).save(args.output)
         print(f"saved {args.output}")
     if prompts:
