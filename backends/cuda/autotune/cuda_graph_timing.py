@@ -31,9 +31,11 @@ and captures on that same stream (the legacy default stream cannot be
 captured).
 
 To keep captures succeeding:
-- each capture's graph is released right after timing (``torch.cuda.graph``
-  also empties the allocator's cache before every capture), and the cache is
-  emptied once it holds a lot of unused memory;
+- each capture's graph is released and the allocator's cache emptied right
+  after timing. The cache is not checked first: the allocator stats keep an
+  entry for every private pool ever captured, so reading them costs more with
+  each capture, while emptying a cache that holds little more than the
+  released pool is cheap;
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
   the tensors given as ``offload`` (the model's weights moved to the GPU for
   the compile) are parked on the CPU while the candidate is timed and restored
@@ -60,7 +62,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 _TARGET_GRAPH_US = 2000.0
 _MIN_CALLS = 4
 _MAX_CALLS = 32
-_EMPTY_CACHE_THRESHOLD_BYTES = 1 << 30
 
 
 @dataclass
@@ -115,22 +116,6 @@ def _default_cuda_bench(
 ) -> Any:
     kwargs.setdefault("device_type", "cuda")
     return bench.benchmark_gpu(fn, warmup=warmup, rep=rep, **kwargs)
-
-
-def _release_cached_memory_if_large() -> None:
-    # The allocator stats keep an entry for every CUDA-graph private pool ever
-    # captured, even after the pool is released and the cache emptied, and
-    # memory_reserved() and memory_allocated() each flatten and sort all of
-    # them in Python. Read the two counters from one nested call instead; it
-    # still builds the per-pool entries, so it grows with the capture count
-    # too, but far more slowly.
-    stats = torch.cuda.memory_stats_as_nested_dict()
-    cached = (
-        stats["reserved_bytes"]["all"]["current"]
-        - stats["allocated_bytes"]["all"]["current"]
-    )
-    if cached > _EMPTY_CACHE_THRESHOLD_BYTES:
-        torch.cuda.empty_cache()
 
 
 _l2_flush_buffers: dict[int, torch.Tensor] = {}
@@ -189,7 +174,7 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
         with contextlib.suppress(RuntimeError):
             graph.reset()
         del graph
-        _release_cached_memory_if_large()
+        torch.cuda.empty_cache()
 
 
 class ParkedTensorsNotRestored(RuntimeError):

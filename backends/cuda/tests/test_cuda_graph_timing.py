@@ -9,7 +9,6 @@
     python -m pytest backends/cuda/tests/test_cuda_graph_timing.py -v
 """
 
-import gc
 import statistics
 import struct
 import unittest
@@ -154,31 +153,21 @@ class CudaGraphTimingTest(unittest.TestCase):
             self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
         self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
 
-    def test_cached_memory_check_matches_the_flattened_counters(self) -> None:
+    def test_captures_do_not_read_the_allocator_stats(self) -> None:
         x = torch.zeros(1 << 16, device="cuda")
-        with cgt.cuda_graph_timing() as stats:
+        # The torch.cuda and torch.accelerator stats APIs all end in these.
+        with mock.patch.object(
+            torch._C, "_cuda_memoryStats", wraps=torch._C._cuda_memoryStats
+        ) as cuda_stats, mock.patch.object(
+            torch._C,
+            "_accelerator_getDeviceStats",
+            wraps=torch._C._accelerator_getDeviceStats,
+        ) as accelerator_stats, cgt.cuda_graph_timing() as stats:
             for _ in range(8):
                 benchmarking.benchmarker.benchmark(lambda: x.add_(1), device="cuda")
         self.assertEqual(stats.captured, 8)
-        # Free what earlier tests' mock reference cycles still hold, so no block
-        # is released between reading the counters and the zero-margin check.
-        gc.collect()
-        flattened = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        for threshold, empties in ((flattened - 1, 1), (flattened, 0)):
-            with self.subTest(threshold=threshold), mock.patch.object(
-                cgt, "_EMPTY_CACHE_THRESHOLD_BYTES", threshold
-            ), mock.patch.object(
-                torch.cuda, "empty_cache"
-            ) as empty_cache, mock.patch.object(
-                # The flattening APIs reach the nested stats through
-                # torch.cuda.memory's own global, so they never count here.
-                torch.cuda,
-                "memory_stats_as_nested_dict",
-                wraps=torch.cuda.memory_stats_as_nested_dict,
-            ) as nested:
-                cgt._release_cached_memory_if_large()
-                self.assertEqual(nested.call_count, 1)
-                self.assertEqual(empty_cache.call_count, empties)
+        self.assertEqual(cuda_stats.call_count, 0)
+        self.assertEqual(accelerator_stats.call_count, 0)
 
 
 # ---------------------------------------------------------------------------
