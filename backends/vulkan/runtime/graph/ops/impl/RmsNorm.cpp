@@ -51,17 +51,20 @@ void add_rms_norm_node(
     const ValueRef eps,
     const ValueRef out) {
   const bool is_buffer = graph.is_buffer_storage(in);
-
-  // The buffer shader indexes the weight as a dense array.
-  ValueRef arg_weight = prepack_standard(
-      graph,
-      weight_data,
-      graph.storage_type_of(in),
-      is_buffer ? utils::kWidthPacked : graph.estimate_memory_layout_of(in));
+  const bool has_weight = graph.val_is_not_none(weight_data);
+  std::vector<ValueRef> read_inputs = {in};
+  if (has_weight) {
+    // The buffer shader indexes the weight as a dense array.
+    read_inputs.push_back(prepack_standard(
+        graph,
+        weight_data,
+        graph.storage_type_of(in),
+        is_buffer ? utils::kWidthPacked : graph.estimate_memory_layout_of(in)));
+  }
 
   float epsilon = graph.extract_scalar<float>(eps);
 
-  std::string kernel_name("rms_norm");
+  std::string kernel_name(has_weight ? "rms_norm" : "rms_norm_no_weight");
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -82,7 +85,7 @@ void add_rms_norm_node(
       rms_norm_gwg,
       pick_required_lwg,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{in, arg_weight}, vkapi::kRead}},
+      {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader params buffers
       param_ubos,
       // Push Constants
