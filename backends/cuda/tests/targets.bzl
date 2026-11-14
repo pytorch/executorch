@@ -97,6 +97,30 @@ def define_common_targets(is_fbcode = False):
         ),
     )
 
+    python_unittest_remote_gpu(
+        name = "test_conv_depthwise",
+        srcs = [
+            "test_conv_depthwise.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
     runtime.python_library(
         name = "autotune_test_utils",
         srcs = [

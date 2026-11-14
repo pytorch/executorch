@@ -20,6 +20,7 @@ from typing import Callable, Iterator, Optional
 
 import torch
 import triton
+from executorch.backends.cuda.triton.kernels.conv.core import direct
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     check_params,
     ConvCall,
@@ -42,7 +43,17 @@ class ConvTemplate:
     worth_routing: Callable[[ConvCall], Optional[str]]
 
 
-TEMPLATES: tuple[ConvTemplate, ...] = ()
+TEMPLATES = (
+    ConvTemplate(
+        "direct",
+        direct.supports,
+        tuple(s.name for s in direct.SCHEDULES),
+        direct.schedule_supports,
+        direct.launch,
+        direct.run_schedule,
+        direct.worth_routing,
+    ),
+)
 
 _FORCED: contextvars.ContextVar[Optional[tuple[str, Optional[triton.Config]]]] = (
     contextvars.ContextVar("forced_conv_schedule", default=None)
