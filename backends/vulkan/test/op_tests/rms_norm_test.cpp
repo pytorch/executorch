@@ -83,27 +83,32 @@ void test_rms_norm(
     const float eps = 1e-5f,
     const vkcompute::vkapi::ScalarType dtype = vkcompute::vkapi::kFloat,
     const vkcompute::utils::StorageType storage_type =
-        vkcompute::utils::kTexture3D) {
+        vkcompute::utils::kTexture3D,
+    const bool has_weight = true) {
   const int64_t hidden_size = input_shape.back();
   const size_t input_numel = numel(input_shape);
   const size_t weight_numel = static_cast<size_t>(hidden_size);
 
   std::vector<float> x_data = rand_floats(input_numel, 42);
-  std::vector<float> w_data = rand_floats(weight_numel, 123);
+  // The reference always multiplies by a weight, so no weight means ones.
+  std::vector<float> w_data = has_weight ? rand_floats(weight_numel, 123)
+                                         : std::vector<float>(weight_numel, 1);
 
   // For fp16: round-trip through Half so the reference uses the same precision
   // as the GPU input.
   std::vector<Half> x_half, w_half;
   if (dtype == vkcompute::vkapi::kHalf) {
     x_half.resize(input_numel);
-    w_half.resize(weight_numel);
     for (size_t i = 0; i < input_numel; ++i) {
       x_half[i] = static_cast<Half>(x_data[i]);
       x_data[i] = static_cast<float>(x_half[i]);
     }
-    for (size_t i = 0; i < weight_numel; ++i) {
-      w_half[i] = static_cast<Half>(w_data[i]);
-      w_data[i] = static_cast<float>(w_half[i]);
+    if (has_weight) {
+      w_half.resize(weight_numel);
+      for (size_t i = 0; i < weight_numel; ++i) {
+        w_half[i] = static_cast<Half>(w_data[i]);
+        w_data[i] = static_cast<float>(w_half[i]);
+      }
     }
   }
 
@@ -118,9 +123,14 @@ void test_rms_norm(
 
   IOValueRef r_x = graph.add_input_tensor(input_shape, dtype);
 
-  ValueRef r_weight = (dtype == vkapi::kHalf)
-      ? graph.add_tensorref({hidden_size}, vkapi::kHalf, w_half.data())
-      : graph.add_tensorref({hidden_size}, vkapi::kFloat, w_data.data());
+  ValueRef r_weight;
+  if (!has_weight) {
+    r_weight = graph.add_none();
+  } else if (dtype == vkapi::kHalf) {
+    r_weight = graph.add_tensorref({hidden_size}, vkapi::kHalf, w_half.data());
+  } else {
+    r_weight = graph.add_tensorref({hidden_size}, vkapi::kFloat, w_data.data());
+  }
 
   const ValueRef r_eps = graph.add_scalar<double>(static_cast<double>(eps));
   const ValueRef r_out = graph.add_tensor(input_shape, dtype);
@@ -197,6 +207,24 @@ TEST(VulkanRmsNormTest, 4d_multi_z_slice_texture) {
   test_rms_norm({1, 5, 4, 128});
 }
 
+TEST(VulkanRmsNormTest, no_weight_texture) {
+  test_rms_norm(
+      {1, 5, 4, 128},
+      1e-5f,
+      vkcompute::vkapi::kFloat,
+      vkcompute::utils::kTexture3D,
+      /*has_weight=*/false);
+}
+
+TEST(VulkanRmsNormTest, no_weight_fp16_texture) {
+  test_rms_norm(
+      {1, 1, 1, 896},
+      1e-6f,
+      vkcompute::vkapi::kHalf,
+      vkcompute::utils::kTexture3D,
+      /*has_weight=*/false);
+}
+
 //
 // Buffer storage tests
 //
@@ -215,6 +243,24 @@ TEST(VulkanRmsNormTest, fp16_buffer) {
       1e-6f,
       vkcompute::vkapi::kHalf,
       vkcompute::utils::kBuffer);
+}
+
+TEST(VulkanRmsNormTest, no_weight_buffer) {
+  test_rms_norm(
+      {1, 5, 4, 128},
+      1e-5f,
+      vkcompute::vkapi::kFloat,
+      vkcompute::utils::kBuffer,
+      /*has_weight=*/false);
+}
+
+TEST(VulkanRmsNormTest, no_weight_fp16_buffer) {
+  test_rms_norm(
+      {1, 1, 7, 896},
+      1e-6f,
+      vkcompute::vkapi::kHalf,
+      vkcompute::utils::kBuffer,
+      /*has_weight=*/false);
 }
 
 //

@@ -17,6 +17,9 @@ ${define_required_extensions("texture3d", DTYPE)}
 
 ${define_active_storage_type("texture3d")}
 
+$if HAS_WEIGHT:
+  #define HAS_WEIGHT
+
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
@@ -26,7 +29,8 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
-${layout_declare_tensor(B, "r", "t_weight", DTYPE, "texture3d")}
+$if HAS_WEIGHT:
+  ${layout_declare_tensor(B, "r", "t_weight", DTYPE, "texture3d")}
 
 ${layout_declare_ubo(B, "TextureMetadata", "out_meta")}
 ${layout_declare_ubo(B, "TextureMetadata", "in_meta")}
@@ -105,9 +109,10 @@ void main() {
     ivec3 pos = ivec3(tx, y, z);
 
     const VEC4_T in_val = texelFetch(t_in, pos, 0);
-    const VEC4_T weight = texelFetch(t_weight, ivec3(tx, 0, 0), 0);
-    const VEC4_T outtex =
-        VEC4_T(vec4(in_val) * rstd * vec4(weight));
-    imageStore(t_out, pos, outtex);
+    vec4 outtex = vec4(in_val) * rstd;
+#ifdef HAS_WEIGHT
+    outtex *= vec4(texelFetch(t_weight, ivec3(tx, 0, 0), 0));
+#endif
+    imageStore(t_out, pos, VEC4_T(outtex));
   }
 }
