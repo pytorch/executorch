@@ -143,7 +143,8 @@ def _export_codec_pte(model, args, device: str) -> None:
     Codec convs are expressed as unfold + matmul / matmul + Fold
     (model.py:_conv1d_as_matmul / _conv_transpose1d_as_matmul) so AOTI's CUDA
     backend can lower them via Triton mm kernels. CodecAttention uses an
-    additive ALiBi mask which is fine for ATen SDPA when triton_kernel_mode=OFF.
+    additive ALiBi mask, which the Triton SDPA kernel does not take, so the CUDA
+    backend leaves that SDPA to the regular lowering.
     """
     print("\n" + "=" * 60)
     print("Exporting codec_decoder.pte")
@@ -155,13 +156,7 @@ def _export_codec_pte(model, args, device: str) -> None:
         qlinear_codec_group_size=args.qlinear_codec_group_size,
         device=device,
     )
-    codec_triton_mode = "OFF" if args.backend in ("cuda", "cuda-windows") else "ON"
-    et_codec = lower_to_executorch(
-        codec_programs,
-        codec_metadata,
-        backend=args.backend,
-        triton_kernel_mode=codec_triton_mode,
-    )
+    et_codec = lower_to_executorch(codec_programs, codec_metadata, backend=args.backend)
 
     codec_pte = os.path.join(args.output_dir, "codec_decoder.pte")
     print(f"\nSaving to {codec_pte}...")
@@ -475,15 +470,8 @@ def apply_model_quantization(
         )
 
 
-def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mode="ON"):
-    """Lower exported programs to ExecuTorch.
-
-    Args:
-        triton_kernel_mode: For CUDA backend only. "ON" replaces ATen SDPA with
-            Triton sdpa kernel (required for the LM decoder). "OFF" disables
-            replacement so the codec's additive ALiBi mask SDPA can lower
-            (Triton sdpa kernel only accepts bool masks).
-    """
+def lower_to_executorch(programs, metadata, backend="xnnpack"):
+    """Lower exported programs to ExecuTorch."""
     mutable_buffer_passes = [InitializedMutableBufferPass(["k_cache", "v_cache"])]
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -504,7 +492,7 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
         print(
             f"\nLowering to ExecuTorch with CUDA "
             f"{'(Windows) ' if backend == 'cuda-windows' else ''}"
-            f"({len(programs)} methods, triton_kernel_mode={triton_kernel_mode})..."
+            f"({len(programs)} methods)..."
         )
         # NB: conv1d_to_conv2d is applied inside CudaBackend.preprocess via its
         # decomposition_table. Doing it here too triggers an extra run_decompositions
@@ -513,9 +501,6 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
         partitioner = {}
         for key in programs:
             compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
-            compile_specs.append(
-                CompileSpec("triton_kernel_mode", triton_kernel_mode.encode("utf-8"))
-            )
             if backend == "cuda-windows":
                 compile_specs.append(CompileSpec("platform", b"windows"))
             partitioner[key] = [CudaPartitioner(compile_specs)]
@@ -540,7 +525,8 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
             passes=mutable_buffer_passes,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
+                # The CUDA backend keeps mutable state inside its delegates.
+                share_mutable_buffers=backend not in ("cuda", "cuda-windows"),
             ),
             emit_mutable_buffer_names=True,
         ),
