@@ -387,6 +387,9 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
     Colored nodes are left alone: a backend that claimed an op is going to lower
     it itself, and defusing it would take it away. See
     :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
+
+    Unclaimed channels-last ops have no ATen equivalent and are rejected: run
+    ``ToChannelsFirst`` first.
     """
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
@@ -404,6 +407,11 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
         # any of the graph has been rewritten.
         qparam_placeholders: set[fx.Node] = set()
         for node in nodes:
+            if cast(_OpOverload, node.target)._schema.name.endswith("_channels_last"):
+                raise ValueError(
+                    f"Cannot decompose {node.name}: channels-last ops have no ATen "
+                    "equivalent; run ToChannelsFirst before DecomposeFusedQuant"
+                )
             for qparams, value in _qparam_blocks(node):
                 per_tensor = _qparam_granularity(qparams, value) == "per_tensor"
                 for qparam in (qparams.scale, qparams.zero_point):
