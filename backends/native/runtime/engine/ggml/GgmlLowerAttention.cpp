@@ -397,4 +397,107 @@ void GraphBuilder::lower_sdpa(const Node& node) {
           {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}});
 }
 
+// Writes this step's K/V into the cache rows the executor uploads, then
+// attends the cache prefix under the uploaded causal mask. Q/K/V are [B,H,T,D].
+void GraphBuilder::lower_update_and_attend(const Node& node) {
+  if (offgraph_cache_ == nullptr) {
+    throw std::runtime_error(
+        "ggml: kvcache.update_and_attend needs an off-graph KV cache; create "
+        "the context with the llm_cache_registry_key option");
+  }
+  const TensorRef query = rows_arg(node, "q", 0);
+  const TensorRef key = rows_arg(node, "k", 1);
+  const TensorRef val = rows_arg(node, "v", 2);
+  const int64_t layer = int_arg(node, "layer_id", 4, -1);
+  const auto num_layers =
+      static_cast<int64_t>(offgraph_cache_->layers.size());
+  if (layer < 0 || layer >= num_layers) {
+    throw std::runtime_error(
+        "ggml: update_and_attend layer_id " + std::to_string(layer) +
+        " is outside the cache's " + std::to_string(num_layers) + " layers");
+  }
+  const auto [k_cache, v_cache] =
+      offgraph_cache_->layers[static_cast<size_t>(layer)];
+  if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
+      val.sizes.size() != 4 || query.sizes[0] != 1 || key.sizes[0] != 1 ||
+      val.sizes[0] != 1) {
+    throw std::runtime_error(
+        "ggml: update_and_attend expects batch-1 [B,H,T,D] q/k/v");
+  }
+  const int64_t tokens = query.sizes[2];
+  if (key.sizes != val.sizes || key.sizes[2] != tokens ||
+      key.sizes[3] != query.sizes[3] || key.sizes[1] <= 0 ||
+      query.sizes[1] % key.sizes[1] != 0) {
+    throw std::runtime_error(
+        "ggml: update_and_attend q/k/v shapes are incompatible");
+  }
+  if (k_cache->ne[0] != key.sizes[3] || k_cache->ne[2] != key.sizes[1]) {
+    throw std::runtime_error(
+        "ggml: update_and_attend layer " + std::to_string(layer) +
+        " K/V shape disagrees with the cache geometry");
+  }
+  const int64_t keys = offgraph_cache_->keys;
+  ggml_context* ctx = instance_.context.get();
+  if (!instance_.offgraph) {
+    ggml_tensor* rows = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, tokens);
+    ggml_set_name(rows, "kv_cache.rows");
+    ggml_set_input(rows);
+    ggml_tensor* mask = new_tensor(ctx, GGML_TYPE_F16, {1, 1, tokens, keys});
+    ggml_set_name(mask, "kv_cache.mask");
+    ggml_set_input(mask);
+    instance_.offgraph = OffGraphUploads{
+        .rows = instance_.uploads.size(),
+        .mask = instance_.uploads.size() + 1,
+        .tokens = tokens,
+        .keys = keys};
+    instance_.uploads.push_back(Upload{.tensor = rows});
+    instance_.uploads.push_back(Upload{.tensor = mask});
+  } else if (instance_.offgraph->tokens != tokens) {
+    throw std::runtime_error(
+        "ggml: every update_and_attend in a method must see the same tokens");
+  }
+  ggml_tensor* rows = instance_.uploads[instance_.offgraph->rows].tensor;
+  ggml_tensor* mask = instance_.uploads[instance_.offgraph->mask].tensor;
+
+  const auto write = [&](ggml_tensor* cache, ggml_tensor* step) {
+    // set_rows converts F32 to either cache type, but not F16 to F32 on
+    // every backend.
+    ggml_tensor* source =
+        cache->type == GGML_TYPE_F16 && step->type == GGML_TYPE_F16
+        ? skip_f16_cast(step)
+        : as_f32(step);
+    ggml_tensor* written = ggml_set_rows(ctx, cache, source, rows);
+    ggml_build_forward_expand(instance_.graph, written);
+    // Viewing the write orders the read after it.
+    return ggml_view_3d(
+        ctx, written, cache->ne[0], keys, cache->ne[2], cache->nb[1],
+        cache->nb[2], 0);
+  };
+  ggml_tensor* k = write(k_cache, key.tensor);
+  ggml_tensor* v = write(v_cache, val.tensor);
+
+  ggml_tensor* q = query.tensor;
+  if (k_cache->type == GGML_TYPE_F16) {
+    q = skip_f16_cast(q);
+  }
+  const auto scale = static_cast<float>(float_arg(node, "scale", 5, 1.0));
+  ggml_tensor* result =
+      ggml_flash_attn_ext(ctx, as_f32(q), k, v, mask, scale, 0.0f, 0.0f);
+  ggml_prec_set_acc(result, GGML_PREC_F32);
+  // flash_attn_ext returns [Dv, H, T, B]; torch order is [B, H, T, Dv].
+  TensorRef out{
+      ggml_permute(ctx, result, 0, 2, 1, 3),
+      {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}};
+  const std::vector<ValueId> ids = output_ids(node);
+  const ggml_type out_type = ids.empty()
+      ? GGML_TYPE_F32
+      : compute_type(method_.graph.value(ids.front()).tensor_meta());
+  if (out_type != GGML_TYPE_F32) {
+    out.tensor = ggml_cast(ctx, out.tensor, out_type);
+    set_single_output(node, out);
+  } else {
+    set_single_view(node, out);
+  }
+}
+
 } // namespace ptn::ggml_detail

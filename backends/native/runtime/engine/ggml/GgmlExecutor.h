@@ -29,13 +29,16 @@ ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options);
 using GgmlMutableKeyOwners = std::unordered_map<std::string, std::string>;
 
 // The executable holds the method's mutable buffer keys in
-// `mutable_key_owners` until it is destroyed.
+// `mutable_key_owners` until it is destroyed. `kv_cache`, which must outlive
+// the executable, serves the method's kvcache::update_and_attend calls; a
+// method with such calls and a null cache does not compile.
 std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Method& method,
     const Package& package,
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
-    GgmlMutableKeyOwners& mutable_key_owners);
+    GgmlMutableKeyOwners& mutable_key_owners,
+    GgmlSequenceCache* kv_cache = nullptr);
 
 } // namespace ptn
