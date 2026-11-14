@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Function-preserving module swaps for backends that lack an op.
+"""Function-preserving module swaps for backends that lack an op or run it
+slowly.
 
 The model in model.py uses plain PyTorch ops. Each swap below computes the
 same function from more widely supported ops; export_phonon.py selects them
@@ -13,10 +14,15 @@ per backend:
   decompose_elu           MLX and Vulkan have no aten.elu kernel; without it
                           the Mimi decoder splits at every ELU.
   conv_transpose1d_as_2d  Vulkan runs transposed convolution on 4-D inputs only.
+  conv_transpose1d_as_conv1d
+                          XNNPACK's deconvolution is slow; this runs the Mimi
+                          decoder's transposed convolutions (kernel =
+                          2 * stride) as a convolution and an interleave.
   depthwise_conv_transpose_as_mul
                           Vulkan computes the Mimi upsampler (depthwise,
                           kernel = 2 * stride) incorrectly; this runs it as a
-                          multiply and an overlap-add.
+                          multiply and an overlap-add. XNNPACK also runs it
+                          faster this way.
   use_webgpu_compat_ops   WebGPU runtimes built before these runtime fixes
                           (off by default; --webgpu-compat-ops):
                             * native_layer_norm resize hook (the flow LM's
@@ -93,6 +99,36 @@ class ConvTranspose1dAs2d(nn.Module):
         return y.squeeze(2)
 
 
+class ConvTranspose1dAsConv1d(nn.Module):
+    """ConvTranspose1d with kernel_size == 2 * stride as a kernel-2 Conv1d
+    with stride * out_channels outputs (one per output phase), interleaved
+    into the output steps."""
+
+    def __init__(self, convtr: nn.ConvTranspose1d):
+        super().__init__()
+        (self.stride,) = convtr.stride
+        s = self.stride
+        w = convtr.weight.detach()  # [cin, cout, 2s]
+        cin, cout, _ = w.shape
+        # Phase j of output step p reads input p - 1 through tap j + s and
+        # input p through tap j.
+        taps = torch.stack([w[..., s:], w[..., :s]], -1)  # [cin, cout, s, 2]
+        self.weight = nn.Parameter(
+            taps.permute(1, 2, 0, 3).reshape(cout * s, cin, 2).contiguous(),
+            requires_grad=False,
+        )
+        self.bias = convtr.bias
+        self.out_channels = cout
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = F.conv1d(x, self.weight, padding=1)  # [b, cout * s, n + 1]
+        b, _, n = z.shape
+        s = self.stride
+        y = z.view(b, self.out_channels, s, n).transpose(2, 3)
+        y = y.reshape(b, self.out_channels, n * s)
+        return y if self.bias is None else y + self.bias.view(1, -1, 1)
+
+
 class ComputeIn(nn.Module):
     """Runs `module` with its weights in `dtype` on a float32 input and
     returns float32. Other attributes (bias, kernel_size, ...) are read from
@@ -167,6 +203,23 @@ def conv_transpose1d_as_2d(programs: dict[str, nn.Module]) -> int:
                 module.convtr, nn.ConvTranspose1d
             ):
                 module.convtr = ConvTranspose1dAs2d(module.convtr)
+                count += 1
+    return count
+
+
+def conv_transpose1d_as_conv1d(programs: dict[str, nn.Module]) -> int:
+    count = 0
+    for program in programs.values():
+        for module in program.modules():
+            if not isinstance(module, StreamingConvTranspose1d):
+                continue
+            convtr = module.convtr
+            if (
+                isinstance(convtr, nn.ConvTranspose1d)
+                and convtr.groups == 1
+                and convtr.kernel_size[0] == 2 * convtr.stride[0]
+            ):
+                module.convtr = ConvTranspose1dAsConv1d(convtr)
                 count += 1
     return count
 

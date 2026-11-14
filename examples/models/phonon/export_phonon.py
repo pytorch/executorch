@@ -82,6 +82,7 @@ def source_transforms_for(backend: str, webgpu_compat_ops: bool):
             raise ValueError("--webgpu-compat-ops only applies to --backend webgpu")
         return [st.use_webgpu_compat_ops]
     return {
+        "xnnpack": [st.depthwise_conv_transpose_as_mul, st.conv_transpose1d_as_conv1d],
         "mlx": [st.decompose_elu],
         "vulkan": [
             st.decompose_elu,
