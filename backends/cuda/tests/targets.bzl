@@ -19,6 +19,7 @@ def define_common_targets(is_fbcode = False):
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_replacement_pass",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
