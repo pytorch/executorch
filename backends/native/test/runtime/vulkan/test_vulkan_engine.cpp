@@ -2833,12 +2833,15 @@ std::vector<uint8_t> stored_floats(const std::vector<StoredFloats>& constants) {
   return tensors;
 }
 
-// aten.rms_norm over the last dim of a [2, 4] input with a stored weight.
-std::vector<uint8_t> make_rms_norm_program(fbs::ScalarType dtype) {
+// aten.rms_norm over the last dim of a [2, 4] input, with a stored weight if
+// `affine` and a None weight otherwise.
+std::vector<uint8_t> make_rms_norm_program(
+    fbs::ScalarType dtype,
+    bool affine = true) {
   flatbuffers::FlatBufferBuilder builder;
   const auto meta = create_tensor_meta(builder, dtype, {2, 4});
   const auto weight_meta = create_tensor_meta(builder, dtype, {4});
-  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "input", meta),
       fbs::CreateTensorValueDirect(builder, "weight", weight_meta),
       fbs::CreateTensorValueDirect(builder, "normed", meta),
@@ -2856,7 +2859,10 @@ std::vector<uint8_t> make_rms_norm_program(fbs::ScalarType dtype) {
       fbs::CreateNamedArgumentDirect(
           builder, "normalized_shape", create_int_list_arg(builder, {4})),
       fbs::CreateNamedArgumentDirect(
-          builder, "weight", create_tensor_arg(builder, "weight")),
+          builder,
+          "weight",
+          affine ? create_tensor_arg(builder, "weight")
+                 : create_none_arg(builder)),
       fbs::CreateNamedArgumentDirect(
           builder,
           "eps",
@@ -2866,7 +2872,7 @@ std::vector<uint8_t> make_rms_norm_program(fbs::ScalarType dtype) {
   const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
       fbs::CreateNamedArgumentDirect(
           builder, "", create_tensor_arg(builder, "normed"))};
-  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
       fbs::CreateNodeDirect(
           builder,
           "input",
@@ -2891,16 +2897,22 @@ std::vector<uint8_t> make_rms_norm_program(fbs::ScalarType dtype) {
       fbs::CreateNodeDirect(
           builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
   };
+  std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
+  };
+  if (!affine) {
+    // Drop the weight value, its placeholder and its constant.
+    tensor_values.erase(tensor_values.begin() + 1);
+    nodes.erase(nodes.begin() + 1);
+    constants.clear();
+  }
   const auto graph = fbs::CreateGraph(
       builder,
       builder.CreateVector(nodes),
       create_strings(builder, {"input"}),
       create_strings(builder, {"normed"}),
       builder.CreateVector(tensor_values));
-  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
-      fbs::CreateNamedTensorRefDirect(
-          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
-  };
   return finish_program(
       builder,
       graph,
@@ -3585,6 +3597,26 @@ TEST(VulkanEngineTest, ExecutesBFloat16RMSNormWithStoredWeight) {
       output,
       (std::vector<uint16_t>{
           0x3F00, 0xBFC0, 0xC000, 0xC040, 0x3F00, 0x3FC0, 0x4000, 0x4040}));
+}
+
+TEST(VulkanEngineTest, ExecutesBFloat16RMSNormWithoutWeight) {
+  CompiledProgram compiled = compile_program(
+      make_rms_norm_program(fbs::ScalarType::BFLOAT16, /*affine=*/false));
+  // bf16 bits: rows {2, -2, 2, -2} and {4, 4, -4, 4}, each with an RMS that
+  // normalizes it to +-1.
+  const std::vector<uint16_t> input = {
+      0x4000, 0xC000, 0x4000, 0xC000, 0x4080, 0x4080, 0xC080, 0x4080};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::BFloat16);
+  compiled.executable->execute();
+  std::vector<uint16_t> output(8);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::BFloat16);
+  // {1, -1, 1, -1} and {1, 1, -1, 1}.
+  EXPECT_EQ(
+      output,
+      (std::vector<uint16_t>{
+          0x3F80, 0xBF80, 0x3F80, 0xBF80, 0x3F80, 0x3F80, 0xBF80, 0x3F80}));
 }
 
 TEST(VulkanEngineTest, ExecutesMetadataOnlyAliasAfterAliasLowering) {

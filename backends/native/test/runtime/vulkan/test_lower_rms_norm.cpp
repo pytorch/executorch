@@ -22,14 +22,14 @@
 namespace ptn::vulkan {
 namespace {
 
-Method make_rms_norm(ScalarType dtype = ScalarType::Float) {
+Method make_rms_norm(ScalarType dtype = ScalarType::Float, int64_t width = 4) {
   Method method;
   method.name = "forward";
   Graph& graph = method.graph;
   graph.values = {
-      Value("input", dtype, {2, 4}),
-      Value("weight", dtype, {4}),
-      Value("output", dtype, {2, 4}),
+      Value("input", dtype, {2, width}),
+      Value("weight", dtype, {width}),
+      Value("output", dtype, {2, width}),
   };
   graph.value(1).role = ValueRole::Parameter;
   graph.nodes = {
@@ -49,7 +49,7 @@ Method make_rms_norm(ScalarType dtype = ScalarType::Float) {
           .inputs =
               {
                   {.name = "input", .arg = TensorArg{0}},
-                  {.name = "normalized_shape", .arg = IntListArg{{4}}},
+                  {.name = "normalized_shape", .arg = IntListArg{{width}}},
                   {.name = "weight", .arg = TensorArg{1}},
                   {.name = "eps", .arg = FloatArg{1e-5}},
               },
@@ -104,9 +104,57 @@ TEST(LowerRMSNormTest, RewritesBFloat16Norm) {
   EXPECT_NO_THROW(validate_graph(method.graph));
 }
 
+TEST(LowerRMSNormTest, RewritesNormWithoutWeight) {
+  Method method = make_rms_norm();
+  method.graph.node(2).inputs[2].arg = NoneArg{};
+  method.graph.rebuild_def_use();
+
+  EXPECT_EQ(lower_rms_norms(method.graph), 1);
+
+  const Node& norm = method.graph.node(2);
+  EXPECT_EQ(norm.target, "torch.ops.et_vk.rms_norm.default");
+  ASSERT_EQ(norm.inputs.size(), 3);
+  EXPECT_EQ(norm.inputs[1].arg.kind(), ArgKind::None);
+  EXPECT_NO_THROW(validate_graph(method.graph));
+}
+
 TEST(LowerRMSNormTest, RejectsMismatchedNormalizedShape) {
   Method method = make_rms_norm();
   method.graph.node(2).inputs[1].arg = IntListArg{{8}};
+
+  EXPECT_EQ(lower_rms_norms(method.graph), 0);
+  EXPECT_EQ(method.graph.node(2).target, "torch.ops.aten.rms_norm.default");
+}
+
+TEST(LowerRMSNormTest, RejectsInvalidWeight) {
+  struct Case {
+    const char* name;
+    ValueRole role;
+    ScalarType dtype;
+    std::vector<int64_t> sizes;
+  };
+  const std::vector<Case> cases = {
+      {"intermediate", ValueRole::Intermediate, ScalarType::Float, {4}},
+      {"user input", ValueRole::UserInput, ScalarType::Float, {4}},
+      {"wrong shape", ValueRole::Parameter, ScalarType::Float, {8}},
+      {"wrong dtype", ValueRole::Parameter, ScalarType::Half, {4}},
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(c.name);
+    Method method = make_rms_norm();
+    method.graph.value(1) = Value("weight", c.dtype, c.sizes);
+    method.graph.value(1).role = c.role;
+    method.graph.rebuild_def_use();
+
+    EXPECT_EQ(lower_rms_norms(method.graph), 0);
+    EXPECT_EQ(method.graph.node(2).target, "torch.ops.aten.rms_norm.default");
+  }
+}
+
+TEST(LowerRMSNormTest, RejectsZeroWidthNorm) {
+  Method method = make_rms_norm(ScalarType::Float, /*width=*/0);
+  method.graph.node(2).inputs[2].arg = NoneArg{};
+  method.graph.rebuild_def_use();
 
   EXPECT_EQ(lower_rms_norms(method.graph), 0);
   EXPECT_EQ(method.graph.node(2).target, "torch.ops.aten.rms_norm.default");
