@@ -10,6 +10,11 @@
 //
 //   phonon_runner --model_path phonon_exports/xnnpack/phonon.pte \
 //       --text "Hello from ExecuTorch." --output hello.wav
+//
+// --stream plays the audio while it is generated:
+//
+//   phonon_runner --model_path ... --text "..." --stream |
+//       aplay -q -f S16_LE -r 24000
 
 #include "runner.h"
 
@@ -39,6 +44,11 @@ DEFINE_string(
     "program)");
 DEFINE_string(text, "", "Text to synthesize");
 DEFINE_string(output, "phonon.wav", "Output WAV file (16-bit PCM, mono)");
+DEFINE_bool(
+    stream,
+    false,
+    "Write raw 16-bit little-endian mono PCM to stdout as each frame is "
+    "decoded, instead of the WAV file");
 DEFINE_double(
     temperature,
     -1,
@@ -67,7 +77,14 @@ void write_u16(std::ofstream& out, uint16_t v) {
   out.write(reinterpret_cast<const char*>(b), 2);
 }
 
-// 16-bit mono PCM, rounded like run_phonon.py (round half to even).
+// Rounded like run_phonon.py (round half to even).
+int16_t to_pcm16(float sample) {
+  const double value = std::isfinite(sample)
+      ? std::nearbyint(static_cast<double>(sample) * 32767.0)
+      : 0.0;
+  return static_cast<int16_t>(std::clamp(value, -32768.0, 32767.0));
+}
+
 void write_wav(
     const std::string& path,
     const std::vector<float>& pcm,
@@ -87,11 +104,7 @@ void write_wav(
   out.write("data", 4);
   write_u32(out, data_bytes);
   for (float sample : pcm) {
-    double value = std::isfinite(sample)
-        ? std::nearbyint(static_cast<double>(sample) * 32767.0)
-        : 0.0;
-    value = std::clamp(value, -32768.0, 32767.0);
-    write_u16(out, static_cast<uint16_t>(static_cast<int16_t>(value)));
+    write_u16(out, static_cast<uint16_t>(to_pcm16(sample)));
   }
   if (!out) {
     throw std::runtime_error("Could not write " + path);
@@ -130,24 +143,47 @@ int main(int argc, char** argv) {
             : FLAGS_voice_path);
     const double load_s = seconds_since(start);
 
+    double first_audio_s = 0;
+    std::vector<unsigned char> bytes;
+    const auto on_audio = [&](const float* pcm, size_t size) {
+      if (first_audio_s == 0) {
+        first_audio_s = seconds_since(start);
+      }
+      if (!FLAGS_stream) {
+        return;
+      }
+      bytes.resize(size * 2);
+      for (size_t i = 0; i < size; ++i) {
+        const auto v = static_cast<uint16_t>(to_pcm16(pcm[i]));
+        bytes[2 * i] = static_cast<unsigned char>(v);
+        bytes[2 * i + 1] = static_cast<unsigned char>(v >> 8);
+      }
+      std::fwrite(bytes.data(), 1, bytes.size(), stdout);
+      std::fflush(stdout);
+    };
     start = std::chrono::steady_clock::now();
-    const auto result =
-        runner.synthesize(FLAGS_text, voice, FLAGS_temperature, FLAGS_seed);
+    const auto result = runner.synthesize(
+        FLAGS_text, voice, FLAGS_temperature, FLAGS_seed, on_audio);
     const double synth_s = seconds_since(start);
     if (result.pcm.empty()) {
       throw std::runtime_error("No audio generated");
     }
-    write_wav(FLAGS_output, result.pcm, runner.sample_rate());
+    if (!FLAGS_stream) {
+      write_wav(FLAGS_output, result.pcm, runner.sample_rate());
+    }
 
     const double audio_s =
         static_cast<double>(result.pcm.size()) / runner.sample_rate();
-    std::printf(
-        "Wrote %s: %.2f s of audio, %lld frames, load %.2f s, synthesis "
-        "%.2f s (RTF %.2f)\n",
-        FLAGS_output.c_str(),
+    std::fprintf(
+        FLAGS_stream ? stderr : stdout,
+        "%s %s: %.2f s of audio, %lld frames, load %.2f s, first audio "
+        "%.3f s, synthesis %.2f s (RTF %.2f)\n",
+        FLAGS_stream ? "Streamed" : "Wrote",
+        FLAGS_stream ? "to stdout" : FLAGS_output.c_str(),
         audio_s,
         static_cast<long long>(result.frames),
         load_s,
+        first_audio_s,
         synth_s,
         synth_s / audio_s);
   } catch (const std::exception& error) {
