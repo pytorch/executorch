@@ -1201,7 +1201,7 @@ jobs:
     # requests, ciflow tags or manual dispatch); pull requests get the
     # unittest-cuda-* jobs above.
     if: |
-      github.event_name == 'push' && github.ref == 'refs/heads/main' && (
+      (
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
