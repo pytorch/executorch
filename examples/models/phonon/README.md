@@ -57,9 +57,10 @@ cmake-out/examples/models/phonon/phonon_runner --model_path=... --text="..." --s
 ```
 
 XNNPACK delegates the linear and convolution ops; the flow LM's attention runs
-as the ExecuTorch custom op `llama::sdpa_with_kv_cache`. The export also
-rewrites the Mimi decoder's transposed convolutions as convolutions, which
-XNNPACK runs faster.
+as the ExecuTorch custom op `llama::sdpa_with_kv_cache`.
+
+For XNNPACK, Vulkan, MLX and CUDA, the export rewrites the Mimi decoder's
+transposed convolutions as convolutions, which those backends run faster.
 
 `--quantize 4bit` or `--quantize 8bit` quantizes the linear layers of the flow
 LM's transformer and flow net with the scheme of the backend; the codec stays in
