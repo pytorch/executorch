@@ -7784,6 +7784,341 @@ class ScatterAddTest(OpTestCase):
         return (x, index, src)
 
 
+def _dynamic_tag(dynamic: Dict[str, Dict[int, tuple]]) -> str:
+    return "dyn_" + "_".join(
+        f"{name}{axis}{spec[0]}"
+        for name, axes in dynamic.items()
+        for axis, spec in axes.items()
+    )
+
+
+def _dynamic_shapes(
+    dynamic: Dict[str, Dict[int, tuple]], inputs: Tuple[str, ...]
+) -> Dict[str, any]:
+    """Build dynamic_shapes from {input: {axis: (name, run size[, min, max])}}.
+
+    Inputs that share a dim name share one Dim, so they get the same symbol.
+    """
+    dims = {}
+    for axes in dynamic.values():
+        for name, _, *bounds in axes.values():
+            dims.setdefault(
+                name,
+                (
+                    Dim(name, min=bounds[0], max=bounds[1])
+                    if bounds
+                    else Dim(name, min=1, max=16)
+                ),
+            )
+    return {
+        inp: (
+            {axis: dims[spec[0]] for axis, spec in dynamic[inp].items()}
+            if inp in dynamic
+            else None
+        )
+        for inp in inputs
+    }
+
+
+def _run_shape(
+    shape: Tuple[int, ...], dynamic: Optional[Dict[int, tuple]]
+) -> Tuple[int, ...]:
+    shape = list(shape)
+    for axis, spec in (dynamic or {}).items():
+        shape[axis] = spec[1]
+    return tuple(shape)
+
+
+class ScatterModel(nn.Module):
+    """Model that scatters src, a constant value or src.item() into x along a dim."""
+
+    def __init__(self, dim: int = 0, value: Optional[float] = None, item=False):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+        self.item = item
+
+    def forward(self, x: torch.Tensor, index: torch.Tensor, src: torch.Tensor):
+        if self.item:
+            return x.scatter(self.dim, index, src.item())
+        if self.value is not None:
+            return x.scatter(self.dim, index, self.value)
+        return x.scatter(self.dim, index, src)
+
+
+@register_test
+class ScatterTest(OpTestCase):
+    """Test case for aten.scatter.src and aten.scatter.value.
+
+    scatter(self, dim, index, src) writes src at index positions along dim.
+    The index may be smaller than self on the other axes and smaller than
+    src on every axis. ``dynamic`` maps an input to
+    ``{axis: (dim name, run size[, min, max])}``: the model is exported at the
+    static shapes and run at the run sizes. Indices are unique along dim so
+    the result is well-defined, and the comparison is exact.
+    """
+
+    name = "scatter"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (4, 8),
+        dim: int = 1,
+        num_indices: int = 3,
+        index_shape: Optional[Tuple[int, ...]] = None,
+        src_shape: Optional[Tuple[int, ...]] = None,
+        value: Optional[float] = None,
+        item: bool = False,
+        dtype: torch.dtype = torch.float32,
+        dynamic: Optional[Dict[str, Dict[int, tuple]]] = None,
+        expected_node_counts: Optional[Dict[str, int]] = None,
+        bad_index: Optional[List[List[int]]] = None,
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.num_indices = num_indices
+        self.bad_index = bad_index
+        self.index_shape = index_shape
+        self.src_shape = src_shape
+        self.value = value
+        self.item = item
+        self.dtype = dtype
+        self.dynamic = dynamic
+        self.expected_node_counts = expected_node_counts
+        parts = ["scatter", "x".join(str(s) for s in shape), f"dim{dim}"]
+        parts.append(f"idx{num_indices}")
+        if index_shape is not None:
+            parts.append("ishape" + "x".join(str(s) for s in index_shape))
+        if src_shape is not None:
+            parts.append("src" + "x".join(str(s) for s in src_shape))
+        if value is not None:
+            parts.append("value")
+        if item:
+            parts.append("item")
+        if dtype != torch.float32:
+            parts.append(str(dtype).replace("torch.", ""))
+        if dynamic:
+            parts.append(_dynamic_tag(dynamic))
+        if bad_index is not None:
+            parts.append("clamp")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ScatterTest"]:
+        narrowed = {"SliceNode": 1, "PutAlongAxisNode": 1, "SliceUpdateNode": 1}
+        return [
+            # 1D
+            cls(shape=(8,), dim=0, num_indices=5),
+            # 2D, each axis, negative dim, full permutation along dim
+            cls(shape=(4, 8), dim=1, num_indices=3),
+            cls(shape=(4, 8), dim=0, num_indices=2),
+            cls(shape=(4, 8), dim=-1, num_indices=8),
+            # 3D and 4D
+            cls(shape=(2, 4, 8), dim=1, num_indices=2),
+            cls(shape=(2, 3, 4, 8), dim=-1, num_indices=4),
+            # index smaller than self on the non-scatter axes, including size 1
+            # (broadcasting would write every row) and two axes at once
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(2, 3),
+                expected_node_counts=narrowed,
+            ),
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(1, 3),
+                expected_node_counts=narrowed,
+            ),
+            cls(
+                shape=(2, 4, 8),
+                dim=0,
+                num_indices=1,
+                index_shape=(1, 3, 5),
+                expected_node_counts={"SliceNode": 2, "SliceUpdateNode": 2},
+            ),
+            cls(shape=(2, 4, 8), dim=-1, num_indices=3, index_shape=(2, 2, 3)),
+            # src larger than index
+            cls(shape=(4, 8), dim=1, num_indices=3, src_shape=(4, 6)),
+            cls(shape=(4, 8), dim=0, num_indices=2, src_shape=(3, 8)),
+            # src larger and index smaller than self at once
+            cls(
+                shape=(4, 8),
+                dim=-1,
+                num_indices=3,
+                index_shape=(2, 3),
+                src_shape=(3, 5),
+            ),
+            # zero indices along dim: output is self
+            cls(shape=(4, 8), dim=1, num_indices=0),
+            # scalar value (aten.scatter.value)
+            cls(shape=(4, 8), dim=1, num_indices=3, value=2.5),
+            cls(shape=(2, 4, 8), dim=0, num_indices=1, value=-1.0),
+            cls(shape=(4, 8), dim=1, num_indices=3, index_shape=(1, 3), value=2.5),
+            # runtime scalar value from .item(), lowered to a FullNode
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                item=True,
+                expected_node_counts={"ItemIntNode": 1, "FullNode": 1},
+            ),
+            # half precision, bool, and a float value cast into an int32 self
+            cls(shape=(4, 8), dim=1, num_indices=3, dtype=torch.float16),
+            cls(shape=(4, 8), dim=0, num_indices=2, dtype=torch.bfloat16),
+            cls(shape=(4, 8), dim=1, num_indices=3, dtype=torch.bool),
+            cls(shape=(4, 8), dim=1, num_indices=3, value=2.5, dtype=torch.int32),
+            # dynamic batch shared by all three inputs: nothing to narrow
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                dynamic={
+                    "x": {0: ("batch", 7)},
+                    "index": {0: ("batch", 7)},
+                    "src": {0: ("batch", 7)},
+                },
+                expected_node_counts={"SliceNode": 0, "SliceUpdateNode": 0},
+            ),
+            # dynamic self, static index: static slice stop
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(2, 3),
+                dynamic={"x": {0: ("batch", 7)}},
+                expected_node_counts={**narrowed, "SymSizeNode": 0},
+            ),
+            # self dynamic along the scatter axis
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                dynamic={"x": {1: ("seq", 13)}},
+                expected_node_counts={"SliceNode": 0, "SliceUpdateNode": 0},
+            ),
+            # dynamic src larger than a static index
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                src_shape=(4, 6),
+                dynamic={"src": {1: ("width", 9, 3, 16)}},
+                expected_node_counts={"SliceNode": 1, "SliceUpdateNode": 0},
+            ),
+            # different symbols on self, index and src: stops read from the index
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(2, 3),
+                src_shape=(3, 3),
+                dynamic={
+                    "x": {0: ("a", 7)},
+                    "index": {0: ("b", 3)},
+                    "src": {0: ("c", 5)},
+                },
+                expected_node_counts={
+                    "SliceNode": 2,
+                    "SliceUpdateNode": 1,
+                    "SymSizeNode": 2,
+                },
+            ),
+            # symbolic index against a static self
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(2, 3),
+                dynamic={
+                    "index": {0: ("rows", 3, 1, 4)},
+                    "src": {0: ("rows", 3, 1, 4)},
+                },
+                expected_node_counts={**narrowed, "SymSizeNode": 1},
+            ),
+            # Out-of-range and negative indices at run time. Eager raises on 9
+            # and -9; the runtime clamps them to the nearest end, and -2 counts
+            # from the end. The clamped targets stay unique per row.
+            cls(
+                shape=(2, 8),
+                dim=1,
+                num_indices=3,
+                bad_index=[[9, 0, -2], [-9, 3, 1]],
+                expected_node_counts={"PutAlongAxisNode": 1},
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ScatterModel(dim=self.dim, value=self.value, item=self.item)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic:
+            return None
+        return _dynamic_shapes(self.dynamic, ("x", "index", "src"))
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._make_inputs(self.shape, self._index_shape(), self._src_shape(), 5)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.bad_index is not None:
+            x, _, src = self.create_inputs()
+            return (x, torch.tensor(self.bad_index), src)
+        if not self.dynamic and not self.item:
+            return self.create_inputs()
+        dynamic = self.dynamic or {}
+        return self._make_inputs(
+            _run_shape(self.shape, dynamic.get("x")),
+            _run_shape(self._index_shape(), dynamic.get("index")),
+            _run_shape(self._src_shape(), dynamic.get("src")),
+            -3,
+        )
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if self.bad_index is None:
+            return model(*test_inputs)
+        x, index, src = test_inputs
+        size = x.shape[self.dim]
+        return model(x, index.clamp(-size, size - 1) % size, src)
+
+    def _index_shape(self) -> Tuple[int, ...]:
+        index_shape = list(self.index_shape or self.shape)
+        index_shape[self.dim % len(self.shape)] = self.num_indices
+        return tuple(index_shape)
+
+    def _src_shape(self) -> Tuple[int, ...]:
+        return self.src_shape or self._index_shape()
+
+    def _make_inputs(
+        self,
+        shape: Tuple[int, ...],
+        index_shape: Tuple[int, ...],
+        src_shape: Tuple[int, ...],
+        item_value: int,
+    ) -> Tuple[torch.Tensor, ...]:
+        def rand(s):
+            if self.dtype.is_floating_point:
+                return torch.randn(s, dtype=self.dtype)
+            if self.dtype == torch.bool:
+                return torch.rand(s) > 0.5
+            return torch.randint(-8, 8, s, dtype=self.dtype)
+
+        x = rand(shape)
+        dim = self.dim % len(shape)
+        # A random permutation along dim, cut to num_indices, gives unique
+        # targets per output position.
+        perm_shape = list(index_shape)
+        perm_shape[dim] = shape[dim]
+        index = (
+            torch.rand(perm_shape).argsort(dim).narrow(dim, 0, self.num_indices)
+        ).contiguous()
+        src = torch.tensor(item_value) if self.item else rand(src_shape)
+        return (x, index, src)
+
+
 @register_test
 class QuantizedEmbeddingTest(OpTestCase):
     """Test case for TorchAO int4 quantized nn.Embedding."""

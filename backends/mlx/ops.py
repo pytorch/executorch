@@ -22,6 +22,7 @@ import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_floordiv,
     emit_if_else,
+    emit_leading_block,
     emit_lifted_constant,
     emit_product,
     emit_quantized_biases,
@@ -123,6 +124,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     PartitionNode,
     PowerNode,
     ProdNode,
+    PutAlongAxisNode,
     RandomBitsNode,
     ReciprocalNode,
     RemainderNode,
@@ -2728,6 +2730,84 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             axis=dim,
         )
     )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.scatter.src, torch.ops.aten.scatter.value])
+def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.scatter: out = self; out[index[i][j]][j] = src[i][j] for dim=0.
+
+    scatter.src(self, dim, index, src) -> Tensor
+    scatter.value(self, dim, index, value) -> Tensor
+
+    Maps to mlx::put_along_axis(a, indices, values, axis). aten reads only the
+    leading ``index.shape`` block of ``src`` and writes only the leading block
+    of ``self`` on the non-scatter axes, while MLX broadcasts. So ``src`` is
+    sliced to that block, and when ``self`` is larger the scatter runs on its
+    leading block, which is then written back with SliceUpdateNode. A scalar
+    ``value`` becomes a 0-D tensor that MLX broadcasts. With duplicate indices
+    along ``dim`` aten leaves the result unspecified; MLX keeps one of the
+    writes.
+
+    Unlike eager, a bad index does not raise: the runtime clamps it to
+    [-size, size - 1] as for gather, so the write stays inside self.
+    """
+    args = P.args(n)
+    require_args(args, 4, 4, "aten.scatter")
+    require_kwargs(P.kwargs(n), set(), "aten.scatter")
+    x, dim, index, src = args
+
+    x_meta = n.args[0].meta.get("val")
+    index_meta = n.args[2].meta.get("val")
+    if x_meta is None or index_meta is None:
+        raise ValueError("aten.scatter requires input and index shape metadata")
+    ndim = len(x_meta.shape)
+    if ndim == 0 or len(index_meta.shape) != ndim:
+        raise NotImplementedError(
+            f"aten.scatter: index must have the same non-zero rank as input, got "
+            f"{len(index_meta.shape)} vs {ndim}"
+        )
+    if x_meta.dtype == torch.int64:
+        # The only 8-byte dtype the delegate accepts; mlx ScatterAxis::eval_gpu
+        # has no kernel for 8-byte element types.
+        raise NotImplementedError(
+            f"aten.scatter: {x_meta.dtype} input is not supported"
+        )
+    dim = dim % ndim
+
+    if isinstance(src, Slot) and src.id_type == IdType.Tensor:
+        src_meta = n.args[3].meta.get("val")
+        if src_meta is None:
+            raise ValueError("aten.scatter requires src shape metadata")
+        src, _ = emit_leading_block(P, src, src_meta.shape, index, index_meta.shape)
+    else:
+        src = emit_lifted_constant(P, src, x_meta.dtype)
+
+    block, steps = emit_leading_block(P, x, x_meta.shape, index, index_meta.shape, dim)
+    out = P.make_or_get_slot(n)
+    result = P.make_tmp_slot()[1] if steps else out
+    P.emit(
+        PutAlongAxisNode(
+            x=P.slot_to_tid(block),
+            indices=P.slot_to_tid(index),
+            values=P.slot_to_tid(src),
+            out=P.slot_to_tid(result),
+            axis=dim,
+        )
+    )
+    for i, (dst, axis, stop) in enumerate(reversed(steps)):
+        update = result
+        result = out if i == len(steps) - 1 else P.make_tmp_slot()[1]
+        P.emit(
+            SliceUpdateNode(
+                dst=P.slot_to_tid(dst),
+                update=P.slot_to_tid(update),
+                out=P.slot_to_tid(result),
+                axis=P.to_int_or_vid(axis),
+                start=P.to_int_or_vid(0),
+                stop=stop,
+            )
+        )
     return out
 
 

@@ -905,6 +905,26 @@ inline void exec_scatter_add(
   st.set_tensor(n.out, scatter_add_axis(x, indices, updates, n.axis, s));
 }
 
+inline void exec_put_along_axis(
+    const PutAlongAxisNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "PutAlongAxis");
+  const int size = x.shape(axis);
+  if (size == 0) {
+    // x is empty, so there is nowhere to write.
+    st.set_tensor(n.out, x);
+    return;
+  }
+  // Clamped like ScatterNode: mlx::put_along_axis would write out of range.
+  const auto indices =
+      clip(st.const_tensor_ref(n.indices), array(-size), array(size - 1), s);
+  const auto& values = st.const_tensor_ref(n.values);
+  st.set_tensor(n.out, put_along_axis(x, indices, values, axis, s));
+}
+
 inline void
 exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2652,6 +2672,9 @@ class Interpreter {
         break;
       case OpCode::CUMMAX:
         ops::exec_cummax(std::get<CummaxNode>(instr.node), st, s);
+        break;
+      case OpCode::PUT_ALONG_AXIS:
+        ops::exec_put_along_axis(std::get<PutAlongAxisNode>(instr.node), st, s);
         break;
       case OpCode::STACK:
         ops::exec_stack(std::get<StackNode>(instr.node), st, s);

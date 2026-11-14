@@ -402,6 +402,34 @@ class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
                 )
 
 
+class TestMLXPartitionerScatterDeclines(unittest.TestCase):
+    """Declined scatter calls run on CPU; the neighbouring add stays on MLX."""
+
+    class Scatter(nn.Module):
+        def forward(self, x, index, src):
+            return (x + 1).scatter(0, index, src)
+
+    def _assert_declined(self, inputs):
+        counts, delegates, err = _run(self.Scatter().eval(), inputs)
+        self.assertEqual(counts.get("PutAlongAxisNode", 0), 0)
+        self.assertEqual(counts.get("AddNode", 0), 1)
+        self.assertEqual(delegates, 1)
+        self.assertEqual(err, 0)
+
+    def test_scatter_int64_self(self):
+        # mlx ScatterAxis::eval_gpu has no kernel for 8-byte element types.
+        self._assert_declined(
+            (
+                torch.arange(8).reshape(4, 2),
+                torch.tensor([[3, 0], [1, 2]]),
+                torch.full((2, 2), -1),
+            )
+        )
+
+    def test_scatter_zero_dim(self):
+        self._assert_declined((torch.tensor(2.0), torch.tensor(0), torch.tensor(5.0)))
+
+
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):
         super().__init__()
