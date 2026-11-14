@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,6 +16,8 @@ class FuseConvPaddingPass(ExportPass):
         conv_ops = {
             exir_ops.edge.cortex_m.quantized_conv2d.default: (False, 6),
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: (True, 6),
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default: (False, 6),
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default: (True, 6),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: (False, 7),
             exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: (True, 7),
         }
@@ -43,7 +46,12 @@ class FuseConvPaddingPass(ExportPass):
             ):
                 continue
             height, width = tensor.shape[1:3] if explicit_nhwc else tensor.shape[2:4]
-            kernel = get_first_fake_tensor(node.args[1]).shape[1:3]
+            filter_shape = node.kwargs.get("filter_shape")
+            kernel = (
+                filter_shape[1:3]
+                if filter_shape
+                else get_first_fake_tensor(node.args[1]).shape[1:3]
+            )
             # The pinned CMSIS-NN MVE 1xN kernel mishandles asymmetric boundaries.
             if height == 1 and kernel[0] == 1:
                 continue

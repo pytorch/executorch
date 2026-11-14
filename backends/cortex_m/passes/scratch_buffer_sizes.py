@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, cast
 
@@ -85,6 +85,7 @@ def cmsis_nn_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
     nhwc_logical: bool = False,
+    packed_weights: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -96,6 +97,9 @@ def cmsis_nn_conv_buffer_size(
     ) = _get_common_conv_buffer_size_inputs(
         conv_node=conv_node, nhwc_logical=nhwc_logical
     )
+    filter_shape = conv_node.kwargs.get("filter_shape")
+    if filter_shape is not None:
+        weight_shape = list(cast(Sequence[int], filter_shape))
     input_offset = cast(int, conv_node.args[6])
     output_offset = cast(int, conv_node.args[7])
     output_qmin = cast(int, conv_node.args[10])
@@ -120,6 +124,7 @@ def cmsis_nn_conv_buffer_size(
                 output_offset=output_offset,
                 activation_min=output_qmin,
                 activation_max=output_qmax,
+                weights_packed=packed_weights,
             )
         )
     ]
@@ -255,16 +260,6 @@ def cmsis_nn_transpose_conv_buffer_size(
         ),
     )
 
-    # A zero reverse buffer means CMSIS-NN selected its rolling-buffer path.
-    if reverse_buffer_bytes == 0:
-        # The sizing API uses stride.h where the kernel uses stride.w. Preserve
-        # the API's requirement while ensuring enough space for the kernel.
-        # TODO: Remove this correction once our CMSIS-NN pin includes
-        # https://github.com/ARM-software/CMSIS-NN/pull/243.
-        buffer_w = (input_nhwc[2] - 1) * stride_hw[1] + max(kernel_w, stride_hw[1])
-        buffer_h = max(kernel_h, stride_hw[0])
-        buffer_bytes = max(buffer_bytes, buffer_w * buffer_h * c_out * 4)
-
     return [buffer_bytes, reverse_buffer_bytes]
 
 
@@ -298,6 +293,12 @@ _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: partial(
         cmsis_nn_conv_buffer_size, nhwc_logical=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_packed.default: partial(
+        cmsis_nn_conv_buffer_size, packed_weights=True
+    ),
+    exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default: partial(
+        cmsis_nn_conv_buffer_size, nhwc_logical=True, packed_weights=True
     ),
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: partial(

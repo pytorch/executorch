@@ -14,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 _LEGACY_SPATIAL_OPS = {
-    exir_ops.edge.cortex_m.quantized_conv2d.default,
+    exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
     exir_ops.edge.cortex_m.quantized_transpose_conv2d.default,
     exir_ops.edge.cortex_m.quantized_avg_pool2d.default,
@@ -70,13 +70,13 @@ def _count(exported_program, target) -> int:
     [
         (
             False,
-            exir_ops.edge.cortex_m.quantized_conv2d.default,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         ),
         (
             True,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
-            exir_ops.edge.cortex_m.quantized_conv2d.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
         ),
     ],
 )
@@ -171,7 +171,10 @@ def test_explicit_conv1d_runs_on_fvp():
         Conv1d().eval(), inputs, explicit_layout=True
     )
     program = edge.exported_program()
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
 
     serialized = CortexMSerialize(CortexMTargetConfig(cpu=CortexM.M55))
     serialized.run(edge.to_executorch())
