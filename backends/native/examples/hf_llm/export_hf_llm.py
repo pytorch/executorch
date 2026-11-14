@@ -55,6 +55,7 @@ from transformers import (
     AttentionInterface,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoTokenizer,
     PreTrainedModel,
 )
@@ -65,6 +66,7 @@ from transformers.masking_utils import (
     ALL_MASK_ATTENTION_FUNCTIONS,
     AttentionMaskInterface,
 )
+from transformers.modeling_outputs import CausalLMOutput
 
 
 _OFFGRAPH_ATTENTION = "offgraph"
@@ -92,37 +94,82 @@ def _parameters_on_meta() -> Iterator[None]:
         nn.Module.register_parameter = register
 
 
+class MuseGlimmerTextLM(nn.Module):
+    """Muse Glimmer's language model and LM head, under their Hugging Face
+    parameter names, without the vision tower. Text-only, so it skips the
+    multimodal model's scan of input_ids for image and video tokens."""
+
+    def __init__(self, model: PreTrainedModel) -> None:
+        super().__init__()
+        self.config = model.config
+        self.generation_config = model.generation_config
+        self.model = nn.ModuleDict({"language_model": model.model.language_model})
+        self.lm_head = model.lm_head
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor | None = None,
+        logits_to_keep: int = 0,
+        **_,
+    ) -> CausalLMOutput:
+        text_config = self.config.text_config
+        hidden = self.model["language_model"](
+            input_ids=input_ids, position_ids=position_ids, use_cache=False
+        ).last_hidden_state
+        if logits_to_keep:
+            hidden = hidden[:, -logits_to_keep:]
+        logits = self.lm_head(hidden) * text_config.output_multiplier
+        cap = text_config.final_logit_softcapping
+        return CausalLMOutput(logits=torch.tanh(logits / cap) * cap)
+
+
+# Models Transformers builds only with their vision tower: the class that
+# builds one, and the text-only module to export instead.
+_TEXT_ONLY = {"muse_glimmer": (AutoModelForImageTextToText, MuseGlimmerTextLM)}
+# Per-layer config lists, kept for the layers --layers keeps.
+_PER_LAYER = ("layer_types", "layer_rope_theta")
+
+
 def _load(
     path: str,
     layers: int,
     random_weights: bool,
     empty_weights: bool,
     offgraph_cache: bool = False,
-) -> PreTrainedModel:
+) -> nn.Module:
     config = AutoConfig.from_pretrained(path)
     text_config = config.get_text_config()
     if layers:
         text_config.num_hidden_layers = layers
-        if getattr(text_config, "layer_types", None):
-            text_config.layer_types = text_config.layer_types[:layers]
+        for name in _PER_LAYER:
+            if getattr(text_config, name, None):
+                setattr(text_config, name, getattr(text_config, name)[:layers])
+    auto_class, text_only = _TEXT_ONLY.get(
+        config.model_type, (AutoModelForCausalLM, None)
+    )
+    if text_only and not offgraph_cache:
+        raise ValueError(f"{config.model_type} exports only with --offgraph_cache")
     if offgraph_cache:
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
     kwargs = {"dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
         with _parameters_on_meta():
-            model = AutoModelForCausalLM.from_config(config, **kwargs)
+            model = auto_class.from_config(config, **kwargs)
     elif random_weights:
-        model = AutoModelForCausalLM.from_config(config, **kwargs)
+        model = auto_class.from_config(config, **kwargs)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, config=config, **kwargs)
+        model = auto_class.from_pretrained(path, config=config, **kwargs)
+    if text_only:
+        model = text_only(model)
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     return model.eval()
 
 
 def load_gguf(
-    model: PreTrainedModel,
+    model: nn.Module,
     path: str,
     architecture: str | None = None,
     raw_iter: RawIter | None = None,
@@ -277,7 +324,7 @@ class OffGraphLastTokenLM(nn.Module):
     ``capacity`` positions the active one.
     """
 
-    def __init__(self, model: PreTrainedModel, capacity: int) -> None:
+    def __init__(self, model: nn.Module, capacity: int) -> None:
         super().__init__()
         self.model = model
         config = model.config.get_text_config()
