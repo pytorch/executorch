@@ -8,6 +8,10 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -55,5 +59,14 @@ class Matmul(NodeVisitor):
         )
         matmul_op.AddInputTensors(matmul_input_tensors)
         matmul_op.AddOutputTensors(matmul_output_tensors)
+        if self.backend_type == QnnExecuTorchBackendType.kLpaiBackend:
+            # Optional in the QNN op spec (default false), but the LPAI backend
+            # rejects a MatMul without them: "getParam(transpose_in0) is NULL".
+            for param in (OpMatMul.param_transpose_in0, OpMatMul.param_transpose_in1):
+                matmul_op.AddScalarParam(
+                    param,
+                    PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+                    {QCOM_DATA: False},
+                )
 
         return matmul_op

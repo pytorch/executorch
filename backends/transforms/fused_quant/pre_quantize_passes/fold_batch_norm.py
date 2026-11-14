@@ -11,18 +11,17 @@ from dataclasses import dataclass
 from typing import cast
 
 import torch
-from executorch.backends.transforms.permute_pass_utils import get_arg
-from executorch.backends.transforms.utils import (
+from executorch.backends.transforms.fused_quant.pre_quantize_passes.tensor_constants import (
     add_constant,
+    fold_constants,
     get_constant,
-    get_input_kind,
+    get_kind,
 )
-from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch import fx
 from torch._ops import OpOverload
-from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 _BATCH_NORM = torch.ops.aten._native_batch_norm_legit_no_training.default
 _CONVOLUTION = torch.ops.aten.convolution.default
@@ -55,7 +54,6 @@ class _FoldConstants:
 
 
 def _get_optional_constant(
-    exported_program: ExportedProgram,
     node: fx.Node,
     name: str,
 ) -> tuple[fx.Node | None, torch.Tensor | None]:
@@ -64,28 +62,19 @@ def _get_optional_constant(
         return None, None
     if not isinstance(arg, fx.Node):
         return None, None
-    return arg, get_constant(exported_program, arg)
+    return arg, get_constant(arg)
 
 
 def _get_fold_constants(
-    exported_program: ExportedProgram,
     conv: fx.Node,
     batch_norm: fx.Node,
 ) -> _FoldConstants | None:
-    conv_weight_node, conv_weight = _get_optional_constant(
-        exported_program, conv, "weight"
-    )
-    conv_bias_node, conv_bias = _get_optional_constant(exported_program, conv, "bias")
-    bn_weight_node, bn_weight = _get_optional_constant(
-        exported_program, batch_norm, "weight"
-    )
-    bn_bias_node, bn_bias = _get_optional_constant(exported_program, batch_norm, "bias")
-    mean_node, running_mean = _get_optional_constant(
-        exported_program, batch_norm, "running_mean"
-    )
-    var_node, running_var = _get_optional_constant(
-        exported_program, batch_norm, "running_var"
-    )
+    conv_weight_node, conv_weight = _get_optional_constant(conv, "weight")
+    conv_bias_node, conv_bias = _get_optional_constant(conv, "bias")
+    bn_weight_node, bn_weight = _get_optional_constant(batch_norm, "weight")
+    bn_bias_node, bn_bias = _get_optional_constant(batch_norm, "bias")
+    mean_node, running_mean = _get_optional_constant(batch_norm, "running_mean")
+    var_node, running_var = _get_optional_constant(batch_norm, "running_var")
     required = (
         conv_weight_node,
         conv_weight,
@@ -227,39 +216,33 @@ def _make_fused_parameters(
     )
 
 
-def _constant_kind(
-    exported_program: ExportedProgram,
-    node: fx.Node,
-) -> InputKind:
-    return get_input_kind(exported_program, node) or InputKind.CONSTANT_TENSOR
+def _constant_kind(node: fx.Node) -> InputKind:
+    return get_kind(node) or InputKind.CONSTANT_TENSOR
 
 
 def _insert_folded_conv(
-    exported_program: ExportedProgram,
     conv: fx.Node,
     batch_norm: fx.Node,
     constants: _FoldConstants,
     fused_weight: torch.Tensor,
     fused_bias: torch.Tensor,
 ) -> fx.Node:
-    weight = add_constant(
-        exported_program,
-        f"{batch_norm.name}_folded_weight",
-        fused_weight,
-        batch_norm,
-        kind=_constant_kind(exported_program, constants.conv_weight_node),
-    )
-    bias_source = constants.conv_bias_node or constants.conv_weight_node
-    bias = add_constant(
-        exported_program,
-        f"{batch_norm.name}_folded_bias",
-        fused_bias,
-        batch_norm,
-        kind=_constant_kind(exported_program, bias_source),
-    )
     owning_module = conv.graph.owning_module
     if owning_module is None:
         raise RuntimeError(f"Convolution {conv} does not belong to a graph module")
+    weight = add_constant(
+        owning_module,
+        f"{batch_norm.name}_folded_weight",
+        fused_weight,
+        _constant_kind(constants.conv_weight_node),
+    )
+    bias_source = constants.conv_bias_node or constants.conv_weight_node
+    bias = add_constant(
+        owning_module,
+        f"{batch_norm.name}_folded_bias",
+        fused_bias,
+        _constant_kind(bias_source),
+    )
     normalized_args = conv.normalized_arguments(
         owning_module,
         normalize_to_only_use_kwargs=True,
@@ -299,31 +282,27 @@ def _erase_folded_pattern(
     graph.erase_node(conv)
 
 
-class FoldBatchNorm(ExportedProgramPassBase):
+class FoldBatchNorm(PassBase):
     """Fold inference BatchNorm parameters into an upstream convolution."""
 
-    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
-        graph = exported_program.graph_module.graph
+    def call(self, graph_module: fx.GraphModule) -> PassResult:
+        graph = graph_module.graph
         modified = False
         for batch_norm in graph.find_nodes(op="call_function", target=_BATCH_NORM):
-            modified |= self._fold(exported_program, batch_norm)
+            modified |= self._fold(batch_norm)
 
         if modified:
-            exported_program = constant_prop_pass(exported_program)
-        return ExportedProgramPassResult(exported_program, modified)
+            fold_constants(graph_module)
+        return PassResult(graph_module, modified)
 
-    def _fold(
-        self,
-        exported_program: ExportedProgram,
-        batch_norm: fx.Node,
-    ) -> bool:
+    def _fold(self, batch_norm: fx.Node) -> bool:
         output_accessors = _native_output_accessors(batch_norm)
         fusion_nodes = _get_fusion_nodes(batch_norm)
         if output_accessors is None or fusion_nodes is None:
             return False
         conv, replacement = fusion_nodes
 
-        constants = _get_fold_constants(exported_program, conv, batch_norm)
+        constants = _get_fold_constants(conv, batch_norm)
         if constants is None:
             return False
         fused_parameters = _make_fused_parameters(
@@ -334,7 +313,6 @@ class FoldBatchNorm(ExportedProgramPassBase):
             return False
         fused_weight, fused_bias = fused_parameters
         folded_conv = _insert_folded_conv(
-            exported_program,
             conv,
             batch_norm,
             constants,

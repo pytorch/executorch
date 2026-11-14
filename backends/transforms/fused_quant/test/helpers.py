@@ -107,9 +107,7 @@ def trace(
     """Export ``model`` to core ATen, keeping ``ops_to_keep`` undecomposed."""
     model.eval()
     decomp_table = torch.export.default_decompositions()
-    remove_decompositions(
-        decomp_table, [*(ops_to_keep or []), torch.ops.aten._safe_softmax.default]
-    )
+    remove_decompositions(decomp_table, ops_to_keep or [])
     return torch.export.export(model, inputs, strict=True).run_decompositions(
         decomp_table
     )

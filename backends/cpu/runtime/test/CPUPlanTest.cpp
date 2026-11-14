@@ -560,6 +560,26 @@ TEST_F(XNNLayoutTest, BmmReleasesOnlyAConstantRightHandSide) {
   }
 }
 
+TEST_F(XNNLayoutTest, DecomposedHardswishStaysInOneRegion) {
+  const std::vector<int64_t> shape{2, 3, 4};
+  const auto input = tensor(shape, ptn::ValueRole::UserInput);
+  const auto three =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto six =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto shifted = binary("torch.ops.aten.add.Tensor", input, three, shape);
+  const auto lower = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{shifted}, ptn::IntArg{0}, ptn::NoneArg{}},
+      shape);
+  const auto upper = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{lower}, ptn::NoneArg{}, ptn::IntArg{6}},
+      shape);
+  const auto product = binary("torch.ops.aten.mul.Tensor", input, upper, shape);
+  check({binary("torch.ops.aten.div.Tensor", product, six, shape)});
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
@@ -795,6 +815,82 @@ TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
   }
 }
 
+TEST_F(CPUPlanTest, MixedRegionsRetainSharedPackedWeightsAfterCompilation) {
+  for (const auto* name :
+       {"input", "weight", "bias", "linear", "gelu", "out"}) {
+    graph.values.emplace_back(
+        name, ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
+  }
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {3, 3});
+  graph.values[1].role = ptn::ValueRole::Parameter;
+  graph.values[2] = ptn::Value("bias", ptn::ScalarType::Float, {3});
+  graph.values[2].role = ptn::ValueRole::ConstantTensor;
+  graph.input_ids = {0};
+  ptn::Node linear;
+  linear.name = "first";
+  linear.target = "torch.ops.aten.linear.default";
+  linear.inputs = {
+      {"input", ptn::TensorArg{0}},
+      {"weight", ptn::TensorArg{1}},
+      {"bias", ptn::TensorArg{2}}};
+  linear.outputs = {{ptn::OutputValueKind::Tensor, 3, {}}};
+  graph.nodes.push_back(linear);
+  gelu("gelu", 3, 4);
+  linear.name = "second";
+  linear.inputs[0].arg = ptn::TensorArg{4};
+  linear.outputs[0].value_id = 5;
+  graph.nodes.push_back(std::move(linear));
+  finish({5});
+  const std::array<float, 9> weight{1, 0, 0, 0, 2, 0, 0, 0, 3};
+  const std::array<float, 3> bias{0.25f, -0.5f, 1};
+  for (auto id : {1, 2}) {
+    auto buffer =
+        allocate_buffer(allocator, tensor_bytes(graph.value(id)).get());
+    ASSERT_TRUE(buffer.ok());
+    buffers[id] = buffer.get();
+    std::memcpy(
+        buffer->data,
+        id == 1 ? weight.data() : bias.data(),
+        id == 1 ? sizeof(weight) : sizeof(bias));
+    buffers[id].writable_bytes = 0;
+  }
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 3);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  EXPECT_EQ(plan.steps()[1].provider->name(), "Reference");
+  EXPECT_EQ(plan.steps()[2].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (auto id : {1, 2}) {
+    ASSERT_TRUE(plan.can_release_constant(id));
+    std::memset(buffers[id].data, 0, buffers[id].readable_bytes);
+    buffers[id] = {};
+  }
+  const auto original_input = buffers[0];
+  const auto original_output = buffers[5];
+  auto replacement_input = allocate_buffer(allocator, 3 * sizeof(float));
+  auto replacement_output = allocate_buffer(allocator, 3 * sizeof(float));
+  ASSERT_TRUE(replacement_input.ok());
+  ASSERT_TRUE(replacement_output.ok());
+  for (int run = 0; run < 3; ++run) {
+    buffers[0] = run == 1 ? replacement_input.get() : original_input;
+    buffers[5] = run == 1 ? replacement_output.get() : original_output;
+    const std::array<float, 3> input{
+        float(run), float(run) - 1, float(run) - 2};
+    std::copy(input.begin(), input.end(), static_cast<float*>(buffers[0].data));
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+    const auto* output = static_cast<const float*>(buffers[5].data);
+    for (size_t index = 0; index < 3; ++index) {
+      const float scale = weight[index * 3 + index];
+      EXPECT_NEAR(
+          output[index],
+          scale * gelu(scale * input[index] + bias[index]) + bias[index],
+          1e-5);
+    }
+  }
+}
+
 TEST_F(CPUPlanTest, RetainsConstantsWithRuntimeConsumersOrGraphOutputs) {
   for (const std::string use : {"add", "gelu", "output"}) {
     SCOPED_TRACE(use);
@@ -978,6 +1074,9 @@ TEST_F(CPUPlanTest, StepTraceNameCountsTheRegionsRemainingNodes) {
   ASSERT_EQ(plan.select(), Error::Ok);
   ASSERT_EQ(plan.steps().size(), 1);
   EXPECT_EQ(plan.steps()[0].trace_name, "XNNPACK/subgraph:sum+1");
+  EXPECT_NE(
+      plan.describe(0).find("\"trace_name\":\"XNNPACK/subgraph:sum+1\""),
+      std::string::npos);
 }
 
 TEST_F(XNNLayoutTest, TracesEachXNNPACKOperatorWithItsOwnShapes) {

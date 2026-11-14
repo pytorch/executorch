@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
+#include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKPasses.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
 #include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
@@ -29,6 +30,7 @@ namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
 using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
+using xnnpack::clamp_bound;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -296,8 +298,21 @@ class XNNExecutable final : public Executable {
         region.inputs.begin(), region.inputs.end());
     std::unordered_set<ptn::ValueId> outputs(
         region.outputs.begin(), region.outputs.end());
+    const auto hardswish_chains = xnnpack::find_hardswish_chains(
+        region, context_.graph, context_.buffers);
+    std::unordered_map<KernelId, const xnnpack::HardswishChain*> recomposed;
     std::unordered_set<ptn::ValueId> used;
+    for (const auto& chain : hardswish_chains) {
+      for (auto id : chain.nodes) {
+        recomposed.emplace(id, &chain);
+      }
+      used.insert(chain.input);
+      used.insert(chain.output);
+    }
     for (auto id : region.nodes) {
+      if (recomposed.count(id)) {
+        continue;
+      }
       const auto& node = context_.graph.node(id);
       for (auto value : node.input_value_ids()) {
         used.insert(value);
@@ -345,7 +360,13 @@ class XNNExecutable final : public Executable {
       }
     }
     for (auto id : region.nodes) {
-      const auto error = define(context_.graph.node(id));
+      const auto chain = recomposed.find(id);
+      if (chain != recomposed.end() && chain->second->nodes.back() != id) {
+        continue;
+      }
+      const auto error = chain == recomposed.end()
+          ? define(context_.graph.node(id))
+          : hardswish(*chain->second);
       if (error != Error::Ok) {
         ET_LOG(
             Error,
@@ -370,6 +391,8 @@ class XNNExecutable final : public Executable {
         context_.execution.threadpool,
         runtime_flags,
         &runtime_));
+    CPU_XNN_CHECK(xnn_delete_subgraph(subgraph_));
+    subgraph_ = nullptr;
     if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
       profiling_ = check_profiling(
           profiler_.initialize(runtime_, &state_.operator_counts),
@@ -800,8 +823,18 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
+  Error hardswish(const xnnpack::HardswishChain& chain) {
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_, xnn_unary_hardswish, nullptr, chain.input, chain.output, 0));
+    return Error::Ok;
+  }
+
   static bool supports_activation(const Kernel& node, const ptn::Graph& graph) {
-    if (node.inputs.size() != 1 || node.outputs.size() != 1 ||
+    return node.inputs.size() == 1 && elementwise_unary(node, graph);
+  }
+
+  static bool elementwise_unary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 ||
         arg(node, 0).kind() != ptn::ArgKind::Tensor ||
         node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
         !fp32(node, graph)) {
@@ -1063,18 +1096,44 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  static bool supports_add(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 3 &&
-        node.outputs.size() == 1 &&
-        ((arg(node, 2).kind() == ptn::ArgKind::Int &&
-          arg(node, 2).as_int().value == 1) ||
-         (arg(node, 2).kind() == ptn::ArgKind::Float &&
-          arg(node, 2).as_float().value == 1));
+  static bool supports_clamp(const Kernel& node, const ptn::Graph& graph) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    float min = 0;
+    float max = 0;
+    return node.inputs.size() == 3 && elementwise_unary(node, graph) &&
+        (arg(node, 1).kind() != ptn::ArgKind::None ||
+         arg(node, 2).kind() != ptn::ArgKind::None) &&
+        clamp_bound(arg(node, 1), -infinity, min) &&
+        clamp_bound(arg(node, 2), infinity, max) && min <= max;
   }
 
-  static bool supports_mul(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 2 &&
-        node.outputs.size() == 1;
+  Error clamp(const Kernel& node) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    xnn_unary_params params{};
+    clamp_bound(arg(node, 1), -infinity, params.clamp.min);
+    clamp_bound(arg(node, 2), infinity, params.clamp.max);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_clamp,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
+  static bool supports_binary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 || node.inputs.size() < 2 ||
+        node.inputs.size() > 3 || arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        arg(node, 1).kind() != ptn::ArgKind::Tensor || !fp32(node, graph)) {
+      return false;
+    }
+    if (node.inputs.size() == 2) {
+      return true;
+    }
+    const auto& alpha = arg(node, 2);
+    return (alpha.kind() == ptn::ArgKind::Int && alpha.as_int().value == 1) ||
+        (alpha.kind() == ptn::ArgKind::Float && alpha.as_float().value == 1);
   }
 
   template <xnn_binary_operator Operator>
@@ -1215,18 +1274,22 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 15> kOps{{
+  static constexpr std::array<XNNOp, 17> kOps{{
       {"torch.ops.aten.add.Tensor",
-       &E::supports_add,
+       &E::supports_binary,
        &E::binary<xnn_binary_add>},
       {"torch.ops.aten.as_strided_copy.default",
        &E::supports_as_strided,
        &E::static_reshape},
       {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
       {"torch.ops.aten.bmm.default", &E::supports_bmm, &E::bmm},
+      {"torch.ops.aten.clamp.default", &E::supports_clamp, &E::clamp},
       {"torch.ops.aten.convolution.default",
        &E::supports_convolution,
        &E::convolution},
+      {"torch.ops.aten.div.Tensor",
+       &E::supports_binary,
+       &E::binary<xnn_binary_divide>},
       {"torch.ops.aten.gelu.default",
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
@@ -1236,7 +1299,7 @@ const XNNOp* find_op(std::string_view target) {
        &E::max_pool},
       {"torch.ops.aten.mean.dim", &E::supports_mean, &E::mean},
       {"torch.ops.aten.mul.Tensor",
-       &E::supports_mul,
+       &E::supports_binary,
        &E::binary<xnn_binary_multiply>},
       {"torch.ops.aten.native_layer_norm.default",
        &E::supports_layer_norm,

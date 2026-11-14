@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Shared by the shaders of every Winograd F(m x m, r x r) configuration. The
+ * including shader defines OUT_TILE, the side m of an output tile.
+ */
+
+#ifndef CONV2D_WINOGRAD_GLSLH
+#define CONV2D_WINOGRAD_GLSLH
+
+// Output tiles along a dimension of `size` pixels. Unsigned, so that dividing
+// by a power of 2 compiles to a shift.
+#define tiles_of(size) int(uint((size) + (OUT_TILE - 1)) / uint(OUT_TILE))
+
+#endif // CONV2D_WINOGRAD_GLSLH

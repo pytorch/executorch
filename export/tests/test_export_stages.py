@@ -694,6 +694,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -746,6 +747,77 @@ class TestQuantizeStage(unittest.TestCase):
         self.assertEqual(artifact.data["forward"], self.model)
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_with_preserve_ops(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """preserve_ops decomposes the capture, keeping those ops, before prepare."""
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [self.create_dummy_quantizer()]
+        mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = [torch.ops.aten.linear.default]
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+        run_decompositions = mock_torch_export.return_value.run_decompositions
+
+        QuantizeStage(mock_recipe).run(
+            PipelineArtifact(data=self.models_dict, context=self.context)
+        )
+
+        (decomp_table,), _ = run_decompositions.call_args
+        self.assertNotIn(torch.ops.aten.linear.default, decomp_table)
+        self.assertIn(torch.ops.aten.conv2d.default, decomp_table)
+        mock_prepare_pt2e.assert_called_once_with(
+            run_decompositions.return_value.module.return_value,
+            mock_composable_quantizer.return_value,
+        )
+
+    def test_quantizer_sees_core_aten_except_preserve_ops(self) -> None:
+        """The quantizer sees core ATen plus preserve_ops, or plain export without."""
+
+        def annotated_targets(preserve_ops: list | None) -> list:
+            seen = []
+
+            class RecordingQuantizer(TorchAOPT2EQuantizer):
+                def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+                    seen.extend(
+                        node.target
+                        for node in model.graph.nodes
+                        if node.op == "call_function"
+                    )
+                    return model
+
+                def validate(self, model: torch.fx.GraphModule) -> None:
+                    pass
+
+            recipe = QuantizationRecipe(
+                quantizers=[RecordingQuantizer()], preserve_ops=preserve_ops
+            )
+            QuantizeStage(recipe).run(
+                PipelineArtifact(data=self.models_dict, context=self.context)
+            )
+            return seen
+
+        linear = torch.ops.aten.linear.default
+        self.assertIn(linear, annotated_targets(None))
+        decomposed = annotated_targets([])
+        self.assertIn(torch.ops.aten.addmm.default, decomposed)
+        self.assertNotIn(linear, decomposed)
+        kept = annotated_targets([linear])
+        self.assertIn(linear, kept)
+        self.assertNotIn(torch.ops.aten.addmm.default, kept)
+
     @patch("executorch.export.stages.allow_exported_model_train_eval")
     @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.move_exported_model_to_train")
@@ -780,6 +852,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.train_fn = train_fn
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -829,6 +902,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.train_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -870,6 +944,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.train_fn = Mock()
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -920,6 +995,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -939,6 +1015,45 @@ class TestQuantizeStage(unittest.TestCase):
 
         mock_prepare_pt2e.assert_called_once()
         mock_prepare_qat_pt2e.assert_not_called()
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_ptq_model_put_in_eval_mode_before_export(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """PTQ: model.eval() must be called before torch.export.export so that
+        calibration runs batch_norm and dropout as the deployed model does."""
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [self.create_dummy_quantizer()]
+        mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        self.model.train()
+        training_at_export_time = []
+
+        def capture_training_flag(model, *args, **kwargs):
+            training_at_export_time.append(model.training)
+            return Mock(spec=ExportedProgram)
+
+        mock_torch_export.side_effect = capture_training_flag
+
+        QuantizeStage(mock_recipe).run(
+            PipelineArtifact(data=self.models_dict, context=self.context)
+        )
+
+        self.assertEqual(training_at_export_time, [False])
 
     @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
@@ -968,6 +1083,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
         mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
@@ -1023,6 +1139,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.train_fn = Mock()
         mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
         mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
@@ -1067,6 +1184,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = calibration_inputs_fn
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -1109,6 +1227,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
         mock_recipe.dynamic_batch_size = False
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -1331,6 +1450,7 @@ class TestQuantizeStageExportDynamicShapes(unittest.TestCase):
         mock_recipe.quantizers = [Mock(spec=TorchAOPT2EQuantizer)]
         mock_recipe.is_qat = is_qat
         mock_recipe.dynamic_batch_size = dynamic_batch_size
+        mock_recipe.preserve_ops = None
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.train_fn = Mock() if is_qat else None
         mock_recipe.pre_prepare_passes = None

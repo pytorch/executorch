@@ -179,12 +179,6 @@ _CASES: list[_Case] = [
         {"normalized_shape": [8], "eps": 1e-5},
     ),
     _Case(
-        "_masked_softmax",
-        {"inp": _int8(2, 4), "mask": lambda: torch.rand(2, 4) > 0.5},
-        frozenset({"inp"}),
-        {"dim": -1, "mask_type": 2},
-    ),
-    _Case(
         "embedding",
         {"weight": _int8(10, 4), "indices": lambda: torch.tensor([0, 3, 9])},
         frozenset({"weight"}),

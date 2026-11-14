@@ -25,6 +25,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     visibility = [
         "//executorch/backends/arm/test:etdump_to_chrome_trace",
+        "//executorch/backends/cpu/...",
         "//executorch/devtools/...",
     ],
     deps = [
@@ -43,6 +44,7 @@ fbcode_target(_kind = runtime.python_library,
     },
     visibility = [
         "//executorch/backends/arm/test:etdump_to_chrome_trace",
+        "//executorch/backends/cpu/...",
         "//executorch/devtools/...",
         "//executorch/runtime/test/...",
     ],

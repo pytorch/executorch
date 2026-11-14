@@ -121,6 +121,36 @@ class CPURuntimeTest(unittest.TestCase):
                 for output, expected in zip(actual, model(x, current), strict=True):
                     torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
+    def test_fp64_constant_chain_stays_outside_delegate(self):
+        class AddConstant(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "constant", torch.arange(6, dtype=torch.float64).reshape(2, 3)
+                )
+
+            def forward(self, x):
+                return x + self.constant.sin().float()
+
+        model = AddConstant()
+        x = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+        edge = to_edge_transform_and_lower(
+            torch.export.export(model, (x,)), partitioner=[CPUPartitioner()]
+        )
+        program = edge.to_executorch()
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual([delegate.id for delegate in plan.delegates], ["CpuBackend"])
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for current in (x, -x):
+            torch.testing.assert_close(runtime.forward((current,))[0], model(current))
+
+    def test_hard_activations_execute_with_folded_constants(self):
+        x = torch.tensor([-4.0, -3.0, -1.0, 0.0, 1.0, 3.0, 4.0])
+        for model in (torch.nn.Hardsigmoid(), torch.nn.Hardswish()):
+            with self.subTest(activation=type(model).__name__):
+                with self._lower(model, (x,)) as runtime:
+                    torch.testing.assert_close(runtime.forward((x,))[0], model(x))
+
     def test_empty_tensors_execute(self):
         class Add(torch.nn.Module):
             def forward(self, x):

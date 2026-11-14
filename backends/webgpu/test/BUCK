@@ -37,7 +37,9 @@ fbcode_target(
     _kind = python_unittest,
     name = "test_webgpu_partitioner",
     srcs = [
+        "ops/test_conv_transpose1d.py",
         "ops/test_elu_silu.py",
+        "ops/test_erf.py",
         "test_webgpu_partitioner.py",
     ],
     deps = [

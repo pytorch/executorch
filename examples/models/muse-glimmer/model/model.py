@@ -182,12 +182,20 @@ def apply_rotary_emb(
 # KV Caches
 
 
+def ring_buffer_size(window_size: int, max_write_len: int) -> int:
+    """Ring slots so every query of a ``max_write_len``-token write sees its window.
+
+    The first query of a T-token write still needs the W - 1 keys before it,
+    so W + T - 1 consecutive positions must coexist in the ring.
+    """
+    return window_size + max_write_len - 1
+
+
 class RingKVCache(nn.Module):
     """Ring-buffer KV cache for sliding window attention.
 
-    Sized to ``window_size * 2`` to avoid index_copy_ collisions when
-    prefill chunks approach the window size. The C++ runner must chunk
-    prefill to not exceed buf_size.
+    ``max_write_len`` is the largest single ``update`` (the max prefill
+    chunk); it defaults to ``window_size``, like the MLX ``RingBufferKVCache``.
     """
 
     def __init__(
@@ -196,10 +204,12 @@ class RingKVCache(nn.Module):
         window_size: int,
         num_kv_heads: int,
         head_dim: int,
+        max_write_len: int | None = None,
     ):
         super().__init__()
         self.window_size = window_size
-        self.buf_size = window_size * 2
+        self.max_write_len = window_size if max_write_len is None else max_write_len
+        self.buf_size = ring_buffer_size(window_size, self.max_write_len)
         cache_shape = (max_batch_size, num_kv_heads, self.buf_size, head_dim)
         self.register_buffer("k_cache", torch.zeros(cache_shape), persistent=False)
         self.register_buffer("v_cache", torch.zeros(cache_shape), persistent=False)
@@ -511,6 +521,7 @@ class MuseGlimmerModel(nn.Module):
 
         # Sliding window size for mask building (from config pattern)
         self._sliding_window = max(config.attn_pattern)
+        self.max_prefill_chunk = self._sliding_window
 
         # Constants as buffers so they move with .to(device)
         self.register_buffer(
@@ -529,6 +540,24 @@ class MuseGlimmerModel(nn.Module):
             persistent=False,
         )
 
+    def set_max_prefill_chunk(self, max_prefill_chunk: int) -> None:
+        """Size the sliding-window ring buffers for prefill chunks up to this long."""
+        self.max_prefill_chunk = max_prefill_chunk
+        for layer in self.layers:
+            attn = layer.self_attn
+            if not attn.is_sliding:
+                continue
+            old = attn.kv_cache.k_cache
+            with torch.device(old.device):
+                cache = RingKVCache(
+                    max_batch_size=old.shape[0],
+                    window_size=attn.window_size,
+                    num_kv_heads=attn.n_kv_heads,
+                    head_dim=attn.head_dim,
+                    max_write_len=max_prefill_chunk,
+                )
+            attn.kv_cache = cache.to(old.dtype)
+
     def _build_masks(
         self, input_pos: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -545,7 +574,7 @@ class MuseGlimmerModel(nn.Module):
 
         # Sliding window mask over ring buffer: (1, 1, T_q, buf_size)
         window_size = self._sliding_window
-        buf_size = window_size * 2
+        buf_size = ring_buffer_size(window_size, self.max_prefill_chunk)
         seq_len = input_pos.shape[0]
         total_written = input_pos[0] + seq_len
         j = torch.arange(buf_size, dtype=torch.long, device=input_pos.device)
