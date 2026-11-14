@@ -12,6 +12,9 @@ Primitives (Metal 4) kernels, with two activation modes:
 
 * ``mlx::int8_int4_affine_gemm``: dynamic per-token affine int8 activations,
   INT8 x INT4 -> INT32 MPP accumulation per weight group.
+* ``mlx::int8sym_int4_affine_gemm``: the same with symmetric per-token int8
+  activations (scale only, as ``mlx::int8_intx_gemm``): no ``x_zero`` /
+  ``w_sum`` term, same weights and GEMM kernels.
 * ``mlx::fp_int4_affine_gemm``: fp16 / bf16 activations, half / bfloat x INT4
   -> FP32 MPP accumulation per weight group.
 
@@ -85,6 +88,7 @@ Usage::
 
 from __future__ import annotations
 
+import math
 from string import Template
 from typing import Callable, NamedTuple, Optional
 
@@ -92,6 +96,7 @@ import torch
 from executorch.backends.mlx.custom_kernel_ops import fp_int4_gemm, int8_intx_gemm
 from executorch.backends.mlx.custom_kernel_ops.int8_intx_gemm import (
     pack_int4,
+    quantize_per_token_int8,
     unpack_int4,
 )
 from torch import nn, Tensor
@@ -99,7 +104,7 @@ from torch.fx.node import Node
 
 _EPS = 1e-10
 GROUP_SIZES = (64, 128, 256, None)
-ACTS = ("int8", "fp")
+ACTS = ("int8", "int8sym", "fp")
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +243,10 @@ class Int4AffineLinear(nn.Module):
             return torch.ops.mlx.int8_int4_affine_gemm(
                 x, self.w_packed, self.w_scale, self.w_bias, self.w_sum
             )
+        if self.act == "int8sym":
+            return torch.ops.mlx.int8sym_int4_affine_gemm(
+                x, self.w_packed, self.w_scale, self.w_bias
+            )
         return torch.ops.mlx.fp_int4_affine_gemm(
             x, self.w_packed, self.w_scale, self.w_bias
         )
@@ -263,6 +272,23 @@ def int8_int4_affine_gemm(
 @torch.library.register_fake("mlx::int8_int4_affine_gemm")
 def int8_int4_affine_gemm_fake(
     x: Tensor, w_packed: Tensor, w_scale: Tensor, w_bias: Tensor, w_sum: Tensor
+) -> Tensor:
+    return x.new_empty((*x.shape[:-1], w_packed.shape[0]))
+
+
+@torch.library.custom_op("mlx::int8sym_int4_affine_gemm", mutates_args=())
+def int8sym_int4_affine_gemm(
+    x: Tensor, w_packed: Tensor, w_scale: Tensor, w_bias: Tensor
+) -> Tensor:
+    K = x.shape[-1]
+    xq, x_scale = quantize_per_token_int8(x.reshape(-1, K))
+    y = x_scale * (xq.float() @ dequantize_int4_affine(w_packed, w_scale, w_bias).T)
+    return y.to(x.dtype).reshape(*x.shape[:-1], w_packed.shape[0])
+
+
+@torch.library.register_fake("mlx::int8sym_int4_affine_gemm")
+def int8sym_int4_affine_gemm_fake(
+    x: Tensor, w_packed: Tensor, w_scale: Tensor, w_bias: Tensor
 ) -> Tensor:
     return x.new_empty((*x.shape[:-1], w_packed.shape[0]))
 
@@ -336,7 +362,8 @@ class AffinePlan(NamedTuple):
     with ``bm`` activation rows per threadgroup; ``bn < 0`` the qmv_wide-style
     kernel with ``bm`` rows per threadgroup and ``-bn`` lanes per output
     channel; otherwise the MPP GEMM on a ``bm x bn`` threadgroup tile of
-    ``sm x sn`` per-SIMD-group ops, split over K when ``splits > 1``. Grouped
+    ``sm x sn`` per-SIMD-group ops (``sm == 0``: one op shared by 4 SIMD
+    groups, for 8-row tiles), split over K when ``splits > 1``. Grouped
     weights add the bias term with one MPP call (``bias == 1``) or after the
     group loop (``bias == 3``); per-channel weights fold it per element
     (``bias == 0``)."""
@@ -350,11 +377,25 @@ class AffinePlan(NamedTuple):
     bias: int = 0
 
 
+def effective_splits(n_groups: int, splits: int) -> int:
+    """Split count for grouped weights: each split takes ceil(G / splits)
+    groups (fewer in the last), and splits that would be empty are dropped, as
+    in the M5 Max study's kernel."""
+    return math.ceil(n_groups / math.ceil(n_groups / splits))
+
+
 def _mpp_plan(max_m: int, bm: int, bn: int, splits: int, N: int, K: int, gs: int):
     if max_m == _MAX_M and (N, K) in _MG_LARGE_M_TILES:
         bm, bn = _MG_LARGE_M_TILES[(N, K)]
-    # Sub-tiles with measured accumulator layouts: 16-row tiles as 16 x 64 /
-    # 16 x 32, larger ones as 32 x 32.
+    # 8-row tiles share one op across the threadgroup (the channelwise
+    # kernels' layout); otherwise sub-tiles with measured accumulator layouts:
+    # 16-row tiles as 16 x 64 / 16 x 32, larger ones as 32 x 32.
+    if bm <= 8:
+        while bn > 32 and bn > N:
+            bn //= 2
+        if gs < K:
+            splits = effective_splits(K // gs, splits)
+        return AffinePlan(max_m, bm, bn, splits, 0, 0, 3 if gs < K else 0)
     if bm <= 16:
         bm, sm, sn = 16, 16, 64 if bn >= 64 else 32
     else:
@@ -363,20 +404,183 @@ def _mpp_plan(max_m: int, bm: int, bn: int, splits: int, N: int, K: int, gs: int
         bn //= 2
     bias = 0
     if gs < K:
-        while (K // gs) % splits:
-            splits //= 2
+        splits = effective_splits(K // gs, splits)
         bias = 1 if bm * bn <= _MAX_BIAS_TILE else 3
     return AffinePlan(max_m, bm, bn, splits, sm, sn, bias)
 
 
+# Swept Muse Glimmer plans per (act, "pc" | "gs<GS>") and (N, K), as
+# AffinePlan fields; regenerate with bench_muse_glimmer_gemm.py --emit-plans.
+# Generated by bench_muse_glimmer_gemm.py --emit-plans from fp16 sweeps on Apple M4 Max.
+_TUNED_PLANS: dict[tuple[str, str], dict[tuple[int, int], list[tuple]]] = {
+    ("fp", "gs256"): {
+        (6656, 4096): [  # o
+            (1, 1, -8, 1),
+            (2, 2, -32, 1),
+            (4, 2, -8, 1),
+            (16, 8, 32, 8, 0, 0, 3),
+            (256, 32, 32, 1, 32, 32, 1),
+            (_MAX_M, 64, 64, 1, 32, 32, 1),
+        ],
+        (6656, 19968): [  # down
+            (1, 1, 0, 1),
+            (2, 2, -16, 1),
+            (4, 2, -8, 1),
+            (16, 8, 32, 2, 0, 0, 3),
+            (256, 128, 32, 2, 32, 32, 1),
+            (_MAX_M, 32, 64, 1, 32, 32, 1),
+        ],
+        (8704, 6656): [  # qkv
+            (1, 1, -8, 1),
+            (2, 2, -32, 1),
+            (4, 2, -16, 1),
+            (16, 8, 64, 2, 0, 0, 3),
+            (256, 32, 64, 2, 32, 32, 1),
+            (_MAX_M, 32, 64, 1, 32, 32, 1),
+        ],
+        (39936, 6656): [  # gate_up
+            (1, 1, -32, 1),
+            (2, 2, -16, 1),
+            (16, 8, 128, 2, 0, 0, 3),
+            (256, 32, 64, 1, 32, 32, 1),
+            (_MAX_M, 32, 32, 1, 32, 32, 1),
+        ],
+        (202048, 6656): [  # lm_head
+            (1, 1, -32, 1),
+            (2, 2, -16, 1),
+            (16, 8, 128, 2, 0, 0, 3),
+            (256, 64, 64, 1, 32, 32, 1),
+            (_MAX_M, 128, 32, 1, 32, 32, 1),
+        ],
+    },
+    ("fp", "pc"): {
+        (6656, 4096): [  # o
+            (1, 1, -16, 1),
+            (2, 2, -16, 1),
+            (4, 2, -8, 1),
+            (16, 8, 32, 8, 0, 0, 0),
+            (_MAX_M, 32, 32, 2, 32, 32, 0),
+        ],
+        (6656, 19968): [  # down
+            (1, 1, -16, 1),
+            (2, 2, -32, 1),
+            (4, 2, 0, 1),
+            (16, 8, 64, 8, 0, 0, 0),
+            (_MAX_M, 128, 32, 4, 32, 32, 0),
+        ],
+        (8704, 6656): [  # qkv
+            (1, 1, -8, 1),
+            (2, 2, -16, 1),
+            (4, 2, -8, 1),
+            (16, 8, 64, 8, 0, 0, 0),
+            (_MAX_M, 32, 64, 2, 32, 32, 0),
+        ],
+        (39936, 6656): [  # gate_up
+            (1, 1, -8, 1),
+            (4, 2, -16, 1),
+            (16, 8, 128, 4, 0, 0, 0),
+            (_MAX_M, 32, 64, 1, 32, 32, 0),
+        ],
+        (202048, 6656): [  # lm_head
+            (1, 1, -16, 1),
+            (4, 2, -16, 1),
+            (16, 8, 128, 2, 0, 0, 0),
+            (_MAX_M, 32, 128, 1, 32, 32, 0),
+        ],
+    },
+    ("int8", "gs256"): {
+        (6656, 4096): [  # o
+            (2, 1, 0, 1),
+            (4, 8, 128, 8, 0, 0, 3),
+            (16, 8, 64, 8, 0, 0, 3),
+            (_MAX_M, 64, 32, 1, 32, 32, 1),
+        ],
+        (6656, 19968): [  # down
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (4, 4, 0, 1),
+            (16, 8, 32, 2, 0, 0, 3),
+            (256, 128, 32, 2, 32, 32, 1),
+            (_MAX_M, 64, 32, 1, 32, 32, 3),
+        ],
+        (8704, 6656): [  # qkv
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (4, 8, 128, 2, 0, 0, 3),
+            (16, 8, 64, 2, 0, 0, 3),
+            (256, 32, 64, 2, 32, 32, 1),
+            (_MAX_M, 32, 32, 1, 32, 32, 1),
+        ],
+        (39936, 6656): [  # gate_up
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (16, 8, 128, 2, 0, 0, 3),
+            (256, 128, 32, 1, 32, 32, 1),
+            (_MAX_M, 64, 32, 1, 32, 32, 1),
+        ],
+        (202048, 6656): [  # lm_head
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (16, 8, 128, 2, 0, 0, 3),
+            (256, 128, 32, 1, 32, 32, 1),
+            (_MAX_M, 64, 32, 1, 32, 32, 1),
+        ],
+    },
+    ("int8", "pc"): {
+        (6656, 4096): [  # o
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (16, 8, 64, 8, 0, 0, 0),
+            (_MAX_M, 32, 64, 2, 32, 32, 0),
+        ],
+        (6656, 19968): [  # down
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (4, 8, 64, 8, 0, 0, 0),
+            (16, 8, 128, 4, 0, 0, 0),
+            (_MAX_M, 32, 32, 4, 32, 32, 0),
+        ],
+        (8704, 6656): [  # qkv
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (4, 8, 128, 8, 0, 0, 0),
+            (16, 8, 32, 2, 0, 0, 0),
+            (_MAX_M, 32, 64, 4, 32, 32, 0),
+        ],
+        (39936, 6656): [  # gate_up
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (4, 8, 128, 8, 0, 0, 0),
+            (16, 8, 128, 2, 0, 0, 0),
+            (_MAX_M, 32, 64, 1, 32, 32, 0),
+        ],
+        (202048, 6656): [  # lm_head
+            (1, 1, 0, 1),
+            (2, 2, 0, 1),
+            (16, 8, 128, 2, 0, 0, 0),
+            (_MAX_M, 32, 64, 1, 32, 32, 0),
+        ],
+    },
+}
+
+
 def affine_plans(N: int, K: int, group_size: int, act: str) -> list[AffinePlan]:
     """Kernel plans, smallest ``max_m`` first; the last covers every larger M.
-    Starts from the channelwise ``fp_int4_gemm`` / ``int8_intx_gemm`` plans;
+    Swept shapes and group sizes use ``_TUNED_PLANS``. Others start from the
+    channelwise ``fp_int4_gemm`` / ``int8_intx_gemm`` plans;
     MPP tiles become per-SIMD-group tiles (Muse Glimmer's large-M tiles from
-    the M5 Max group-wise study) with splits limited to whole weight groups.
+    the M5 Max group-wise study) with splits made effective (no empty split).
     Small-M int8 is weight-bandwidth bound like fp, so int8 matvec plans take
-    fp_int4's swept wide plan for the same ``max_m`` where there is one."""
-    if act == "int8":
+    fp_int4's swept wide plan for the same ``max_m`` where there is one.
+    ``int8sym`` runs the int8 GEMM kernels and uses int8's plans unless it has
+    its own."""
+    scheme = "pc" if group_size == K else f"gs{group_size}"
+    tuned = _TUNED_PLANS.get((act, scheme), {}).get((N, K))
+    if tuned is None and act == "int8sym":
+        tuned = _TUNED_PLANS.get(("int8", scheme), {}).get((N, K))
+    if tuned is not None:
+        return [AffinePlan(*p) for p in tuned]
+    if act != "fp":
         fp_wide = {p.max_m: p for p in fp_int4_gemm.full_k_plans(N, K) if p.bn < 0}
         base = [
             fp_wide.get(p.max_m, p) if p.bn == 0 else p
@@ -433,6 +637,18 @@ _ACT_SUBS = {
             "float(w_sum[n + 1]), float(w_sum[n + 2]), float(w_sum[n + 3])), v))"
         ),
     },
+    "int8sym": {
+        "x_elem": "int8_t",
+        "x_ptr": "xq",
+        "acc_t": "int",
+        "x_rows": "xq_shape[0]",
+        "def_m": "const int M = x_scale_shape[0];",
+        "x_load": "const uint4 xv = *(device const uint4*)(xrow + k);",
+        "x_vec": "float4(as_type<char4>(xv[i]))",
+        "exact_pc": "true",
+        "out_val": "T(x_scale[m] * v)",
+        "out_vec": "vec<T, 4>(x_scale[m] * v)",
+    },
     "fp": {
         "x_elem": "T",
         "x_ptr": "x",
@@ -452,10 +668,13 @@ _ACT_SUBS = {
 
 
 # Template args T, K, TPR, XG: one threadgroup of TPR threads per xq row.
-# Writes xq, x_scale, x_zero, and x_sum[m, b] = sum of xq over the b-th
-# XG-wide K block (XG % 64 == 0) as fp32 (exact). Padding rows past M write
-# zeros to xq and x_sum so the GEMM sees whole BM tiles.
-_INT8_QUANT_SOURCE = """
+# Writes xq, x_scale (and x_zero for affine activations), and x_sum[m, b] = sum
+# of xq over the b-th XG-wide K block (XG % 64 == 0) as fp32 (exact). Padding
+# rows past M write zeros to xq and x_sum so the GEMM sees whole BM tiles.
+# Symmetric activations use x_scale = max(max |x|, eps) / 127 and
+# xq = clamp(round(x / x_scale), -128, 127), as int8_intx_gemm.
+_INT8_QUANT_TEMPLATE = Template(
+    """
     constexpr int SG = TPR / 32;
     constexpr int NXG = K / XG;
     threadgroup float sg_lo[SG];
@@ -503,7 +722,7 @@ _INT8_QUANT_SOURCE = """
         lo = min(lo, sg_lo[s]);
         hi = max(hi, sg_hi[s]);
     }
-    const float scale = max(precise::divide(hi - lo, 255.0f), INT4_AFFINE_EPS);
+    const float scale = $scale;
     const float inv_scale = precise::divide(1.0f, scale);
 
     // Each 16-lane half of a SIMD group covers one 64-value segment, which
@@ -513,8 +732,7 @@ _INT8_QUANT_SOURCE = """
         const int i = base + tid;
         int sum = 0;
         if (i < K / 4) {
-            const float4 q =
-                clamp(rint((float4(x_row[i]) - lo) * inv_scale), 0.0f, 255.0f) - 128.0f;
+            const float4 q = $quant;
             xq_row[i] = as_type<uint>(char4(q));
             sum = int((q.x + q.y) + (q.z + q.w));
         }
@@ -530,10 +748,20 @@ _INT8_QUANT_SOURCE = """
         x_sum[size_t(m) * NXG + b] = float(atomic_load_explicit(&sums[b], memory_order_relaxed));
     }
     if (tid == 0) {
-        x_scale[m] = scale;
-        x_zero[m] = -128.0f - precise::divide(lo, scale);
+        x_scale[m] = scale;$zero
     }
 """
+)
+_INT8_QUANT_SOURCE = _INT8_QUANT_TEMPLATE.substitute(
+    scale="max(precise::divide(hi - lo, 255.0f), INT4_AFFINE_EPS)",
+    quant="clamp(rint((float4(x_row[i]) - lo) * inv_scale), 0.0f, 255.0f) - 128.0f",
+    zero="\n        x_zero[m] = -128.0f - precise::divide(lo, scale);",
+)
+_INT8_SYM_QUANT_SOURCE = _INT8_QUANT_TEMPLATE.substitute(
+    scale="max(precise::divide(max(hi, -lo), 127.0f), INT4_AFFINE_EPS)",
+    quant="clamp(rint(float4(x_row[i]) * inv_scale), -128.0f, 127.0f)",
+    zero="",
+)
 
 
 # Template args T, K, TPR, XG: one SIMD group per (row, XG-wide K block) writes
@@ -569,9 +797,12 @@ _FP_SUM_SOURCE = """
 """
 
 
-# Template args T, ST, N, K, BM, BN, SM, SN, NM, GS, SPLITS, BIAS. Each SIMD
-# group of a BM x BN threadgroup runs its own SM x SN MPP op (execution_simdgroup,
-# so SIMD groups do not rescale in lockstep); the last column tile shifts back
+# Template args T, ST, N, K, BM, BN, SM, SN, NM, GS, SPLITS, BIAS, COOP. Each
+# SIMD group of a BM x BN threadgroup runs its own SM x SN MPP op
+# (execution_simdgroup, so SIMD groups do not rescale in lockstep), or with COOP
+# the threadgroup's 4 SIMD groups share one BM x BN op (execution_simdgroups<4>,
+# as in int8_intx_gemm / fp_int4_gemm), which allows 8-row tiles; COOP always
+# runs the per-element path below. The last column tile shifts back
 # to N - BN so full tiles stay in bounds (overlapping columns are written twice,
 # identically). K is walked in KB-wide blocks matching x_sum's: weight groups
 # (KB = GS), or one K / SPLITS block per split for per-channel weights. x_sum
@@ -579,7 +810,8 @@ _FP_SUM_SOURCE = """
 # memory (inputs under 8 elements), where it could not back an MPP tensor; M
 # comes from x_scale (int8) or x (fp).
 #
-# Grouped (BIAS 1 / 3): grid z picks K / GS / SPLITS consecutive groups; per
+# Grouped (BIAS 1 / 3): grid z picks ceil(K / GS / SPLITS) consecutive groups
+# (fewer in the last split; effective_splits keeps every split non-empty); per
 # group MPP multiplies the [KB, rows] activation block by the packed [KB, N]
 # weight block (W transposed) into ``acc`` and facc = fma(acc, w_scale, facc).
 # The bias term sum_g S[m, g] * w_bias[g, n] is one f32 x ST MPP call per
@@ -598,25 +830,37 @@ _FP_SUM_SOURCE = """
 # NM rows per thread and NRN = CAP / (4 * NM) runs of 4 adjacent columns, so a
 # thread loads each group's scales as NRN 4-vectors and stores 4-vectors. Each
 # SIMD group checks this layout once (plus N % 4 == 0 and a full column
-# sub-tile) and otherwise runs the same math per element.
+# sub-tile) and otherwise runs the same math per element. The layout was
+# measured on M5 Max; on M4 Max it fails for all three sub-tiles, so the
+# per-element path is the one that runs there.
+#
+# Operands (operand_setup / operand_block from _operand_views): each K
+# block is a fixed-extent slice of the full tensor where every tile is known to
+# be in bounds, as the M5 Max study's kernel does (int8 activations, whose rows
+# are padded to whole tiles; weights when N >= BN, where the column-tile shift
+# keeps every sub-tile inside N), so MPP skips bounds handling; otherwise a
+# bounds-checked view of exactly KB columns (fp activations; weights when
+# N < BN, the ``_dynw`` kernels).
 _MPP_TEMPLATE = Template(
     """
     constexpr bool PER_CHANNEL = GS == K;
     constexpr int KB = PER_CHANNEL ? K / SPLITS : GS;
     constexpr int NB = K / KB;
-    constexpr int NBS = NB / SPLITS;
+    constexpr int NBS = (NB + SPLITS - 1) / SPLITS;
     constexpr bool RAW = PER_CHANNEL && SPLITS > 1;
-    constexpr int SGN = BN / SN;
+    static_assert(!(COOP && BIAS == 1), "cooperative tiles add the bias after the loop");
+    constexpr int SGN = COOP ? 1 : BN / SN;
     constexpr int CAP = SM * SN / 32;
-    constexpr int NRN = CAP / (4 * NM);
+    constexpr int NRN = CAP / (4 * NM) > 0 ? CAP / (4 * NM) : 1;
     $def_m
     const int rows = $x_rows;
     const int s = int(threadgroup_position_in_grid.z);
     const int b0 = s * NBS;
+    const int nbs = min(NBS, NB - b0);
     const int sg = int(simdgroup_index_in_threadgroup);
     const int tn = int(threadgroup_position_in_grid.x) * BN;
-    const int n0 = (N >= BN ? min(tn, N - BN) : tn) + (sg % SGN) * SN;
-    const int m0 = int(threadgroup_position_in_grid.y) * BM + (sg / SGN) * SM;
+    const int n0 = (N >= BN ? min(tn, N - BN) : tn) + (COOP ? 0 : (sg % SGN) * SN);
+    const int m0 = int(threadgroup_position_in_grid.y) * BM + (COOP ? 0 : (sg / SGN) * SM);
     if (m0 >= M || n0 >= N) {
         return;
     }
@@ -625,11 +869,9 @@ _MPP_TEMPLATE = Template(
     using WTensor = tensor<device int4b_format, dextents<int, 2>, tensor_inline>;
     constexpr auto desc = matmul2d_descriptor(
         SM, SN, KB, false, true, false, matmul2d_descriptor::mode::multiply);
-    matmul2d<desc, execution_simdgroup> mm;
-    XTensor X0((device $x_elem*)$x_ptr, dextents<int, 2>(KB, rows), array<int, 2>{1, K});
-    WTensor W0((device uchar*)w_packed, dextents<int, 2>(KB, N), array<int, 2>{1, K});
-    auto mA0 = X0.slice(0, m0);
-    auto mB0 = W0.slice(0, n0);
+    using Scope = metal::conditional_t<COOP, execution_simdgroups<4>, execution_simdgroup>;
+    matmul2d<desc, Scope> mm;
+$operand_setup
     auto acc = mm.template get_destination_cooperative_tensor<decltype(mA0), decltype(mB0), $acc_t>();
     auto facc = mm.template get_destination_cooperative_tensor<decltype(mA0), decltype(mB0), float>();
     #pragma clang loop unroll(full)
@@ -639,7 +881,7 @@ _MPP_TEMPLATE = Template(
 
     int rn[NRN];
     int rm[NM];
-    bool fast = N % 4 == 0 && n0 + SN <= N && facc.get_capacity() == CAP;
+    bool fast = !COOP && N % 4 == 0 && n0 + SN <= N && facc.get_capacity() == CAP;
     if (fast) {
         #pragma clang loop unroll(full)
         for (int r = 0; r < NRN; ++r) {
@@ -667,10 +909,10 @@ _MPP_TEMPLATE = Template(
         // fp32 tile.
         threadgroup float bias_tile[BM * BN];
         tensor<device float, dextents<int, 2>, tensor_inline> XS(
-            (device float*)x_sum + b0, dextents<int, 2>(NBS, x_sum_shape[0]),
+            (device float*)x_sum + b0, dextents<int, 2>(nbs, x_sum_shape[0]),
             array<int, 2>{1, NB});
         tensor<device ST, dextents<int, 2>, tensor_inline> WB(
-            (device ST*)w_bias + size_t(b0) * N, dextents<int, 2>(N, NBS), array<int, 2>{1, N});
+            (device ST*)w_bias + size_t(b0) * N, dextents<int, 2>(N, nbs), array<int, 2>{1, N});
         constexpr auto bdesc = matmul2d_descriptor(
             SM, SN, static_cast<int>(dynamic_extent), false, false, false,
             matmul2d_descriptor::mode::multiply);
@@ -686,45 +928,53 @@ _MPP_TEMPLATE = Template(
         facc.load(bt);
     }
 
-    vec<ST, 4> sv[NRN];
-    if (!PER_CHANNEL && fast) {
-        #pragma clang loop unroll(full)
-        for (int r = 0; r < NRN; ++r) {
-            sv[r] = *(device const vec<ST, 4>*)(w_scale + size_t(b0) * N + rn[r]);
-        }
-    }
-    for (int b = b0; b < b0 + NBS; ++b) {
-        // The group's scales, with the next group's loaded behind them.
-        vec<ST, 4> sc[NRN];
-        if (!PER_CHANNEL && fast) {
-            const int bnext = min(b + 1, NB - 1);
+    // As in the study's kernel, the fast and per-element paths run separate
+    // group loops, so the hot loop holds only the MPP call and the rescale.
+    if (fast) {
+        vec<ST, 4> sv[NRN];
+        if (!PER_CHANNEL) {
             #pragma clang loop unroll(full)
             for (int r = 0; r < NRN; ++r) {
-                sc[r] = sv[r];
-                sv[r] = *(device const vec<ST, 4>*)(w_scale + size_t(bnext) * N + rn[r]);
+                sv[r] = *(device const vec<ST, 4>*)(w_scale + size_t(b0) * N + rn[r]);
             }
         }
-        XTensor X((device $x_elem*)$x_ptr + b * KB, dextents<int, 2>(KB, rows), array<int, 2>{1, K});
-        WTensor W((device uchar*)w_packed + b * (KB / 2), dextents<int, 2>(KB, N), array<int, 2>{1, K});
-        auto mA = X.slice(0, m0);
-        auto mB = W.slice(0, n0);
-        mm.run(mA, mB, acc);
-        if (PER_CHANNEL) {
-            break;
-        }
-        if (fast) {
+        for (int b = b0; b < b0 + nbs; ++b) {
+            // The group's scales, with the next group's loaded behind them.
+            vec<ST, 4> sc[NRN];
+            if (!PER_CHANNEL) {
+                const int bnext = min(b + 1, NB - 1);
+                #pragma clang loop unroll(full)
+                for (int r = 0; r < NRN; ++r) {
+                    sc[r] = sv[r];
+                    sv[r] = *(device const vec<ST, 4>*)(w_scale + size_t(bnext) * N + rn[r]);
+                }
+            }
+$operand_block
+            mm.run(mA, mB, acc);
+            if (PER_CHANNEL) {
+                break;
+            }
             #pragma clang loop unroll(full)
             for (ushort i = 0; i < CAP; ++i) {
                 facc[i] = fma(float(acc[i]), float(sc[(i / 8) % NRN][i % 4]), facc[i]);
             }
-        } else {
+        }
+    } else {
+        for (int b = b0; b < b0 + nbs; ++b) {
+$operand_block
+            mm.run(mA, mB, acc);
+            if (PER_CHANNEL) {
+                break;
+            }
             #pragma clang loop unroll(full)
             for (ushort i = 0; i < acc.get_capacity(); ++i) {
                 if (acc.is_valid_element(i)) {
                     const auto c = acc.get_multidimensional_index(i);
                     const int n = n0 + int(c[0]);
                     const int m = m0 + int(c[1]);
-                    if (m < M && n < N) {
+                    // Rows past M read x_sum's zero padding and are never
+                    // stored; columns stay below N unless N < BN.
+                    if (N >= BN || n < N) {
                         const size_t wi = size_t(b) * N + n;
                         facc[i] = fma(float(acc[i]), float(w_scale[wi]), facc[i]);
                         if (BIAS == 3) {
@@ -737,7 +987,7 @@ _MPP_TEMPLATE = Template(
     }
 
     if (BIAS == 3 && fast) {
-        for (int b = b0; b < b0 + NBS; ++b) {
+        for (int b = b0; b < b0 + nbs; ++b) {
             vec<ST, 4> bv[NRN];
             float xv[NM];
             #pragma clang loop unroll(full)
@@ -1143,15 +1393,59 @@ _WIDE_TEMPLATE = Template(
 )
 
 
+def _operand_views(static_x: bool, static_w: bool) -> dict[str, str]:
+    """``operand_setup`` (the full tensors and block 0's views, which fix the
+    accumulators' types) and ``operand_block`` (block b's views mA / mB) for
+    the MPP template."""
+    x_full = (
+        "XTensor X((device $x_elem*)$x_ptr, dextents<int, 2>(K, rows), "
+        "array<int, 2>{1, K});"
+    )
+    w_full = (
+        "WTensor W((device uchar*)w_packed, dextents<int, 2>(K, N), "
+        "array<int, 2>{1, K});"
+    )
+    if static_x:
+        x_setup = x_full + "\n    auto mA0 = X.template slice<KB, SM>(0, m0);"
+        x_block = "auto mA = X.template slice<KB, SM>(b * KB, m0);"
+    else:
+        x_setup = (
+            "XTensor X0((device $x_elem*)$x_ptr, dextents<int, 2>(KB, rows), "
+            "array<int, 2>{1, K});\n    auto mA0 = X0.slice(0, m0);"
+        )
+        x_block = (
+            "XTensor Xb((device $x_elem*)$x_ptr + b * KB, dextents<int, 2>(KB, rows), "
+            "array<int, 2>{1, K});\n        auto mA = Xb.slice(0, m0);"
+        )
+    if static_w:
+        w_setup = w_full + "\n    auto mB0 = W.template slice<KB, SN>(0, n0);"
+        w_block = "auto mB = W.template slice<KB, SN>(b * KB, n0);"
+    else:
+        w_setup = (
+            "WTensor W0((device uchar*)w_packed, dextents<int, 2>(KB, N), "
+            "array<int, 2>{1, K});\n    auto mB0 = W0.slice(0, n0);"
+        )
+        w_block = (
+            "WTensor Wb((device uchar*)w_packed + b * (KB / 2), dextents<int, 2>(KB, N), "
+            "array<int, 2>{1, K});\n        auto mB = Wb.slice(0, n0);"
+        )
+    return {
+        "operand_setup": "    " + x_setup + "\n    " + w_setup,
+        "operand_block": "            " + x_block + "\n            " + w_block,
+    }
+
+
 def _sources(act: str) -> dict[str, str]:
     subs = _ACT_SUBS[act]
-    return {
-        **{
-            kind: _MPP_TEMPLATE.substitute(
-                subs, **{k: Template(v).substitute(subs) for k, v in stores.items()}
+    mpp = {}
+    for kind, stores in _MPP_STORES.items():
+        for suffix, static_w in (("", True), ("_dynw", False)):
+            pieces = {**stores, **_operand_views(act != "fp", static_w)}
+            mpp[kind + suffix] = _MPP_TEMPLATE.substitute(
+                subs, **{k: Template(v).substitute(subs) for k, v in pieces.items()}
             )
-            for kind, stores in _MPP_STORES.items()
-        },
+    return {
+        **mpp,
         "reduce": _REDUCE_TEMPLATE.substitute(subs),
         "reduce_raw": _REDUCE_RAW_TEMPLATE.substitute(subs),
         "matvec": _MATVEC_TEMPLATE.substitute(subs),
@@ -1166,19 +1460,30 @@ def _lit(*values: int) -> list[IntOrVid]:
     return [IntOrVid.from_literal(v) for v in values]
 
 
-@REGISTRY.register(
-    target=[
-        torch.ops.mlx.int8_int4_affine_gemm.default,
-        torch.ops.mlx.fp_int4_affine_gemm.default,
-    ]
-)
-def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C901
-    # Only the int8 op takes w_sum.
-    args = P.args(n)
-    act = "int8" if len(args) == 5 else "fp"
+@REGISTRY.register(target=[torch.ops.mlx.int8_int4_affine_gemm.default])
+def _int8_int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    return _lower_int4_affine_gemm(P, n, "int8")
+
+
+@REGISTRY.register(target=[torch.ops.mlx.int8sym_int4_affine_gemm.default])
+def _int8sym_int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    return _lower_int4_affine_gemm(P, n, "int8sym")
+
+
+@REGISTRY.register(target=[torch.ops.mlx.fp_int4_affine_gemm.default])
+def _fp_int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    return _lower_int4_affine_gemm(P, n, "fp")
+
+
+def _lower_int4_affine_gemm(  # noqa: C901
+    P: MLXProgramBuilder, n: Node, act: str
+) -> Slot:
     op_name = f"mlx::{act}_int4_affine_gemm"
+    args = P.args(n)
     x_slot, w_packed_slot, w_scale_slot, w_bias_slot = args[:4]
+    # Only the affine int8 op takes w_sum (for the activation zero point).
     w_sum_slot = args[4] if act == "int8" else None
+    int8_act = act != "fp"
     x_node = n.args[0]
     x_meta = x_node.meta["val"]
     N, KP = n.args[1].meta["val"].shape
@@ -1240,7 +1545,7 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
     sources = _SOURCES[act]
 
     # Activation-side inputs of the GEMM kernels and the inputs the int8
-    # epilogue reads.
+    # epilogues read.
     if act == "int8":
         x_inputs = {"xq": xq_slot}
         epilogue_inputs = {
@@ -1248,6 +1553,9 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
             "x_zero": x_zero_slot,
             "w_sum": w_sum_slot,
         }
+    elif act == "int8sym":
+        x_inputs = {"xq": xq_slot}
+        epilogue_inputs = {"x_scale": x_scale_slot}
     else:
         x_inputs = {"x": x_slot}
         epilogue_inputs = {}
@@ -1292,18 +1600,21 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
     def emit_prologue(rows: IntOrVid, xg: int) -> None:
         nxg = IntOrVid.from_literal(K // xg)
         targs = {"T": dtype_int, "K": K, "TPR": _PROLOGUE_THREADS, "XG": xg}
-        if act == "int8":
+        if int8_act:
             # rows > M zero-pads xq and x_sum to whole BM tiles; x_scale and
             # x_zero stay [M].
+            quant_outputs = {
+                "xq": (xq_slot, int8, [rows, k_lit]),
+                "x_scale": (x_scale_slot, fp32, [m_iov]),
+                "x_zero": (x_zero_slot, fp32, [m_iov]),
+                "x_sum": (x_sum_slot, fp32, [rows, nxg]),
+            }
+            if act == "int8sym":
+                del quant_outputs["x_zero"]
             emit_kernel(
                 "quantize",
                 {"x": x_slot},
-                {
-                    "xq": (xq_slot, int8, [rows, k_lit]),
-                    "x_scale": (x_scale_slot, fp32, [m_iov]),
-                    "x_zero": (x_zero_slot, fp32, [m_iov]),
-                    "x_sum": (x_sum_slot, fp32, [rows, nxg]),
-                },
+                quant_outputs,
                 [
                     IntOrVid.from_literal(_PROLOGUE_THREADS),
                     rows,
@@ -1311,7 +1622,9 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
                 ],
                 _PROLOGUE_THREADS,
                 targs,
-                source=_INT8_QUANT_SOURCE,
+                source=(
+                    _INT8_SYM_QUANT_SOURCE if act == "int8sym" else _INT8_QUANT_SOURCE
+                ),
             )
             return
         blocks_per_tg = _PROLOGUE_THREADS // 32
@@ -1332,7 +1645,7 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
         )
 
     def emit_matvec(mr: int) -> None:
-        if act == "int8":
+        if int8_act:
             emit_prologue(m_iov, K)
         rows_per_tg = _MATVEC_SIMDGROUPS * _MATVEC_ROWS_PER_SIMDGROUP
         emit_kernel(
@@ -1355,7 +1668,7 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
             raise NotImplementedError(
                 f"{op_name}: wide kernel needs K % {16 * kl} == 0; got K={K}"
             )
-        if act == "int8":
+        if int8_act:
             emit_prologue(m_iov, K)
         channels_per_tg = _MATVEC_SIMDGROUPS * (32 // kl)
         emit_kernel(
@@ -1378,17 +1691,23 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
 
     def emit_mpp(plan: AffinePlan) -> None:
         bm, bn, splits = plan.bm, plan.bn, plan.splits
+        if gs < K:
+            splits = effective_splits(G, splits)
         tiles_m = emit_ceil_div(P, m_iov, bm)
         rows = emit_product(P, [tiles_m, IntOrVid.from_literal(bm)])
         emit_prologue(rows, K // splits if gs == K else gs)
-        threads = (bm // plan.sm) * (bn // plan.sn) * 32
+        coop = plan.sm == 0
+        sm, sn = (bm, bn) if coop else (plan.sm, plan.sn)
+        # Weights take fixed-extent slices unless N < BN (see _MPP_TEMPLATE).
+        dynw = "_dynw" if N < bn else ""
+        threads = 128 if coop else (bm // sm) * (bn // sn) * 32
         grid = [
             IntOrVid.from_literal((N + bn - 1) // bn * threads),
             tiles_m,
             IntOrVid.from_literal(splits),
         ]
         # int8 kernels read M from x_scale.
-        m_inputs = {"x_scale": x_scale_slot} if act == "int8" else {}
+        m_inputs = {"x_scale": x_scale_slot} if int8_act else {}
         mpp_inputs = {**x_inputs, "x_sum": x_sum_slot, **w_inputs, **m_inputs}
         targs = {
             "T": dtype_int,
@@ -1397,16 +1716,17 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
             "K": K,
             "BM": bm,
             "BN": bn,
-            "SM": plan.sm,
-            "SN": plan.sn,
-            "NM": _SG_ROWS_PER_THREAD.get((plan.sm, plan.sn), 4),
+            "SM": sm,
+            "SN": sn,
+            "NM": 1 if coop else _SG_ROWS_PER_THREAD.get((sm, sn), 4),
             "GS": gs,
             "SPLITS": splits,
             "BIAS": plan.bias,
+            "COOP": int(coop),
         }
         if splits == 1:
             emit_kernel(
-                "full_k",
+                "full_k" + dynw,
                 {**mpp_inputs, **epilogue_inputs},
                 {"out": (out, dtype_int, out_shape_flat)},
                 grid,
@@ -1418,12 +1738,12 @@ def _int4_affine_gemm_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C
         # once in the reduce; grouped splits sum scaled FP32 partials.
         raw = gs == K
         emit_kernel(
-            "split_k",
+            "split_k" + dynw,
             mpp_inputs,
             {
                 "partial": (
                     partial_slot,
-                    int32 if raw and act == "int8" else fp32,
+                    int32 if raw and int8_act else fp32,
                     [IntOrVid.from_literal(splits), m_iov, n_lit],
                 )
             },

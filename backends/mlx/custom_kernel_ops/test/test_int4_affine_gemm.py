@@ -45,7 +45,7 @@ def _plan_kernel_count(plan: AffinePlan, act: str) -> int:
     # Prologue + matvec / wide / full-K, or prologue + split-K + reduce; the
     # fp matvec and wide kernels have no prologue.
     if plan.bn <= 0:
-        return 2 if act == "int8" else 1
+        return 1 if act == "fp" else 2
     return 3 if plan.splits > 1 else 2
 
 
@@ -106,8 +106,8 @@ class Int4AffineGemmTest(OpTestCase):
             {"m": 5, "n": 96, "k": 1024},
             {"m": 12, "n": 96, "k": 1024, "dtype": torch.float16},
             {"m": 17, "n": 512, "k": 1024, "dtype": torch.float16},
-            # Muse Glimmer `o` shape: wide kernel (KL=16 at M=1, KL=32 with
-            # 2 rows at M=2; fp KL=16 with 2 rows at M=4), int8 split-K at M=4.
+            # Muse Glimmer `o` shape: tuned decode plans for pc / gs256 (fp
+            # wide, int8 matvec); gs64 / gs128 take the derived wide plans.
             {"m": 1, "n": 6656, "k": 4096, "dtype": torch.float16},
             {"m": 2, "n": 6656, "k": 4096},
             {"m": 4, "n": 6656, "k": 4096, "dtype": torch.float16},
@@ -120,6 +120,10 @@ class Int4AffineGemmTest(OpTestCase):
             # Muse Glimmer `qkv` shape at large M: 64 x 128 tile, bias term
             # after the group loop (BIAS 3).
             {"m": 40, "n": 8704, "k": 6656, "group_size": 128},
+            # Uneven split-K: 10 groups in 4 splits of 3, 3, 3, 1 (cooperative
+            # 8-row tile at M = 5, 16 x 64 sub-tiles with BIAS 1 at M = 12).
+            {"m": 5, "n": 96, "k": 1280, "group_size": 128},
+            {"m": 12, "n": 96, "k": 1280, "group_size": 128},
             # fp32 qparam planes: f32 x f32 bias MPP call.
             {
                 "m": 33,
@@ -140,11 +144,27 @@ class Int4AffineGemmTest(OpTestCase):
             {"m": 17, "n": 512, "k": 1024, "dtype": torch.float32, "group_size": 128},
             {"m": 33, "n": 95, "k": 192, "group_size": None},
         ]
+        # int8sym shares every GEMM kernel with int8; cover its quantize and
+        # epilogue on each lowering (matvec, cooperative split-K, per-SIMD-group
+        # tiles, tuned decode, dynamic M).
+        sym_shapes = [
+            {"m": 1, "n": 100, "k": 1024},
+            {"m": 5, "n": 96, "k": 1024},
+            {"m": 33, "n": 95, "k": 768},
+            {"m": 2, "n": 6656, "k": 4096},
+            {"m": 8, "n": 320, "k": 1024, "test_m": 40},
+        ]
         configs = [
             cls(**s, act=act, group_size=gs)
-            for act in ACTS
+            for act in ("int8", "fp")
             for gs in GROUP_SIZES
             for s in shapes
+            if gs is None or s["k"] % gs == 0
+        ]
+        configs += [
+            cls(**s, act="int8sym", group_size=gs)
+            for gs in GROUP_SIZES
+            for s in sym_shapes
             if gs is None or s["k"] % gs == 0
         ]
         configs += [cls(**s, act=act) for act in ACTS for s in both_acts]
