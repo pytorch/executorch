@@ -98,7 +98,7 @@ def read_prepared_samples(
 
             for spec_idx, spec in enumerate(input_spec):
                 bin_file_path = os.path.join(
-                    sample_dir, f"{str(spec_idx).zfill(2)}.bin"
+                    sample_dir, f"{str(spec_idx).zfill(4)}.bin"
                 )
                 sample_vector = np.fromfile(
                     bin_file_path, dtype=torch_type_to_numpy_type(spec.dtype)

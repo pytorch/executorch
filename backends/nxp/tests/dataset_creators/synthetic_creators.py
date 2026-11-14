@@ -56,7 +56,7 @@ class SyntheticDatasetCreator(BaseDatasetCreator):
                     torch_type_to_numpy_type(spec.dtype)
                 )
                 file_name = (
-                    f"{str(spec_idx).zfill(2)}.bin"
+                    f"{str(spec_idx).zfill(4)}.bin"
                     if len(input_spec) > 1
                     else f"{str(idx).zfill(4)}.bin"
                 )
