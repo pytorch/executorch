@@ -949,6 +949,41 @@ class TestEmit(unittest.TestCase):
             f"Stacked outputs mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
         )
 
+    def test_run_emit_scan_view_of_carry_and_buffer(self) -> None:
+        """Views of the carry and of a captured buffer read the values bound to them."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanViews(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.arange(1.0, 5.0))
+
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry.view(2, 2).sum(0).repeat(2) + (
+                        x.unsqueeze(0) * self.w.view(4, 1)
+                    ).sum(0)
+                    return new_carry, new_carry.clone()
+
+                return scan(combine_fn, torch.ones(4), xs)
+
+        f = ScanViews()
+        inputs = (torch.arange(12).float().reshape(3, 4),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        loaded_model = _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
+        et_outputs = loaded_model(inputs)
+        eager_outputs = f(*inputs)
+        for et_output, eager_output in zip(et_outputs, eager_outputs):
+            self.assertTrue(
+                torch.allclose(et_output, eager_output),
+                f"Mismatch: {et_output} vs {eager_output}",
+            )
+
     def test_emit_scan_add_mul(self) -> None:
         """Test scan with add operation in combine_fn."""
         from torch._higher_order_ops.scan import scan

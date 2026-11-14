@@ -1294,7 +1294,15 @@ class _Emitter(torch.fx.Interpreter):
         is_memory_planned = is_memory_planned or (
             spec.const and spec.storage is not None
         )
-        if is_static and is_memory_planned:
+        # A placeholder of a control flow submodule can be bound to a value of the
+        # parent graph, so its planned memory may never be written.
+        base = self.node.args[0]
+        is_submodule_input = (
+            self.binding_input_values is not None
+            and isinstance(base, torch.fx.Node)
+            and base.op == "placeholder"
+        )
+        if is_static and is_memory_planned and not is_submodule_input:
             return self._emit_spec(spec)
 
         self_arg = self._emit_argument(args[0], torch.TensorType)  # pyre-ignore[6]
