@@ -383,6 +383,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
             "//executorch/exir:lib",
         ],
         keep_gpu_sections = True,

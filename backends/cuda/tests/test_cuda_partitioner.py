@@ -50,9 +50,9 @@ from torch.fx.passes.utils.fuser_utils import validate_partition
 class TestCudaLowMemoryExport(unittest.TestCase):
     @staticmethod
     def _materialize(weights, directory, device_type=AOTI_DEVICE_TYPE_CPU):
-        return CudaWeightCollector().materialize(
-            weights, directory, lambda _: device_type
-        )
+        collector = CudaWeightCollector()
+        with collector.capture(lambda _: device_type) as capture:
+            return collector.materialize(weights, directory, capture)
 
     @staticmethod
     def _parent_result(so_key: str) -> PreprocessResult:
@@ -222,9 +222,9 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         weights = Weights({"weight": (tensor, TensorProperties(tensor))})
 
         with tempfile.TemporaryDirectory() as directory:
-            artifact = CudaWeightCollector().materialize(
-                weights, directory, _aoti_device_type_for_weight
-            )
+            collector = CudaWeightCollector()
+            with collector.capture(_aoti_device_type_for_weight) as capture:
+                artifact = collector.materialize(weights, directory, capture)
             self.assertEqual(artifact.entries[0].device_type, AOTI_DEVICE_TYPE_CUDA)
             for storage in artifact.storages.values():
                 storage.close()
