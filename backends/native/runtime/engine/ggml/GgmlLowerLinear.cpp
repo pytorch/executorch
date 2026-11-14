@@ -48,19 +48,31 @@ void GraphBuilder::lower_linear(const Node& node) {
 }
 
 void GraphBuilder::lower_row_gather(const Node& node) {
-  const TensorRef weight = tensor_arg(node, "weight", 0);
+  TensorRef weight = tensor_arg(node, "weight", 0);
   const Argument& arg = require_arg(node, "indices", 1).arg;
   ValueId indices_id = kInvalid;
+  // x[:, rows] of a [1, T, D] x, as Hugging Face selects logits_to_keep rows,
+  // gathers rows of the [T, D] matrix and keeps the leading 1.
+  bool leading_one = false;
   if (op_key(node.target) == "aten.embedding.default") {
     indices_id = arg.as_tensor().id;
   } else {
     const std::vector<ValueId> ids = arg.kind() == ArgKind::TensorList
         ? arg.as_tensor_list().ids
         : arg.as_optional_tensor_list().ids;
-    if (ids.size() != 1 || !valid(ids.front())) {
-      throw std::runtime_error("ggml: index supports one row-index tensor");
+    leading_one = ids.size() == 2 && !valid(ids.front()) &&
+        weight.sizes.size() == 3 && weight.sizes.front() == 1;
+    if (leading_one) {
+      weight.sizes.erase(weight.sizes.begin());
+    } else if (ids.size() != 1) {
+      throw std::runtime_error(
+          "ggml: index supports one row-index tensor, after at most one "
+          "leading size-1 dimension");
     }
-    indices_id = ids.front();
+    indices_id = ids.back();
+    if (!valid(indices_id)) {
+      throw std::runtime_error("ggml: index needs a row-index tensor");
+    }
   }
   const ScalarType dtype = method_.graph.value(indices_id).tensor_meta().dtype;
   if (weight.sizes.size() != 2 ||
@@ -79,6 +91,9 @@ void GraphBuilder::lower_row_gather(const Node& node) {
       reshape(ctx, indices.tensor, {ggml_nelements(indices.tensor)});
   std::vector<int64_t> sizes = indices.sizes;
   sizes.push_back(weight.sizes.at(1));
+  if (leading_one) {
+    sizes.insert(sizes.begin(), 1);
+  }
   ggml_tensor* result =
       reshape(ctx, ggml_get_rows(ctx, weight.tensor, flat), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
