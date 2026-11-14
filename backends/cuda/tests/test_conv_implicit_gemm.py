@@ -5,15 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 """triton::convolution on dense convolutions: every schedule and K order of
-the implicit-GEMM template against an FP64 reference."""
+the implicit-GEMM template against an FP64 reference, and models lowered
+through the CUDA backend."""
 
+import glob
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
+_PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
 _TOLERANCE = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 1.6e-2}
 _TF32_TOLERANCE = 5e-3
 
@@ -321,3 +327,121 @@ class Tf32AuthorityTest(unittest.TestCase):
                 device_interface, "get_interface_for_device", return_value=interface
             ):
                 self.assertEqual(common.conv_allows_tf32(), allowed)
+
+
+class _KernelEqualsStride(nn.Module):
+    """A 2-D and a 3-D convolution with kernel == stride."""
+
+    def __init__(self, dtype):
+        super().__init__()
+        self.conv2d = nn.Conv2d(3, 64, 14, stride=14, padding="valid", dtype=dtype)
+        self.conv3d = nn.Conv3d(
+            3, 64, (2, 14, 14), stride=(2, 14, 14), bias=False, dtype=dtype
+        )
+
+    def forward(self, x, y):
+        return self.conv2d(x), self.conv3d(y.view(-1, 3, 2, 14, 14))
+
+
+class _ThreeChannelBlock(nn.Module):
+    """3-input-channel 7x7 stride-2 convolutions, padded and unpadded, and
+    the 1x1 convolutions left to Inductor."""
+
+    def __init__(self, dtype):
+        super().__init__()
+        self.padded = nn.Conv2d(3, 32, 7, stride=2, padding=3, bias=False, dtype=dtype)
+        self.unpadded = nn.Conv2d(3, 32, 7, stride=2, dtype=dtype)
+        self.down = nn.Conv2d(32, 64, 1, stride=2, bias=False, dtype=dtype)
+        self.proj = nn.Conv2d(64, 16, 1, dtype=dtype)
+
+    def forward(self, x):
+        return self.proj(self.down(F.relu(self.padded(x)))), self.unpadded(x)
+
+
+class ImplicitGemmLoweringTest(unittest.TestCase):
+    def setUp(self):
+        if not torch.cuda.is_available() or torch.version.hip is not None:
+            self.skipTest("CUDA required")
+
+    def lower_and_run(self, model, inputs, routed, tolerance):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+
+        with torch.no_grad():
+            program = torch.export.export(model, inputs, strict=True)
+        with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        output = "\n".join(logs.output)
+        self.assertEqual(output.count("(optional, implicit_gemm template)"), routed)
+        self.assertIn(f"Replaced {routed} nodes with Triton kernels", output)
+
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return output
+        from executorch.runtime import Runtime
+
+        et_program = edge.to_executorch()
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                et_program.write_to_file(f)
+            et_program.write_tensor_data_to_file(directory)
+            data_path = glob.glob(os.path.join(directory, "*.ptd"))[0]
+            method = Runtime.get().load_program(path, data_path=data_path)
+            outputs = method.load_method("forward").execute([i.cpu() for i in inputs])
+        with torch.no_grad(), torch.backends.cudnn.flags(
+            enabled=True, allow_tf32=False
+        ):
+            expected = model(*inputs)
+        for got, want in zip(outputs, expected):
+            torch.testing.assert_close(
+                got.float(), want.float().cpu(), atol=tolerance, rtol=tolerance
+            )
+        return output
+
+    def fp32_tolerance(self):
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            conv_allows_tf32,
+        )
+
+        return _TF32_TOLERANCE if conv_allows_tf32() else 1e-4
+
+    def test_kernel_equals_stride_lowers_and_runs(self):
+        for dtype, tolerance in (
+            (torch.float32, self.fp32_tolerance()),
+            (torch.bfloat16, 3e-2),
+        ):
+            torch.manual_seed(0)
+            model = _KernelEqualsStride(dtype).to("cuda").eval()
+            inputs = (
+                torch.randn(1, 3, 224, 224, device="cuda", dtype=dtype),
+                torch.randn(256, 3 * 2 * 14 * 14, device="cuda", dtype=dtype),
+            )
+            with self.subTest(dtype=dtype):
+                self.lower_and_run(model, inputs, routed=2, tolerance=tolerance)
+
+    def test_three_channel_block_lowers_and_runs(self):
+        for dtype, tolerance in (
+            (torch.float32, self.fp32_tolerance()),
+            (torch.bfloat16, 3e-2),
+        ):
+            torch.manual_seed(0)
+            model = _ThreeChannelBlock(dtype).to("cuda").eval()
+            inputs = (torch.randn(2, 3, 84, 84, device="cuda", dtype=dtype),)
+            with self.subTest(dtype=dtype):
+                output = self.lower_and_run(
+                    model, inputs, routed=2, tolerance=tolerance
+                )
+                # The 1x1 convolutions keep Inductor's lowering.
+                self.assertEqual(output.count("Skipping conv replacement"), 2)
