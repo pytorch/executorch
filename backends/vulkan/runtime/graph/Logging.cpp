@@ -246,7 +246,9 @@ void ComputeGraph::print_readable() {
 
     std::stringstream read_s;
     for (const ArgGroup& arg_group : node->args_) {
-      if (arg_group.access != vkapi::MemoryAccessType::READ) {
+      // A read with modifier bits (e.g. kReadStorageImage) is still a read.
+      if (!(arg_group.access & vkapi::MemoryAccessType::READ) ||
+          (arg_group.access & vkapi::MemoryAccessType::WRITE)) {
         continue;
       }
       read_s << arg_group.refs;

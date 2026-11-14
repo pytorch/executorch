@@ -12,6 +12,9 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/EnabledDeviceState.h>
+
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <utility>
@@ -140,6 +143,14 @@ VkDevice create_logical_device(
 #endif /* VK_EXT_subgroup_size_control */
   };
 
+#ifdef VK_KHR_vulkan_memory_model
+  if (physical_device.vulkan_memory_model_features.vulkanMemoryModel ==
+      VK_TRUE) {
+    requested_device_extensions.push_back(
+        VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
+  }
+#endif /* VK_KHR_vulkan_memory_model */
+
   std::vector<const char*> enabled_device_extensions;
   find_requested_device_extensions(
       physical_device.handle,
@@ -200,6 +211,25 @@ VkDevice create_logical_device(
   };
 
   void* extension_list_top = nullptr;
+
+#ifdef VK_KHR_vulkan_memory_model
+  VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR};
+  for (const char* extension : enabled_device_extensions) {
+    if (std::strcmp(extension, VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME) ==
+        0) {
+      vulkan_memory_model_features.vulkanMemoryModel = VK_TRUE;
+      // Existing shaders use Device memory scope
+      // (VUID-RuntimeSpirv-vulkanMemoryModel-06265).
+      vulkan_memory_model_features.vulkanMemoryModelDeviceScope =
+          physical_device.vulkan_memory_model_features
+              .vulkanMemoryModelDeviceScope;
+      vulkan_memory_model_features.pNext = extension_list_top;
+      extension_list_top = &vulkan_memory_model_features;
+      break;
+    }
+  }
+#endif /* VK_KHR_vulkan_memory_model */
 
 #ifdef VK_KHR_16bit_storage
   VkPhysicalDevice16BitStorageFeatures shader_16bit_storage{
@@ -310,6 +340,12 @@ VkDevice create_logical_device(
       VK_TRUE;
   f.cooperative_matrix2_tensor_addressing =
       cooperative_matrix2_features.cooperativeMatrixTensorAddressing == VK_TRUE;
+#endif
+#ifdef VK_KHR_vulkan_memory_model
+  f.vulkan_memory_model =
+      vulkan_memory_model_features.vulkanMemoryModel == VK_TRUE;
+  f.vulkan_memory_model_device_scope =
+      vulkan_memory_model_features.vulkanMemoryModelDeviceScope == VK_TRUE;
 #endif
 #ifdef VK_EXT_subgroup_size_control
   f.subgroup_size_control =
@@ -434,6 +470,12 @@ PhysicalDevice shared_physical_device(
 #endif
   physical.supports_subgroup_size_control &= f.subgroup_size_control;
   physical.supports_compute_full_subgroups &= f.compute_full_subgroups;
+#ifdef VK_KHR_vulkan_memory_model
+  physical.vulkan_memory_model_features.vulkanMemoryModel &=
+      f.vulkan_memory_model ? VK_TRUE : VK_FALSE;
+  physical.vulkan_memory_model_features.vulkanMemoryModelDeviceScope &=
+      f.vulkan_memory_model_device_scope ? VK_TRUE : VK_FALSE;
+#endif
   return physical;
 }
 
@@ -464,13 +506,19 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
-      compute_pipeline_cache_(device_.handle, cache_data_path),
+      compute_pipeline_cache_(
+          device_.handle,
+          cache_data_path,
+          full_subgroups_enabled(enabled_device_features_)),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
       linear_tiling_3d_enabled_{test_linear_tiling_3d_image_support(
           device_.handle,
           physical_device_.handle)},
-      owns_device_{true} {}
+      owns_device_{true},
+      vulkan_memory_model_enabled_{vulkan_memory_model_enabled(
+          enabled_device_extensions_,
+          enabled_device_features_)} {}
 
 Adapter::Adapter(
     VkInstance instance,
@@ -488,6 +536,8 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
+      // The enabled features of an external VkDevice are unknown: no full
+      // subgroups (and no Vulkan memory model).
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
@@ -534,13 +584,19 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
-      compute_pipeline_cache_(device_.handle, cache_data_path),
+      compute_pipeline_cache_(
+          device_.handle,
+          cache_data_path,
+          full_subgroups_enabled(enabled_device_features_)),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
       linear_tiling_3d_enabled_(test_linear_tiling_3d_image_support(
           device_.handle,
           physical_device_.handle)),
-      owns_device_(false) {}
+      owns_device_(false),
+      vulkan_memory_model_enabled_(vulkan_memory_model_enabled(
+          enabled_device_extensions_,
+          enabled_device_features_)) {}
 
 void Adapter::wait_idle(const Queue& queue) {
   if (shared_device_) {
@@ -1011,6 +1067,14 @@ bool Adapter::supports_spirv_capability(const uint32_t value) {
       return supports_int8_dot_product();
     case SpirvCapability::COOPERATIVE_MATRIX_KHR:
       return supports_cooperative_matrix();
+#if defined(VK_KHR_vulkan_memory_model) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::VULKAN_MEMORY_MODEL:
+      return supports_vulkan_memory_model();
+    case SpirvCapability::VULKAN_MEMORY_MODEL_DEVICE_SCOPE:
+      return supports_vulkan_memory_model() &&
+          physical_device_.vulkan_memory_model_features
+              .vulkanMemoryModelDeviceScope == VK_TRUE;
+#endif
 #if defined(VK_NV_cooperative_matrix2) && !defined(ETVK_FORCE_NO_EXTENSIONS)
     case SpirvCapability::COOPERATIVE_MATRIX_REDUCTIONS_NV:
       return physical_device_.cooperative_matrix2_features

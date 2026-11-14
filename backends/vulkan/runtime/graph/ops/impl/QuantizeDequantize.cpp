@@ -171,7 +171,11 @@ void add_quantize_and_pack_4h4w_with_group_sums_node(
   const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
   const int32_t blocks_per_group = utils::div_up(group_size_val, int32_t(4));
 
-  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
+  // The row-major layout serves the row-major cooperative-matrix kernels.
+  std::string shader_name =
+      graph.estimate_memory_layout_of(packed_int_input) == utils::kPackedInt8_4W
+      ? "quantize_and_pack_4w_with_group_sums"
+      : "quantize_and_pack_4h4w_with_group_sums";
   if (group_size_val >= 128) {
     shader_name += "_o2w32";
   } else {

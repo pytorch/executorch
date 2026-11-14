@@ -1088,6 +1088,39 @@ checks that the output named by `parameters.output_name` resized to
 step sets `validate_output` to false. See the `dynamic_resize` cases in
 `convolution/conv2d/cases/correctness.json`.
 
+`wmma_family_route` (`operators/gemm/linear/qw/wmma/`) runs the same steps
+for the 4-bit linear operators and also checks the kernels each step
+dispatches, read from the shader profiling records. A step's
+`expected_kernels` maps a cooperative-matrix family (`xe2`, `nvidia`) to the
+name prefix of the kernel the step must dispatch on a device of that family;
+a family without an entry, and a device that matches no family, must dispatch
+no `_wmma` kernel. `ETVK_WMMA_EXPECTED_FAMILY` states the device's family
+independently of the selector under test: with `xe2`, `nvidia` or `none` the
+device must match that family, every step must have profiling records, and a
+case whose shader or route is unsupported fails instead of reporting `SKIP`.
+A step's `family_validation_method` replaces the case's `validation_method` on
+devices of that family, so a family kernel is held to its own measured
+tolerance while other devices validate the existing kernels at the case's; it
+also validates the output there when the step sets `validate_output` to false.
+`software` is for devices without timestamp queries, such as SwiftShader: no
+family, a case that does not run fails as well, and kernels are checked only
+where records exist (`route_asserted: false` otherwise). Unset, the selector's
+family is used, profiling records are still required, and a case that does not
+run reports `SKIP`. GitHub CI runs the collection with
+`nvidia` on the NVIDIA job and `software` on SwiftShader.
+
+```sh
+ETVK_WMMA_EXPECTED_FAMILY=nvidia etvk_ops_bench --validation_only \
+  --config=operators/gemm/linear/qw/wmma/cases/correctness.json
+```
+`wmma_family_shared_memory` checks, without GPU work, that the shared memory
+each family row declares for kernel selection equals the Workgroup variables
+of its variants' SPIR-V.
+`wmma_memory_model_gate` checks that on a device matching a family the Vulkan
+memory model is enabled and every family variant passes the capability gate.
+On every device it reports the gate's verdict on the listed upstream shaders
+that declare `VulkanMemoryModel`.
+
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:
 

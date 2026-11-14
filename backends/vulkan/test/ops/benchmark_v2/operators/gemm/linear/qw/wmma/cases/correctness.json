@@ -1,0 +1,2931 @@
+[
+  {"name": "wmma family rows shared memory", "check": "wmma_family_shared_memory", "parameters": {}},
+  {
+    "name": "wmma memory model gate",
+    "check": "wmma_memory_model_gate",
+    "parameters": {
+      "memory_model_shaders": [
+        "linear_coopmat_float",
+        "linear_coopmat_half",
+        "linear_coopmat_bias_float",
+        "linear_coopmat_bias_half",
+        "matmul_coopmat_float",
+        "matmul_coopmat_half",
+        "linear_q4gsw_coopmat_buffer_buffer_half",
+        "linear_q4gsw_coopmat_buffer_texture2d_half",
+        "linear_dq8ca_q4gsw_coopmat_buffer_buffer_half",
+        "linear_dq8ca_q4gsw_coopmat_buffer_texture2d_half"
+      ]
+    }
+  },
+  {
+    "name": "wmma q4gsw M256 K256 N384 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K256 N384 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [384, 128], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [2, 384], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 384], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 256]},
+        "expected_output_sizes": [256, 384],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K256 N384 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K256 N384 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 256], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [384, 128], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [2, 384], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 384], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 256]}, "expected_output_sizes": [256, 384], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M2048 K2048 N512 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M2048 K2048 N512 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2048, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2048, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [2048, 2048]},
+        "expected_output_sizes": [2048, 512],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M2048 K2048 N512 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M2048 K2048 N512 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2048, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2048, 512], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [2048, 2048]}, "expected_output_sizes": [2048, 512], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K3072 N1024 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K3072 N1024 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 3072], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 1024], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 3072]},
+        "expected_output_sizes": [256, 1024],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K3072 N1024 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K3072 N1024 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 3072], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 1024], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 3072]}, "expected_output_sizes": [256, 1024], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N8192 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N8192 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 8192],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N8192 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N8192 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K4096 N8192 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K4096 N8192 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 4096]},
+        "expected_output_sizes": [256, 8192],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K4096 N8192 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K4096 N8192 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 4096]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K14336 N4096 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K14336 N4096 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 14336], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 14336]},
+        "expected_output_sizes": [256, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K14336 N4096 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K14336 N4096 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 14336], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 14336]},
+        "expected_output_sizes": [256, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K896 N4864 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K896 N4864 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 896], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4864, 448], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [7, 4864], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4864], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 896]},
+        "expected_output_sizes": [256, 4864],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K896 N4864 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K896 N4864 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 896], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4864, 448], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [7, 4864], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4864], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 896]}, "expected_output_sizes": [256, 4864], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K9216 N2304 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K9216 N2304 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [72, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 9216]},
+        "expected_output_sizes": [256, 2304],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K9216 N2304 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K9216 N2304 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [72, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 9216]},
+        "expected_output_sizes": [256, 2304],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g64 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g64 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [32, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 64},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g64 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g64 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [32, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 64},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K256 N384 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K256 N384 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [384, 128], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [2, 384], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [2, 384], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 384], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 256]},
+        "expected_output_sizes": [256, 384],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K256 N384 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K256 N384 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 256], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [384, 128], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [2, 384], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [2, 384], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 384], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 256]}, "expected_output_sizes": [256, 384], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M2048 K2048 N512 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M2048 K2048 N512 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2048, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 2048], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 512], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2048, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [2048, 2048]},
+        "expected_output_sizes": [2048, 512],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M2048 K2048 N512 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M2048 K2048 N512 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2048, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 2048], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 512], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2048, 512], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [2048, 2048]}, "expected_output_sizes": [2048, 512], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K3072 N1024 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K3072 N1024 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 3072], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [24, 1024], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 1024], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 3072]},
+        "expected_output_sizes": [256, 1024],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K3072 N1024 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K3072 N1024 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 3072], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [24, 1024], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 1024], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 3072]}, "expected_output_sizes": [256, 1024], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N8192 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N8192 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 8192],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N8192 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N8192 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K4096 N8192 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K4096 N8192 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 4096]},
+        "expected_output_sizes": [256, 8192],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K4096 N8192 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K4096 N8192 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 4096]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K14336 N4096 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K14336 N4096 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 14336], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [112, 4096], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 14336]},
+        "expected_output_sizes": [256, 4096],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K14336 N4096 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K14336 N4096 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 14336], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [112, 4096], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 14336]}, "expected_output_sizes": [256, 4096], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K896 N4864 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K896 N4864 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 896], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [4864, 448], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [7, 4864], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [7, 4864], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4864], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 896]},
+        "expected_output_sizes": [256, 4864],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K896 N4864 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K896 N4864 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 896], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [4864, 448], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [7, 4864], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [7, 4864], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4864], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 896]}, "expected_output_sizes": [256, 4864], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K9216 N2304 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K9216 N2304 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [72, 2304], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [72, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 9216]},
+        "expected_output_sizes": [256, 2304],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K9216 N2304 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K9216 N2304 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [72, 2304], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [72, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 9216]}, "expected_output_sizes": [256, 2304], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g64 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g64 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 64}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 64},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g64 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g64 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 64}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 64},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
+  },
+  {
+    "name": "wmma q4gsw M511 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M511 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [511, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [511, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [511, 2048]},
+        "expected_output_sizes": [511, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M511 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M511 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [511, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [511, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [511, 2048]}, "expected_output_sizes": [511, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw M300 K3072 N1024 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M300 K3072 N1024 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [300, 3072], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [300, 1024], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [300, 3072]},
+        "expected_output_sizes": [300, 1024],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M300 K3072 N1024 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M300 K3072 N1024 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [300, 3072], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [1024, 1536], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [24, 1024], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [300, 1024], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [300, 3072]}, "expected_output_sizes": [300, 1024]}]
+  },
+  {
+    "name": "wmma q4gsw M129 K14336 N4096 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M129 K14336 N4096 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [129, 14336], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [129, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [129, 14336]},
+        "expected_output_sizes": [129, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M129 K14336 N4096 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M129 K14336 N4096 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [129, 14336], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [129, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [129, 14336]}, "expected_output_sizes": [129, 4096]}]
+  },
+  {
+    "name": "wmma q4gsw M127 K2048 N512 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M127 K2048 N512 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [127, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [127, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [127, 2048]}, "expected_output_sizes": [127, 512]}]
+  },
+  {
+    "name": "wmma q4gsw M127 K2048 N512 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M127 K2048 N512 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [127, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [512, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [127, 512], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [127, 2048]}, "expected_output_sizes": [127, 512]}]
+  },
+  {
+    "name": "wmma q4gsw resize M512 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw resize M512 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [100, 2048]},
+        "expected_output_sizes": [100, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_tiled_texture3d_texture2d_half", "nvidia": "linear_q4gsw_tiled_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_coop_texture3d_texture2d_half", "nvidia": "linear_q4gsw_coop_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [129, 2048]},
+        "expected_output_sizes": [129, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw resize M512 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw resize M512 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [300, 2048]}, "expected_output_sizes": [300, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [100, 2048]}, "expected_output_sizes": [100, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048], "expected_kernels": {"xe2": "linear_q4gsw_coop_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [129, 2048]}, "expected_output_sizes": [129, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw resize M512 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw resize M512 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [256, 2048], "input_scale": [1, 256], "input_zero_point": [1, 256]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [100, 2048], "input_scale": [1, 100], "input_zero_point": [1, 100]},
+        "expected_output_sizes": [100, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [129, 2048], "input_scale": [1, 129], "input_zero_point": [1, 129]},
+        "expected_output_sizes": [129, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw resize M512 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw resize M512 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [256, 2048], "input_scale": [1, 256], "input_zero_point": [1, 256]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [100, 2048], "input_scale": [1, 100], "input_zero_point": [1, 100]},
+        "expected_output_sizes": [100, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [129, 2048], "input_scale": [1, 129], "input_zero_point": [1, 129]},
+        "expected_output_sizes": [129, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw resize M256 K14336 N4096 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw resize M256 K14336 N4096 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 14336], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [4096, 7168], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [112, 4096], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 14336]},
+        "expected_output_sizes": [256, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      },
+      {
+        "tensor_sizes": {"input": [129, 14336]},
+        "expected_output_sizes": [129, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      },
+      {
+        "tensor_sizes": {"input": [1, 14336]},
+        "expected_output_sizes": [1, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_coop_texture3d_texture2d_half", "nvidia": "linear_q4gsw_coop_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [256, 14336]},
+        "expected_output_sizes": [256, 4096],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw decode M1 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw decode M1 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw fp32 M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw fp32 M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.05, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float32", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float32", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw bias M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw bias M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            {"tensor": {"name": "bias", "sizes": [2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw decode M1 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw decode M1 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw fp32 M256 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw fp32 M256 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.05, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float32", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float32", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw bias M256 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw bias M256 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            {"tensor": {"name": "bias", "sizes": [2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw decode M1 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw decode M1 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 1], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 1], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp32 M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp32 M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.05, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float32", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float32", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw bias M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw bias M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            {"tensor": {"name": "bias", "sizes": [2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw decode M1 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw decode M1 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 1], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 1], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp32 M256 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp32 M256 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.05, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float32", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float32", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw bias M256 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw bias M256 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            {"tensor": {"name": "bias", "sizes": [2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw fp32 scales resize M512 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw fp32 scales resize M512 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t128x128k16g22s32_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_coop_texture3d_texture2d_half", "nvidia": "linear_q4gsw_coop_texture3d_texture2d_half"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw fp32 scales resize M512 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw fp32 scales resize M512 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [300, 2048]}, "expected_output_sizes": [300, 2048], "expected_kernels": {"xe2": "linear_q4gsw_tiled_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [1, 2048]}, "expected_output_sizes": [1, 2048], "expected_kernels": {"xe2": "linear_q4gsw_coop_buffer_texture2d_half"}},
+      {"tensor_sizes": {"input": [512, 2048]}, "expected_output_sizes": [512, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp32 scales resize M512 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp32 scales resize M512 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp32 scales resize M512 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp32 scales resize M512 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_buffer_texture2d_half_zpint8"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp16 zero points M256 K4096 N8192 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp16 zero points M256 K4096 N8192 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 4096]},
+        "expected_output_sizes": [256, 8192],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_texture3d_texture2d_half_zpinherit", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpinherit"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp16 zero points resize M512 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp16 zero points resize M512 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpinherit", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_texture3d_texture2d_half_zpinherit", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpinherit", "nvidia": "linear_dq8ca_q4gsw_coop_texture3d_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpinherit", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpinherit"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp16 zero points M256 K4096 N8192 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp16 zero points M256 K4096 N8192 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 4096], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [8192, 2048], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [32, 8192], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [32, 8192], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 8192], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 4096]}, "expected_output_sizes": [256, 8192], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_buffer_texture2d_half_zpinherit"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw fp16 zero points resize M512 K2048 N2048 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw fp16 zero points resize M512 K2048 N2048 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [512, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [300, 2048], "input_scale": [1, 300], "input_zero_point": [1, 300]},
+        "expected_output_sizes": [300, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_tiled_buffer_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [1, 2048], "input_scale": [1, 1], "input_zero_point": [1, 1]},
+        "expected_output_sizes": [1, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_coop_buffer_texture2d_half_zpinherit"}
+      },
+      {
+        "tensor_sizes": {"input": [512, 2048], "input_scale": [1, 512], "input_zero_point": [1, 512]},
+        "expected_output_sizes": [512, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpinherit"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw padded rows N130 zero points 0 M256 K512 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw padded rows N130 zero points 0 M256 K512 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 512], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}},
+            {"tensor": {"name": "weight", "sizes": [130, 256], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [4, 130], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [4, 130], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 130], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [256, 512], "input_scale": [1, 256], "input_zero_point": [1, 256]}, "expected_output_sizes": [256, 130]},
+      {"tensor_sizes": {"input": [129, 512], "input_scale": [1, 129], "input_zero_point": [1, 129]}, "expected_output_sizes": [129, 130]}
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw padded rows N130 zero points 0 M256 K512 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw padded rows N130 zero points 0 M256 K512 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 512], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}},
+            {"tensor": {"name": "weight", "sizes": [130, 256], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [4, 130], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [4, 130], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 130], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [256, 512], "input_scale": [1, 256], "input_zero_point": [1, 256]}, "expected_output_sizes": [256, 130]},
+      {"tensor_sizes": {"input": [129, 512], "input_scale": [1, 129], "input_zero_point": [1, 129]}, "expected_output_sizes": [129, 130]}
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw padded rows N130 one group M256 K128 g128 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw padded rows N130 one group M256 K128 g128 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 128], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [130, 64], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [1, 130], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [1, 130], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 130], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [256, 128], "input_scale": [1, 256], "input_zero_point": [1, 256]}, "expected_output_sizes": [256, 130]},
+      {"tensor_sizes": {"input": [129, 128], "input_scale": [1, 129], "input_zero_point": [1, 129]}, "expected_output_sizes": [129, 130]}
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw padded rows N130 one group M256 K128 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw padded rows N130 one group M256 K128 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 128], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [130, 64], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [1, 130], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [1, 130], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 130], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [256, 128], "input_scale": [1, 256], "input_zero_point": [1, 256]}, "expected_output_sizes": [256, 130]},
+      {"tensor_sizes": {"input": [129, 128], "input_scale": [1, 129], "input_zero_point": [1, 129]}, "expected_output_sizes": [129, 130]}
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g32 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g32 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [64, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 32},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g32 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g32 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [64, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 32},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma q4gsw M256 K9216 N2304 g32 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K9216 N2304 g32 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [288, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 32},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 9216]},
+        "expected_output_sizes": [256, 2304],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}, "nvidia": {"function": "is_close", "atol": 0.03, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K9216 N2304 g32 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K9216 N2304 g32 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 9216], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2304, 4608], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [288, 2304], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 32},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2304], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 9216]},
+        "expected_output_sizes": [256, 2304],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"},
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.3, "rtol": 0.0}}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g32 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g32 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [64, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 32}}}},
+            {"tensor": {"name": "scales", "sizes": [64, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 32},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048]}]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g256 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g256 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [8, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 256},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw M256 K2048 N2048 g256 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw M256 K2048 N2048 g256 buffer operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [8, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 256},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer_texture2d_half"}}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g256 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g256 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [8, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 256}}}},
+            {"tensor": {"name": "scales", "sizes": [8, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 256},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"},
+        "validate_output": false,
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.25, "rtol": 0.02}, "nvidia": {"function": "is_close", "atol": 0.25, "rtol": 0.02}}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g256 buffer",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw M256 K2048 N2048 g256 buffer operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [8, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 256}}}},
+            {"tensor": {"name": "scales", "sizes": [8, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 256},
+            null,
+            {"tensor": {"name": "output", "sizes": [256, 2048], "dtype": "float16", "storage": "buffer", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [256, 2048]},
+        "expected_output_sizes": [256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"},
+        "validate_output": false,
+        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.25, "rtol": 0.02}}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw [1, M, K] M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw [1, M, K] M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [1, 256, 2048]},
+        "expected_output_sizes": [1, 256, 2048],
+        "expected_kernels": {"xe2": "linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d_texture2d_half", "nvidia": "linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d_texture2d_half"}
+      }
+    ]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw [1, M, K] M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw [1, M, K] M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [1, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 256], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 256], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [1, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [
+      {
+        "tensor_sizes": {"input": [1, 256, 2048]},
+        "expected_output_sizes": [1, 256, 2048],
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
+      }
+    ]
+  },
+  {
+    "name": "wmma q4gsw [2, M, K] M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma q4gsw [2, M, K] M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [2, 256, 2048]}, "expected_output_sizes": [2, 256, 2048], "validate_output": false}]
+  },
+  {
+    "name": "wmma dq8ca_q4gsw [2, M, K] M256 K2048 N2048 g128 texture3d",
+    "check": "wmma_family_route",
+    "parameters": {
+      "operator_case": {
+        "name": "wmma dq8ca_q4gsw [2, M, K] M256 K2048 N2048 g128 texture3d operator",
+        "operator": "et_vk.linear_dq8ca_q4gsw.default",
+        "target_ms": 100,
+        "warmup_runs": 1,
+        "benchmark_runs": 3,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0.02},
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [2, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+            {"tensor": {"name": "input_scale", "sizes": [1, 512], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"fill": 0.0625}}},
+            {"tensor": {"name": "input_zero_point", "sizes": [1, 512], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-8, 8]}}},
+            {"tensor": {"name": "weight", "sizes": [2048, 1024], "dtype": "uint8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [0, 255]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [16, 2048], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"q4_group_sum": {"tensor": "weight", "group_size": 128}}}},
+            {"tensor": {"name": "scales", "sizes": [16, 2048], "dtype": "float16", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.005, 0.015]}}},
+            {"int": 128},
+            null,
+            {"tensor": {"name": "output", "sizes": [2, 256, 2048], "dtype": "float16", "storage": "texture3d", "layout": "width", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "output_name": "output"
+    },
+    "validation_steps": [{"tensor_sizes": {"input": [2, 256, 2048]}, "expected_output_sizes": [2, 256, 2048], "validate_output": false}]
+  }
+]

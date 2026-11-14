@@ -2135,6 +2135,18 @@ jobs:
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
+        # Cooperative-matrix family kernels. SwiftShader matches no family and has no
+        # timestamp queries: every case must run and validate, but the dispatched
+        # kernels are not checked. The xe2 rows have no CI coverage (no runner has
+        # an Intel Xe2 GPU); the nvidia rows run in vulkan.yml.
+        ETVK_WMMA_EXPECTED_FAMILY=software \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
+
+        # Host-only test of the cooperative-matrix family key and kernel rows
+        cmake backends/vulkan/test/custom_ops -Bcmake-out/backends/vulkan/test/custom_ops
+        cmake --build cmake-out/backends/vulkan/test/custom_ops -j"$(nproc)"
+        ctest --test-dir cmake-out/backends/vulkan/test/custom_ops --output-on-failure
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build

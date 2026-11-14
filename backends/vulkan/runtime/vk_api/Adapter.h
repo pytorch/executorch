@@ -125,6 +125,10 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
+  // VK_KHR_vulkan_memory_model and vulkanMemoryModel are enabled on the
+  // logical device: known for a device this Adapter created or borrows through
+  // a shared device, false for an external VkDevice.
+  bool vulkan_memory_model_enabled_ = false;
   // Test-only capability overrides; empty unless a ScopedCapabilityOverride
   // is live.
   AdapterCapabilityOverrides capability_overrides_;
@@ -181,6 +185,16 @@ class Adapter final {
 
   inline vkapi::DeviceType device_type() const {
     return physical_device_.device_type;
+  }
+
+  // VkPhysicalDeviceProperties::vendorID.
+  inline uint32_t vendor_id() const {
+    return physical_device_.properties.vendorID;
+  }
+
+  // VkDriverId of the driver, or 0 when the device does not report it.
+  inline uint32_t driver_id() const {
+    return physical_device_.driver_id;
   }
 
   // Driver-reported physical device type. Use device_type() above for
@@ -367,6 +381,20 @@ class Adapter final {
 #endif /* VK_KHR_cooperative_matrix */
   }
 
+#ifdef VK_KHR_cooperative_matrix
+  // Every cooperative-matrix configuration the device enumerates (empty when
+  // cooperative matrices are unsupported).
+  inline const std::vector<VkCooperativeMatrixPropertiesKHR>&
+  cooperative_matrix_properties() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    static const std::vector<VkCooperativeMatrixPropertiesKHR> kNone;
+    return kNone;
+#else
+    return physical_device_.cooperative_matrix_properties;
+#endif
+  }
+#endif /* VK_KHR_cooperative_matrix */
+
   inline bool supports_int16_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
@@ -530,6 +558,16 @@ class Adapter final {
 
   inline uint32_t max_compute_workgroup_invocations() const {
     return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  // vulkanMemoryModel is enabled on the logical device (false for an external
+  // VkDevice).
+  inline bool supports_vulkan_memory_model() const {
+    return vulkan_memory_model_enabled_;
+  }
+
+  inline uint32_t max_compute_shared_memory_size() const {
+    return physical_device_.properties.limits.maxComputeSharedMemorySize;
   }
 
   inline uint32_t recommended_lwg_nthreads() const {
