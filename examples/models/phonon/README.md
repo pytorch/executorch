@@ -61,6 +61,9 @@ as the ExecuTorch custom op `llama::sdpa_with_kv_cache`.
 
 For XNNPACK, Vulkan, MLX and CUDA, the export rewrites the Mimi decoder's
 transposed convolutions as convolutions, which those backends run faster.
+For CUDA, the Mimi decoder also keeps its streaming state on the GPU between
+frames: its `mimi_decode` takes `(latent, reset)` instead of the latent and
+the state (see `phonon.json`).
 
 `--quantize 4bit` or `--quantize 8bit` quantizes the linear layers of the flow
 LM's transformer and flow net with the scheme of the backend; the codec stays in

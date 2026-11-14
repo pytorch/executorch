@@ -28,7 +28,7 @@ using executorch::runtime::EValue;
 
 // The official runtime's sentence chunk size.
 constexpr size_t kMaxChunkTokens = 50;
-constexpr int kFormatVersion = 1;
+constexpr int kFormatVersion = 2;
 
 std::vector<EValue> execute(
     Module& model,
@@ -293,6 +293,7 @@ Runner::Runner(
   frame_rate_ = real("frame_rate");
   eos_threshold_ = real("eos_threshold");
   temperature_ = real("temperature");
+  mimi_state_in_program_ = integer("mimi_state_in_program") != 0;
   bos_embeds_ = copy_floats(execute(model_, "bos_embeds").at(0));
   if (static_cast<int64_t>(bos_embeds_.size()) != dim_) {
     throw std::runtime_error("bos_embeds does not match dim");
@@ -307,6 +308,12 @@ Runner::Runner(
   auto meta = model_.method_meta("mimi_decode");
   if (!meta.ok()) {
     throw std::runtime_error("Could not read mimi_decode metadata");
+  }
+  if (mimi_state_in_program_) {
+    if (meta->num_inputs() != 2) {
+      throw std::runtime_error("mimi_decode must take (latent, reset)");
+    }
+    return;
   }
   for (size_t i = 1; i < meta->num_inputs(); ++i) {
     auto info = meta->input_tensor_meta(i);
@@ -434,6 +441,8 @@ Synthesis Runner::synthesize(
     }
     state.emplace_back(numel, 0.0f);
   }
+  // For a program that keeps the Mimi state: 1 on the first frame.
+  float mimi_reset = 1.0f;
 
   Synthesis result;
   const auto count_tokens = [this](const std::string& s) {
@@ -471,9 +480,12 @@ Synthesis Runner::synthesize(
 
       // The tensors must outlive the EValues that point to them.
       std::vector<executorch::extension::TensorPtr> tensors;
-      tensors.reserve(state.size() + 1);
+      tensors.reserve(state.size() + 2);
       tensors.push_back(from_blob(
           step.latent.data(), {1, 1, static_cast<SizesType>(latent_dim_)}));
+      if (mimi_state_in_program_) {
+        tensors.push_back(from_blob(&mimi_reset, {1}));
+      }
       for (size_t i = 0; i < state.size(); ++i) {
         tensors.push_back(from_blob(state[i].data(), mimi_state_sizes_[i]));
       }
@@ -491,6 +503,7 @@ Synthesis Runner::synthesize(
         std::memcpy(
             state[i].data(), float_data(out.at(i + 1)), state[i].size() * 4);
       }
+      mimi_reset = 0.0f;
 
       if (step.eos_logit > eos_threshold_ && countdown < 0) {
         countdown = frames_after_eos;

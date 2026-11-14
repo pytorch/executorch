@@ -66,6 +66,13 @@ QUANTIZE_SCHEMES = {
 }
 
 
+def mimi_state_in_program(backend: str) -> bool:
+    """Whether mimi_decode keeps its streaming state in the program
+    (StatefulMimiDecode). On CUDA, state passed as inputs and outputs is copied
+    between host and device on every frame."""
+    return backend == "cuda"
+
+
 def attention_for(backend: str) -> str:
     """KV cache / attention implementation of the flow LM per backend (see
     FlowLMStep): the ExecuTorch custom op where a kernel exists for it, plain
@@ -246,8 +253,9 @@ def lower_phonon(
     qlinear, dtype = quantize_scheme(backend, quantize, dtype)
     packing = "tile_packed_to_4d" if backend == "cuda" and qlinear == "4w" else None
     # Before the module swaps, which change the model's modules in place.
-    metadata = program_metadata(model)
-    programs = build_programs(model, attention_for(backend))
+    stateful_mimi = mimi_state_in_program(backend)
+    metadata = program_metadata(model, stateful_mimi)
+    programs = build_programs(model, attention_for(backend), stateful_mimi)
     for transform in source_transforms_for(backend, webgpu_compat_ops):
         print(f"{transform.__name__}: {transform(programs)}")
     if dtype == "bf16":
@@ -275,7 +283,7 @@ def lower_phonon(
                 skip_incompatible_shapes=True,
             )
 
-    inputs, shapes = example_inputs(cfg), dynamic_shapes(cfg)
+    inputs, shapes = example_inputs(cfg, stateful_mimi), dynamic_shapes(cfg)
     if packing:
         inputs["flow_lm"] = tuple(t.to("cuda") for t in inputs["flow_lm"])
     partitioners, passes, decompositions = partitioners_for(
@@ -356,7 +364,7 @@ def export_phonon(
         "constants": {k: v for k, v in metadata.items() if not torch.is_tensor(v)},
         "constant_tensors": {"bos_embeds": [1, 1, cfg.dim]},
         "dynamic": {"S": [1, cfg.max_prefill]},
-        "methods": io_contract(cfg),
+        "methods": io_contract(cfg, mimi_state_in_program(backend)),
         "mimi_state": [[n, list(s)] for n, s in mimi_state_spec(cfg)],
         "delegation": delegation,
     }

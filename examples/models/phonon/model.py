@@ -810,7 +810,8 @@ class MimiDecodeStep(nn.Module):
     the SEANet decoder. Every piece of streaming state (conv tails, transposed
     conv partial sums, the window's keys and values, which window slots are
     filled, and the RoPE offset) is an explicit input and output, so no backend
-    has to keep mutable state alive between calls.
+    has to keep mutable state alive between calls. StatefulMimiDecode keeps it
+    in the program instead.
     """
 
     def __init__(self, model: Phonon):
@@ -915,7 +916,41 @@ class MimiDecodeStep(nn.Module):
         )
 
 
-def example_inputs(cfg: PhononConfig) -> dict[str, Tuple[torch.Tensor, ...]]:
+class MimiState(nn.Module):
+    """Buffers for the state of mimi_state_spec, in its order."""
+
+    def __init__(self, cfg: PhononConfig):
+        super().__init__()
+        for name, shape in mimi_state_spec(cfg):
+            self.register_buffer(name, torch.zeros(shape), persistent=False)
+
+
+class StatefulMimiDecode(nn.Module):
+    """forward(latent f32[1, 1, latent_dim], reset f32[1]) -> pcm f32[1, 1, frame]
+
+    MimiDecodeStep with its streaming state in mutable buffers of the program,
+    so a backend that runs on another device (CUDA) keeps it there instead of
+    copying about 2 MB in and out per frame. reset = 1 starts an utterance from
+    the zero state, reset = 0 continues it.
+    """
+
+    def __init__(self, step: MimiDecodeStep):
+        super().__init__()
+        self.cfg = step.cfg
+        self.step = step
+        self.state = MimiState(step.cfg)
+
+    def forward(self, latent: torch.Tensor, reset: torch.Tensor) -> torch.Tensor:
+        keep = 1.0 - reset
+        pcm, *new_state = self.step(latent, *(s * keep for s in self.state.buffers()))
+        for buf, value in zip(self.state.buffers(), new_state):
+            buf.copy_(value)
+        return pcm
+
+
+def example_inputs(
+    cfg: PhononConfig, mimi_state_in_program: bool = False
+) -> dict[str, Tuple[torch.Tensor, ...]]:
     g = torch.Generator().manual_seed(0)
     seq = 5
     return {
@@ -928,7 +963,7 @@ def example_inputs(cfg: PhononConfig) -> dict[str, Tuple[torch.Tensor, ...]]:
         ),
         "mimi_decode": (
             torch.randn(1, 1, cfg.latent_dim, generator=g),
-            *mimi_zero_state(cfg),
+            *([torch.ones(1)] if mimi_state_in_program else mimi_zero_state(cfg)),
         ),
     }
 
@@ -944,23 +979,28 @@ def dynamic_shapes(cfg: PhononConfig) -> dict[str, Any]:
 
 
 def build_programs(
-    model: Phonon, attention: str = "custom_sdpa"
+    model: Phonon, attention: str = "custom_sdpa", mimi_state_in_program: bool = False
 ) -> dict[str, nn.Module]:
+    mimi = MimiDecodeStep(model)
     return {
         "text_embed": TextEmbedding(model).eval(),
         "voice_embed": VoiceEmbedding(model).eval(),
         "flow_lm": FlowLMStep(model, attention).eval(),
-        "mimi_decode": MimiDecodeStep(model).eval(),
+        "mimi_decode": (
+            StatefulMimiDecode(mimi) if mimi_state_in_program else mimi
+        ).eval(),
     }
 
 
-def program_metadata(model: Phonon) -> dict[str, Any]:
+def program_metadata(
+    model: Phonon, mimi_state_in_program: bool = False
+) -> dict[str, Any]:
     """Constant methods stored in the .pte next to the four programs."""
     cfg = model.cfg
     with torch.no_grad():
         bos = model.flow_lm.bos_embeds().contiguous()
     return {
-        "format_version": 1,
+        "format_version": 2,
         "sample_rate": cfg.sample_rate,
         "frame_samples": cfg.frame_samples,
         "frame_rate": cfg.frame_rate,
@@ -971,13 +1011,17 @@ def program_metadata(model: Phonon) -> dict[str, Any]:
         "eos_threshold": cfg.eos_threshold,
         "temperature": cfg.temperature,
         "num_mimi_state": len(mimi_state_spec(cfg)),
+        "mimi_state_in_program": int(mimi_state_in_program),
         "bos_embeds": bos,
     }
 
 
-def io_contract(cfg: PhononConfig) -> dict[str, Any]:
+def io_contract(
+    cfg: PhononConfig, mimi_state_in_program: bool = False
+) -> dict[str, Any]:
     """Inputs and outputs of every program; "S" is the dynamic sequence length
-    (1 <= S <= max_prefill). Identical for every backend."""
+    (1 <= S <= max_prefill). mimi_decode takes and returns its state unless the
+    program keeps it (StatefulMimiDecode)."""
     d, ld = cfg.dim, cfg.latent_dim
     state = [
         {"name": name, "shape": list(shape), "dtype": "float32"}
@@ -1009,7 +1053,9 @@ def io_contract(cfg: PhononConfig) -> dict[str, Any]:
             ],
         },
         "mimi_decode": {
-            "inputs": [t("latent", [1, 1, ld])] + state,
-            "outputs": [t("pcm", [1, 1, cfg.frame_samples])] + state,
+            "inputs": [t("latent", [1, 1, ld])]
+            + ([t("reset", [1])] if mimi_state_in_program else state),
+            "outputs": [t("pcm", [1, 1, cfg.frame_samples])]
+            + ([] if mimi_state_in_program else state),
         },
     }
