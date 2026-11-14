@@ -1166,10 +1166,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
         capture = CudaWeightCollector.current_capture()
         capture.artifact = capture.collector.materialize(
-            weights[0],
-            os.path.dirname(blob_path),
-            capture.device_type_for_weight,
-            capture,
+            weights[0], os.path.dirname(blob_path), capture
         )
 
         # Keep AotiBackend's existing path contract intact. The compatibility
@@ -1561,21 +1558,14 @@ class CudaBackend(AotiBackend, BackendDetails):
             moved = move_to_device_pass(edge_program, device)
             _track_moved_tensors(moved)
             return moved
-        sources = {
-            **dict(edge_program.state_dict),
-            **{
-                name: value
-                for name, value in edge_program.constants.items()
-                if isinstance(value, torch.Tensor)
-            },
-        }
+        # Only parameters reach AOTI's weights as the moved storage: low-memory
+        # compilation hands AOTI CPU clones of buffers (_compile_time_cpu_clones).
+        sources = dict(edge_program.state_dict)
         moved = _move_to_device_resize_kv(edge_program, device)
         _track_moved_tensors(moved)
-        capture = CudaWeightCollector.active_capture()
-        if capture is not None:
-            capture.track_moved_tensors(
-                sources, {**dict(moved.state_dict), **dict(moved.constants)}
-            )
+        CudaWeightCollector.current_capture().track_moved_tensors(
+            sources, dict(moved.state_dict)
+        )
         return moved
 
     @classmethod

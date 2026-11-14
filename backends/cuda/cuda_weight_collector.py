@@ -47,7 +47,9 @@ class CudaWeightArtifact:
     entries: List[CudaWeightEntry]
     storages: Dict[str, FileBackedData]
     # Storage keys an earlier method of this collector already stored with the
-    # same bytes; they are not written again.
+    # same bytes; they are not written again. A key reused because it was moved
+    # from the same CPU source view is not re-read: that relies on the shared
+    # source and the moved storage not changing between methods.
     stored: Set[str] = field(default_factory=set)
 
 
@@ -70,8 +72,15 @@ class CudaAotiMetadata:
 
 
 def _source_identity(source: torch.Tensor) -> Tuple[Any, ...]:
+    try:
+        # Bumped by in-place updates, so a changed source no longer matches.
+        version = source._version
+    except RuntimeError:
+        # Inference tensors cannot be updated in place and have no counter.
+        version = None
     return (
         source.untyped_storage()._cdata,
+        version,
         source.dtype,
         source.storage_offset(),
         tuple(source.shape),
@@ -91,9 +100,10 @@ class _CudaWeightCapture:
     collector: "CudaWeightCollector"
     device_type_for_weight: Callable[[torch.Tensor], int]
     artifact: Optional[CudaWeightArtifact] = None
-    # This method's moved storage -> the CPU source it was copied from. Both
-    # are held weakly: a moved storage freed before materialize (and any
-    # storage later allocated at its address) or a freed source matches nothing.
+    # This method's moved storage -> the CPU source it was copied from, keyed by
+    # storage address. The StorageWeakRefs keep both storage objects (not their
+    # data) allocated, so no other storage can take either address while this
+    # capture lives.
     moved_sources: Dict[int, "_MovedSource"] = field(default_factory=dict)
 
     def track_moved_tensors(
@@ -115,6 +125,8 @@ class _CudaWeightCapture:
                 and tensor.is_cuda
                 and source.device.type == "cpu"
                 and source.untyped_storage().nbytes() > 0
+                # Low-memory KV placeholders are emptied on the device.
+                and tensor.untyped_storage().nbytes() > 0
                 and type(source) in (torch.Tensor, torch.nn.Parameter)
                 and type(tensor) in (torch.Tensor, torch.nn.Parameter)
             ):
@@ -126,10 +138,7 @@ class _CudaWeightCapture:
                 )
 
     def source_of(self, tensor: torch.Tensor) -> Optional["_MovedSource"]:
-        moved = self.moved_sources.get(tensor.untyped_storage()._cdata)
-        if moved is None or moved.moved.expired() or moved.source.expired():
-            return None
-        return moved
+        return self.moved_sources.get(tensor.untyped_storage()._cdata)
 
 
 def trim_host_memory() -> None:
@@ -451,8 +460,9 @@ class CudaWeightCollector:
         # share their CPU weights (low_memory_mode), each moves the same source
         # to the GPU and frees the copy afterwards, so a later method's copy of
         # the same source view is recognized by its source and not written
-        # again. The source is held weakly: once it is gone nothing matches,
-        # even if its address is reused.
+        # again. The StorageWeakRef keeps the source's storage object allocated,
+        # so its address, part of the identity, is not reused; once its data is
+        # freed, a later live source takes the key over.
         self._written_sources: Dict[str, Tuple[StorageWeakRef, Tuple[Any, ...]]] = {}
 
     def _written_from_same_source(
@@ -460,10 +470,7 @@ class CudaWeightCollector:
     ) -> bool:
         written = self._written_sources.get(storage_key)
         return (
-            moved is not None
-            and written is not None
-            and not written[0].expired()
-            and written[1] == moved.identity
+            moved is not None and written is not None and written[1] == moved.identity
         )
 
     @contextlib.contextmanager
@@ -479,12 +486,8 @@ class CudaWeightCollector:
             self._active.current = previous
 
     @classmethod
-    def active_capture(cls) -> Optional[_CudaWeightCapture]:
-        return getattr(cls._active, "current", None)
-
-    @classmethod
     def current_capture(cls) -> _CudaWeightCapture:
-        capture = cls.active_capture()
+        capture = getattr(cls._active, "current", None)
         if capture is None:
             raise RuntimeError(
                 "CUDA structured weights must be materialized inside preprocess"
@@ -495,8 +498,7 @@ class CudaWeightCollector:
         self,
         weights: Any,
         directory: str,
-        device_type_for_weight: Callable[[torch.Tensor], int],
-        capture: Optional[_CudaWeightCapture] = None,
+        capture: _CudaWeightCapture,
     ) -> CudaWeightArtifact:
         """Turn AOTI ``Weights`` into one independently named blob per FQN.
 
@@ -524,7 +526,7 @@ class CudaWeightCollector:
                 and tuple(tensor.stride()) == tuple(getattr(properties, "stride", ()))
             )
             del storage
-            device_type = device_type_for_weight(tensor)
+            device_type = capture.device_type_for_weight(tensor)
             expected_storage_nbytes = int(
                 getattr(properties, "storage_size", None) or 0
             )
@@ -547,11 +549,7 @@ class CudaWeightCollector:
                 library_local = _is_aoti_library_local_fqn(fqn)
                 shareable = tensor.is_cuda and not library_local
                 first = self._stored_storages.get(storage_key)
-                moved = (
-                    capture.source_of(tensor)
-                    if capture is not None and shareable
-                    else None
-                )
+                moved = capture.source_of(tensor) if shareable else None
                 if self._written_from_same_source(storage_key, moved):
                     stored.add(storage_key)
                 elif (
