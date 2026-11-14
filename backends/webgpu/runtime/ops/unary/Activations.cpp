@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/erf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/hardsigmoid_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
@@ -92,6 +93,16 @@ void round_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 void neg_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_unary_op(
       graph, args.at(0), args.at(1), kNegWGSL, kNegWorkgroupSizeX, "neg");
+}
+
+void hardsigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_unary_op(
+      graph,
+      args.at(0),
+      args.at(1),
+      kHardsigmoidWGSL,
+      kHardsigmoidWorkgroupSizeX,
+      "hardsigmoid");
 }
 
 void hardswish_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -190,6 +201,7 @@ WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.tanh.default, tanh_impl);
   WEBGPU_REGISTER_OP(aten.round.default, round_impl);
   WEBGPU_REGISTER_OP(aten.neg.default, neg_impl);
+  WEBGPU_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid_impl);
   WEBGPU_REGISTER_OP(aten.hardswish.default, hardswish_impl);
   WEBGPU_REGISTER_OP(aten.silu.default, silu_impl);
   WEBGPU_REGISTER_OP(aten.elu.default, elu_impl);
