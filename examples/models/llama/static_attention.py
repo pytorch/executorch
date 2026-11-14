@@ -862,8 +862,10 @@ class StaticAttention(Attention):
         self.qk_norm_before_rope = config.qk_norm_before_rope
         self.scale_query_by = getattr(config, "scale_query_by", 1.0)
         self.split_mha = split_mha
-        self.is_kv_shared_layer = is_kv_shared_layer
         self.num_kv_shared_layers = config.num_kv_shared_layers
+        self.is_kv_shared_layer = is_kv_shared_layer or _is_kv_shared_layer(
+            layer_id, config.n_layers, self.num_kv_shared_layers
+        )
         self.use_conv2d = False
         self.enable_qnn_masked_softmax = kwargs.get("enable_qnn_masked_softmax", False)
 
@@ -878,7 +880,7 @@ class StaticAttention(Attention):
                     for _ in range(self.n_heads)
                 ]
             )
-            if is_kv_shared_layer:
+            if self.is_kv_shared_layer:
                 self.wks = nn.ModuleList()
                 self.wvs = nn.ModuleList()
                 self.k_caches = nn.ModuleList()
@@ -911,7 +913,7 @@ class StaticAttention(Attention):
                 "wvs": ("v_proj", self.dim, self.head_dim * self.n_kv_heads),
             }
             for attr, (target, in_dim, out_dim) in _PROJ_TARGET.items():
-                if is_kv_shared_layer and attr in ("wks", "wvs"):
+                if self.is_kv_shared_layer and attr in ("wks", "wvs"):
                     setattr(self, attr, nn.ModuleList())
                     continue
                 if has_lora and target in config.target_modules:
@@ -926,7 +928,7 @@ class StaticAttention(Attention):
                     proj = nn.Linear(in_dim, out_dim, bias=self.attention_qkv_bias)
                 setattr(self, attr, nn.ModuleList([proj]))
 
-            if is_kv_shared_layer:
+            if self.is_kv_shared_layer:
                 self.k_caches = nn.ModuleList()
                 self.v_caches = nn.ModuleList()
             else:
@@ -936,7 +938,16 @@ class StaticAttention(Attention):
         self._init_wo(config)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
-        self._init_qk_norms(config, is_kv_shared_layer)
+
+        interval = config.no_rope_layer_interval
+        rope_layer_id = (
+            config.n_layers - config.num_kv_shared_layers - 1
+            if self.is_kv_shared_layer
+            else layer_id
+        )
+        self.use_rope = interval is None or (rope_layer_id + 1) % interval != 0
+
+        self._init_qk_norms(config, self.is_kv_shared_layer)
 
     def _init_wo(self, config: ModelArgs) -> None:
         wo_use_lora = (
@@ -1036,6 +1047,8 @@ class StaticAttention(Attention):
             is_kv_shared_layer=is_kv_shared,
             **kwargs,
         )
+
+        instance.use_rope = other.use_rope
 
         # Replace nn.Linear with LoRALinear where the source uses LoRA.
         if has_lora:
@@ -1185,6 +1198,9 @@ class StaticAttention(Attention):
             freqs_cos (list): List of cosine frequencies.
             freqs_sin (list): List of sine frequencies.
         """
+        if not self.use_rope:
+            return qs, ks
+
         qs = [self.rope(q, freqs_cos, freqs_sin) for q in qs]
         if ks is not None:
             ks = [self.rope(k, freqs_cos, freqs_sin) for k in ks]
@@ -1401,7 +1417,8 @@ class StaticAttention(Attention):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
 
-            q = self.rope(q, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
@@ -1416,8 +1433,9 @@ class StaticAttention(Attention):
                 q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
-            q = self.rope(q, freqs_cos, freqs_sin)
-            k = self.rope(k, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
+                k = self.rope(k, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
