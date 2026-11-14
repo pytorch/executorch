@@ -32,9 +32,10 @@ namespace {
 // Waiting inside get_work() would prevent the second session from arriving.
 class InitialBatchGate final : public batching::Scheduler {
  public:
-  explicit InitialBatchGate(bool gate)
+  explicit InitialBatchGate(bool gate, std::string decode_gate = {})
       : inner_(batching::DecodeFirstScheduler::create(512, 8, 256)),
-        released_(!gate) {}
+        released_(!gate),
+        decode_gate_(std::move(decode_gate)) {}
 
   bool submit(std::vector<batching::Task> tasks) override {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -59,12 +60,17 @@ class InitialBatchGate final : public batching::Scheduler {
 
   bool has_work() const override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return released_ && inner_->has_work();
+    return inner_->has_work() && gate_open_();
   }
 
   std::vector<batching::Task> get_work() override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return released_ ? inner_->get_work() : std::vector<batching::Task>{};
+    if (!gate_open_()) {
+      return {};
+    }
+    auto tasks = inner_->get_work();
+    first_batch_dispatched_ = first_batch_dispatched_ || !tasks.empty();
+    return tasks;
   }
 
   std::vector<batching::Task> cancel(batching::SessionId sid) override {
@@ -84,10 +90,18 @@ class InitialBatchGate final : public batching::Scheduler {
   }
 
  private:
+  bool gate_open_() const {
+    return released_ &&
+        (!first_batch_dispatched_ || decode_gate_.empty() ||
+         std::ifstream(decode_gate_).good());
+  }
+
   std::unique_ptr<batching::DecodeFirstScheduler> inner_;
   mutable std::mutex mutex_;
   std::set<batching::SessionId> queued_;
   bool released_;
+  const std::string decode_gate_;
+  bool first_batch_dispatched_ = false;
 };
 
 class TraceExecutor final : public batching::testing::FakeExecutor {
@@ -206,6 +220,7 @@ int main(int argc, char** argv) {
   bool stop_immediately = false;
   bool prefix_cache = false;
   std::string trace_path;
+  std::string decode_gate;
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
     if (arg == "--gate-two") {
@@ -214,6 +229,8 @@ int main(int argc, char** argv) {
       stop_immediately = true;
     } else if (arg == "--prefix-cache") {
       prefix_cache = true;
+    } else if (arg == "--gate-after-first" && i + 1 < argc) {
+      decode_gate = argv[++i];
     } else if (arg == "--trace" && i + 1 < argc) {
       trace_path = argv[++i];
     } else {
@@ -246,7 +263,10 @@ int main(int argc, char** argv) {
     config.default_stop_tokens = {9};
   }
   serving::ServingRuntime runtime(
-      executor, std::make_unique<InitialBatchGate>(gate), tokenizer, config);
+      executor,
+      std::make_unique<InitialBatchGate>(gate, decode_gate),
+      tokenizer,
+      config);
   executorch::examples::llm_server::MultiplexedWorkerConfig worker_config;
   worker_config.max_inflight_requests = 16;
   return executorch::examples::llm_server::run_multiplexed_worker(
