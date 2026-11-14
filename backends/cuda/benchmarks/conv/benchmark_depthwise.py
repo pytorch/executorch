@@ -30,10 +30,14 @@ weight and bias, one write of the output.
 Suites: ``representative`` (model shapes, one dtype and layout per run),
 ``envelope`` (each axis of what the template supports varied around base
 shapes, every dtype and layout), ``extent`` (the largest shapes and the
-remaining weight layouts) and ``grouped`` (1 to 8 input channels per group,
-channel multipliers 1 to 4). The router's ``direct.worth_routing`` takes the
-range these suites cover. For grouped shapes a case is significantly faster
-when it is against both the template and the tap sum.
+remaining weight layouts), ``layouts`` (those shapes with channels-last
+inputs or weights and the contiguous output a graph exported on CUDA records,
+which triton::convolution produces through ``output_strides`` and the other
+paths through a ``contiguous()`` that Inductor may fuse) and ``grouped`` (1 to
+8 input channels per group, channel multipliers 1 to 4). The router's
+``direct.worth_routing`` takes the range these suites cover. For grouped shapes
+a case is significantly faster when it is against both the template and the
+tap sum.
 
 Usage:
     python benchmark_depthwise.py
@@ -179,6 +183,21 @@ def envelope_cases():
             Case(label, shape, kernel, stride, before, after, "float32", "weight_cl")
         )
     return cases
+
+
+def layout_cases():
+    """The envelope and extent shapes whose input or weight is channels-last,
+    with the contiguous output a graph exported on CUDA records for them."""
+    follow = {
+        "channels_last": "cl_to_nchw",
+        "weight_cl": "weight_cl_to_nchw",
+        "both_cl": "both_cl_to_nchw",
+    }
+    return [
+        Case(**{**asdict(case), "layout": follow[case.layout]})
+        for case in envelope_cases() + extent_cases()
+        if case.layout in follow
+    ]
 
 
 def extent_cases():
@@ -351,7 +370,11 @@ def _pad(x, case):
     return F.pad(x, [case.before[1], case.after[1], case.before[0], case.after[0]])
 
 
-def triton_runner(x, w, b, case):
+def _contiguous_output(case):
+    return case.layout.endswith("_to_nchw")
+
+
+def triton_runner(x, w, b, case, output_strides=None):
     args = (
         list(case.stride),
         list(case.before),
@@ -360,6 +383,7 @@ def triton_runner(x, w, b, case):
         False,
         [0, 0],
         case.groups,
+        output_strides,
     )
     stream = torch.cuda.Stream()
     with torch.cuda.stream(stream), autotune_launch_params() as stats:
@@ -375,10 +399,13 @@ def triton_runner(x, w, b, case):
 
 
 def aten_conv(x, w, b, case):
-    """What the exported graph holds: a separate pad for asymmetric padding."""
+    """What the exported graph holds: a separate pad for asymmetric padding, and
+    a contiguous output where the graph records one."""
     if case.before == case.after:
-        return F.conv2d(x, w, b, case.stride, case.before, 1, case.groups)
-    return F.conv2d(_pad(x, case), w, b, case.stride, 0, 1, case.groups)
+        out = F.conv2d(x, w, b, case.stride, case.before, 1, case.groups)
+    else:
+        out = F.conv2d(_pad(x, case), w, b, case.stride, 0, 1, case.groups)
+    return out.contiguous() if _contiguous_output(case) else out
 
 
 def tap_sum(x, w, b, case):
@@ -415,11 +442,15 @@ def run_case(case, flush, threshold):
     )
     w = w / (case.group_channels * case.kernel[0] * case.kernel[1]) ** 0.5
     b = torch.randn(out_channels, device="cuda", dtype=dtype)
-    if case.layout in ("channels_last", "both_cl"):
+    if case.layout in ("channels_last", "both_cl", "cl_to_nchw", "both_cl_to_nchw"):
         x = x.to(memory_format=torch.channels_last)
-    if case.layout in ("weight_cl", "both_cl"):
+    if case.layout in ("weight_cl", "both_cl", "weight_cl_to_nchw", "both_cl_to_nchw"):
         w = w.to(memory_format=torch.channels_last)
-    ours, schedule = triton_runner(x, w, b, case)
+    output_strides = None
+    if _contiguous_output(case):
+        shape = aten_conv(x[:1].double(), w.double(), None, case).shape
+        output_strides = list(torch.empty((case.shape[0], *shape[1:])).stride())
+    ours, schedule = triton_runner(x, w, b, case, output_strides)
     runners = [
         ("ours", ours),
         ("inductor", inductor_runner(x, w, b, case)),
@@ -462,7 +493,7 @@ def main():
     parser.add_argument(
         "--suite",
         default="representative",
-        choices=["representative", "envelope", "extent", "grouped"],
+        choices=["representative", "envelope", "extent", "layouts", "grouped"],
     )
     parser.add_argument(
         "--dtype", default="float32", choices=["float32", "float16", "bfloat16"]
@@ -480,6 +511,7 @@ def main():
         "representative": lambda: representative_cases(args.dtype, args.layout),
         "envelope": envelope_cases,
         "extent": extent_cases,
+        "layouts": layout_cases,
         "grouped": grouped_cases,
     }[args.suite]()
     index, count = map(int, args.shard.split("/"))

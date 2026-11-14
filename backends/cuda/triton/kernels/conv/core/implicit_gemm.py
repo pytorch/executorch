@@ -54,6 +54,7 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     max_offset,
     Schedule,
     SUPPORTED_DTYPES,
+    unbenchmarked_layout,
 )
 from executorch.backends.cuda.triton.routing import device_supports
 from torch.library import wrap_triton
@@ -127,15 +128,22 @@ class RoutedFamily:
 # measured call significantly faster than Inductor's Triton conv template:
 # 3-channel inputs, which the flat K order walks without the empty
 # lanes of the template's channel blocks, in the geometry families below, with
-# a dense NCHW or channels-last input and a contiguous weight (the layouts the
-# benchmark measures). Its ``boundary`` suite measures ``boundary_calls()``:
-# each geometry at every corner of these limits.
+# the (input, weight, output) memory formats in ROUTED_LAYOUTS. Its
+# ``boundary`` suite measures ``boundary_calls()``: each geometry at every
+# corner of these limits.
 ROUTED_CHANNELS = 3
 MIN_ROUTED_OUT_CHANNELS = 32
 MAX_ROUTED_OUT_CHANNELS = 1280
 MIN_ROUTED_OUTPUT_PIXELS = 256
 MAX_ROUTED_INPUT_PIXELS = 1024 * 1024
 MAX_ROUTED_OUTPUT_ELEMENTS = 1 << 24
+ROUTED_LAYOUTS = frozenset(
+    {
+        ("contiguous", "contiguous", "contiguous"),
+        ("channels_last", "contiguous", "channels_last"),
+        ("channels_last", "contiguous", "contiguous"),
+    }
+)
 ROUTED_FAMILIES = (
     RoutedFamily(
         "window",
@@ -164,18 +172,6 @@ ROUTED_FAMILIES = (
 )
 
 
-def _benchmarked_layout(x: torch.Tensor, w: torch.Tensor) -> bool:
-    """A dense, unsliced NCHW or channels-last input and a contiguous weight."""
-    channels_last = torch.channels_last if x.dim() == 4 else torch.channels_last_3d
-    dense_input = x.is_contiguous() or x.is_contiguous(memory_format=channels_last)
-    return (
-        dense_input
-        and x.storage_offset() == 0
-        and w.is_contiguous()
-        and w.storage_offset() == 0
-    )
-
-
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -197,12 +193,9 @@ def worth_routing(call: ConvCall) -> Optional[str]:
         )
     if x.shape[1] != ROUTED_CHANNELS:
         return f"implicit GEMM: {x.shape[1]} input channels are not benchmarked faster"
-    if not _benchmarked_layout(x, w):
-        return (
-            f"implicit GEMM: input strides {list(x.stride())} (offset "
-            f"{x.storage_offset()}) or weight strides {list(w.stride())} are not "
-            "a benchmarked layout"
-        )
+    reason = unbenchmarked_layout(call, ROUTED_LAYOUTS)
+    if reason is not None:
+        return f"implicit GEMM: {reason}"
     family = _family(call)
     if family is None:
         return (

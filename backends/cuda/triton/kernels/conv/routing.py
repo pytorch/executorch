@@ -7,9 +7,10 @@
 """Which conv nodes become ``triton::convolution``.
 
 ``plan(node)`` is the replacement pass's preflight for convolutions
-(see ``triton/routing.py``): it binds the node's arguments, checks the output
-layout contract and the templates' ``supports()``, and classifies the node
-without touching the graph. ``OPTIONAL`` means a template runs it, its
+(see ``triton/routing.py``): it binds the node's arguments, checks the
+templates' ``supports()``, and classifies the node without touching the graph.
+The replacement produces exactly the output strides the node recorded, which
+must be a dense layout. ``OPTIONAL`` means a template runs it, its
 ``worth_routing`` (the measured range where it beats the regular lowering)
 accepts it, and the regular lowering could run it too; ``REQUIRED`` means a
 template runs it and the regular lowering cannot.
@@ -21,6 +22,7 @@ otherwise leaves the node unchanged.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any, Optional
 
@@ -30,6 +32,7 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     bind_conv,
     ConvCall,
     ConvParams,
+    dense_strides,
     out_shape_and_stride,
 )
 from executorch.backends.cuda.triton.routing import (
@@ -86,12 +89,17 @@ def _check(node: Node, call: ConvCall, gap: Optional[str]) -> ReplacementPlan:
         return _unsupported("symbolic shapes or missing fake tensors")
     if call.input.device.type != "cuda":
         return _unsupported(f"input on {call.input.device}")
-    size, stride = out_shape_and_stride(call)
-    if (size, stride) != (tuple(expected.shape), tuple(expected.stride())):
+    if not dense_strides(expected.shape, expected.stride()):
         return _unsupported(
-            f"output {list(size)}@{list(stride)} differs from the node's "
-            f"{list(expected.shape)}@{list(expected.stride())}"
+            f"the node's output strides {list(expected.stride())} are not a "
+            "dense layout"
         )
+    size, _ = out_shape_and_stride(call)
+    if size != tuple(expected.shape):
+        return _unsupported(
+            f"output size {list(size)} differs from the node's {list(expected.shape)}"
+        )
+    call = dataclasses.replace(call, output_strides=tuple(expected.stride()))
     reasons = []
     for template in TEMPLATES:
         reason = template.supports(call)
@@ -135,13 +143,15 @@ def plan(node: Node) -> ReplacementPlan:
             result = _unsupported(f"{result.reason}; regular lowering: {gap}")
         return result
     route = Route.OPTIONAL if gap is None else Route.REQUIRED
+    # The output follows the strides the node recorded.
+    call = dataclasses.replace(call, output_strides=tuple(node.meta["val"].stride()))
     return ReplacementPlan(
         route,
         gap or "",
         "conv",
         f"{result.label} template",
         torch.ops.triton.convolution.default,
-        (input, weight, bias, *_canonical_args(params)),
+        (input, weight, bias, *_canonical_args(params), list(call.output_strides)),
         call.signature(),
     )
 
