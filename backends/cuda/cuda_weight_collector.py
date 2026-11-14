@@ -12,6 +12,7 @@ import os
 import struct
 import tempfile
 import threading
+import weakref
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
@@ -143,6 +144,16 @@ def _same_cuda_storage(first: torch.Tensor, second: torch.Tensor) -> bool:
     if first.untyped_storage().nbytes() != second.untyped_storage().nbytes():
         return False
     return torch.equal(_storage_bytes(first), _storage_bytes(second))
+
+
+def _source_identity(source: torch.Tensor) -> Tuple[Any, ...]:
+    return (
+        source.untyped_storage()._cdata,
+        source.dtype,
+        source.storage_offset(),
+        tuple(source.shape),
+        tuple(source.stride()),
+    )
 
 
 def _required_view_nbytes(
@@ -391,6 +402,46 @@ class CudaWeightCollector:
         self._stored_storages: Dict[str, torch.Tensor] = {}
         # The key each storage was written under, which ends in its SHA-256.
         self._content_keys: Dict[str, str] = {}
+        # The CPU storage each storage key was written from. Each method moves
+        # the same source weights to the GPU and frees the copies afterwards,
+        # so a later method's copy of the same source view is recognized by its
+        # source and not written again. The storage is held weakly: once it is
+        # gone nothing matches, even if its address is reused.
+        self._written_sources: Dict[
+            str, Tuple["weakref.ref[torch.UntypedStorage]", Tuple[Any, ...]]
+        ] = {}
+        # This method's moved storages -> the CPU tensor each was copied from.
+        self._moved_sources: Dict[int, torch.Tensor] = {}
+
+    def track_moved_tensors(
+        self, sources: Dict[str, torch.Tensor], moved: Dict[str, torch.Tensor]
+    ) -> None:
+        """Record which CPU tensor each tensor of this method was moved from."""
+        self._moved_sources = {}
+        for name, tensor in moved.items():
+            source = sources.get(name)
+            if (
+                isinstance(tensor, torch.Tensor)
+                and isinstance(source, torch.Tensor)
+                and source is not tensor
+                and source.device.type == "cpu"
+                and source.untyped_storage().nbytes() > 0
+                and type(source) in (torch.Tensor, torch.nn.Parameter)
+                and type(tensor) in (torch.Tensor, torch.nn.Parameter)
+            ):
+                self._moved_sources[tensor.untyped_storage()._cdata] = source
+
+    def _written_from_same_source(self, storage_key: str, tensor: torch.Tensor) -> bool:
+        source = self._moved_sources.get(tensor.untyped_storage()._cdata)
+        written = self._written_sources.get(storage_key)
+        if source is None or written is None:
+            return False
+        written_storage = written[0]()
+        return (
+            written_storage is not None
+            and written_storage._cdata == source.untyped_storage()._cdata
+            and written[1] == _source_identity(source)
+        )
 
     @contextlib.contextmanager
     def capture(
@@ -403,6 +454,10 @@ class CudaWeightCollector:
             yield capture
         finally:
             self._active.current = previous
+
+    @classmethod
+    def active_capture(cls) -> Optional[_CudaWeightCapture]:
+        return getattr(cls._active, "current", None)
 
     @classmethod
     def current_capture(cls) -> _CudaWeightCapture:
@@ -460,9 +515,14 @@ class CudaWeightCollector:
                     raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
                 # Library-local constants are keyed per shared library, so
                 # only FQN weights can match an earlier method's storage.
-                shareable = tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
+                library_local = _is_aoti_library_local_fqn(fqn)
+                shareable = tensor.is_cuda and not library_local
                 first = self._stored_storages.get(storage_key)
-                if (
+                if not library_local and self._written_from_same_source(
+                    storage_key, tensor
+                ):
+                    stored.add(storage_key)
+                elif (
                     shareable
                     and first is not None
                     and _same_cuda_storage(first, tensor)
@@ -472,6 +532,15 @@ class CudaWeightCollector:
                     storages[storage_key] = _materialize_storage(tensor, directory)
                     if shareable:
                         self._stored_storages.setdefault(storage_key, tensor)
+                    source = self._moved_sources.get(tensor.untyped_storage()._cdata)
+                    if source is not None and not library_local:
+                        self._written_sources.setdefault(
+                            storage_key,
+                            (
+                                weakref.ref(source.untyped_storage()),
+                                _source_identity(source),
+                            ),
+                        )
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -515,6 +584,7 @@ class CudaWeightCollector:
                 )
             )
 
+        self._moved_sources = {}
         trim_host_memory()
         return CudaWeightArtifact(entries=entries, storages=storages, stored=stored)
 
@@ -639,3 +709,5 @@ class CudaWeightCollector:
             result.data_store_output = shared_output
         self._stored_storages.clear()
         self._content_keys.clear()
+        self._written_sources.clear()
+        self._moved_sources.clear()

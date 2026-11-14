@@ -169,3 +169,71 @@ class CudaWeightReuseTest(unittest.TestCase):
         self.assertFalse(same(base, base[:8].clone()))
         empty = torch.empty(0, dtype=torch.uint8, device="cuda")
         self.assertTrue(same(empty, empty.clone()))
+
+    def _moved_method(self, collector, so_key, sources):
+        """A method whose weights are moved from ``sources`` and freed after it."""
+        moved = {name: tensor.to("cuda") for name, tensor in sources.items()}
+        collector.track_moved_tensors(sources, moved)
+        artifact, result = self._method(collector, so_key, _weights(**moved))
+        for tensor in moved.values():
+            tensor.untyped_storage().resize_(0)
+        return artifact, result
+
+    def test_freed_copies_of_one_source_are_written_once(self) -> None:
+        sources = {
+            "w": torch.randn(1024, 33),
+            "b": torch.arange(7, dtype=torch.int8),
+        }
+        collector = CudaWeightCollector()
+        writes = []
+        materialize_storage = cuda_weight_collector._materialize_storage
+
+        def counting(tensor, directory):
+            writes.append(tensor.untyped_storage().nbytes())
+            return materialize_storage(tensor, directory)
+
+        with mock.patch.object(cuda_weight_collector, "_materialize_storage", counting):
+            first, first_result = self._moved_method(collector, "so-0", sources)
+            second, second_result = self._moved_method(collector, "so-1", sources)
+            third, _ = self._moved_method(collector, "so-2", sources)
+        collector.finish()
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(second.storages, {})
+        self.assertEqual(third.storages, {})
+        self.assertEqual(second.stored, {e.storage_key for e in second.entries})
+        self.assertEqual(
+            decode_cuda_aoti_metadata(second_result.processed_bytes).entries,
+            decode_cuda_aoti_metadata(first_result.processed_bytes).entries,
+        )
+        stored = {
+            key: _as_bytes(collector._store.buffers[index])
+            for key, index in collector._store.key_to_buffer_idx.items()
+        }
+        for entry in decode_cuda_aoti_metadata(first_result.processed_bytes).entries:
+            name = entry.fqn
+            self.assertEqual(
+                stored[entry.storage_key],
+                sources[name].contiguous().view(torch.uint8).numpy().tobytes(),
+            )
+
+    def test_another_source_with_the_same_key_is_written_and_checked(self) -> None:
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", {"w": torch.randn(256, 8)})
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(collector, "so-1", {"w": torch.randn(256, 8)})
+
+    def test_a_source_view_with_other_metadata_is_written_again(self) -> None:
+        base = torch.randn(64, 16)
+        collector = CudaWeightCollector()
+        writes = []
+        materialize_storage = cuda_weight_collector._materialize_storage
+
+        def counting(tensor, directory):
+            writes.append(tensor.untyped_storage().nbytes())
+            return materialize_storage(tensor, directory)
+
+        with mock.patch.object(cuda_weight_collector, "_materialize_storage", counting):
+            self._moved_method(collector, "so-0", {"w": base})
+            with self.assertRaisesRegex(ValueError, "with different data"):
+                self._moved_method(collector, "so-1", {"w": base[:32]})
+        self.assertEqual(len(writes), 2)

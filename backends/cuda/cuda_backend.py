@@ -1548,11 +1548,24 @@ class CudaBackend(AotiBackend, BackendDetails):
         """
         from torch.export.passes import move_to_device_pass
 
+        sources = {
+            **dict(edge_program.state_dict),
+            **{
+                name: value
+                for name, value in edge_program.constants.items()
+                if isinstance(value, torch.Tensor)
+            },
+        }
         if not cls._is_low_memory_mode(compile_specs):
             moved = move_to_device_pass(edge_program, device)
         else:
             moved = _move_to_device_resize_kv(edge_program, device)
         _track_moved_tensors(moved)
+        capture = CudaWeightCollector.active_capture()
+        if capture is not None:
+            capture.collector.track_moved_tensors(
+                sources, {**dict(moved.state_dict), **dict(moved.constants)}
+            )
         return moved
 
     @classmethod
