@@ -164,6 +164,14 @@ TEST_F(XNNPackedLhsTest, RuntimeSpecOverridesGlobalDefault) {
 }
 
 TEST(XNNCompilerTest, Bf16BatchMatrixMultiplyOutputWithoutDims) {
+  ASSERT_EQ(xnn_initialize(/*allocator=*/nullptr), xnn_status_success);
+  xnn_operator_t bf16_bmm = nullptr;
+  if (xnn_create_batch_matrix_multiply_nc_bf16_f32(0, &bf16_bmm) ==
+      xnn_status_unsupported_hardware) {
+    GTEST_SKIP()
+        << "XNNPACK has no bf16 batch matrix multiply for this hardware";
+  }
+  xnn_delete_operator(bf16_bmm);
   runtime::runtime_init();
   auto* backend = runtime::get_backend_class(xnnpack_backend_key);
   ASSERT_NE(backend, nullptr);
