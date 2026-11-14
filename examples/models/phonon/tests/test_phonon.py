@@ -43,6 +43,7 @@ from executorch.examples.models.phonon.run_phonon import (
 )
 from executorch.examples.models.phonon.source_transformations import (
     compute_weights_in,
+    ConvTranspose1dAsConv1d,
     use_webgpu_compat_ops,
 )
 from executorch.examples.models.phonon.tests.reference import (
@@ -236,18 +237,42 @@ class TestPrograms(unittest.TestCase):
                 for a, b in zip(outputs, programs[name](*inputs[name])):
                     self.assertLess(max_diff(a, b), 1e-4)
 
-    def test_vulkan_swaps_preserve_outputs(self):
+    def _check_swaps(self, backend: str, counts: list[int]):
         inputs = example_inputs(TINY)
         programs = build_programs(self.model)
         with torch.no_grad():
             before = programs["mimi_decode"](*inputs["mimi_decode"])
-        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
-        counts = [t(programs) for t in source_transforms_for("vulkan", False)]
-        self.assertEqual(counts, [7, 1, 2])
+        self.assertEqual(
+            [t(programs) for t in source_transforms_for(backend, False)], counts
+        )
         with torch.no_grad():
             after = programs["mimi_decode"](*inputs["mimi_decode"])
         for a, b in zip(before, after):
             self.assertLess(max_diff(a, b), 1e-4)
+
+    def test_vulkan_swaps_preserve_outputs(self):
+        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("vulkan", [7, 1, 2])
+
+    def test_xnnpack_swaps_preserve_outputs(self):
+        # The depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("xnnpack", [1, 2])
+
+    def test_conv_transpose_as_conv_matches(self):
+        torch.manual_seed(0)
+        for stride, steps, bias in (
+            (1, 1, True),
+            (4, 16, False),
+            (5, 1, True),
+            (6, 16, True),
+        ):
+            convtr = torch.nn.ConvTranspose1d(
+                6, 3, 2 * stride, stride=stride, bias=bias
+            )
+            x = torch.randn(1, 6, steps)
+            with torch.no_grad():
+                got = ConvTranspose1dAsConv1d(convtr)(x)
+                self.assertLess(max_diff(got, convtr(x)), 1e-5, stride)
 
     def test_compute_weights_in_keeps_float32_io(self):
         inputs = example_inputs(TINY)
