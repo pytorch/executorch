@@ -687,6 +687,20 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
 
+    def test_elu(self):
+        special = torch.tensor(
+            [[float("nan"), float("inf"), -float("inf"), 0.0, -0.0, -1e-7]]
+        )
+        for x in (torch.randn(2, 3, 4) * 3.0, special):
+            self._check(Lambda(F.elu), (x,))
+            self._check(
+                Lambda(lambda x: torch.ops.aten.elu.default(x, 1.0, 2.0)), (x,)
+            )
+
+    def test_elu_rejects_alpha(self):
+        with self.assertRaisesRegex(AssertionError, "alpha = 1"):
+            self._check(Lambda(lambda x: F.elu(x, alpha=0.5)), (torch.randn(2, 3),))
+
     def test_sqrt(self):
         x = torch.tensor(
             [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
