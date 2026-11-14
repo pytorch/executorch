@@ -9,6 +9,7 @@ import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from executorch.exir._serialize._cord import Cord, FileBackedData
 
@@ -82,3 +83,78 @@ class TestCord(unittest.TestCase):
                 self.assertEqual(b"PrefixFileBacked", bytes(cord))
 
             self.assertEqual([], os.listdir(directory))
+
+    def test_file_backed_data_moves_into_a_file_without_a_second_copy(self) -> None:
+        payload = bytes(range(256)) * 41  # 10 chunks and part of one
+        chunk = 1000
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "source.bin")
+            with open(source_path, "wb") as f:
+                f.write(payload)
+            written, on_disk = [0], []
+
+            class Recording(io.FileIO):
+                # Bytes on disk after each write: the source left plus all written.
+                def write(self, b) -> int:
+                    size = super().write(b)
+                    written[0] += size
+                    on_disk.append(os.path.getsize(source_path) + written[0])
+                    return size
+
+            data = FileBackedData(source_path, consume_on_write=True)
+            cord = Cord(b"Prefix")
+            cord.append(data)
+            cord.append(b"Suffix")
+            out_path = os.path.join(directory, "out.bin")
+            with mock.patch.object(FileBackedData, "_COPY_CHUNK_SIZE", chunk):
+                with io.BufferedWriter(Recording(out_path, "wb")) as outfile:
+                    cord.write_to_file(outfile)
+
+            with open(out_path, "rb") as result:
+                self.assertEqual(b"Prefix" + payload + b"Suffix", result.read())
+            self.assertEqual(0, os.path.getsize(source_path))
+            self.assertLessEqual(
+                max(on_disk), len(b"PrefixSuffix") + len(payload) + chunk
+            )
+            with self.assertRaises(RuntimeError):
+                data.to_bytes()
+
+    def test_file_backed_data_is_copied_into_a_stream_it_cannot_seek(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "source.bin")
+            with open(source_path, "wb") as f:
+                f.write(b"FileBacked")
+            data = FileBackedData(source_path, consume_on_write=True)
+            read, write = os.pipe()
+            with open(write, "wb") as outfile:
+                data.write_to_file(outfile)
+            with open(read, "rb") as infile:
+                self.assertEqual(b"FileBacked", infile.read())
+            self.assertEqual(b"FileBacked", data.to_bytes())
+
+    def test_file_backed_data_is_copied_into_a_file_opened_to_append(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "source.bin")
+            with open(source_path, "wb") as f:
+                f.write(b"FileBacked")
+            out_path = os.path.join(directory, "out.bin")
+            with open(out_path, "wb") as f:
+                f.write(b"Prefix")
+            data = FileBackedData(source_path, consume_on_write=True)
+            with mock.patch.object(FileBackedData, "_COPY_CHUNK_SIZE", 4):
+                with open(out_path, "ab") as outfile:
+                    data.write_to_file(outfile)
+            with open(out_path, "rb") as result:
+                self.assertEqual(b"PrefixFileBacked", result.read())
+
+    def test_file_backed_data_refuses_to_move_a_file_that_shrank(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "source.bin")
+            with open(source_path, "wb") as f:
+                f.write(b"FileBacked")
+            first = FileBackedData(source_path, consume_on_write=True)
+            second = FileBackedData(source_path, consume_on_write=True)
+            with open(os.path.join(directory, "out.bin"), "wb") as outfile:
+                first.write_to_file(outfile)
+                with self.assertRaises(RuntimeError):
+                    second.write_to_file(outfile)
