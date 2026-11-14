@@ -170,16 +170,14 @@ class CudaGraphTimingTest(unittest.TestCase):
             ), mock.patch.object(
                 torch.cuda, "empty_cache"
             ) as empty_cache, mock.patch.object(
-                # memory_reserved() and memory_allocated() flatten through this.
-                torch.cuda.memory,
-                "memory_stats",
-                side_effect=AssertionError("flattened the allocator stats"),
-            ), mock.patch.object(
+                # The flattening APIs reach the nested stats through
+                # torch.cuda.memory's own global, so they never count here.
                 torch.cuda,
-                "memory_stats",
-                side_effect=AssertionError("flattened the allocator stats"),
-            ):
+                "memory_stats_as_nested_dict",
+                wraps=torch.cuda.memory_stats_as_nested_dict,
+            ) as nested:
                 cgt._release_cached_memory_if_large()
+                self.assertEqual(nested.call_count, 1)
                 self.assertEqual(empty_cache.call_count, empties)
 
 
