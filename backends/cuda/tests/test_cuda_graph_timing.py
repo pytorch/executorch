@@ -153,6 +153,19 @@ class CudaGraphTimingTest(unittest.TestCase):
             self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
         self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
 
+    def test_cached_memory_check_matches_the_flattened_counters(self) -> None:
+        x = torch.zeros(1 << 16, device="cuda")
+        with cgt.cuda_graph_timing():
+            for _ in range(8):
+                benchmarking.benchmarker.benchmark(lambda: x.add_(1), device="cuda")
+        flattened = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
+        for threshold, empties in ((flattened - 1, 1), (flattened, 0)):
+            with self.subTest(threshold=threshold), mock.patch.object(
+                cgt, "_EMPTY_CACHE_THRESHOLD_BYTES", threshold
+            ), mock.patch.object(torch.cuda, "empty_cache") as empty_cache:
+                cgt._release_cached_memory_if_large()
+                self.assertEqual(empty_cache.call_count, empties)
+
 
 # ---------------------------------------------------------------------------
 # End to end: export while the CPU is saturated, and check every pick.

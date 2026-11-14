@@ -117,10 +117,15 @@ def _default_cuda_bench(
 
 
 def _release_cached_memory_if_large() -> None:
-    if (
-        torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        > _EMPTY_CACHE_THRESHOLD_BYTES
-    ):
+    # memory_reserved() and memory_allocated() each flatten every allocator
+    # stat, including one entry per CUDA-graph private pool ever captured, so
+    # their cost grows with every capture. Read the two counters once instead.
+    stats = torch._C._cuda_memoryStats(torch.cuda.current_device())
+    cached = (
+        stats["reserved_bytes"]["all"]["current"]
+        - stats["allocated_bytes"]["all"]["current"]
+    )
+    if cached > _EMPTY_CACHE_THRESHOLD_BYTES:
         torch.cuda.empty_cache()
 
 
