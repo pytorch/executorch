@@ -19,6 +19,7 @@ from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
+from .cast_zero_dim_int64_operands_pass import CastZeroDimInt64OperandsPass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
 from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
@@ -227,6 +228,7 @@ from .rewrite_high_rank_singleton_permute_pass import (  # noqa
 )
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
+from .rewrite_int64_cast_via_int32_pass import RewriteInt64CastViaInt32Pass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
