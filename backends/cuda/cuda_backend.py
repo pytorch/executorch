@@ -200,6 +200,45 @@ def _install_small_gpu_override(active):
 _SMALL_GPU_OVERRIDE = _CompilePatch(_install_small_gpu_override)
 
 
+def _install_grouped_mm_override(active):
+    from torch._inductor.kernel import mm_grouped
+
+    original = mm_grouped.has_grouped_mm_triton_support
+
+    def has_grouped_mm_triton_support() -> bool:
+        if original():
+            return True
+        if not active():
+            return False
+        # The grouped GEMM Triton template uses TMA only on sm_90 and above;
+        # its remaining path works on sm_80. Inductor still offers the
+        # template only on sm_90 and above, and this backend allows no ATen
+        # choice, so below sm_90 a grouped GEMM has nothing to lower to.
+        return torch.cuda.is_available() and torch.cuda.get_device_capability() >= (
+            8,
+            0,
+        )
+
+    mm_grouped.has_grouped_mm_triton_support = has_grouped_mm_triton_support
+
+    def remove() -> None:
+        mm_grouped.has_grouped_mm_triton_support = original
+
+    return remove
+
+
+_GROUPED_MM_OVERRIDE = _CompilePatch(_install_grouped_mm_override)
+
+
+def _allow_grouped_mm_triton_template() -> typing.ContextManager[None]:
+    """Let Inductor offer its grouped GEMM Triton template on sm_80 and above.
+
+    Only threads inside this context get the override; other threads get the
+    original answer.
+    """
+    return _GROUPED_MM_OVERRIDE.scope()
+
+
 def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
     """Let Inductor use Triton templates on GPUs below its 68-SM floor. This
     backend autotunes with Triton only, so otherwise a matmul or convolution
@@ -1464,6 +1503,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
+                    stack.enter_context(_allow_grouped_mm_triton_template())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.
