@@ -166,6 +166,35 @@ def test_cuda_launcher_rejects_missing_weights_or_vision(arguments, tmp_path, ca
     assert error.value.code == 2
 
 
+def test_native_worker_takes_its_engine_options(arguments):
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "native", "--prefix-cache-entries", "2"]
+        + ["--native-device", "cpu"]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert (flags["--backend"], flags["--prefix_cache_entries"]) == ("native", "2")
+    assert (flags["--native_device"], flags["--native_kv_dtype"]) == ("cpu", "fp32")
+
+
+def test_other_backends_omit_native_options(arguments):
+    flags = serve_batching._worker_command(serve_batching._parse_args(arguments))
+    assert not any(flag.startswith("--native_") for flag in flags)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [["--dflash"], ["--pos-embed-path", "FILE"], ["--data-path", "FILE"]],
+)
+def test_native_launcher_rejects_dflash_vision_and_data(arguments, tmp_path, extra):
+    path = tmp_path / "file.bin"
+    path.touch()
+    extra = [str(path) if value == "FILE" else value for value in extra]
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(arguments + ["--backend", "native"] + extra)
+    assert error.value.code == 2
+
+
 @pytest.mark.parametrize("shortfall", [0, 1])
 def test_image_frame_capacity(arguments, shortfall):
     # Four image bytes need eight base64 bytes plus 1024 bytes of JSON framing.

@@ -7,7 +7,9 @@
 """Serve Muse Glimmer text/images with the batching multiplexed worker.
 
 Requires an off-graph batching export: export_solo.py --use-offgraph-kv-cache
-for MLX (text and images); add --backend cuda for CUDA (text only). DFlash is
+for MLX (text and images); add --backend cuda for CUDA (text only). --backend
+native serves a .ptn from backends/native's export_hf_llm.py --offgraph_cache
+--logits_to_keep selected on the ggml engine (text only). DFlash is
 opt-in, MLX only, and requires a matching export; the legacy launcher and
 runners remain separate.
 """
@@ -47,7 +49,19 @@ def _parse_args(argv=None):
     parser.add_argument("--tokenizer-path", required=True)
     parser.add_argument("--hf-tokenizer", required=True)
     parser.add_argument("--pos-embed-path")
-    parser.add_argument("--backend", choices=("mlx", "cuda"), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "cuda", "native"), default="mlx")
+    parser.add_argument(
+        "--native-device",
+        choices=("gpu", "cpu"),
+        default="gpu",
+        help="--backend native: the ggml device.",
+    )
+    parser.add_argument(
+        "--native-kv-dtype",
+        choices=("fp32", "fp16"),
+        default="fp32",
+        help="--backend native: the KV cache storage.",
+    )
     parser.add_argument("--dflash", action="store_true")
     parser.add_argument(
         "--dflash-n-draft",
@@ -118,6 +132,16 @@ def _parse_args(argv=None):
 
 
 def _validate_backend(parser, args):
+    if args.backend == "native":
+        if args.dflash:
+            parser.error("--backend native does not support --dflash")
+        if args.pos_embed_path is not None:
+            parser.error("--backend native serves text only; omit --pos-embed-path")
+        if args.data_path is not None:
+            parser.error(
+                "--backend native reads its weights from the .ptn; omit --data-path"
+            )
+        return
     if args.backend != "cuda":
         return
     if args.data_path is None:
@@ -176,6 +200,11 @@ def _worker_command(args):
         ("eos_id", args.eos_id),
         ("data_path", args.data_path),
         ("pos_embed_path", args.pos_embed_path),
+        ("native_device", args.native_device if args.backend == "native" else None),
+        (
+            "native_kv_dtype",
+            args.native_kv_dtype if args.backend == "native" else None,
+        ),
     ):
         if value is not None:
             # gflags requires '=' to pass false for boolean flags.
