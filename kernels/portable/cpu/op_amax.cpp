@@ -44,6 +44,18 @@ Tensor& amax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  // An empty input gives an empty output, unless a reduced dim is empty: max
+  // has no identity, so ATen rejects that case.
+  if (in.numel() == 0) {
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out.numel() == 0,
+        InvalidArgument,
+        out,
+        "amax.out: cannot reduce over an empty dimension");
+    return out;
+  }
+
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "amax.out";
 
