@@ -44,6 +44,7 @@ from executorch.extension.llm.export.gguf import iter_gguf
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from executorch.extension.llm.export.model_metadata import (
     write_cache_geometry,
+    write_logits_to_keep_mode,
     write_max_context_len,
 )
 from torch.export import Dim, export
@@ -113,14 +114,16 @@ class MuseGlimmerTextLM(nn.Module):
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor | None = None,
-        logits_to_keep: int = 0,
+        logits_to_keep: int | torch.Tensor = 0,
         **_,
     ) -> CausalLMOutput:
         text_config = self.config.text_config
         hidden = self.model["language_model"](
             input_ids=input_ids, position_ids=position_ids, use_cache=False
         ).last_hidden_state
-        if logits_to_keep:
+        if isinstance(logits_to_keep, torch.Tensor):
+            hidden = hidden[:, logits_to_keep]
+        elif logits_to_keep:
             hidden = hidden[:, -logits_to_keep:]
         logits = self.lm_head(hidden) * text_config.output_multiplier
         cap = text_config.final_logit_softcapping
@@ -289,6 +292,11 @@ class LastTokenLM(nn.Module):
             logits_to_keep=1,
         ).logits
 
+    def call_inputs(
+        self, input_ids: torch.Tensor, positions: torch.Tensor
+    ) -> list[torch.Tensor]:
+        return [input_ids, positions]
+
     def reset_cache(self) -> None:
         self.cache.reset()
 
@@ -318,7 +326,9 @@ def _cache_windows(config) -> list[int]:
 
 
 class OffGraphLastTokenLM(nn.Module):
-    """Last-position logits with the KV cache outside the graph.
+    """Last-position logits with the KV cache outside the graph, or with
+    ``selected`` the logits of the token indices a third input names, which a
+    batched forward over several sequences needs.
 
     Each attention layer emits ``kvcache::update_and_attend`` over this step's
     K/V; the cache, not the graph, applies a sliding layer's window, so the
@@ -327,9 +337,10 @@ class OffGraphLastTokenLM(nn.Module):
     ``capacity`` positions the active one.
     """
 
-    def __init__(self, model: nn.Module, capacity: int) -> None:
+    def __init__(self, model: nn.Module, capacity: int, selected: bool = False) -> None:
         super().__init__()
         self.model = model
+        self.selected = selected
         config = model.config.get_text_config()
         self._windows = _cache_windows(config)
         self._head_dim = (
@@ -362,13 +373,27 @@ class OffGraphLastTokenLM(nn.Module):
         geometry = write_cache_geometry(
             [self._kv_heads] * n, [self._head_dim] * n, self._windows
         )
-        return {
-            name: value.tolist() if isinstance(value, torch.Tensor) else value
-            for name, value in geometry.items()
-        } | write_max_context_len(self._max_context_len)
+        return (
+            {
+                name: value.tolist() if isinstance(value, torch.Tensor) else value
+                for name, value in geometry.items()
+            }
+            | write_max_context_len(self._max_context_len)
+            | write_logits_to_keep_mode("selected" if self.selected else "last")
+        )
+
+    def call_inputs(
+        self, input_ids: torch.Tensor, positions: torch.Tensor
+    ) -> list[torch.Tensor]:
+        """A call's inputs, selecting the last token's logits."""
+        last = torch.tensor([input_ids.shape[1] - 1], dtype=torch.long)
+        return [input_ids, positions, last] if self.selected else [input_ids, positions]
 
     def forward(
-        self, input_ids: torch.Tensor, cache_position: torch.Tensor
+        self,
+        input_ids: torch.Tensor,
+        cache_position: torch.Tensor,
+        logits_to_keep: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.model(
             input_ids=input_ids,
@@ -377,7 +402,7 @@ class OffGraphLastTokenLM(nn.Module):
             position_ids=cache_position.unsqueeze(0),
             use_cache=False,
             past_key_values=None,
-            logits_to_keep=1,
+            logits_to_keep=logits_to_keep if self.selected else 1,
         ).logits
 
     def reset_cache(self) -> None:
@@ -460,8 +485,9 @@ def golden_samples(
             positions = torch.arange(len(ids), dtype=torch.long)
             calls = []
             for _ in range(decode_steps + 1):
-                logits = wrapper(input_ids, positions)
-                calls.append(Call("forward", [input_ids, positions], [logits]))
+                inputs = wrapper.call_inputs(input_ids, positions)
+                logits = wrapper(*inputs)
+                calls.append(Call("forward", inputs, [logits]))
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
             samples.append(Sample(calls))
@@ -506,6 +532,14 @@ def _parse_args() -> argparse.Namespace:
         "the graph; the runner owns the cache and sets its capacity and dtype.",
     )
     parser.add_argument(
+        "--logits_to_keep",
+        choices=["last", "selected"],
+        default="last",
+        help="With --offgraph_cache: 'selected' adds a third int64[K] input of "
+        "token indices whose logits to return, for a batching runtime that "
+        "puts several sequences in one forward.",
+    )
+    parser.add_argument(
         "--samples",
         type=int,
         default=0,
@@ -520,6 +554,8 @@ def _parse_args() -> argparse.Namespace:
         parser.error(
             "--gguf loads every weight; it excludes --random_weights and --quantize"
         )
+    if args.logits_to_keep == "selected" and not args.offgraph_cache:
+        parser.error("--logits_to_keep selected needs --offgraph_cache")
     if args.offgraph_cache and (
         args.max_context_length or args.kv_cache_dtype != "fp32"
     ):
@@ -560,7 +596,9 @@ def main() -> None:
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
     if args.offgraph_cache:
-        wrapper = OffGraphLastTokenLM(model, cache_len).eval()
+        wrapper = OffGraphLastTokenLM(
+            model, cache_len, selected=args.logits_to_keep == "selected"
+        ).eval()
     else:
         kv_cache_dtype = (
             torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
@@ -570,11 +608,19 @@ def main() -> None:
     input_ids = torch.zeros((1, 6), dtype=torch.long)
     cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
     seq = Dim("seq", min=1, max=args.max_seq_length - 1)
+    inputs = wrapper.call_inputs(input_ids, cache_position)
+    dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
+    if len(inputs) == 3:
+        # Trace two rows: export specializes a size of 1.
+        inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
+        dynamic_shapes["logits_to_keep"] = {
+            0: Dim("rows", min=1, max=args.max_seq_length - 1)
+        }
     with torch.no_grad():
         ep = export(
             wrapper,
-            (input_ids, cache_position),
-            dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+            tuple(inputs),
+            dynamic_shapes=dynamic_shapes,
             strict=not args.non_strict,
         )
     report_lowering(ep, "forward")
