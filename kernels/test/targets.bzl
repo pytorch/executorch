@@ -242,6 +242,7 @@ def define_common_targets():
     _common_op_test("op_ceil_test", ["aten", "portable"])
     _common_op_test("op_clamp_test", ["aten", "portable"])
     _common_op_test("op_clone_test", ["aten", "portable"])
+    _common_op_test("op_complex_test", ["aten", "portable"])
     _common_op_test("op_constant_pad_nd_test", ["aten", "portable"])
     _common_op_test("op_convolution_test", ["aten", "portable"])
     _common_op_test("op_convolution_backward_test", ["aten", "portable"])

@@ -106,6 +106,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_ceil.cpp",
     "kernels/portable/cpu/op_clamp.cpp",
     "kernels/portable/cpu/op_clone.cpp",
+    "kernels/portable/cpu/op_complex.cpp",
     "kernels/portable/cpu/op_constant_pad_nd.cpp",
     "kernels/portable/cpu/op_convolution.cpp",
     "kernels/portable/cpu/op_convolution_backward.cpp",
