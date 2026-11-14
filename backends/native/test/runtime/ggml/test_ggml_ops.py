@@ -638,6 +638,17 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_softmax_last_dim(self):
+        self._check(Lambda(lambda x: F.softmax(x, dim=-1)), (torch.randn(2, 3, 5),))
+        self._check(
+            Lambda(lambda x: torch.softmax(x * 8.0, dim=3)),
+            (torch.randn(2, 3, 7, 7),),
+        )
+
+    def test_softmax_rejects_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "only the last dim"):
+            self._check(Lambda(lambda x: F.softmax(x, dim=1)), (torch.randn(2, 3, 5),))
+
     def test_tanh(self):
         self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
 
@@ -686,6 +697,20 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_elu(self):
+        special = torch.tensor(
+            [[float("nan"), float("inf"), -float("inf"), 0.0, -0.0, -1e-7]]
+        )
+        for x in (torch.randn(2, 3, 4) * 3.0, special):
+            self._check(Lambda(F.elu), (x,))
+            self._check(
+                Lambda(lambda x: torch.ops.aten.elu.default(x, 1.0, 2.0)), (x,)
+            )
+
+    def test_elu_rejects_alpha(self):
+        with self.assertRaisesRegex(AssertionError, "alpha = 1"):
+            self._check(Lambda(lambda x: F.elu(x, alpha=0.5)), (torch.randn(2, 3),))
 
     def test_sqrt(self):
         x = torch.tensor(

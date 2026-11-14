@@ -682,6 +682,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_unary(node, ggml_tanh);
   } else if (key == "aten.gelu.default" || key == "aten.gelu_.default") {
     lower_gelu(node);
+  } else if (key == "aten._softmax.default" || key == "aten.softmax.int") {
+    lower_softmax(node);
   } else if (key == "aten.native_layer_norm.default") {
     lower_layer_norm(node);
   } else if (key == "aten.constant_pad_nd.default") {
@@ -697,6 +699,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
     lower_hardtanh(node);
+  } else if (key == "aten.elu.default") {
+    lower_elu(node);
   } else if (key == "aten.sqrt.default") {
     lower_sqrt(node);
   } else if (key == "aten.convolution.default") {
