@@ -15,6 +15,7 @@ import shutil
 import sys
 import threading
 import typing
+import warnings
 import weakref
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
@@ -1253,15 +1254,12 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """
-        Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
+        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass.
 
-        The Triton kernel replacement behavior can be controlled via compile_specs:
-        - triton_kernel_mode="ON": Use Triton kernels for the calls they support; other calls use the regular lowering
-        - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
+        The replacement pass uses Triton kernels for the calls they support and
+        leaves other calls to the regular lowering. The triton_kernel_mode
+        compile spec is deprecated: "OFF" is treated as "ON".
         """
-        # Parse compile_specs for triton_kernel_mode
-
-        triton_kernel_mode = "ON"  # Default mode
         for spec in compile_specs:
             if spec.key == "triton_kernel_mode":
                 mode = spec.value.decode("utf-8").upper()
@@ -1269,7 +1267,16 @@ class CudaBackend(AotiBackend, BackendDetails):
                     raise ValueError(
                         f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
-                triton_kernel_mode = mode
+                if mode == "OFF":
+                    warnings.warn(
+                        "triton_kernel_mode=OFF is deprecated and is now treated as "
+                        "ON: the CUDA backend replaces the calls its Triton kernels "
+                        "support and leaves the others to the regular lowering. "
+                        "Remove the triton_kernel_mode compile spec; it will be "
+                        "removed in a future release.",
+                        FutureWarning,
+                        stacklevel=2,
+                    )
         passes = [
             RemoveAssertAsyncPass(),
             ReplaceComplexWithRealPass(),
@@ -1294,8 +1301,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 passes.append(
                     LowerOffGraphKVPass(parse_offgraph_kv_manifest(spec.value))
                 )
-        if triton_kernel_mode == "ON":
-            passes.append(ReplaceEdgeOpWithTritonOpPass())
+        passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
 
     @classmethod
