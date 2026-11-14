@@ -26,8 +26,8 @@ channels-last input with the contiguous output a graph exported on CUDA
 records (``cl_to_nchw``: triton::convolution gets ``output_strides``, the
 other paths a ``contiguous()`` that Inductor may fuse).
 
-Suites: ``shapes`` (dense and kernel == stride convolutions at representative
-shapes), ``envelope`` (each axis of what the
+Suites: ``shapes`` (dense, kernel == stride and transposed convolutions at
+representative shapes), ``envelope`` (each axis of what the
 template supports varied around base shapes, in every precision and input
 layout) and ``boundary`` (every geometry the router takes at every corner of
 its limits, ``implicit_gemm.boundary_calls()``). The router's
@@ -47,12 +47,14 @@ from dataclasses import asdict, dataclass
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+from executorch.backends.cuda.cuda_backend import _conv_transpose_as_conv
 from executorch.backends.cuda.triton.kernels.conv.conv import (
     convolution,
     force_conv_candidate,
 )
 from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 from executorch.backends.cuda.triton.kernels.conv.core.common import conv_allows_tf32
+from torch.fx.experimental.proxy_tensor import make_fx
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,7 @@ class Case:
     # The padding is a separate pad op before a padding-0 convolution, as the
     # model writes it; both paths run that pad.
     explicit_pad: bool = False
+    transposed: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,17 @@ class Pad:
     after: tuple[int, ...]
 
 
-def _case(label, shape, out_channels, kernel, stride, padding, bias, precision):
+def _case(
+    label,
+    shape,
+    out_channels,
+    kernel,
+    stride,
+    padding,
+    bias,
+    precision,
+    transposed=False,
+):
     rank = len(shape) - 2
 
     def expand(v):
@@ -102,6 +115,7 @@ def _case(label, shape, out_channels, kernel, stride, padding, bias, precision):
         bias,
         precision,
         explicit_pad=explicit,
+        transposed=transposed,
     )
 
 
@@ -367,12 +381,26 @@ SHAPES = [
 ]
 
 
+# Transposed 1-D convolutions, likewise: kernel 4, stride 2, upsampling
+# sequences of 4 to 32 steps.
+TRANSPOSED_SHAPES = [
+    ("1d_transposed", "1024 ch T4", (1, 1024, 4), 1024, 4, 2, 1, True),
+    ("1d_transposed", "512 ch T8", (1, 512, 8), 512, 4, 2, 1, True),
+    ("1d_transposed", "1024 ch T16", (1, 1024, 16), 1024, 4, 2, 1, True),
+    ("1d_transposed", "512 ch T32", (1, 512, 32), 512, 4, 2, 1, True),
+]
+
+
 def shape_cases(precision, layout, groups=None):
     return [
         Case(
-            **{**asdict(_case(f"{group} {label}", *rest, precision)), "layout": layout}
+            **{
+                **asdict(_case(f"{group} {label}", *rest, precision, transposed)),
+                "layout": layout,
+            }
         )
-        for group, label, *rest in SHAPES
+        for table, transposed in ((SHAPES, False), (TRANSPOSED_SHAPES, True))
+        for group, label, *rest in table
         if groups is None or group in groups
     ]
 
@@ -530,7 +558,7 @@ def _args(case):
         list(case.before),
         list(case.after),
         [1] * rank,
-        False,
+        case.transposed,
         [0] * rank,
         1,
     )
@@ -573,6 +601,10 @@ def aten_conv(x, w, b, case):
     """What the CUDA backend gives Inductor: a separate pad for explicit or
     asymmetric padding, a 1-D convolution as a 2-D one, and a contiguous output
     where the graph records one."""
+    if case.transposed:
+        conv = {1: F.conv_transpose1d, 2: F.conv_transpose2d, 3: F.conv_transpose3d}
+        out = conv[len(case.kernel)](x, w, b, case.stride, case.before)
+        return out.contiguous() if case.layout == "cl_to_nchw" else out
     conv = {1: _conv1d, 2: F.conv2d, 3: F.conv3d}[len(case.kernel)]
     if case.explicit_pad or case.before != case.after:
         out = conv(_pad(x, case), w, b, case.stride)
@@ -583,14 +615,21 @@ def aten_conv(x, w, b, case):
 
 def inductor_runner(x, w, b, case):
     torch._dynamo.reset()
+    fn = lambda x, w, b: aten_conv(x, w, b, case)  # noqa: E731
+    if case.transposed:
+        # The backend rewrites a 1-D or 2-D transposed convolution as a
+        # convolution before Inductor sees it.
+        fn = make_fx(
+            lambda x, w, b: _conv_transpose_as_conv(
+                x, w, b, list(case.stride), list(case.before)
+            )
+        )(x, w, b)
     with torch._inductor.config.patch(
         max_autotune=True,
         max_autotune_conv_backends="TRITON",
         max_autotune_gemm_backends="TRITON",
     ):
-        compiled = torch.compile(
-            lambda x, w, b: aten_conv(x, w, b, case), dynamic=False, fullgraph=True
-        )
+        compiled = torch.compile(fn, dynamic=False, fullgraph=True)
         compiled(x, w, b)
     return lambda: compiled(x, w, b)
 
@@ -618,12 +657,12 @@ def _tensors(case):
     channels = case.shape[1]
     fan_in = channels * torch.Size(case.kernel).numel()
     x = torch.randn(case.shape, device="cuda", dtype=dtype)
-    w = (
-        torch.randn(
-            case.out_channels, channels, *case.kernel, device="cuda", dtype=dtype
-        )
-        / fan_in**0.5
+    w_shape = (
+        (channels, case.out_channels)
+        if case.transposed
+        else (case.out_channels, channels)
     )
+    w = torch.randn(*w_shape, *case.kernel, device="cuda", dtype=dtype) / fan_in**0.5
     b = (
         torch.randn(case.out_channels, device="cuda", dtype=dtype)
         if case.bias
@@ -665,7 +704,7 @@ def run_case(case, flush, threshold):
     }
     out = ours()
     nbytes = sum(t.numel() * t.element_size() for t in (x, w, b, out) if t is not None)
-    flops = 2 * out.numel() * w[0].numel()
+    flops = 2 * out.numel() * x.shape[1] * torch.Size(case.kernel).numel()
     speedup = results["inductor"][0] / results["ours"][0]
     significant = speedup >= threshold and results["ours"][2] < results["inductor"][1]
     return {
