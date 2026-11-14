@@ -107,6 +107,24 @@ class Conv1dModule(torch.nn.Module, EagerModelBase):
         return (torch.randn(1, 3, 10),)
 
 
+class DepthwiseConvModule(torch.nn.Module, EagerModelBase):
+    """A depthwise 3x3 convolution with a residual, as in the convolutional
+    position encodings of hybrid vision transformers."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(64, 64, kernel_size=3, padding=1, groups=64)
+
+    def forward(self, x):
+        return x + self.conv(x)
+
+    def get_eager_model(self) -> torch.nn.Module:
+        return self
+
+    def get_example_inputs(self):
+        return (torch.randn(3, 64, 28, 28),)
+
+
 class SdpaModule(torch.nn.Module, EagerModelBase):
     def __init__(self):
         super().__init__()
