@@ -324,6 +324,28 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
   EXPECT_FLOAT_EQ(stack[1]->toDouble(), 3.0);
 }
 
+TEST_F(RegisterPrimOpsTest, TestModTakesSignOfDivisor) {
+  // Same results as Python's %, which these ops implement.
+  const int64_t cases[][3] = {
+      {7, 3, 1},
+      {-5, 8, 3},
+      {5, -8, -3},
+      {-5, -8, -5},
+      {-17, 6, 1},
+      {-16, 8, 0},
+  };
+  for (const char* op_name :
+       {"executorch_prim::mod.int", "executorch_prim::mod.Scalar"}) {
+    for (const auto& c : cases) {
+      EValue values[3] = {EValue(c[0]), EValue(c[1]), EValue(int64_t(0))};
+      EValue* stack[3] = {&values[0], &values[1], &values[2]};
+      getOpsFn(op_name)(context_, Span<EValue*>(stack));
+      EXPECT_EQ(stack[2]->toInt(), c[2])
+          << op_name << "(" << c[0] << ", " << c[1] << ")";
+    }
+  }
+}
+
 TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::et_copy_index.tensor"));
 
