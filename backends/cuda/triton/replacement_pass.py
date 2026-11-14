@@ -15,6 +15,7 @@ from typing import Callable
 
 import torch
 from executorch.backends.cuda.triton import routing
+from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
 from executorch.backends.cuda.triton.kernels.sdpa import (
     _prepare_mask_params,
     _validate_qkv_shapes,
@@ -28,15 +29,31 @@ from torch.fx.passes.infra.pass_base import PassBase, PassResult
 logger = logging.getLogger(__name__)
 triton = torch.ops.triton
 
+CONV_TARGETS = (
+    exir_ops.edge.aten.conv1d.default,
+    exir_ops.edge.aten.conv2d.default,
+    exir_ops.edge.aten.conv3d.default,
+    exir_ops.edge.aten.conv1d.padding,
+    exir_ops.edge.aten.conv2d.padding,
+    exir_ops.edge.aten.conv3d.padding,
+    exir_ops.edge.aten.conv_transpose1d.default,
+    exir_ops.edge.aten.conv_transpose2d.input,
+    exir_ops.edge.aten.conv_transpose3d.input,
+    exir_ops.edge.aten.convolution.default,
+)
+
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
     exir_ops.edge.aten.topk.default: triton.topk,
+    **{target: triton.convolution for target in CONV_TARGETS},
 }
 
 # Ops whose calls are classified before they are replaced (see routing.py):
 # edge op -> planner(node) returning a ``routing.ReplacementPlan``.
-PLANNERS: dict[object, Callable[[Node], routing.ReplacementPlan]] = {}
+PLANNERS: dict[object, Callable[[Node], routing.ReplacementPlan]] = {
+    target: conv_routing.plan for target in CONV_TARGETS
+}
 
 
 _SPLITK_LKV_THRESHOLD = 256
