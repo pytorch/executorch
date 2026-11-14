@@ -8,6 +8,7 @@
 the implicit-GEMM template against an FP64 reference, and models lowered
 through the CUDA backend."""
 
+import dataclasses
 import glob
 import itertools
 import os
@@ -193,6 +194,11 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             ((2, 32, 8), 32, (3,), (2,), (1,), (1,)),
             ((1, 48, 4), 64, (1,), (1,), (0,), (0,)),
             ((1, 5, 13), 7, (4,), (3,), (2,), (1,)),
+            # 3-D: a causal 3x3x3 on an explicitly padded input, a
+            # temporal (3,1,1) s(2,1,1) and a 1x1x1.
+            ((1, 24, 3, 10, 12), 16, (3, 3, 3), (1, 1, 1), (0,) * 3, (0,) * 3),
+            ((2, 32, 9, 4, 5), 32, (3, 1, 1), (2, 1, 1), (0,) * 3, (0,) * 3),
+            ((1, 16, 2, 5, 6), 24, (1, 1, 1), (1, 1, 1), (0,) * 3, (0,) * 3),
         )
         cases = [
             (geometry, layout, layout == "weight_cl" or i % 2 == 0)
@@ -454,6 +460,22 @@ class _Conv1dBlock(nn.Module):
         return self.down(self.same(F.mish(self.conv(x)) + self.res(x)))
 
 
+class _ExplicitPadConv3dBlock(nn.Module):
+    """3-D convolutions as models write them: a causal
+    pad and a 3x3x3, a 1x1x1 shortcut, and a (3,1,1) s(2,1,1) time
+    convolution."""
+
+    def __init__(self, dtype):
+        super().__init__()
+        self.causal = nn.Conv3d(12, 16, 3, dtype=dtype)
+        self.shortcut = nn.Conv3d(12, 16, 1, dtype=dtype)
+        self.time = nn.Conv3d(16, 16, (3, 1, 1), stride=(2, 1, 1), dtype=dtype)
+
+    def forward(self, x):
+        y = self.causal(F.pad(x, (1, 1, 1, 1, 2, 0))) + self.shortcut(x)
+        return self.time(y)
+
+
 class ImplicitGemmLoweringTest(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
@@ -567,3 +589,19 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
             model, inputs, 1, self.fp32_tolerance(), route="required"
         )
         self.assertEqual(output.count("Skipping conv replacement"), 3)
+
+    def test_conv3d_block_lowers_and_runs(self):
+        from executorch.backends.cuda.triton.kernels.conv import routing
+
+        torch.manual_seed(0)
+        model = _ExplicitPadConv3dBlock(torch.bfloat16).to("cuda").eval()
+        inputs = (torch.randn(1, 12, 5, 16, 16, device="cuda", dtype=torch.bfloat16),)
+        # Outside the benchmarked range: Inductor lowers all three.
+        self.lower_and_run(model, inputs, 0, 3e-2)
+        # Every one is correct through the template; the pad stays separate.
+        take_all = tuple(
+            dataclasses.replace(t, worth_routing=lambda call: None)
+            for t in routing.TEMPLATES
+        )
+        with mock.patch.object(routing, "TEMPLATES", take_all):
+            self.lower_and_run(model, inputs, 3, 3e-2)
