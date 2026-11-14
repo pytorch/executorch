@@ -31,8 +31,9 @@ and captures on that same stream (the legacy default stream cannot be
 captured).
 
 To keep captures succeeding:
-- each capture's graph and its memory pool are released right after timing,
-  and the allocator's cache is emptied once it holds a lot of unused memory;
+- each capture's graph is released right after timing, which leaves its
+  memory pool to be freed the next time the allocator's cache is emptied; the
+  cache is emptied once it holds a lot of unused memory;
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
   the tensors given as ``offload`` (the model's weights moved to the GPU for
   the compile) are parked on the CPU while the candidate is timed and restored
@@ -117,10 +118,14 @@ def _default_cuda_bench(
 
 
 def _release_cached_memory_if_large() -> None:
-    # memory_reserved() and memory_allocated() each flatten every allocator
-    # stat, including one entry per CUDA-graph private pool ever captured, so
-    # their cost grows with every capture. Read the two counters once instead.
-    stats = torch._C._cuda_memoryStats(torch.cuda.current_device())
+    # The allocator stats keep an entry for every CUDA-graph private pool not
+    # yet destroyed, and memory_reserved() and memory_allocated() each flatten
+    # and sort all of them in Python. Read the two counters from one nested
+    # call instead; it still builds the per-pool entries, so it grows with the
+    # pool count too, but far more slowly.
+    stats = torch.cuda.memory_stats_as_nested_dict()
+    if not stats:
+        return
     cached = (
         stats["reserved_bytes"]["all"]["current"]
         - stats["allocated_bytes"]["all"]["current"]

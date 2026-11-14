@@ -9,6 +9,7 @@
     python -m pytest backends/cuda/tests/test_cuda_graph_timing.py -v
 """
 
+import gc
 import statistics
 import struct
 import unittest
@@ -158,11 +159,21 @@ class CudaGraphTimingTest(unittest.TestCase):
         with cgt.cuda_graph_timing():
             for _ in range(8):
                 benchmarking.benchmarker.benchmark(lambda: x.add_(1), device="cuda")
+        # Free what earlier tests' mock reference cycles still hold, so no block
+        # is released between reading the counters and the zero-margin check.
+        gc.collect()
         flattened = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
         for threshold, empties in ((flattened - 1, 1), (flattened, 0)):
             with self.subTest(threshold=threshold), mock.patch.object(
                 cgt, "_EMPTY_CACHE_THRESHOLD_BYTES", threshold
-            ), mock.patch.object(torch.cuda, "empty_cache") as empty_cache:
+            ), mock.patch.object(
+                torch.cuda, "empty_cache"
+            ) as empty_cache, mock.patch.object(
+                # memory_reserved() and memory_allocated() flatten through this.
+                torch.cuda.memory,
+                "memory_stats",
+                side_effect=AssertionError("flattened the allocator stats"),
+            ):
                 cgt._release_cached_memory_if_large()
                 self.assertEqual(empty_cache.call_count, empties)
 
