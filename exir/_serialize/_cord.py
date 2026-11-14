@@ -10,11 +10,18 @@ import os
 import shutil
 import tempfile
 import weakref
-from typing import List, Optional, Union
+from typing import IO, List, Optional, Union
 
 
 class FileBackedData:
-    """A byte buffer that stays on disk until explicitly closed."""
+    """A byte buffer that stays on disk until explicitly closed.
+
+    With ``consume_on_write``, the first write into a seekable file moves the data there
+    instead of copying it, so the data is never on disk twice: chunks are copied from
+    the end back to the start, and ``path`` is truncated after each one, while the part
+    of the output not yet written stays a hole. Afterwards ``path`` is empty and the
+    data can't be read again. For a caller that deletes ``path`` after the write.
+    """
 
     _COPY_CHUNK_SIZE = 8 * 1024 * 1024
 
@@ -23,10 +30,13 @@ class FileBackedData:
         path: str,
         cleanup: bool = False,
         sha256: Optional[bytes] = None,
+        consume_on_write: bool = False,
     ) -> None:
         self._path = path
         self._size = os.path.getsize(path)
         self._sha256 = sha256
+        self._consume_on_write = consume_on_write
+        self._moved = False
         self._finalizer = (
             weakref.finalize(self, self._remove, path) if cleanup else None
         )
@@ -56,26 +66,61 @@ class FileBackedData:
     def __len__(self) -> int:
         return self._size
 
+    def _open(self, mode: str = "rb") -> IO[bytes]:
+        if self._moved:
+            raise RuntimeError(
+                f"The data of {self._path} was moved into the file it was written to"
+            )
+        return open(self._path, mode)
+
     def prefix(self, size: int) -> bytes:
-        with open(self._path, "rb") as f:
+        with self._open() as f:
             return f.read(size)
 
     def sha256(self) -> bytes:
         if self._sha256 is None:
             digest = hashlib.sha256()
-            with open(self._path, "rb") as f:
+            with self._open() as f:
                 while chunk := f.read(self._COPY_CHUNK_SIZE):
                     digest.update(chunk)
             self._sha256 = digest.digest()
         return self._sha256
 
     def to_bytes(self) -> bytes:
-        with open(self._path, "rb") as f:
+        with self._open() as f:
             return f.read()
 
     def write_to_file(self, outfile: io.BufferedIOBase) -> None:
-        with open(self._path, "rb") as f:
+        # In append mode every write lands at the end, not at the chunk's offset.
+        if (
+            self._consume_on_write
+            and outfile.seekable()
+            and "a" not in getattr(outfile, "mode", "")
+        ):
+            self._move_to_file(outfile)
+            return
+        with self._open() as f:
             shutil.copyfileobj(f, outfile, length=self._COPY_CHUNK_SIZE)
+
+    def _move_to_file(self, outfile: io.BufferedIOBase) -> None:
+        start = outfile.tell()
+        with self._open("r+b") as source:
+            # Set before any truncation, so a partly moved file is never read as whole.
+            self._moved = True
+            end = self._size
+            while end > 0:
+                begin = max(end - self._COPY_CHUNK_SIZE, 0)
+                source.seek(begin)
+                chunk = source.read(end - begin)
+                if len(chunk) != end - begin:
+                    raise RuntimeError(
+                        f"{self._path} no longer holds the {self._size} bytes to move"
+                    )
+                outfile.seek(start + begin)
+                outfile.write(chunk)
+                source.truncate(begin)
+                end = begin
+        outfile.seek(start + self._size)
 
     def close(self) -> None:
         if self._finalizer is not None:
