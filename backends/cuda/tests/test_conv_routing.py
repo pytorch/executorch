@@ -911,6 +911,33 @@ def _layout_variants(routed_layouts):  # noqa: C901
     )
 
 
+# 1-D convolutions over short sequences: (row, model, input shape, dtype,
+# why Inductor keeps them).
+_CONV1D_ROWS = (
+    (
+        "k5",
+        _dense(nn.Conv1d, 512, 512, 5, torch.float32, padding=2),
+        (1, 512, 16),
+        torch.float32,
+        "512 input channels",
+    ),
+    (
+        "k1",
+        _dense(nn.Conv1d, 512, 1024, 1, torch.float32),
+        (1, 512, 8),
+        torch.float32,
+        "1x1 convolution",
+    ),
+    (
+        "k3 s2",
+        _dense(nn.Conv1d, 512, 512, 3, torch.float32, stride=2, padding=1),
+        (1, 512, 16),
+        torch.float32,
+        "512 input channels",
+    ),
+)
+
+
 def _steps_past(families, shape, c_out, kernel, stride, padding):
     """The calls one step past each limit a benchmarked corner sits on."""
     from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
@@ -1167,3 +1194,36 @@ class ImplicitGemmRoutingTest(_PassTest):
                             self.assertIsNone(reason)
                         else:
                             self.assertIn("not a benchmarked layout", reason)
+
+    def test_conv1d_rows(self):
+        # to_edge leaves a 1-D convolution as aten.convolution, which Inductor
+        # cannot lower, so the template takes it. to_edge_transform_and_lower
+        # leaves aten.conv1d, which the backend lowers as a 2-D convolution;
+        # no row is benchmarked faster, so Inductor keeps it.
+        for row, model, shape, dtype, reason in _CONV1D_ROWS:
+            graphs = _backend_graphs(
+                model, lambda shape=shape, dtype=dtype: torch.randn(shape, dtype=dtype)
+            )
+            for api, graph_module in graphs.items():
+                with self.subTest(row=row, api=api):
+                    targets, logs = self.run_pass(graph_module)
+                    if api == "to_edge_to_backend":
+                        self.assertEqual(
+                            targets.count(torch.ops.triton.convolution.default), 1
+                        )
+                        self.assertIn("required, implicit_gemm template", logs)
+                    else:
+                        self.assertNotIn(torch.ops.triton.convolution.default, targets)
+                        self.assertIn(reason, logs)
+
+    def test_same_padded_conv1d_is_required(self):
+        # The backend decomposes only conv1d.default into a 2-D convolution.
+        graphs = _backend_graphs(
+            _dense(nn.Conv1d, 16, 32, 4, torch.float32, padding="same"),
+            lambda: torch.randn(1, 16, 16),
+        )
+        for api, graph_module in graphs.items():
+            with self.subTest(api=api):
+                targets, logs = self.run_pass(graph_module)
+                self.assertEqual(targets.count(torch.ops.triton.convolution.default), 1)
+                self.assertIn("required, implicit_gemm template", logs)

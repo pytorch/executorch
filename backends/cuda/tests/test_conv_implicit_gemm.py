@@ -28,7 +28,7 @@ _TF32_TOLERANCE = 5e-3
 
 def _reference(x, w, b, stride, before, after):
     pad = [p for pair in zip(reversed(before), reversed(after)) for p in pair]
-    conv = F.conv2d if x.dim() == 4 else F.conv3d
+    conv = {3: F.conv1d, 4: F.conv2d, 5: F.conv3d}[x.dim()]
     bias = None if b is None else b.double()
     return conv(F.pad(x.double(), pad), w.double(), bias, stride)
 
@@ -43,6 +43,8 @@ def _dense_strides(shape, order):
 
 
 def _channels_last(t):
+    if t.dim() == 3:
+        return t.transpose(1, 2).contiguous().transpose(1, 2)
     return t.to(
         memory_format=torch.channels_last if t.dim() == 4 else torch.channels_last_3d
     )
@@ -185,6 +187,12 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             ((1, 20, 9, 7), 3, (2, 4), (1, 3), (2, 0), (0, 5)),
             ((1, 17, 4, 9, 8), 18, (3, 3, 3), (1, 2, 1), (2, 1, 1), (0, 1, 1)),
             ((1, 2, 1, 1), 1, (1, 1), (1, 1), (0, 0), (0, 0)),
+            # 1-D: k5, k3 s2 and k1 convolutions over short sequences, and an
+            # asymmetric pad.
+            ((1, 64, 16), 96, (5,), (1,), (2,), (2,)),
+            ((2, 32, 8), 32, (3,), (2,), (1,), (1,)),
+            ((1, 48, 4), 64, (1,), (1,), (0,), (0,)),
+            ((1, 5, 13), 7, (4,), (3,), (2,), (1,)),
         )
         cases = [
             (geometry, layout, layout == "weight_cl" or i % 2 == 0)
@@ -236,6 +244,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 (0, 0, 0),
                 [(0, 1, 2, 3, 4), (0, 2, 3, 4, 1), (1, 0, 2, 3, 4)],
             ),
+            ((2, 16, 12), 24, (5,), (1,), (2,), [(0, 1, 2), (0, 2, 1), (2, 1, 0)]),
         ):
             x, w, b = self.tensors(shape, c_out, kernel)
             out_shape = (
@@ -430,30 +439,55 @@ class _ThreeChannelBlock(nn.Module):
         return self.proj(self.down(F.relu(self.padded(x)))), self.unpadded(x)
 
 
+class _Conv1dBlock(nn.Module):
+    """1-D convolutions: k5 p2, a k1 residual and a k3 s2 p1 downsample; and a
+    "same"-padded even kernel."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv1d(16, 32, 5, padding=2)
+        self.res = nn.Conv1d(16, 32, 1)
+        self.same = nn.Conv1d(32, 32, 4, padding="same")
+        self.down = nn.Conv1d(32, 32, 3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.down(self.same(F.mish(self.conv(x)) + self.res(x)))
+
+
 class ImplicitGemmLoweringTest(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
             self.skipTest("CUDA required")
 
-    def lower_and_run(self, model, inputs, routed, tolerance):
+    def lower_and_run(
+        self, model, inputs, routed, tolerance, route="optional", to_backend=False
+    ):
+        """Lowers ``model`` with to_edge_transform_and_lower, or with to_edge
+        and to_backend, checks that ``routed`` convolutions take the template
+        on ``route``, and runs the program against eager (outside fbcode)."""
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.exir import (
+            EdgeCompileConfig,
+            to_edge,
+            to_edge_transform_and_lower,
+        )
 
         with torch.no_grad():
             program = torch.export.export(model, inputs, strict=True)
+        partitioner = CudaPartitioner(
+            [CudaBackend.generate_method_name_compile_spec("forward")]
+        )
+        config = EdgeCompileConfig(_check_ir_validity=False)
         with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
-            edge = to_edge_transform_and_lower(
-                program,
-                partitioner=[
-                    CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec("forward")]
-                    )
-                ],
-                compile_config=EdgeCompileConfig(_check_ir_validity=False),
-            )
+            if to_backend:
+                edge = to_edge(program, compile_config=config).to_backend(partitioner)
+            else:
+                edge = to_edge_transform_and_lower(
+                    program, partitioner=[partitioner], compile_config=config
+                )
         output = "\n".join(logs.output)
-        self.assertEqual(output.count("(optional, implicit_gemm template)"), routed)
+        self.assertEqual(output.count(f"({route}, implicit_gemm template)"), routed)
         self.assertIn(f"Replaced {routed} nodes with Triton kernels", output)
 
         from executorch.export.utils import is_fbcode
@@ -476,7 +510,9 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
             enabled=True, allow_tf32=False
         ):
             expected = model(*inputs)
-        for got, want in zip(outputs, expected):
+        if isinstance(expected, torch.Tensor):
+            expected = (expected,)
+        for got, want in zip(outputs, expected, strict=True):
             torch.testing.assert_close(
                 got.float(), want.float().cpu(), atol=tolerance, rtol=tolerance
             )
@@ -517,3 +553,17 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
                 )
                 # The 1x1 convolutions keep Inductor's lowering.
                 self.assertEqual(output.count("Skipping conv replacement"), 2)
+
+    def test_conv1d_block_lowers_and_runs(self):
+        torch.manual_seed(0)
+        model = _Conv1dBlock().to("cuda").eval()
+        inputs = (torch.randn(1, 16, 16, device="cuda"),)
+        # to_edge keeps aten.convolution, which Inductor cannot lower in 1-D:
+        # the template is required. to_edge_transform_and_lower keeps
+        # aten.conv1d, which the backend lowers as a 2-D convolution, except
+        # for the "same" overload.
+        self.lower_and_run(model, inputs, 4, 1e-4, route="required", to_backend=True)
+        output = self.lower_and_run(
+            model, inputs, 1, self.fp32_tolerance(), route="required"
+        )
+        self.assertEqual(output.count("Skipping conv replacement"), 3)
