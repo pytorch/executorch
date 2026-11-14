@@ -8,7 +8,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.transforms import decompose_sdpa
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass
 
 
 class DecomposeScaledDotProductAttentionPass(
@@ -20,22 +20,5 @@ class DecomposeScaledDotProductAttentionPass(
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def call(
-        self, graph_module: torch.fx.GraphModule, allow_non_fake_inputs: bool = True
-    ) -> PassResult:
-        graph = graph_module.graph
-        modified = False
-        for node in list(graph.nodes):
-            if node.target != torch.ops.aten.scaled_dot_product_attention.default:
-                continue
-            if not self.allowed_to_transform(node.meta):
-                continue
-
-            # Decompose with the superclass helper to reuse the shared logic.
-            super()._decompose_sdpa_node(graph_module, node, allow_non_fake_inputs)
-            modified = True
-
-        if modified:
-            graph.eliminate_dead_code()
-            graph_module.recompile()
-        return PassResult(graph_module, modified)
+    def _should_decompose(self, node: torch.fx.Node) -> bool:
+        return self.allowed_to_transform(node.meta) and super()._should_decompose(node)

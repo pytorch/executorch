@@ -20,6 +20,14 @@ from torch.fx.node import Argument
 class DecomposeScaledDotProductAttention(ExportPass):
     """
     Decompose from scaled_dot_product_attention to multiple nodes.
+
+    The standard decomposition uses ``_safe_softmax``, which guards rows whose
+    scores are all ``-inf`` with ``eq``/``any``/``where`` ops. With
+    ``skip_safe_softmax_guard=True``, only zero-dropout SDPA calls without
+    ``attn_mask`` and with a statically nonzero key sequence length are
+    decomposed, using regular ``softmax``. ``is_causal`` is allowed since its
+    top-left aligned mask always keeps the first key. This assumes scores do
+    not become all ``-inf`` through nonfinite inputs or overflow.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -29,24 +37,51 @@ class DecomposeScaledDotProductAttention(ExportPass):
         ("is_causal", False),
     )
 
-    def __init__(self, allow_non_fake_inputs: bool = True) -> None:
+    def __init__(
+        self,
+        allow_non_fake_inputs: bool = True,
+        skip_safe_softmax_guard: bool = False,
+    ) -> None:
         super().__init__()
         # With allow_non_fake_inputs=False, we don't get _unsafe_view ops
         # in the graph, we allow disabling it here.
         self._allow_non_fake_inputs = allow_non_fake_inputs
+        self._skip_safe_softmax_guard = skip_safe_softmax_guard
 
     def call(
         self, graph_module: torch.fx.GraphModule, allow_non_fake_inputs: bool = True
     ) -> PassResult:
         graph = graph_module.graph
+        modified = False
         for node in list(graph.nodes):
             if node.target != torch.ops.aten.scaled_dot_product_attention.default:
                 continue
+            if not self._should_decompose(node):
+                continue
             self._decompose_sdpa_node(graph_module, node, allow_non_fake_inputs)
+            modified = True
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        if modified:
+            graph.eliminate_dead_code()
+            graph_module.recompile()
+        return PassResult(graph_module, modified)
+
+    def _should_decompose(self, node: torch.fx.Node) -> bool:
+        if not self._skip_safe_softmax_guard:
+            return True
+        canonical_args, _, _ = self._canonicalize_sdpa_call(node)
+        _, key, _, attn_mask, dropout_p, _, _ = canonical_args
+        if attn_mask is not None or self._extract_arg_value(dropout_p) != 0.0:
+            return False
+        if not isinstance(key, torch.fx.Node):
+            return False
+        shape = getattr(key.meta.get("val"), "shape", None)
+        return (
+            shape is not None
+            and len(shape) >= 2
+            and isinstance(shape[-2], int)
+            and shape[-2] > 0
+        )
 
     @staticmethod
     def _extract_arg_value(arg: object) -> object:
@@ -199,6 +234,11 @@ class DecomposeScaledDotProductAttention(ExportPass):
             tracing_mode="fake",
             _allow_non_fake_inputs=allow_non_fake_inputs,
         )(*input_tensors)
+
+        if self._skip_safe_softmax_guard:
+            for decomposed_node in decomposed_module.graph.nodes:
+                if decomposed_node.target == torch.ops.aten._safe_softmax.default:
+                    decomposed_node.target = torch.ops.aten.softmax.int
 
         with graph.inserting_before(node):
             self._copy_decomposed_graph(

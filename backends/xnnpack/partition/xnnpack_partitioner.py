@@ -9,6 +9,9 @@ import itertools
 import logging
 from typing import List, Optional, Type, Union
 
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.backends.xnnpack.partition.config import ALL_PARTITIONER_CONFIGS
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -82,6 +85,14 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                 if "program/_program.py" in filename:
                     return True
         return False
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        DecomposeScaledDotProductAttention(skip_safe_softmax_guard=True)(
+            exported_program.graph_module
+        )
+        return exported_program
 
     def partition(self, exported_program):
         """
