@@ -1245,7 +1245,11 @@ jobs:
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
+    # Hours of A100 time per run, so only after merge to main (not on pull
+    # requests, ciflow tags or manual dispatch); pull requests get the
+    # unittest-cuda-* jobs above.
     if: |
+      (
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
@@ -1260,7 +1264,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
-      needs.run-decision.outputs.is-full-run == 'true'
+      needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write

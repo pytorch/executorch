@@ -1166,7 +1166,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
         capture = CudaWeightCollector.current_capture()
         capture.artifact = capture.collector.materialize(
-            weights[0], os.path.dirname(blob_path), capture.device_type_for_weight
+            weights[0], os.path.dirname(blob_path), capture
         )
 
         # Keep AotiBackend's existing path contract intact. The compatibility
@@ -1545,14 +1545,30 @@ class CudaBackend(AotiBackend, BackendDetails):
         check on the cache update. They are re-synthesized as zeros for the lifted
         graph and the serialized blob. This activates automatically with low-memory
         mode. Other (non-low-memory) exports use the stock pass.
+
+        Low-memory methods share their CPU weights, so the CPU source of each
+        moved tensor is recorded on the active weight capture. ``materialize``
+        then reuses a storage an earlier method already wrote from the same
+        source view. The moved storages must keep their source's bytes until
+        ``materialize`` runs.
         """
         from torch.export.passes import move_to_device_pass
 
         if not cls._is_low_memory_mode(compile_specs):
             moved = move_to_device_pass(edge_program, device)
-        else:
-            moved = _move_to_device_resize_kv(edge_program, device)
+            _track_moved_tensors(moved)
+            return moved
+        # Only parameters are recorded: low-memory compilation can hand AOTI CPU
+        # clones of buffers (_compile_time_cpu_clones).
+        sources = {
+            name: edge_program.state_dict[name]
+            for name in edge_program.graph_signature.parameters
+        }
+        moved = _move_to_device_resize_kv(edge_program, device)
         _track_moved_tensors(moved)
+        CudaWeightCollector.current_capture().record_moved_sources(
+            sources, dict(moved.state_dict)
+        )
         return moved
 
     @classmethod

@@ -129,6 +129,26 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         self.assertNotIn("BENCHMARK", smoke)
         self.assertNotIn("batching_bench", smoke)
 
+    def test_full_e2e_runs_only_on_main_pushes(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        e2e_if = (
+            workflow.split("  test-muse-glimmer-cuda-e2e:", 1)[1]
+            .split("    if: |\n", 1)[1]
+            .split("    uses:", 1)[0]
+            .strip()
+        )
+        self.assertTrue(
+            e2e_if.startswith(
+                "github.event_name == 'push' && github.ref == 'refs/heads/main' && ("
+            )
+        )
+        self.assertTrue(e2e_if.endswith(")"))
+        self.assertEqual(e2e_if.count("("), e2e_if.count(")"))
+        unit_if = workflow.split("  unittest-cuda-muse-glimmer-batching:", 1)[1].split(
+            "    uses:", 1
+        )[0]
+        self.assertNotIn("github.event_name", unit_if)
+
     def test_owned_shell_and_unit_workflow_syntax(self):
         for script in ("test_model_e2e.sh", "build_muse_glimmer_batching_smoke.sh"):
             result = subprocess.run(["bash", "-n", str(SCRIPTS / script)])

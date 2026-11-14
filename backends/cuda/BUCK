@@ -5,6 +5,18 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "cpu_count",
+    srcs = [
+        "utils/__init__.py",
+        "utils/cpu_count.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "coalesced_int4_tensor",
     srcs = [
         "coalesced_int4_tensor.py",
@@ -188,6 +200,7 @@ fbcode_target(
     ],
     deps = [
         ":autotune",
+        ":cpu_count",
         "//caffe2:torch",
     ],
 )
