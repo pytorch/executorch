@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Python drivers for the version-1 ``hf_static`` float-cache contract."""
+"""Python drivers for the ``hf_static`` contract (versions 1 and 2)."""
 
 from typing import Callable, Dict, List, Sequence
 
@@ -157,13 +157,22 @@ class HfStaticRunner:
             or not 1 <= version <= IO_CONTRACT_VERSION
         ):
             raise ValueError(
-                f"Unsupported hf_static contract version {version!r}; supported: 1."
+                f"Unsupported hf_static contract version {version!r}; "
+                f"supported: 1..{IO_CONTRACT_VERSION}."
             )
         if constant_method(program, "get_io_contract") != IO_CONTRACT:
             raise ValueError("Expected an hf_static program.")
         length = constant_method(program, "get_max_seq_len")
         layers = constant_method(program, "get_n_layers")
         dtype_name = constant_method(program, "get_cache_dtype")
+        key_layout = (
+            constant_method(program, "get_key_layout") if version >= 2 else "hf"
+        )
+        if key_layout not in ("hf", "transposed"):
+            raise ValueError(f"Unsupported key layout {key_layout!r}.")
+        cache_dtypes = (torch.float16, torch.float32) + (
+            (torch.uint8, torch.uint16) if version >= 2 else ()
+        )
         if not isinstance(length, int) or isinstance(length, bool) or length <= 0:
             raise ValueError("get_max_seq_len must be a positive integer.")
         if not isinstance(layers, int) or isinstance(layers, bool) or layers <= 0:
@@ -207,6 +216,8 @@ class HfStaticRunner:
             for i in range(layers):
                 k, v, counter = state_shapes[3 * i : 3 * i + 3]
                 kd, vd, cd = state_dtypes[3 * i : 3 * i + 3]
+                if key_layout == "transposed" and len(k) == 4:
+                    k = torch.Size((k[0], k[1], k[3], k[2]))
                 if (
                     len(k) != 4
                     or k != v
@@ -219,11 +230,11 @@ class HfStaticRunner:
                     raise ValueError(f"{name}: invalid cache shapes or counter.")
                 if (
                     kd != vd
-                    or kd not in (torch.float16, torch.float32)
+                    or kd not in cache_dtypes
                     or dtype_name != str(kd).removeprefix("torch.")
                 ):
                     raise ValueError(
-                        f"{name}: get_cache_dtype does not match the float cache inputs."
+                        f"{name}: get_cache_dtype does not match the cache inputs."
                     )
                 for info in state_inputs[3 * i : 3 * i + 3]:
                     if info.is_memory_planned() or info.device() != "cpu":
@@ -234,7 +245,7 @@ class HfStaticRunner:
                     raise ValueError(
                         f"{name}: mask/cache width mismatch or query longer than cache."
                     )
-                cache_shapes.extend((k, v))
+                cache_shapes.extend(state_shapes[3 * i : 3 * i + 2])
             if query > length or meta.num_outputs() not in (
                 1 + 3 * layers,
                 1 + 6 * layers,
@@ -286,6 +297,7 @@ class HfStaticRunner:
                 token_dtype=dtypes[0],
                 position_dtype=dtypes[1 + masks],
                 window_masks=[n for n, w in widths.items() if w < length],
+                key_layout=key_layout,
             )
             self.methods[name] = method
         if DECODE_METHOD not in self.methods:

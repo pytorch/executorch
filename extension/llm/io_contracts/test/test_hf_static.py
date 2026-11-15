@@ -374,8 +374,78 @@ class TestHfStaticRunner(unittest.TestCase):
             self._expected(self.PROMPT, 8),
         )
 
+    @torch.no_grad()
+    def _v2_buffer(self, sliding="full", attention="split"):
+        programs = {
+            name: hf_static.to_hf_static(
+                hf_static.specialize(
+                    self.hf_graph,
+                    q,
+                    self.CONTEXT,
+                    config=self.model.config,
+                    sliding=sliding,
+                ),
+                attention=attention,
+                key_layout="transposed",
+            )
+            for name, q in (("decode", 1), ("prefill", self.CHUNK))
+        }
+        constants = {
+            "get_io_contract": "hf_static",
+            "get_io_contract_version": 2,
+            "get_key_layout": "transposed",
+            "get_max_seq_len": self.CONTEXT,
+            "get_n_layers": 2,
+            "get_cache_dtype": "float32",
+            "get_eos_ids": [],
+        }
+        edge = to_edge(
+            programs,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            constant_methods=constants,
+        )
+        return (
+            programs,
+            edge.to_executorch(
+                ExecutorchBackendConfig(
+                    run_reinplace_pass=True,
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_graph_input=False, alloc_graph_output=False
+                    ),
+                )
+            ).buffer,
+        )
+
+    def test_v2_transposed_keys_with_full_length_sliding_caches(self):
+        programs, buffer = self._v2_buffer()
+        layout = hf_static.HfStaticLayout.of(programs["decode"])
+        self.assertEqual(layout.key_layout, "transposed")
+        self.assertEqual(
+            [tuple(s) for s in layout.cache_shapes[:2]],
+            [(1, 2, 16, self.CONTEXT), (1, 2, self.CONTEXT, 16)],
+        )
+        runner = HfStaticRunner(_PortableProgram(buffer))
+        self.assertEqual(
+            runner.generate(self.PROMPT, 20), self._expected(self.PROMPT, 20)
+        )
+
+    def test_v2_per_head_attention(self):
+        _, buffer = self._v2_buffer(attention="sha")
+        runner = HfStaticRunner(_PortableProgram(buffer))
+        self.assertEqual(
+            runner.generate(self.PROMPT, 20), self._expected(self.PROMPT, 20)
+        )
+
+    def test_v2_requires_a_known_key_layout(self):
+        _, buffer = self._v2_buffer()
+        for layout in ("hf", "columns", None):
+            with self.subTest(layout=layout), self.assertRaises(ValueError):
+                HfStaticRunner(
+                    _Program(_PortableProgram(buffer), {"get_key_layout": layout})
+                )
+
     def test_rejects_newer_or_invalid_versions(self):
-        for version in (2, 0, None, True):
+        for version in (3, 0, None, True):
             with self.subTest(version=version), self.assertRaisesRegex(
                 ValueError, "contract version"
             ):
@@ -530,7 +600,7 @@ class TestHfStaticRunner(unittest.TestCase):
             name: SimpleNamespace(metadata=Metadata(program.load_method(name).metadata))
             for name in ("decode", "prefill")
         }
-        with self.assertRaisesRegex(ValueError, "float cache inputs"):
+        with self.assertRaisesRegex(ValueError, "cache inputs"):
             HfStaticRunner(_Program(program, {"get_cache_dtype": "float64"}, methods))
 
     def test_rejects_memory_planned_cache_state(self):

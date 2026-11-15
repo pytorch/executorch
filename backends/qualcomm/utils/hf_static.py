@@ -25,7 +25,6 @@ from executorch.extension.llm.export.hf_static import (
     HfStaticLayout,
     inplace_input_writes,
     IO_CONTRACT,
-    IO_CONTRACT_VERSION,
     PREFILL_METHOD,
     sliding_windows,
     specialize,
@@ -339,7 +338,7 @@ def _lower(
     constant_methods = {
         **metadata,
         "get_io_contract": IO_CONTRACT,
-        "get_io_contract_version": IO_CONTRACT_VERSION,
+        "get_io_contract_version": 1,
         "get_max_seq_len": max_seq_len,
         "get_n_layers": layout.n_layers,
         "get_cache_dtype": str(layout.dtype).removeprefix("torch."),

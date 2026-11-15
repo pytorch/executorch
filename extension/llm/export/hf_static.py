@@ -27,7 +27,9 @@ from torch.export import ExportedProgram
 aten = torch.ops.aten
 IO_CONTRACT = "hf_static"
 # 1: float caches, fixed prefill/decode methods, absolute counters and padding masks.
-IO_CONTRACT_VERSION = 1
+# 2: adds keys stored [1, H, D, L] (get_key_layout) and integer caches whose
+#    contents the runner treats as opaque.
+IO_CONTRACT_VERSION = 2
 PREFILL_METHOD = "prefill"
 DECODE_METHOD = "decode"
 CACHE_PREFIX = "past_key_values_"
@@ -53,6 +55,8 @@ class HfStaticLayout:
     token_dtype: torch.dtype = torch.int64
     position_dtype: torch.dtype = torch.int64
     window_masks: List[str] = field(default_factory=list)
+    # "hf": keys [1, H, L, D] as HF stores them; "transposed": [1, H, D, L].
+    key_layout: str = "hf"
 
     @classmethod
     def of(cls, exported_program: ExportedProgram) -> "HfStaticLayout":
@@ -73,8 +77,9 @@ class HfStaticLayout:
             raise ValueError(
                 "Expected per layer keys, values and a counter as the cache inputs."
             )
-        context = exported_program.graph_module.meta.get(
-            "hf_static_max_seq_len", max(c.shape[2] for c in caches)
+        meta = exported_program.graph_module.meta
+        context = meta.get(
+            "hf_static_max_seq_len", max(c.shape[2] for c in caches[1::2])
         )
         return cls(
             input_names=names,
@@ -92,9 +97,8 @@ class HfStaticLayout:
             state_dtypes=[v.dtype for v in state],
             token_dtype=vals[names.index("input_ids")].dtype,
             position_dtype=vals[names.index("position_ids")].dtype,
-            window_masks=exported_program.graph_module.meta.get(
-                "hf_static_window_masks", []
-            ),
+            window_masks=meta.get("hf_static_window_masks", []),
+            key_layout=meta.get("hf_static_key_layout", "hf"),
         )
 
 
@@ -128,8 +132,12 @@ def specialize(  # noqa: C901
     max_seq_len: int,
     *,
     config,
+    sliding: str = "window",
 ) -> ExportedProgram:
-    """Re-export at fixed lengths, preserving config-defined sliding caches."""
+    """Re-export at fixed lengths. Sliding layers keep HF's window-sized caches
+    (``window``) or take context-length caches with the window masked (``full``)."""
+    if sliding not in ("window", "full"):
+        raise ValueError(f"Unknown sliding mode {sliding!r}.")
     if not 0 < query_len <= max_seq_len:
         raise ValueError("query_len must be positive and no longer than max_seq_len.")
     windows = sliding_windows(config)
@@ -141,7 +149,9 @@ def specialize(  # noqa: C901
         raise ValueError(
             "sliding_window is shorter than context but no sliding layer was detected."
         )
-    if any(query_len > min(w, max_seq_len) for w in windows if w is not None):
+    if sliding == "window" and any(
+        query_len > min(w, max_seq_len) for w in windows if w is not None
+    ):
         raise ValueError("query_len exceeds the smallest sliding cache length.")
     args, kwargs = exported_program.example_inputs
     flat, spec = pytree.tree_flatten((args, kwargs))
@@ -152,7 +162,10 @@ def specialize(  # noqa: C901
     ]
     if len(user) != len(flat):
         raise ValueError("The program's example inputs don't match its user inputs.")
-    lengths = [max_seq_len if w is None else min(w, max_seq_len) for w in windows]
+    lengths = [
+        max_seq_len if w is None or sliding == "full" else min(w, max_seq_len)
+        for w in windows
+    ]
     gm = exported_program.module()
     attention_layers = _cache_attention(gm.graph)
     if len(attention_layers) != len(windows):
@@ -170,7 +183,7 @@ def specialize(  # noqa: C901
                 "Layers with different cache lengths require separate masks."
             )
         masks[mask.name] = lengths[i]
-        if windows[i] is not None:
+        if windows[i] is not None and sliding == "window":
             window_masks.append(mask.name)
     static = []
     state_index = 0
@@ -206,6 +219,7 @@ def specialize(  # noqa: C901
         hf_static_max_seq_len=max_seq_len,
         hf_static_windows=windows,
         hf_static_window_masks=list(dict.fromkeys(window_masks)),
+        hf_static_sliding=sliding,
     )
     return program
 
@@ -329,23 +343,45 @@ def _sliding_writes(gm, cache, rows, start, valid, window: int, steps: int):
     )
 
 
+def _window_full_mask(gm, start, length: int, steps: int, window: int):
+    """[context-length cache slots | the step's rows] each query row sees
+    within ``window`` positions behind it (slot j holds position j)."""
+    call = _cpu_call(gm.graph)
+    slots = _constant(
+        gm, f"_hf_static_slots_{length}", torch.arange(length).view(1, 1, 1, length)
+    )
+    rows = _constant(
+        gm, f"_hf_static_rows_{steps}", torch.arange(steps).view(1, 1, steps, 1)
+    )
+    cols = _constant(
+        gm, f"_hf_static_cols_{steps}", torch.arange(steps).view(1, 1, 1, steps)
+    )
+    behind = call(aten.sub.Tensor, (call(aten.add.Tensor, (rows, start)), slots))
+    past = call(
+        aten.logical_and.default,
+        (call(aten.lt.Tensor, (slots, start)), call(aten.lt.Scalar, (behind, window))),
+    )
+    new = call(
+        aten.logical_and.default,
+        (
+            call(aten.le.Tensor, (cols, rows)),
+            call(aten.lt.Scalar, (call(aten.sub.Tensor, (rows, cols)), window)),
+        ),
+    )
+    return call(aten.cat.default, ([past, new], -1))
+
+
 def _attention_concat(
-    call, q, cache_k, cache_v, k_new, v_new, keep, scale, masked_softmax
+    call, q, cache_kt, cache_v, k_new, v_new, keep, scale, masked_softmax
 ):
     """One QK and one PV matmul over the cache and current-token rows, with
     grouped-query heads expanded in K and V for QNN's per-head split (mha2sha)."""
     _, hq, steps, d = q.meta["val"].shape
-    _, hkv, length, _ = cache_k.meta["val"].shape
+    _, hkv, length, _ = cache_v.meta["val"].shape
     rep, total = hq // hkv, length + steps
     k_all = call(
         aten.cat.default,
-        (
-            [
-                call(aten.transpose.int, (cache_k, 2, 3)),
-                call(aten.transpose.int, (k_new, 2, 3)),
-            ],
-            3,
-        ),
+        ([cache_kt, call(aten.transpose.int, (k_new, 2, 3))], 3),
     )
     v_all = call(aten.cat.default, ([cache_v, v_new], 2))
     if rep > 1:
@@ -365,8 +401,42 @@ def _attention_concat(
     return call(aten.matmul.default, (probs, v_all))
 
 
+def _attention_sha(
+    call, q, cache_kt, cache_v, k_new, v_new, keep, scale, masked_softmax
+):
+    """One single-head attention per query head over [cache, the step's rows],
+    each KV head's keys and values concatenated once for its query heads: the
+    per-head graph QNN's mha2sha makes of the concat form, written out (QNN
+    cannot expand quantized 16-bit K/V for grouped-query heads)."""
+    _, hq, steps, d = q.meta["val"].shape
+    _, hkv, _, _ = cache_v.meta["val"].shape
+    rep = hq // hkv
+
+    def head(t, i):
+        return call(aten.slice.Tensor, (t, 1, i, i + 1))
+
+    outs = []
+    for g in range(hkv):
+        kg = call(
+            aten.cat.default,
+            ([head(cache_kt, g), call(aten.transpose.int, (head(k_new, g), 2, 3))], 3),
+        )
+        vg = call(aten.cat.default, ([head(cache_v, g), head(v_new, g)], 2))
+        for r in range(rep):
+            scores = call(
+                aten.mul.Tensor,
+                (call(aten.matmul.default, (head(q, g * rep + r), kg)), scale),
+            )
+            probs = call(
+                aten._softmax.default,
+                (_masked(call, scores, keep, masked_softmax), -1, False),
+            )
+            outs.append(call(aten.matmul.default, (probs, vg)))
+    return call(aten.cat.default, (outs, 1))
+
+
 def _attention_split(
-    call, q, cache_k, cache_v, k_new, v_new, keep, scale, masked_softmax
+    call, q, cache_kt, cache_v, k_new, v_new, keep, scale, masked_softmax
 ):
     """The cache and current-token rows in separate matmuls, grouped-query heads folded
     into the query rows, so each KV head's cache is read once and never copied:
@@ -381,16 +451,14 @@ def _attention_split(
 
     ``keep`` is the step mask repeated for each query head of a KV group."""
     _, hq, steps, d = q.meta["val"].shape
-    _, hkv, length, _ = cache_k.meta["val"].shape
+    _, hkv, length, _ = cache_v.meta["val"].shape
     rep = hq // hkv
     qg = call(aten.reshape.default, (q, [1, hkv, rep * steps, d]))
     scores = call(
         aten.cat.default,
         (
             [
-                call(
-                    aten.matmul.default, (qg, call(aten.transpose.int, (cache_k, 2, 3)))
-                ),
+                call(aten.matmul.default, (qg, cache_kt)),
                 call(
                     aten.matmul.default, (qg, call(aten.transpose.int, (k_new, 2, 3)))
                 ),
@@ -495,6 +563,8 @@ def _rewrite_attention(  # noqa: C901
     masked_softmax: bool,
     form: str,
     windows: Sequence[Optional[int]],
+    key_layout: str = "hf",
+    sliding_mode: str = "window",
 ) -> int:
     """Attend over incoming caches and current-token rows, then update caches on CPU."""
     graph = gm.graph
@@ -504,7 +574,11 @@ def _rewrite_attention(  # noqa: C901
         raise ValueError(
             f"Expected {len(windows)} cache attention layers, matched {len(layers)}."
         )
-    attention = {"concat": _attention_concat, "split": _attention_split}[form]
+    attention = {
+        "concat": _attention_concat,
+        "split": _attention_split,
+        "sha": _attention_sha,
+    }[form]
     masks, windowed = {}, {}
     for i, (sdpa, k_write, v_write) in enumerate(layers):
         q = sdpa.args[0]
@@ -512,9 +586,12 @@ def _rewrite_attention(  # noqa: C901
         if mask is None or mask.meta["val"].dtype != torch.bool:
             raise ValueError(f"{sdpa.name}: expected a bool attention mask.")
         cache_k, cache_v = k_write.args[0], v_write.args[0]
-        length, steps = cache_k.meta["val"].shape[2], q.meta["val"].shape[2]
-        rep = q.meta["val"].shape[1] // cache_k.meta["val"].shape[1]
+        length, steps = cache_v.meta["val"].shape[2], q.meta["val"].shape[2]
+        rep = q.meta["val"].shape[1] // cache_v.meta["val"].shape[1]
         sliding = windows[i] is not None
+        full_window = sliding and sliding_mode == "full"
+        if sliding and not full_window and key_layout != "hf":
+            raise ValueError("Window-sized sliding caches require HF's key layout.")
         mask.meta.setdefault("custom", {})[CPU_META] = True
         for write in (k_write, v_write):
             write.meta.setdefault("custom", {})[CPU_META] = True
@@ -534,11 +611,12 @@ def _rewrite_attention(  # noqa: C901
                     aten.view.default,
                     (cpu(aten.slice.Tensor, (index, 0, 0, 1)), [1, 1, 1, 1]),
                 )
-                keep = (
-                    _window_mask(gm, start, length, steps)
-                    if sliding
-                    else _step_mask(gm, mask, index, start, length, steps)
-                )
+                if full_window:
+                    keep = _window_full_mask(gm, start, length, steps, windows[i])
+                elif sliding:
+                    keep = _window_mask(gm, start, length, steps)
+                else:
+                    keep = _step_mask(gm, mask, index, start, length, steps)
                 masks[mask] = (keep, start)
             keep, start = masks[mask]
             if form == "split" and rep > 1:
@@ -548,10 +626,15 @@ def _rewrite_attention(  # noqa: C901
                     )
                 keep = masks[(mask, rep)]
             scale = sdpa.args[6] if len(sdpa.args) > 6 else sdpa.kwargs.get("scale")
+            cache_kt = (
+                cache_k
+                if key_layout == "transposed"
+                else call(aten.transpose.int, (cache_k, 2, 3))
+            )
             out = attention(
                 call,
                 q,
-                cache_k,
+                cache_kt,
                 cache_v,
                 k_write.args[3],
                 v_write.args[3],
@@ -562,12 +645,22 @@ def _rewrite_attention(  # noqa: C901
         out.meta = dict(sdpa.meta)
         sdpa.replace_all_uses_with(out)
         graph.erase_node(sdpa)
-        if sliding:
+        if sliding and not full_window:
             windowed[k_write] = windowed[v_write] = (mask, start, length, steps)
     graph.eliminate_dead_code()
     output = next(n for n in graph.nodes if n.op == "output")
     valid = {}
     for _, k_write, v_write in layers:
+        if key_layout == "transposed":
+            with graph.inserting_before(output):
+                rows = call(aten.transpose.int, (k_write.args[3], 2, 3))
+                k_t = _cpu_call(graph)(
+                    aten.index_copy_.default,
+                    (k_write.args[0], 3, k_write.args[2], rows),
+                )
+            k_write.replace_all_uses_with(k_t)
+            graph.erase_node(k_write)
+            k_write = k_t
         for write in (k_write, v_write):
             if write not in windowed:
                 output.prepend(write)
@@ -597,16 +690,35 @@ def to_hf_static(
     exported_program: ExportedProgram,
     masked_softmax: bool = False,
     attention: str = "split",
+    key_layout: str = "hf",
+    int32_token_ids: bool = False,
 ) -> ExportedProgram:
-    """Rewrite a specialized graph without changing its per-step signature."""
-    if attention not in ("split", "concat"):
+    """Rewrite a specialized graph keeping its per-step signature; with
+    ``key_layout="transposed"`` the key caches are [1, H, D, L]. With
+    ``int32_token_ids`` the embedding gathers by int32 ids, converted on CPU
+    (the input stays HF's int64)."""
+    if attention not in ("split", "concat", "sha"):
         raise ValueError(f"Unknown attention form {attention!r}.")
-    gm = exported_program.module()
+    if key_layout not in ("hf", "transposed"):
+        raise ValueError(f"Unknown key layout {key_layout!r}.")
+    reshaped = key_layout != "hf"
+    # A plain module: the exported one checks inputs against the old shapes.
+    gm = exported_program.module(check_guards=not reshaped)
+    if reshaped:
+        gm = torch.fx.GraphModule(gm, gm.graph)
     graph = gm.graph
     position_ids = next(
         n for n in graph.nodes if n.op == "placeholder" and n.name == "position_ids"
     )
     layout = HfStaticLayout.of(exported_program)
+    if int32_token_ids:
+        for node in list(graph.nodes):
+            if node.target == aten.embedding.default:
+                with graph.inserting_before(node):
+                    ids = _cpu_call(graph)(
+                        aten._to_copy.default, (node.args[1],), {"dtype": torch.int32}
+                    )
+                node.replace_input_with(node.args[1], ids)
     _fold_small_constants(gm)
     # Only RoPE depends on the position alone; the cache writes follow the counters.
     position_ids.meta.setdefault("custom", {})[CPU_META] = True
@@ -628,7 +740,14 @@ def to_hf_static(
     windows = exported_program.graph_module.meta.get(
         "hf_static_windows", [None] * layout.n_layers
     )
-    matched = _rewrite_attention(gm, masked_softmax, attention, windows)
+    matched = _rewrite_attention(
+        gm,
+        masked_softmax,
+        attention,
+        windows,
+        key_layout,
+        exported_program.graph_module.meta.get("hf_static_sliding", "window"),
+    )
     if matched != layout.n_layers:
         raise ValueError(
             f"Expected {layout.n_layers} cache attention layers, matched {matched}."
@@ -637,9 +756,16 @@ def to_hf_static(
     graph.lint()
     gm.recompile()
     args, kwargs = copy.deepcopy(exported_program.example_inputs)
+    flat, spec = pytree.tree_flatten((args, kwargs))
+    keys = set([n for n in layout.input_names if n.startswith(CACHE_PREFIX)][0::3])
+    for i, name in enumerate(layout.input_names):
+        if key_layout == "transposed" and name in keys:
+            flat[i] = flat[i].transpose(2, 3).contiguous()
+    args, kwargs = pytree.tree_unflatten(flat, spec)
     with torch.fx.traceback.preserve_node_meta():
         program = torch.export.export(gm, args, kwargs, strict=False)
     program.graph_module.meta.update(exported_program.graph_module.meta)
+    program.graph_module.meta.update(hf_static_key_layout=key_layout)
     return program
 
 
