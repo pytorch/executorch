@@ -9,17 +9,24 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_eq_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_eq_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ge_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ge_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_gt_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_gt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_le_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_le_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_lt_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_lt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ne_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ne_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/logical_not_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,21 +35,36 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-// Shared uniform for the byte-packed-bool op family. `scalar` is unused (0) for
-// the scalar-less (unary) logical_not variant.
+// Shared uniform for the byte-packed-bool op family. The scalar fields are
+// unused (0) for the scalar-less (unary) logical_not variant; int_scalar and
+// float_compare are read by the int32-input compare variants only.
 struct BoolOpParams {
   uint32_t num_elements;
   float scalar;
-  uint32_t _pad1;
-  uint32_t _pad2;
+  int32_t int_scalar;
+  uint32_t float_compare;
 };
+static_assert(sizeof(BoolOpParams) == 16, "BoolOpParams must be 16 bytes");
 
-float read_scalar(WebGPUGraph& graph, int id, const char* op_name) {
+// An Int scalar compares an int32 input in int32; a Double one compares it in
+// fp32, as PyTorch promotes an integer tensor against a float scalar.
+BoolOpParams read_scalar(WebGPUGraph& graph, int id, const char* op_name) {
+  BoolOpParams p = {};
   if (graph.get_value_type(id) == WebGPUGraph::ValueType::Double) {
-    return static_cast<float>(graph.get_double(id));
+    p.scalar = static_cast<float>(graph.get_double(id));
+    p.float_compare = 1u;
+    return p;
   }
   if (graph.get_value_type(id) == WebGPUGraph::ValueType::Int) {
-    return static_cast<float>(graph.get_int(id));
+    const int64_t v = graph.get_int(id);
+    if (v < std::numeric_limits<int32_t>::min() ||
+        v > std::numeric_limits<int32_t>::max()) {
+      throw std::runtime_error(
+          std::string(op_name) + ": int scalar is outside int32 range");
+    }
+    p.scalar = static_cast<float>(v);
+    p.int_scalar = static_cast<int32_t>(v);
+    return p;
   }
   throw std::runtime_error(std::string(op_name) + ": scalar is not int/double");
 }
@@ -50,14 +72,14 @@ float read_scalar(WebGPUGraph& graph, int id, const char* op_name) {
 // Dispatch a byte-packed-bool op (scalar compares + logical_not): read an input
 // buffer, write a u32 output packing 4 bool bytes per word, one thread per word
 // (no inter-thread write race). The caller validates dtypes/shapes and supplies
-// `numel` (logical element count = prod(dims)), the scalar (0 when unused), and
-// the per-variant shader from boolean_op.yaml.
+// `numel` (logical element count = prod(dims)), the scalar params (0 when
+// unused), and the per-variant shader from boolean_op.yaml.
 void dispatch_bool_op(
     WebGPUGraph& graph,
     int self_id,
     int out_id,
     uint32_t numel,
-    float scalar,
+    BoolOpParams params,
     const char* wgsl,
     uint32_t wg_size_x,
     const char* op_name) {
@@ -79,7 +101,7 @@ void dispatch_bool_op(
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  BoolOpParams params = {numel, scalar, 0u, 0u};
+  params.num_elements = numel;
   WGPUBuffer params_buf =
       utils::make_uniform(device, &params, sizeof(BoolOpParams));
   graph.add_uniform_buffer_bytes(sizeof(BoolOpParams));
@@ -103,7 +125,7 @@ void dispatch_bool_op(
 
   WGPUBuffer p_buf = params_buf;
   auto resize =
-      [self_id, out_id, scalar, wg_size, dispatch_idx, p_buf, op_name](
+      [self_id, out_id, params, wg_size, dispatch_idx, p_buf, op_name](
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(self_id);
         uint32_t n = 1u;
@@ -111,7 +133,8 @@ void dispatch_bool_op(
           n *= static_cast<uint32_t>(x);
         }
         g.set_cur_dims(out_id, d);
-        BoolOpParams p = {n, scalar, 0u, 0u};
+        BoolOpParams p = params;
+        p.num_elements = n;
         wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
         const uint32_t nw = (n + 3u) / 4u;
         g.dispatch_at(dispatch_idx).workgroup_count_x =
@@ -122,24 +145,28 @@ void dispatch_bool_op(
   graph.own_uniform_buffer(params_buf);
 }
 
-// cmp(self[i], scalar) -> byte-packed bool. args: [self, scalar, out].
+// cmp(self[i], scalar) -> byte-packed bool. args: [self, scalar, out]. An
+// fp32 self uses `wgsl`, an int32 self (int64 inputs are downcast) `wgsl_int`.
 void compare_dispatch(
     WebGPUGraph& graph,
     const std::vector<int>& args,
     const char* wgsl,
+    const char* wgsl_int,
     uint32_t wg_size_x,
     const char* op_name) {
   const int self_id = args.at(0);
   const int out_id = args.at(args.size() - 1);
-  const float scalar = read_scalar(graph, args.at(1), op_name);
+  const BoolOpParams params = read_scalar(graph, args.at(1), op_name);
 
   const auto& self_tensor = graph.get_tensor(self_id);
   const auto& out_tensor = graph.get_tensor(out_id);
   if (self_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
     throw std::runtime_error(std::string(op_name) + ": null buffer binding");
   }
-  if (self_tensor.nbytes % sizeof(float) != 0) {
-    throw std::runtime_error(std::string(op_name) + ": self is not fp32");
+  if (self_tensor.is_bool || self_tensor.elem_size != 4 ||
+      self_tensor.nbytes % sizeof(float) != 0) {
+    throw std::runtime_error(
+        std::string(op_name) + ": self is not fp32 or int32");
   }
   const uint32_t numel =
       static_cast<uint32_t>(self_tensor.nbytes / sizeof(float));
@@ -148,26 +175,69 @@ void compare_dispatch(
         std::string(op_name) + ": out is not a 1-byte (bool) tensor");
   }
   dispatch_bool_op(
-      graph, self_id, out_id, numel, scalar, wgsl, wg_size_x, op_name);
+      graph,
+      self_id,
+      out_id,
+      numel,
+      params,
+      self_tensor.is_int ? wgsl_int : wgsl,
+      wg_size_x,
+      op_name);
 }
 
 void eq_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareEqWGSL, kCompareEqWorkgroupSizeX, "eq.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareEqWGSL,
+      kCompareEqIntWGSL,
+      kCompareEqWorkgroupSizeX,
+      "eq.Scalar");
 }
 void ne_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareNeWGSL, kCompareNeWorkgroupSizeX, "ne.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareNeWGSL,
+      kCompareNeIntWGSL,
+      kCompareNeWorkgroupSizeX,
+      "ne.Scalar");
 }
 void le_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareLeWGSL, kCompareLeWorkgroupSizeX, "le.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareLeWGSL,
+      kCompareLeIntWGSL,
+      kCompareLeWorkgroupSizeX,
+      "le.Scalar");
 }
 void ge_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareGeWGSL, kCompareGeWorkgroupSizeX, "ge.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareGeWGSL,
+      kCompareGeIntWGSL,
+      kCompareGeWorkgroupSizeX,
+      "ge.Scalar");
 }
 void lt_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareLtWGSL, kCompareLtWorkgroupSizeX, "lt.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareLtWGSL,
+      kCompareLtIntWGSL,
+      kCompareLtWorkgroupSizeX,
+      "lt.Scalar");
 }
 void gt_scalar_impl(WebGPUGraph& g, const std::vector<int>& a) {
-  compare_dispatch(g, a, kCompareGtWGSL, kCompareGtWorkgroupSizeX, "gt.Scalar");
+  compare_dispatch(
+      g,
+      a,
+      kCompareGtWGSL,
+      kCompareGtIntWGSL,
+      kCompareGtWorkgroupSizeX,
+      "gt.Scalar");
 }
 
 // logical_not: byte-packed bool -> byte-packed bool. args: [self, out].
@@ -189,7 +259,7 @@ void logical_not_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       self_id,
       out_id,
       numel,
-      0.0f,
+      BoolOpParams{},
       kLogicalNotWGSL,
       kLogicalNotWorkgroupSizeX,
       "logical_not");
