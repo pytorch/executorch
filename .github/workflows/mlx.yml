@@ -24,6 +24,7 @@ on:
       - examples/models/muse-glimmer/**
       - examples/models/nemotron3_diarization/**
       - examples/models/parakeet/**
+      - examples/models/phonon/**
       - examples/models/supertonic/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
@@ -408,6 +409,41 @@ jobs:
         # Ensure the shared install still supplies the speech/LLM runner targets.
         test -f cmake-out/lib/libextension_asr_runner.a
         test -f cmake-out/lib/libextension_llm_runner.a
+
+  test-mlx-phonon:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-phonon
+      runner: macos-15-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        # Top-level presets build with unlimited make -j and per-model presets serially.
+        export CMAKE_BUILD_PARALLEL_LEVEL=$(( $(sysctl -n hw.ncpu) - 1 ))
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} pip install safetensors tokenizers huggingface_hub
+        ${CONDA_RUN} python -m pytest examples/models/phonon/tests -q
+        ${CONDA_RUN} python -m executorch.examples.models.phonon.export_phonon \
+          --backend mlx --output-dir phonon_exports/mlx
+        ${CONDA_RUN} make phonon-mlx
+        BIN_DIR=cmake-out/examples/models/phonon
+        test -f "${BIN_DIR}/mlx.metallib"
+        "${BIN_DIR}/phonon_runner" \
+          --model_path phonon_exports/mlx/phonon.pte \
+          --text "Hello from ExecuTorch." \
+          --output phonon.wav
+        # 16-bit mono WAV with at least 0.5 s of audio at 24 kHz.
+        test "$(wc -c < phonon.wav)" -gt $((44 + 24000))
 
   backend-tester:
     needs: run-decision
