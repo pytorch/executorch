@@ -1,6 +1,6 @@
 # Hugging Face static-cache I/O contract
 
-**Version:** 1 (`get_io_contract = "hf_static"`)
+**Versions:** 1 and 2 (`get_io_contract = "hf_static"`)
 
 ## TL;DR
 
@@ -75,10 +75,34 @@ KV-cache policies, including eviction, long-context handling, reset and fork, be
 
 Cache inspection and adopt / fork / evict hooks are follow-up work and are not exposed by the current IOManager. They need explicit state-ownership semantics and an appropriate contract version rather than silently changing version 1.
 
+## Version 2: the NPU cache layout
+
+Version 2 keeps every rule above and changes only how the caches and logits are stored, so that an NPU reads and writes them in its native layout and type. A quantized QNN export produces it by default. The properties are the ones measured to matter on HTP, one at a time (Galaxy S25, QNN 2.48, Qwen3-0.6B with Qualcomm's quantization recipe, ctx 1024, decode / prefill tok/s):
+
+| Program | Decode | Prefill |
+|---|---|---|
+| Version 1 (float caches) | 49.1 | 813 |
+| + quantized caches in attention's signed encoding | 46.1 | 592 |
+| + keys stored `[1, H, D, L]` | 59.9 | 847 |
+| + caches stored as HTP's unsigned 16-bit type | 85.6 | 1034 |
+| + per-head prompt attention (private to the program) | 88.0 | 1232 |
+| + uint16 logits | 93.4 | 1470 |
+| Qualcomm's `qnn_llama_runner`, same recipe | 79.6 | 1452 |
+
+| Property | Metadata | What the runner does |
+|---|---|---|
+| Key cache layout `[1, H_kv, D, L_i]` | `get_key_layout = "transposed"` (`"hf"` keeps `[1, H_kv, L_i, D]`) | Allocates keys with the program's shape; values stay `[1, H_kv, L_i, D]` |
+| Integer caches | `get_cache_dtype = "uint16"` or `"uint8"`; per-cache `get_cache_scales`, `get_cache_zero_points`, `get_cache_quant_mins`, `get_cache_quant_maxs` | Treats the contents as opaque bytes; a reset zero-fills (unwritten slots are masked) |
+| Context-length sliding caches | none: sliding layers' caches and masks are full length | Builds every mask as for full attention; the program applies the window |
+| uint16 logits | `get_logits_scale`, `get_logits_zero_point` | Dequantizes the row it samples |
+
+The program still writes each step's rows (in the cache's encoding, quantized inside the delegate) and the counters in place; tokens, masks and positions are unchanged. Everything else is private to the program: the attention form (grouped split for decode, per-head for prompt chunks), the in-graph conversion from the stored unsigned encoding to the signed one attention reads, the int32 conversion of token ids on CPU before the embedding gather (HTP gathers about 300x slower through an in-graph int64 cast: Llama-3.2-1B decodes 53.4 instead of 38.5 tok/s), RoPE tables and CPU arithmetic. A version 2 program without `get_key_layout`, or whose cache shapes disagree with it, is rejected at load; a version 1 runner rejects version 2.
+
+Rejected as unnecessary: a runner-built mask over `[cache | step rows]` (+0.4 decode tok/s, within noise) and context-minus-chunk cache lengths, which would need per-method cache shapes. Shared (rpcmem) buffers remain an allocator choice, not contract: both runners need them for speed (heap caches cost about 30% of decode on each), and the QNN runtime keeps each execute on shared memory only.
+
 ## Version history
 
 | Version | Definition |
 |---|---|
 | 1 | Batch-one fixed-length decode / prefill, float caches, in-place state mutation, sliding-mask padding protocol |
-
-Experimental quantized caches, `sha` attention and full-length sliding-cache mode are excluded from this contract and the upstream series.
+| 2 | Version 1 plus transposed key caches, opaque integer caches with recorded encodings, and context-length sliding caches |

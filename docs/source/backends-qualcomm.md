@@ -547,7 +547,7 @@ cd $env:EXECUTORCH_ROOT
 
 ### Export a Hugging Face LLM
 
-`executorch.backends.qualcomm.utils.hf_static` traces a Hugging Face decoder with HF's static-cache exporter and lowers it to QNN. The model can use a tuned quantization recipe while its cache I/O stays floating-point. The following is an export configuration example, not a device-validation or performance result:
+`executorch.backends.qualcomm.utils.hf_static` traces a Hugging Face decoder with HF's static-cache exporter and lowers it to QNN. Float programs keep HF's float caches (contract version 1); quantized programs store their caches in the NPU layout of version 2 (`--float_caches` keeps version 1). The following is an export configuration example, not a device-validation or performance result:
 
 ```bash
 python -m executorch.backends.qualcomm.utils.hf_static \
@@ -563,11 +563,11 @@ ExecuTorch's LLM runner uses `HfStaticIOManager` without a transformers dependen
 
 KV-cache policies, including eviction, long-context handling, reset and fork, belong in the runner's IOManager, not the QNN backend or exporter. This series implements fixed-shape execution and reset. Cache inspection and adopt / fork / evict hooks are follow-up work, not APIs provided by the current IOManager.
 
-`hf_static` v1 uses float32 / float16 caches, even with quantized model computation. Auto attention uses split for decode and quantized computation, and concat for floating-point prefill.
+Float programs (`hf_static` v1) use float32 / float16 caches. Quantized programs default to `hf_static` v2: uint16 caches in the encoding attention reads, offset to HTP's unsigned type, keys stored `[1, H, D, L]`, context-length caches for sliding layers, and uint16 logits; see [version 2](llm-hf-static-io-contract.md#version-2-the-npu-cache-layout). Auto attention uses split for decode, per-head attention for quantized prefill and concat for floating-point prefill.
 
 For the transformers export used here, the Python branch that shifts HF's sliding cache once full is traced away. `hf_static` replaces those writes and determines sliding layers from model configuration. A prompt method must not exceed the smallest sliding cache length. Padding rows in a window mask are all-false, so the shift counts real tokens only. See the [counter and padding protocol](llm-hf-static-io-contract.md#positions-counters-and-padding), including the counter difference from HF eager state. These model window writes do not supply a general runner eviction policy.
 
-**Validation boundary:** CPU tests provide sliding-window correctness evidence only. They do not establish sliding-window device support, longer-context device support or device latency. Device behavior requires separate validation. Quantized caches, `sha` prefill and full-length sliding-cache mode are held back from this series.
+**Validation boundary:** CPU tests cover graph correctness (greedy equality with HF, including sliding windows and both key layouts). Device results for both contract versions are summarized in the contract document; other models, contexts and SoCs need their own validation.
 
 ### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
 
