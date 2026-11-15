@@ -29,7 +29,7 @@ class SD15PipelineExportSpec(StableDiffusionPipelineExportSpec):
     """Compose SD1.5 components into exported PTE methods."""
 
     pipeline_behavior = SD15PipelineBehavior()
-    default_max_sequence_lengths = (77,)
+    default_max_text_sequence_lengths = (77,)
     max_sequence_length_override_index = None
     default_size = (512, 512)
 
@@ -39,7 +39,7 @@ class SD15PipelineExportSpec(StableDiffusionPipelineExportSpec):
         scale = vae_scale_factor(components.require("vae"))
         if config.model.height % scale or config.model.width % scale:
             raise ValueError(f"height and width must be multiples of {scale}")
-        if config.model.max_sequence_lengths != self.default_max_sequence_lengths:
+        if config.model.max_sequence_lengths != self.default_max_text_sequence_lengths:
             raise ValueError("SD 1.5 requires a sequence length of 77")
         return scale
 
@@ -86,6 +86,7 @@ class SD15PipelineExportSpec(StableDiffusionPipelineExportSpec):
                 (prompt,),
                 height=config.model.height,
                 width=config.model.width,
+                vae_scale_factor=scale,
                 dtype=config.model.denoiser_dtype,
                 guidance_scale=(
                     self.pipeline_behavior.default_guidance_scale

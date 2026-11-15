@@ -34,11 +34,15 @@ DEFINE_int32(
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
-    "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
+    "Periodic checkpoint interval in tokens; 0 disables periodic capture.");
 DEFINE_int32(
     prefix_capture_slots,
     0,
     "Transient capture rows; 0: size automatically from session/request limits");
+DEFINE_string(
+    prefix_checkpoint_prompt_end,
+    "initial",
+    "Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(
@@ -48,23 +52,37 @@ DEFINE_int32(
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  const bool every_prompt_end = FLAGS_prefix_checkpoint_prompt_end == "every";
+  if (!every_prompt_end && FLAGS_prefix_checkpoint_prompt_end != "initial") {
+    std::cerr << "--prefix_checkpoint_prompt_end must be initial or every\n";
+    return 1;
+  }
+  if (every_prompt_end && FLAGS_prefix_checkpoint_interval) {
+    std::cerr << "--prefix_checkpoint_prompt_end=every cannot be combined with "
+                 "--prefix_checkpoint_interval\n";
+    return 1;
+  }
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_session_tokens <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_prefix_cache_entries < 0 ||
       FLAGS_prefix_capture_slots < 0 || FLAGS_prefix_checkpoint_interval < 0 ||
-      (FLAGS_prefix_checkpoint_interval > 0 &&
+      ((FLAGS_prefix_checkpoint_interval > 0 || every_prompt_end) &&
        FLAGS_prefix_cache_entries == 0)) {
     std::cerr
         << "--pte and --tokenizer are required; capacity limits must be positive"
            "; prefix-cache limits must be nonnegative; "
-           "checkpoints require prefix_cache_entries > 0\n";
+           "--prefix_checkpoint_interval and --prefix_checkpoint_prompt_end=every require --prefix_cache_entries > 0\n";
     return 1;
   }
-  executorch::extension::llm::serving::ServingRuntimeConfig config;
+  namespace serving = executorch::extension::llm::serving;
+  serving::ServingRuntimeConfig config;
   config.max_sessions = FLAGS_max_sessions;
   config.prefix_cache_capacity = FLAGS_prefix_cache_entries;
   config.max_prefix_captures = FLAGS_prefix_capture_slots;
   config.prefix_checkpoint_interval = FLAGS_prefix_checkpoint_interval;
+  config.prefix_checkpoint_prompt_end = every_prompt_end
+      ? serving::PromptEndCapture::Every
+      : serving::PromptEndCapture::Initial;
   config.max_context_length = FLAGS_max_session_tokens;
   config.max_requests = FLAGS_max_inflight_requests;
   config.max_pending_operations = FLAGS_max_inflight_requests;

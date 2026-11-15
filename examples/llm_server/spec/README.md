@@ -112,9 +112,10 @@ Non-streaming response: `chat.completion` with one `choice`
 ∈ `stop` | `length` | `tool_calls`) and a `usage` block.
 When reasoning is returned, `message.reasoning_content` contains the extracted
 reasoning text separately from visible `content` and `tool_calls`.
-`usage.prompt_tokens_details.cached_tokens` reports prompt tokens served from
-the session's resident state instead of prefetched this request (0 when the
-turn fully prefilled); the streaming usage chunk carries the same field.
+`usage.prompt_tokens_details.cached_tokens` reports prompt tokens reused from
+the session's resident state or a shared prefix snapshot instead of prefilled
+this request (0 when the turn fully prefilled); the streaming usage chunk
+carries the same field.
 
 Adapters with a generated-token counter also return
 `usage.completion_tokens_details.reasoning_tokens`. It counts actual generated
@@ -251,7 +252,7 @@ identities; tokenization, decoding, stop handling, and session history belong to
 the runtime. Chat templates and OpenAI response presentation remain in Python.
 The legacy cancellation and cross-session cache limitations above do not describe
 this opt-in path. See the [batching-backed serving guide](batching.md) for launch
-selection, creation-only caching, and native-backed Python integration checks.
+selection, prompt-boundary caching, and native-backed Python integration checks.
 
 Before accepting requests the worker emits one readiness record, with no request
 ID:
@@ -390,15 +391,31 @@ batched cache via `cache::kind::kBatched`, derives scheduler width from
 `preferred_batch_tokens()`, and constructs
 one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
 Glimmer's legacy session implementation. Prefix caching is disabled by default.
-`--prefix_cache_entries=N` enables creation-only reuse for both greedy and
+`--prefix_cache_entries=N` enables retained-prefix reuse for both greedy and
 sampled requests. With `--prefix_capture_slots=C`, it adds `N + C` physical rows
 for retained snapshots and transient captures; logical `--max_sessions` remains
 unchanged. The default `--prefix_capture_slots=0` resolves `C` automatically to
 `min(max_sessions, max_inflight_requests)`, so overlapping requests can each capture
-their initial prompt. With checkpoints enabled, automatic sizing uses at most two
+their prompt. `--prefix_checkpoint_prompt_end=initial` (the default) captures the
+prompt end of each request that creates a session, including every anonymous
+request but not the first generation after open or reset.
+`--prefix_checkpoint_prompt_end=every` captures the prompt end of every request
+with the same concurrent allowance; it requires nonzero cache capacity. Without
+periodic checkpoints, a prompt end already in the cache is
+refreshed instead of cloned again, and a snapshot is published and its transient
+slot released at the source request's first output after the clone completes, or
+when the request finishes.
+With periodic checkpoints enabled, automatic sizing uses at most two
 rows because checkpoint collection remains serialized and one replacement can
 overlap. A positive value overrides automatic sizing; values above two add unused
-row capacity in checkpoint mode. Disabled prefix caching reserves no capture rows.
+row capacity in periodic mode. Disabled prefix caching reserves no capture rows.
+Capture is best effort. `--prefix_checkpoint_prompt_end=every` cannot be combined
+with a nonzero checkpoint interval or a custom checkpoint policy; invalid
+combinations are rejected. A C++ `prefix_checkpoint_policy` overrides the
+interval and prompt-end capture.
+Periodic/custom checkpoints share a serialized lane; a pending clone can skip
+another boundary. See the [batching-backed serving guide](batching.md) for what
+`every` reuses in practice and its MLX memory cost.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,

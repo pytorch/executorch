@@ -366,6 +366,47 @@ jobs:
         bash .ci/scripts/test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./parakeet_output"
         echo "::endgroup::"
 
+  test-phonon-xnnpack-linux:
+    needs: docker-image
+    name: test-phonon-xnnpack-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: mt-l-x86iavx512-16-128
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+        mkdir -p "${HF_HOME}"
+        # The runner also points HF_HUB_CACHE at the read-only mount.
+        export HF_HUB_CACHE="${HF_HOME}/hub"
+
+        ./install_executorch.sh
+        pip install safetensors tokenizers huggingface_hub
+        python -m pytest examples/models/phonon/tests -q
+        python -m executorch.examples.models.phonon.export_phonon \
+          --backend xnnpack --output-dir phonon_exports/xnnpack
+        make phonon-cpu
+        cmake-out/examples/models/phonon/phonon_runner \
+          --model_path phonon_exports/xnnpack/phonon.pte \
+          --text "Hello from ExecuTorch." \
+          --output phonon.wav
+        # 16-bit mono WAV with at least 0.5 s of audio at 24 kHz.
+        test "$(wc -c < phonon.wav)" -gt $((44 + 24000))
+
   test-voxtral-realtime-xnnpack-linux:
     needs: docker-image
     name: test-voxtral-realtime-xnnpack-linux
