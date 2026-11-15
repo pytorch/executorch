@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -509,3 +510,29 @@ def test_state_reset_and_instances(tmp_path):
         expected = as_list(emulator(*inputs))
         assert_matches(first[step], expected)
         assert_matches(second[step], expected)
+
+
+def test_streaming_example_runs_without_copies(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "examples/espressif"))
+    import export_streaming_model as example
+
+    edge = example.lower(calibration_frames=32)
+    program = edge.to_executorch(example.executorch_config()).buffer
+    generator = torch.Generator().manual_seed(1)
+    steps = [
+        [
+            torch.randint(
+                -128,
+                128,
+                (1, example.FEATURES, 1, 1),
+                generator=generator,
+                dtype=torch.int8,
+            )
+        ]
+        for _ in range(6)
+    ]
+    (outputs,), stats = run_host(tmp_path, program, steps, "--share-io")
+    emulator = ProgramEmulator(edge.exported_program())
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["states"] == 2 and stats["staging"] == 0

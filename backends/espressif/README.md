@@ -29,6 +29,7 @@ backends/espressif/
   test/                      pytest suite (lowering, operators, CPU fallback, parser)
 examples/espressif/
   quantize_and_lower.py           minimal quantize -> lower -> .pte example
+  export_streaming_model.py       streaming model with delegate-owned state
   export_espnn_test_programs.py   the test models as BundleIO programs for the runner
   camera_stream/                  live camera classification on the ExecuTorch runtime
 ```
@@ -193,6 +194,49 @@ executorch::backends::espressif::reset_delegate_states();
 executorch::runtime::BackendOptions<1> options;
 options.set_option("reset_states", true);
 executorch::runtime::set_option("EspNNBackend", options.view());
+```
+
+### Streaming keyword spotting
+
+[`examples/espressif/export_streaming_model.py`](../../examples/espressif/export_streaming_model.py)
+puts the pieces above together for a streaming keyword-spotting model: one
+frame of features in, one score out, the frame history in delegate-owned
+buffers, int8 input and output in the application's memory. The resulting
+program has one input and one output, no CPU operators, and needs no
+planned memory.
+
+Quantization choices that matter for such models:
+
+- `EspNNQuantizer` observes activations with histograms. For small streaming
+  models, min/max ranges (`minmax_quantizer()` in the example) often track a
+  float model, or a TensorFlow Lite reference, more closely.
+- To reproduce an existing int8 model exactly, give each activation the
+  reference model's scale and zero point: after `prepare_pt2e`, replace its
+  observers with `FixedQParamsObserver(scale, zero_point, ...)`.
+- Weight scales are `max|w| / 127` per output channel; check that a layer with
+  very small weights is not clamped by the weight observer's `eps`.
+- Calibrate on consecutive frames, so the histories see realistic values, and
+  zero the buffers before exporting, since calibration updated them.
+
+On the device, the application binds its buffers once and calls `execute()`
+for each frame:
+
+```cpp
+#include <espnn/espnn_backend.h>
+#include <executorch/runtime/executor/method.h>
+
+// After Program::load() and load_method() with a method allocator sized by
+// method_meta(), and no planned buffers (the program has none):
+method.set_input(EValue(Tensor(&features_impl)), 0);  // int8[1, 40, 1, 1]
+method.set_output_data_ptr(&score, sizeof(score), 0);  // int8[1, 1]
+for (;;) {
+  compute_features(features);  // writes the bound buffer in place
+  method.execute();
+  if (score > threshold) {
+    on_detection();
+    executorch::backends::espressif::reset_delegate_states();
+  }
+}
 ```
 
 ## Running on the ESP32-S3
