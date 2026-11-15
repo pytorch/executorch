@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/winograd/Conv2dWinograd.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
@@ -348,6 +349,19 @@ void conv2d_with_epilogue_impl(
       stride,
       padding,
       dilation);
+
+  if (const std::optional<Conv2dWinogradConfig> winograd =
+          pick_conv2d_winograd_config(
+              graph,
+              in,
+              weight_data,
+              out,
+              kernel_params,
+              transposed_val,
+              groups_val)) {
+    return conv2d_winograd_impl(
+        graph, *winograd, in, weight_data, bias, out, epilogue);
+  }
 
   const bool fast_tiled = can_use_fast_tiled_conv2d(
       graph, in, out, kernel_params, transposed_val, groups_val);
