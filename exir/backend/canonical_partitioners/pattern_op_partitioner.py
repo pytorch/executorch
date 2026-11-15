@@ -116,10 +116,11 @@ def generate_pattern_op_partitions(
     Args:
         graph_module: Module that we want to partition
         patterns: A list of patterns in the form of torch.fx.Graph. These graphs
-            can be obtained through the `graph` field from a GraphModule obtained by
-            torch.export (recommended) or symbolic tracing (which might not result
-            in an accurate edge dialect graph), or by manual crafting a graph
-            module.
+            should use edge-dialect targets to match an edge-dialect graph_module.
+            Use to_edge(torch.export.export(module, args)).exported_program().graph
+            (with to_edge from executorch.exir), as in the XNNPACK bilinear_2d
+            patterns. Plain torch.export produces ATen-dialect targets, which
+            will not match edge-dialect nodes.
         partitions_list: A list of node lists whose nodes are intended to be tagged
             along with the nodes detected by the pattern matcher.
         op_support: A OperatorSupportBase that can be created in the following ways:

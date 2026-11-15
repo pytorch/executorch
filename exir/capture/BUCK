@@ -16,17 +16,6 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         ":config",
-        ":utils",
-    ],
-)
-
-fbcode_target(_kind = runtime.python_library,
-    name = "utils",
-    srcs = [
-        "_utils.py",
-    ],
-    deps = [
-        "//caffe2:torch",
     ],
 )
 

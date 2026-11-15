@@ -19,7 +19,6 @@ from executorch.exir.program import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.serde.serialize import load, save
-from executorch.exir.tracer import ExirDynamoConfig
 from torch.export import ExportedProgram, ExportGraphSignature
 
 Value = Any
@@ -40,7 +39,6 @@ __all__ = [
     "EdgeCompileConfig",
     "ExecutorchBackendConfig",
     "Value",
-    "ExirDynamoConfig",
     "load",
     "save",
 ]

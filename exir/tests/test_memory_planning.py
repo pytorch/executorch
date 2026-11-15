@@ -32,7 +32,6 @@ from executorch.exir import (
     memory,
     to_edge,
 )
-from executorch.exir.capture._utils import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
 from executorch.exir.inplace_aliasing import is_inplace_node
@@ -66,6 +65,7 @@ from executorch.exir.tensor import TensorSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
 )
+from executorch.test.end2end.export_utils import patch_forward
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
 from torch import nn

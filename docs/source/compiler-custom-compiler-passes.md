@@ -445,10 +445,12 @@ We also provide a combined helper function:
 Args:
 * `graph_module (fx.GraphModule)`: Module that we want to partition
 * `patterns (List[torch.fx.Graph])`: A list of patterns in the form of
-   torch.fx.Graph. These graphs can be obtained through the `graph` field from a
-   GraphModule obtained by torch.export (recommended) or symbolic tracing (which
-   might not result in an accurate edge dialect graph), or by manual crafting a
-   graph module.
+   torch.fx.Graph. For edge-dialect matching, use
+   `to_edge(torch.export.export(module, args)).exported_program().graph`, with
+   `to_edge` imported from `executorch.exir`, as in the
+   [XNNPACK bilinear_2d patterns](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/partition/graphs/bilinear_2d.py).
+   Plain `torch.export.export` produces ATen-dialect targets, which will not match
+   edge-dialect nodes.
 * `op_support (OperatorSupportBase)`: A OperatorSupportBase that can be created
    in the following ways:
     * Subclassing it directly and implementing `is_node_supported()`

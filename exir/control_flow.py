@@ -9,7 +9,9 @@
 """
 This module contains tools for rewriting a dynamic PyTorch program such
 that the dynamic part (e.g. control flow) can be properly captured by
-DispatchTracer.
+the legacy DispatchTracer. These helpers do not record control-flow nodes
+under torch.export.export(); use torch.cond or
+torch._higher_order_ops.while_loop with torch.export instead.
 The core idea is annotating all branches in the graph with unique keys,
 and using a dictionary of supplemental inputs as arguments to these
 local branches so that every path gets a canonical input during tracing.
@@ -42,11 +44,7 @@ and cond operator:
 
     ret = control_flow.cond(pred, branch_true, branch_false, args)
 
-and we can use the usual torch.export.export() function.
-
-.. code-block:: python
-
-    torch.export.export(module, args)
+This rewriting requires the legacy DispatchTracer to be active.
 
 """
 
@@ -71,7 +69,8 @@ from executorch.exir.wrap import update_with_proxy
 def shape(x: torch.Tensor) -> Union[torch._C.Size, torch.Tensor]:
     """
     A helper function for capturing the shape as a tensor from a tensor
-    value.
+    value under the legacy DispatchTracer. Without an active DispatchTracer,
+    this returns x.shape instead of recording a shape-as-tensor node.
     """
     tracer = DispatchTracer.get()
     if tracer is None:
@@ -97,6 +96,7 @@ def _make_submodule(
     example_returns: Optional[List[torch.Tensor]] = None,
     single_return: bool = False,
 ) -> torch.fx.GraphModule:
+    """Trace a tracing_context-decorated function with the legacy DispatchTracer."""
     if not hasattr(fn, "__tracing_inputs__"):
         raise ExportError(
             ExportErrorType.MISSING_PROPERTY,
@@ -133,7 +133,9 @@ def while_loop(
 ) -> Union[Tuple[torch.Tensor], Value]:
     """
     A higher order function returning the result based on executing body_fn
-    until cond_fn returns False.
+    until cond_fn returns False. Records a loop node only under the legacy
+    DispatchTracer; otherwise executes eagerly. For torch.export, use
+    torch._higher_order_ops.while_loop instead.
     """
     flattened_inputs, _ = pytree.tree_flatten(init_val)
     if not all(isinstance(i, torch.Tensor) for i in flattened_inputs):
@@ -180,8 +182,8 @@ def tracing_context(
     """
     A decorator function to annotate code path that we conditionally
     run during tracing. We need to annotate these paths for now because
-    during torch.export.export(), the tracer does not know what's the proper
-    local inputs to be passed to the untaken path.
+    the legacy DispatchTracer needs example local inputs for untaken paths.
+    This decorator does not enable control-flow capture with torch.export.
     """
 
     def decorator(
