@@ -50,12 +50,14 @@ if grep -E "libtorch|libc10|libpython|libtriton|not found" "${work}/ldd.txt"; th
 fi
 # The directories the runner's libraries resolve to, plus the inherited ones
 # (e.g. where the container mounts the CUDA driver) that are not part of a
-# Python installation.
+# Python installation. The system's default directories are left out: the
+# loader searches them last anyway, and listed first, their older libstdc++
+# would shadow the newer one the program's shared library needs.
 library_path="$(
   {
     awk '$3 ~ /^\// {print $3}' "${work}/ldd.txt" | xargs -n1 dirname
     tr ':' '\n' <<<"${LD_LIBRARY_PATH:-}" | grep -vE 'site-packages|/python[0-9.]*/' || true
-  } | grep -v '^$' | awk '!seen[$0]++' | paste -sd: -
+  } | grep -vE '^$|^/(usr/)?lib(64)?(/x86_64-linux-gnu)?/?$' | awk '!seen[$0]++' | paste -sd: -
 )"
 # strace may itself come from a conda environment.
 strace_library_path="$(dirname "$(dirname "${strace_bin}")")/lib"
