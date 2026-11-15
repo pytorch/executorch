@@ -92,13 +92,171 @@ install_domains() {
     "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
+# DO NOT MERGE: publish only allowlisted fields, never raw Git traces.
+_pytorch_clone_diagnostics() {
+  local python_executable=${PYTHON_EXECUTABLE:-python}
+  "${python_executable}" - "$@" 3<&0 <<'PYTORCH_CLONE_DIAGNOSTICS'
+import json
+import math
+import os
+import re
+import stat
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def publish(name, value):
+    """Write only sanitized fields to artifacts and the console."""
+    text = json.dumps(value, indent=2, allow_nan=False) + "\n"
+    (output / name).write_text(text)
+    try:
+        print(f"PyTorch clone diagnostics: {name}\n{text}", flush=True)
+    except BrokenPipeError:
+        pass
+
+
+def trace_events(path):
+    """Keep process relationships, signals and exits, never raw trace text."""
+    events, processes, malformed = [], {}, 0
+    for line in path.read_text(errors="replace").splitlines() if path.exists() else []:
+        try:
+            source = json.loads(line)
+        except ValueError:
+            malformed += 1
+            continue
+        if not isinstance(source, dict):
+            continue
+        kind = source.get("event")
+        if kind not in ("cmd_name", "child_start", "child_exit", "signal", "exit"):
+            continue
+        # Session IDs can contain text: publish only numeric process relationships.
+        sid = source.get("sid", "")
+        sid = sid if isinstance(sid, str) else ""
+        if sid not in processes:
+            processes[sid] = len(processes)
+        event = {"event": kind, "process_index": processes[sid]}
+        parent = sid.rsplit("/", 1)[0] if "/" in sid else None
+        if parent in processes:
+            event["parent_process_index"] = processes[parent]
+        for key in ("child_id", "pid", "code", "signo", "t_abs", "t_rel"):
+            value = source.get(key)
+            if (
+                type(value) in (int, float)
+                and abs(value) <= 2**63 - 1
+                and math.isfinite(value)
+            ):
+                event[key] = value
+        if kind == "cmd_name":
+            name = source.get("name")
+            commands = ("clone", "remote-curl", "index-pack", "fetch", "fetch-pack")
+            event["command"] = name if name in commands else "other"
+        events.append(event)
+    return {"present": path.is_file(), "events": events, "malformed_lines": malformed}
+
+
+def transport_events(path):
+    """Summarize known transport symptoms without headers, URLs or messages."""
+    errors = {
+        "dns_failed": r"Could not resolve (host|proxy)",
+        "connect_failed": r"Failed to connect|Couldn't connect",
+        "connection_reset": r"Connection reset by peer",
+        "broken_pipe": r"Broken pipe",
+        "timeout": r"timed out|Timeout was reached",
+        "tls_error": r"SSL certificate problem|SSL_ERROR_|TLS connect error|SSL connect error",
+        "http2_stream_error": r"HTTP/2.*(not closed cleanly|INTERNAL_ERROR|PROTOCOL_ERROR)",
+    }
+    events = []
+    for line in path.read_text(errors="replace").splitlines() if path.exists() else []:
+        event = {}
+        http = re.search(r"\bHTTP/(1\.0|1\.1|2|3) ([1-5]\d{2})\b", line)
+        if http:
+            event.update(http_version=http[1], http_status=int(http[2]))
+        tls = re.search(r"\bTLSv1(?:\.[0-3])?\b", line)
+        if tls:
+            event["tls_version"] = tls[0]
+        categories = [
+            name for name, pattern in errors.items() if re.search(pattern, line, re.I)
+        ]
+        if categories:
+            event["categories"] = categories
+        if event:
+            events.append(event)
+    return {"present": path.is_file(), "events": events}
+
+
+action, raw, output, attempt = sys.argv[1:5]
+raw, output = Path(raw), Path(output)
+output.mkdir(parents=True, exist_ok=True)
+status_name = f"attempt-{attempt}-status.json"
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+if action == "start":
+    publish(status_name, {"started_at": now, "started_monotonic": time.monotonic()})
+    if attempt == "1":
+        version = subprocess.run(
+            ["git", "--version"], capture_output=True, text=True, timeout=5
+        ).stdout
+        version = re.match(r"git version (\d+(?:\.\d+){1,3})", version)
+        streams = {}
+        # fd 0 holds this program; fd 3 preserves the caller's stdin.
+        for fd, name in ((3, "stdin"), (1, "stdout"), (2, "stderr")):
+            mode = os.fstat(fd).st_mode
+            kind = (
+                "pipe"
+                if stat.S_ISFIFO(mode)
+                else "file" if stat.S_ISREG(mode) else "other"
+            )
+            streams[name] = {"tty": os.isatty(fd), "kind": kind}
+        publish(
+            "environment.json",
+            {"git_version": version[1] if version else "unknown", "streams": streams},
+        )
+elif action == "finish":
+    status = json.loads((output / status_name).read_text())
+    status.update(finished_at=now, exit_code=int(sys.argv[5]))
+    status["elapsed_seconds"] = time.monotonic() - status.pop("started_monotonic")
+    publish(status_name, status)
+
+    for suffix, label, parser in (
+        ("trace2.jsonl", "trace2", trace_events),
+        ("curl.log", "transport", transport_events),
+    ):
+        path = raw / f"attempt-{attempt}.{suffix}"
+        publish(f"attempt-{attempt}-{label}.json", parser(path))
+        path.unlink(missing_ok=True)
+
+PYTORCH_CLONE_DIAGNOSTICS
+}
+
 install_pytorch_and_domains() {
   local python_executable=${PYTHON_EXECUTABLE:-python}
   pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
 
-  git clone https://github.com/pytorch/pytorch.git
+  # DO NOT MERGE: raw traces stay private; only allowlisted fields are uploaded.
+  local trace_dir artifact_dir
+  trace_dir=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/pytorch-clone.XXXXXX")
+  artifact_dir="${RUNNER_ARTIFACT_DIR:-${RUNNER_TEMP:-/tmp}/artifacts}/pytorch-clone"
+
+  local clone_status
+  _pytorch_clone_diagnostics start "${trace_dir}" "${artifact_dir}" 1 \
+    || echo "Could not record clone start diagnostics." >&2
+  # Keep the original arguments and inherited stdout/stderr (no tee/pipeline).
+  if GIT_TRACE2_EVENT="${trace_dir}/attempt-1.trace2.jsonl" \
+    GIT_TRACE_CURL="${trace_dir}/attempt-1.curl.log" \
+    GIT_TRACE_CURL_NO_DATA=1 GIT_TRACE_REDACT=1 \
+    git clone https://github.com/pytorch/pytorch.git; then
+    clone_status=0
+  else
+    clone_status=$?
+  fi
+  _pytorch_clone_diagnostics finish "${trace_dir}" "${artifact_dir}" 1 "${clone_status}" \
+    || echo "Could not publish allowlisted clone diagnostics; raw traces will not be uploaded." >&2
+  if [[ "${clone_status}" -ne 0 ]]; then
+    return "${clone_status}"
+  fi
 
   # Fetch the target commit
   pushd pytorch || return

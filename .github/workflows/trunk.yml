@@ -73,6 +73,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: pytorch-clone-cpu-${{ matrix.model }}-${{ matrix.backend }}
       script: |
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=cmake
@@ -160,6 +161,7 @@ jobs:
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      upload-artifact: pytorch-clone-custom-ops-${{ matrix.build-tool }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
 
@@ -187,6 +189,7 @@ jobs:
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      upload-artifact: pytorch-clone-selective-build-${{ matrix.build-tool }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
 
@@ -245,6 +248,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: pytorch-clone-coreml-delegate
       script: |
         set -eux
         # Pinned PyTorch's MPS build requires the Metal 4 SDK.
@@ -409,6 +413,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
+      upload-artifact: pytorch-clone-llama-${{ matrix.dtype }}-${{ matrix.mode }}
       script: |
 
         DTYPE=${{ matrix.dtype }}
@@ -602,6 +607,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: pytorch-clone-coreml-${{ matrix.model }}
       script: |
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=cmake
