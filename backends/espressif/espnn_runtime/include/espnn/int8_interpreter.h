@@ -41,6 +41,9 @@ struct Int8RuntimeOptions {
   bool dual_core = false;
   /// Internal RAM left free when deciding whether the arena fits there.
   size_t internal_reserve_bytes = 48 * 1024;
+  /// Time every operation for op_time_us() and print_profile(). Otherwise
+  /// invoke() reads the timer only a few times per call.
+  bool profile_operations = false;
 };
 
 /**
@@ -161,7 +164,8 @@ class Int8Interpreter {
   int64_t last_invoke_us() const {
     return last_invoke_us_;
   }
-  /// Duration of operation @p op during the last invoke(), or 0.
+  /// Duration of operation @p op during the last invoke(), or 0 without
+  /// Int8RuntimeOptions::profile_operations.
   int64_t op_time_us(uint32_t op) const;
   /// Size of the activation arena.
   size_t arena_bytes() const {
@@ -229,6 +233,7 @@ class Int8Interpreter {
   size_t phase_bytes_ = 0;
   int32_t* params_ = nullptr;
   size_t params_size_ = 0;
+  int64_t* op_us_ = nullptr;
   uint32_t inputs_[MAX_GRAPH_IO]{};
   uint32_t outputs_[MAX_GRAPH_IO]{};
   size_t input_count_ = 0;

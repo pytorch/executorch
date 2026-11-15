@@ -199,6 +199,9 @@ class EspNNBackendInterface final : public BackendInterface {
 #if CONFIG_ESPNN_DELEGATE_DUAL_CORE
     options.dual_core = true;
 #endif
+#if CONFIG_ESPNN_DELEGATE_PROFILE
+    options.profile_operations = true;
+#endif
     if (!state->interpreter.load(
             static_cast<const uint8_t*>(processed->data()),
             processed->size(),

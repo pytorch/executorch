@@ -30,6 +30,10 @@ namespace {
 
 constexpr size_t ARENA_ALIGNMENT = 16;
 constexpr int64_t YIELD_INTERVAL_US = 1000000;
+// Without profiling, invoke() checks the yield deadline only every this many
+// operations and when it returns: one timer read costs as much as a small
+// operation.
+constexpr uint32_t YIELD_CHECK_OPERATIONS = 16;
 
 SemaphoreHandle_t invoke_mutex() {
   static StaticSemaphore_t storage;
@@ -173,9 +177,6 @@ struct Int8Interpreter::OpState {
   int32_t dilation_h;
   int32_t dilation_w;
   int32_t batches;
-  int64_t total_us;
-  int64_t last_us;
-  uint32_t calls;
 };
 
 Int8Interpreter::~Int8Interpreter() {
@@ -201,6 +202,8 @@ void Int8Interpreter::reset() {
     heap_caps_free(operations_);
   if (op_states_ != nullptr)
     heap_caps_free(op_states_);
+  if (op_us_ != nullptr)
+    heap_caps_free(op_us_);
   if (tensor_offsets_ != nullptr)
     heap_caps_free(tensor_offsets_);
   arena_ = nullptr;
@@ -210,6 +213,7 @@ void Int8Interpreter::reset() {
   tensors_ = nullptr;
   operations_ = nullptr;
   op_states_ = nullptr;
+  op_us_ = nullptr;
   tensor_offsets_ = nullptr;
   arena_size_ = 0;
   scratch_size_ = 0;
@@ -266,8 +270,13 @@ bool Int8Interpreter::load(
       heap_caps_calloc(op_count, sizeof(OpState), MALLOC_CAP_8BIT));
   tensor_offsets_ = static_cast<size_t*>(
       heap_caps_calloc(tensor_count, sizeof(size_t), MALLOC_CAP_8BIT));
+  if (options_.profile_operations) {
+    op_us_ = static_cast<int64_t*>(
+        heap_caps_calloc(op_count, sizeof(int64_t), MALLOC_CAP_8BIT));
+  }
   if (tensors_ == nullptr || operations_ == nullptr || op_states_ == nullptr ||
-      tensor_offsets_ == nullptr) {
+      tensor_offsets_ == nullptr ||
+      (options_.profile_operations && op_us_ == nullptr)) {
     std::printf("ERROR: unable to allocate interpreter tables\n");
     reset();
     return false;
@@ -926,8 +935,9 @@ int32_t Int8Interpreter::output_argmax(size_t index) const {
 }
 
 int64_t Int8Interpreter::op_time_us(uint32_t op) const {
-  return loaded_ && op < graph_.header.num_operations ? op_states_[op].last_us
-                                                      : 0;
+  return loaded_ && op_us_ != nullptr && op < graph_.header.num_operations
+      ? op_us_[op]
+      : 0;
 }
 
 bool Int8Interpreter::run_operation(uint32_t index) {
@@ -1680,10 +1690,10 @@ bool Int8Interpreter::invoke() {
     esp_nn_set_depthwise_conv_scratch_buf(scratch_);
     esp_nn_set_mean_scratch_buf(scratch_);
   }
-  int64_t compute_us = 0;
-  int64_t last_yield = esp_timer_get_time();
+  const int64_t invoke_started = esp_timer_get_time();
+  int64_t op_started = invoke_started;
+  int64_t last_yield = invoke_started;
   for (uint32_t i = 0; i < graph_.header.num_operations; ++i) {
-    const int64_t started = esp_timer_get_time();
     if (!run_operation(i)) {
       std::printf(
           "ERROR: operation %u (%s) failed\n",
@@ -1691,18 +1701,22 @@ bool Int8Interpreter::invoke() {
           opcode_name(op_states_[i].opcode));
       return false;
     }
-    const int64_t finished = esp_timer_get_time();
-    OpState& state = op_states_[i];
-    state.last_us = finished - started;
-    state.total_us += state.last_us;
-    ++state.calls;
-    compute_us += state.last_us;
-    if (finished - last_yield > YIELD_INTERVAL_US) {
+    if (op_us_ == nullptr && (i + 1) % YIELD_CHECK_OPERATIONS != 0)
+      continue;
+    int64_t now = esp_timer_get_time();
+    if (op_us_ != nullptr)
+      op_us_[i] = now - op_started;
+    if (now - last_yield > YIELD_INTERVAL_US) {
       vTaskDelay(1);
-      last_yield = esp_timer_get_time();
+      now = esp_timer_get_time();
+      last_yield = now;
     }
+    op_started = now;
   }
-  last_invoke_us_ = compute_us;
+  const int64_t finished = esp_timer_get_time();
+  if (finished - last_yield > YIELD_INTERVAL_US)
+    vTaskDelay(1);
+  last_invoke_us_ = finished - invoke_started;
   return true;
 }
 
@@ -1750,7 +1764,7 @@ void Int8Interpreter::print_summary() const {
 }
 
 void Int8Interpreter::print_profile() const {
-  if (!loaded_)
+  if (!loaded_ || op_us_ == nullptr)
     return;
   int64_t per_type[OPCODE_COUNT]{};
   uint32_t count_per_type[OPCODE_COUNT]{};
@@ -1758,7 +1772,7 @@ void Int8Interpreter::print_profile() const {
     const OpState& s = op_states_[i];
     const unsigned type = static_cast<unsigned>(s.opcode);
     if (type < OPCODE_COUNT) {
-      per_type[type] += s.last_us;
+      per_type[type] += op_us_[i];
       ++count_per_type[type];
     }
     std::printf(
@@ -1772,7 +1786,7 @@ void Int8Interpreter::print_profile() const {
         static_cast<long>(
             tensors_[s.output].rank == 4 ? tensors_[s.output].shape[1]
                                          : static_cast<int32_t>(s.elements)),
-        static_cast<long long>(s.last_us));
+        static_cast<long long>(op_us_[i]));
   }
   for (unsigned t = 0; t < OPCODE_COUNT; ++t) {
     if (count_per_type[t] == 0)

@@ -174,7 +174,7 @@ Other options, in menuconfig under *ExecuTorch ESP-NN backend*:
 |---|---|---|
 | `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` | y | Copies weights from memory-mapped flash into PSRAM when they fit (faster than flash cache misses on large models) |
 | `ESPNN_DELEGATE_DUAL_CORE` | n | Splits large convolutions across both cores |
-| `ESPNN_DELEGATE_PROFILE` | n | Prints a per-operator time table after a delegate's first run |
+| `ESPNN_DELEGATE_PROFILE` | n | Times every operator and prints a per-operator time table after a delegate's first run. The timer reads cost about 1 µs per operator on the ESP32-S3, so leave it off in production |
 
 ### The original ESP32
 

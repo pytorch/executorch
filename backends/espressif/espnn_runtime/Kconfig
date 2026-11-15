@@ -20,5 +20,9 @@ menu "ExecuTorch ESP-NN backend"
     config ESPNN_DELEGATE_PROFILE
         bool "Print a per-operator profile after each delegate's first run"
         default n
+        help
+            Times every operator, which adds a timer read per operator to
+            each execute. Without it, the delegate reads the timer only
+            every few operators, for its cooperative yield.
 
 endmenu
