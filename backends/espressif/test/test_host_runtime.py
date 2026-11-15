@@ -30,7 +30,10 @@ pytest.importorskip("torchao")
 import torch
 
 from executorch.backends.espressif import to_espnn_edge
-from executorch.backends.espressif.reference import ProgramEmulator
+from executorch.backends.espressif.reference import (
+    esp_nn_reference as reference,
+    ProgramEmulator,
+)
 from executorch.backends.espressif.test import (
     test_int8_lowering as lowering_cases,
     test_int8_ops as op_cases,
@@ -78,8 +81,11 @@ def as_list(value):
     return list(value) if isinstance(value, (tuple, list)) else [value]
 
 
-def run_host(tmp_path: Path, program: bytes, steps, *args) -> list[list[bytes]]:
-    """Runs one list of input tensors per step; returns raw outputs per step."""
+def run_host(tmp_path: Path, program: bytes, steps, *args):
+    """
+    Runs one list of input tensors per step. Returns the output files per
+    instance and step, and the delegates' memory statistics.
+    """
     (tmp_path / "program.pte").write_bytes(program)
     for step, inputs in enumerate(steps):
         for i, tensor in enumerate(inputs):
@@ -93,13 +99,21 @@ def run_host(tmp_path: Path, program: bytes, steps, *args) -> list[list[bytes]]:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    (stats_line,) = [
+        line for line in result.stdout.splitlines() if line.startswith("STATS ")
+    ]
+    stats = {
+        key: int(value)
+        for key, value in (field.split("=") for field in stats_line.split()[1:])
+    }
     instances = 1
     if "--instances" in args:
         instances = int(args[args.index("--instances") + 1])
-    return [
+    outputs = [
         [sorted(tmp_path.glob(f"out_{k}_{step}_*.bin")) for step in range(len(steps))]
         for k in range(instances)
     ]
+    return outputs, stats
 
 
 def assert_matches(paths: list[Path], expected: list[torch.Tensor]):
@@ -126,17 +140,28 @@ def random_steps(shapes, count: int, seed: int = 11):
 def test_host_delegate_matches_reference(tmp_path, name, model, shapes):
     exported, program = lower(model, shapes)
     steps = random_steps(shapes, 2)
-    (outputs,) = run_host(tmp_path, program, steps)
+    (outputs,), stats = run_host(tmp_path, program, steps)
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
+    # With ESP-NN scratch planned in the arena, the arena also holds scratch.
+    planned = sum(
+        reference.plan_activation_arena(delegate.graph)[0]
+        for delegate in emulator.delegates.values()
+    )
+    assert stats["delegates"] == len(emulator.delegates)
+    if stats["scratch"]:
+        assert stats["arena"] == planned
+    else:
+        assert stats["arena"] >= planned
 
 
 def test_instances_run_independently(tmp_path):
     model, shapes = lowering_cases.ConvActModel(), [(1, 3, 16, 16)]
     exported, program = lower(model, shapes)
     steps = random_steps(shapes, 3)
-    first, second = run_host(tmp_path, program, steps, "--instances", 2)
+    (first, second), stats = run_host(tmp_path, program, steps, "--instances", 2)
+    assert stats["delegates"] == 2
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         expected = as_list(emulator(*inputs))
@@ -148,7 +173,7 @@ def test_unplanned_io_shared_with_the_caller(tmp_path):
     model, shapes = op_cases.TwoInputTwoOutput(), [(1, 3, 12, 12), (1, 6)]
     exported, program = lower(model, shapes, planned_io=False)
     steps = random_steps(shapes, 2)
-    (outputs,) = run_host(tmp_path, program, steps, "--share-io")
+    (outputs,), _ = run_host(tmp_path, program, steps, "--share-io")
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))

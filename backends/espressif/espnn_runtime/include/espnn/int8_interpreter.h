@@ -44,6 +44,11 @@ struct Int8RuntimeOptions {
   /// Time every operation for op_time_us() and print_profile(). Otherwise
   /// invoke() reads the timer only a few times per call.
   bool profile_operations = false;
+  /// Plan each operation's ESP-NN scratch in the activation arena, live only
+  /// while the operation runs, instead of one buffer sized for the largest
+  /// operation. Saves memory, but the scratch then lives wherever the arena
+  /// does (PSRAM for a large model).
+  bool scratch_in_arena = false;
 };
 
 /**
@@ -175,10 +180,12 @@ class Int8Interpreter {
   bool arena_in_internal_ram() const {
     return arena_internal_;
   }
-  /// Size of the shared ESP-NN scratch buffer.
+  /// Size of the separate ESP-NN scratch buffer (0 with scratch_in_arena).
   size_t scratch_bytes() const {
     return scratch_size_;
   }
+  /// Size of the per-operation and per-tensor tables kept after load().
+  size_t table_bytes() const;
   /// Size of the precomputed requantization tables.
   size_t parameter_bytes() const {
     return params_size_;
@@ -221,7 +228,6 @@ class Int8Interpreter {
   bool loaded_ = false;
   uint8_t* blob_copy_ = nullptr;
   TensorRecord* tensors_ = nullptr;
-  OperationRecord* operations_ = nullptr;
   OpState* op_states_ = nullptr;
   size_t* tensor_offsets_ = nullptr;
   uint8_t* arena_ = nullptr;

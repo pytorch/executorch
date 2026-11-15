@@ -33,6 +33,11 @@ struct DelegateStats {
   int64_t total_us;
   /// Sum of the activation arenas held by the initialized delegates.
   size_t arena_bytes;
+  /// Sums of the separate ESP-NN scratch buffers, the requantization tables
+  /// and the per-operation and per-tensor tables of the initialized delegates.
+  size_t scratch_bytes;
+  size_t parameter_bytes;
+  size_t table_bytes;
 };
 
 /**

@@ -202,6 +202,9 @@ class EspNNBackendInterface final : public BackendInterface {
 #if CONFIG_ESPNN_DELEGATE_PROFILE
     options.profile_operations = true;
 #endif
+#if CONFIG_ESPNN_DELEGATE_SCRATCH_IN_ARENA
+    options.scratch_in_arena = true;
+#endif
     if (!state->interpreter.load(
             static_cast<const uint8_t*>(processed->data()),
             processed->size(),
@@ -213,6 +216,9 @@ class EspNNBackendInterface final : public BackendInterface {
       processed->Free();
     ++g_stats.delegates;
     g_stats.arena_bytes += state->interpreter.arena_bytes();
+    g_stats.scratch_bytes += state->interpreter.scratch_bytes();
+    g_stats.parameter_bytes += state->interpreter.parameter_bytes();
+    g_stats.table_bytes += state->interpreter.table_bytes();
     return state;
   }
 

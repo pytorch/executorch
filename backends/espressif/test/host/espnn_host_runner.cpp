@@ -22,7 +22,8 @@
  * outputs must not be memory planned), the tensors are bound once to runner
  * buffers through set_input and set_output_data_ptr, and --alias makes an
  * input and an output share one buffer: that input is then read from its file
- * at step 0 only and afterwards holds the output of the previous step.
+ * at step 0 only and afterwards holds the output of the previous step. After
+ * loading, the runner prints the delegates' memory as a STATS line.
  */
 
 #include <cstdio>
@@ -33,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include <espnn/espnn_backend.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/executor/method.h>
@@ -213,6 +215,15 @@ int main(int argc, char** argv) {
         fail("set_output_data_ptr", static_cast<int>(error));
     }
   }
+
+  const auto stats = executorch::backends::espressif::delegate_stats();
+  std::printf(
+      "STATS delegates=%u arena=%zu scratch=%zu parameters=%zu tables=%zu\n",
+      static_cast<unsigned>(stats.delegates),
+      stats.arena_bytes,
+      stats.scratch_bytes,
+      stats.parameter_bytes,
+      stats.table_bytes);
 
   for (int step = 0; step < steps; ++step) {
     for (int k = 0; k < instance_count; ++k) {

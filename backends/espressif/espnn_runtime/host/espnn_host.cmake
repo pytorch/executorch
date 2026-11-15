@@ -22,6 +22,9 @@ set(ESPNN_LOCAL_PATH
 )
 option(ESPNN_HOST_OPTIMIZED "Use esp-nn's generic optimized C kernels" OFF)
 option(ESPNN_DELEGATE_PROFILE "Time every delegate operator" OFF)
+option(ESPNN_DELEGATE_SCRATCH_IN_ARENA
+       "Plan ESP-NN scratch in the activation arena" OFF
+)
 
 if(ESPNN_LOCAL_PATH)
   set(espnn_source_dir "${ESPNN_LOCAL_PATH}")
@@ -72,11 +75,11 @@ target_include_directories(
 target_compile_definitions(
   espnn_backend PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
-if(ESPNN_DELEGATE_PROFILE)
-  target_compile_definitions(
-    espnn_backend PRIVATE CONFIG_ESPNN_DELEGATE_PROFILE=1
-  )
-endif()
+foreach(option ESPNN_DELEGATE_PROFILE ESPNN_DELEGATE_SCRATCH_IN_ARENA)
+  if(${option})
+    target_compile_definitions(espnn_backend PRIVATE CONFIG_${option}=1)
+  endif()
+endforeach()
 target_link_libraries(espnn_backend PUBLIC executorch_core esp_nn_host)
 set_target_properties(espnn_backend PROPERTIES POSITION_INDEPENDENT_CODE ON)
 executorch_target_link_options_shared_lib(espnn_backend)

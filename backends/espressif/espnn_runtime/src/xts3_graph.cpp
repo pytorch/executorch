@@ -524,24 +524,39 @@ bool validate_int8_operation(
   return false;
 }
 
+// Set of tensor IDs, so that validation keeps 128 bytes per set on the stack
+// instead of a 1,024-byte bool array.
+class TensorSet {
+ public:
+  bool operator[](uint32_t id) const {
+    return ((bits_[id / 32] >> (id % 32)) & 1U) != 0;
+  }
+  void set(uint32_t id) {
+    bits_[id / 32] |= 1U << (id % 32);
+  }
+
+ private:
+  uint32_t bits_[MAX_GRAPH_TENSORS / 32]{};
+};
+
 bool validate_int8_dataflow(const GraphView& graph) {
-  bool produced[MAX_GRAPH_TENSORS]{};
-  bool copy_produced[MAX_GRAPH_TENSORS]{};
+  TensorSet produced;
+  TensorSet copy_produced;
   uint32_t input_count = 0;
   uint32_t output_count = 0;
   for (uint32_t i = 0; i < graph.header.num_tensors; ++i) {
     TensorRecord tensor{};
     read_tensor(graph, i, tensor);
     if ((tensor.flags & TENSOR_FLAG_GRAPH_INPUT) != 0) {
-      produced[i] = true;
+      produced.set(i);
       ++input_count;
     }
     if ((tensor.flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0)
       ++output_count;
   }
   if (graph.header.version == GRAPH_ESP_NN_INT8_IO_VERSION) {
-    bool listed_input[MAX_GRAPH_TENSORS]{};
-    bool listed_output[MAX_GRAPH_TENSORS]{};
+    TensorSet listed_input;
+    TensorSet listed_output;
     for (uint32_t i = 0; i < graph.num_inputs; ++i) {
       const uint32_t id = graph_input_id(graph, i);
       TensorRecord tensor{};
@@ -552,7 +567,7 @@ bool validate_int8_dataflow(const GraphView& graph) {
             static_cast<unsigned>(id));
         return false;
       }
-      listed_input[id] = true;
+      listed_input.set(id);
     }
     for (uint32_t i = 0; i < graph.num_outputs; ++i) {
       const uint32_t id = graph_output_id(graph, i);
@@ -564,7 +579,7 @@ bool validate_int8_dataflow(const GraphView& graph) {
             static_cast<unsigned>(id));
         return false;
       }
-      listed_output[id] = true;
+      listed_output.set(id);
     }
     for (uint32_t i = 0; i < graph.header.num_tensors; ++i) {
       TensorRecord tensor{};
@@ -608,8 +623,9 @@ bool validate_int8_dataflow(const GraphView& graph) {
             static_cast<unsigned>(id));
         return false;
       }
-      produced[id] = true;
-      copy_produced[id] = is_copy;
+      produced.set(id);
+      if (is_copy)
+        copy_produced.set(id);
     }
   }
   for (uint32_t i = 0; i < graph.header.num_tensors; ++i) {
