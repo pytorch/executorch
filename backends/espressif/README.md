@@ -206,6 +206,27 @@ ANSI C reference kernels against the same bundled outputs. Both jobs target
 ESP32-S3. Logs include the kernel configuration in their filenames; artifacts
 retain the bundled fixtures, SDK configuration, and resolved component versions.
 
+### On the host
+
+The delegate also builds outside ESP-IDF, for Linux and macOS, over ESP-NN's
+portable C kernels. `host/include` stands in for the few ESP-IDF APIs it uses,
+and ESP-NN is fetched from GitHub (or taken from `-DESPNN_LOCAL_PATH=...`).
+`test_host_runtime.py` runs fully delegated programs through the ExecuTorch
+runtime and this build, and checks every output against the host reference,
+with no board or emulator:
+
+```bash
+cmake -S backends/espressif/test/host -B cmake-out-espnn-host -G Ninja
+cmake --build cmake-out-espnn-host
+ESPNN_HOST_RUNNER=cmake-out-espnn-host/espnn_host_runner \
+    pytest backends/espressif/test/test_host_runtime.py
+```
+
+`-DESPNN_HOST_SANITIZE=ON` builds with AddressSanitizer and
+UndefinedBehaviorSanitizer; `.ci/scripts/test_espressif_host.sh` runs both
+builds. The host build checks the delegate's logic, not ESP-NN's S3 assembly
+kernels, which only the emulator and the board run.
+
 The code follows the ExecuTorch coding style and passes the repository's
 `lintrunner` checks:
 
@@ -233,5 +254,5 @@ lintrunner --paths-cmd "git ls-files backends/espressif examples/espressif"
 Every source file in this backend and its examples is released under the
 BSD 3-Clause license (`SPDX-License-Identifier: BSD-3-Clause`), the same
 license as ExecuTorch. See the `LICENSE` file at the repository root. ESP-NN
-is Apache-2.0 and is fetched from the Espressif component registry, not
-vendored.
+is Apache-2.0 and is fetched from the Espressif component registry (or, for
+the host build, from GitHub), not vendored.

@@ -10,6 +10,17 @@
 # is meant to sit next to examples/espressif/executor_runner, which imports the
 # cross-compiled ExecuTorch targets this component links against: build
 # examples/espressif/project with -DET_ESPNN_BACKEND=ON.
+#
+# Outside ESP-IDF, this file builds the same delegate for the host (Linux,
+# macOS) as the espnn_backend library, over esp-nn's portable C kernels, with
+# host/include standing in for the few ESP-IDF APIs it uses. Add it after
+# ExecuTorch with add_subdirectory(); backends/espressif/test/host uses it to
+# check the delegate against the bit-exact Python reference without a board.
+
+if(NOT ESP_PLATFORM)
+  include(${CMAKE_CURRENT_LIST_DIR}/host/espnn_host.cmake)
+  return()
+endif()
 
 idf_component_register(
   SRCS
