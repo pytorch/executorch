@@ -228,10 +228,7 @@ def grouped_cases():
     shape = (8, 192, 28, 28)
     combinations = [(g, m) for g in (1, 2, 4, 8) for m in (1, 2, 4) if (g, m) != (1, 1)]
     geometries = [
-        (g, m, k, s, "nchw")
-        for g, m in combinations
-        for k in (3, 5, 7)
-        for s in (1, 2)
+        (g, m, k, s, "nchw") for g, m in combinations for k in (3, 5, 7) for s in (1, 2)
     ]
     geometries += [(g, m, 3, s, "nchw") for g in (3, 6) for m in (1, 2) for s in (1, 2)]
     geometries += [(g, m, 3, 1, "channels_last") for g, m in combinations]
@@ -436,7 +433,8 @@ def run_case(case, flush, threshold):
     significant = all(
         results[name][0] / results["ours"][0] >= threshold
         and results["ours"][2] < results[name][1]
-        for name in ("inductor", "tap_sum") if name in results
+        for name in ("inductor", "tap_sum")
+        if name in results
     )
     extra = {}
     if grouped:

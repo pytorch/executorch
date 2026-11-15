@@ -279,6 +279,9 @@ class CanonicalArgumentsTest(unittest.TestCase):
             torch.ops.triton.convolution(*forward)
 
 
+@unittest.skipIf(
+    torch.version.hip is not None, "compares with the CUDA layouts of aten.convolution"
+)
 class OutShapeAndStrideTest(unittest.TestCase):
     """``out_shape_and_stride`` against FakeTensor ``aten.convolution`` on CUDA."""
 
