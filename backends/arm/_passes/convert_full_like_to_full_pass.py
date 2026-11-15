@@ -45,7 +45,7 @@ class ConvertFullLikeToFullPass(ArmOpTargetedPass):
         # Each entry is an int (static dim) or an aten.sym_size.int ProxyValue (dynamic dim).
         size_args = self.call_size_operator_all(args[0], meta, edge_dialect=True)
         full_args = (size_args, args[1])
-        full_kwargs = {"dtype": tensor.dtype}
+        full_kwargs = {"dtype": kwargs.get("dtype") or tensor.dtype}
         return super().call_operator(
             exir_ops.edge.aten.full.default, full_args, full_kwargs, meta
         )

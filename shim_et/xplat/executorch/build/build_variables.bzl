@@ -450,6 +450,7 @@ CPU_RUNTIME_BUCK_SRCS = [
 CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
     "runtime/CPUBackend.cpp",
     "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKPasses.cpp",
     "runtime/providers/xnnpack/XNNPACKProvider.cpp",
 ]]
 

@@ -99,10 +99,16 @@ def _check_version(component_dir):
     installed = executorch.version.__version__
     installed_sha = executorch.version.git_version or ""
     if not versions_match(installed, installed_sha, component_version, component_sha):
+        wanted = "the executorch the component was built from"
+        if "-dev." in component_version:
+            nightly = component_version.replace("-dev.", ".dev")
+            wanted += (
+                f" (for a published dev version, the nightly executorch=={nightly})"
+            )
         raise GenKernelsError(
             f"installed executorch {installed} ({installed_sha[:12]}) does not match "
             f"the component's {component_version} ({component_sha[:12]}); export and "
-            "generate with the executorch release the component was built from"
+            f"generate with {wanted}, installed as the component's README.md shows"
         )
     return component_version, component_sha, installed, installed_sha
 
