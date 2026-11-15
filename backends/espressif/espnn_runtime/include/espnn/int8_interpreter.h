@@ -227,7 +227,9 @@ class Int8Interpreter {
   GraphView graph_{};
   bool loaded_ = false;
   uint8_t* blob_copy_ = nullptr;
-  TensorRecord* tensors_ = nullptr;
+  const TensorRecord* tensors_ = nullptr;
+  /// The graph's tensor table and requantization arrays are used in place.
+  bool tables_in_place_ = false;
   OpState* op_states_ = nullptr;
   size_t* tensor_offsets_ = nullptr;
   uint8_t* arena_ = nullptr;

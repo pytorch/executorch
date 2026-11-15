@@ -19,17 +19,21 @@
  * (backends/espressif/serialization/xts3.py). All multi-byte fields are
  * little-endian. A graph is a header, an optional input/output table
  * (version 6), fixed-size tensor and operation records, a parameter region
- * and a constant region. parse_graph() bounds-checks every region and record
- * before any accessor reads it.
+ * and a constant region. Version 7 pads the input/output table to a 4-byte
+ * boundary, so that the records and the parameter region are word-aligned and
+ * the runtime can use them where they are. parse_graph() bounds-checks every
+ * region and record before any accessor reads it.
  */
 
 namespace executorch {
 namespace backends {
 namespace espressif {
 
-/// Graph versions accepted by this runtime; 6 adds the input/output table.
+/// Graph versions accepted by this runtime; 6 adds the input/output table and
+/// 7 aligns the tables that follow it.
 static constexpr uint32_t GRAPH_ESP_NN_INT8_VERSION = 5;
 static constexpr uint32_t GRAPH_ESP_NN_INT8_IO_VERSION = 6;
+static constexpr uint32_t GRAPH_ESP_NN_INT8_ALIGNED_VERSION = 7;
 static constexpr size_t GRAPH_HEADER_SIZE = 22;
 static constexpr size_t GRAPH_IO_TABLE_HEADER_SIZE = 4;
 static constexpr size_t MAX_GRAPH_IO = 16;

@@ -34,11 +34,13 @@ from executorch.backends.espressif.reference import (
     esp_nn_reference as reference,
     ProgramEmulator,
 )
+from executorch.backends.espressif.serialization import xts3
 from executorch.backends.espressif.test import (
     test_int8_lowering as lowering_cases,
     test_int8_ops as op_cases,
 )
 from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes import MemoryPlanningPass
 
 RUNNER = os.environ.get("ESPNN_HOST_RUNNER")
@@ -65,10 +67,16 @@ def disable_grad():
         yield
 
 
-def lower(model, shapes, planned_io: bool = True):
+def lower(model, shapes, planned_io: bool = True, xts3_version: int | None = None):
     _, program = op_cases.quantize(model, shapes)
     edge, report = to_espnn_edge(program, allow_cpu_fallback=False)
     assert not report["cpu_ops"]
+    if xts3_version is not None:
+        for _, module in edge.exported_program().graph_module.named_children():
+            if isinstance(module, LoweredBackendModule):
+                graph = xts3.parse_graph(module.processed_bytes)
+                graph.version = xts3_version
+                module._processed_bytes = xts3.serialize_graph(graph)
     config = ExecutorchBackendConfig(
         memory_planning_pass=MemoryPlanningPass(
             alloc_graph_input=planned_io, alloc_graph_output=planned_io
@@ -150,6 +158,8 @@ def test_host_delegate_matches_reference(tmp_path, name, model, shapes):
         for delegate in emulator.delegates.values()
     )
     assert stats["delegates"] == len(emulator.delegates)
+    # Version 7 graphs keep every requantization table in place.
+    assert stats["parameters"] == 0
     if stats["scratch"]:
         assert stats["arena"] == planned
     else:
@@ -177,3 +187,15 @@ def test_unplanned_io_shared_with_the_caller(tmp_path):
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
+
+
+def test_version_6_graphs_still_run(tmp_path):
+    model, shapes = lowering_cases.SEBlockModel(), [(1, 3, 16, 16)]
+    exported, program = lower(model, shapes, xts3_version=6)
+    steps = random_steps(shapes, 2)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert all(d.graph.version == 6 for d in emulator.delegates.values())
+    assert stats["parameters"] > 0

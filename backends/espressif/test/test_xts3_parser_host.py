@@ -89,6 +89,8 @@ def _layout(graph: xts3.XTS3Graph):
             len(graph.inputs) + len(graph.outputs)
         )
     tensors = xts3.HEADER_SIZE + io_table
+    if graph.version >= 7:
+        tensors += -tensors % 4
     operations = tensors + xts3.TENSOR_SIZE * len(graph.tensors)
     parameters = operations + xts3.OP_SIZE * len(graph.operations)
     offsets, cursor = [], parameters

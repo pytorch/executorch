@@ -29,5 +29,7 @@ for variant in plain sanitized; do
         -DPYTHON_EXECUTABLE="$(command -v python)" "${options[@]}"
     cmake --build "${build_dir}/${variant}"
     ESPNN_HOST_RUNNER="${build_dir}/${variant}/espnn_host_runner" \
-        python -m pytest -v --tb=short backends/espressif/test/test_host_runtime.py
+        ESPNN_HOST_INTERPRETER="${build_dir}/${variant}/espnn_host_interpreter" \
+        python -m pytest -v --tb=short backends/espressif/test/test_host_runtime.py \
+        backends/espressif/test/test_host_interpreter.py
 done

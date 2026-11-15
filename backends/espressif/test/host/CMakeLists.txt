@@ -6,10 +6,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-# Host build of the ESP-NN delegate and espnn_host_runner, for
-# backends/espressif/test/test_host_runtime.py (see "On the host" in
-# backends/espressif/README.md). -DESPNN_HOST_SANITIZE=ON builds everything with
-# AddressSanitizer and UndefinedBehaviorSanitizer.
+# Host build of the ESP-NN delegate, espnn_host_runner and
+# espnn_host_interpreter, for backends/espressif/test/test_host_runtime.py and
+# test_host_interpreter.py (see "On the host" in backends/espressif/README.md).
+# -DESPNN_HOST_SANITIZE=ON builds everything with AddressSanitizer and
+# UndefinedBehaviorSanitizer.
 
 cmake_minimum_required(VERSION 3.24)
 project(espnn_host_runner CXX C)
@@ -59,3 +60,6 @@ target_include_directories(espnn_host_runner PRIVATE "${EXECUTORCH_ROOT}/..")
 target_link_libraries(
   espnn_host_runner PRIVATE executorch_core extension_data_loader espnn_backend
 )
+
+add_executable(espnn_host_interpreter espnn_host_interpreter.cpp)
+target_link_libraries(espnn_host_interpreter PRIVATE espnn_backend)

@@ -11,6 +11,7 @@
 #include <espnn/int8_interpreter.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -55,6 +56,71 @@ class InvokeLock {
  private:
   SemaphoreHandle_t handle_;
 };
+
+// A version 7 graph keeps its tensor table and parameter region word-aligned.
+// On a little-endian target its tensor records then have TensorRecord's
+// layout, and per-channel multipliers and shifts are int32 arrays.
+static_assert(
+    sizeof(TensorRecord) == TENSOR_RECORD_SIZE &&
+        offsetof(TensorRecord, dtype) == 8 &&
+        offsetof(TensorRecord, rank) == 10 &&
+        offsetof(TensorRecord, shape) == 12 &&
+        offsetof(TensorRecord, quant_scale) == 28 &&
+        offsetof(TensorRecord, quant_zero_point) == 32,
+    "TensorRecord must have the XTS3 tensor record layout");
+
+bool graph_tables_aligned(const GraphView& graph) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  return graph.header.version >= GRAPH_ESP_NN_INT8_ALIGNED_VERSION &&
+      (reinterpret_cast<uintptr_t>(graph.data) & 3U) == 0;
+#else
+  return false;
+#endif
+}
+
+// An int32 array of the parameter region where it sits in the graph, or
+// nullptr when it must be copied.
+const int32_t* int32s_in_place(bool tables_in_place, const uint8_t* data) {
+  if (!tables_in_place || (reinterpret_cast<uintptr_t>(data) & 3U) != 0)
+    return nullptr;
+  return reinterpret_cast<const int32_t*>(data);
+}
+
+// The per-channel requantization multipliers and shifts of a convolution or
+// linear operation, little-endian int32 arrays in its parameter block.
+bool requantization_arrays(
+    const GraphView& graph,
+    const TensorRecord* tensors,
+    const OperationRecord& op,
+    const uint8_t*& multipliers,
+    const uint8_t*& shifts,
+    uint32_t& count) {
+  const uint8_t* p = graph.parameter_data + op.parameter_offset;
+  switch (static_cast<OpCode>(op.opcode)) {
+    case OpCode::CONV2D:
+    case OpCode::DEPTHWISE_CONV2D: {
+      count = static_cast<uint32_t>(tensors[op.outputs[0]].shape[1]);
+      Int8ConvParams params{};
+      if (!read_int8_conv_params(graph, op, count, params))
+        return false;
+      multipliers = params.multipliers;
+      shifts = params.shifts;
+      return true;
+    }
+    case OpCode::TRANSPOSE_CONV2D:
+      count = static_cast<uint32_t>(tensors[op.outputs[0]].shape[1]);
+      multipliers = p + TRANSPOSE_CONV_PARAMS_SIZE;
+      shifts = multipliers + 4 * count;
+      return true;
+    case OpCode::LINEAR:
+      count = static_cast<uint32_t>(tensors[op.inputs[1]].shape[0]);
+      multipliers = p + INT8_PAIR_PARAMS_SIZE;
+      shifts = multipliers + 4 * count;
+      return true;
+    default:
+      return false;
+  }
+}
 
 size_t align_up(size_t value, size_t alignment) {
   return (value + alignment - 1) & ~(alignment - 1);
@@ -205,8 +271,9 @@ void Int8Interpreter::reset() {
     heap_caps_free(params_);
   if (blob_copy_ != nullptr)
     heap_caps_free(blob_copy_);
-  if (tensors_ != nullptr)
-    heap_caps_free(tensors_);
+  if (tensors_ != nullptr && !tables_in_place_)
+    heap_caps_free(const_cast<TensorRecord*>(tensors_));
+  tables_in_place_ = false;
   if (op_states_ != nullptr)
     heap_caps_free(op_states_);
   if (op_us_ != nullptr)
@@ -242,10 +309,10 @@ bool Int8Interpreter::load(
   }
   if (!is_int8_graph_version(graph_.header.version)) {
     std::printf(
-        "ERROR: model is XTS3 v%u; the int8 runtime requires v%u or v%u\n",
+        "ERROR: model is XTS3 v%u; the int8 runtime requires v%u to v%u\n",
         static_cast<unsigned>(graph_.header.version),
         static_cast<unsigned>(GRAPH_ESP_NN_INT8_VERSION),
-        static_cast<unsigned>(GRAPH_ESP_NN_INT8_IO_VERSION));
+        static_cast<unsigned>(GRAPH_ESP_NN_INT8_ALIGNED_VERSION));
     return false;
   }
   const bool misaligned =
@@ -268,8 +335,12 @@ bool Int8Interpreter::load(
 
   const uint32_t tensor_count = graph_.header.num_tensors;
   const uint32_t op_count = graph_.header.num_operations;
-  tensors_ = static_cast<TensorRecord*>(
-      heap_caps_calloc(tensor_count, sizeof(TensorRecord), MALLOC_CAP_8BIT));
+  tables_in_place_ = graph_tables_aligned(graph_);
+  tensors_ = tables_in_place_
+      ? reinterpret_cast<const TensorRecord*>(
+            graph_.data + graph_.tensor_table_offset)
+      : static_cast<TensorRecord*>(heap_caps_calloc(
+            tensor_count, sizeof(TensorRecord), MALLOC_CAP_8BIT));
   op_states_ = static_cast<OpState*>(
       heap_caps_calloc(op_count, sizeof(OpState), MALLOC_CAP_8BIT));
   tensor_offsets_ = static_cast<size_t*>(
@@ -285,8 +356,11 @@ bool Int8Interpreter::load(
     reset();
     return false;
   }
-  for (uint32_t i = 0; i < tensor_count; ++i)
-    read_tensor(graph_, i, tensors_[i]);
+  if (!tables_in_place_) {
+    TensorRecord* tensors = const_cast<TensorRecord*>(tensors_);
+    for (uint32_t i = 0; i < tensor_count; ++i)
+      read_tensor(graph_, i, tensors[i]);
+  }
   input_count_ = graph_input_count(graph_);
   output_count_ = graph_output_count(graph_);
   if (input_count_ > MAX_GRAPH_IO || output_count_ > MAX_GRAPH_IO) {
@@ -326,6 +400,10 @@ bool Int8Interpreter::load(
         return false;
       }
       rebase_constants(old_base, size);
+      if (tables_in_place_) {
+        tensors_ = reinterpret_cast<const TensorRecord*>(
+            graph_.data + graph_.tensor_table_offset);
+      }
     }
   }
   if (options_.dual_core) {
@@ -479,15 +557,25 @@ bool Int8Interpreter::plan_memory() {
 
 bool Int8Interpreter::prepare_operations() {
   const uint32_t op_count = graph_.header.num_operations;
+  // Requantization parameters are used where they sit in a version 7 graph,
+  // and copied into params_ otherwise.
   size_t param_words = 0;
   for (uint32_t i = 0; i < op_count; ++i) {
     OperationRecord op{};
     read_operation(graph_, i, op);
-    const OpCode code = static_cast<OpCode>(op.opcode);
-    if (code == OpCode::CONV2D || code == OpCode::DEPTHWISE_CONV2D ||
-        code == OpCode::LINEAR || code == OpCode::TRANSPOSE_CONV2D) {
-      param_words += 2U * tensor_element_count(tensors_[op.inputs[2]]);
-    } else if (code == OpCode::SOFTMAX) {
+    const uint8_t* multipliers = nullptr;
+    const uint8_t* shifts = nullptr;
+    uint32_t channels = 0;
+    if (requantization_arrays(
+            graph_, tensors_, op, multipliers, shifts, channels)) {
+      if (int32s_in_place(tables_in_place_, multipliers) == nullptr ||
+          int32s_in_place(tables_in_place_, shifts) == nullptr)
+        param_words += 2U * channels;
+    } else if (
+        static_cast<OpCode>(op.opcode) == OpCode::SOFTMAX &&
+        int32s_in_place(
+            tables_in_place_, graph_.parameter_data + op.parameter_offset) ==
+            nullptr) {
       param_words += 256U;
     }
   }
@@ -511,6 +599,31 @@ bool Int8Interpreter::prepare_operations() {
       state.scratch_bytes = bytes;
     if (bytes > scratch_size)
       scratch_size = bytes;
+  };
+  auto bind_requantization = [this, &cursor](
+                                 OpState& state, const OperationRecord& op) {
+    const uint8_t* multipliers = nullptr;
+    const uint8_t* shifts = nullptr;
+    uint32_t channels = 0;
+    if (!requantization_arrays(
+            graph_, tensors_, op, multipliers, shifts, channels))
+      return false;
+    const int32_t* multipliers_in_place =
+        int32s_in_place(tables_in_place_, multipliers);
+    const int32_t* shifts_in_place = int32s_in_place(tables_in_place_, shifts);
+    if (multipliers_in_place != nullptr && shifts_in_place != nullptr) {
+      state.multipliers = const_cast<int32_t*>(multipliers_in_place);
+      state.shifts = const_cast<int32_t*>(shifts_in_place);
+      return true;
+    }
+    state.multipliers = cursor;
+    state.shifts = cursor + channels;
+    for (uint32_t c = 0; c < channels; ++c) {
+      state.multipliers[c] = read_le_i32(multipliers + c * 4);
+      state.shifts[c] = read_le_i32(shifts + c * 4);
+    }
+    cursor += 2U * channels;
+    return true;
   };
   for (uint32_t i = 0; i < op_count; ++i) {
     OperationRecord op{};
@@ -541,13 +654,8 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, weight));
         state.bias = reinterpret_cast<const int32_t*>(
             tensor_constant_data(graph_, bias));
-        state.multipliers = cursor;
-        state.shifts = cursor + channels;
-        for (uint32_t c = 0; c < channels; ++c) {
-          state.multipliers[c] = read_le_i32(params.multipliers + c * 4);
-          state.shifts[c] = read_le_i32(params.shifts + c * 4);
-        }
-        cursor += 2U * channels;
+        if (!bind_requantization(state, op))
+          return false;
         state.quant.mult = state.multipliers;
         state.quant.shift = state.shifts;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
@@ -674,7 +782,6 @@ bool Int8Interpreter::prepare_operations() {
       case OpCode::TRANSPOSE_CONV2D: {
         const TensorRecord& weight = tensors_[op.inputs[1]];
         const TensorRecord& bias = tensors_[op.inputs[2]];
-        const uint32_t channels = static_cast<uint32_t>(output.shape[1]);
         state.weights = reinterpret_cast<const int8_t*>(
             tensor_constant_data(graph_, weight));
         state.bias = reinterpret_cast<const int32_t*>(
@@ -685,15 +792,8 @@ bool Int8Interpreter::prepare_operations() {
         state.dilation_w = read_le_i32(p + 36);
         state.value0 = read_le_i32(p + 44);
         state.value1 = read_le_i32(p + 48);
-        state.multipliers = cursor;
-        state.shifts = cursor + channels;
-        const uint8_t* multipliers = p + TRANSPOSE_CONV_PARAMS_SIZE;
-        const uint8_t* shifts = multipliers + channels * 4U;
-        for (uint32_t c = 0; c < channels; ++c) {
-          state.multipliers[c] = read_le_i32(multipliers + c * 4);
-          state.shifts[c] = read_le_i32(shifts + c * 4);
-        }
-        cursor += 2U * channels;
+        if (!bind_requantization(state, op))
+          return false;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
         state.output_dims = {
             output.shape[3], output.shape[2], output.shape[1], 1};
@@ -733,10 +833,14 @@ bool Int8Interpreter::prepare_operations() {
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
       case OpCode::SOFTMAX:
-        state.multipliers = cursor;
-        for (int k = 0; k < 256; ++k)
-          state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
-        cursor += 256;
+        if (const int32_t* table = int32s_in_place(tables_in_place_, p)) {
+          state.multipliers = const_cast<int32_t*>(table);
+        } else {
+          state.multipliers = cursor;
+          for (int k = 0; k < 256; ++k)
+            state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
+          cursor += 256;
+        }
         state.cols = input.shape[1];
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
@@ -768,16 +872,8 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, bias));
         state.value0 = read_le_i32(p);
         state.value1 = read_le_i32(p + 4);
-        state.multipliers = cursor;
-        state.shifts = cursor + state.rows;
-        const uint8_t* multipliers = p + INT8_PAIR_PARAMS_SIZE;
-        const uint8_t* shifts =
-            multipliers + static_cast<size_t>(state.rows) * 4U;
-        for (int32_t r = 0; r < state.rows; ++r) {
-          state.multipliers[r] = read_le_i32(multipliers + r * 4);
-          state.shifts[r] = read_le_i32(shifts + r * 4);
-        }
-        cursor += 2 * state.rows;
+        if (!bind_requantization(state, op))
+          return false;
         break;
       }
       default:
@@ -825,6 +921,12 @@ void Int8Interpreter::rebase_constants(const uint8_t* old_base, size_t size) {
       state.bias = reinterpret_cast<const int32_t*>(rebase(state.bias));
     if (state.table != nullptr)
       state.table = rebase(state.table);
+    state.multipliers = const_cast<int32_t*>(
+        reinterpret_cast<const int32_t*>(rebase(state.multipliers)));
+    state.shifts = const_cast<int32_t*>(
+        reinterpret_cast<const int32_t*>(rebase(state.shifts)));
+    state.quant.mult = state.multipliers;
+    state.quant.shift = state.shifts;
   }
 }
 

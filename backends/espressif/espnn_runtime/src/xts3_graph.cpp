@@ -42,7 +42,7 @@ bool valid_dtype(uint8_t dtype) {
 }
 
 bool valid_opcode(uint8_t opcode, uint32_t version) {
-  if (version == GRAPH_ESP_NN_INT8_IO_VERSION) {
+  if (version >= GRAPH_ESP_NN_INT8_IO_VERSION) {
     return opcode <= static_cast<uint8_t>(OpCode::TRANSPOSE_CONV2D);
   }
   return opcode <= static_cast<uint8_t>(OpCode::SOFTMAX);
@@ -554,7 +554,7 @@ bool validate_int8_dataflow(const GraphView& graph) {
     if ((tensor.flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0)
       ++output_count;
   }
-  if (graph.header.version == GRAPH_ESP_NN_INT8_IO_VERSION) {
+  if (graph.header.version >= GRAPH_ESP_NN_INT8_IO_VERSION) {
     TensorSet listed_input;
     TensorSet listed_output;
     for (uint32_t i = 0; i < graph.num_inputs; ++i) {
@@ -653,7 +653,8 @@ int32_t read_le_i32(const uint8_t* p) {
 
 bool is_int8_graph_version(uint32_t version) {
   return version == GRAPH_ESP_NN_INT8_VERSION ||
-      version == GRAPH_ESP_NN_INT8_IO_VERSION;
+      version == GRAPH_ESP_NN_INT8_IO_VERSION ||
+      version == GRAPH_ESP_NN_INT8_ALIGNED_VERSION;
 }
 
 namespace {
@@ -868,7 +869,7 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
   graph.data = data;
   graph.size = size;
   graph.tensor_table_offset = GRAPH_HEADER_SIZE;
-  if (graph.header.version == GRAPH_ESP_NN_INT8_IO_VERSION) {
+  if (graph.header.version >= GRAPH_ESP_NN_INT8_IO_VERSION) {
     if (!range_valid(GRAPH_HEADER_SIZE, GRAPH_IO_TABLE_HEADER_SIZE, size))
       return false;
     graph.num_inputs = read_u16(data + GRAPH_HEADER_SIZE);
@@ -891,6 +892,21 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
     }
     graph.tensor_table_offset =
         GRAPH_HEADER_SIZE + GRAPH_IO_TABLE_HEADER_SIZE + io_bytes;
+  }
+  if (graph.header.version >= GRAPH_ESP_NN_INT8_ALIGNED_VERSION) {
+    const size_t padded = (graph.tensor_table_offset + 3U) & ~size_t{3};
+    if (!range_valid(
+            graph.tensor_table_offset,
+            padded - graph.tensor_table_offset,
+            size))
+      return false;
+    for (size_t i = graph.tensor_table_offset; i < padded; ++i) {
+      if (data[i] != 0) {
+        std::printf("ERROR: graph IO table padding is not zero\n");
+        return false;
+      }
+    }
+    graph.tensor_table_offset = padded;
   }
   graph.tensor_record_size = TENSOR_RECORD_SIZE;
   const size_t tensor_bytes =
@@ -953,7 +969,7 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
       return false;
     }
     const bool quantized_constant_allowed =
-        graph.header.version == GRAPH_ESP_NN_INT8_IO_VERSION &&
+        graph.header.version >= GRAPH_ESP_NN_INT8_IO_VERSION &&
         tensor.dtype == static_cast<uint8_t>(DataType::INT8);
     if ((is_constant
              ? ((tensor.dtype != static_cast<uint8_t>(DataType::INT8) &&
@@ -990,6 +1006,8 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
   for (uint32_t i = 0; i < graph.header.num_operations; ++i) {
     OperationRecord op{};
     read_operation(graph, i, op);
+    if (graph.header.version >= GRAPH_ESP_NN_INT8_ALIGNED_VERSION)
+      expected_parameter_offset = (expected_parameter_offset + 3U) & ~size_t{3};
     if (op.op_id != (i & 0xFFU) ||
         !valid_opcode(op.opcode, graph.header.version) || op.num_inputs == 0 ||
         op.num_inputs > 6 || op.num_outputs == 0 || op.num_outputs > 2 ||

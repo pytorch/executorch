@@ -19,8 +19,10 @@ from executorch.backends.espressif.utils.quantization import (
 )
 
 MAGIC = b"XTS3"
-XTS3_VERSION = 6
-XTS3_VERSIONS = (5, 6)
+# Version 7 is version 6 with the IO table padded to 4 bytes, so that the
+# runtime can use the tensor records and parameter blocks in place.
+XTS3_VERSION = 7
+XTS3_VERSIONS = (5, 6, 7)
 IO_TABLE_HEADER = "<HH"
 IO_TABLE_HEADER_SIZE = struct.calcsize(IO_TABLE_HEADER)
 
@@ -1948,6 +1950,8 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
     parameter_data = bytearray()
     operation_data = bytearray()
     for operation in graph.operations:
+        if graph.version >= 7:
+            parameter_data += b"\x00" * (-len(parameter_data) % 4)
         operation_data += _serialize_operation(operation, len(parameter_data))
         parameter_data += operation.params
     io_table = b""
@@ -1959,6 +1963,8 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
         ) + struct.pack(
             f"<{len(graph.inputs) + len(graph.outputs)}I", *graph.inputs, *graph.outputs
         )
+    if graph.version >= 7:
+        io_table += b"\x00" * ((-(HEADER_SIZE + len(io_table))) % 4)
     prefix = (
         HEADER_SIZE
         + len(io_table)
@@ -1987,7 +1993,7 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
 
 
 def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
-    """Parse and bounds-check an XTS3 v5 or v6 int8 graph."""
+    """Parse and bounds-check an XTS3 v5, v6 or v7 int8 graph."""
     if len(data) < HEADER_SIZE:
         raise ValueError("Graph blob is smaller than the header")
     magic, version, tensor_count, operation_count, parameter_size, constant_size = (
@@ -2012,6 +2018,11 @@ def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
         ids = struct.unpack_from(f"<{input_count + output_count}I", data, offset)
         graph_inputs, graph_outputs = list(ids[:input_count]), list(ids[input_count:])
         offset += 4 * (input_count + output_count)
+    if version >= 7:
+        padding = (-offset) % 4
+        if data[offset : offset + padding] != b"\x00" * padding:
+            raise ValueError("Graph IO table padding is not zero")
+        offset += padding
 
     if offset + tensor_count * TENSOR_SIZE > len(data):
         raise ValueError("Graph tensor region exceeds blob")
