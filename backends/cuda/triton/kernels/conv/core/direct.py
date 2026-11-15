@@ -246,7 +246,9 @@ def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
             return "dw_mult needs a depthwise convolution with a channel multiplier"
         multiplier = w.shape[0] // call.params.groups
         if multiplier > MAX_MULT_MULTIPLIER:
-            return f"dw_mult: channel multiplier {multiplier} above {MAX_MULT_MULTIPLIER}"
+            return (
+                f"dw_mult: channel multiplier {multiplier} above {MAX_MULT_MULTIPLIER}"
+            )
     if name in ("grp_plane", "grp_reduce"):
         w = call.weight
         if w.shape[1] == 1 and w.shape[0] == call.params.groups:
@@ -298,7 +300,9 @@ def _flat_row(
             xv = tl.load(
                 x_base + ci * SX_C + ih * SX_H + iw * SX_W, mask=tap_mask, other=0.0
             )
-            wv = tl.load(w_base + ci * SW_CI + kh * SW_H + kw * SW_W, mask=mask, other=0.0)
+            wv = tl.load(
+                w_base + ci * SW_CI + kh * SW_H + kw * SW_W, mask=mask, other=0.0
+            )
             acc += xv.to(tl.float32) * wv.to(tl.float32)
     return acc
 
@@ -335,7 +339,9 @@ def _flat_row_same_size(
         tap_mask = row_mask & (ow >= PAD_W - kw) & (ow < W + PAD_W - kw)
         for ci in tl.static_range(CG):
             xv = tl.load(row + ci * SX_C + (kw - PAD_W), mask=tap_mask, other=0.0)
-            wv = tl.load(w_base + ci * SW_CI + kh * SW_H + kw * SW_W, mask=mask, other=0.0)
+            wv = tl.load(
+                w_base + ci * SW_CI + kh * SW_H + kw * SW_W, mask=mask, other=0.0
+            )
             acc += xv.to(tl.float32) * wv.to(tl.float32)
     return acc
 
@@ -424,26 +430,94 @@ def _flat_kernel(
         if CG == 1:
             for kh in tl.static_range(KH):
                 acc = _flat_row_same_size(
-                    acc, x_pos, w_base, mask, oh, ow, kh, CG, H, W, KW, PAD_H,
-                    PAD_W, SX_C, SW_CI, SW_H, SW_W,
+                    acc,
+                    x_pos,
+                    w_base,
+                    mask,
+                    oh,
+                    ow,
+                    kh,
+                    CG,
+                    H,
+                    W,
+                    KW,
+                    PAD_H,
+                    PAD_W,
+                    SX_C,
+                    SW_CI,
+                    SW_H,
+                    SW_W,
                 )
         else:
             for kh in range(KH):
                 acc = _flat_row_same_size(
-                    acc, x_pos, w_base, mask, oh, ow, kh, CG, H, W, KW, PAD_H,
-                    PAD_W, SX_C, SW_CI, SW_H, SW_W,
+                    acc,
+                    x_pos,
+                    w_base,
+                    mask,
+                    oh,
+                    ow,
+                    kh,
+                    CG,
+                    H,
+                    W,
+                    KW,
+                    PAD_H,
+                    PAD_W,
+                    SX_C,
+                    SW_CI,
+                    SW_H,
+                    SW_W,
                 )
     elif CG == 1:
         for kh in tl.static_range(KH):
             acc = _flat_row(
-                acc, x_base, w_base, mask, oh, ow, kh, CG, H, W, KW, STRIDE_H,
-                STRIDE_W, PAD_H, PAD_W, SX_C, SX_H, SX_W, SW_CI, SW_H, SW_W,
+                acc,
+                x_base,
+                w_base,
+                mask,
+                oh,
+                ow,
+                kh,
+                CG,
+                H,
+                W,
+                KW,
+                STRIDE_H,
+                STRIDE_W,
+                PAD_H,
+                PAD_W,
+                SX_C,
+                SX_H,
+                SX_W,
+                SW_CI,
+                SW_H,
+                SW_W,
             )
     else:
         for kh in range(KH):
             acc = _flat_row(
-                acc, x_base, w_base, mask, oh, ow, kh, CG, H, W, KW, STRIDE_H,
-                STRIDE_W, PAD_H, PAD_W, SX_C, SX_H, SX_W, SW_CI, SW_H, SW_W,
+                acc,
+                x_base,
+                w_base,
+                mask,
+                oh,
+                ow,
+                kh,
+                CG,
+                H,
+                W,
+                KW,
+                STRIDE_H,
+                STRIDE_W,
+                PAD_H,
+                PAD_W,
+                SX_C,
+                SX_H,
+                SX_W,
+                SW_CI,
+                SW_H,
+                SW_W,
             )
     if HAS_BIAS:
         acc += tl.load(b_ptr + c, mask=mask, other=0.0).to(tl.float32)
@@ -469,7 +543,14 @@ def _store_row(out_ptrs, acc, mask, ow, OW: tl.constexpr, SO_W: tl.constexpr):
 
 @triton.jit
 def _row8_input_row(
-    acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7,
+    acc0,
+    acc1,
+    acc2,
+    acc3,
+    acc4,
+    acc5,
+    acc6,
+    acc7,
     ptrs,
     row_mask,
     w_row,
@@ -590,7 +671,14 @@ def _row8_kernel(
             ih = oh * STRIDE_H + kh - PAD_H
             row_mask = c_mask & (ih >= 0) & (ih < H)
             acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7 = _row8_input_row(
-                acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7,
+                acc0,
+                acc1,
+                acc2,
+                acc3,
+                acc4,
+                acc5,
+                acc6,
+                acc7,
                 x_base + ih * SX_H,
                 row_mask,
                 w_base + kh * SW_H,
@@ -608,7 +696,14 @@ def _row8_kernel(
             row_mask = c_mask & (ih >= 0) & (ih < H)
             for ci in tl.static_range(CG):
                 acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7 = _row8_input_row(
-                    acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7,
+                    acc0,
+                    acc1,
+                    acc2,
+                    acc3,
+                    acc4,
+                    acc5,
+                    acc6,
+                    acc7,
                     x_base + ci * SX_C + ih * SX_H,
                     row_mask,
                     w_base + ci * SW_CI + kh * SW_H,
@@ -722,11 +817,7 @@ def _multiplier_kernel(
     if HAS_BIAS:
         acc += tl.load(b_ptr + c, mask=m_mask, other=0.0).to(tl.float32)[:, None]
     out_ptrs = (
-        out_ptr
-        + n * SO_N
-        + c[:, None] * SO_C
-        + oh[None, :] * SO_H
-        + ow[None, :] * SO_W
+        out_ptr + n * SO_N + c[:, None] * SO_C + oh[None, :] * SO_H + ow[None, :] * SO_W
     )
     tl.store(
         out_ptrs,
@@ -940,7 +1031,13 @@ PLANE_CONFIGS = [
 ]
 REDUCE_CONFIGS = [
     triton.Config({"BLOCK": block, "BLOCK_R": r}, num_warps=warps)
-    for block, r, warps in ((16, 64, 4), (32, 32, 4), (8, 128, 4), (64, 16, 4), (32, 64, 8))
+    for block, r, warps in (
+        (16, 64, 4),
+        (32, 32, 4),
+        (8, 128, 4),
+        (64, 16, 4),
+        (32, 64, 8),
+    )
 ]
 _KERNELS = {
     "dw_flat": triton.autotune(configs=FLAT_CONFIGS, key=_TUNING_KEY)(_flat_kernel),
