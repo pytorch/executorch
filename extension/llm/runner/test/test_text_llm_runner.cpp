@@ -301,6 +301,90 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
 }
 
 // Test that warmup() calls generate with the warming flag set
+// stop() called while the prompt is being prefilled must end the generation:
+// only the token prefill produced is emitted, and the decoder never runs.
+TEST_F(RunnerTest, StopDuringPrefillEndsGeneration) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  EXPECT_CALL(*text_decoder_runner, step(_, _)).Times(0);
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  TextLLMRunner* runner_ptr = nullptr;
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        runner_ptr->stop(); // e.g. the user cancels while the prompt runs
+        return Result<uint64_t>(4);
+      });
+
+  auto stats = std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+  runner_ptr = &runner;
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+  CallbackCounter counter;
+  Error err = runner.generate(
+      "test prompt", config, [&counter](const std::string& token) {
+        counter.callback(token);
+      });
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(counter.getCount(), 1);
+}
+
+// A stop() from before generate() must not carry into it.
+TEST_F(RunnerTest, StopBeforeGenerateDoesNotCarryOver) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+  auto stats = std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+  runner.load();
+  runner.stop();
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+  CallbackCounter counter;
+  Error err = runner.generate(
+      "test prompt", config, [&counter](const std::string& token) {
+        counter.callback(token);
+      });
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(counter.getCount(), config.max_new_tokens);
+}
+
 TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
   // Create mock instances using helper functions
   auto tokenizer = createMockTokenizer();
