@@ -21,6 +21,7 @@
 //   O  ONE dyn_conv1d graph reused across live input lengths
 //   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
 //   Q  dyn_layer_norm(_rows)   R dyn_mean_keepdim   S dyn_elu_silu (reused)
+//   S2 dyn_erf_gelu (reused)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -1957,6 +1958,16 @@ TEST(DynamicShape, EluSiluReusedGraph) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_elu_silu.pte";
   for (int s : {128, 32, 1, 128}) {
     check_s(m, "dyn_elu_silu", s);
+  }
+}
+
+// S2: x * 0.5 * (1 + erf(x / sqrt(2))) on ONE loaded graph, shrinking and
+// growing S.
+TEST(DynamicShape, ErfGeluReusedGraph) {
+  Module m(g_dir + "/dyn_erf_gelu.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_erf_gelu.pte";
+  for (int s : {128, 7, 1, 125, 7}) {
+    check_s(m, "dyn_erf_gelu", s);
   }
 }
 
