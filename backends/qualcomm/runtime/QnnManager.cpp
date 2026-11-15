@@ -16,6 +16,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <algorithm>
 #include <charconv>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -100,7 +101,16 @@ QnnManager::~QnnManager() {
 QnnManager::QnnManager(
     const QnnExecuTorchOptions* options,
     const QnnExecuTorchContextBinary& qnn_executorch_context_binary)
-    : qnn_context_blob_(qnn_executorch_context_binary), options_(options) {
+    : qnn_context_blob_(qnn_executorch_context_binary),
+      options_(options),
+      staging_blocks_(
+          [](size_t nbytes) {
+            return SharedBuffer::GetSharedBufferManager().AllocMem(
+                nbytes, alignof(std::max_align_t));
+          },
+          [](void* data) {
+            SharedBuffer::GetSharedBufferManager().FreeMem(data);
+          }) {
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
 
@@ -166,6 +176,43 @@ Error QnnManager::RegisterMem(
     return RegisterCustomMem(data_ptr, custom_mem_base, tensor_wrapper);
   }
   return RegisterIonMem(data_ptr, tensor_wrapper);
+}
+
+std::vector<void*> QnnManager::StagingBuffers(
+    const std::string& graph_name,
+    const std::vector<std::shared_ptr<TensorWrapper>>& tensors) {
+  auto staged = staged_buffers_.find(graph_name);
+  if (staged != staged_buffers_.end()) {
+    return staged->second.size() == tensors.size() ? staged->second
+                                                   : std::vector<void*>();
+  }
+  if (!options_->shared_buffer() ||
+      backend_params_ptr_->qnn_mem_manager_ptr_ == nullptr) {
+    return {};
+  }
+  std::vector<size_t> sizes, offsets;
+  for (const auto& tensor : tensors) {
+    sizes.push_back(tensor->GetBytes());
+  }
+  const size_t total = PackStaging(sizes, alignof(std::max_align_t), offsets);
+  auto* block = static_cast<char*>(staging_blocks_.Get(graph_name, total));
+  if (block == nullptr) {
+    return {};
+  }
+  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
+  std::vector<void*> buffers;
+  buffers.reserve(tensors.size());
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    void* buffer = block + offsets[i];
+    shared_buffer_manager.AddCusomMemTensorAddr(buffer, block);
+    if (RegisterCustomMem(buffer, block, tensors[i]) != Error::Ok) {
+      return {};
+    }
+    buffers.push_back(buffer);
+  }
+  // Registered once: each tensor keeps its staging memory handle.
+  staged_buffers_.emplace(graph_name, buffers);
+  return buffers;
 }
 
 Error QnnManager::RegisterIonMem(

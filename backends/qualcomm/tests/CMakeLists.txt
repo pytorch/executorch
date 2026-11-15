@@ -49,6 +49,12 @@ target_link_libraries(
   "$<LINK_GROUP:RESCAN,qnn_context,qnn_custom_protocol>"
   executorch_core GTest::gtest_main
 )
+add_executable(qnn_shared_io_staging_test test_shared_io_staging.cpp)
+target_include_directories(
+  qnn_shared_io_staging_test PRIVATE "${EXECUTORCH_ROOT}/.."
+)
+target_link_libraries(qnn_shared_io_staging_test PRIVATE GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(qnn_io_buffer_allocator_test)
 gtest_discover_tests(qnn_output_order_test)
+gtest_discover_tests(qnn_shared_io_staging_test)
