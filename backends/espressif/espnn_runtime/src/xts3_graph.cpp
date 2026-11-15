@@ -154,8 +154,10 @@ bool validate_int8_conv(
       1;
   if (output.shape[2] != expected_h || output.shape[3] != expected_w)
     return false;
+  // ESP-NN's convolution kernels take these as uint16_t.
   if (input.shape[1] > 65535 || input.shape[2] > 65535 ||
-      input.shape[3] > 65535 || output.shape[1] > 65535)
+      input.shape[3] > 65535 || output.shape[1] > 65535 ||
+      output.shape[2] > 65535 || output.shape[3] > 65535)
     return false;
   for (uint32_t i = 0; i < channels; ++i) {
     if (!valid_requantization(
@@ -407,7 +409,8 @@ bool validate_int8_operation(
           !is_int8_activation(out) || !same_quantization(a, out) ||
           a.rank != 4 || out.rank != 4 || a.shape[0] != 1 ||
           out.shape[0] != 1 || a.shape[1] != out.shape[1] ||
-          a.shape[1] > 65535 || a.shape[2] > 65535 || a.shape[3] > 65535)
+          a.shape[1] > 65535 || a.shape[2] > 65535 || a.shape[3] > 65535 ||
+          out.shape[2] > 65535 || out.shape[3] > 65535)
         return false;
       const int32_t kh = p[0];
       const int32_t kw = p[1];

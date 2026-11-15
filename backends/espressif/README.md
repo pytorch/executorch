@@ -100,6 +100,49 @@ wrote mobilenet_v2_espnn.pte
 
 Calibrate on a few hundred real samples; random data gives useless scales.
 
+### Inputs and outputs
+
+The delegate keeps rank-4 tensors in NHWC order. It reads an int8 input and
+writes an int8 output directly in the ExecuTorch tensor's memory when that
+memory is 16-byte aligned and already in this layout: the tensor is not rank
+4, has one channel or one pixel, or has a channels-last dim order. Anything
+else (float, NCHW with several channels and pixels, or a misaligned buffer)
+goes through a delegate-owned staging buffer and is quantized or transposed
+on the way. The staging buffer is allocated by the first `execute()` that
+needs it.
+
+For the smallest and fastest program, give the delegate int8, channels-last
+inputs and outputs and leave them out of ExecuTorch's memory plan, so that
+the application's own buffers are used:
+
+```python
+from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.quantize_io_pass import quantize_input, quantize_output
+
+# Example inputs (and calibration data) in channels-last memory format. An
+# output that PyTorch would make contiguous, such as a slice of a cat, needs
+# .clone(memory_format=torch.channels_last) at the end of forward().
+example_inputs = (torch.randn(1, 3, 96, 96).to(memory_format=torch.channels_last),)
+# ... quantize and calibrate as above ...
+program = torch.export.export(quantized, example_inputs)
+quantize_input(program, 0)
+quantize_output(program, 0)
+edge, report = to_espnn_edge(program)
+config = ExecutorchBackendConfig(
+    memory_planning_pass=MemoryPlanningPass(
+        alloc_graph_input=False, alloc_graph_output=False
+    )
+)
+pte = edge.to_executorch(config).buffer
+```
+
+The application then binds its buffers once, with `Method::set_input()` and
+`Method::set_output_data_ptr()`, and each step is a call to
+`Method::execute()`. An output may share memory with an input (for example,
+to update a state tensor in place): the delegate detects the overlap and
+writes that output through its staging buffer after all operators have run.
+
 ## Running on the ESP32-S3
 
 You need ESP-IDF and an activated ESP-IDF shell.
@@ -212,9 +255,10 @@ retain the bundled fixtures, SDK configuration, and resolved component versions.
 The delegate also builds outside ESP-IDF, for Linux and macOS, over ESP-NN's
 portable C kernels. `host/include` stands in for the few ESP-IDF APIs it uses,
 and ESP-NN is fetched from GitHub (or taken from `-DESPNN_LOCAL_PATH=...`).
-`test_host_runtime.py` runs fully delegated programs through the ExecuTorch
-runtime and this build, and checks every output against the host reference,
-with no board or emulator:
+`test_host_runtime.py` runs programs through the ExecuTorch runtime, this
+build and the portable kernels, and checks every output against the host
+reference (bit-exactly for fully delegated programs), with no board or
+emulator:
 
 ```bash
 cmake -S backends/espressif/test/host -B cmake-out-espnn-host -G Ninja
@@ -247,8 +291,9 @@ lintrunner --paths-cmd "git ls-files backends/espressif examples/espressif"
 - The delegate handle comes from ExecuTorch's runtime allocator, but each
   delegate allocates its activation arena, scratch buffers and optional PSRAM
   weight copy with ESP-IDF's `heap_caps` allocator at `init()`, so it can
-  choose between internal RAM and PSRAM. Nothing is allocated during
-  `execute()`.
+  choose between internal RAM and PSRAM. After that, only the first
+  `execute()` that needs a staging buffer (see "Inputs and outputs")
+  allocates.
 
 ## License
 

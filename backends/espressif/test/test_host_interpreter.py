@@ -19,6 +19,7 @@ backends/espressif/test/host/CMakeLists.txt.
 from __future__ import annotations
 
 import os
+import struct
 import subprocess
 
 import pytest
@@ -47,7 +48,9 @@ def disable_grad():
         yield
 
 
-def run(tmp_path, graph: xts3.XTS3Graph, offset: int, inputs) -> tuple[list, dict]:
+def run(
+    tmp_path, graph: xts3.XTS3Graph, offset: int, inputs, *options
+) -> tuple[list, dict]:
     blob = tmp_path / "graph.xts3"
     blob.write_bytes(xts3.serialize_graph(graph))
     input_paths, output_paths = [], []
@@ -58,7 +61,15 @@ def run(tmp_path, graph: xts3.XTS3Graph, offset: int, inputs) -> tuple[list, dic
     for o in range(len(graph.outputs)):
         output_paths.append(str(tmp_path / f"out_{offset}_{o}.bin"))
     result = subprocess.run(
-        [INTERPRETER, str(blob), str(offset), *input_paths, "--", *output_paths],
+        [
+            INTERPRETER,
+            str(blob),
+            str(offset),
+            *options,
+            *input_paths,
+            "--",
+            *output_paths,
+        ],
         capture_output=True,
         text=True,
     )
@@ -93,3 +104,56 @@ def test_graph_at_any_alignment(tmp_path, version):
         assert stats["blob_copied"] == ("0" if offset == 0 else "1")
         # Version 7 graphs keep their requantization parameters in place.
         assert (stats["parameters"] == "0") == (version == 7)
+
+
+def test_partial_copy_does_not_leak_into_a_bound_output(tmp_path):
+    # One COPY segment writes 4 of the output's 16 elements; the rest of a
+    # caller's output buffer must not keep its previous contents.
+    def tensor(tensor_id, size, flags):
+        return xts3.XTS3Tensor(
+            tensor_id,
+            (1, size),
+            xts3.XTS3DType.INT8,
+            flags=flags | xts3.TENSOR_FLAG_QUANTIZED,
+            quant_scale=1.0,
+        )
+
+    segment = struct.pack(
+        xts3.COPY_SEGMENT,
+        0,
+        1,
+        0,
+        0,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        *([1] + [0] * 5) * 2,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    graph = xts3.XTS3Graph(
+        tensors=[
+            tensor(0, 4, xts3.TENSOR_FLAG_GRAPH_INPUT),
+            tensor(1, 16, xts3.TENSOR_FLAG_GRAPH_OUTPUT),
+        ],
+        operations=[
+            xts3.XTS3Operation(
+                0,
+                xts3.XTS3OpCode.COPY,
+                [0],
+                [1],
+                struct.pack(xts3.COPY_HEADER, 1, 0, 0) + segment,
+            )
+        ],
+        inputs=[0],
+        outputs=[1],
+    )
+    values = np.arange(1, 5, dtype=np.int8)
+    (output,), _ = run(tmp_path, graph, 0, [values], "--external-io")
+    np.testing.assert_array_equal(output, np.concatenate([values, np.zeros(12)]))

@@ -154,6 +154,60 @@ def test_parser_rejects_oversized_upsample_tables(parser):
     assert parser({"upsample": corrupted}) == {"upsample": "reject"}
 
 
+def _wide_graph(opcode, width, params, weight=False):
+    """One operation from a [1, 1, 1, width - 1] input to a [1, 1, 1, width]
+    output, with a [1, 1, 1, 2] weight and a zero bias when weight is set."""
+    activation = xts3.TENSOR_FLAG_QUANTIZED
+    tensors = [
+        xts3.XTS3Tensor(0, (1, 1, 1, width - 1), xts3.XTS3DType.INT8),
+        xts3.XTS3Tensor(1, (1, 1, 1, width), xts3.XTS3DType.INT8),
+    ]
+    tensors[0].flags = activation | xts3.TENSOR_FLAG_GRAPH_INPUT
+    tensors[1].flags = activation | xts3.TENSOR_FLAG_GRAPH_OUTPUT
+    for tensor in tensors:
+        tensor.quant_scale = 1.0
+    inputs = [0]
+    constants = b""
+    if weight:
+        constant = xts3.TENSOR_FLAG_CONSTANT
+        tensors += [
+            xts3.XTS3Tensor(2, (1, 1, 1, 2), xts3.XTS3DType.INT8, 0, 2, constant),
+            xts3.XTS3Tensor(3, (1,), xts3.XTS3DType.INT32, 16, 4, constant),
+        ]
+        inputs += [2, 3]
+        constants = bytes(20)
+    graph = xts3.XTS3Graph(
+        tensors=tensors,
+        operations=[xts3.XTS3Operation(0, opcode, inputs, [1], params)],
+        constant_data=constants,
+        inputs=[0],
+        outputs=[1],
+    )
+    return xts3.serialize_graph(graph)
+
+
+def test_parser_rejects_outputs_wider_than_esp_nn_supports(parser):
+    # ESP-NN's pooling and convolution kernels take uint16_t dimensions: a
+    # (1, 2) window with padding (0, 1) widens 65535 to 65536.
+    pool = struct.pack(xts3.INT8_POOL_PARAMS, 1, 2, 1, 1, 0, 1, 1, 1, -128, 127)
+    conv = struct.pack(
+        xts3.INT8_CONV_BASE_PARAMS, 1, 2, 1, 1, 0, 1, 1, 1, 1, -128, 127
+    ) + struct.pack("<2i", 1 << 30, 0)
+    blobs = {}
+    for name, opcode, params, weight in [
+        ("pool", xts3.XTS3OpCode.MAX_POOL2D, pool, False),
+        ("conv", xts3.XTS3OpCode.CONV2D, conv, True),
+    ]:
+        blobs[f"{name}_widest"] = _wide_graph(opcode, 65535, params, weight)
+        blobs[f"{name}_too_wide"] = _wide_graph(opcode, 65536, params, weight)
+    assert parser(blobs) == {
+        "pool_widest": "accept",
+        "pool_too_wide": "reject",
+        "conv_widest": "accept",
+        "conv_too_wide": "reject",
+    }
+
+
 def test_parser_rejects_misaligned_int32_constants(parser):
     graph = _lowered(ops.DetectionHead(), [(1, 3, 16, 16)])
     blob = xts3.serialize_graph(graph)

@@ -13,7 +13,7 @@
  * backends/espressif/test/test_host_runtime.py.
  *
  *   espnn_host_runner PROGRAM IO_DIR STEPS [--instances N] [--share-io]
- *                     [--alias INPUT:OUTPUT]...
+ *                     [--alias INPUT:OUTPUT]... [--misalign]
  *
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
  * output o to IO_DIR/out_<k>_<s>_<o>.bin: the raw bytes of the tensor in its
@@ -22,8 +22,9 @@
  * outputs must not be memory planned), the tensors are bound once to runner
  * buffers through set_input and set_output_data_ptr, and --alias makes an
  * input and an output share one buffer: that input is then read from its file
- * at step 0 only and afterwards holds the output of the previous step. After
- * loading, the runner prints the delegates' memory as a STATS line.
+ * at step 0 only and afterwards holds the output of the previous step.
+ * --misalign places every runner buffer one byte past a 16-byte boundary. At
+ * the end, the runner prints the delegates' memory as a STATS line.
  */
 
 #include <cstdio>
@@ -83,18 +84,24 @@ void write_file(const std::string& path, const void* data, size_t size) {
   std::fclose(file);
 }
 
+uint8_t* aligned_buffer(uint8_t* base, size_t misalign) {
+  return base + (16 - reinterpret_cast<uintptr_t>(base) % 16) % 16 + misalign;
+}
+
 // A tensor over a runner-owned buffer with the program's shape and dim order.
 struct HostTensor {
-  explicit HostTensor(const TensorInfo& info)
+  HostTensor(const TensorInfo& info, size_t misalign)
       : sizes(info.sizes().begin(), info.sizes().end()),
         dim_order(info.dim_order().begin(), info.dim_order().end()),
         strides(sizes.size()),
-        data(info.nbytes()),
+        storage(info.nbytes() + 32),
+        data(aligned_buffer(storage.data(), misalign)),
+        nbytes(info.nbytes()),
         impl(
             info.scalar_type(),
             static_cast<ssize_t>(sizes.size()),
             sizes.data(),
-            data.data(),
+            data,
             dim_order.data(),
             strides.data()) {
     if (executorch::runtime::dim_order_to_stride(
@@ -105,7 +112,9 @@ struct HostTensor {
   std::vector<TensorImpl::SizesType> sizes;
   std::vector<TensorImpl::DimOrderType> dim_order;
   std::vector<TensorImpl::StridesType> strides;
-  std::vector<uint8_t> data;
+  std::vector<uint8_t> storage;
+  uint8_t* data;
+  size_t nbytes;
   TensorImpl impl;
 };
 
@@ -130,6 +139,7 @@ int main(int argc, char** argv) {
   const int steps = std::atoi(argv[3]);
   int instance_count = 1;
   bool share_io = false;
+  size_t misalign = 0;
   std::vector<std::pair<size_t, size_t>> aliases;
   for (int a = 4; a < argc; ++a) {
     const std::string arg = argv[a];
@@ -137,6 +147,8 @@ int main(int argc, char** argv) {
       instance_count = std::atoi(argv[++a]);
     } else if (arg == "--share-io") {
       share_io = true;
+    } else if (arg == "--misalign") {
+      misalign = 1;
     } else if (arg == "--alias" && a + 1 < argc) {
       unsigned input = 0, output = 0;
       if (std::sscanf(argv[++a], "%u:%u", &input, &output) != 2)
@@ -181,18 +193,17 @@ int main(int argc, char** argv) {
     instance.method = std::make_unique<Method>(std::move(method.get()));
 
     for (size_t i = 0; i < meta->num_inputs(); ++i) {
-      instance.inputs.push_back(
-          std::make_unique<HostTensor>(meta->input_tensor_meta(i).get()));
+      instance.inputs.push_back(std::make_unique<HostTensor>(
+          meta->input_tensor_meta(i).get(), misalign));
     }
     for (size_t o = 0; o < meta->num_outputs(); ++o) {
-      instance.outputs.push_back(
-          std::make_unique<HostTensor>(meta->output_tensor_meta(o).get()));
+      instance.outputs.push_back(std::make_unique<HostTensor>(
+          meta->output_tensor_meta(o).get(), misalign));
     }
     for (const auto& [input, output] : aliases) {
       if (input >= instance.inputs.size() ||
           output >= instance.outputs.size() ||
-          instance.inputs[input]->data.size() !=
-              instance.outputs[output]->data.size())
+          instance.inputs[input]->nbytes != instance.outputs[output]->nbytes)
         fail("invalid --alias");
     }
     if (!share_io)
@@ -204,26 +215,17 @@ int main(int argc, char** argv) {
         fail("set_input", static_cast<int>(error));
     }
     for (size_t o = 0; o < instance.outputs.size(); ++o) {
-      void* buffer = instance.outputs[o]->data.data();
+      void* buffer = instance.outputs[o]->data;
       for (const auto& [input, output] : aliases) {
         if (output == o)
-          buffer = instance.inputs[input]->data.data();
+          buffer = instance.inputs[input]->data;
       }
       Error error = instance.method->set_output_data_ptr(
-          buffer, instance.outputs[o]->data.size(), o);
+          buffer, instance.outputs[o]->nbytes, o);
       if (error != Error::Ok)
         fail("set_output_data_ptr", static_cast<int>(error));
     }
   }
-
-  const auto stats = executorch::backends::espressif::delegate_stats();
-  std::printf(
-      "STATS delegates=%u arena=%zu scratch=%zu parameters=%zu tables=%zu\n",
-      static_cast<unsigned>(stats.delegates),
-      stats.arena_bytes,
-      stats.scratch_bytes,
-      stats.parameter_bytes,
-      stats.table_bytes);
 
   for (int step = 0; step < steps; ++step) {
     for (int k = 0; k < instance_count; ++k) {
@@ -238,8 +240,8 @@ int main(int argc, char** argv) {
         const std::vector<uint8_t> bytes = read_file(
             io_dir + "/in_" + std::to_string(step) + "_" + std::to_string(i) +
                 ".bin",
-            tensor.data.size());
-        std::memcpy(tensor.data.data(), bytes.data(), bytes.size());
+            tensor.nbytes);
+        std::memcpy(tensor.data, bytes.data(), bytes.size());
         if (!share_io) {
           Error error = instance.method->set_input(
               EValue(executorch::aten::Tensor(&tensor.impl)), i);
@@ -261,5 +263,16 @@ int main(int argc, char** argv) {
       }
     }
   }
+  const auto stats = executorch::backends::espressif::delegate_stats();
+  std::printf(
+      "STATS delegates=%u arena=%zu scratch=%zu parameters=%zu tables=%zu "
+      "staging=%zu\n",
+      static_cast<unsigned>(stats.delegates),
+      stats.arena_bytes,
+      stats.scratch_bytes,
+      stats.parameter_bytes,
+      stats.table_bytes,
+      stats.staging_bytes);
+
   return 0;
 }

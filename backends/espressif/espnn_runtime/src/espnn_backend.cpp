@@ -11,6 +11,7 @@
 #include <espnn/espnn_backend.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -73,29 +74,54 @@ int8_t quantize(float value, float inverse_scale, int32_t zero_point) {
   return static_cast<int8_t>(q);
 }
 
-bool same_layout(const Tensor& tensor, const Int8TensorInfo& info) {
+// How an ExecuTorch tensor's bytes relate to the delegate's device layout
+// (NHWC for rank 4). kDevice: identical, because the tensor is not rank 4, its
+// transpose is trivial (one channel, or one pixel), or it is channels-last.
+// kNchw: a contiguous rank-4 tensor that needs transposing.
+enum class Layout : uint8_t { kInvalid, kNchw, kDevice };
+
+Layout tensor_layout(const Tensor& tensor, const Int8TensorInfo& info) {
   if (tensor.dim() != info.rank ||
       static_cast<size_t>(tensor.numel()) != info.bytes)
-    return false;
+    return Layout::kInvalid;
   for (uint8_t d = 0; d < info.rank; ++d) {
     if (tensor.size(d) != info.shape[d])
-      return false;
+      return Layout::kInvalid;
   }
-  return executorch::runtime::is_contiguous_dim_order(
-      tensor.dim_order().data(), tensor.dim_order().size());
+  const auto dim_order = tensor.dim_order();
+  if (executorch::runtime::is_contiguous_dim_order(
+          dim_order.data(), dim_order.size())) {
+    const bool trivial = info.rank != 4 || info.channels == 1 ||
+        static_cast<int64_t>(info.height) * info.width == 1;
+    return trivial ? Layout::kDevice : Layout::kNchw;
+  }
+  if (info.rank == 4 &&
+      executorch::runtime::is_channels_last_dim_order(
+          dim_order.data(), dim_order.size()))
+    return Layout::kDevice;
+  return Layout::kInvalid;
+}
+
+// The kernels may rely on the activation arena's 16-byte alignment, so only
+// buffers aligned like it are used in place.
+bool arena_aligned(const void* data) {
+  return reinterpret_cast<uintptr_t>(data) % 16 == 0;
+}
+
+bool overlaps(const void* a, size_t a_bytes, const void* b, size_t b_bytes) {
+  const uintptr_t a_begin = reinterpret_cast<uintptr_t>(a);
+  const uintptr_t b_begin = reinterpret_cast<uintptr_t>(b);
+  return a_begin < b_begin + b_bytes && b_begin < a_begin + a_bytes;
 }
 
 bool load_input(
-    Int8Interpreter& interpreter,
-    size_t index,
-    const Tensor& tensor) {
-  Int8TensorInfo info{};
-  if (!interpreter.input_info(index, info) || !same_layout(tensor, info))
-    return false;
-  int8_t* destination = interpreter.input_data(index);
+    const Int8TensorInfo& info,
+    Layout layout,
+    const Tensor& tensor,
+    int8_t* destination) {
   const size_t plane = static_cast<size_t>(info.height) * info.width;
   const size_t channels = static_cast<size_t>(info.channels);
-  const bool nchw = info.rank == 4;
+  const bool nchw = layout == Layout::kNchw;
   if (tensor.scalar_type() == ScalarType::Float) {
     const float* source = tensor.const_data_ptr<float>();
     const float inverse =
@@ -129,16 +155,13 @@ bool load_input(
 }
 
 bool store_output(
-    const Int8Interpreter& interpreter,
-    size_t index,
+    const Int8TensorInfo& info,
+    Layout layout,
+    const int8_t* source,
     Tensor& tensor) {
-  Int8TensorInfo info{};
-  if (!interpreter.output_info(index, info) || !same_layout(tensor, info))
-    return false;
-  const int8_t* source = interpreter.output_data(index);
   const size_t plane = static_cast<size_t>(info.height) * info.width;
   const size_t channels = static_cast<size_t>(info.channels);
-  const bool nchw = info.rank == 4;
+  const bool nchw = layout == Layout::kNchw;
   if (tensor.scalar_type() == ScalarType::Float) {
     float* destination = tensor.mutable_data_ptr<float>();
     if (!nchw) {
@@ -160,7 +183,8 @@ bool store_output(
   if (tensor.scalar_type() == ScalarType::Char) {
     int8_t* destination = tensor.mutable_data_ptr<int8_t>();
     if (!nchw) {
-      std::memcpy(destination, source, info.bytes);
+      if (destination != source)
+        std::memcpy(destination, source, info.bytes);
       return true;
     }
     for (size_t c = 0; c < channels; ++c) {
@@ -175,6 +199,52 @@ bool store_output(
 struct DelegateState {
   Int8Interpreter interpreter;
   bool profiled = false;
+  // Device-layout copies of the inputs and outputs whose tensors the
+  // interpreter cannot use directly (float, NCHW, misaligned, an input that is
+  // also an output, or an output that overlaps an input), one slot per input
+  // then per output. Allocated, zeroed, by the first execute() that needs one.
+  int8_t* staging = nullptr;
+
+  ~DelegateState() {
+    if (staging != nullptr)
+      heap_caps_free(staging);
+  }
+
+  int8_t* staging_slot(size_t slot) {
+    const size_t inputs = interpreter.input_count();
+    const size_t slots = inputs + interpreter.output_count();
+    size_t offset = 0;
+    size_t total = 0;
+    for (size_t k = 0; k < slots; ++k) {
+      Int8TensorInfo info{};
+      if (k < inputs ? !interpreter.input_info(k, info)
+                     : !interpreter.output_info(k - inputs, info))
+        return nullptr;
+      if (k == slot)
+        offset = total;
+      const size_t bytes = (info.bytes + 15) & ~static_cast<size_t>(15);
+      if (info.bytes > SIZE_MAX - 15 || bytes > SIZE_MAX - total)
+        return nullptr;
+      total += bytes;
+    }
+    if (staging == nullptr) {
+      staging = static_cast<int8_t*>(heap_caps_aligned_alloc(
+          16, total, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+      if (staging == nullptr) {
+        staging = static_cast<int8_t*>(
+            heap_caps_aligned_alloc(16, total, MALLOC_CAP_8BIT));
+      }
+      if (staging == nullptr) {
+        std::printf(
+            "EspNN delegate: cannot allocate %u staging bytes\n",
+            static_cast<unsigned>(total));
+        return nullptr;
+      }
+      std::memset(staging, 0, total);
+      g_stats.staging_bytes += total;
+    }
+    return staging + offset;
+  }
 };
 
 class EspNNBackendInterface final : public BackendInterface {
@@ -193,6 +263,7 @@ class EspNNBackendInterface final : public BackendInterface {
       return Error::MemoryAllocationFailed;
     DelegateState* state = new (memory) DelegateState();
     Int8RuntimeOptions options{};
+    options.external_io = true;
 #if CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
     options.copy_constants_to_psram = true;
 #endif
@@ -238,27 +309,112 @@ class EspNNBackendInterface final : public BackendInterface {
       return Error::InvalidArgument;
     }
     const int64_t started = esp_timer_get_time();
+    // An aligned int8 tensor already in the device layout is used in place;
+    // any other goes through a staging slot.
+    Int8TensorInfo info{};
     for (size_t i = 0; i < inputs; ++i) {
-      if (!args[i]->isTensor() ||
-          !load_input(interpreter, i, args[i]->toTensor())) {
+      const Layout layout =
+          args[i]->isTensor() && interpreter.input_info(i, info)
+          ? tensor_layout(args[i]->toTensor(), info)
+          : Layout::kInvalid;
+      bool ok = layout != Layout::kInvalid;
+      if (ok) {
+        const Tensor& tensor = args[i]->toTensor();
+        // An input that is also returned as an output is staged, so that
+        // outputs written over the caller's input buffers cannot change it.
+        bool returned = false;
+        for (size_t o = 0; o < outputs; ++o) {
+          Int8TensorInfo output{};
+          interpreter.output_info(o, output);
+          returned = returned || output.tensor_id == info.tensor_id;
+        }
+        if (tensor.scalar_type() == ScalarType::Char &&
+            layout == Layout::kDevice &&
+            arena_aligned(tensor.const_data_ptr()) && !returned) {
+          ok = interpreter.bind_input(i, tensor.const_data_ptr<int8_t>());
+        } else {
+          int8_t* slot = state->staging_slot(i);
+          if (slot == nullptr)
+            return Error::MemoryAllocationFailed;
+          ok = load_input(info, layout, tensor, slot) &&
+              interpreter.bind_input(i, slot);
+        }
+      }
+      if (!ok) {
         std::printf(
             "EspNN delegate: input %u has an unsupported dtype, shape or dim order\n",
             static_cast<unsigned>(i));
         return Error::InvalidArgument;
       }
     }
-    if (!interpreter.invoke())
-      return Error::Internal;
+    uint32_t staged_outputs = 0;
     for (size_t o = 0; o < outputs; ++o) {
-      if (!args[inputs + o]->isTensor())
-        return Error::InvalidArgument;
-      Tensor tensor = args[inputs + o]->toTensor();
-      if (!store_output(interpreter, o, tensor)) {
+      const Layout layout =
+          args[inputs + o]->isTensor() && interpreter.output_info(o, info)
+          ? tensor_layout(args[inputs + o]->toTensor(), info)
+          : Layout::kInvalid;
+      bool ok = layout != Layout::kInvalid;
+      // A graph tensor returned more than once is written where its first
+      // output is bound, and a graph input returned as an output stays where
+      // the input is bound; both are copied to their outputs afterwards.
+      bool repeated = false;
+      for (size_t earlier = 0; ok && earlier < o; ++earlier) {
+        Int8TensorInfo first{};
+        interpreter.output_info(earlier, first);
+        repeated = repeated || first.tensor_id == info.tensor_id;
+      }
+      for (size_t i = 0; ok && i < inputs; ++i) {
+        Int8TensorInfo input{};
+        interpreter.input_info(i, input);
+        repeated = repeated || input.tensor_id == info.tensor_id;
+      }
+      if (ok && repeated) {
+        staged_outputs |= 1U << o;
+      } else if (ok) {
+        Tensor tensor = args[inputs + o]->toTensor();
+        // The operations may still read an input after writing an output, so
+        // an output that shares memory with an input is staged.
+        bool direct = tensor.scalar_type() == ScalarType::Char &&
+            layout == Layout::kDevice && arena_aligned(tensor.const_data_ptr());
+        for (size_t i = 0; direct && i < inputs; ++i) {
+          Int8TensorInfo input{};
+          interpreter.input_info(i, input);
+          direct = !overlaps(
+              tensor.const_data_ptr(),
+              info.bytes,
+              interpreter.input_data(i),
+              input.bytes);
+        }
+        if (direct) {
+          ok = interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>());
+        } else {
+          int8_t* slot = state->staging_slot(inputs + o);
+          if (slot == nullptr)
+            return Error::MemoryAllocationFailed;
+          ok = interpreter.bind_output(o, slot);
+          staged_outputs |= 1U << o;
+        }
+      }
+      if (!ok) {
         std::printf(
             "EspNN delegate: output %u has an unsupported dtype, shape or dim order\n",
             static_cast<unsigned>(o));
         return Error::InvalidArgument;
       }
+    }
+    if (!interpreter.invoke())
+      return Error::Internal;
+    for (size_t o = 0; o < outputs; ++o) {
+      if ((staged_outputs & (1U << o)) == 0)
+        continue;
+      Tensor tensor = args[inputs + o]->toTensor();
+      interpreter.output_info(o, info);
+      if (!store_output(
+              info,
+              tensor_layout(tensor, info),
+              interpreter.output_data(o),
+              tensor))
+        return Error::InvalidArgument;
     }
     ++g_stats.calls;
     g_stats.total_us += esp_timer_get_time() - started;

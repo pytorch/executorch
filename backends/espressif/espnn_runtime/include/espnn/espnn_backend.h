@@ -38,6 +38,9 @@ struct DelegateStats {
   size_t scratch_bytes;
   size_t parameter_bytes;
   size_t table_bytes;
+  /// Sum of the buffers that delegates allocated on their first execute()
+  /// for inputs and outputs they cannot use in place.
+  size_t staging_bytes;
 };
 
 /**

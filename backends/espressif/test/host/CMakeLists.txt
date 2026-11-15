@@ -36,7 +36,7 @@ set(EXECUTORCH_BUILD_PYBIND OFF)
 set(EXECUTORCH_BUILD_DEVTOOLS OFF)
 set(EXECUTORCH_BUILD_XNNPACK OFF)
 set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED OFF)
-set(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
+set(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set(EXECUTORCH_BUILD_PTHREADPOOL OFF)
 set(EXECUTORCH_BUILD_CPUINFO OFF)
 set(EXECUTORCH_BUILD_TESTS OFF)
@@ -55,10 +55,14 @@ if(ESPNN_HOST_SANITIZE)
   target_compile_options(esp_nn_host PRIVATE -fno-sanitize=shift-base)
 endif()
 
+# The portable and quantized kernels run what a program leaves on the CPU.
+executorch_target_link_options_shared_lib(portable_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 add_executable(espnn_host_runner espnn_host_runner.cpp)
 target_include_directories(espnn_host_runner PRIVATE "${EXECUTORCH_ROOT}/..")
 target_link_libraries(
   espnn_host_runner PRIVATE executorch_core extension_data_loader espnn_backend
+                            portable_ops_lib quantized_ops_lib
 )
 
 add_executable(espnn_host_interpreter espnn_host_interpreter.cpp)

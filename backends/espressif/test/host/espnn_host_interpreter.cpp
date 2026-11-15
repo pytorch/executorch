@@ -12,11 +12,12 @@
  * Runs one XTS3 graph on Int8Interpreter directly, for
  * backends/espressif/test/test_host_interpreter.py:
  *
- *   espnn_host_interpreter GRAPH OFFSET INPUT... -- OUTPUT...
+ *   espnn_host_interpreter GRAPH OFFSET [--external-io] INPUT... -- OUTPUT...
  *
  * The graph is placed OFFSET bytes past a 16-byte boundary, so that a test can
  * load it from addresses with any alignment. Inputs and outputs are raw
- * device-layout (NHWC) int8 files.
+ * device-layout (NHWC) int8 files. With --external-io, inputs and outputs are
+ * bound to runner buffers, the outputs prefilled with 0x5a.
  */
 
 #include <cstdint>
@@ -29,6 +30,7 @@
 #include <espnn/int8_interpreter.h>
 
 using executorch::backends::espressif::Int8Interpreter;
+using executorch::backends::espressif::Int8RuntimeOptions;
 using executorch::backends::espressif::Int8TensorInfo;
 
 namespace {
@@ -61,9 +63,12 @@ int main(int argc, char** argv) {
   std::vector<const char*> inputs;
   std::vector<const char*> outputs;
   bool past_separator = false;
+  Int8RuntimeOptions options{};
   for (int a = 3; a < argc; ++a) {
     if (std::strcmp(argv[a], "--") == 0)
       past_separator = true;
+    else if (std::strcmp(argv[a], "--external-io") == 0)
+      options.external_io = true;
     else
       (past_separator ? outputs : inputs).push_back(argv[a]);
   }
@@ -75,11 +80,27 @@ int main(int argc, char** argv) {
   std::memcpy(base + offset, graph.data(), graph.size());
 
   Int8Interpreter interpreter;
-  if (!interpreter.load(base + offset, graph.size()))
+  if (!interpreter.load(base + offset, graph.size(), options))
     return fail("load failed");
   if (inputs.size() != interpreter.input_count() ||
       outputs.size() != interpreter.output_count())
     return fail("wrong number of inputs or outputs");
+  std::vector<std::vector<uint64_t>> bound(inputs.size() + outputs.size());
+  for (size_t k = 0; options.external_io && k < bound.size(); ++k) {
+    Int8TensorInfo info{};
+    if (k < inputs.size())
+      interpreter.input_info(k, info);
+    else
+      interpreter.output_info(k - inputs.size(), info);
+    bound[k].resize(info.bytes / 8 + 2);
+    int8_t* buffer = reinterpret_cast<int8_t*>(bound[k].data());
+    if (k < inputs.size()) {
+      interpreter.bind_input(k, buffer);
+    } else {
+      std::memset(buffer, 0x5a, info.bytes);
+      interpreter.bind_output(k - inputs.size(), buffer);
+    }
+  }
   for (size_t i = 0; i < inputs.size(); ++i) {
     Int8TensorInfo info{};
     interpreter.input_info(i, info);

@@ -49,6 +49,11 @@ struct Int8RuntimeOptions {
   /// operation. Saves memory, but the scratch then lives wherever the arena
   /// does (PSRAM for a large model).
   bool scratch_in_arena = false;
+  /// Leave graph inputs and outputs out of the activation arena: the caller
+  /// binds a device-layout (NHWC) buffer to each of them with bind_input()
+  /// and bind_output() before invoke(), and the operations read and write
+  /// those buffers directly.
+  bool external_io = false;
 };
 
 /**
@@ -123,6 +128,21 @@ class Int8Interpreter {
   bool input_info(size_t index, Int8TensorInfo& info) const;
   /// Describes output @p index. @retval false @p index is out of range.
   bool output_info(size_t index, Int8TensorInfo& info) const;
+  /**
+   * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
+   * buffer of input_info().bytes, the storage of input @p index until it is
+   * bound again. invoke() only reads it.
+   *
+   * @retval false external_io is off or @p index is out of range.
+   */
+  bool bind_input(size_t index, const int8_t* data);
+  /**
+   * Same for output @p index. invoke() writes the buffer while it may still
+   * read the inputs, so it must not overlap a bound input. An output that is
+   * also a graph input cannot be bound: output_data() returns the input's
+   * buffer.
+   */
+  bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
   int8_t* input_data(size_t index);
   /// Device-layout (NHWC) int8 buffer of output @p index, or nullptr.
@@ -184,7 +204,7 @@ class Int8Interpreter {
   size_t scratch_bytes() const {
     return scratch_size_;
   }
-  /// Size of the per-operation and per-tensor tables kept after load().
+  /// Size of the per-operation and per-tensor tables kept in RAM after load().
   size_t table_bytes() const;
   /// Size of the precomputed requantization tables.
   size_t parameter_bytes() const {
@@ -231,7 +251,7 @@ class Int8Interpreter {
   /// The graph's tensor table and requantization arrays are used in place.
   bool tables_in_place_ = false;
   OpState* op_states_ = nullptr;
-  size_t* tensor_offsets_ = nullptr;
+  int8_t** tensor_data_ = nullptr;
   uint8_t* arena_ = nullptr;
   size_t arena_size_ = 0;
   bool arena_internal_ = false;
