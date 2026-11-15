@@ -172,8 +172,20 @@ class Method:
                 a later execution may overwrite them, which avoids a copy.
 
         Returns:
-            A list of output values, typically torch.Tensor objects. Without
-            PyTorch, tensor outputs are ExecuTorchResult objects.
+            A list of output values. When PyTorch is installed, tensor outputs
+            are torch.Tensor objects, and the first call that returns one
+            imports torch. Without PyTorch, they are ExecuTorchResult objects.
+
+        .. warning::
+
+            A future release will make tensor outputs follow the tensor inputs:
+            torch.Tensor objects if any input is one, and ExecuTorchResult
+            objects if all are other tensors, even when PyTorch is installed.
+            With no tensor inputs, outputs stay torch.Tensor objects whenever
+            torch can be imported. Each call whose outputs will change warns
+            with a FutureWarning. Set ``EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT`` to
+            ``torch`` or ``executorch`` before importing ExecuTorch to choose
+            the type now.
         """
         return self._method(inputs, clone_outputs=clone_outputs)
 

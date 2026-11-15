@@ -12,6 +12,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 _DEQUANT_OPS: Tuple[torch._ops.OpOverload] = (
     torch.ops.quantized_decomposed.dequantize_per_tensor.default,
@@ -57,6 +58,31 @@ class RemoveNoopPass(ExportPass):
 
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
+                continue
+
+            if node.target == torch.ops.aten.copy.default and len(node.args) == 2:
+                # Each run_decompositions in to_edge_transform_and_lower unlifts
+                # the program, which writes every mutated user input back with
+                # copy_(input, new_value); refunctionalized, that is
+                # copy(input, new_value). Upstream drops it for buffers but not
+                # for user inputs, so it keeps an index update of an input from
+                # being reinplaced. index_put keeps its self's representation,
+                # quantization included, so copying its result back into that
+                # same tensor is a no-op. Other copies are kept: their metadata
+                # alone cannot show that two tensors share quantization
+                # parameters.
+                dst, src = node.args
+                if (
+                    src.target == torch.ops.aten.index_put.default
+                    and src.args[0] is dst
+                    and all(
+                        statically_known_true(dst_stride == src_stride)
+                        for dst_stride, src_stride in zip(
+                            dst.meta["val"].stride(), src.meta["val"].stride()
+                        )
+                    )
+                ):
+                    node.replace_all_uses_with(src)
                 continue
 
             if node.target not in (

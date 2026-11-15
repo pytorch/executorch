@@ -22,6 +22,7 @@ import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
+from executorch.backends.webgpu.test.ops.test_erf import ErfGeluModule
 from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
@@ -440,6 +441,18 @@ def export_dynamic_expand_copy_rejection_case(out_dir: str) -> None:
     )
 
 
+def export_dynamic_erf_gelu_cases(out_dir: str, s_dim) -> None:
+    erf_gelu = ErfGeluModule()
+    _export(
+        erf_gelu,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_erf_gelu.pte"),
+        partitioner_cls=WebGPUPartitioner,
+    )
+    _write_goldens(erf_gelu, "dyn_erf_gelu", out_dir, [MAXS, 125, 7, 1])
+
+
 def export_dynamic_shape_cases(out_dir: str) -> None:
     """Write the dynamic + static .pte's and per-S goldens for the native test."""
     os.makedirs(out_dir, exist_ok=True)
@@ -554,6 +567,9 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
         partitioner_cls=WebGPUPartitioner,
     )
     _write_goldens(elu_silu, "dyn_elu_silu", out_dir, [MAXS, 32, 1])
+
+    # 2h.4) The hand-written exact GELU of ESM-2 / BERT (erf) with a DYNAMIC S.
+    export_dynamic_erf_gelu_cases(out_dir, s_dim)
 
     # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
     # fused dispatch at M=512; compact variants isolate commutative matching and
@@ -1769,6 +1785,9 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_elu_silu.pte",
                 "dyn_elu_silu.S32.input.bin",
                 "dyn_elu_silu.S32.golden.bin",
+                "dyn_erf_gelu.pte",
+                "dyn_erf_gelu.S125.input.bin",
+                "dyn_erf_gelu.S7.golden.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",
