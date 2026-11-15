@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
 import json
 import os
 import tempfile
@@ -36,6 +37,7 @@ from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_c
 from executorch.exir import EdgeCompileConfig
 from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.runtime import Runtime, Verification
 from torch._export.pass_base import PassType
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -142,6 +144,26 @@ class Tester(TesterBase):
             dynamic_shapes=dynamic_shapes,
             **kwargs,
         )
+
+    @staticmethod
+    def execute_from_file(pte: bytes, inputs: Tuple[Any, ...]) -> List[Any]:
+        """Runs the forward method of the program `pte`, loaded from a file.
+        Unlike a program loaded from a buffer, this one lets the delegates free
+        the constant data they no longer need after init."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pte_path = os.path.join(temp_dir, "program.pte")
+            with open(pte_path, "wb") as f:
+                f.write(pte)
+            program = Runtime.get().load_program(
+                pte_path, verification=Verification.Minimal
+            )
+            method = program.load_method("forward")
+            outputs = [output.clone() for output in method.execute(inputs)]
+            # The program keeps the .pte mapped while it or any of its methods
+            # is alive, and Windows refuses to delete a mapped file.
+            del method, program
+            gc.collect()
+        return outputs
 
     def xnnpack_node_types(self) -> Counter:
         """Node types in the serialized XNNPACK graph of the single delegate
