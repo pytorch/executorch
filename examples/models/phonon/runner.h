@@ -105,7 +105,10 @@ class Runner {
       max_prefill_;
   double frame_rate_, eos_threshold_, temperature_;
   std::vector<float> bos_embeds_, noise_;
+  // Shapes of the Mimi state passed in and out of mimi_decode; empty when the
+  // program keeps the state (mimi_state_in_program) and takes a reset flag.
   std::vector<std::vector<executorch::aten::SizesType>> mimi_state_sizes_;
+  bool mimi_state_in_program_ = false;
 };
 
 } // namespace phonon
