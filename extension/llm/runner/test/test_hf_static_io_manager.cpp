@@ -195,7 +195,8 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         "ET_HF_STATIC_TINY_PATH",
         "ET_HF_STATIC_TINY_HALF_PATH",
-        "ET_HF_STATIC_TINY_STATE_PATH"));
+        "ET_HF_STATIC_TINY_STATE_PATH",
+        "ET_HF_STATIC_TINY_V2_PATH"));
 
 TEST_P(HfStaticIOManagerTest, PrepareSetsEveryCounterFromStart) {
   int64_t token = 1, start = 7;
@@ -271,10 +272,48 @@ INSTANTIATE_TEST_SUITE_P(
         "logits_rows",
         "method_vocab",
         "state_count",
-        "state_shape"),
+        "state_shape",
+        "v2_no_key_layout",
+        "v2_layout_mismatch",
+        "v2_uint16_logits_unscaled"),
     [](const ::testing::TestParamInfo<const char*>& info) {
       return info.param;
     });
+
+TEST(HfStaticContractTest, Version2SizesOpaqueIntegerCaches) {
+  Module module(fixture_path("HfStatic_v2_uint16"));
+  HfStaticIOManager io(module);
+  ASSERT_EQ(io.load("prefill", "decode"), Error::Ok);
+  std::vector<int64_t> tokens = {1};
+  int64_t start = 0;
+  auto ids =
+      from_blob(tokens.data(), {1, 1}, executorch::aten::ScalarType::Long);
+  auto pos = from_blob(&start, {1}, executorch::aten::ScalarType::Long);
+  auto inputs = io.prepare_decode(ids, pos, "decode");
+  ASSERT_EQ(inputs.error(), Error::Ok);
+  const auto& keys = (*inputs)[3].toTensor();
+  const auto& values = (*inputs)[4].toTensor();
+  EXPECT_EQ(keys.scalar_type(), executorch::aten::ScalarType::UInt16);
+  EXPECT_EQ(keys.size(2), values.size(3));
+  EXPECT_EQ(keys.size(3), values.size(2));
+}
+
+TEST(HfStaticContractTest, Version2DequantizesUint16Logits) {
+  Module module(fixture_path("HfStatic_v2_uint16_logits"));
+  HfStaticIOManager io(module);
+  ASSERT_EQ(io.load("prefill", "decode"), Error::Ok);
+  std::vector<uint16_t> raw(32, 32768);
+  raw[5] = 40000;
+  auto logits =
+      from_blob(raw.data(), {1, 1, 32}, executorch::aten::ScalarType::UInt16);
+  std::vector<executorch::runtime::EValue> outputs(6);
+  outputs.emplace_back(*logits);
+  auto result = io.logits(outputs, "decode");
+  ASSERT_EQ(result.error(), Error::Ok);
+  const float* row = result->const_data_ptr<float>();
+  EXPECT_FLOAT_EQ(row[5], (40000 - 32768) * 0.5f);
+  EXPECT_FLOAT_EQ(row[0], 0.0f);
+}
 
 TEST(HfStaticContractTest, RejectsNewerContractVersion) {
   Module module(fixture_path("HfStatic_newer_version"));

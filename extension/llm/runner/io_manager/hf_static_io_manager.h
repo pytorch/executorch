@@ -28,7 +28,10 @@ namespace llm {
  * A program may carry `prefill` (N tokens per step, for the prompt) and
  * `decode` (one token), or a single `forward`.
  *
- * Version 1 supports float32 and float16 caches. See the versioned contract
+ * Version 1 supports float32 and float16 caches. Version 2 adds keys stored
+ * [1, H, D, L] (get_key_layout = "transposed"), uint8/uint16 caches, whose
+ * contents are opaque to the runner, and uint16 logits dequantized with
+ * get_logits_scale / get_logits_zero_point. See the versioned contract
  * in docs/source/llm-hf-static-io-contract.md for metadata and padding rules.
  *
  * Sliding-window layers may hold window-sized caches (HF's): get_max_seq_len
@@ -43,7 +46,7 @@ namespace llm {
 class ET_EXPERIMENTAL HfStaticIOManager : public IOManager {
  public:
   static constexpr const char* kContract = "hf_static";
-  static constexpr int64_t kContractVersion = 1;
+  static constexpr int64_t kContractVersion = 2;
 
   explicit HfStaticIOManager(ET_MODULE_NAMESPACE::Module& module);
   ~HfStaticIOManager() override;
@@ -131,6 +134,11 @@ class ET_EXPERIMENTAL HfStaticIOManager : public IOManager {
       executorch::aten::ScalarType::Float;
   int32_t num_layers_ = 0;
   int64_t context_len_ = 0;
+  // Version 2: keys stored [1, H, D, L]; uint16 logits and their encoding.
+  bool keys_transposed_ = false;
+  bool quantized_logits_ = false;
+  float logits_scale_ = 1.0f;
+  float logits_zero_point_ = 0.0f;
   std::vector<float> logits_f_;
   TensorPtr logits_f_tensor_;
 };

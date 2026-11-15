@@ -28,9 +28,10 @@ def _heads(x, weight):
 
 
 class TinyHfStaticDecoder(torch.nn.Module):
-    def __init__(self, return_state=False):
+    def __init__(self, return_state=False, key_layout="hf"):
         super().__init__()
         self.return_state = return_state
+        self.key_layout = key_layout
         torch.manual_seed(0)
         self.embed = torch.nn.Embedding(VOCAB, HIDDEN)
         self.qkvo = torch.nn.ModuleList(
@@ -46,11 +47,17 @@ class TinyHfStaticDecoder(torch.nn.Module):
         ):
             slots = torch.arange(steps) + counter
             q, k, v, o = layer.weight.split(HIDDEN)
-            keys.index_copy_(2, slots, _heads(x, k).to(keys.dtype))
+            rows = _heads(x, k).to(keys.dtype)
+            if self.key_layout == "transposed":
+                keys.index_copy_(3, slots, rows.transpose(2, 3))
+                key_rows = keys.transpose(2, 3)
+            else:
+                keys.index_copy_(2, slots, rows)
+                key_rows = keys
             values.index_copy_(2, slots, _heads(x, v).to(values.dtype))
             counter.add_(steps)
             attn = torch.nn.functional.scaled_dot_product_attention(
-                _heads(x, q), keys.float(), values.float(), attn_mask=attention_mask
+                _heads(x, q), key_rows.float(), values.float(), attn_mask=attention_mask
             )
             x = x + attn.transpose(1, 2).reshape(1, steps, HIDDEN) @ o.t()
         logits = self.head(x)
@@ -64,13 +71,14 @@ def _inputs(tokens, start, steps):
     return ids, mask, positions[None]
 
 
-def _caches(dtype=torch.float32):
+def _caches(dtype=torch.float32, key_layout="hf"):
     shape = (1, HEADS, CONTEXT, HIDDEN // HEADS)
+    keys = (1, HEADS, HIDDEN // HEADS, CONTEXT) if key_layout == "transposed" else shape
     return [
         tensor
         for _ in range(LAYERS)
         for tensor in (
-            torch.zeros(shape, dtype=dtype),
+            torch.zeros(keys, dtype=dtype),
             torch.zeros(shape, dtype=dtype),
             torch.zeros((), dtype=torch.long),
         )
@@ -78,7 +86,7 @@ def _caches(dtype=torch.float32):
 
 
 def expected_tokens(model, dtype):
-    caches, start = _caches(dtype), 0
+    caches, start = _caches(dtype, model.key_layout), 0
     generated = []
     with torch.no_grad():
         while start < len(PROMPT):
@@ -99,15 +107,18 @@ def expected_tokens(model, dtype):
     return generated
 
 
-def _metadata(dtype=torch.float32):
-    return {
+def _metadata(dtype=torch.float32, key_layout=None):
+    metadata = {
         "get_io_contract": "hf_static",
         "get_io_contract_version": 1,
-        "get_cache_dtype": "float32" if dtype == torch.float32 else "float16",
+        "get_cache_dtype": str(dtype).removeprefix("torch."),
         "get_n_layers": LAYERS,
         "get_max_seq_len": CONTEXT,
         "get_vocab_size": VOCAB,
     }
+    if key_layout is not None:
+        metadata.update(get_io_contract_version=2, get_key_layout=key_layout)
+    return metadata
 
 
 def _lower(programs, metadata):
@@ -126,14 +137,16 @@ def _lower(programs, metadata):
     )
 
 
-def export(model, dtype):
+def export(model, dtype, version_2=False):
     programs = {
         name: torch.export.export(
-            model, (*_inputs([0], 0, steps), *_caches(dtype)), strict=False
+            model,
+            (*_inputs([0], 0, steps), *_caches(dtype, model.key_layout)),
+            strict=False,
         )
         for name, steps in (("prefill", PREFILL), ("decode", 1))
     }
-    metadata = _metadata(dtype)
+    metadata = _metadata(dtype, model.key_layout if version_2 else None)
     metadata.update(
         get_test_prompt=PROMPT, get_test_expected=expected_tokens(model, dtype)
     )
@@ -151,9 +164,14 @@ class ContractProbe(torch.nn.Module):
 
     def forward(self, *inputs):
         for tensor in inputs[self.first_cache :]:
-            tensor.add_(1)
+            if tensor.dtype == torch.uint16:
+                tensor.copy_(torch.zeros_like(tensor))
+            else:
+                tensor.add_(1)
         shape = self.logits_shape or (1, inputs[0].shape[1], VOCAB)
         logits = torch.zeros(shape) + inputs[0].sum().float()
+        if self.state_case == "v2_uint16_logits":
+            logits = logits.to(torch.uint16)
         if self.state_case == "state_count":
             return logits, inputs[self.first_cache]
         if self.state_case == "state_shape":
@@ -164,9 +182,12 @@ class ContractProbe(torch.nn.Module):
 
 
 def export_probe(case):
-    metadata = _metadata()
+    metadata = _metadata(
+        torch.uint16 if case == "v2_uint16" else torch.float32,
+        "transposed" if case.startswith("v2_") else None,
+    )
     overrides = {
-        "newer_version": {"get_io_contract_version": 2},
+        "newer_version": {"get_io_contract_version": 3},
         "zero_version": {"get_io_contract_version": 0},
         "version_type": {"get_io_contract_version": "1"},
         "dtype_mismatch": {"get_cache_dtype": "float16"},
@@ -186,10 +207,20 @@ def export_probe(case):
     metadata.update(overrides.get(case, {}))
     if case.startswith("missing_"):
         del metadata["get_" + case.removeprefix("missing_")]
+    if case == "v2_no_key_layout":
+        del metadata["get_key_layout"]
+    if case in ("v2_uint16_logits", "v2_uint16_logits_unscaled"):
+        metadata.update(get_logits_scale=0.5, get_logits_zero_point=32768)
+    if case == "v2_uint16_logits_unscaled":
+        del metadata["get_logits_scale"], metadata["get_logits_zero_point"]
     programs = {}
     for name, steps in (("prefill", PREFILL), ("decode", 1)):
         inputs, first_cache, logits_shape = _probe_inputs(case, name, steps)
-        model = ContractProbe(first_cache, logits_shape, case)
+        model = ContractProbe(
+            first_cache,
+            logits_shape,
+            "v2_uint16_logits" if case.startswith("v2_uint16_logits") else case,
+        )
         programs[name] = torch.export.export(model, tuple(inputs), strict=False)
     return _lower(programs, metadata)
 
@@ -228,6 +259,12 @@ def _probe_inputs(case, name, steps):
     }
     for index, shape, dtype in shapes.get((name, case), []):
         inputs[index] = torch.zeros(shape, dtype=dtype)
+    if case == "v2_uint16":
+        inputs[3:] = _caches(torch.uint16, "transposed")
+    elif case.startswith("v2_"):
+        inputs[3:] = _caches(torch.float32, "transposed")
+        if case == "v2_layout_mismatch":
+            inputs[3:] = _caches(torch.float32, "hf")
     if case == "cache_batch":
         for c in (3, 4):
             inputs[c] = torch.zeros(2, HEADS, CONTEXT, HIDDEN // HEADS)
@@ -280,6 +317,11 @@ PROBE_CASES = (
     "method_vocab",
     "state_count",
     "state_shape",
+    "v2_uint16",
+    "v2_uint16_logits",
+    "v2_uint16_logits_unscaled",
+    "v2_no_key_layout",
+    "v2_layout_mismatch",
 )
 
 
@@ -290,19 +332,22 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     torch.set_num_threads(1)
     torch.set_grad_enabled(False)
-    for name, dtype, return_state in (
-        ("HfStaticTiny", torch.float32, False),
-        ("HfStaticTinyHalf", torch.float16, False),
-        ("HfStaticTinyWithState", torch.float32, True),
+    for name, dtype, return_state, key_layout in (
+        ("HfStaticTiny", torch.float32, False, "hf"),
+        ("HfStaticTinyHalf", torch.float16, False, "hf"),
+        ("HfStaticTinyWithState", torch.float32, True, "hf"),
+        ("HfStaticTinyV2", torch.float32, False, "transposed"),
     ):
-        model = TinyHfStaticDecoder(return_state).eval().requires_grad_(False)
+        model = TinyHfStaticDecoder(return_state, key_layout).eval()
         with open(os.path.join(args.outdir, name + ".pte"), "wb") as f:
-            export(model, dtype).write_to_file(f)
+            export(
+                model.requires_grad_(False), dtype, key_layout != "hf"
+            ).write_to_file(f)
     for case in PROBE_CASES:
         with open(os.path.join(args.outdir, "HfStatic_" + case + ".pte"), "wb") as f:
             export_probe(case).write_to_file(f)
     with open(os.path.join(args.outdir, "hf_static_fixtures.stamp"), "w") as f:
-        f.write("float-cache v1 fixtures\n")
+        f.write("v1 and v2 fixtures\n")
 
 
 if __name__ == "__main__":

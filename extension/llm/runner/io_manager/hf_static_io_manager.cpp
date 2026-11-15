@@ -150,11 +150,49 @@ Error HfStaticIOManager::load_metadata() {
       InvalidArgument,
       "hf_static: get_cache_dtype must be float32 or float16.");
   const std::string label(dtype->toString());
+  const bool v2 = version->toInt() >= 2;
   ET_CHECK_OR_RETURN_ERROR(
-      label == "float32" || label == "float16",
+      label == "float32" || label == "float16" ||
+          (v2 && (label == "uint16" || label == "uint8")),
       InvalidArgument,
       "hf_static: unsupported cache dtype '%s'.",
       label.c_str());
+  if (v2) {
+    ET_CHECK_OR_RETURN_ERROR(
+        names->count("get_key_layout"),
+        InvalidArgument,
+        "hf_static: version 2 requires metadata method get_key_layout.");
+    auto key_layout = module_.get("get_key_layout");
+    ET_CHECK_OK_OR_RETURN_ERROR(key_layout.error());
+    ET_CHECK_OR_RETURN_ERROR(
+        key_layout->isString(),
+        InvalidArgument,
+        "hf_static: get_key_layout must be a string.");
+    const std::string keys(key_layout->toString());
+    ET_CHECK_OR_RETURN_ERROR(
+        keys == "hf" || keys == "transposed",
+        InvalidArgument,
+        "hf_static: unsupported key layout '%s'.",
+        keys.c_str());
+    keys_transposed_ = keys == "transposed";
+    if (names->count("get_logits_scale")) {
+      auto scale = module_.get("get_logits_scale");
+      ET_CHECK_OK_OR_RETURN_ERROR(scale.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          names->count("get_logits_zero_point"),
+          InvalidArgument,
+          "hf_static: get_logits_scale requires get_logits_zero_point.");
+      auto zero = module_.get("get_logits_zero_point");
+      ET_CHECK_OK_OR_RETURN_ERROR(zero.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          scale->isDouble() && scale->toDouble() > 0 && zero->isInt(),
+          InvalidArgument,
+          "hf_static: get_logits_scale/get_logits_zero_point are malformed.");
+      logits_scale_ = static_cast<float>(scale->toDouble());
+      logits_zero_point_ = static_cast<float>(zero->toInt());
+      quantized_logits_ = true;
+    }
+  }
   auto layers = module_.get("get_n_layers");
   ET_CHECK_OK_OR_RETURN_ERROR(layers.error());
   auto context = module_.get("get_max_seq_len");
@@ -166,7 +204,10 @@ Error HfStaticIOManager::load_metadata() {
           context->toInt() <= std::numeric_limits<int32_t>::max(),
       InvalidArgument,
       "hf_static: get_n_layers and get_max_seq_len must be positive integers.");
-  cache_dtype_ = label == "float32" ? ScalarType::Float : ScalarType::Half;
+  cache_dtype_ = label == "float32" ? ScalarType::Float
+      : label == "float16"          ? ScalarType::Half
+      : label == "uint16"           ? ScalarType::UInt16
+                                    : ScalarType::Byte;
   num_layers_ = static_cast<int32_t>(layers->toInt());
   context_len_ = context->toInt();
   metadata_loaded_ = true;
@@ -251,12 +292,15 @@ Error HfStaticIOManager::load_method(const std::string& method) {
         c + 2);
     const auto keys = infos[c].sizes();
     const auto values = infos[c + 1].sizes();
+    const bool same_shape = keys_transposed_
+        ? keys[1] == values[1] && keys[2] == values[3] && keys[3] == values[2]
+        : std::equal(keys.begin(), keys.end(), values.begin());
     ET_CHECK_OR_RETURN_ERROR(
-        keys[0] == 1 && keys[1] > 0 && keys[2] >= io.query_len &&
-            keys[2] <= context_len_ && keys[3] > 0 &&
-            std::equal(keys.begin(), keys.end(), values.begin()),
+        keys[0] == 1 && values[0] == 1 && values[1] > 0 &&
+            values[2] >= io.query_len && values[2] <= context_len_ &&
+            values[3] > 0 && same_shape,
         InvalidArgument,
-        "hf_static: %s: keys and values must share [1, H, L, D], N <= L <= context.",
+        "hf_static: %s: keys must be [1, H, L, D] (or [1, H, D, L] transposed) and values [1, H, L, D], N <= L <= context.",
         method.c_str());
   }
   for (size_t s = 0; s < io.first_cache; ++s) {
@@ -291,11 +335,13 @@ Error HfStaticIOManager::load_method(const std::string& method) {
   const auto logits_sizes = logits_meta->sizes();
   ET_CHECK_OR_RETURN_ERROR(
       (logits_meta->scalar_type() == ScalarType::Float ||
-       logits_meta->scalar_type() == ScalarType::Half) &&
+       logits_meta->scalar_type() == ScalarType::Half ||
+       (quantized_logits_ &&
+        logits_meta->scalar_type() == ScalarType::UInt16)) &&
           logits_sizes.size() == 3 && logits_sizes[0] == 1 &&
           logits_sizes[1] == io.query_len && logits_sizes[2] > 0,
       InvalidArgument,
-      "hf_static: %s: logits must be float32/float16 [1, N, V].",
+      "hf_static: %s: logits must be float32/float16 [1, N, V] (or uint16 with get_logits_scale).",
       method.c_str());
   if (caches_.empty()) {
     caches_.resize(num_cache_inputs);
@@ -512,6 +558,14 @@ Result<executorch::aten::Tensor> HfStaticIOManager::logits(
           t.const_data_ptr<executorch::aten::Half>() + row * vocab;
       for (size_t i = 0; i < vocab; ++i) {
         logits_f_[i] = static_cast<float>(src[i]);
+      }
+      break;
+    }
+    case ScalarType::UInt16: {
+      const auto* src = t.const_data_ptr<uint16_t>() + row * vocab;
+      for (size_t i = 0; i < vocab; ++i) {
+        logits_f_[i] =
+            (static_cast<float>(src[i]) - logits_zero_point_) * logits_scale_;
       }
       break;
     }
