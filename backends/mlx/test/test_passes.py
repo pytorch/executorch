@@ -10,6 +10,7 @@ Tests for graph transformation passes in the MLX backend.
 """
 
 import unittest
+from unittest.mock import patch
 
 import executorch.exir as exir
 import torch
@@ -1211,6 +1212,113 @@ class TestReinplacePass(unittest.TestCase):
                 )
                 # The MLX builder must lower the in-place op (handler registered).
                 MLXProgramBuilder(eep).build()
+
+
+class TestNVFP4LinearDtype(unittest.TestCase):
+    """A bf16 NVFP4 linear stays bf16: MLX promotes the bf16 matmul output times
+    the 0-dim float32 per-tensor scale to float32, so the handler casts back."""
+
+    def _build(self, bias: bool, use_per_tensor_scale=True, dtype=torch.bfloat16):
+        from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Config
+        from torchao.quantization import quantize_
+
+        model = nn.Sequential(nn.Linear(64, 128, bias=bias)).to(dtype).eval()
+        quantize_(
+            model, ExportableNVFP4Config(use_per_tensor_scale=use_per_tensor_scale)
+        )
+        x = torch.randn(2, 64, dtype=dtype)
+        ep = export(model, (x,), strict=True).run_decompositions({})
+        program = MLXProgramBuilder(ep).build()
+        return [i.op for c in program.instruction_chains for i in c.instructions]
+
+    def test_scaled_output_is_cast_back(self):
+        for bias in (False, True):
+            with self.subTest(bias=bias):
+                ops = self._build(bias)
+                names = [type(op).__name__ for op in ops]
+                q = names.index("QuantizedMatmulNode")
+                self.assertEqual(
+                    names[q:],
+                    ["QuantizedMatmulNode", "MultiplyNode"]
+                    + (["AddNode"] if bias else [])
+                    + ["AsTypeNode"],
+                )
+                self.assertEqual(ops[-1].x.idx, ops[q].out.idx)
+                self.assertEqual(ops[-1].out.idx, ops[q].out.idx)
+                self.assertEqual(ops[-1].scalar_type, 15)  # bfloat16
+
+    def test_no_promotion_needs_no_cast(self):
+        for dtype, use_per_tensor_scale in (
+            (torch.bfloat16, False),
+            (torch.float32, True),
+        ):
+            for bias in (False, True):
+                with self.subTest(dtype=dtype, scale=use_per_tensor_scale, bias=bias):
+                    ops = self._build(bias, use_per_tensor_scale, dtype)
+                    names = [type(op).__name__ for op in ops]
+                    q = names.index("QuantizedMatmulNode")
+                    self.assertEqual(
+                        names[q:],
+                        ["QuantizedMatmulNode"]
+                        + (["MultiplyNode"] if use_per_tensor_scale else [])
+                        + (["AddNode"] if bias else []),
+                    )
+
+    def test_bias_promotion_is_cast_back(self):
+        from executorch.backends.mlx.patterns import NVFP4QuantizedLinearHandler
+        from executorch.backends.mlx.serialization.mlx_graph_schema import (
+            AddNode,
+            AsTypeNode,
+            QuantizedMatmulNode,
+        )
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        # Test the handler directly: ordinary PyTorch linear rejects mixed bias dtypes.
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = fake_mode.from_tensor(torch.empty(2, 64, dtype=torch.bfloat16))
+        qdata = graph.placeholder("qdata")
+        qdata.meta["val"] = fake_mode.from_tensor(
+            torch.empty(128, 8, dtype=torch.uint32)
+        )
+        scale = graph.placeholder("scale")
+        scale.meta["val"] = fake_mode.from_tensor(
+            torch.empty(128, 4, dtype=torch.uint8)
+        )
+        per_tensor_scale = graph.placeholder("per_tensor_scale")
+        per_tensor_scale_value = torch.tensor(1.0, dtype=torch.float32)
+        per_tensor_scale.meta["val"] = fake_mode.from_tensor(per_tensor_scale_value)
+        bias = graph.placeholder("bias")
+        bias.meta["val"] = fake_mode.from_tensor(torch.empty(128, dtype=torch.float32))
+        linear = graph.call_function(torch.ops.aten.linear.default, (x, qdata, bias))
+        linear.meta["val"] = fake_mode.from_tensor(
+            torch.empty(2, 128, dtype=torch.bfloat16)
+        )
+        handler = NVFP4QuantizedLinearHandler(
+            linear, [], qdata, scale, per_tensor_scale, torch.bfloat16
+        )
+        builder = MLXProgramBuilder(
+            export(nn.Identity(), (torch.empty(2, 64, dtype=torch.bfloat16),))
+        )
+        with (
+            patch.object(
+                builder,
+                "get_placeholder_target_and_tensor",
+                return_value=("per_tensor_scale", per_tensor_scale_value),
+            ),
+            patch.object(builder, "emit") as emit,
+        ):
+            handler(builder, linear)
+
+        ops = [call.args[0] for call in emit.call_args_list]
+        self.assertEqual(
+            [type(op) for op in ops], [QuantizedMatmulNode, AddNode, AsTypeNode]
+        )
+        self.assertEqual(ops[1].a.idx, ops[0].out.idx)
+        self.assertEqual(ops[2].x.idx, ops[1].out.idx)
+        self.assertEqual(ops[2].out.idx, ops[0].out.idx)
+        self.assertEqual(ops[2].scalar_type, 15)  # bfloat16
 
 
 if __name__ == "__main__":

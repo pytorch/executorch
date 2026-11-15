@@ -173,7 +173,8 @@ Events inside a step come from the provider. Reference's ET kernels log their
 usual `native_call_<op>` events, which follow the tracer's profiling level at
 execution. XNNPACK logs one event per XNNPACK operator, named
 `<operator> #<n>`, for example `Transpose (ND, X32) #3`, where `<n>` counts
-operators of that name across all XNNPACK regions of the method. XNNPACK
+operators of that name across the XNNPACK regions of one CPU delegate, so
+each delegate in a method numbers its operators from 1. XNNPACK
 enables its profiling when it compiles a region, so these events require a
 tracer with a profiling level above `kProfileMethodOnly` when the method is
 loaded.

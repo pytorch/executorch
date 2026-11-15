@@ -80,7 +80,7 @@ def generate(
 ) -> str:
     """Autoregressive generation with chunked multi-token prefill."""
     tokens = [bos_token_id] + tokenizer.encode(prompt, add_special_tokens=False).ids
-    max_chunk = model._sliding_window * 2
+    max_chunk = model.max_prefill_chunk
     print(f"Input: {len(tokens)} tokens")
 
     with torch.no_grad():
@@ -181,7 +181,7 @@ def generate_with_image(
 
     text_tokens = tokenizer.encode(prompt, add_special_tokens=False).ids
     tokens = [bos_token_id] + [PATCH_ID] * n_soft + text_tokens
-    max_chunk = model._sliding_window * 2
+    max_chunk = model.max_prefill_chunk
 
     with torch.no_grad():
         tok_t = torch.tensor([tokens], dtype=torch.long, device="cuda")

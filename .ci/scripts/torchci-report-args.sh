@@ -8,9 +8,11 @@
 
 TORCHCI_REPORT_ARGS=()
 if [[ -n "${RUNNER_TEST_RUN_REPORTS_DIR:-}" ]]; then
+  # Reporting is best-effort, as in PyTorch: a failed preflight warns and
+  # leaves the tests running without the plugin.
   # The interpreter may include a launcher such as conda run.
   # shellcheck disable=SC2086
-  ${TORCHCI_PYTHON:-${PYTHON_EXECUTABLE:-python}} -c '
+  if ${TORCHCI_PYTHON:-${PYTHON_EXECUTABLE:-python}} -c '
 import os
 import pytest
 from torch.testing._internal.torchci import environment, plugin, report
@@ -25,9 +27,12 @@ if not job_id.isdigit() or int(job_id) <= 0:
 if not os.environ.get("GITHUB_REPOSITORY"):
     raise RuntimeError("torchci requires GITHUB_REPOSITORY")
 environment.capture()
-' || return 1
-  TORCHCI_REPORT_ARGS=(
-    -p torch.testing._internal.torchci.plugin
-    "--torchci-report-prefix=${RUNNER_TEST_RUN_REPORTS_DIR}/${1:-pytest}"
-  )
+'; then
+    TORCHCI_REPORT_ARGS=(
+      -p torch.testing._internal.torchci.plugin
+      "--torchci-report-prefix=${RUNNER_TEST_RUN_REPORTS_DIR}/${1:-pytest}"
+    )
+  else
+    echo "::warning::torchci: test-run reports disabled because the preflight failed; tests run without them"
+  fi
 fi
