@@ -188,7 +188,7 @@ void add_conv2d_dw_node(
     const Conv2dEpilogueArgs& epilogue_args) {
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
   const Conv2dEpilogueParams epilogue_params =
-      create_conv2d_epilogue_params(epilogue);
+      create_conv2d_epilogue_params(epilogue, false);
   vkapi::SpecVarList spec_vars;
   append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 

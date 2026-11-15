@@ -52,6 +52,9 @@ ${define_required_extensions("buffer", DTYPE)}
 $if IO_STORAGE == "buffer":
   #define IO_BUFFER
 
+$if IO_STORAGE == "buffer" and DTYPE == "half":
+  #define ROUND_BUFFER_OUTPUT_TO_HALF
+
 $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
 
@@ -66,6 +69,10 @@ $if WEIGHT_KC == 1:
 #define WGS WORKERS_PER_GROUP
 
 layout(std430) buffer;
+
+#ifdef ROUND_BUFFER_OUTPUT_TO_HALF
+#include "convert.glslh"
+#endif
 
 // Unified 6-binding layout shared across q4gsw_linear shaders so a single
 // DynamicDispatchNode with pick_shader_fn can switch between GEMM and GEMV
@@ -320,6 +327,12 @@ void main() {
   }
 
 #ifdef IO_BUFFER
+#ifdef ROUND_BUFFER_OUTPUT_TO_HALF
+  // Some devices round toward zero when converting f32 to f16. Rounding to the
+  // nearest f16 first makes the conversion below exact.
+  out_a = round_to_half_rte(out_a);
+  out_b = round_to_half_rte(out_b);
+#endif
   const int n_base_a = n4_a * 4;
   const int n_base_b = n4_b * 4;
   // Bounds-checked scalar writes (N may not be a multiple of 8).

@@ -25,6 +25,14 @@ class TestF16ImageStores(unittest.TestCase):
                 )
                 self.assertIn("round_to_f16(texel)", declaration)
 
+    def test_f16_texels_skip_rounding_in_f16_shaders(self) -> None:
+        declaration = gen_vulkan_spv.layout_declare_image(0, "w", "t_out", "half")
+        self.assertIn(
+            "#ifdef HAS_FLOAT16_ACCUMULATION\n"
+            "vec4 round_to_f16(const f16vec4 v) { return vec4(v); }",
+            declaration,
+        )
+
     def test_other_images_store_unchanged(self) -> None:
         for access, dtype in (("r", "half"), ("w", "float"), ("w", "int32")):
             with self.subTest(access=access, dtype=dtype):

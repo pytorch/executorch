@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 from copy import deepcopy
+from dataclasses import replace
 from enum import Enum
 from importlib.metadata import version
 from os import environ, mkdir
@@ -20,6 +21,9 @@ import torch
 import yaml
 from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.tests.comparators.all_close_comparator import (
+    AllCloseOutputComparator,
+)
 from executorch.backends.nxp.tests.config_importer import test_config
 from executorch.backends.nxp.tests.dataset_creators.quant_helpers import (
     create_quantized_variant_of_dataset,
@@ -42,14 +46,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    AllCloseOutputComparator,
-)
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 from executorch.backends.nxp.tests.utils import (
     process_input_sample,
     process_output_sample,
     read_prepared_samples,
+    reorder_results_to_match_spec,
     save_pte_program,
     store_results,
     store_txt_input_tensor,
@@ -538,10 +540,14 @@ def lower_run_compare(
     )
 
     if logging.root.isEnabledFor(logging.DEBUG):
+        model_spec, ref_spec = list(model_input_spec), list(reference_input_spec)
         _generate_txt_test_data(
-            model_calibration_dataset_dir,
-            model_testing_dataset_dir,
-            list(model_input_spec),
+            [
+                (model_calibration_dataset_dir, model_spec, False),
+                (model_testing_dataset_dir, model_spec, remove_quant_io_ops),
+                (ref_calibration_dataset_dir, ref_spec, False),
+                (ref_testing_dataset_dir, ref_spec, remove_quant_io_ops),
+            ]
         )
         dump_debug_test_summary(test_name, test_dir)
     npu_results_dir = os.path.join(test_dir, "results_npu")
@@ -587,7 +593,7 @@ def _run_reference_model(
         case ReferenceRunner.QUANTIZED_EXECUTORCH_CPP:
             # Lower to quantized executorch program, export to `.pte` file and run in c++ using
             #  examples/nxp/executor_runner/nxp_executor_runner.cpp
-            _run_non_delegated_executorch_program(
+            non_delegated_program = _run_non_delegated_executorch_program(
                 reference_model,
                 test_dir,
                 test_name,
@@ -598,6 +604,14 @@ def _run_reference_model(
                 use_qat=use_qat,
                 train_fn=train_fn,
                 remove_quant_io_ops=remove_quant_io_ops,
+            )
+
+            # The C++ runner dumps raw output memory in the reference program's dim order, so reorder it to the NPU
+            #  layout. The Python and Cortex-M runners already do this via `process_output_sample()`.
+            reorder_results_to_match_spec(
+                cpu_results_dir,
+                _get_program_output_spec(non_delegated_program),
+                output_spec,
             )
 
         case ReferenceRunner.QUANTIZED_EDGE_PYTHON:
@@ -621,9 +635,11 @@ def _run_reference_model(
             # The input spec has to still have float32 dtype during edge program lowering to correctly calibrate the
             # model. When running in Python, the testing data are loaded from numpy tensors according to input spec.
             # There the testing data are in quantized int8 dtype.
+            # A copy is used, as the spec may be shared with the delegated model.
             if remove_quant_io_ops:
-                for spec in reference_input_spec:
-                    spec.dtype = torch.int8
+                reference_input_spec = [
+                    replace(spec, dtype=torch.int8) for spec in reference_input_spec
+                ]
 
             _run_python_program(
                 non_delegated_edge_program,
@@ -911,32 +927,30 @@ def dump_debug_test_summary(test_name: str, test_dir: str):
 
 
 def _generate_txt_test_data(
-    calibration_dataset_dir: str,
-    testing_dataset_dir: str,
-    input_tensor_spec: list[ModelInputSpec],
+    datasets: list[tuple[str, list[ModelInputSpec], bool]],
 ):
-    # Generates txt tensor variants for input datasets
-    # Testing dataset can point to calibration dataset
-    dataset_paths = (
-        [calibration_dataset_dir, testing_dataset_dir]
-        if calibration_dataset_dir != testing_dataset_dir
-        else [testing_dataset_dir]
-    )
-    for d_path in dataset_paths:
-        quant_dataset = d_path.endswith("model_dataset_quant")
+    """Generate txt tensor variants for input datasets.
 
+    :param datasets: List of (dataset_dir, input_spec, is_quantized_dataset) tuples.
+    """
+
+    def _list_bin_files(dir_path: str) -> list[str]:
+        return sorted(f for f in os.listdir(dir_path) if f.endswith(".bin"))
+
+    for d_path, input_tensor_spec, quant_dataset in datasets:
         # For multiple input tests, list each sample dir, for single input tests the input files are in d_path
         sample_dirs = [os.path.join(d_path, file) for file in os.listdir(d_path)]
         sample_dirs = [file for file in sample_dirs if os.path.isdir(file)]
         # Single input dataset has tensor directly in dataset path
         if len(sample_dirs) == 0:
-            for input_tensor_name in sorted(os.listdir(d_path)):
+            for input_tensor_name in _list_bin_files(d_path):
                 input_tensor_path = os.path.join(d_path, input_tensor_name)
                 tensor_spec = input_tensor_spec[0]
                 store_txt_input_tensor(input_tensor_path, tensor_spec, quant_dataset)
         else:
             for sample_dir in sample_dirs:
-                for idx, input_tensor_name in enumerate(os.listdir(sample_dir)):
+                input_tensor_names = _list_bin_files(sample_dir)
+                for idx, input_tensor_name in enumerate(input_tensor_names):
                     input_tensor_path = os.path.join(sample_dir, input_tensor_name)
                     tensor_spec = input_tensor_spec[idx]
                     store_txt_input_tensor(

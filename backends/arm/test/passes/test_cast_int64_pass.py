@@ -226,3 +226,87 @@ def test_cast_empty_lifted_int64_index_constant_to_int32():
         node for node in ep.graph_module.graph.nodes if node.name == placeholder_name
     )
     assert placeholder.meta["val"].dtype == torch.int32
+
+
+class Int64BufferAddModel(torch.nn.Module):
+    offset: torch.Tensor
+    test_data = {
+        "wide": (torch.tensor([2**40, -(2**38), 2**31, -1]),),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("offset", torch.tensor([2**39, 1, -(2**40), 7]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.offset
+
+
+@common.parametrize("test_data", Int64BufferAddModel.test_data)
+def test_cast_int64_buffers_keeps_int64_users_tosa_FP_INT_int64(test_data: input_t):
+    pipeline = PassPipeline[input_t](
+        Int64BufferAddModel(),
+        test_data,
+        quantize=False,
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+        tosa_version="1.1",
+        tosa_extensions=["INT", "int64"],
+    )
+    pipeline.run()
+
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
+    assert exported_program.state_dict["offset"].dtype == torch.int64
+
+
+@common.parametrize("test_data", NonPersistentInt64BufferModel.test_data)
+def test_cast_int64_buffers_narrows_other_users_tosa_FP_INT_int64(test_data: input_t):
+    pipeline = PassPipeline[input_t](
+        NonPersistentInt64BufferModel(),
+        test_data,
+        quantize=False,
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+        tosa_version="1.1",
+        tosa_extensions=["INT", "int64"],
+    )
+    pipeline.run()
+
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
+    assert exported_program.constants["position_ids"].dtype == torch.int32
+
+
+class Int64BufferFloatComparisonModel(torch.nn.Module):
+    limit: torch.Tensor
+    test_data = {
+        "rand": (torch.rand(4),),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("limit", torch.tensor([-2, -1, 0, 1]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + (self.limit > -1.5)
+
+
+@common.parametrize("test_data", Int64BufferFloatComparisonModel.test_data)
+def test_cast_int64_buffers_narrows_float_comparison_tosa_FP_INT_int64(
+    test_data: input_t,
+):
+    pipeline = PassPipeline[input_t](
+        Int64BufferFloatComparisonModel(),
+        test_data,
+        quantize=False,
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+        tosa_version="1.1",
+        tosa_extensions=["INT", "int64"],
+    )
+    pipeline.run()
+
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
+    assert exported_program.state_dict["limit"].dtype == torch.int32
