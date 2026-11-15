@@ -109,10 +109,21 @@ def _depthwise(channels=8, kernel=3, padding=1, dtype=torch.float32, **kwargs):
     return Depthwise
 
 
+def _runs_on_rocm(test):
+    """Marks a test of the routing on ROCm: the other tests check the routing
+    on CUDA, and skip on ROCm, where the router takes no convolution."""
+    test.runs_on_rocm = True
+    return test
+
+
 class _PassTest(unittest.TestCase):
     def setUp(self):
         if importlib.util.find_spec("triton") is None:
             self.skipTest("Triton required")
+        if torch.version.hip is not None and not getattr(
+            getattr(self, self._testMethodName), "runs_on_rocm", False
+        ):
+            self.skipTest("the router takes no convolution on ROCm")
 
     def run_pass(self, graph_module):
         from executorch.backends.cuda.triton.replacement_pass import (
@@ -221,6 +232,7 @@ class ConvRoutingTest(_PassTest):
             output_strides=[648, 81, 9, 1],
         )
 
+    @_runs_on_rocm
     def test_rocm_is_kept(self):
         for graph_module in _backend_graphs(
             _depthwise(), lambda: torch.randn(1, 8, 9, 9)
@@ -327,6 +339,8 @@ class ConvFailureContractTest(unittest.TestCase):
     def setUp(self):
         if importlib.util.find_spec("triton") is None:
             self.skipTest("Triton required")
+        if torch.version.hip is not None:
+            self.skipTest("the router takes no convolution on ROCm")
 
     def graph(self, dilation=1):
         """A conv whose output has two users."""
@@ -481,6 +495,7 @@ class DirectTemplateRoutingTest(_PassTest):
                     lambda channels=channels: torch.randn(2, channels, 12, 10),
                     template="direct",
                 )
+
     def test_channels_last_cuda_export_is_routed(self):
         # The export on CUDA records a contiguous output for a channels-last
         # input; the converted conv writes exactly that layout.
