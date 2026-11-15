@@ -34,6 +34,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - `conda` is recommended as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+  - [uv](https://docs.astral.sh/uv/getting-started/installation/) is also supported.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
 * `python` version 3.11-3.15
@@ -61,6 +62,29 @@ portability details.
    conda activate executorch
    ```
 
+Alternatively, create a virtual environment with uv:
+
+```bash
+uv venv --python 3.12 .venv
+```
+
+Activate it on macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+On Windows, activate it from a [Visual Studio Developer PowerShell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+The installation scripts use pip to install ExecuTorch and its dependencies.
+If pip is missing, they first install it with uv from `PATH`, targeting the
+running Python environment. There is no need to seed pip manually. Subsequent
+installation steps and later runs use pip.
+
 > **_NOTE:_** Additional Windows Setup
 >
 > ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to `version.py` when running `pip install .`. See [src/README.md](https://github.com/pytorch/executorch/blob/main/src/README.md) for more information.
@@ -77,6 +101,12 @@ portability details.
    ```bash
    # Install ExecuTorch pip package and its dependencies.
    ./install_executorch.sh
+   ```
+
+   On Windows, run this command in the same Developer PowerShell:
+
+   ```powershell
+   .\install_executorch.bat
    ```
 
    The `install_executorch.sh` script supports the following flags:

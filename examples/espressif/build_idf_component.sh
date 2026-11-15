@@ -23,12 +23,16 @@
 #                                  on release/X.Y, after vX.Y.Z, and differ
 #                                  from it only under examples/espressif/,
 #                                  .ci/, .github/ and docs/.
+#   --version-suffix -dev          X.Y.Z-dev.<HEAD's commit date in UTC>, with
+#                                  HEAD on the nightly branch, whose commits
+#                                  ExecuTorch's nightly wheels are built from.
 #   --allow-dev-stamp              X.Y.Z-dev.<HEAD's commit date in UTC>, for
 #                                  builds from any commit; never published.
 #                                  Without an executorch package that matches
 #                                  the component, it leaves out the example.
-# The first three also refuse uncommitted changes to what the generator
-# reads, and every stamp needs ExecuTorch at the top of its own git checkout.
+# All but --allow-dev-stamp also refuse uncommitted changes to what the
+# generator reads, and every stamp needs ExecuTorch at the top of its own git
+# checkout.
 #
 # Derived from examples/arduino/build_arduino_library.sh with an ESP-IDF
 # output layout and the shared ESP-IDF PAL. The component vendors every
@@ -124,7 +128,8 @@ COPIED_TREES=(runtime/core/portable_type/c10/c10 runtime/core/portable_type/c10/
 # Everything else the generator reads from the tree.
 OTHER_INPUTS=(version.txt LICENSE shim_et/xplat/executorch/build/build_variables.bzl
   extension/data_loader/buffer_data_loader.h extension/flat_tensor/serialize
-  backends/cadence/aot/functions.yaml .ci/docker/ci_commit_pins/pytorch.txt examples/espressif)
+  backends/cadence/aot/functions.yaml .ci/docker/ci_commit_pins/pytorch.txt examples/espressif
+  install_requirements.py install_utils.py)
 
 # Uncommitted changes to what the generator reads: to tracked files, or
 # untracked files where it globs, including in the flatbuffers submodule.
@@ -150,17 +155,30 @@ ET_VERSION=$(cat "$ET_ROOT/version.txt")
 if [[ ! "$ET_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
   stamp_error "version.txt must contain an ExecuTorch version in X.Y.Z form."
 fi
+DEV_SUFFIX="-dev.$(TZ=UTC git -C "$ET_ROOT" log -1 --no-show-signature --format=%cd \
+  --date=format-local:%Y%m%d)"
 if [ "$ALLOW_DEV_STAMP" = true ]; then
   if [ "$VERSION_SUFFIX_GIVEN" = true ]; then
     stamp_error "--allow-dev-stamp picks the suffix; drop --version-suffix."
   fi
-  VERSION_SUFFIX="-dev.$(TZ=UTC git -C "$ET_ROOT" log -1 --no-show-signature --format=%cd \
-    --date=format-local:%Y%m%d)"
+  VERSION_SUFFIX="$DEV_SUFFIX"
 fi
+VERSION_SUFFIX_AS_GIVEN="$VERSION_SUFFIX"
 # A release commit can carry its last RC's tag too.
 HEAD_TAGS=$(git -C "$ET_ROOT" tag --points-at HEAD 2>/dev/null || true)
 head_has_tag() {
   grep -qxF "$1" <<< "$HEAD_TAGS"
+}
+# Whether HEAD is on a branch, checked out or fetched from origin.
+head_on_branch() {
+  local ref
+  for ref in "refs/heads/$1" "refs/remotes/origin/$1"; do
+    if git -C "$ET_ROOT" rev-parse -q --verify "$ref" > /dev/null \
+       && git -C "$ET_ROOT" merge-base --is-ancestor HEAD "$ref"; then
+      return 0
+    fi
+  done
+  return 1
 }
 case "$VERSION_SUFFIX" in
   "")
@@ -185,14 +203,7 @@ case "$VERSION_SUFFIX" in
       stamp_error "a respin stamp needs HEAD at the tag $RESPIN_TAG, which names the respin since git refs cannot hold ~."
     fi
     RELEASE_BRANCH="release/${ET_VERSION%.*}"
-    ON_RELEASE_BRANCH=false
-    for ref in "refs/heads/$RELEASE_BRANCH" "refs/remotes/origin/$RELEASE_BRANCH"; do
-      if git -C "$ET_ROOT" rev-parse -q --verify "$ref" > /dev/null \
-         && git -C "$ET_ROOT" merge-base --is-ancestor HEAD "$ref"; then
-        ON_RELEASE_BRANCH=true
-      fi
-    done
-    if [ "$ON_RELEASE_BRANCH" = false ]; then
+    if ! head_on_branch "$RELEASE_BRANCH"; then
       stamp_error "a respin stamp needs HEAD on $RELEASE_BRANCH."
     fi
     if ! git -C "$ET_ROOT" rev-parse -q --verify "refs/tags/v$ET_VERSION" > /dev/null; then
@@ -211,17 +222,23 @@ case "$VERSION_SUFFIX" in
 $CHANGED_SINCE_TAG"
     fi
     ;;
+  -dev)
+    if ! head_on_branch nightly; then
+      stamp_error "a published dev stamp needs HEAD on the nightly branch, checked out or fetched from origin."
+    fi
+    VERSION_SUFFIX="$DEV_SUFFIX"
+    ;;
   *)
     # The only other suffix is the one --allow-dev-stamp picks.
     if [ "$ALLOW_DEV_STAMP" = false ]; then
-      stamp_error "--version-suffix must be empty, -rc.N or ~N, not $VERSION_SUFFIX; --allow-dev-stamp makes a development stamp."
+      stamp_error "--version-suffix must be empty, -rc.N, ~N or -dev, not $VERSION_SUFFIX; --allow-dev-stamp makes an unpublished development stamp."
     fi
     ;;
 esac
 if [ "$ALLOW_DEV_STAMP" = false ]; then
   UNCOMMITTED=$(uncommitted_changes)
   if [ -n "$UNCOMMITTED" ]; then
-    stamp_error "a release, RC or respin stamp needs a checkout without uncommitted changes to what the generator reads, but found:
+    stamp_error "a published stamp needs a checkout without uncommitted changes to what the generator reads, but found:
 $UNCOMMITTED"
   fi
 fi
@@ -229,10 +246,23 @@ ET_COMPONENT_VERSION="$ET_VERSION$VERSION_SUFFIX"
 if [ "$ALLOW_DEV_STAMP" = true ]; then
   STAMP_OPTION=" --allow-dev-stamp"
 elif [ "$VERSION_SUFFIX_GIVEN" = true ]; then
-  STAMP_OPTION=" --version-suffix '$VERSION_SUFFIX'"
+  STAMP_OPTION=" --version-suffix '$VERSION_SUFFIX_AS_GIVEN'"
 else
   STAMP_OPTION=""
 fi
+# The torch that install_requirements.py installs to build ExecuTorch's wheels,
+# which declare none, and the CPU index it installs it from. Read before
+# --version exits, so a stamp check also catches a pin this cannot read.
+TORCH_REQUIREMENT=$(sed -n 's/.*"\(torch==[^"]*\)" if use_pytorch_nightly.*/\1/p' \
+  "$ET_ROOT/install_requirements.py")
+if [ "$(printf '%s\n' "$TORCH_REQUIREMENT" | grep -c .)" != 1 ]; then
+  stamp_error "install_requirements.py does not name one torch==X for the wheel builds."
+fi
+READ_TORCH_URL_BASE='import sys; sys.path.insert(0, sys.argv[1]); from install_requirements import TORCH_URL_BASE; print(TORCH_URL_BASE)'
+if ! TORCH_URL_BASE=$("$PYTHON" -I -c "$READ_TORCH_URL_BASE" "$ET_ROOT" 2> /dev/null); then
+  stamp_error "$PYTHON cannot import TORCH_URL_BASE from install_requirements.py: $("$PYTHON" -I -c "$READ_TORCH_URL_BASE" "$ET_ROOT" 2>&1 | tail -n 1)"
+fi
+TORCH_INDEX="$TORCH_URL_BASE/cpu"
 if [ "$PRINT_VERSION" = true ]; then
   echo "$ET_COMPONENT_VERSION"
   exit 0
@@ -500,7 +530,35 @@ echo "[4/6] Kernel bundle tooling copied"
 #    Kconfig, idf_component.yml, VERSION, licenses).
 # ─────────────────────────────────────────────────────────
 cp "$TEMPLATE_DIR/CMakeLists.txt" "$TEMPLATE_DIR/project_include.cmake" "$OUT_DIR/"
-sed "s/@ET_COMPONENT_VERSION@/$ET_COMPONENT_VERSION/" "$TEMPLATE_DIR/README.md" \
+# The commands that install the executorch and torch this component's kernel
+# bundles need. torch comes from its own index, which is not let supply
+# executorch: download.pytorch.org's test and release indexes also serve
+# executorch builds, as X.Y.Z+cpu, which pip prefers to PyPI's X.Y.Z.
+TORCH_INSTALL="pip install \"$TORCH_REQUIREMENT\" --index-url $TORCH_INDEX"
+case "$VERSION_SUFFIX_AS_GIVEN" in
+  "" | "~"*)
+    INSTALL="$TORCH_INSTALL
+pip install \"executorch==$ET_VERSION\""
+    ;;
+  -rc.*)
+    INSTALL="$TORCH_INSTALL
+pip install \"executorch==$ET_VERSION\" --extra-index-url https://download.pytorch.org/whl/test/cpu"
+    ;;
+  -dev)
+    INSTALL="# The nightly index keeps about 60 days of wheels, executorch's and a dated
+# torch's alike, so move to a newer dev version before these age out.
+$TORCH_INSTALL
+pip install \"executorch==$ET_VERSION.dev${DEV_SUFFIX#-dev.}\" --extra-index-url https://download.pytorch.org/whl/nightly/cpu"
+    ;;
+  *)
+    INSTALL="# executorch built from $ET_SHA, in an ExecuTorch checkout of that commit:
+./install_executorch.sh"
+    ;;
+esac
+# Split at the placeholder rather than substituted, since bash 5.2 gives & a
+# meaning in a substitution's replacement.
+README=$(sed "s/@ET_COMPONENT_VERSION@/$ET_COMPONENT_VERSION/" "$TEMPLATE_DIR/README.md")
+printf '%s%s%s\n' "${README%%@ET_INSTALL@*}" "$INSTALL" "${README#*@ET_INSTALL@}" \
   > "$OUT_DIR/README.md"
 cp "$TEMPLATE_DIR/include/et_model.h" "$OUT_DIR/include/"
 mkdir -p "$OUT_DIR/src/platform"
@@ -706,6 +764,8 @@ ET_DIRTY=$(uncommitted_changes)
   echo "executorch_version: $ET_VERSION"
   echo "component_version: $ET_COMPONENT_VERSION"
   echo "executorch_commit: $ET_SHA${ET_DIRTY:+ (tree had uncommitted changes)}"
+  echo "torch_requirement: $TORCH_REQUIREMENT"
+  echo "torch_index: $TORCH_INDEX"
   echo "generator: examples/espressif/build_idf_component.sh --out DIR$STAMP_OPTION"
   echo "kernel_libraries:"
   for entry in "${LIBRARIES[@]}"; do

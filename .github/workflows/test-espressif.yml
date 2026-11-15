@@ -23,6 +23,9 @@ on:
       - third-party/flatbuffers
       - shim_et/xplat/executorch/build/build_variables.bzl
       - version.txt
+      # Read for the torch the component's VERSION and README name.
+      - install_requirements.py
+      - install_utils.py
       # Exported by the consumer test.
       - examples/models/mlperf_tiny/**
       - devtools/bundled_program/**

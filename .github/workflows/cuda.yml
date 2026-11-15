@@ -41,6 +41,7 @@ on:
       - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
       - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
+      - examples/models/phonon/**
       - extension/pybindings/**
       - runtime/__init__.py
       - runtime/cuda.py
@@ -806,6 +807,53 @@ jobs:
         fi
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
+
+  test-cuda-phonon:
+    name: test-cuda-phonon
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/phonon') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+        mkdir -p "${HF_HOME}"
+        # The runner also points HF_HUB_CACHE at the read-only mount.
+        export HF_HUB_CACHE="${HF_HOME}/hub"
+
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        pip install safetensors tokenizers huggingface_hub
+        python -m pytest examples/models/phonon/tests -q
+        python -m executorch.examples.models.phonon.export_phonon \
+          --backend cuda --output-dir phonon_exports/cuda
+        make phonon-cuda
+        cmake-out/examples/models/phonon/phonon_runner \
+          --model_path phonon_exports/cuda/phonon.pte \
+          --data_path phonon_exports/cuda/aoti_cuda_blob.ptd \
+          --text "Hello from ExecuTorch." \
+          --output phonon.wav
+        # 16-bit mono WAV with at least 0.5 s of audio at 24 kHz.
+        test "$(wc -c < phonon.wav)" -gt $((44 + 24000))
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}

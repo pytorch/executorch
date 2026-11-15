@@ -6,9 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 # Checks build_idf_component.sh's version stamping guards in a scratch git
-# repository holding only the generator, gen_kernels.py, version.txt, a
-# FlatBuffers submodule without its sources, and a README the generator does
-# not read. Needs git and a Python with PyYAML, which gen_kernels.py imports.
+# repository holding only the generator, gen_kernels.py, version.txt, the
+# install_requirements.py it reads the torch pin from, a FlatBuffers
+# submodule without its sources, and a README the generator does not read.
+# Needs git and a Python with PyYAML, which gen_kernels.py imports.
 
 set -euo pipefail
 
@@ -22,6 +23,7 @@ mkdir -p "${repo}/examples/espressif/idf_component_template/tools"
 cp "${script_dir}/idf_component_template/tools/gen_kernels.py" \
     "${repo}/examples/espressif/idf_component_template/tools/"
 echo 1.6.0 > "${repo}/version.txt"
+cp "${script_dir}/../../install_requirements.py" "${script_dir}/../../install_utils.py" "${repo}/"
 echo readme > "${repo}/README.md"
 
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
@@ -76,6 +78,15 @@ expect_error() {
 }
 
 expect_error "release stamp off a tag" "release tag" --version --version-suffix ""
+pin=$(<"${repo}/install_requirements.py")
+printf '%s\n' "${pin//\"torch==/\"torch>=}" > "${repo}/install_requirements.py"
+expect_error "a torch pin the generator cannot read" "does not name one torch==X" \
+    --version --allow-dev-stamp
+git checkout -q -- install_requirements.py
+echo "import no_such_module" >> "${repo}/install_utils.py"
+expect_error "an install_requirements.py that does not import" "No module named 'no_such_module'" \
+    --version --allow-dev-stamp
+git checkout -q -- install_utils.py
 expect_version "clean needs no stamp" "Nothing to clean: ${repo}/out is not a generated component." \
     --out "${repo}/out" --clean
 expect_error "release stamp by default" "release tag" --version
@@ -83,7 +94,27 @@ expect_error "dev suffix" "--allow-dev-stamp makes" --version --version-suffix -
 expect_version "dev stamp from the commit date" 1.6.0-dev.20261104 --version --allow-dev-stamp
 GIT_COMMITTER_DATE=2026-11-04T23:30:00-05:00 git commit -q --allow-empty -m "late commit"
 expect_version "dev stamp from the commit's UTC date" 1.6.0-dev.20261105 --version --allow-dev-stamp
-expect_error "unknown suffix" "must be empty, -rc.N or ~N" --version --version-suffix -beta.1
+expect_error "unknown suffix" "must be empty, -rc.N, ~N or -dev" --version --version-suffix -beta.1
+expect_error "published dev stamp off the nightly branch" "nightly branch" \
+    --version --version-suffix -dev
+git branch nightly
+expect_version "published dev stamp on the nightly branch" 1.6.0-dev.20261105 \
+    --version --version-suffix -dev
+git update-ref refs/remotes/origin/nightly nightly
+git branch -q -D nightly
+expect_version "published dev stamp on origin's nightly branch" 1.6.0-dev.20261105 \
+    --version --version-suffix -dev
+echo "# local edit" >> "${repo}/examples/espressif/build_idf_component.sh"
+expect_error "published dev stamp with uncommitted changes" "uncommitted" \
+    --version --version-suffix -dev
+expect_version "unpublished dev stamp with uncommitted changes" 1.6.0-dev.20261105 \
+    --version --allow-dev-stamp
+git checkout -q -- .
+mkdir -p "${repo}/kernels/portable/cpu"
+echo "// local kernel" > "${repo}/kernels/portable/cpu/op_local.cpp"
+expect_error "published dev stamp with an untracked kernel source" \
+    "kernels/portable/cpu/op_local.cpp" --version --version-suffix -dev
+rm -r "${repo}/kernels"
 expect_error "malformed rc suffix" "-rc.N" --version --version-suffix -rc.0
 expect_error "dev stamp with a suffix" "--allow-dev-stamp" --version --allow-dev-stamp --version-suffix "~1"
 expect_error "malformed respin suffix" "~N with N >= 1" --version --version-suffix "~0"
