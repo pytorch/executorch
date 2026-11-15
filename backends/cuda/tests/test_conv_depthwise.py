@@ -122,9 +122,12 @@ class DepthwiseScheduleTest(unittest.TestCase):
         and ``multiplier`` output channels per group."""
         out_channels = c // group_channels * multiplier
         x = torch.randn(n, c, h, w, device="cuda", dtype=dtype)
-        weight = torch.randn(
-            out_channels, group_channels, kh, kw, device="cuda", dtype=dtype
-        ) / (group_channels * kh * kw) ** 0.5
+        weight = (
+            torch.randn(
+                out_channels, group_channels, kh, kw, device="cuda", dtype=dtype
+            )
+            / (group_channels * kh * kw) ** 0.5
+        )
         b = torch.randn(out_channels, device="cuda", dtype=dtype) if bias else None
         return x, weight, b
 
