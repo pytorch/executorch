@@ -106,6 +106,7 @@ def _metadata(dtype=torch.float32):
         "get_cache_dtype": "float32" if dtype == torch.float32 else "float16",
         "get_n_layers": LAYERS,
         "get_max_seq_len": CONTEXT,
+        "get_vocab_size": VOCAB,
     }
 
 

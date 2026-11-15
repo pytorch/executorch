@@ -333,9 +333,9 @@ TEST(HfStaticContractTest, AllWindowCachesUseMetadataContext) {
 
 class TinyTokenizer : public ::tokenizers::Tokenizer {
  public:
-  TinyTokenizer() {
+  explicit TinyTokenizer(uint64_t vocab_size = 32) {
     initialized_ = true;
-    vocab_size_ = 32;
+    vocab_size_ = vocab_size;
     eos_tok_ = 100;
   }
   ::tokenizers::Error load(const std::string&) override {
@@ -371,6 +371,18 @@ class ObservedHfStaticIOManager : public HfStaticIOManager {
   }
   int resets = 0;
 };
+
+TEST(HfStaticRunnerTest, SamplesNoMoreLogitsThanTheModelReturns) {
+  Module module(fixture_path("HfStaticTiny"));
+  TinyTokenizer larger(33), smaller(16);
+  auto bounded = executorch::extension::llm::get_llm_metadata(&larger, &module);
+  ASSERT_TRUE(bounded.ok());
+  EXPECT_EQ(bounded->at(executorch::extension::llm::kVocabSize), 32);
+  auto smaller_vocab =
+      executorch::extension::llm::get_llm_metadata(&smaller, &module);
+  ASSERT_TRUE(smaller_vocab.ok());
+  EXPECT_EQ(smaller_vocab->at(executorch::extension::llm::kVocabSize), 16);
+}
 
 TEST_P(HfStaticIOManagerTest, RunnerResetRegeneratesIdenticalTokens) {
   const char* path = std::getenv(GetParam());

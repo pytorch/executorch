@@ -28,6 +28,7 @@
 #include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace executorch::extension::llm {
@@ -174,7 +175,17 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
 
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
-  metadata[llm::kVocabSize] = tokenizer->vocab_size();
+  // The sampler reads this many logits per row, so never more than the model
+  // returns, which can be fewer than the tokenizer's entries (Gemma 3: 262144
+  // logits, 262145 tokens).
+  int64_t vocab_size = tokenizer->vocab_size();
+  if (method_names.count(llm::kVocabSize)) {
+    auto model_vocab = module->get(llm::kVocabSize);
+    if (model_vocab.ok() && model_vocab->isInt() && model_vocab->toInt() > 0) {
+      vocab_size = std::min<int64_t>(vocab_size, model_vocab->toInt());
+    }
+  }
+  metadata[llm::kVocabSize] = vocab_size;
   return metadata;
 }
 
