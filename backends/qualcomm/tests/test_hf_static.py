@@ -177,7 +177,12 @@ class TestHfStatic(unittest.TestCase):
                         for n in program.graph.nodes
                         if n.target == torch.ops.aten.matmul.default
                     ]
-                    expected = 4 if method == "decode" or quantized else 2
+                    # decode: split (4 per layer); prefill: per-head when
+                    # quantized (2 per query head), concat otherwise (2).
+                    heads = self.model.config.num_attention_heads
+                    expected = (
+                        4 if method == "decode" else 2 * heads if quantized else 2
+                    )
                     self.assertEqual(
                         len(matmuls), expected * self.model.config.num_hidden_layers
                     )
@@ -357,9 +362,9 @@ class TestHfStatic(unittest.TestCase):
         )
         # Every cache and counter is written in place on the caller's buffer;
         # no CPU op copies a whole cache.
-        # A sliding cache takes two writes: the shift, then the new rows.
+        # Sliding layers take context-length caches by default: one write each.
         windows = hf_static.sliding_windows(self.model.config)
-        writes = 3 * len(windows) + 2 * sum(w is not None for w in windows)
+        writes = 3 * len(windows)
         for method in (hf_static.PREFILL_METHOD, hf_static.DECODE_METHOD):
             self.assertEqual(_cache_ops(plans[method]), (writes, []))
 
@@ -447,6 +452,70 @@ class TestHfStatic(unittest.TestCase):
                 torch.nn.functional.cosine_similarity(ref, got, dim=0).item()
             )
         return fidelity
+
+    def test_quantized_export_uses_the_npu_cache_layout(self):
+        class Tokenizer:
+            def __call__(self, text, return_tensors=None):
+                ids = [PROMPT[:N]]
+                return {"input_ids": torch.tensor(ids) if return_tensors else ids[0]}
+
+        quantizer = self._quantizer()
+        quantizer.set_convert_linear_to_conv2d(True)
+        with torch.enable_grad():
+            program = hf_static.export_hf_static(
+                self.make_model(),
+                Tokenizer(),
+                "SM8750",
+                max_seq_len=L,
+                prefill_len=N,
+                quantizer=quantizer,
+                calibration_new_tokens=4,
+            )
+        plans = {p.name: p for p in program.executorch_program.execution_plan}
+
+        def constant(name):
+            value = plans[name].values[plans[name].outputs[0]].val
+            return getattr(value, "int_val", getattr(value, "string_val", None))
+
+        self.assertEqual(constant("get_io_contract_version"), 2)
+        self.assertEqual(constant("get_key_layout"), "transposed")
+        self.assertEqual(constant("get_cache_dtype"), "uint16")
+        windows = hf_static.sliding_windows(self.model.config)
+        for method in (hf_static.PREFILL_METHOD, hf_static.DECODE_METHOD):
+            plan = plans[method]
+            caches = [
+                plan.values[i].val
+                for i in plan.inputs
+                if getattr(plan.values[i].val, "sizes", None) is not None
+                and len(plan.values[i].val.sizes) == 4
+                and plan.values[i].val.scalar_type == 27  # UInt16
+            ]
+            self.assertEqual(len(caches), 2 * len(windows))
+            for keys, values in zip(caches[0::2], caches[1::2]):
+                self.assertEqual(keys.sizes[2:], values.sizes[:1:-1])
+                self.assertEqual(values.sizes[2], L)
+            # Every cache and counter is written in place, no full-cache copy.
+            self.assertEqual(_cache_ops(plan), (3 * len(windows), []))
+            logits = plan.values[plan.outputs[3 * len(windows)]].val
+            self.assertEqual(logits.scalar_type, 27)  # UInt16
+            # The int64 token ids are converted to int32 on CPU for the gather.
+            ops = [o.name for o in plan.operators]
+            casts = [
+                i.instr_args
+                for c in plan.chains
+                for i in c.instructions
+                if hasattr(i.instr_args, "op_index")
+                and ops[i.instr_args.op_index] == "aten::_to_copy"
+                and i.instr_args.args[0] == plan.inputs[0]
+            ]
+            self.assertEqual(len(casts), 1)
+            self.assertEqual(plan.values[casts[0].args[-1]].val.scalar_type, 3)
+        self.assertGreater(
+            plans["get_logits_scale"]
+            .values[plans["get_logits_scale"].outputs[0]]
+            .val.double_val,
+            0,
+        )
 
     def test_kv_8bit_annotation_keeps_float_cache_inputs(self):
         try:
@@ -676,7 +745,7 @@ class TestHfStaticCpuTags(unittest.TestCase):
             ValueError, "prefill_len.*smallest sliding cache.*6"
         ):
             hf_static.export_hf_static(
-                model, None, "SM8750", max_seq_len=32, prefill_len=8
+                model, None, "SM8750", max_seq_len=32, prefill_len=8, sliding="window"
             )
 
     def test_cpu_selection_uses_tags_not_dtype_size_or_name(self):
@@ -697,13 +766,15 @@ class TestHfStaticCpuTags(unittest.TestCase):
 
 class TestHfStaticCli(unittest.TestCase):
     def test_cli_forwards_decode_and_quantized_prefill_options(self):
-        for quantized in (False, True):
+        for quantized, float_caches in ((False, False), (True, False), (True, True)):
             with self.subTest(
-                quantized=quantized
+                quantized=quantized, float_caches=float_caches
             ), tempfile.NamedTemporaryFile() as output:
                 argv = ["hf_static", "--model", "local-model", "--output", output.name]
                 if quantized:
                     argv += ["--quantize", "--hybrid", "--prefill_len", "4"]
+                if float_caches:
+                    argv += ["--float_caches"]
                 model, tokenizer, quantizer, recipe = Mock(), Mock(), Mock(), Mock()
                 recipe.masked_softmax = False
                 recipe.seq_mse_candidates = 4
@@ -726,6 +797,7 @@ class TestHfStaticCli(unittest.TestCase):
                     "max_seq_len": 128,
                     "prefill_len": 4 if quantized else None,
                     "quantizer": quantizer if quantized else None,
+                    "cache_io": "float" if float_caches else "auto",
                 }
                 if quantized:
                     options.update(masked_softmax=False, seq_mse_candidates=4)

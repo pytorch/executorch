@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Lower the ``hf_static`` float-cache contract to QNN."""
+"""Lower the ``hf_static`` contract to QNN: float caches (version 1), or the
+NPU cache layout of version 2 (quantized caches stored as HTP's unsigned
+16-bit type, keys [1, H, D, L]) for quantized programs."""
 
 import argparse
 import functools
@@ -12,6 +14,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_QUANT_ATTRS,
+    QCOM_QUANTIZED_IO,
+)
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -25,6 +31,7 @@ from executorch.extension.llm.export.hf_static import (
     HfStaticLayout,
     inplace_input_writes,
     IO_CONTRACT,
+    IO_CONTRACT_VERSION,
     PREFILL_METHOD,
     sliding_windows,
     specialize,
@@ -204,12 +211,24 @@ def share_encodings(
     return copied
 
 
-def _cpu_nodes(program):
-    """Read explicit rewrite tags, including producers used only by CPU nodes."""
+def _cpu_nodes(program, keep_qdq=False):
+    """Read explicit rewrite tags, including producers used only by CPU nodes.
+    With ``keep_qdq``, quantize/dequantize nodes stay on HTP: quantized cache
+    rows leave the delegate in the cache's encoding."""
     if isinstance(program, ExportedProgram):
         tag_cache_mutations(program)
     cpu = {n for n in program.graph.nodes if n.meta.get("custom", {}).get(CPU_META)}
     for node in reversed(list(program.graph.nodes)):
+        if keep_qdq and getattr(node.target, "_op", node.target) in _PER_TENSOR_QDQ:
+            continue
+        if keep_qdq and QCOM_QUANTIZED_IO in node.meta and node not in cpu:
+            continue
+        if (
+            keep_qdq
+            and QCOM_QUANT_ATTRS in node.meta
+            and "_to_copy" in str(node.target)
+        ):
+            continue
         if node.users and all(user in cpu for user in node.users):
             cpu.add(node)
     return [n.name for n in program.graph.nodes if n in cpu]
@@ -219,16 +238,35 @@ class HfStaticPartitioner(QnnPartitioner):
     """Keep tagged cache writes, masks and counter arithmetic outside QNN."""
 
     def transform_passes(self, exported_program: ExportedProgram):
-        self.skip_node_id_set |= set(_cpu_nodes(exported_program))
-        return super().transform_passes(exported_program)
+        from executorch.backends.qualcomm.utils.hf_static_quant_io import (
+            _write_requantizations,
+        )
+
+        self.skip_node_id_set |= set(_cpu_nodes(exported_program, self.keep_qdq))
+        return super().transform_passes(exported_program) + [_write_requantizations]
+
+    keep_qdq = False
 
     def partition(self, edge_program: ExportedProgram):
-        self.skip_node_id_set |= set(_cpu_nodes(edge_program))
+        self.skip_node_id_set |= set(_cpu_nodes(edge_program, self.keep_qdq))
         return super().partition(edge_program)
 
 
+class QuantizedCacheHfStaticPartitioner(HfStaticPartitioner):
+    """Keeps the quantize/dequantize of quantized cache rows on HTP."""
+
+    keep_qdq = True
+
+
 def _quantize(
-    programs, lengths, layout, quantizer, tokenizer, prompts, seq_mse_candidates=0
+    programs,
+    lengths,
+    layout,
+    quantizer,
+    tokenizer,
+    prompts,
+    seq_mse_candidates=0,
+    new_tokens=None,
 ):
     """Quantize model compute with float caches and shared weight encodings."""
     if prepare_pt2e is None:
@@ -242,7 +280,8 @@ def _quantize(
             raise ValueError(
                 f"Calibration prompt of {len(ids)} tokens doesn't fit the cache."
             )
-        sequence = decode.generate(ids, layout.max_seq_len - len(ids) - 1)
+        budget = layout.max_seq_len - len(ids) - 1
+        sequence = decode.generate(ids, min(budget, new_tokens or budget))
         if PREFILL_METHOD in prepared:
             chunk = lengths[PREFILL_METHOD]
             prefill = HfStaticDriver(
@@ -277,10 +316,13 @@ def _quantize(
 
 
 def _attention_form(attention: str, query_len: int, quantized: bool) -> str:
-    """Auto uses split for decode or quantized compute, concat for float prefill."""
+    """Auto uses split for decode, per-head (sha) for quantized prefill and
+    concat (split per head by mha2sha) for float prefill."""
     if attention != "auto":
         return attention
-    return "split" if query_len == 1 or quantized else "concat"
+    if query_len == 1:
+        return "split"
+    return "sha" if quantized else "concat"
 
 
 def _lower(
@@ -298,6 +340,10 @@ def _lower(
     seq_mse_candidates=0,
     *,
     config,
+    cache_io="float",
+    key_layout="hf",
+    sliding="window",
+    calibration_new_tokens=None,
 ):
     forms = {
         m: _attention_form(attention, q, quantizer is not None)
@@ -305,9 +351,14 @@ def _lower(
     }
     programs = {
         m: to_hf_static(
-            specialize(hf_graph, q, max_seq_len, config=config),
+            specialize(hf_graph, q, max_seq_len, config=config, sliding=sliding),
             masked_softmax,
             forms[m],
+            key_layout,
+            # HTP gathers a quantized embedding table ~300x faster by int32
+            # than by int64 ids cast inside the graph (SmolLM2: 344 against
+            # 272 decode tok/s).
+            int32_token_ids=quantizer is not None,
         )
         for m, q in lengths.items()
     }
@@ -323,16 +374,54 @@ def _lower(
             tokenizer,
             calibration_prompts,
             seq_mse_candidates,
+            calibration_new_tokens,
         )
     options = dict(partitioner_options)
+    cache_metadata = {"get_cache_dtype": str(layout.dtype).removeprefix("torch.")}
+    encodings = None
+    if cache_io == "quantized":
+        from executorch.backends.qualcomm.utils import hf_static_quant_io as qio
+
+        if quantizer is None:
+            raise ValueError("Quantized cache I/O requires a quantizer.")
+        encodings = qio._unsigned_storage(programs, qio._cache_quant_io(programs))
+        dtypes = {
+            name: qio.QUANT_RANGES[(qmin, qmax)]
+            for name, (_, _, qmin, qmax) in encodings.items()
+        }
+        options.setdefault(
+            "passes_job",
+            qio._quant_io_passes(qio._quant_io_dtype_fn(dtypes, logits=True)),
+        )
+        caches = [n for n in layout.input_names if n in encodings]
+        cache_metadata = {
+            "get_cache_dtype": str(dtypes[caches[0]]).removeprefix("torch."),
+            "get_cache_scales": [float(encodings[n][0]) for n in caches],
+            "get_cache_zero_points": [int(encodings[n][1]) for n in caches],
+            "get_cache_quant_mins": [int(encodings[n][2]) for n in caches],
+            "get_cache_quant_maxs": [int(encodings[n][3]) for n in caches],
+        }
+        # The logits leave HTP in their 16-bit encoding; the runner dequantizes
+        # the one row it samples.
+        scale, zero, qmin, qmax = qio.logits_encoding(programs[DECODE_METHOD])
+        if (qmin, qmax) != (0, 65535):
+            raise ValueError("Quantized logits require an unsigned 16-bit encoding.")
+        cache_metadata.update(
+            get_logits_scale=float(scale), get_logits_zero_point=int(zero)
+        )
     options.setdefault("use_fp16", quantizer is None)
     options.setdefault("shared_buffer", True)
     options.setdefault("convert_linear_to_conv2d", True)
     options.setdefault("use_weight_sharing", len(programs) > 1)
     if "concat" in forms.values():
         options.setdefault("use_mha2sha", True)
+    partitioner_cls = (
+        QuantizedCacheHfStaticPartitioner
+        if cache_io == "quantized"
+        else HfStaticPartitioner
+    )
     partitioners = {
-        m: [HfStaticPartitioner.from_options(soc_model=soc_model, **options)]
+        m: [partitioner_cls.from_options(soc_model=soc_model, **options)]
         for m in programs
     }
     constant_methods = {
@@ -341,20 +430,26 @@ def _lower(
         "get_io_contract_version": 1,
         "get_max_seq_len": max_seq_len,
         "get_n_layers": layout.n_layers,
-        "get_cache_dtype": str(layout.dtype).removeprefix("torch."),
         "use_kv_cache": True,
+        **cache_metadata,
     }
+    if (key_layout, cache_io) != ("hf", "float"):
+        constant_methods.update(
+            get_io_contract_version=IO_CONTRACT_VERSION, get_key_layout=key_layout
+        )
     edge = to_edge_transform_and_lower(
         programs,
         partitioner=partitioners,
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
         constant_methods={k: v for k, v in constant_methods.items() if v is not None},
     )
+    if encodings is not None:
+        qio._check_cache_writes(edge, encodings)
     return edge, programs, layout
 
 
 @torch.no_grad()
-def export_hf_static(
+def export_hf_static(  # noqa: C901
     model: torch.nn.Module,
     tokenizer: Any,
     soc_model: str,
@@ -366,13 +461,28 @@ def export_hf_static(
     masked_softmax: Optional[bool] = None,
     attention: Optional[str] = None,
     seq_mse_candidates: int = 0,
+    cache_io: str = "auto",
+    key_layout: str = "auto",
+    sliding: str = "auto",
+    calibration_new_tokens: Optional[int] = None,
     **partitioner_options: Any,
 ):
-    """Export QNN compute with caller-owned float caches and fixed prefill/decode.
+    """Export QNN compute with caller-owned caches and fixed prefill/decode.
 
-    ``auto`` attention uses split for decode and quantized compute, concat for
-    float prefill. Prefill must fit every sliding window. The registered runner
-    pads prompt chunks and falls back to decode for a near-context tail.
+    ``cache_io``: ``float`` caches (contract version 1, the default without a
+    quantizer) or ``quantized`` caches (version 2, the default with one), each
+    stored as unsigned 16-bit with the encoding attention reads, so HTP reads it
+    without converting it. ``key_layout``: ``hf`` [1, H, L, D] or ``transposed``
+    [1, H, D, L] keys (the default with quantized caches). ``sliding``:
+    window-sized caches for sliding layers (``window``, HF's key layout only)
+    or context-length caches with the window masked (``full``, the default:
+    no per-step shift; Gemma3-1B fp16 decodes 27.4 instead of 22.5 tok/s). ``calibration_new_tokens`` caps the tokens generated
+    from each calibration prompt (by default up to the context).
+
+    ``auto`` attention uses split for decode, per-head attention for quantized
+    prefill and concat for float prefill. With window-sized caches prefill must fit every window. The
+    registered runner pads prompt chunks and falls back to decode for a
+    near-context tail.
     """
     calibration_prompts = calibration_prompts or DEFAULT_CALIBRATION_PROMPTS
     if (
@@ -389,14 +499,24 @@ def export_hf_static(
         raise ValueError(
             "prefill_len must be None or an integer between 2 and max_seq_len."
         )
+    if cache_io == "auto":
+        cache_io = "float" if quantizer is None else "quantized"
+    if cache_io not in ("float", "quantized") or (
+        cache_io == "quantized" and quantizer is None
+    ):
+        raise ValueError("cache_io must be float, or quantized with a quantizer.")
+    if key_layout == "auto":
+        key_layout = "hf" if cache_io == "float" else "transposed"
+    if sliding == "auto":
+        sliding = "full"
     windows = sliding_windows(model.config)
     minimum = min([max_seq_len, *[w for w in windows if w is not None]])
-    if prefill_len is not None and prefill_len > minimum:
+    if sliding == "window" and prefill_len is not None and prefill_len > minimum:
         raise ValueError(
             f"prefill_len ({prefill_len}) exceeds the smallest sliding cache length ({minimum})."
         )
     attention = attention or "auto"
-    if attention not in ("split", "concat", "auto"):
+    if attention not in ("split", "concat", "sha", "auto"):
         raise ValueError(f"Unknown attention form {attention!r}.")
     masked_softmax = quantizer is not None if masked_softmax is None else masked_softmax
     if DynamoExporter is None:
@@ -437,6 +557,10 @@ def export_hf_static(
         metadata,
         seq_mse_candidates,
         config=model.config,
+        cache_io=cache_io,
+        key_layout=key_layout,
+        sliding=sliding,
+        calibration_new_tokens=calibration_new_tokens,
     )
     for method in edge.methods:
         written = inplace_input_writes(edge.exported_program(method))
@@ -445,8 +569,11 @@ def export_hf_static(
                 f"{method}: {written} of {3 * layout.n_layers} cache inputs are "
                 "written in place; the rest would be full-cache CPU copies."
             )
+    from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
+
     return edge.to_executorch(
         ExecutorchBackendConfig(
+            passes=[BuildQuantIo()] if cache_io == "quantized" else [],
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False, alloc_graph_output=False
             ),
@@ -467,7 +594,12 @@ def main() -> None:
     parser.add_argument(
         "--quantize",
         action="store_true",
-        help="Quantize model computation while keeping float caches",
+        help="Quantize model computation (and, unless --float_caches, the caches)",
+    )
+    parser.add_argument(
+        "--float_caches",
+        action="store_true",
+        help="Keep float caches (contract version 1) when quantizing",
     )
     parser.add_argument(
         "--recipe_id", default=None, help="Recipe to use instead of the model's"
@@ -505,6 +637,7 @@ def main() -> None:
         max_seq_len=args.max_seq_len,
         prefill_len=args.prefill_len if args.hybrid else None,
         quantizer=quantizer,
+        cache_io="float" if args.float_caches else "auto",
         **options,
     )
     with open(args.output, "wb") as f:
