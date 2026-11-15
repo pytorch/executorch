@@ -152,9 +152,12 @@ class DepthwiseScheduleTest(unittest.TestCase):
         and ``multiplier`` output channels per group."""
         out_channels = c // group_channels * multiplier
         x = torch.randn(n, c, h, w, device="cuda", dtype=dtype)
-        weight = torch.randn(
-            out_channels, group_channels, kh, kw, device="cuda", dtype=dtype
-        ) / (group_channels * kh * kw) ** 0.5
+        weight = (
+            torch.randn(
+                out_channels, group_channels, kh, kw, device="cuda", dtype=dtype
+            )
+            / (group_channels * kh * kw) ** 0.5
+        )
         b = torch.randn(out_channels, device="cuda", dtype=dtype) if bias else None
         return x, weight, b
 
@@ -323,6 +326,7 @@ class DepthwiseScheduleTest(unittest.TestCase):
             )
             with self.subTest(groups=groups):
                 self.assertIn(reason, direct.supports(call))
+
     def test_output_layouts(self):
         # Every schedule writes the output strides the graph recorded, whatever
         # the input layout; dims of size 1 keep their recorded strides.
