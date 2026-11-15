@@ -42,6 +42,11 @@ void gelu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, "gelu");
+  // gelu.wgsl reads and writes array<f32>: any other dtype (int, or fp16,
+  // whose element pairs would be read as one f32) is refused, not misread.
+  if (!utils::is_fp32_tensor(in_tensor) || !utils::is_fp32_tensor(out_tensor)) {
+    throw std::runtime_error("gelu: only float32 operands are supported");
+  }
 
   const uint64_t num_elements64 = out_tensor.nbytes / sizeof(float);
   if (num_elements64 >

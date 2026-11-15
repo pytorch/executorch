@@ -90,7 +90,15 @@ vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
 }
 
 float hardsigmoid(float x) {
-  return mix(float(x >= 0.0), x / 6 + 0.5, float(abs(x) <= 3.0));
+  // Branches rather than mix(): mix() still computes x / 6 + 0.5 for +-inf,
+  // and 0 * inf is NaN where PyTorch gives 1 or 0.
+  if (x <= -3) {
+    return 0;
+  } else if (x >= 3) {
+    return 1;
+  } else {
+    return x / 6 + 0.5;
+  }
 }
 
 vec4 hardsigmoid(vec4 tex) {

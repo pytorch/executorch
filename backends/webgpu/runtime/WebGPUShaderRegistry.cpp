@@ -138,6 +138,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/erf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/hardsigmoid_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
@@ -594,6 +595,13 @@ constexpr std::array<WebGPUShaderInfo, 142> kShaderRegistry = {{
         kGroupNormReduceWorkgroupSizeX,
         kGroupNormReduceWorkgroupSizeY,
         kGroupNormReduceWorkgroupSizeZ,
+    },
+    {
+        "hardsigmoid",
+        kHardsigmoidWGSL,
+        kHardsigmoidWorkgroupSizeX,
+        kHardsigmoidWorkgroupSizeY,
+        kHardsigmoidWorkgroupSizeZ,
     },
     {
         "hardswish",
