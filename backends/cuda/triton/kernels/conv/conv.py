@@ -9,6 +9,8 @@
 The op body allocates the output once, with the size and stride of
 ``out_shape_and_stride``, and hands it to the first template whose
 ``supports()`` accepts the call; the template's schedules only write into it.
+``output_strides`` fixes the output's strides (a dense layout); the router
+passes the strides the source node recorded, so the output follows the graph.
 """
 
 from __future__ import annotations
@@ -104,6 +106,7 @@ def _canonical_call(
     transposed: bool,
     output_padding: list[int],
     groups: int,
+    output_strides: Optional[list[int]],
 ) -> ConvCall:
     params = ConvParams(
         tuple(stride),
@@ -120,7 +123,13 @@ def _canonical_call(
             f"{params.rank}-D convolution of a {input.dim()}-D input with a "
             f"{weight.dim()}-D weight"
         )
-    return ConvCall(input, weight, bias, params)
+    return ConvCall(
+        input,
+        weight,
+        bias,
+        params,
+        None if output_strides is None else tuple(output_strides),
+    )
 
 
 @triton_op("triton::convolution", mutates_args={})
@@ -135,6 +144,7 @@ def convolution(
     transposed: bool,
     output_padding: list[int],
     groups: int,
+    output_strides: Optional[list[int]] = None,
 ) -> torch.Tensor:
     call = _canonical_call(
         input,
@@ -147,6 +157,7 @@ def convolution(
         transposed,
         output_padding,
         groups,
+        output_strides,
     )
     params = call.params
     template = select_template(call)
@@ -176,6 +187,7 @@ def _convolution_fake(
     transposed: bool,
     output_padding: list[int],
     groups: int,
+    output_strides: Optional[list[int]] = None,
 ) -> torch.Tensor:
     call = _canonical_call(
         input,
@@ -188,6 +200,7 @@ def _convolution_fake(
         transposed,
         output_padding,
         groups,
+        output_strides,
     )
     size, stride_out = out_shape_and_stride(call)
     return input.new_empty_strided(size, stride_out)

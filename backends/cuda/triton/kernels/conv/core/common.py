@@ -25,6 +25,7 @@ Canonical arguments. Every spatial argument has one entry per spatial dim.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import Any, Callable, NamedTuple, Optional, Sequence
 
@@ -91,6 +92,9 @@ class ConvCall:
     weight: torch.Tensor
     bias: Optional[torch.Tensor]
     params: ConvParams
+    # The output strides the caller requires (a dense layout), or None for the
+    # layout ATen's CUDA convolution returns.
+    output_strides: Optional[tuple[int, ...]] = None
 
     def signature(self) -> str:
         def describe(t: Optional[torch.Tensor]) -> str:
@@ -106,7 +110,13 @@ class ConvCall:
             f"stride={list(p.stride)}, padding_before={list(p.padding_before)}, "
             f"padding_after={list(p.padding_after)}, dilation={list(p.dilation)}, "
             f"transposed={p.transposed}, output_padding={list(p.output_padding)}, "
-            f"groups={p.groups})"
+            f"groups={p.groups}"
+            + (
+                ""
+                if self.output_strides is None
+                else f", output_strides={list(self.output_strides)}"
+            )
+            + ")"
         )
 
 
@@ -306,8 +316,61 @@ def _unsqueeze2(
     return (*shape[:2], 1, shape[2]), (*strides[:2], strides[2] * shape[2], strides[2])
 
 
+def dense_strides(shape: Sequence[int], strides: Sequence[int]) -> bool:
+    """Whether ``strides`` lay ``shape`` out densely: each element once, with no
+    gaps, in some order of the dimensions. Dimensions of size 1 may have any
+    non-negative stride."""
+    if len(strides) != len(shape) or any(s < 0 for s in strides):
+        return False
+    expected = 1
+    for size, stride in sorted(
+        ((n, s) for n, s in zip(shape, strides) if n != 1), key=lambda d: d[1]
+    ):
+        if stride != expected:
+            return False
+        expected *= size
+    return True
+
+
+def memory_formats(shape: Sequence[int], strides: Sequence[int]) -> frozenset[str]:
+    """The dense layouts ("contiguous", "channels_last") ``strides`` match; both
+    for strides that are ambiguous because of dimensions of size 1."""
+    formats = set()
+    if _is_contiguous(shape, strides):
+        formats.add("contiguous")
+    if len(shape) in (4, 5):
+        expected, running = [0] * len(shape), 1
+        for d in _channels_last_order(len(shape)):
+            expected[d] = running
+            running *= shape[d]
+        if all(n == 1 or s == e for n, s, e in zip(shape, strides, expected)):
+            formats.add("channels_last")
+    return frozenset(formats)
+
+
+def unbenchmarked_layout(
+    call: ConvCall, routed: frozenset[tuple[str, str, str]]
+) -> Optional[str]:
+    """Why the (input, weight, output) memory formats of ``call`` are not one of
+    ``routed``, or None. A sliced input or weight matches no format."""
+    x, w = call.input, call.weight
+    shape, out = out_shape_and_stride(call)
+    formats = [
+        memory_formats(t.shape, t.stride()) if t.storage_offset() == 0 else ()
+        for t in (x, w)
+    ]
+    if routed.intersection(itertools.product(*formats, memory_formats(shape, out))):
+        return None
+    return (
+        f"input strides {list(x.stride())} (offset {x.storage_offset()}), weight "
+        f"strides {list(w.stride())} (offset {w.storage_offset()}) and output "
+        f"strides {list(out)} are not a benchmarked layout"
+    )
+
+
 def out_shape_and_stride(call: ConvCall) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """The size and stride of the output, as ATen's CUDA convolution lays it out."""
+    """The size and stride of the output: ``call.output_strides`` if given (which
+    must be dense), otherwise the strides ATen's CUDA convolution returns."""
     x, w, p = call.input, call.weight, call.params
     kernel = w.shape[2:]
     if p.transposed:
@@ -338,6 +401,13 @@ def out_shape_and_stride(call: ConvCall) -> tuple[tuple[int, ...], tuple[int, ..
             )
         ]
     shape = (x.shape[0], channels, *spatial)
+    if call.output_strides is not None:
+        if not dense_strides(shape, call.output_strides):
+            raise ConvBindingError(
+                f"output strides {list(call.output_strides)} are not a dense "
+                f"layout of {list(shape)}"
+            )
+        return shape, tuple(call.output_strides)
     if not _channels_last_output(call):
         return shape, _contiguous_strides(shape)
     if len(shape) == 3:
