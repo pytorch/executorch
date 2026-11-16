@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from .fuse_grid_sampler_flow_offset import FuseGridSamplerFlowOffsetPass  # noqa
+from .group_independent_custom_shaders import GroupIndependentCustomShadersPass  # noqa
 from .insert_grid_sampler_grid_dequant_pass import (  # noqa
     InsertGridSamplerGridDequantPass,
 )

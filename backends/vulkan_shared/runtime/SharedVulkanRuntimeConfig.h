@@ -18,11 +18,15 @@ namespace executorch {
 namespace backends {
 namespace vulkan_shared {
 
-inline constexpr char kSharedContextNameOption[] = "vulkan_shared_context_name";
-inline constexpr char kSharedContextModeOption[] = "vulkan_shared_context_mode";
+inline constexpr char kSharedDeviceNameOption[] = "vulkan_shared_device_name";
+inline constexpr char kSharedDeviceModeOption[] = "vulkan_shared_device_mode";
+inline constexpr char kLegacySharedContextNameOption[] =
+    "vulkan_shared_context_name";
+inline constexpr char kLegacySharedContextModeOption[] =
+    "vulkan_shared_context_mode";
 inline constexpr char kSharedGroupIdOption[] = "vulkan_shared_group_id";
 
-enum class SharedContextMode : uint8_t {
+enum class SharedDeviceMode : uint8_t {
   kDisabled = 0,
   kLookupOnly = 1,
   kLookupOrCreate = 2,
@@ -33,24 +37,24 @@ enum class SharedContextMode : uint8_t {
 // are RuntimeSpec options: context selection is a deployment concern and must
 // not be serialized into a backend CompileSpec or a .pte file.
 struct SharedVulkanRuntimeConfig final {
-  std::string context_name = "default";
+  std::string device_name = "default";
   int group_id = 0;
-  SharedContextMode context_mode = SharedContextMode::kLookupOrCreate;
+  SharedDeviceMode device_mode = SharedDeviceMode::kLookupOrCreate;
 
   bool enabled() const {
-    return context_mode != SharedContextMode::kDisabled;
+    return device_mode != SharedDeviceMode::kDisabled;
   }
 
   bool lookup_only() const {
-    return context_mode == SharedContextMode::kLookupOnly;
+    return device_mode == SharedDeviceMode::kLookupOnly;
   }
 
   bool lookup_or_create() const {
-    return context_mode == SharedContextMode::kLookupOrCreate;
+    return device_mode == SharedDeviceMode::kLookupOrCreate;
   }
 
   bool create_only() const {
-    return context_mode == SharedContextMode::kCreateOnly;
+    return device_mode == SharedDeviceMode::kCreateOnly;
   }
 };
 

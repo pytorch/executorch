@@ -12,13 +12,23 @@ import unittest
 import torch
 
 from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
+    DFlashOwnerArgmaxVerifier,
+    DFlashOwnerVerifier,
     DFlashTokenSampler,
     sample_tokens,
+    verify_owners,
+    verify_owners_greedy,
 )
 
 
 def _reference_row(
-    logits: list[float], temperature: float, top_k: int, top_p: float, uniform: float
+    logits: list[float],
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    uniform: float,
+    *,
+    batching_policy: bool = False,
 ) -> tuple[int, list[float]]:
     vocab_size = len(logits)
     if temperature <= 0.0:
@@ -26,17 +36,22 @@ def _reference_row(
         return token, [float(index == token) for index in range(vocab_size)]
 
     ranked = sorted(range(vocab_size), key=lambda index: (-logits[index], index))
-    if 0 < top_k < vocab_size:
+    use_top_k = 0 < top_k < vocab_size
+    if use_top_k:
         ranked = ranked[:top_k]
     maximum = max(logits[index] for index in ranked)
     weights = [0.0] * vocab_size
     for index in ranked:
         weights[index] = math.exp((logits[index] - maximum) / temperature)
     total = sum(weights)
-    if 0.0 < top_p < 1.0:
+    if 0.0 < top_p < 1.0 and not (batching_policy and use_top_k):
         nucleus, nucleus_sum = [], 0.0
         for index in ranked:
-            if nucleus_sum >= top_p * total:
+            if (
+                nucleus_sum > top_p * total
+                if batching_policy
+                else nucleus_sum >= top_p * total
+            ):
                 break
             nucleus.append(index)
             nucleus_sum += weights[index]
@@ -139,3 +154,146 @@ class DFlashTokenSamplerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DFlashOwnerVerifierTest(unittest.TestCase):
+    """Owner verification uses the batching target's sampling distribution."""
+
+    def _reference(self, logits, candidates, params):
+        width = candidates.shape[1]
+        expected = []
+        for owner in range(candidates.shape[0]):
+            row = params[owner]
+            distributions = [
+                _reference_row(
+                    values.tolist(),
+                    float(row[0]),
+                    int(row[1]),
+                    float(row[2]),
+                    0.5,
+                    batching_policy=True,
+                )[1]
+                for values in logits[owner]
+            ]
+            accepted = 0
+            for index in range(width - 1):
+                proposal = int(candidates[owner, index + 1])
+                distribution = distributions[index]
+                keep = (
+                    float(row[3 + index]) < distribution[proposal]
+                    if row[0] > 0
+                    else proposal
+                    == max(range(len(distribution)), key=distribution.__getitem__)
+                )
+                if not keep:
+                    break
+                accepted += 1
+            distribution = distributions[accepted].copy()
+            if row[0] == 0:
+                correction = max(range(len(distribution)), key=distribution.__getitem__)
+            else:
+                if accepted < width - 1:
+                    distribution[int(candidates[owner, accepted + 1])] = 0.0
+                    total = sum(distribution)
+                    distribution = [value / total for value in distribution]
+                cumulative = 0.0
+                correction = max(i for i, value in enumerate(distribution) if value > 0)
+                for token, value in enumerate(distribution):
+                    cumulative += value
+                    if cumulative > float(row[-1]):
+                        correction = token
+                        break
+            expected.append([accepted, correction])
+        return torch.tensor(expected)
+
+    def _case(self, owners, width, vocab, temperature, top_k, top_p, seed):
+        generator = torch.Generator().manual_seed(seed)
+        logits = torch.randn(owners, width, vocab, generator=generator) * 3
+        greedy = logits.argmax(-1)
+        candidates = torch.randint(0, vocab, (owners, width), generator=generator)
+        # Owner o's draft agrees with the target for its first o proposals.
+        for owner in range(owners):
+            agree = min(owner, width - 1)
+            candidates[owner, 1 : agree + 1] = greedy[owner, :agree]
+        params = torch.cat(
+            [
+                torch.tensor([[temperature, top_k, top_p]]).expand(owners, 3),
+                torch.rand(owners, width, generator=generator),
+            ],
+            dim=1,
+        )
+        return logits, candidates, params
+
+    def test_matches_independent_batch_sampling_reference(self) -> None:
+        for temperature, top_k, top_p in (
+            (0.0, 0, 1.0),
+            (0.8, 0, 1.0),
+            (1.0, 5, 1.0),
+            (0.7, 0, 0.9),
+            (1.2, 7, 0.8),
+        ):
+            for seed in range(6):
+                with self.subTest(t=temperature, k=top_k, p=top_p, seed=seed):
+                    logits, candidates, params = self._case(
+                        4, 16, 32, temperature, top_k, top_p, seed
+                    )
+                    torch.testing.assert_close(
+                        verify_owners(logits, candidates, params),
+                        self._reference(logits, candidates, params),
+                    )
+
+    def test_top_k_overrides_top_p_like_the_target_sampler(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, :4] = 0.0
+        candidates = torch.tensor([[0, 0, 0]])
+        params = torch.tensor([[1.0, 4.0, 0.1, 0.5, 0.5, 0.4]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[0, 2]])
+
+    def test_top_p_includes_the_equal_cumulative_mass_boundary(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, :4] = 0.0
+        candidates = torch.tensor([[0, 2, 2]])
+        params = torch.tensor([[1.0, 0.0, 0.5, 0.2, 0.2, 0.75]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[2, 2]])
+
+    def test_bonus_zero_coin_selects_a_supported_token(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, 3] = 0.0
+        logits[:, :, 4] = 1.0
+        candidates = torch.tensor([[0, 4, 4]])
+        params = torch.tensor([[1.0, 2.0, 1.0, 0.0, 0.0, 0.0]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[2, 3]])
+
+    def test_greedy_fast_path_matches_and_counts_prefix(self) -> None:
+        logits, candidates, params = self._case(4, 16, 32, 0.0, 0, 1.0, 3)
+        candidates[3, 1:] = logits[3, :-1].argmax(-1)
+        result = verify_owners_greedy(logits, candidates)
+        torch.testing.assert_close(result, verify_owners(logits, candidates, params))
+        self.assertEqual(result[:, 0].tolist(), [0, 1, 2, 15])
+        self.assertEqual(int(result[3, 1]), int(logits[3, 15].argmax()))
+
+    def test_strict_export_supports_dynamic_owners_and_width(self) -> None:
+        logits, candidates, params = self._case(4, 16, 32, 0.9, 0, 1.0, 1)
+        owners = torch.export.Dim("owners", min=1, max=4)
+        width = torch.export.Dim("width", min=3, max=16)
+        sampled = torch.export.export(
+            DFlashOwnerVerifier(),
+            (logits, candidates, params),
+            dynamic_shapes=(
+                {0: owners, 1: width},
+                {0: owners, 1: width},
+                {0: owners, 1: width + 3},
+            ),
+            strict=True,
+        )
+        greedy = torch.export.export(
+            DFlashOwnerArgmaxVerifier(),
+            (logits, candidates),
+            dynamic_shapes=({0: owners, 1: width}, {0: owners, 1: width}),
+            strict=True,
+        )
+        small = (logits[:2, :4], candidates[:2, :4], params[:2, :7])
+        torch.testing.assert_close(sampled.module()(*small), verify_owners(*small))
+        torch.testing.assert_close(
+            greedy.module()(*small[:2]), verify_owners_greedy(*small[:2])
+        )

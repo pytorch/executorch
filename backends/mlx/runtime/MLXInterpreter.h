@@ -186,10 +186,18 @@ inline void exec_take_along_axis(
     const TakeAlongAxisNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      take_along_axis(
-          st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "TakeAlongAxis");
+  const int size = x.shape(axis);
+  const auto& indices = st.const_tensor_ref(n.indices);
+  // An empty axis has no position to clamp to.
+  if (size == 0 && indices.size() != 0) {
+    throw std::runtime_error("TakeAlongAxis: cannot take from an empty axis");
+  }
+  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
+  const auto clamped = clip(indices, array(-size), array(size - 1), s);
+  st.set_tensor(n.out, take_along_axis(x, clamped, axis, s));
 }
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -338,8 +346,8 @@ inline void exec_update_and_attend(
   // The cache places the step and attends over whatever storage its layout
   // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
-  // One position per query token, read host-side so the cache stays pure graph
-  // + integer bookkeeping. Every layer of a step reads the same position
+  // Read positions host-side so the cache stays pure graph + integer
+  // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
@@ -350,10 +358,6 @@ inline void exec_update_and_attend(
     throw std::runtime_error("update_and_attend: position must be contiguous");
   }
   const int length = static_cast<int>(pos.size());
-  if (length != static_cast<int>(q.shape(2))) {
-    throw std::runtime_error(
-        "update_and_attend: position must hold one entry per query token");
-  }
   std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:
@@ -902,6 +906,66 @@ inline void exec_scatter_add(
 }
 
 inline void
+exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const int rank = static_cast<int>(x.ndim());
+
+  if (n.indices.size() != n.axes.size()) {
+    throw std::runtime_error(
+        "ScatterNode: indices count (" + std::to_string(n.indices.size()) +
+        ") must match axes count (" + std::to_string(n.axes.size()) + ")");
+  }
+
+  for (auto axis : n.axes) {
+    if (axis < 0 || axis >= rank) {
+      throw std::runtime_error(
+          "ScatterNode: axis " + std::to_string(axis) +
+          " out of range for input with ndim " + std::to_string(rank));
+    }
+  }
+
+  std::vector<array> indices;
+  indices.reserve(n.indices.size());
+  size_t index_ndim = 0;
+  for (auto tid : n.indices) {
+    indices.push_back(st.const_tensor_ref(tid));
+    index_ndim = std::max(index_ndim, indices.back().ndim());
+  }
+
+  // mlx::scatter checks neither the index values nor where a slice ends, and
+  // either one out of range would write outside x. The handler always emits
+  // a slice of size 1 on each indexed axis.
+  const auto& updates = st.const_tensor_ref(n.updates);
+  for (auto axis : n.axes) {
+    const auto dim = index_ndim + static_cast<size_t>(axis);
+    if (updates.ndim() <= dim || updates.shape()[dim] != 1) {
+      throw std::runtime_error(
+          "ScatterNode: updates must have size 1 on indexed axis " +
+          std::to_string(axis));
+    }
+  }
+  // Clamped on the device: a host range check has to wait for indices that
+  // are computed on the device, which made a MoE block several times slower.
+  for (size_t i = 0; i < indices.size(); ++i) {
+    const int size = x.shape(n.axes[i]);
+    if (size == 0) {
+      // x is empty, so there is nowhere to write.
+      st.set_tensor(n.out, x);
+      return;
+    }
+    indices[i] = clip(indices[i], array(-size), array(size - 1), s);
+  }
+
+  if (n.reduce == "none") {
+    st.set_tensor(n.out, scatter(x, indices, updates, n.axes, s));
+  } else if (n.reduce == "sum") {
+    st.set_tensor(n.out, scatter_add(x, indices, updates, n.axes, s));
+  } else {
+    throw std::runtime_error("ScatterNode: unsupported reduce: " + n.reduce);
+  }
+}
+
+inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
@@ -1215,7 +1279,8 @@ inline void exec_slice_update(
   // st.set_tensor does a std::move. Keeping for now, but should investigate and
   // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
-  array& dst = st.tensor_ref(n.dst);
+  // Only the in-place form writes dst. Otherwise dst may be a constant.
+  const array& dst = st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
 
   const int rank = static_cast<int>(dst.ndim());
@@ -1256,9 +1321,10 @@ inline void exec_slice_update(
       return;
     }
     if (n.step == 1) {
-      dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+      st.tensor_ref(n.dst) =
+          slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
     } else {
-      dst = slice_update(
+      st.tensor_ref(n.dst) = slice_update(
           dst, upd, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s);
     }
 
@@ -2623,6 +2689,9 @@ class Interpreter {
         break;
       case OpCode::SCATTER_ADD:
         ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER:
+        ops::exec_scatter(std::get<ScatterNode>(instr.node), st, s);
         break;
       case OpCode::GATHER_MM:
         ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);

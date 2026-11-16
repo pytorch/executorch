@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import copy
+import itertools
 import unittest
 from typing import cast
 
@@ -38,6 +39,7 @@ from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+from parameterized import parameterized
 from torch.utils import _pytree as pytree
 
 
@@ -590,6 +592,84 @@ class PostponePermuteBelowSqueezeViewTest(unittest.TestCase):
         targets = get_compute_nodes(result.graph_module)
         self.assertEqual(targets[0], exir_ops.edge.aten.view_copy.default)
         self.assertEqual(targets[1], exir_ops.edge.aten.permute_copy.default)
+
+    def test_negative_permute_dims_below_unsqueeze_axis(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        p = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [-3, 2, 1])
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p, [2, 4, 1, 3])
+        )
+        builder.output([v])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView().call(original),
+        )
+
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+        self.assertEqual(
+            get_compute_nodes(gm),
+            [
+                exir_ops.edge.aten.view_copy.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ],
+        )
+        (permute,) = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(permute.args[1], [0, 3, 2, 1])
+        validate_numerics(
+            gm_before,
+            gm,
+            [x_data],
+            "PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView",
+        )
+
+    def test_negative_permute_dims_below_squeeze_axis(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(2, 3, 1, 4)
+        x = builder.placeholder("x", x_data)
+        p = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [-4, 2, 1, 3])
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p, [2, 3, 4])
+        )
+        builder.output([v])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView().call(original),
+        )
+
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+        self.assertEqual(
+            get_compute_nodes(gm),
+            [
+                exir_ops.edge.aten.view_copy.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ],
+        )
+        (permute,) = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(permute.args[1], [0, 1, 2])
+        validate_numerics(
+            gm_before,
+            gm,
+            [x_data],
+            "PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView",
+        )
 
 
 class FuseTransposeOrPermuteOpPairsTest(unittest.TestCase):
@@ -1678,6 +1758,71 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permutation_sink_view_terminal_broadcast_is_optimized",
         )
 
+    def test_numel_one_operand_does_not_block_region(self) -> None:
+        x_data = torch.randn(1, 4, 2, 3)
+        scale_data = torch.tensor(0.5)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        scale = builder.placeholder("scale", scale_data)
+        permute_in = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute_in, scale)
+        )
+        permute_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 3, 1, 2])
+        )
+        builder.output([permute_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, scale_data],
+            "numel_one_operand_does_not_block_region",
+        )
+
+    def test_cat_with_different_concat_sizes_does_not_block_region(self) -> None:
+        x_data = torch.randn(1, 4, 2, 2)
+        y_data = torch.randn(1, 6, 2, 2)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        permute_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        permute_y = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 2, 3, 1])
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([permute_x, permute_y], 3)
+        )
+        permute_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(cat, [0, 3, 1, 2])
+        )
+        builder.output([permute_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "cat_with_different_concat_sizes_does_not_block_region",
+        )
+
     def test_split_sink_view_is_not_remapped_for_broadcast(self) -> None:
         x_data = torch.randn(1, 4, 2)
         sink_data = torch.randn(1, 1, 1, 8)
@@ -2297,6 +2442,28 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
 
+    def test_deep_elementwise_region_does_not_recurse(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 2, 3))
+        node = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        for _ in range(1100):
+            node = builder.call_operator(
+                op=exir_ops.edge.aten.hardtanh.default, args=(node,)
+            )
+        node = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(node, [0, 2, 1])
+        )
+        builder.output([node])
+
+        result = RemovePermutesAroundElementwiseOps().call(builder.get_graph_module())
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
     def test_region_ending_in_permute_then_view(self) -> None:
         """permute -> mul -> permute -> view(squeeze).
 
@@ -2477,6 +2644,366 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             [x_data],
             "chained_regions_absorb_into_last_permute",
         )
+
+    def test_permute_bypassed_by_one_region_is_kept_by_another(self) -> None:
+        """Region A bypasses pb as an incoming permute, so mul reads tanh
+        directly. Region B would remove pb as its outgoing permute and change
+        tanh's layout, so it must be skipped."""
+        builder = GraphBuilder()
+        x_data = torch.randn(2, 3, 4)
+        y_data = torch.randn(2, 4, 3)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        pa = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        pc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 2, 1])
+        )
+        tanh = builder.call_operator(op=exir_ops.edge.aten.tanh.default, args=(pc,))
+        pb = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(tanh, [0, 2, 1])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(pa, pb))
+        out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 2, 1])
+        )
+        builder.output([out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+
+        self.assertTrue(result.modified)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "permute_bypassed_by_one_region_is_kept_by_another",
+        )
+
+    def test_lower_rank_constant_is_transposed_into_region_layout(self) -> None:
+        # Constants that reorder non-unit dims need a transpose; constants that
+        # only move unit dims reshape. The channels-last cases use a start
+        # permutation that is not its own inverse, so applying the wrong one fails.
+        ncl_to_nlc = ((1, 4, 6), [0, 2, 1], [0, 2, 1])
+        nchw_to_nhwc = ((1, 3, 4, 5), [0, 2, 3, 1], [0, 3, 1, 2])
+        cases = (
+            (ncl_to_nlc, (6, 4), 1),
+            (ncl_to_nlc, (4,), 0),
+            (ncl_to_nlc, (6, 1), 0),
+            (nchw_to_nhwc, (4, 5, 3), 1),
+            (nchw_to_nhwc, (5, 3), 1),
+            (nchw_to_nhwc, (3,), 0),
+            (nchw_to_nhwc, (4, 1, 1), 0),
+        )
+        for (x_shape, start, end), const_shape, expected_permutes in cases:
+            with self.subTest(x_shape=x_shape, const_shape=const_shape):
+                builder = GraphBuilder()
+                x_data = torch.randn(*x_shape)
+                const_data = torch.randn(*const_shape)
+                x = builder.placeholder("x", x_data)
+                const = builder.placeholder("p_const", const_data)
+                p1 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(x, start)
+                )
+                add = builder.call_operator(
+                    op=exir_ops.edge.aten.add.Tensor, args=(p1, const)
+                )
+                p2 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(add, end)
+                )
+                builder.output([p2])
+                original = builder.get_graph_module()
+                gm_before = copy.deepcopy(original)
+
+                result = cast(
+                    PassResult, RemovePermutesAroundElementwiseOps()(original)
+                )
+
+                self.assertTrue(result.modified)
+                validate_numerics(
+                    gm_before,
+                    result.graph_module,
+                    [x_data, const_data],
+                    f"lower_rank_constant_{const_shape}",
+                )
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    expected_permutes,
+                )
+
+
+_NHWC_SHAPE = [2, 3, 4, 5]
+_AXIS_NAMES = "NHWC"
+# x.permute(_NHWC_FROM_NCHW) turns an NCHW tensor into NHWC.
+_NHWC_FROM_NCHW = [0, 2, 3, 1]
+
+
+def _nchw_order(nhwc: list[int]) -> list[int]:
+    return [nhwc[0], nhwc[3], nhwc[1], nhwc[2]]
+
+
+def _case_name(broadcast: tuple[int, ...], kept_states: dict[int, str]) -> str:
+    parts = (
+        ["broadcast_" + "".join(_AXIS_NAMES[a] for a in broadcast)] if broadcast else []
+    )
+    parts += [f"{_AXIS_NAMES[a]}_{state}" for a, state in kept_states.items()]
+    return "_".join(parts)
+
+
+def _region_expand_cases() -> list[tuple[str, tuple[int, ...], dict[int, str]]]:
+    cases = []
+    for count in range(1, 5):
+        for broadcast in itertools.combinations(range(4), count):
+            kept = [a for a in range(4) if a not in broadcast]
+            for states in itertools.product(
+                ("size", "minus_one", "dynamic"), repeat=len(kept)
+            ):
+                kept_states = dict(zip(kept, states))
+                cases.append(
+                    (_case_name(broadcast, kept_states), broadcast, kept_states)
+                )
+    return cases
+
+
+def _constant_expand_cases() -> list[tuple[str, int, tuple[int, ...], dict[int, str]]]:
+    cases = []
+    for rank in range(1, 4):
+        own_axes = list(range(4 - rank, 4))
+        for count in range(rank + 1):
+            for broadcast in itertools.combinations(own_axes, count):
+                kept = [a for a in own_axes if a not in broadcast]
+                for states in itertools.product(
+                    ("size", "minus_one"), repeat=len(kept)
+                ):
+                    kept_states = dict(zip(kept, states))
+                    name = f"rank{rank}_" + _case_name(broadcast, kept_states)
+                    cases.append((name.rstrip("_"), rank, broadcast, kept_states))
+    return cases
+
+
+def _export_to_edge(
+    module: torch.nn.Module,
+    example_inputs: tuple[torch.Tensor, ...],
+    dynamic_shapes: dict[str, dict[int, torch.export.Dim] | None] | None,
+) -> torch.fx.GraphModule:
+    exported = torch.export.export(
+        module, example_inputs, dynamic_shapes=dynamic_shapes
+    )
+    edge = to_edge(exported, compile_config=EdgeCompileConfig(_check_ir_validity=False))
+    return edge.exported_program().graph_module
+
+
+class RemovePermutesAroundExpandCopyTest(unittest.TestCase):
+    """An NHWC region around ``expand_copy``, for every set of broadcast axes,
+    with kept axes written as their size, as -1, or as -1 on a dynamic dim."""
+
+    def _remove_permutes(self, original: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+        # A constant whose non-unit dims change order keeps a permute of its
+        # own; only the activation path has to be permute-free.
+        permute = exir_ops.edge.aten.permute_copy.default
+        (x,) = (n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x")
+        self.assertNotIn(permute, [user.target for user in x.users])
+        (output,) = gm.graph.find_nodes(op="output")
+        self.assertNotEqual(output.args[0][0].target, permute)
+        return gm
+
+    def _expand_size(self, gm: torch.fx.GraphModule) -> list[int]:
+        (expand,) = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.expand_copy.default
+        )
+        return expand.args[1]
+
+    @parameterized.expand(_region_expand_cases())
+    def test_expand_of_region_tensor(
+        self, name: str, broadcast: tuple[int, ...], kept_states: dict[int, str]
+    ) -> None:
+        dynamic_axes = [a for a, state in kept_states.items() if state == "dynamic"]
+        size = [
+            -1 if kept_states.get(a) in ("minus_one", "dynamic") else _NHWC_SHAPE[a]
+            for a in range(4)
+        ]
+
+        class PermuteExpandPermute(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.permute(0, 2, 3, 1).expand(*size).permute(0, 3, 1, 2)
+
+        input_nhwc = [1 if a in broadcast else _NHWC_SHAPE[a] for a in range(4)]
+        x = torch.randn(*_nchw_order(input_nhwc))
+        dims = {
+            _NHWC_FROM_NCHW[a]: torch.export.Dim(f"d{a}", min=2, max=16)
+            for a in dynamic_axes
+        }
+        original = _export_to_edge(PermuteExpandPermute(), (x,), {"x": dims or None})
+        gm_before = copy.deepcopy(original)
+
+        gm = self._remove_permutes(original)
+
+        expected_nhwc = [-1 if a in dynamic_axes else _NHWC_SHAPE[a] for a in range(4)]
+        self.assertEqual(self._expand_size(gm), _nchw_order(expected_nhwc))
+        resized_nhwc = [
+            d + 3 if a in dynamic_axes else d for a, d in enumerate(input_nhwc)
+        ]
+        for inputs in ([x], [torch.randn(*_nchw_order(resized_nhwc))]):
+            validate_numerics(gm_before, gm, inputs, name)
+
+    @parameterized.expand(_constant_expand_cases())
+    def test_rank_growing_expand_of_constant(
+        self,
+        name: str,
+        rank: int,
+        broadcast: tuple[int, ...],
+        kept_states: dict[int, str],
+    ) -> None:
+        bias_shape = [
+            1 if a in broadcast else _NHWC_SHAPE[a] for a in range(4 - rank, 4)
+        ]
+        size = [
+            -1 if kept_states.get(a) == "minus_one" else _NHWC_SHAPE[a]
+            for a in range(4)
+        ]
+        builder = GraphBuilder()
+        x_data = torch.randn(*_nchw_order(_NHWC_SHAPE))
+        bias_data = torch.randn(*bias_shape)
+        x = builder.placeholder("x", x_data)
+        bias = builder.placeholder("p_bias", bias_data)
+        nhwc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        expanded = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default, args=(bias, size)
+        )
+        scaled = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(nhwc, expanded)
+        )
+        nchw = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(scaled, [0, 3, 1, 2])
+        )
+        builder.output([nchw])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        gm = self._remove_permutes(original)
+
+        self.assertEqual(self._expand_size(gm), _nchw_order(_NHWC_SHAPE))
+        validate_numerics(gm_before, gm, [x_data, bias_data], name)
+
+    def test_keep_entry_moved_onto_an_added_dim(self) -> None:
+        # Undoing the [1, 0, 2, 3] swap moves the -1 onto the dim the expand
+        # adds, so it has to be spelled out as 1 first.
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 4, 5, 3)
+        bias_data = torch.randn(1, 5, 3)
+        x = builder.placeholder("x", x_data)
+        bias = builder.placeholder("p_bias", bias_data)
+        swapped = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 0, 2, 3])
+        )
+        expanded = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default, args=(bias, [4, -1, 5, 3])
+        )
+        scaled = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(swapped, expanded)
+        )
+        back = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(scaled, [1, 0, 2, 3])
+        )
+        builder.output([back])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        gm = self._remove_permutes(original)
+
+        self.assertEqual(self._expand_size(gm), [1, 4, 5, 3])
+        validate_numerics(gm_before, gm, [x_data, bias_data], "added_dim")
+
+    @parameterized.expand([(f"symbolic_target_{_AXIS_NAMES[a]}", a) for a in range(4)])
+    def test_symbolic_broadcast_target_leaves_region(
+        self, name: str, axis: int
+    ) -> None:
+        class ExpandToSymbolicSize(torch.nn.Module):
+            def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                size = [-1] * 4
+                size[axis] = t.shape[0]
+                return x.permute(0, 2, 3, 1).expand(*size).permute(0, 3, 1, 2)
+
+        input_nhwc = [1 if a == axis else _NHWC_SHAPE[a] for a in range(4)]
+        x = torch.randn(*_nchw_order(input_nhwc))
+        original = _export_to_edge(
+            ExpandToSymbolicSize(),
+            (x, torch.randn(6)),
+            {"x": None, "t": {0: torch.export.Dim("t", min=2, max=16)}},
+        )
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        for t_size in (6, 9):
+            validate_numerics(
+                gm_before, result.graph_module, [x, torch.randn(t_size)], name
+            )
+
+
+class SymbolicScalarInputTest(unittest.TestCase):
+    """A region whose ops take a symbolic size is left alone rather than
+    crashing the pass."""
+
+    def test_symbolic_arguments_leave_the_region_unchanged(self) -> None:
+        def nhwc(x: torch.Tensor) -> torch.Tensor:
+            return x.permute(0, 2, 3, 1)
+
+        def nchw(x: torch.Tensor) -> torch.Tensor:
+            return x.permute(0, 3, 1, 2)
+
+        class SymbolicArgument(torch.nn.Module):
+            def __init__(self, op: str) -> None:
+                super().__init__()
+                self.op = op
+
+            def forward(self, x: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
+                y = nhwc(x)
+                if self.op == "expand":
+                    y = y.expand(2, n.shape[0], 8, 3)
+                elif self.op == "slice":
+                    y = y[:, :, : n.shape[0], :]
+                else:
+                    y = torch.nn.functional.pad(y, (0, 0, 0, n.shape[0]))
+                return nchw(y)
+
+        for op in ("expand", "slice", "pad"):
+            with self.subTest(op=op):
+                x = torch.randn(2, 3, 1 if op == "expand" else 4, 8)
+                original = _export_to_edge(
+                    SymbolicArgument(op),
+                    (x, torch.randn(4)),
+                    {"x": None, "n": {0: torch.export.Dim("n", min=2, max=7)}},
+                )
+                gm_before = copy.deepcopy(original)
+
+                result = cast(
+                    PassResult, RemovePermutesAroundElementwiseOps()(original)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    2,
+                )
+                validate_numerics(
+                    gm_before, result.graph_module, [x, torch.randn(6)], op
+                )
 
 
 class LayoutPermuteVisibilityTest(unittest.TestCase):

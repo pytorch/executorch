@@ -9,6 +9,8 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <executorch/schema/program_generated.h>
 
+#include <cinttypes>
+
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 namespace internal {
@@ -32,7 +34,7 @@ Result<FreeableBuffer> PteDataMap::get_data(std::string_view key) const {
     ET_CHECK_OR_RETURN_ERROR(
         named_data_item != nullptr && named_data_item->key() != nullptr,
         InvalidArgument,
-        "Searching for key %.*s: NamedData at index %d is null",
+        "Searching for key %.*s: NamedData at index %" PRIu32 " is null",
         static_cast<int>(key.size()),
         key.data(),
         i);
@@ -46,7 +48,7 @@ Result<FreeableBuffer> PteDataMap::get_data(std::string_view key) const {
       ET_CHECK_OR_RETURN_ERROR(
           segment_index < segments_->size(),
           InvalidArgument,
-          "Segment index %zu for key %.*s is out of range for segments size %u",
+          "Segment index %zu for key %.*s is out of range for segments size %" PRIu32,
           segment_index,
           static_cast<int>(key.size()),
           key.data(),
@@ -70,7 +72,8 @@ ET_NODISCARD Result<const char*> PteDataMap::get_key(uint32_t index) const {
   ET_CHECK_OR_RETURN_ERROR(
       index < named_data_->size(),
       InvalidArgument,
-      "Index out of range: named_data size is %u, received index %u",
+      "Index out of range: named_data size is %" PRIu32
+      ", received index %" PRIu32,
       named_data_->size(),
       index);
 
@@ -78,7 +81,7 @@ ET_NODISCARD Result<const char*> PteDataMap::get_key(uint32_t index) const {
   ET_CHECK_OR_RETURN_ERROR(
       item != nullptr && item->key() != nullptr,
       InvalidArgument,
-      "NamedData at index %u is null",
+      "NamedData at index %" PRIu32 " is null",
       index);
   return item->key()->c_str();
 }

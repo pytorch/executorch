@@ -199,8 +199,9 @@ alignas(16) uint8_t scratch_[32 * 1024];
 
 class HiFiQuantizedFullyConnectedPackedTest : public OperatorTest {};
 
-// in_dim = 32 takes the vector unpack; out_dim = 136 spans two row tiles
-// (128 + 8), so the tile loop and the per-channel qparam offsets are covered.
+// in_dim = 32 takes the vector unpack (on HiFi4, 4-bit takes the fused kernel
+// instead); out_dim = 136 spans two row tiles (128 + 8), so the tile loop and
+// the per-channel qparam offsets are covered.
 TEST_F(HiFiQuantizedFullyConnectedPackedTest, VectorUnpack) {
   for (int64_t bits : {4, 6}) {
     SCOPED_TRACE(bits);
@@ -210,14 +211,41 @@ TEST_F(HiFiQuantizedFullyConnectedPackedTest, VectorUnpack) {
   }
 }
 
-// in_dim = 40 is not a multiple of 32, so the scalar unpack serves the nnlib
-// path.
+// in_dim = 44 is not a multiple of 8, so the scalar unpack serves the nnlib
+// path on every core (4-bit at a multiple of 8 takes the fused kernel on
+// HiFi4).
 TEST_F(HiFiQuantizedFullyConnectedPackedTest, ScalarUnpack) {
   for (int64_t bits : {4, 6}) {
     SCOPED_TRACE(bits);
     MemoryAllocator allocator(sizeof(scratch_), scratch_);
     KernelRuntimeContext ctx(nullptr, &allocator);
-    run_and_check(ctx, Case{bits, 40, 24});
+    run_and_check(ctx, Case{bits, 44, 24});
+  }
+}
+
+// The fused 4-bit kernel (HiFi4; other cores take the nnlib path): one
+// iteration per row (in_dim = 8), out_dim not a multiple of 4 so the one-row
+// tail runs, and a longer row.
+TEST_F(HiFiQuantizedFullyConnectedPackedTest, Fused4Bit) {
+  for (const auto& [in_dim, out_dim] :
+       {std::pair<int64_t, int64_t>{8, 4}, {40, 22}, {64, 9}}) {
+    SCOPED_TRACE(testing::Message() << "in_dim " << in_dim);
+    MemoryAllocator allocator(sizeof(scratch_), scratch_);
+    KernelRuntimeContext ctx(nullptr, &allocator);
+    run_and_check(ctx, Case{4, in_dim, out_dim});
+    run_and_check(ctx, Case{4, in_dim, out_dim, /*scalar_qparams=*/true});
+  }
+}
+
+// in_dim = 36: rows of the input alternate between 8-byte aligned and 4 bytes
+// off, and each leaves a 4-value tail, so the input sum's scalar head and tail
+// both run alongside its vector loop.
+TEST_F(HiFiQuantizedFullyConnectedPackedTest, InputSumHeadAndTail) {
+  for (int64_t bits : {4, 6}) {
+    SCOPED_TRACE(bits);
+    MemoryAllocator allocator(sizeof(scratch_), scratch_);
+    KernelRuntimeContext ctx(nullptr, &allocator);
+    run_and_check(ctx, Case{bits, 36, 8});
   }
 }
 
@@ -255,15 +283,16 @@ TEST_F(
   }
 }
 
-// Scratch for exactly one weight tile (128 rows x 32 for in_dim = 32) and
+// Scratch for exactly one weight tile (128 rows x 36 for in_dim = 36) and
 // nothing more: the bias tile allocation fails, so the offset-binary bias
-// cannot be folded and the unpack has to subtract it per value instead.
+// cannot be folded and the unpack has to subtract it per value instead. 36 is
+// not a multiple of 8, which keeps 4-bit off the fused kernel.
 TEST_F(HiFiQuantizedFullyConnectedPackedTest, NoBiasScratchSubtractsOffset) {
   for (int64_t bits : {4, 6}) {
     SCOPED_TRACE(bits);
-    MemoryAllocator allocator(128 * 32, scratch_);
+    MemoryAllocator allocator(128 * 36, scratch_);
     KernelRuntimeContext ctx(nullptr, &allocator);
-    run_and_check(ctx, Case{bits, 32, 136});
+    run_and_check(ctx, Case{bits, 36, 136});
   }
 }
 

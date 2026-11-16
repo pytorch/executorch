@@ -16,6 +16,8 @@ from executorch.backends.arm.test.common import parametrize
 from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.cortex_m.test.tester import McuTestCase, ramp_tensor
+from torch.export import export
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 _QUANT_CONFIG_INT8 = get_symmetric_quantization_config()
@@ -734,3 +736,36 @@ def test_silu_does_not_share_input_qspec():
     )
     pipeline.run()
     _check_quant_params(pipeline, model.quant_params)
+
+
+class ShapeAsOperand(torch.nn.Module):
+    """``op(x + x, other)`` reads only the shape of ``other``, so its qparams
+    must stay ``other``'s own rather than join those of ``x + x``.
+    """
+
+    def __init__(self, op: str) -> None:
+        super().__init__()
+        self.op = op
+
+    def forward(self, x, y):
+        other = y + y
+        return getattr(x + x, self.op)(other) + other
+
+
+@parametrize(
+    "test_data",
+    {"view_as": ("view_as", (2, 16)), "expand_as": ("expand_as", (1, 8))},
+)
+def test_shape_operand_does_not_share_qspec(test_data):
+    op, x_shape = test_data
+    inputs = (ramp_tensor(-1, 1, x_shape), ramp_tensor(-50, 50, (4, 8)))
+    model = ShapeAsOperand(op).eval()
+    prepared = prepare_pt2e(export(model, inputs).module(), _get_quantizer())
+    prepared(*inputs)
+    quantized = convert_pt2e(prepared)
+
+    (node,) = quantized.graph.find_nodes(
+        op="call_function", target=getattr(torch.ops.aten, op).default
+    )
+    data_dequantize, other_dequantize = node.args
+    assert data_dequantize.args[1] != other_dequantize.args[1]

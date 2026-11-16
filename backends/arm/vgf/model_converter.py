@@ -59,6 +59,18 @@ class ModelConverterEnvironmentCheck:
         }
 
 
+def _bundled_model_converter_binary() -> Optional[str]:
+    # Buck's live test packages expose this resource through a build-owned symlink.
+    resource = Path(__file__).with_name("_model_converter_binary")
+    try:
+        executable = resource.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if not _safe_is_file(executable) or not os.access(executable, os.X_OK):
+        return None
+    return str(executable)
+
+
 def _model_converter_scripts_dir() -> Path:
     """Return the trusted scripts directory."""
     scripts_dir = sysconfig.get_path("scripts")
@@ -79,16 +91,17 @@ def _model_converter_candidate_names() -> tuple[str, ...]:
 
 
 def find_model_converter_binary() -> Optional[str]:
-    """Return model-converter from the active Python environment.
+    """Return a packaged converter or one from Python's scripts directory.
 
-    Do not use MODEL_CONVERTER_PATH or search PATH. Both are externally
-    controllable process state and must not determine which executable is
-    launched by the VGF backend.
-
-    The model-converter package is installed into the active Python environment,
-    so its scripts directory is the trusted installation location.
+    Buck may supply the converter as a resource with a fixed name. Otherwise,
+    use the active Python environment. PATH and MODEL_CONVERTER_PATH do not
+    participate in executable selection.
 
     """
+    binary = _bundled_model_converter_binary()
+    if binary is not None:
+        return binary
+
     try:
         scripts_dir = _model_converter_scripts_dir()
     except (OSError, RuntimeError):

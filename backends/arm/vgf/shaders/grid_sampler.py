@@ -5,6 +5,7 @@
 
 import base64
 import json
+import math
 import shutil
 import subprocess  # nosec B404 - fixed shader compiler invocation
 import tempfile
@@ -295,6 +296,7 @@ def _compile_flow_offset_grid_sampler_shader(
     flow_scale: float,
     flow_zero_point: int,
     flow_channel_offset: int,
+    flow_normalization: tuple[float, float] = (1.0, 1.0),
 ) -> str:
     source = (
         files(__package__)
@@ -305,6 +307,8 @@ def _compile_flow_offset_grid_sampler_shader(
         .replace("@OUTPUT_SCALE@", _format_float(output_scale))
         .replace("@OUTPUT_ZERO_POINT@", str(int(output_zero_point)))
         .replace("@FLOW_SCALE@", _format_float(flow_scale))
+        .replace("@FLOW_NORMALIZATION_X@", _format_float(flow_normalization[0]))
+        .replace("@FLOW_NORMALIZATION_Y@", _format_float(flow_normalization[1]))
         .replace("@FLOW_ZERO_POINT@", str(int(flow_zero_point)))
         .replace("@FLOW_X_CHANNEL@", f"{int(flow_channel_offset)}u")
         .replace("@FLOW_Y_CHANNEL@", f"{int(flow_channel_offset) + 1}u")
@@ -348,6 +352,7 @@ def build_flow_offset_grid_sampler_payload(
     flow_scale: float,
     flow_zero_point: int,
     flow_channel_offset: int,
+    flow_normalization: tuple[float, float] = (1.0, 1.0),
 ) -> dict[str, Any]:
     """Build custom shader metadata for fused flow-offset grid sampling.
 
@@ -362,6 +367,8 @@ def build_flow_offset_grid_sampler_payload(
         flow_scale (float): Flow input quantization scale.
         flow_zero_point (int): Flow input quantization zero point.
         flow_channel_offset (int): First flow channel, either zero or two.
+        flow_normalization (tuple[float, float]): XY factors applied after
+            flow dequantization. Defaults to already normalized flow.
 
     Returns:
         dict[str, Any]: Vulkan custom shader metadata payload.
@@ -382,6 +389,11 @@ def build_flow_offset_grid_sampler_payload(
     if flow_channel_offset not in (0, 2):
         raise ValueError("flow_channel_offset must be 0 or 2")
 
+    if len(flow_normalization) != 2 or any(
+        not math.isfinite(value) or value <= 0 for value in flow_normalization
+    ):
+        raise ValueError("flow_normalization must contain two finite positive factors")
+
     sampler_vk_format = GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
     return {
         "entry_point": GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
@@ -395,6 +407,7 @@ def build_flow_offset_grid_sampler_payload(
             flow_scale=flow_scale,
             flow_zero_point=flow_zero_point,
             flow_channel_offset=flow_channel_offset,
+            flow_normalization=flow_normalization,
         ),
         "operator_name": FLOW_OFFSET_GRID_SAMPLER_OPERATOR_NAME,
         "input_scale": input_scale,
@@ -404,6 +417,7 @@ def build_flow_offset_grid_sampler_payload(
         "flow_scale": flow_scale,
         "flow_zero_point": flow_zero_point,
         "flow_channel_offset": flow_channel_offset,
+        "flow_normalization": list(flow_normalization),
         "input_0_binding": 0,
         "input_0_descriptorset": 0,
         "input_0_type": "Image",

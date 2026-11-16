@@ -57,6 +57,13 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
 
   executorch::runtime::etensor::DeviceType device_type() const override;
 
+  /**
+   * Waits for the stream that copies use: the caller stream when one is set,
+   * otherwise the default stream of the device.
+   */
+  executorch::runtime::Error synchronize(
+      executorch::runtime::etensor::DeviceIndex index) override;
+
   /// Returns the global CudaAllocator singleton.
   static CudaAllocator& instance();
 

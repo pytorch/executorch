@@ -62,6 +62,7 @@ def load_config(path):
     defaults = {
         "tasks": ["fix-git"],
         "attempts": 1,
+        "concurrency": 1,
         "step_limit": 100,
         "max_output_tokens": 512,
         "temperature": 0.0,
@@ -83,6 +84,13 @@ def load_config(path):
     affinity = options["session_affinity"]
     if affinity is not None and (not isinstance(affinity, str) or not affinity.strip()):
         raise ValueError("[terminal_bench].session_affinity must be a nonempty string")
+    concurrency = options["concurrency"]
+    if type(concurrency) is not int or concurrency < 1:
+        raise ValueError("[terminal_bench].concurrency must be a positive integer")
+    if concurrency > 1 and affinity is not None:
+        raise ValueError(
+            "Remove [terminal_bench].session_affinity for concurrent trials"
+        )
     return config
 
 
@@ -140,7 +148,7 @@ def commands(config, output):
         "--ae",
         f"no_proxy={agent_host}",
         "--n-concurrent",
-        "1",
+        str(options["concurrency"]),
         "--n-attempts",
         str(options["attempts"]),
         "--max-retries",
@@ -150,6 +158,18 @@ def commands(config, output):
         "--job-name",
         "harbor",
     ]
+    if options["concurrency"] > 1:
+        module = "executorch.examples.llm_server.evals.terminal_bench.sessions"
+        harbor[harbor.index("--agent") + 1] = f"{module}:SessionMiniSweAgent"
+        host = "127.0.0.1" if server["host"] == "0.0.0.0" else server["host"]
+        harbor.extend(
+            [
+                "--plugin",
+                f"{module}:SessionCleanup",
+                "--plugin-kwarg",
+                f"base_url=http://{host}:{server['port']}/v1",
+            ]
+        )
     for task in options["tasks"]:
         harbor.extend(["--include-task-name", task])
     probe = [
@@ -246,6 +266,7 @@ def metrics(log, context, reserve):
         )
     }
     result["requests"] = len(turns)
+    result["session_ids"] = sorted({turn["session_id"] for turn in turns})
     result["peak_prompt_tokens"] = max(
         (int(turn["prompt_tokens"]) for turn in turns), default=0
     )
@@ -342,6 +363,7 @@ def run(config, output, serve, harbor, probe):
             print("Generation preflight passed.", flush=True)
             job = subprocess.Popen(
                 harbor,
+                env=env,
                 stdout=harbor_log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -388,6 +410,19 @@ def run(config, output, serve, harbor, probe):
         raise RuntimeError(
             "Missing server metrics or context limit exceeded; see metrics.json"
         )
+    if config["terminal_bench"]["concurrency"] > 1:
+        trial_ids = {
+            str(json.loads(path.read_text())["id"])
+            for path in (output / "harbor").glob("*/result.json")
+        }
+        session_ids = set(timing["session_ids"])
+        if session_ids != trial_ids:
+            raise RuntimeError(
+                "Concurrent session IDs do not match Harbor trial UUIDs: "
+                f"unexpected={sorted(session_ids - trial_ids)}, "
+                f"missing={sorted(trial_ids - session_ids)}; "
+                "see metrics.json and harbor/*/result.json"
+            )
 
 
 def main(argv=None):

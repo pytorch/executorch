@@ -1,0 +1,156 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Element-wise binary ops, selected by an op type argument.
+ *
+ * The including shader defines:
+ * - IN_T and OUT_T: operand and result types; vectors if BINARY_OP_VEC4 is
+ *   defined, otherwise scalars
+ * - ALPHA_T: type of the alpha that add and sub scale Y by
+ * - BINARY_OP_IS_FLOAT if the operands are floating point
+ * - BINARY_OP_IS_COMPARISON (OUT_T holds booleans) or BINARY_OP_IS_BITWISE to
+ *   compile in those ops instead of the arithmetic ones
+ */
+
+#ifndef BINARY_OP_GLSLH
+#define BINARY_OP_GLSLH
+
+// Values of op_type. Must match BinaryOpType in BinaryOp.h.
+#define BINARY_OP_ADD 0
+#define BINARY_OP_SUB 1
+#define BINARY_OP_MUL 2
+#define BINARY_OP_DIV 3
+#define BINARY_OP_FLOOR_DIVIDE 4
+#define BINARY_OP_POW 5
+#define BINARY_OP_MINIMUM 6
+#define BINARY_OP_SWIGLU 7
+#define BINARY_OP_EQ 8
+#define BINARY_OP_LT 9
+#define BINARY_OP_LE 10
+#define BINARY_OP_GT 11
+#define BINARY_OP_GE 12
+#define BINARY_OP_BITWISE_AND 13
+#define BINARY_OP_BITWISE_OR 14
+
+#ifdef BINARY_OP_VEC4
+#define binary_eq(X, Y) equal(X, Y)
+#define binary_ne(X, Y) notEqual(X, Y)
+#define binary_lt(X, Y) lessThan(X, Y)
+#define binary_le(X, Y) lessThanEqual(X, Y)
+#define binary_gt(X, Y) greaterThan(X, Y)
+#define binary_ge(X, Y) greaterThanEqual(X, Y)
+#else
+#define binary_eq(X, Y) ((X) == (Y))
+#define binary_ne(X, Y) ((X) != (Y))
+#define binary_lt(X, Y) ((X) < (Y))
+#define binary_le(X, Y) ((X) <= (Y))
+#define binary_gt(X, Y) ((X) > (Y))
+#define binary_ge(X, Y) ((X) >= (Y))
+#endif
+
+#if defined(BINARY_OP_IS_FLOAT) && !defined(BINARY_OP_IS_COMPARISON)
+float swiglu(float gate, float up) {
+  return (gate * (1.0 / (1.0 + exp(-gate)))) * up;
+}
+
+vec4 swiglu(vec4 gate, vec4 up) {
+  return (gate * (1.0 / (1.0 + exp(-gate)))) * up;
+}
+#endif
+
+#ifdef BINARY_OP_IS_FLOAT
+// Float division may be off by a few ulp, so floor(X / Y) can land one below
+// or above an exact quotient. The remainder's sign and magnitude correct it.
+IN_T floor_div(const IN_T X, const IN_T Y) {
+  const IN_T q = floor(X / Y);
+  const IN_T r = X - q * Y;
+  return q - IN_T(binary_lt(r * Y, IN_T(0))) +
+      IN_T(binary_ge(abs(r), abs(Y)));
+}
+#else
+// Integer division truncates toward zero; floor division rounds the quotient
+// down when the remainder is nonzero and its sign differs from the divisor's.
+IN_T floor_div(const IN_T X, const IN_T Y) {
+  const IN_T q = X / Y;
+  const IN_T r = X - q * Y;
+  return q - IN_T(binary_ne(r, IN_T(0))) * IN_T(binary_lt(r ^ Y, IN_T(0)));
+}
+#endif
+
+// Whether the op maps two zeros to zero, so that zero padding lanes stay zero
+// without masking. add and sub compute 0 + alpha * 0, which is NaN for an
+// infinite or NaN alpha.
+bool binary_op_preserves_zero(const int op_type, const float alpha) {
+  switch (op_type) {
+    case BINARY_OP_ADD:
+    case BINARY_OP_SUB:
+      return !isinf(alpha) && !isnan(alpha);
+    case BINARY_OP_MUL:
+    case BINARY_OP_MINIMUM:
+    case BINARY_OP_SWIGLU:
+    case BINARY_OP_LT:
+    case BINARY_OP_GT:
+    case BINARY_OP_BITWISE_AND:
+    case BINARY_OP_BITWISE_OR:
+      return true;
+    default:
+      return false;
+  }
+}
+
+OUT_T apply_binary_op(
+    const int op_type,
+    const IN_T X,
+    const IN_T Y,
+    const ALPHA_T A) {
+  switch (op_type) {
+#if defined(BINARY_OP_IS_COMPARISON)
+    case BINARY_OP_LT:
+      return OUT_T(binary_lt(X, Y));
+    case BINARY_OP_LE:
+      return OUT_T(binary_le(X, Y));
+    case BINARY_OP_GT:
+      return OUT_T(binary_gt(X, Y));
+    case BINARY_OP_GE:
+      return OUT_T(binary_ge(X, Y));
+    default: // BINARY_OP_EQ
+#ifdef BINARY_OP_IS_FLOAT
+      return OUT_T(binary_lt(abs(X - Y), IN_T(1e-5)));
+#else
+      return OUT_T(binary_eq(X, Y));
+#endif
+#elif defined(BINARY_OP_IS_BITWISE)
+    case BINARY_OP_BITWISE_OR:
+      return OUT_T(X | Y);
+    default: // BINARY_OP_BITWISE_AND
+      return OUT_T(X & Y);
+#else
+    case BINARY_OP_SUB:
+      return OUT_T(X - A * Y);
+    case BINARY_OP_MUL:
+      return OUT_T(X * Y);
+    case BINARY_OP_DIV:
+      return OUT_T(X / Y);
+    case BINARY_OP_FLOOR_DIVIDE:
+      return OUT_T(floor_div(X, Y));
+    case BINARY_OP_POW:
+      return OUT_T(pow(X, Y));
+    case BINARY_OP_MINIMUM:
+      return OUT_T(min(X, Y));
+#ifdef BINARY_OP_IS_FLOAT
+    case BINARY_OP_SWIGLU:
+      return OUT_T(swiglu(X, Y));
+#endif
+    default: // BINARY_OP_ADD
+      return OUT_T(X + A * Y);
+#endif
+  }
+}
+
+#endif // BINARY_OP_GLSLH

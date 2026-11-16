@@ -35,7 +35,6 @@
 #include <c10/util/quint4x2.h> // @manual
 #include <c10/util/quint8.h> // @manual
 #include <c10/util/safe_numerics.h> // @manual
-#include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
 #include <executorch/runtime/core/array_ref.h> // @manual

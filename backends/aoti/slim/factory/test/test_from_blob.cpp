@@ -327,12 +327,12 @@ TEST(FromBlobTest, InvalidDtypeUndefined) {
       from_blob(external_data, {2, 3}, c10::ScalarType::Undefined), "");
 }
 
-TEST(FromBlobTest, InvalidDtypeDouble) {
+TEST(FromBlobTest, InvalidDtypeComplexFloat) {
   constexpr size_t kNumFloats = 6;
   float external_data[kNumFloats];
 
   EXPECT_DEATH(
-      from_blob(external_data, {2, 3}, static_cast<c10::ScalarType>(7)), "");
+      from_blob(external_data, {2, 3}, static_cast<c10::ScalarType>(9)), "");
 }
 
 TEST(FromBlobTest, InvalidDeviceType) {

@@ -153,6 +153,10 @@ class _EmitterState:
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
     # Only literal arguments with no schema aliasing enter this per-plan pool.
     constant_cache: Dict[Union[int, Tuple[int, ...]], int] = field(default_factory=dict)
+    # pyre-ignore[11]: Annotation `LoweredBackendModule` is not defined as a type.
+    delegate_cache: Dict["LoweredBackendModule", int] = field(  # noqa: F821
+        default_factory=dict
+    )
 
     def spec2id(self, spec: TensorSpec) -> int:
         """Map a TensorSpec to value index in the values array."""
@@ -466,6 +470,21 @@ class _Emitter(torch.fx.Interpreter):
             spec_array_type = (
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
+
+            # data_ptr() is dereferenced from the host below; for non-CPU storage
+            # (e.g. CUDA) that read can segfault instead of raising (#21545).
+            storage_device = typing.cast(torch.UntypedStorage, spec.storage).device
+            if spec.allocated_memory != 0 and storage_device.type != "cpu":
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Constant tensor storage is on device '{storage_device}', "
+                        "but constants serialized into the program must be in CPU "
+                        "memory. Move them to CPU before export (e.g. model.cpu()), "
+                        "or delegate the ops that use them to a backend that "
+                        "accepts device tensors.",
+                    )
+                )
 
             buffer_data = (
                 bytes(
@@ -1499,14 +1518,26 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
 
-        backend_delegate = BackendDelegate(
-            id=lowered_module.backend_id,
-            processed=BackendDelegateDataReference(
-                location=DataLocation.INLINE, index=delegate_index
-            ),
-            compile_specs=lowered_module.compile_specs,
-        )
-        self.emitter_state.delegates.append(backend_delegate)
+        backend_delegate_index = self.emitter_state.delegate_cache.get(lowered_module)
+        if backend_delegate_index is None:
+            backend_delegate = BackendDelegate(
+                id=lowered_module.backend_id,
+                processed=BackendDelegateDataReference(
+                    location=DataLocation.INLINE, index=delegate_index
+                ),
+                compile_specs=lowered_module.compile_specs,
+            )
+            self.emitter_state.delegates.append(backend_delegate)
+            backend_delegate_index = len(self.emitter_state.delegates) - 1
+            # Scratch is planned per call site but the runtime keeps it on the
+            # delegate, so a delegate with scratch cannot be shared.
+            if (
+                lowered_module.share_handle_across_calls
+                and not lowered_module.scratch_specs
+            ):
+                self.emitter_state.delegate_cache[lowered_module] = (
+                    backend_delegate_index
+                )
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
@@ -1521,7 +1552,7 @@ class _Emitter(torch.fx.Interpreter):
         self.chain.instructions.append(
             Instruction(
                 DelegateCall(
-                    delegate_index=len(self.emitter_state.delegates) - 1,
+                    delegate_index=backend_delegate_index,
                     args=delegate_args,
                     scratch=self._emit_delegate_scratch(scratch_specs) or None,
                 )
@@ -2041,11 +2072,13 @@ class _TopLevelEmitter(_Emitter):
             # overall be considered a mutable buffer if it has already been memory planned. This would
             # suggest that the same abstract buffer is mutable in another entry point so we should
             # compel it to be considered mutable in all entry points at emission just as the user did with
-            # memory planning.
+            # memory planning. A device resident constant is planned too, but
+            # it is not mutable.
             is_mutable_buffer |= (
                 _is_buffer(self.node, self.exported_program.graph_signature)
                 and spec.mem_id is not None
                 and spec.mem_offset is not None
+                and not self.node.meta.get("device_resident_constant", False)
             )
 
             # If the placeholder has a constant_tag, it is external to the PTE file

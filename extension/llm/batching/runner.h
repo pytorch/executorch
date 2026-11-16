@@ -104,6 +104,8 @@ struct ET_EXPERIMENTAL GenConfig {
   // Fixed for the generation and installed before its tasks are submitted.
   // nullopt requests nondeterministic sampling.
   std::optional<std::uint64_t> seed;
+  // Increasing absolute positions in this prefill, including any pending token.
+  std::vector<Position> prefill_breakpoints;
 };
 
 // Both defined in runner.cpp: callers see neither the lock and flags the first
@@ -206,6 +208,8 @@ class ET_EXPERIMENTAL Session {
   // prediction, generation, or sampling policy. The source may be generating;
   // upto is checked against its accepted committed position on the engine
   // thread. Speculative or pending tokens beyond that position are excluded.
+  // The Executor must restore all model state at upto, including recurrent
+  // and convolution state; some executors can clone only at saved boundaries.
   //
   // nullopt = invalid/poisoned source or boundary, unavailable retained state,
   // unsupported cloning, capacity pressure, or shutdown. An empty prefix may
@@ -239,19 +243,23 @@ class ET_EXPERIMENTAL Session {
   // not block, invoke user output, destroy Runner, or wait for Runner work.
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
+  //
+  // on_prefill runs at requested breakpoints before later prefill. It may queue
+  // clones but must not wait for Runner work. Exceptions fail the generation.
   GenerationHandle generate_async(
       GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
-      std::function<void()> on_settled = {}) const;
+      std::function<void()> on_settled = {},
+      std::function<void(Position)> on_prefill = {}) const;
 
  private:
   friend class RunnerImpl;
   friend class PrefixCache;
   explicit Session(std::unique_ptr<SessionState> state);
 
-  std::function<std::future<std::optional<Session>>()> make_clone_request(
-      Position upto) const;
+  std::function<std::future<std::optional<Session>>(Position)>
+  make_clone_request() const;
 
   std::unique_ptr<SessionState> state_;
 };

@@ -66,6 +66,28 @@ void DispatchNode::encode(ComputeGraph* graph) {
   }
   event_name += "\"kernel_name\": \"" + shader_.kernel_name + "\", ";
   event_name += "\"operator_id\": " + std::to_string(operator_count);
+  event_name += ", \"specialization_constants\": [";
+  for (uint32_t i = 0; i < spec_vars_.size(); ++i) {
+    if (i > 0) {
+      event_name += ", ";
+    }
+    const auto& spec = spec_vars_.at(i);
+    switch (spec.type) {
+      case vkapi::SpecVar::Type::FLOAT:
+        event_name += std::to_string(spec.value.as_float);
+        break;
+      case vkapi::SpecVar::Type::INT:
+        event_name += std::to_string(spec.value.as_int32);
+        break;
+      case vkapi::SpecVar::Type::UINT:
+        event_name += std::to_string(spec.value.as_uint32);
+        break;
+      case vkapi::SpecVar::Type::BOOL:
+        event_name += spec.value.as_bool ? "true" : "false";
+        break;
+    }
+  }
+  event_name += "]";
 #endif
 
   context->report_shader_dispatch_start(

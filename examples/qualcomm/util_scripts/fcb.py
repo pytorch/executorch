@@ -14,11 +14,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.export_utils import (
-    make_quantizer,
-    QnnConfig,
-    SimpleADB,
-)
+from executorch.backends.qualcomm.export_utils import Device, make_quantizer, QnnConfig
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
@@ -86,14 +82,14 @@ def export_fcb(module, inputs, compiler_specs):
     )
 
 
-def make_adb(args, host, device, pte_path, workspace):
+def make_device(args, host, device, pte_path, workspace):
     soc_model = get_device_soc_model(host, device)
     if soc_model not in args.soc_models:
         raise RuntimeError(
             f"device {device} has {soc_model}, not one of the prepared SoCs "
             f"{args.soc_models}"
         )
-    return soc_model, SimpleADB(
+    return soc_model, Device(
         qnn_config=QnnConfig(
             soc_model=soc_model,
             build_folder=args.build_folder,
@@ -174,16 +170,18 @@ def run_resnet50(args, quantized):
         print(f"{str(reference_weight_sharing):<18} | {size:>16,}")
 
     for host, device in get_devices(args):
-        soc_model, adb = make_adb(
+        soc_model, target_device = make_device(
             args, host, device, execution_pte, f"qnn_fcb_{args.model}"
         )
-        adb.push(inputs=eval_inputs, init_env=True)
-        adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-        adb.execute(method_index=0)
+        target_device.push(inputs=eval_inputs, init_env=True)
+        target_device.execute(custom_runner_cmd=f"rm -rf {target_device.output_folder}")
+        target_device.execute(method_index=0)
         device_outputs = args.output_dir / device
         shutil.rmtree(device_outputs, ignore_errors=True)
         device_outputs.parent.mkdir(parents=True, exist_ok=True)
-        adb.pull(str(device_outputs), device_output_path=adb.output_folder)
+        target_device.pull(
+            str(device_outputs), device_output_path=target_device.output_folder
+        )
         predictions = [
             np.fromfile(
                 next(device_outputs.rglob(f"output_{index}_0.raw")),
@@ -253,19 +251,23 @@ def run_weight_sharing(args):
         )
 
     for host, device in get_devices(args):
-        soc_model, adb = make_adb(
+        soc_model, target_device = make_device(
             args, host, device, execution_pte, "qnn_fcb_weight_sharing"
         )
         for method_index, name in enumerate(modules):
             module = modules[name]
             expected = module(*inputs[name]).detach()
-            adb.push(inputs=[inputs[name]], init_env=method_index == 0)
-            adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-            adb.execute(method_index=method_index)
+            target_device.push(inputs=[inputs[name]], init_env=method_index == 0)
+            target_device.execute(
+                custom_runner_cmd=f"rm -rf {target_device.output_folder}"
+            )
+            target_device.execute(method_index=method_index)
             device_outputs = args.output_dir / device / name
             shutil.rmtree(device_outputs, ignore_errors=True)
             device_outputs.parent.mkdir(parents=True, exist_ok=True)
-            adb.pull(str(device_outputs), device_output_path=adb.output_folder)
+            target_device.pull(
+                str(device_outputs), device_output_path=target_device.output_folder
+            )
             raw_output = next(device_outputs.rglob("*.raw"))
             actual = torch.from_file(
                 str(raw_output), dtype=expected.dtype, size=expected.numel()

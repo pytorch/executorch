@@ -212,7 +212,8 @@ class GenAIPipeline:
         return result
 
     def _run_model_preparation(
-        self, context: PipelineContext
+        self,
+        context: PipelineContext,
     ) -> ModelPreparationOutputConfig:
         if self._model_preparation_stage is not None:
             logger.info("[GenAIPipeline] ModelPreparationStage started")
@@ -220,6 +221,7 @@ class GenAIPipeline:
             input_config = ModelPreparationInputConfig(
                 model_name=context.model_name,
                 soc_model=context.soc_model,
+                extra_options=context.extra_options,
             )
             output = self._model_preparation_stage.invoke(context, input_config)
             elapsed = time.monotonic() - start
@@ -237,13 +239,19 @@ class GenAIPipeline:
         if self._quantization_stage is not None:
             logger.info("[GenAIPipeline] QuantizationStage started")
             start = time.monotonic()
+
+            # The quantization stage builds its own calibration data from the
+            # tokenizer via its injected dataset adapters.
             input_config = QuantizationInputConfig(
                 soc_model=context.soc_model,
                 backend_type=self._engine_proxy.backend_type,
                 model_module=model_prep_output.model_module,
-                # Export inputs come from the model, not from calibration_data.
+                # Export inputs come from the model, not from the dataset.
                 example_inputs=model_prep_output.example_inputs,
-                calibration_data=model_prep_output.calibration_data,
+                tokenizer=model_prep_output.tokenizer,
+                meta=model_prep_output.meta,
+                inference=model_prep_output.inference,
+                extra_options=context.extra_options,
             )
             output = self._quantization_stage.invoke(context, input_config)
             elapsed = time.monotonic() - start
@@ -262,7 +270,7 @@ class GenAIPipeline:
             start = time.monotonic()
             # Fall back to the prepared module when quantization was skipped
             # (FP16 / GPU flows), so the model isn't silently dropped.
-            model = quant_output.quantized_model or model_prep_output.model_module
+            model = quant_output.graphs or model_prep_output.model_module
             input_config = CompilationInputConfig(
                 # Note: context.soc_model is str; str→QcomChipset conversion is
                 # deferred to the strategy/adapter layer (see PR5).

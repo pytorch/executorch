@@ -124,6 +124,7 @@ FACTO_OPS_ENV = "FACTO_OPS"
 FACTO_CASES_FILE_ENV = "FACTO_CASES_FILE"
 FACTO_FAILURES_FILE_ENV = "FACTO_FAILURES_FILE"
 FACTO_SUMMARY_FILE_ENV = "FACTO_SUMMARY_FILE"
+ARM_FACTO_ENV = "ARM_FACTO"
 SUMMARY_REPR_LIMIT = 160
 TENSOR_SAMPLE_LIMIT = 8
 logger = logging.getLogger(__name__)
@@ -158,6 +159,22 @@ def _selected_op_names() -> list[str]:
         for op_name in CombinedSpecDB.keys()
         if _matches_selected_patterns(op_name, patterns)
     ]
+
+
+def _generated_facto_tests_enabled() -> bool:
+    return os.environ.get(ARM_FACTO_ENV, "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _selected_arm_op_names() -> list[str]:
+    if not _generated_facto_tests_enabled():
+        return []
+
+    return _selected_op_names()
 
 
 def _facto_config() -> _FactoConfig:

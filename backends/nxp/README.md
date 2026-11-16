@@ -27,10 +27,10 @@ with eIQ Neutron NPU, like the [i.MX 95](https://www.nxp.com/products/iMX95).
 
 
 ## Backend Status and Maturity
-**Current Status:** Prototype Quality
+**Current Status:** Production Ready
 
-The eIQ Neutron NPU Backend should be considered as prototype quality at this moment. Subject to significant changes and
-improvements. NXP and the ExecuTorch community is actively developing this codebase.
+The eIQ Neutron NPU Backend is production ready. NXP and the ExecuTorch community continue to actively develop and
+extend this codebase.
 
 ## Neutron Backend implementation and SW architecture
 Neutron Backend uses the eIQ Neutron Compiler as ML compiler to compile the delegated subgraph to Neutron microcode. 

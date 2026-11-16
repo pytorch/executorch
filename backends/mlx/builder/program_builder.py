@@ -59,7 +59,11 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     Tid,
     Vid,
 )
-from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir._serialize._named_data_store import (
+    _tensor_to_bytes,
+    NamedDataStore,
+)
+from executorch.exir.tensor_layout import TensorLayout
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
@@ -95,12 +99,13 @@ def _check_input_dtypes(node: Node) -> Optional[str]:
         None if all input dtypes are supported, otherwise an error message string
         describing which input (arg position or kwarg name) has an unsupported dtype
     """
-    # Check positional args
+    # Check positional args, including tensor lists such as aten.cat's
     for i, arg in enumerate(node.args):
-        if isinstance(arg, Node):
-            dtype_error = _check_dtype(arg)
-            if dtype_error is not None:
-                return f"arg[{i}] ({arg.name}) {dtype_error}"
+        for a in pytree.tree_leaves(arg):
+            if isinstance(a, Node):
+                dtype_error = _check_dtype(a)
+                if dtype_error is not None:
+                    return f"arg[{i}] ({a.name}) {dtype_error}"
 
     # Check kwargs
     for kwarg_name, kwarg_val in node.kwargs.items():
@@ -315,8 +320,10 @@ class MLXProgramBuilder:
         A repacking handler replaces a raw weight with new constants, leaving
         the original dead. It would otherwise stay in the ExportedProgram until
         get_named_data_store() sweeps unused constants -- which only runs after
-        the whole graph is built, so every raw weight and every repacked weight
-        are live simultaneously (+16 GB on a 16 GB Q4_K model).
+        the whole graph is built. Dropping it frees the raw weight only when
+        nothing else holds it: during lowering, the delegate's program shares
+        its tensors with the owning program (see
+        MLXBackend.copy_exported_program_for_preprocess).
 
         Only call this when the raw data is fully consumed: the lowering must
         not reference the placeholder's slot in any emitted instruction, or it
@@ -461,7 +468,7 @@ class MLXProgramBuilder:
         )
 
         output_kind_targets = defaultdict(set)
-        constant_tensors = []
+        constant_tensors = {}
         user_inputs = []
         user_outputs = []
         mutable_buffers = []
@@ -490,17 +497,17 @@ class MLXProgramBuilder:
             if isinstance(arg, TensorArgument):
                 if kind == InputKind.PARAMETER:
                     # Parameters are treated as constants (not mutated)
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 elif kind == InputKind.BUFFER:
                     if target in output_kind_targets[OutputKind.BUFFER_MUTATION]:
                         mutable_buffers.append(name)
                     else:
                         # Non-mutated buffers (like lifted tensor constants) are constants
-                        constant_tensors.append(name)
+                        constant_tensors[name] = target
                 elif kind == InputKind.USER_INPUT:
                     user_inputs.append(name)
                 elif kind == InputKind.CONSTANT_TENSOR:
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 else:
                     raise NotImplementedError(
                         f"Support for input {arg} is not implemented"
@@ -519,11 +526,20 @@ class MLXProgramBuilder:
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 
+        constant_targets = set()
         for node in self.ep.graph.nodes:
             if node.op == "placeholder":
                 if node.users == {}:
                     continue
                 if node.name in constant_tensors:
+                    # Constant data is named by target, so a second slot would get none.
+                    target = constant_tensors[node.name]
+                    if target in constant_targets:
+                        raise ValueError(
+                            f"constant '{target}' has more than one placeholder, "
+                            f"'{node.name}' is a second one"
+                        )
+                    constant_targets.add(target)
                     self.make_or_get_slot(node, id_space=IdSpace.Constant)
                 elif node.name in user_inputs:
                     val = node.meta.get("val", None)
@@ -1122,9 +1138,18 @@ class MLXProgramBuilder:
             tensor_meta=tensor_meta_list,
         )
 
-    def get_named_data_store(self) -> NamedDataStore:
+    def get_named_data_store(
+        self, constant_bytes: Dict[int, Tuple[torch.Tensor, bytes]]
+    ) -> NamedDataStore:
         """
         Get a NamedDataStore containing all constant tensors.
+
+        ``constant_bytes`` maps the id of a tensor of the program to the tensor
+        and its bytes. Delegates that share a constant read the same tensor, so
+        passing one map to all of them stores its bytes once rather than once
+        per delegate. The map holds the tensor so that its id stays unique, and
+        takes only the program's tensors, which outlive the lowering anyway,
+        not the constants a handler creates.
 
         Uses the unprefixed canonical-name → Slot mapping built by
         ``_build_io_maps()`` so that tensor lookups hit ``ep.state_dict`` /
@@ -1132,10 +1157,10 @@ class MLXProgramBuilder:
         keys).  The prefix is applied at the exit boundary — the
         ``NamedDataStore`` key — so it matches the FlatBuffer ``named_slots``.
 
-        To reduce peak memory, each constant is deleted from the EP
-        immediately after its bytes are added to the NamedDataStore.
-        This avoids holding two full copies of all constants simultaneously
-        (important for large models where constants can be 20+ GB).
+        Each constant is deleted from the EP immediately after its bytes are
+        added to the NamedDataStore. This frees constants a handler created. A
+        tensor of the program stays alive, held by ``constant_bytes`` (and,
+        during lowering, by the owning program).
         """
         named_data_store = NamedDataStore()
 
@@ -1145,7 +1170,8 @@ class MLXProgramBuilder:
             key=lambda x: self._slot_to_final_tid.get(x[1], 0),
         )
 
-        # Free EP constants not used by the MLX graph to reduce peak memory.
+        # Drop EP constants not used by the MLX graph; this frees only those
+        # that nothing else holds.
         used = set(self._constant_name_to_slot.keys())
         for ispec in self.ep.graph_signature.input_specs:
             if ispec.arg.name in used and ispec.target is not None:
@@ -1155,6 +1181,12 @@ class MLXProgramBuilder:
             for name in list(d.keys()):
                 if name not in used and isinstance(d[name], torch.Tensor):
                     del d[name]
+
+        program_tensors = {
+            id(tensor)
+            for d in (self.ep._state_dict, self.ep._constants)
+            for tensor in d.values()
+        }
 
         logger.debug(f"Adding {len(entries)} constants to NamedDataStore...")
         for canonical_name, _slot in entries:
@@ -1171,17 +1203,21 @@ class MLXProgramBuilder:
                 )
 
             t = tensor.detach().cpu().contiguous()
+            data, layout = t, None
+            if id(tensor) in program_tensors:
+                if id(tensor) not in constant_bytes:
+                    constant_bytes[id(tensor)] = (tensor, _tensor_to_bytes(t))
+                data = constant_bytes[id(tensor)][1]
+                layout = TensorLayout.from_tensor(t)
             named_data_store.add_named_data(
                 key=self._prefix_key(canonical_name),
-                data=t,
+                data=data,
                 alignment=16,
+                tensor_layout=layout,
             )
 
-            # Free the original tensor from the EP immediately.
-            # The contiguous copy is now serialized as bytes in the
-            # NamedDataStore — the EP reference is no longer needed.
-            # (It would be deleted by lowered_backend_module.py after
-            # preprocess() returns anyway.)
+            # The bytes are in the NamedDataStore, so the EP reference is no
+            # longer needed. This frees the tensor only if nothing else holds it.
             self._delete_constant_tensor(canonical_name)
             del tensor, t
 
@@ -1221,7 +1257,7 @@ class MLXProgramBuilder:
         return d[k]
 
     def _delete_constant_tensor(self, name: str) -> None:
-        """Delete a constant from the EP to free memory during serialization."""
+        """Delete a constant from the EP; this frees it only if nothing else does."""
 
         result = self._resolve_constant(name)
         if result:

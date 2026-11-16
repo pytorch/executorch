@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+import io
 import operator
 import unittest
 from unittest.mock import patch
@@ -12,14 +14,17 @@ import executorch.exir.tests.models as models
 
 import torch
 from executorch import exir
-from executorch.exir import to_edge
+from executorch.exir import EdgeProgramManager, to_edge, to_edge_transform_and_lower
+from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from executorch.exir.backend.test.demo_backend import DemoBackend
-from executorch.exir.schema import DelegateCall, Program
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.schema import DelegateCall, DelegateScratch, Program
+from executorch.exir.tensor import make_allocation_info
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
@@ -106,6 +111,206 @@ class TestBackendAPI(unittest.TestCase):
         self.assertTrue(
             torch.allclose(model_outputs[0], expected_res, atol=1e-03, rtol=1e-03)
         )
+
+    def _repeated_sin_calls(self, backend_id, compile_specs, num_calls):
+        """Lowers sin once and returns it with a module that calls it num_calls times."""
+
+        class SinModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.sin(x)
+
+        model_inputs = (torch.ones(1),)
+        lowered_sin_module = to_backend(
+            backend_id,
+            to_edge(export(SinModule(), model_inputs, strict=True)).exported_program(),
+            compile_specs,
+        )
+
+        class RepeatedCalls(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.sin = lowered_sin_module
+
+            def forward(self, x):
+                for _ in range(num_calls):
+                    x = self.sin(x)
+                return x
+
+        edge = to_edge(export(RepeatedCalls(), model_inputs, strict=True))
+        return lowered_sin_module, edge, model_inputs
+
+    def _delegate_indices(self, plan):
+        return [
+            instruction.instr_args.delegate_index
+            for instruction in plan.chains[0].instructions
+            if isinstance(instruction.instr_args, DelegateCall)
+        ]
+
+    def test_calls_of_one_lowered_module_share_one_delegate(self):
+        lowered_sin_module, edge, _ = self._repeated_sin_calls(
+            BackendWithCompilerDemo.__name__,
+            [CompileSpec("max_value", bytes([1]))],
+            num_calls=3,
+        )
+        self.assertTrue(copy.deepcopy(lowered_sin_module).share_handle_across_calls)
+
+        plan = edge.to_executorch().executorch_program.execution_plan[0]
+        self.assertEqual(len(plan.delegates), 1)
+        self.assertEqual(self._delegate_indices(plan), [0, 0, 0])
+        args = [
+            tuple(instruction.instr_args.args)
+            for instruction in plan.chains[0].instructions
+            if isinstance(instruction.instr_args, DelegateCall)
+        ]
+        self.assertEqual(len(set(args)), 3)
+
+    def test_shared_delegate_matches_separate_calls_at_runtime(self):
+        lowered_sin_module, edge, model_inputs = self._repeated_sin_calls(
+            BackendWithCompilerDemo.__name__,
+            [CompileSpec("max_value", bytes([1]))],
+            num_calls=3,
+        )
+        program = edge.to_executorch()
+        self.assertEqual(len(program.executorch_program.execution_plan[0].delegates), 1)
+
+        expected = model_inputs[0]
+        single_call = _load_for_executorch_from_buffer(lowered_sin_module.buffer())
+        for _ in range(3):
+            expected = single_call.forward([expected])[0]
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward(
+            list(model_inputs)
+        )
+        self.assertTrue(torch.equal(outputs[0], expected))
+
+    def test_sharing_survives_a_serde_round_trip(self):
+        _, edge, _ = self._repeated_sin_calls(
+            BackendWithCompilerDemo.__name__,
+            [CompileSpec("max_value", bytes([1]))],
+            num_calls=2,
+        )
+        buffer = io.BytesIO()
+        exir.save(edge.exported_program(), buffer)
+        buffer.seek(0)
+
+        plan = (
+            EdgeProgramManager(exir.load(buffer))
+            .to_executorch()
+            .executorch_program.execution_plan[0]
+        )
+        self.assertEqual(self._delegate_indices(plan), [0, 0])
+
+    def test_runtime_rejects_a_shared_delegate_with_scratch(self):
+        _, edge, model_inputs = self._repeated_sin_calls(
+            BackendWithCompilerDemo.__name__,
+            [CompileSpec("max_value", bytes([1]))],
+            num_calls=2,
+        )
+
+        def delegate_calls(program):
+            return [
+                instruction.instr_args
+                for instruction in program.execution_plan[0].chains[0].instructions
+                if isinstance(instruction.instr_args, DelegateCall)
+            ]
+
+        program = edge.to_executorch().executorch_program
+        scratch = [DelegateScratch(allocation=make_allocation_info(1, 0), size=4)]
+
+        def run(program):
+            return _load_for_executorch_from_buffer(
+                bytes(_serialize_pte_binary(pte_file=_PTEFile(program=program)))
+            ).forward(list(model_inputs))
+
+        # The same scratch on two separate delegates is valid, so the errors
+        # below come from the sharing alone.
+        separate = copy.deepcopy(program)
+        delegates = separate.execution_plan[0].delegates
+        delegates.append(copy.deepcopy(delegates[0]))
+        delegate_calls(separate)[1].delegate_index = 1
+        for call in delegate_calls(separate):
+            call.scratch = scratch
+        run(separate)
+
+        # The emitter never writes these, but another producer could.
+        for calls_with_scratch in ([0, 1], [0], [1]):
+            shared = copy.deepcopy(program)
+            for index in calls_with_scratch:
+                delegate_calls(shared)[index].scratch = scratch
+            with self.assertRaisesRegex(RuntimeError, "error: 0x23"):
+                run(shared)
+
+    def test_partitioned_module_shares_one_delegate_across_calls(self):
+        class AddModule(torch.nn.Module):
+            def forward(self, x):
+                return x + x
+
+        model_inputs = (torch.ones(2, 2),)
+        add = (
+            to_edge_transform_and_lower(
+                export(AddModule(), model_inputs, strict=True),
+                partitioner=[AddMulPartitionerDemo()],
+            )
+            .exported_program()
+            .module()
+        )
+
+        class TwoCalls(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.add = add
+
+            def forward(self, x):
+                return self.add(self.add(x))
+
+        plan = (
+            to_edge(export(TwoCalls(), model_inputs, strict=False))
+            .to_executorch()
+            .executorch_program.execution_plan[0]
+        )
+        self.assertEqual(self._delegate_indices(plan), [0, 0])
+
+    def test_each_call_uses_the_delegate_of_its_own_module(self):
+        class SinModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.sin(x)
+
+        model_inputs = (torch.ones(1),)
+        edge_sin = to_edge(export(SinModule(), model_inputs, strict=True))
+        compile_specs = [CompileSpec("max_value", bytes([1]))]
+        first, second = (
+            to_backend(
+                BackendWithCompilerDemo.__name__,
+                edge_sin.exported_program(),
+                compile_specs,
+            )
+            for _ in range(2)
+        )
+
+        class TwoModules(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.first = first
+                self.second = second
+
+            def forward(self, x):
+                return self.first(self.second(self.first(x)))
+
+        program = (
+            to_edge(export(TwoModules(), model_inputs, strict=True))
+            .to_executorch()
+            .executorch_program
+        )
+        # Identical blobs are stored once, but separate modules keep separate
+        # delegates, and a repeated call goes back to its own module's delegate.
+        self.assertEqual(len(program.backend_delegate_data), 1)
+        self.assertEqual(self._delegate_indices(program.execution_plan[0]), [0, 1, 0])
+
+    def test_calls_keep_their_own_delegate_unless_the_backend_allows_sharing(self):
+        _, edge, _ = self._repeated_sin_calls(DemoBackend.__name__, [], num_calls=2)
+
+        plan = edge.to_executorch().executorch_program.execution_plan[0]
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertEqual(self._delegate_indices(plan), [0, 1])
 
     def test_emit_lowered_backend_module(self):
         module_list = [

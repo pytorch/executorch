@@ -47,7 +47,7 @@ void fp_accumulate_with_int8_weight(
             extract_8bit_from_packed_int_le(w_tile.data[k4][n4][2], k4i),
             extract_8bit_from_packed_int_le(w_tile.data[k4][n4][3], k4i));
 
-        for (int m = 0; m < TILE_M; ++m) {
+        [[unroll]] for (int m = 0; m < TILE_M; ++m) {
           accum.data[m][n4] =
               fma(VEC4_T(in_tile.data[m][k4][k4i]),
                   weight_texel,

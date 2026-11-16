@@ -25,6 +25,8 @@ def sampling_probabilities(
     temperature: torch.Tensor,
     top_k: torch.Tensor,
     top_p: torch.Tensor,
+    *,
+    batching_policy: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Returns ``[R, V]`` filtered probabilities and ``[R]`` argmax tokens."""
     vocab_size = logits.shape[-1]
@@ -52,8 +54,14 @@ def sampling_probabilities(
         torch.cumsum(sorted_probabilities, dim=-1) - sorted_probabilities
     )
     top_p_enabled = (top_p > 0.0) & (top_p < 1.0)
+    if batching_policy:
+        # Match BatchSampler's top-k precedence and inclusive nucleus cutoff.
+        top_p_enabled = top_p_enabled & ~((top_k > 0) & (top_k < vocab_size))
+        nucleus = mass_before_token <= top_p
+    else:
+        nucleus = mass_before_token < top_p
     sorted_probabilities = torch.where(
-        ~top_p_enabled | (mass_before_token < top_p),
+        ~top_p_enabled | nucleus,
         sorted_probabilities,
         torch.zeros_like(sorted_probabilities),
     )
@@ -193,6 +201,97 @@ def verify_speculative(
         target_greedy.index_select(0, decision_row),
     )
     return torch.cat([decision_row + 1, correction, candidates])
+
+
+def verify_owners(
+    target_logits: torch.Tensor,
+    candidates: torch.Tensor,
+    params: torch.Tensor,
+) -> torch.Tensor:
+    """Verifies each owner's greedy draft block against its target rows.
+
+    ``target_logits`` is ``[O, W, V]`` and ``candidates`` ``[O, W]``: the anchor
+    then ``W - 1`` proposals. ``params`` is float32 ``[O, W + 3]``: temperature,
+    top_k, top_p, ``W - 1`` acceptance uniforms, then one correction uniform.
+    Greedy proposals have q = 1, so a proposal is accepted with its target
+    probability and a rejection resamples the target without that token.
+    Returns int64 ``[O, 2]``: accepted proposals and the correction or bonus.
+    """
+    owners, width, vocab_size = target_logits.shape
+    rows = owners * width
+
+    def per_row(column: int) -> torch.Tensor:
+        return params[:, column : column + 1].expand(owners, width).reshape(rows, 1)
+
+    probabilities, greedy = sampling_probabilities(
+        target_logits.reshape(rows, vocab_size),
+        per_row(0),
+        per_row(1),
+        per_row(2),
+        batching_policy=True,
+    )
+    probabilities = probabilities.view(owners, width, vocab_size)
+    greedy = greedy.view(owners, width)
+    proposals = candidates[:, 1:]
+    stochastic = params[:, 0] > 0.0
+    proposal_probability = (
+        probabilities[:, :-1].gather(-1, proposals.unsqueeze(-1)).squeeze(-1)
+    )
+    accepted = torch.where(
+        stochastic.unsqueeze(-1),
+        params[:, 3:-1] < proposal_probability,
+        greedy[:, :-1] == proposals,
+    )
+    count = torch.cumprod(accepted.to(torch.int64), dim=1).sum(dim=1)
+    decision = count.view(owners, 1, 1).expand(owners, 1, vocab_size)
+    row = probabilities.gather(1, decision).squeeze(1)
+    excluded_token = proposals.gather(1, count.clamp(max=width - 2).unsqueeze(1))
+    excluded = row.scatter(1, excluded_token, 0.0)
+    excluded_sum = excluded.sum(dim=-1, keepdim=True)
+    excluded = excluded / torch.where(
+        excluded_sum > 0.0, excluded_sum, torch.ones_like(excluded_sum)
+    )
+    coin = params[:, -1]
+    sampled = torch.where(
+        count < width - 1,
+        strict_categorical_sample(excluded, coin),
+        strict_categorical_sample(row, coin),
+    )
+    correction = torch.where(
+        stochastic, sampled, greedy.gather(1, count.unsqueeze(1)).squeeze(1)
+    )
+    return torch.stack([count, correction], dim=1)
+
+
+def verify_owners_greedy(
+    target_logits: torch.Tensor, candidates: torch.Tensor
+) -> torch.Tensor:
+    """``verify_owners`` at temperature 0, without sorting the vocabulary."""
+    greedy = torch.argmax(target_logits.float(), dim=-1)
+    accepted = greedy[:, :-1] == candidates[:, 1:]
+    count = torch.cumprod(accepted.to(torch.int64), dim=1).sum(dim=1)
+    return torch.stack([count, greedy.gather(1, count.unsqueeze(1)).squeeze(1)], 1)
+
+
+class DFlashOwnerVerifier(nn.Module):
+    """Batched draft verification; see :func:`verify_owners`."""
+
+    def forward(
+        self,
+        target_logits: torch.Tensor,
+        candidates: torch.Tensor,
+        params: torch.Tensor,
+    ) -> torch.Tensor:
+        return verify_owners(target_logits, candidates, params)
+
+
+class DFlashOwnerArgmaxVerifier(nn.Module):
+    """Greedy batched draft verification; see :func:`verify_owners_greedy`."""
+
+    def forward(
+        self, target_logits: torch.Tensor, candidates: torch.Tensor
+    ) -> torch.Tensor:
+        return verify_owners_greedy(target_logits, candidates)
 
 
 class DFlashTokenSampler(nn.Module):

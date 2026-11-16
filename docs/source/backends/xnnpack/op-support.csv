@@ -1,5 +1,6 @@
 Operator,Compute DType,Quantization,Constraints
-_to_dim_order_copy,"fp16, fp32",,no dtype conversion
+_to_copy,"bf16, fp16, fp32",,"dtype conversion only: fp32 <-> fp16, or fp32 <-> bf16 with enable_bf16; no dim order change"
+_to_dim_order_copy,"bf16, fp16, fp32",,"dim order conversion, or fp32 <-> fp16 / fp32 <-> bf16 (with enable_bf16) without a dim order change"
 abs,"fp16, fp32",,
 add,"fp16, fp32",PT2E: static int8,alpha=1
 avg_pool2d,"fp16, fp32",PT2E: static int8,"ceil_mode=False, count_include_pad=False, divisor_override=pooling_region"
@@ -14,7 +15,7 @@ conv2d,"fp16, fp32","PT2E: static or dynamic int8 activations
 8-bit weights, symmetric per-tensor or per-channel",constant weights
 dequantize_per_tensor,"fp16, fp32",,
 div,"fp16, fp32",,
-elu,"fp16, fp32",,
+elu,"fp16, fp32",,"alpha positive and normal in the compute dtype, scale = 1, input_scale = 1"
 exp,"fp16, fp32",,
 floor,"fp16, fp32",,
 gelu,"fp16, fp32",,
@@ -29,7 +30,7 @@ quantize\_: 8-bit dynamic activations
 log,"fp16, fp32",,
 max_pool2d,"fp16, fp32",,"stride ≤ kernel_size, ceil_mode only for static shapes"
 maximum,"fp16, fp32",,
-mean,"fp16, fp32",,"4D tensors only; dims=[-2,-1] or [-1,-2]"
+mean,"fp16, fp32",PT2E: static int8,"no dtype argument; with enable_bf16, a bf16 mean is computed in fp32"
 minimum,"fp16, fp32",,
 mul,"fp16, fp32",PT2E: static int8,
 neg,"fp16, fp32",,

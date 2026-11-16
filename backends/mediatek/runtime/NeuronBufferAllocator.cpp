@@ -49,12 +49,18 @@ void unloadLibrary() {
 
 BufferAllocator& BufferAllocator::GetInstance() {
   static BufferAllocator instance;
+  static bool libraryLoadAttempted = false;
+  static bool allocatorCreateAttempted = false;
 
-  if (handle == nullptr) {
+  std::scoped_lock Guard(instance.mMutex);
+  if (!libraryLoadAttempted) {
+    libraryLoadAttempted = true;
     loadLibrary();
-    if (allocatorHandle == nullptr) {
-      allocatorHandle = create_func();
-    }
+  }
+  if (handle != nullptr && create_func != nullptr &&
+      !allocatorCreateAttempted) {
+    allocatorCreateAttempted = true;
+    allocatorHandle = create_func();
   }
 
   return instance;
@@ -62,28 +68,35 @@ BufferAllocator& BufferAllocator::GetInstance() {
 
 void* BufferAllocator::Allocate(size_t size) {
   std::scoped_lock Guard(mMutex);
+  if (allocate_func == nullptr || allocatorHandle == nullptr) {
+    return nullptr;
+  }
   return allocate_func(allocatorHandle, size);
 }
 
 bool BufferAllocator::RemoveBuffer(void* address) {
   std::scoped_lock Guard(mMutex);
+  if (remove_func == nullptr || allocatorHandle == nullptr) {
+    return false;
+  }
   return remove_func(allocatorHandle, address);
 }
 
 const MemoryUnit* BufferAllocator::Find(void* address) {
   std::scoped_lock Guard(mMutex);
+  if (find_func == nullptr || allocatorHandle == nullptr) {
+    return nullptr;
+  }
   return static_cast<const MemoryUnit*>(find_func(allocatorHandle, address));
 }
 
 void BufferAllocator::Clear() {
   std::scoped_lock Guard(mMutex);
-  clear_func(allocatorHandle);
+  if (clear_func != nullptr && allocatorHandle != nullptr) {
+    clear_func(allocatorHandle);
+  }
 }
 
 } // namespace neuron
 } // namespace backends
 } // namespace executorch
-
-namespace {
-static auto& singletonInstance = GET_NEURON_ALLOCATOR;
-} // namespace

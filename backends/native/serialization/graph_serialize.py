@@ -24,12 +24,14 @@ import importlib.resources
 import json
 import operator
 import os
+import re
 import tempfile
 from contextvars import ContextVar
 from dataclasses import fields, is_dataclass
 from enum import IntEnum
 from typing import (
     Any,
+    Callable,
     cast,
     get_args,
     get_origin,
@@ -1403,6 +1405,28 @@ def serialize_graph(
     )
 
 
+# flatc emits non-finite doubles as bare `inf`, `-inf`, and `nan`, which are
+# not valid JSON and which Python's json module does not accept (it only
+# recognizes `Infinity`, `-Infinity`, and `NaN`). Match only unquoted values in
+# value position (after `:`, `[`, or `,`) so quoted string fields containing
+# these words are left untouched.
+_NON_FINITE_JSON_RE = re.compile(
+    r"([:\[,]\s*)([-+]?(?:inf|nan))(?=[\s,\]\}])", re.IGNORECASE
+)
+
+
+def _loads_flatc_json(text: str) -> object:
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(2).lower()
+        if "nan" in token:
+            return match.group(1) + "NaN"
+        if token.startswith("-"):
+            return match.group(1) + "-Infinity"
+        return match.group(1) + "Infinity"
+
+    return json.loads(_NON_FINITE_JSON_RE.sub(_replace, text))
+
+
 def deserialize_program(data: bytes) -> Program:
     """Deserialize native flatbuffer bytes back into a Program dataclass."""
     with tempfile.TemporaryDirectory() as td:
@@ -1413,7 +1437,7 @@ def deserialize_program(data: bytes) -> Program:
         _flatc_decompile(td, schema_path, bin_path)
         json_path = os.path.join(td, _FILE_STEM + ".json")
         with open(json_path) as f:
-            obj = json.load(f)
+            obj = _loads_flatc_json(f.read())
     return _json_to_dataclass(obj, Program)
 
 
@@ -1464,8 +1488,8 @@ def _iter_graph_args(value: object) -> Iterator[GraphArg]:
             yield from _iter_graph_args(item)
 
 
-def collect_data_keys(program: Program) -> set[str]:
-    """Return every out-of-line data key the program references.
+def map_data_keys(method: Method, fn: Callable[[str], str]) -> None:
+    """Replace every out-of-line data key in ``method`` with ``fn(key)``, in place.
 
     Covers constant references (NamedTensorRef.data_key) plus the quant keys
     (AffineGroup scale and zero-point) carried on any TensorMeta.quant, whether
@@ -1473,30 +1497,39 @@ def collect_data_keys(program: Program) -> set[str]:
     recursing into HOP subgraphs wherever a schema field carries a ``GraphArg``.
     PackedQuant carries no external keys.
     """
-    keys: set[str] = set()
 
-    def add_meta(meta: Optional[TensorMeta]) -> None:
+    def map_meta(meta: Optional[TensorMeta]) -> None:
         if meta is None or meta.quant is None:
             return
         scheme = meta.quant.scheme
         if isinstance(scheme, AffineGroup):
-            keys.add(scheme.scale_data_key)
+            scheme.scale_data_key = fn(scheme.scale_data_key)
             if scheme.zero_point_data_key:
-                keys.add(scheme.zero_point_data_key)
+                scheme.zero_point_data_key = fn(scheme.zero_point_data_key)
 
     def visit_graph(graph: Graph) -> None:
         for value in graph.tensor_values or []:
-            add_meta(value.meta)
+            map_meta(value.meta)
         for node in graph.nodes:
             for graph_arg in _iter_graph_args(node):
                 visit_graph(graph_arg.graph)
 
-    for method in program.methods:
-        for constant in method.constants or []:
-            keys.add(constant.data_key)
-            add_meta(constant.meta)
-        visit_graph(method.graph)
+    for constant in method.constants or []:
+        constant.data_key = fn(constant.data_key)
+        map_meta(constant.meta)
+    visit_graph(method.graph)
 
+
+def collect_data_keys(program: Program) -> set[str]:
+    """Return every out-of-line data key the program references."""
+    keys: set[str] = set()
+
+    def add(key: str) -> str:
+        keys.add(key)
+        return key
+
+    for method in program.methods:
+        map_data_keys(method, add)
     return keys
 
 
