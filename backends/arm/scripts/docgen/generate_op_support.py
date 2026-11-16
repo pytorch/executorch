@@ -709,6 +709,10 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.sigmoid.default": ("torch.sigmoid", "torch.nn.Sigmoid"),
     "torch.ops.aten.tanh.default": ("torch.tanh", "torch.nn.Tanh"),
     "torch.ops.aten.silu.default": ("torch.nn.SiLU", "torch.nn.functional.silu"),
+    "torch.ops.aten.mish.default": (
+        "torch.nn.Mish",
+        "torch.nn.functional.mish",
+    ),
     "torch.ops.aten.elu.default": ("torch.nn.ELU", "torch.nn.functional.elu"),
     "torch.ops.aten.selu.default": ("torch.nn.SELU", "torch.nn.functional.selu"),
     "torch.ops.aten.celu.default": ("torch.nn.CELU", "torch.nn.functional.celu"),

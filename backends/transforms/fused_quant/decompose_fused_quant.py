@@ -29,6 +29,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dialects.fused_quant.ops import QuantParamsStruct
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.frontends.fused_quant.colorer import CLAIM_KEY, is_colored
 from torch import fx
 from torch._C import Argument
 from torch._ops import OpOverload
@@ -381,7 +382,12 @@ def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> Non
 
 
 class DecomposeFusedQuant(ExportedProgramPassBase):
-    """Decompose fused-quant ops into per-tensor/channel dq, ATen, and q ops."""
+    """Decompose fused-quant ops into per-tensor/channel dq, ATen, and q ops.
+
+    Colored nodes are left alone: a backend that claimed an op is going to lower
+    it itself, and defusing it would take it away. See
+    :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
+    """
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_module = exported_program.graph_module
@@ -389,7 +395,7 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
         nodes = [
             node
             for node in graph.nodes
-            if is_fused_quant_node(node) and "delegation_tag" not in node.meta
+            if is_fused_quant_node(node) and not is_colored(node)
         ]
         if not nodes:
             return ExportedProgramPassResult(exported_program, False)
@@ -441,21 +447,28 @@ class AssertNoFusedQuantOps(ExportedProgramPassBase):
     """Fail if any fused_quant op is left in the graph.
 
     fused_quant ops are an ahead-of-time IR with no runtime kernels. Run this
-    after lowering, once every backend has taken what it claimed and
-    :class:`DecomposeFusedQuant` has decomposed the rest, so a leak surfaces here
-    rather than as a missing out-variant at ``to_executorch``.
+    once lowering is done: every backend has lowered what it claimed, and
+    :class:`DecomposeFusedQuant` has decomposed the rest. A leak then surfaces
+    here rather than as a missing out-variant at ``to_executorch``.
     """
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         leaked = [
-            node.name
+            (
+                f"{node.name} (claimed by {node.meta[CLAIM_KEY]})"
+                if is_colored(node)
+                else node.name
+            )
             for node in exported_program.graph_module.graph.nodes
             if is_fused_quant_node(node)
         ]
         if leaked:
             raise RuntimeError(
-                f"fused_quant ops remain after lowering: {leaked}. Colored nodes a "
-                "backend did not lower must be decomposed with DecomposeFusedQuant "
-                "after to_backend."
+                f"fused_quant ops remain after lowering: {leaked}. A backend must "
+                "lower every node it claims: its coloring and partitioning must "
+                "match. Unclaimed ops must go through DecomposeFusedQuant. As a "
+                "transition aid only, ReleaseClaims, then ToChannelsFirst and "
+                "DecomposeFusedQuant after to_backend fall claimed leftovers back "
+                "to the portable kernels."
             )
         return ExportedProgramPassResult(exported_program, False)

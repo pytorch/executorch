@@ -45,6 +45,14 @@ test_data_suite = {
         torch.rand(1, 16, 56, 56),
         [3, (1, 2), 1, 1, True],
     ),
+    "ceil_mode_last_window_dropped": lambda: (
+        torch.rand(1, 16, 56, 57),
+        [1, 2, 0, 1, True],
+    ),
+    "ceil_mode_last_window_dropped_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [2, 3, 1, 1, True],
+    ),
     "non_divisible_window_adjust_padding": lambda: (
         torch.rand(1, 16, 112, 112),
         [3, 2, 1],

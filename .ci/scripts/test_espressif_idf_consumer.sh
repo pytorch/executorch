@@ -132,8 +132,7 @@ sources="${build_dir}/consumer sources"
 rm -rf "${sources}"
 mkdir -p "${sources}/idf_component_smoke"
 cp -r examples/espressif/idf_component_consumer "${sources}/"
-cp -r examples/espressif/idf_component_smoke/main \
-    examples/espressif/idf_component_smoke/sdkconfig.defaults "${sources}/idf_component_smoke/"
+cp -r examples/espressif/idf_component_smoke/main "${sources}/idf_component_smoke/"
 project="${sources}/idf_component_consumer"
 firmware_root="${build_dir}/consumer builds"
 

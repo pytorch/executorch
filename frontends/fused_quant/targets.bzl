@@ -4,6 +4,16 @@ _VISIBILITY = ["PUBLIC"]
 
 def define_common_targets():
     runtime.python_library(
+        name = "colorer",
+        srcs = ["colorer.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
         name = "quantizer",
         srcs = [
             "quantizer/__init__.py",

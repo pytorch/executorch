@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import logging
 from typing import (
     Any,
@@ -521,6 +519,54 @@ class VulkanPartitioner(Partitioner):
 
         return (ops_not_to_decompose, filter_fn)
 
+    def make_supported_operators(
+        self,
+        fusable_subgraphs: Optional[List[PatternMatch]] = None,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
+        operator_allowlist: Optional[Set[OpKey]] = None,
+        operator_blocklist: Optional[Set[OpKey]] = None,
+    ) -> VulkanSupportedOperators:
+        """The node support checker partition() uses, built from this
+        partitioner's options. The optional arguments replace the
+        corresponding partitioner settings."""
+        # small_texture_limits opts into the conservative 3D texture limit that is
+        # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
+        # 2048). An explicit texture_limits always takes precedence.
+        if "texture_limits" in self.options:
+            texture_limits: utils.ImageExtents = self.options["texture_limits"]
+        elif self.options.get("small_texture_limits", False):
+            texture_limits = utils.SMALL_TEXTURE_LIMITS
+        else:
+            texture_limits = utils.DEFAULT_TEXTURE_LIMITS
+        buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
+        return VulkanSupportedOperators(
+            texture_limits,
+            buffer_limit,
+            require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+            skip_bool_tensors=self.options.get("skip_bool_tensors", False),
+            operator_blocklist=(
+                self.operator_blocklist
+                if operator_blocklist is None
+                else operator_blocklist
+            ),
+            operator_allowlist=(
+                self.operator_allowlist
+                if operator_allowlist is None
+                else operator_allowlist
+            ),
+            fusable_subgraphs=fusable_subgraphs,
+            nn_module_blocklist=self.nn_module_blocklist,
+            nn_module_allowlist=self.nn_module_allowlist,
+            downcast_64_bit=self.options.get("downcast_64_bit", True),
+            op_features_overrides=(
+                self.op_features_overrides
+                if op_features_overrides is None
+                else op_features_overrides
+            ),
+            constant_nodes=constant_nodes,
+        )
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
@@ -532,28 +578,8 @@ class VulkanPartitioner(Partitioner):
             self.options.get("skip_fusion_patterns", ()),
         )
 
-        # small_texture_limits opts into the conservative 3D texture limit that is
-        # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
-        # 2048). An explicit texture_limits always takes precedence.
-        if "texture_limits" in self.options:
-            texture_limits: utils.ImageExtents = self.options["texture_limits"]
-        elif self.options.get("small_texture_limits", False):
-            texture_limits = utils.SMALL_TEXTURE_LIMITS
-        else:
-            texture_limits = utils.DEFAULT_TEXTURE_LIMITS
-        buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
-        operator_support = VulkanSupportedOperators(
-            texture_limits,
-            buffer_limit,
-            require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
-            skip_bool_tensors=self.options.get("skip_bool_tensors", False),
-            operator_blocklist=self.operator_blocklist,
-            operator_allowlist=self.operator_allowlist,
+        operator_support = self.make_supported_operators(
             fusable_subgraphs=fusable_subgraphs,
-            nn_module_blocklist=self.nn_module_blocklist,
-            nn_module_allowlist=self.nn_module_allowlist,
-            downcast_64_bit=self.options.get("downcast_64_bit", True),
-            op_features_overrides=self.op_features_overrides,
             constant_nodes=utils.get_constant_nodes(exported_program),
         )
         capability_partitioner = CapabilityBasedPartitioner(

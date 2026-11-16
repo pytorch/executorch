@@ -83,6 +83,35 @@ TEST(ReferenceGgufKQuantTest, DecodesQ4KBlock) {
   EXPECT_EQ(decode_one_row("gguf:q4_k", block), expected);
 }
 
+TEST(ReferenceGgufKQuantTest, DecodesQ5KBlock) {
+  const std::array<uint8_t, 8> scales = {1, 2, 3, 4, 17, 5, 33, 63};
+  const std::array<uint8_t, 8> mins = {0, 1, 2, 3, 4, 18, 5, 40};
+  // Weight e stores the 5-bit value u, with scale pair e / 32. Its low four
+  // bits are the low (even pair) or high (odd pair) nibble of qs byte
+  // 32 * (e / 64) + e % 32, and its fifth bit is bit e / 32 of qh byte e % 32.
+  // Each pair's weights hold different values, so reading the wrong pair fails.
+  std::vector<uint8_t> qh(32);
+  std::vector<uint8_t> qs(128);
+  std::vector<float> expected(256);
+  for (int e = 0; e < 256; ++e) {
+    const int pair = e / 32;
+    const int l = e % 32;
+    const int u = (7 * l + 5 * pair) % 32;
+    uint8_t& nibbles = qs[32 * (pair / 2) + l];
+    nibbles |= static_cast<uint8_t>((u & 0xF) << (4 * (pair % 2)));
+    qh[l] |= static_cast<uint8_t>((u >> 4) << pair);
+    expected[e] = scales[pair] * u - 0.5f * mins[pair];
+  }
+  std::vector<uint8_t> block = {0x00, 0x3C, 0x00, 0x38}; // d = 1, dmin = 0.5
+  const std::array<uint8_t, 12> packed = pack_q4_k_scales(scales, mins);
+  block.insert(block.end(), packed.begin(), packed.end());
+  block.insert(block.end(), qh.begin(), qh.end());
+  block.insert(block.end(), qs.begin(), qs.end());
+  ASSERT_EQ(block.size(), 176);
+
+  EXPECT_EQ(decode_one_row("gguf:q5_k", block), expected);
+}
+
 TEST(ReferenceGgufKQuantTest, DecodesQ6KBlock) {
   std::array<int8_t, 16> scales{};
   for (int i = 0; i < 16; ++i) {
@@ -120,9 +149,11 @@ TEST(ReferenceGgufKQuantTest, DecodesQ6KBlock) {
 
 TEST(ReferenceGgufKQuantTest, SizesWholeSuperBlockRows) {
   EXPECT_TRUE(is_gguf_kquant("gguf:q4_k"));
+  EXPECT_TRUE(is_gguf_kquant("gguf:q5_k"));
   EXPECT_TRUE(is_gguf_kquant("gguf:q6_k"));
   EXPECT_FALSE(is_gguf_kquant("gguf:q4_0"));
   EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q4_k", 512), 288);
+  EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q5_k", 256), 176);
   EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q6_k", 256), 210);
   EXPECT_THROW(gguf_kquant_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_kquant_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
@@ -161,6 +192,7 @@ TEST(ReferenceGgufKQuantTest, MatchesGgmlDequantization) {
   };
   for (const auto& [codec, type, block_bytes] :
        {std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, size_t{144}},
+        std::tuple{"gguf:q5_k", GGML_TYPE_Q5_K, size_t{176}},
         std::tuple{"gguf:q6_k", GGML_TYPE_Q6_K, size_t{210}}}) {
     SCOPED_TRACE(codec);
     constexpr int64_t kRows = 5;
@@ -170,11 +202,11 @@ TEST(ReferenceGgufKQuantTest, MatchesGgmlDequantization) {
       value = static_cast<uint8_t>(byte(rng));
     }
     for (size_t block = 0; block < data.size(); block += block_bytes) {
-      if (type == GGML_TYPE_Q4_K) {
+      if (type == GGML_TYPE_Q6_K) {
+        put_half(&data[block + 208]);
+      } else {
         put_half(&data[block]);
         put_half(&data[block + 2]);
-      } else {
-        put_half(&data[block + 208]);
       }
     }
     std::vector<float> actual(kRows * kCols);
