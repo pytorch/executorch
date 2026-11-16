@@ -536,6 +536,8 @@ jobs:
           backends/cuda/tests/test_autotune_inputs.py
           backends/cuda/tests/test_autotune_launch_params.py
           backends/cuda/tests/test_triton_mutation_cache.py
+          backends/cuda/tests/test_conv_routing.py
+          backends/cuda/tests/test_conv_binding.py
         )
         # These run in unittest-cuda-quantized-gemm.
         QUANTIZED_GEMM_TESTS=(
