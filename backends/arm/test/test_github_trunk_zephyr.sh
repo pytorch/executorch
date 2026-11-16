@@ -6,7 +6,7 @@
 #
 # This is a script to test run the zephyrOS Ethos-U tests and verify that the README.md
 # instructions are correct.by running the tests content of test-arm-backend-zephyr in
-# github/workflows/trunk.yml as a bash script, (ignoring the conda commands)
+# .github/workflows/_arm-trunk.yml as a bash script, (ignoring the conda commands)
 # This is mostly useful for testing this before upstreaming or for debugging CI issues.
 # Or a way to setup zephyrOS so you can play with it.
 # Parse optional arguments to select README and target list.

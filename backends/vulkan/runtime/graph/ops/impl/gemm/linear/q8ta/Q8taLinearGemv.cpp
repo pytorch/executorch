@@ -90,7 +90,7 @@ void add_q8ta_linear_gemv_node(
   }
 
   const bool use_hw_dot =
-      graph.context()->adapter_ptr()->supports_int8_dot_product();
+      graph.context()->adapter_ptr()->accelerates_signed_packed4x8_dot();
   std::string kernel_name =
       use_hw_dot ? "q8ta_linear_gemv" : "q8ta_linear_gemv_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));

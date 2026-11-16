@@ -53,6 +53,9 @@ PHDRS
     rom_sram PT_LOAD;
     rom_rodata PT_LOAD;
     rom_model PT_LOAD;
+#ifdef __clang__
+    tls       PT_TLS;
+#endif
     null     PT_NULL;
 }
 
@@ -117,6 +120,8 @@ SECTIONS
     *(.dtors)
 
     KEEP(*(.eh_frame*))
+    *(.got)
+    *(.got.*)
   } > ITCM :rom_exec
 
   /*
@@ -143,7 +148,11 @@ SECTIONS
   __exidx_end = .;
   } > ITCM :rom_exec
 
+#ifdef __clang__
+  .copy.table :
+#else
   .copy.table (READONLY) :
+#endif
   {
     . = ALIGN(4);
     __copy_table_start__ = .;
@@ -155,17 +164,26 @@ SECTIONS
     LONG (__sram_data_start__)
     LONG ((__sram_data_end__ - __sram_data_start__) / 4)
 
-    LONG (__eddr_data + (__sram_data_end__ - __sram_data_start__))
+    LONG (LOADADDR(.rodata))
     LONG (__rodata_start__)
     LONG ((__rodata_end__ - __rodata_start__) / 4)
 
     __copy_table_end__ = .;
   } > ITCM :rom_exec
 
+#ifdef __clang__
+  .zero.table :
+#else
   .zero.table (READONLY) :
+#endif
   {
     . = ALIGN(4);
     __zero_table_start__ = .;
+#ifdef __clang__
+    LONG (ADDR(.tbss))
+    LONG (SIZEOF(.tbss) / 4)
+#endif
+
     LONG (__bss_start__)
     LONG ((__bss_end__ - __bss_start__) / 4)
     __zero_table_end__ = .;
@@ -188,6 +206,9 @@ SECTIONS
 
     . = ALIGN(4);
     /* preinit data */
+#ifdef __clang__
+    __bothinit_array_start = .;
+#endif
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP(*(.preinit_array))
     PROVIDE_HIDDEN (__preinit_array_end = .);
@@ -198,6 +219,9 @@ SECTIONS
     KEEP(*(SORT(.init_array.*)))
     KEEP(*(.init_array))
     PROVIDE_HIDDEN (__init_array_end = .);
+#ifdef __clang__
+    __bothinit_array_end = .;
+#endif
 
     . = ALIGN(4);
     /* finit data */
@@ -209,8 +233,28 @@ SECTIONS
     KEEP(*(.jcr*))
     . = ALIGN(4);
     /* All data end */
+#ifndef __clang__
     __data_end__ = .;
+#endif
   } > DTCM :rom_data
+
+#ifdef __clang__
+  .tdata : AT(LOADADDR(.data) + SIZEOF(.data))
+  {
+    __tls_start = .;
+    *(.tdata .tdata.* .gnu.linkonce.td.*)
+    . = ALIGN(4);
+    __data_end__ = .;
+  } > DTCM :rom_data :tls
+
+  .tbss (NOLOAD) :
+  {
+    *(.tbss .tbss.* .gnu.linkonce.tb.*)
+    *(.tcommon)
+    . = ALIGN(4);
+    __tls_end = .;
+  } > DTCM :null :tls
+#endif
 
 #if (ETHOSU_MODEL == 0)
   .sram.rodata :
@@ -246,7 +290,6 @@ SECTIONS
     * (expected_output_data_sec)
     . = ALIGN(16);
     * (sec_command_stream, sec_weight_data, sec_input_data)
-    * (.got*)
     * (ethosu_core_in_queue)
     * (ethosu_core_out_queue)
     . = ALIGN(4);
@@ -266,6 +309,7 @@ SECTIONS
     *(.sram.data)
     . = ALIGN(4);
     *op_*.cpp.obj (*.text*)
+    . = ALIGN(4);
     __sram_data_end__ = .;
   } > BRAM AT >DDR :rom_sram
 
@@ -319,6 +363,20 @@ SECTIONS
     __StackTop = .;
   } > DTCM :null
   PROVIDE(__stack = __StackTop);
+
+#ifdef __clang__
+  PROVIDE(__data_start = __data_start__);
+  PROVIDE(__data_source = LOADADDR(.data));
+  PROVIDE(__data_size = __data_end__ - __data_start__);
+  PROVIDE(__bss_start = __bss_start__);
+  PROVIDE(__bss_size = __bss_end__ - __bss_start__);
+  PROVIDE(__tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss)));
+  PROVIDE(__tls_base = __tls_start);
+  PROVIDE(__arm32_tls_tcb_offset = MAX(8, __tls_align));
+  PROVIDE(__heap_start = __end__);
+  PROVIDE(__heap_end = __HeapLimit);
+  PROVIDE(__stack_limit = __StackLimit);
+#endif
 
   __RAM_segment_used_end__ = .;
 

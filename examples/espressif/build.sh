@@ -8,7 +8,7 @@
 # Build script for the ExecuTorch ESP32 executor runner example.
 #
 # Prerequisites:
-#   - ESP-IDF v5.1+ installed and sourced (. $IDF_PATH/export.sh)
+#   - ESP-IDF 6.0 or newer installed and sourced (. $IDF_PATH/export.sh)
 #   - ExecuTorch cross-compiled for the ESP32 target
 #   - Python 3.8+
 #

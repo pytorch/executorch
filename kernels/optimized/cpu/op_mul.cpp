@@ -101,14 +101,16 @@ Tensor& opt_mul_out(
 
       ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, mul_lambda, a, b, out, selected_optimized_path);
+        torch::executor::
+            handle_broadcast_elementwise<CTYPE, /*kCommutative=*/true>(
+                ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     } else {
       ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, mul_lambda, a, b, out, selected_optimized_path);
+        torch::executor::
+            handle_broadcast_elementwise<CTYPE, /*kCommutative=*/true>(
+                ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     }
   } else {

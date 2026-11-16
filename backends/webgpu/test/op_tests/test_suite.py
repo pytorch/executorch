@@ -47,7 +47,8 @@ class Case:
     """One generated test. `construct` kwargs go to `module_factory` and are baked into
     the .pte as constants (never serialized inputs); `inputs` are the forward inputs only.
     `atol`/`rtol` override suite defaults; `required` -> missing .pte FAILs (not skips);
-    `heavy` -> export-gated behind WEBGPU_TEST_HEAVY; `golden_fn` overrides the fp64 oracle.
+    `heavy` -> export-gated behind WEBGPU_TEST_HEAVY; `golden_fn` overrides the fp64 oracle;
+    `equal_nan` -> NaN matches NaN (for cases that feed NaN/inf on purpose).
     """
 
     construct: dict[str, object] = field(default_factory=dict)
@@ -58,6 +59,7 @@ class Case:
     required: bool = True
     heavy: bool = False
     golden_fn: Callable | None = None
+    equal_nan: bool = False
     # Optional upper-bound export inputs; `inputs` stay live manifest tensors.
     export_inputs: tuple[Input, ...] | None = None
     dynamic_shapes: object | None = None

@@ -7,12 +7,14 @@
 
 #include <algorithm>
 #include <array>
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+#include <executorch/runtime/platform/log.h>
+#include <exception>
+#include <vector>
+#endif
 
-#include <ethosu_driver.h>
-#include <pmu_ethosu.h>
-
-#include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
 #include <executorch/backends/arm/runtime/EthosUExecutionStats.h>
+#include <executorch/backends/arm/runtime/EthosUExecutionStats_Internal.h>
 
 #if defined(ET_EVENT_TRACER_ENABLED)
 namespace {
@@ -31,6 +33,7 @@ void write_le64(uint8_t* destination, uint64_t value) {
 #endif
 
 namespace executorch::backends::arm {
+using executorch::runtime::ArrayRef;
 namespace {
 std::atomic<EthosUStatsBuffer*> capture_buffer{nullptr};
 
@@ -80,6 +83,13 @@ executorch::runtime::Error set_ethosu55_65_pmu_events(
   if (events.size() > u55_u65_events.size()) {
     return Error::InvalidArgument;
   }
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  for (auto event : events) {
+    if (!ethosu_linux_pmu_event_supported(1, event)) {
+      return Error::InvalidArgument;
+    }
+  }
+#endif
   copy_pmu_events(u55_u65_events, events);
   return Error::Ok;
 }
@@ -91,145 +101,124 @@ executorch::runtime::Error set_ethosu85_pmu_events(
   if (events.size() > u85_events.size()) {
     return Error::InvalidArgument;
   }
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  for (auto event : events) {
+    if (!ethosu_linux_pmu_event_supported(2, event)) {
+      return Error::InvalidArgument;
+    }
+  }
+#endif
   copy_pmu_events(u85_events, events);
   return Error::Ok;
 }
 
-} // namespace executorch::backends::arm
-
-using executorch::backends::arm::EthosUInvocationContext;
-
-extern "C" {
-void __attribute__((weak)) EthosUBackend_npu_begin() {}
-
-void __attribute__((weak)) EthosUBackend_npu_end() {}
-
-void ethosu_inference_begin(struct ethosu_driver* drv, void* user_arg) {
-  auto* invocation = static_cast<EthosUInvocationContext*>(user_arg);
-  if (invocation == nullptr) {
-    return;
-  }
-
-  invocation->counter_count = 0;
-  invocation->buffer =
-      executorch::backends::arm::capture_buffer.load(std::memory_order_acquire);
-  if (invocation->buffer != nullptr
+ArrayRef<ethosu_pmu_event_type> ethosu_prepare_invocation(
+    EthosUInvocationContext& invocation,
+    uint32_t product) {
+  invocation.pmu_enabled = false;
+  invocation.buffer = capture_buffer.load(std::memory_order_acquire);
+  if (invocation.buffer == nullptr
 #if defined(ET_EVENT_TRACER_ENABLED)
-      || invocation->event_tracer != nullptr
+      && invocation.event_tracer == nullptr
 #endif
   ) {
-    const ethosu_pmu_event_type* events = nullptr;
-    uint32_t event_count = 0;
-    if (drv->dev.caps.product == ETHOSU_PRODUCT_U55 ||
-        drv->dev.caps.product == ETHOSU_PRODUCT_U65) {
-      events = executorch::backends::arm::u55_u65_events.data();
-      event_count = executorch::backends::arm::u55_u65_events.size();
-    } else if (drv->dev.caps.product == ETHOSU_PRODUCT_U85) {
-      events = executorch::backends::arm::u85_events.data();
-      event_count = executorch::backends::arm::u85_events.size();
-    }
-
-    if (events != nullptr) {
-      invocation->counter_count =
-          std::min(event_count, ETHOSU_PMU_Get_NumEventCountersForDrv(drv));
-    }
-    if (events != nullptr && invocation->counter_count != 0) {
-      ETHOSU_PMU_Enable(drv);
-      ETHOSU_PMU_PMCCNTR_CFG_Set_Stop_Event(drv, ETHOSU_PMU_NPU_IDLE);
-      ETHOSU_PMU_PMCCNTR_CFG_Set_Start_Event(drv, ETHOSU_PMU_NPU_ACTIVE);
-      uint32_t event_mask = 0;
-      for (uint32_t slot = 0; slot < invocation->counter_count; ++slot) {
-        const auto event = events[slot];
-        ETHOSU_PMU_Set_EVTYPER(drv, slot, event);
-        if (event != ETHOSU_PMU_NO_EVENT) {
-          event_mask |= 1u << slot;
-        }
-      }
-      ETHOSU_PMU_CNTR_Disable(drv, (1u << invocation->counter_count) - 1u);
-      ETHOSU_PMU_CNTR_Enable(drv, event_mask | ETHOSU_PMU_CCNT_Msk);
-      ETHOSU_PMU_CYCCNT_Reset(drv);
-      ETHOSU_PMU_EVCNTR_ALL_Reset(drv);
-      ETHOSU_PMU_Set_CNTR_OVS(drv, event_mask | ETHOSU_PMU_CCNT_Msk);
-#if defined(ET_EVENT_TRACER_ENABLED)
-      if (invocation->event_tracer != nullptr) {
-        invocation->cycle_event =
-            invocation->event_tracer->start_profiling_delegate(
-                executorch::backends::arm::kEthosUCycleEventName,
-                executorch::runtime::kUnsetDelegateDebugIntId);
-      }
-#endif
-    }
+    return {};
   }
+  if (product == 0 || product == 1) {
+    return {u55_u65_events.data(), u55_u65_events.size()};
+  }
+  if (product == 2) {
+    return {u85_events.data(), u85_events.size()};
+  }
+  return {};
+}
 
-  // Call callback
+// cppcheck-suppress constParameterReference
+void ethosu_execution_begin(EthosUInvocationContext& invocation) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+  if (invocation.pmu_enabled && invocation.event_tracer != nullptr) {
+    invocation.cycle_event = invocation.event_tracer->start_profiling_delegate(
+        kEthosUCycleEventName, executorch::runtime::kUnsetDelegateDebugIntId);
+  }
+#endif
   EthosUBackend_npu_begin();
 }
 
-void ethosu_inference_end(struct ethosu_driver* drv, void* user_arg) {
-  const auto* invocation = static_cast<EthosUInvocationContext*>(user_arg);
-  if (invocation == nullptr) {
-    return;
-  }
-
-  if (invocation->counter_count != 0) {
-    executorch::backends::arm::EthosUExecutionRecord record{};
-    record.delegate_handle = invocation->delegate_handle;
-    record.success = drv->job.result == ETHOSU_JOB_RESULT_OK;
-    record.stats.device_identifier = reinterpret_cast<uintptr_t>(drv->dev.reg);
-    record.stats.product = drv->dev.caps.product;
-    record.stats.macs_per_cycle = 1u << drv->dev.caps.log2_macs;
-    record.stats.cycle_count = ETHOSU_PMU_Get_CCNTR(drv);
-    record.stats.cycle_count_valid = true;
-    const uint32_t overflow_status = ETHOSU_PMU_Get_CNTR_OVS(drv);
-    record.stats.cycle_overflow = (overflow_status & ETHOSU_PMU_CCNT_Msk) != 0;
-    for (uint32_t slot = 0; slot < invocation->counter_count; ++slot) {
-      const auto event = ETHOSU_PMU_Get_EVTYPER(drv, slot);
-      if (event == ETHOSU_PMU_NO_EVENT) {
-        continue;
-      }
-      record.stats.counters[record.stats.counter_count++] = {
-          static_cast<uint32_t>(event),
-          ETHOSU_PMU_Get_EVCNTR(drv, slot),
-          (overflow_status & (1u << slot)) != 0};
-    }
-    ETHOSU_PMU_Disable(drv);
-    EthosUBackend_npu_end();
-#if defined(ET_EVENT_TRACER_ENABLED)
-    if (invocation->event_tracer != nullptr) {
-      // Encode metadata in format described in EthosUExecutionStats.h
-      uint8_t metadata[executorch::backends::arm::kEthosUCycleMetadataMaxSize]{
-          'E', 'U', 'C', '1'};
-      write_le32(metadata + 4, record.stats.product);
-      write_le32(metadata + 8, record.stats.macs_per_cycle);
-      write_le32(metadata + 12, static_cast<uint32_t>(record.stats.platform));
-      const uint32_t flags =
-          (record.stats.cycle_overflow ? 1u : 0u) | (record.success ? 2u : 0u);
-      write_le32(metadata + 16, flags);
-      write_le64(metadata + 20, record.stats.device_identifier);
-      write_le64(metadata + 28, record.stats.cycle_count);
-      write_le32(metadata + 36, record.stats.counter_count);
-      for (uint32_t slot = 0; slot < record.stats.counter_count; ++slot) {
-        const size_t offset =
-            executorch::backends::arm::kEthosUCycleMetadataHeaderSize +
-            slot * executorch::backends::arm::kEthosUCycleCounterMetadataSize;
-        const auto& counter = record.stats.counters[slot];
-        write_le32(metadata + offset, counter.event_id);
-        write_le64(metadata + offset + 4, counter.value);
-        write_le32(metadata + offset + 12, counter.overflow ? 1u : 0u);
-      }
-      const size_t metadata_size =
-          executorch::backends::arm::kEthosUCycleMetadataHeaderSize +
-          record.stats.counter_count *
-              executorch::backends::arm::kEthosUCycleCounterMetadataSize;
-      invocation->event_tracer->end_profiling_delegate(
-          invocation->cycle_event, metadata, metadata_size);
-    }
-#endif
-    if (invocation->buffer != nullptr) {
-      invocation->buffer->append(record);
-    }
-    return;
-  }
+void ethosu_execution_end(
+    const EthosUInvocationContext& invocation,
+    const EthosUExecutionRecord* result) {
   EthosUBackend_npu_end();
+#if defined(ET_EVENT_TRACER_ENABLED)
+  if (invocation.pmu_enabled && invocation.event_tracer != nullptr) {
+    if (result == nullptr) {
+      invocation.event_tracer->end_profiling_delegate(
+          invocation.cycle_event, nullptr, 0);
+      return;
+    }
+    const auto& record = *result;
+    size_t metadata_size = kEthosUCycleMetadataHeaderSize +
+        record.stats.counter_count * kEthosUCycleCounterMetadataSize;
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    std::vector<uint8_t> storage;
+    try {
+      storage.resize(metadata_size + 4 + record.stats.device_identifier.size());
+    } catch (const std::exception& error) {
+      ET_LOG(Debug, "Failed to allocate Ethos-U metadata: %s", error.what());
+      invocation.event_tracer->end_profiling_delegate(
+          invocation.cycle_event, nullptr, 0);
+      return;
+    }
+    uint8_t* metadata = storage.data();
+#else
+    uint8_t metadata[kEthosUCycleMetadataMaxSize]{};
+#endif
+    std::copy_n("EUC1", 4, metadata);
+    write_le32(metadata + 4, record.stats.product);
+    write_le32(metadata + 8, record.stats.macs_per_cycle);
+    write_le32(metadata + 12, static_cast<uint32_t>(record.stats.platform));
+    const uint32_t flags =
+        (record.stats.cycle_overflow ? 1u : 0u) | (record.success ? 2u : 0u);
+    write_le32(metadata + 16, flags);
+#if !defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    write_le64(metadata + 20, record.stats.device_identifier);
+#endif
+    write_le64(metadata + 28, record.stats.cycle_count);
+    write_le32(metadata + 36, record.stats.counter_count);
+    for (uint32_t slot = 0; slot < record.stats.counter_count; ++slot) {
+      const size_t offset =
+          executorch::backends::arm::kEthosUCycleMetadataHeaderSize +
+          slot * executorch::backends::arm::kEthosUCycleCounterMetadataSize;
+      const auto& counter = record.stats.counters[slot];
+      write_le32(metadata + offset, counter.event_id);
+      write_le64(metadata + offset + 4, counter.value);
+      write_le32(metadata + offset + 12, counter.overflow ? 1u : 0u);
+    }
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    const auto& path = record.stats.device_identifier;
+    write_le32(metadata + metadata_size, path.size());
+    std::copy(path.begin(), path.end(), metadata + metadata_size + 4);
+    metadata_size = storage.size();
+#endif
+    invocation.event_tracer->end_profiling_delegate(
+        invocation.cycle_event, metadata, metadata_size);
+  }
+#endif
+  if (result != nullptr && invocation.buffer != nullptr) {
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    try {
+      invocation.buffer->append(*result);
+    } catch (const std::exception& error) {
+      ET_LOG(Debug, "Failed to capture Ethos-U stats: %s", error.what());
+    }
+#else
+    invocation.buffer->append(*result);
+#endif
+  }
 }
+
+} // namespace executorch::backends::arm
+
+extern "C" {
+void __attribute__((weak)) EthosUBackend_npu_begin() {}
+void __attribute__((weak)) EthosUBackend_npu_end() {}
 }

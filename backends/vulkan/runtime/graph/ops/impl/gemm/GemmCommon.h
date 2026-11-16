@@ -28,6 +28,20 @@ ValueRef prepack_fp_linear_weight(
     int64_t B,
     bool force_buffer = false);
 
+// Adds a prepack node that packs `weight_data` with the shader `kernel_name`,
+// one invocation per 4x4 block, into B batches of K4 rows of N4 4OC x 4IC
+// blocks: a kWidthPacked tensor of sizes {B * K4, N4 * 16}. The storage, packed
+// dtype and staging dtype suffixes are appended to `kernel_name`.
+ValueRef prepack_fp_blocked_weight(
+    ComputeGraph& graph,
+    const ValueRef weight_data,
+    std::string kernel_name,
+    int64_t N,
+    int64_t K,
+    int64_t B,
+    utils::StorageType storage,
+    const PushConstantDataInfo& params);
+
 // Resize logic for linear-shaped output: takes M from the input's penultimate
 // dim, N from resize_args[0], optional batch from input's leading dim.
 void resize_linear_node(
