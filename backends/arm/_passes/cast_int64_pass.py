@@ -13,6 +13,10 @@ from executorch.backends.arm._passes.arm_pass_utils import get_compute_dtype
 from executorch.backends.arm._passes.cast_int_comparison_inputs_pass import (
     CastIntComparisonInputsPass,
 )
+from executorch.backends.arm._passes.cast_zero_dim_int64_operands_pass import (
+    ZERO_DIM_INT32_OPS,
+    ZERO_DIM_NARROW_OPS,
+)
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -42,6 +46,11 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         exir_ops.edge.aten.le.Scalar,
         exir_ops.edge.aten.lt.Scalar,
     }
+    _zero_dim_ops = (
+        ZERO_DIM_INT32_OPS
+        | ZERO_DIM_NARROW_OPS
+        | CastIntComparisonInputsPass.target_ops
+    )
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -193,9 +202,10 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         """Return True when ``user`` computes the zero-dimensional ``node`` in a
         narrower integer dtype.
 
-        A cast qualifies when its users compute in an integer dtype at least as
-        wide as the cast. Comparisons qualify only in int32, and quantized users
-        do not qualify.
+        Operators that CastZeroDimInt64OperandsPass casts qualify, and so do
+        comparisons in int32. A cast qualifies when its users compute in an
+        integer dtype at least as wide as the cast. Quantized users do not
+        qualify.
 
         """
         if node.meta["val"].dim() != 0:
@@ -207,7 +217,9 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         if user.meta["val"].dtype == torch.bool and dtype != torch.int32:
             return False
         if user.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
-            return not user.meta.get("input_qparams")
+            return user.target in cls._zero_dim_ops and not user.meta.get(
+                "input_qparams"
+            )
         wider = integer_dtypes[integer_dtypes.index(dtype) :]
         return all(
             get_compute_dtype(consumer) in wider

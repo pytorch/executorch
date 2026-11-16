@@ -355,3 +355,26 @@ def test_zero_dim_int64_constant_narrows_for_int32_comparisons(dtype, narrows):
     gt.meta["val"] = output_val
 
     assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, gt) == narrows
+
+
+@pytest.mark.parametrize(
+    ("target", "narrows"),
+    (
+        (exir_ops.edge.aten.add.Tensor, True),
+        (exir_ops.edge.aten.bitwise_right_shift.Tensor, False),
+        (exir_ops.edge.aten.remainder.Tensor, False),
+    ),
+)
+def test_zero_dim_int64_constant_narrows_for_cast_operators(target, narrows):
+    with FakeTensorMode() as mode:
+        constant_val = mode.from_tensor(torch.empty((), dtype=torch.int64))
+        x_val = mode.from_tensor(torch.empty((4,), dtype=torch.int32))
+    graph = torch.fx.Graph()
+    constant = graph.placeholder("constant")
+    constant.meta["val"] = constant_val
+    x = graph.placeholder("x")
+    x.meta["val"] = x_val
+    user = graph.call_function(target, (x, constant))
+    user.meta["val"] = x_val
+
+    assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, user) == narrows
