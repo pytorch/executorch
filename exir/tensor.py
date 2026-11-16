@@ -137,6 +137,22 @@ def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.clone(memory_format=torch.contiguous_format)
 
 
+def placeholder_constant(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a copy of it, in the form the emitter stores for a
+    constant placeholder: contiguous or channels-last, and not a view into a
+    larger storage.
+    """
+    if not (
+        tensor.is_contiguous()
+        or tensor.is_contiguous(memory_format=torch.channels_last)
+    ):
+        tensor = tensor.contiguous()
+    if tensor.nbytes != tensor.untyped_storage().nbytes():
+        tensor = tensor.clone()
+    return tensor
+
+
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
