@@ -74,7 +74,8 @@ size_t lower_rms_norms(Graph& graph) {
         shape.values != std::vector<int64_t>{input_meta.sizes.back()} ||
         weight_meta.sizes != shape.values ||
         (input_meta.dtype != ScalarType::Float &&
-         input_meta.dtype != ScalarType::Half) ||
+         input_meta.dtype != ScalarType::Half &&
+         input_meta.dtype != ScalarType::BFloat16) ||
         weight_meta.dtype != input_meta.dtype ||
         output_meta.dtype != input_meta.dtype ||
         output_meta.sizes != input_meta.sizes) {
