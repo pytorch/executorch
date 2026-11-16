@@ -2758,9 +2758,7 @@
       {
         "tensor_sizes": {"input": [256, 2048]},
         "expected_output_sizes": [256, 2048],
-        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"},
-        "validate_output": false,
-        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.25, "rtol": 0.02}, "nvidia": {"function": "is_close", "atol": 0.25, "rtol": 0.02}}
+        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half_zpint8", "nvidia": "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half_zpint8"}
       }
     ]
   },
@@ -2792,15 +2790,7 @@
       },
       "output_name": "output"
     },
-    "validation_steps": [
-      {
-        "tensor_sizes": {"input": [256, 2048]},
-        "expected_output_sizes": [256, 2048],
-        "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"},
-        "validate_output": false,
-        "family_validation_method": {"xe2": {"function": "is_close", "atol": 0.25, "rtol": 0.02}}
-      }
-    ]
+    "validation_steps": [{"tensor_sizes": {"input": [256, 2048]}, "expected_output_sizes": [256, 2048], "expected_kernels": {"xe2": "linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half_zpint8"}}]
   },
   {
     "name": "wmma q4gsw [1, M, K] M256 K2048 N2048 g128 texture3d",
