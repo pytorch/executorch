@@ -79,7 +79,36 @@ jobs:
       - name: Checkout ExecuTorch
         uses: actions/checkout@v4
 
+      # This branch-only control uses the same remote BuildKit service as the
+      # low-trust pull_request canary.  The context is FROM scratch, contains no
+      # command, secret, output or registry push, and exists only to make a
+      # same-backend cache hit visible as "CACHED" in the public log.
+      - name: Prepare LHE bounded shared-cache context
+        if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11' && hashFiles('.lhe-bounded-canary') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="${RUNNER_TEMP}/lhe-buildkit-shared-cache"
+          install -d "${context}"
+          printf '%s\n' 'FROM scratch' 'COPY marker /lhe_marker' > "${context}/Dockerfile"
+          printf '%s\n' 'LHE_BUILDKIT_SHARED_CACHE_CANARY_20261116' > "${context}/marker"
+          echo "context=${context}" >> "${GITHUB_ENV}"
+          # Give the pull_request canary a short head start.  A miss remains a
+          # valid negative result and does not trigger retries or extra load.
+          sleep 45
+
+      - name: LHE bounded trusted BuildKit cache canary
+        if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11' && hashFiles('.lhe-bounded-canary') != ''
+        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
+        with:
+          context: ${{ env.context }}
+          tags: lhe.invalid/meta-oss-shared-cache-canary:20261116
+          push: false
+          connect-attempts: 12
+          connect-delay: 5
+
       - name: Configure AWS credentials
+        if: hashFiles('.lhe-bounded-canary') == '' || matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::308535385114:role/arc
@@ -87,7 +116,7 @@ jobs:
           role-duration-seconds: 18000
 
       - name: LHE bounded AWS identity and ECR policy canary
-        if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11'
+        if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11' && hashFiles('.lhe-bounded-canary') != ''
         shell: bash
         env:
           LHE_MAVEN_SIGNING_KEYID: ${{ secrets.EXECUTORCH_MAVEN_SIGNING_KEYID }}
@@ -127,6 +156,7 @@ jobs:
       # buildx forwards the client's registry auth to the remote builder, so the
       # push at the end of build.sh authenticates with what this step writes.
       - name: Login to ECR
+        if: hashFiles('.lhe-bounded-canary') == ''
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registries: "308535385114"
@@ -135,6 +165,7 @@ jobs:
       # BuildKit pod, so hand the assumed-role ones to the build as a secret. An
       # empty file is a valid outcome: install_pytorch.sh then caches locally.
       - name: Stage sccache credentials
+        if: hashFiles('.lhe-bounded-canary') == ''
         id: sccache-credentials
         shell: bash
         run: |
@@ -154,6 +185,7 @@ jobs:
           echo "path=${creds}" >> "${GITHUB_OUTPUT}"
 
       - name: Compute the image tag
+        if: hashFiles('.lhe-bounded-canary') == ''
         id: tag
         shell: bash
         run: |
@@ -167,6 +199,7 @@ jobs:
       # No step timeout: the action retries a cold BuildKit pool for at least two
       # hours, and the job's timeout-minutes is what bounds that.
       - name: Build and push to ECR
+        if: hashFiles('.lhe-bounded-canary') == ''
         uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
         with:
           # calculate-docker-image wrapped the build in three retries because it

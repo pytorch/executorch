@@ -1,0 +1,1 @@
+This marker disables every ECR login, credential-staging, image-build and push step in the LHE canary branch.

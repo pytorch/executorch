@@ -1,0 +1,52 @@
+name: LHE bounded BuildKit reachability canary
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/lhe-buildkit-reachability-canary.yml
+      - .lhe-bounded-canary
+
+permissions:
+  contents: read
+
+jobs:
+  low-trust-buildkit-reachability:
+    if: github.event.pull_request.head.repo.fork == true
+    runs-on: mt-l-x86iavx512-8-64
+    container:
+      image: ghcr.io/actions/actions-runner:latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout fork head
+        uses: actions/checkout@v4
+
+      - name: Prepare inert FROM-scratch context
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="${RUNNER_TEMP}/lhe-buildkit-shared-cache"
+          install -d "${context}"
+          printf '%s\n' 'FROM scratch' 'COPY marker /lhe_marker' > "${context}/Dockerfile"
+          printf '%s\n' 'LHE_BUILDKIT_SHARED_CACHE_CANARY_20261116' > "${context}/marker"
+          echo "context=${context}" >> "${GITHUB_ENV}"
+
+      - name: Build without output, registry write or secret
+        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
+        with:
+          context: ${{ env.context }}
+          tags: lhe.invalid/meta-oss-shared-cache-canary:20261116
+          push: false
+          connect-attempts: 12
+          connect-delay: 5
+
+      - name: Record only bounded service metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          inspect="$(docker buildx inspect remote-buildkit)"
+          version="$(printf '%s\n' "${inspect}" | sed -n 's/^BuildKit:[[:space:]]*//p' | head -n 1)"
+          digest="$(printf '%s' "${inspect}" | sha256sum | cut -d' ' -f1)"
+          echo "LHE_BUILDKIT_LOW_TRUST_CANARY=true"
+          echo "LHE_BUILDKIT_VERSION=${version:-UNAVAILABLE}"
+          echo "LHE_BUILDKIT_INSPECT_SHA256=${digest}"
+          echo "LHE_NO_SECRET_NO_OUTPUT_NO_PUSH=true"
