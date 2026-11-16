@@ -21,6 +21,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
 namespace etrt = executorch::runtime;
@@ -359,6 +360,50 @@ class OpMulOutTest : public OperatorTest {
     op_mul_out(x, y, out);
     EXPECT_TENSOR_CLOSE(out, expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_broadcast() {
+    TensorFactory<DTYPE> tf;
+    // Bounded outputs are resized to the broadcast shape.
+    const auto make_out = [&tf](const std::vector<int32_t>& sizes) {
+      return tf.full(sizes, CTYPE(0, 0), TensorShapeDynamism::DYNAMIC_BOUND);
+    };
+
+    // Values from issue #24408, with zero-dimensional and single-element
+    // scalars on either side.
+    const Tensor x = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
+    const Tensor product = tf.make({2}, {CTYPE(0, 4), CTYPE(8, 0)});
+    for (const auto& scalar_sizes :
+         {std::vector<int32_t>{}, std::vector<int32_t>{1}}) {
+      const Tensor s = tf.make(scalar_sizes, {CTYPE(2, 2)});
+      Tensor out = make_out({4});
+      EXPECT_TENSOR_EQ(op_mul_out(x, s, out), product);
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(op_mul_out(s, x, out), product);
+    }
+
+    // Both operands are scalars.
+    Tensor out = make_out({1});
+    EXPECT_TENSOR_EQ(
+        op_mul_out(
+            tf.make({}, {CTYPE(5, 1)}), tf.make({1}, {CTYPE(1, 1)}), out),
+        tf.make({1}, {CTYPE(4, 6)}));
+
+    // Both operands are broadcast.
+    out = make_out({2, 2});
+    EXPECT_TENSOR_EQ(
+        op_mul_out(
+            tf.make({2, 1}, {CTYPE(5, 1), CTYPE(3, 5)}),
+            tf.make({1, 2}, {CTYPE(1, 1), CTYPE(1, -1)}),
+            out),
+        tf.make(
+            {2, 2}, {CTYPE(4, 6), CTYPE(6, -4), CTYPE(-2, 8), CTYPE(8, 2)}));
+
+    // Empty output.
+    const Tensor empty = tf.make({0}, {});
+    out = make_out({0});
+    EXPECT_TENSOR_EQ(op_mul_out(tf.make({}, {CTYPE(2, 2)}), empty, out), empty);
+  }
 };
 
 class OpMulScalarOutTest : public OperatorTest {
@@ -512,6 +557,17 @@ TEST_F(OpMulOutTest, BothScalarInputBroadcastTest) {
 TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMulOutTest, ComplexBroadcast) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_complex_broadcast<ctype, ScalarType::dtype>();
+  if (SupportedFeatures::get()->is_aten) {
     ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
   } else {
     ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);

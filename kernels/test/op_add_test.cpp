@@ -21,6 +21,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
 namespace etrt = executorch::runtime;
@@ -127,6 +128,61 @@ class OpAddOutKernelTest : public OperatorTest {
   test_add_complex_dtype<ctype, ScalarType::dtype>();
     ET_FORALL_COMPLEXH_TYPES(RUN_COMPLEX_TEST);
 #undef RUN_COMPLEX_TEST
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_add_complex_broadcast() {
+    TensorFactory<DTYPE> tf;
+    // Bounded outputs are resized to the broadcast shape.
+    const auto make_out = [&tf](const std::vector<int32_t>& sizes) {
+      return tf.full(sizes, CTYPE(0, 0), TensorShapeDynamism::DYNAMIC_BOUND);
+    };
+
+    // Values from issue #24408, with zero-dimensional and single-element
+    // scalars on either side.
+    const Tensor x = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
+    for (const auto& scalar_sizes :
+         {std::vector<int32_t>{}, std::vector<int32_t>{1}}) {
+      const Tensor s = tf.make(scalar_sizes, {CTYPE(2, 2)});
+      Tensor out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(x, s, /*alpha=*/2, out),
+          tf.make({2}, {CTYPE(5, 5), CTYPE(6, 2)}));
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(s, x, /*alpha=*/2, out),
+          tf.make({2}, {CTYPE(4, 4), CTYPE(6, -2)}));
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(s, x, /*alpha=*/1, out),
+          tf.make({2}, {CTYPE(3, 3), CTYPE(4, 0)}));
+    }
+
+    // Both operands are scalars.
+    Tensor out = make_out({1});
+    EXPECT_TENSOR_EQ(
+        op_add_out(
+            tf.make({}, {CTYPE(5, 1)}),
+            tf.make({1}, {CTYPE(1, 1)}),
+            /*alpha=*/2,
+            out),
+        tf.make({1}, {CTYPE(7, 3)}));
+
+    // Both operands are broadcast.
+    out = make_out({2, 2});
+    EXPECT_TENSOR_EQ(
+        op_add_out(
+            tf.make({2, 1}, {CTYPE(5, 1), CTYPE(3, 5)}),
+            tf.make({1, 2}, {CTYPE(1, 1), CTYPE(1, -1)}),
+            /*alpha=*/2,
+            out),
+        tf.make({2, 2}, {CTYPE(7, 3), CTYPE(7, -1), CTYPE(5, 7), CTYPE(5, 3)}));
+
+    // Empty output.
+    const Tensor empty = tf.make({0}, {});
+    out = make_out({0});
+    EXPECT_TENSOR_EQ(
+        op_add_out(tf.make({}, {CTYPE(2, 2)}), empty, /*alpha=*/2, out), empty);
   }
 
   // Common testing for adding two floating point Tensors.
@@ -335,6 +391,26 @@ TEST_F(OpAddOutKernelTest, AllRealDtypesSupported) {
 
 TEST_F(OpAddOutKernelTest, ComplexTensors) {
   test_add_enumerate_complex_types();
+}
+
+TEST_F(OpAddOutKernelTest, ComplexBroadcast) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_add_complex_broadcast<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpAddOutKernelTest, RealScalarLeftAdd) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tf_int;
+  const Tensor b = tf.make({3}, {1, 2, 3});
+  const Tensor expected = tf.make({3}, {3, 5, 7});
+
+  Tensor out = tf.zeros({3});
+  EXPECT_TENSOR_EQ(op_add_out(tf.make({}, {1}), b, /*alpha=*/2, out), expected);
+  out = tf.zeros({3});
+  EXPECT_TENSOR_EQ(
+      op_add_out(tf_int.make({}, {1}), b, /*alpha=*/2, out), expected);
 }
 
 TEST_F(OpAddOutKernelTest, FloatTensors) {
