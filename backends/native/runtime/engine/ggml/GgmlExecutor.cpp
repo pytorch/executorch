@@ -593,8 +593,32 @@ class GgmlExecutable final : public EngineExecutable {
     return bytes;
   }
 
-  std::vector<uint8_t> load_q4_0(const TensorMeta& meta, ByteSpan packed)
-      const {
+  // Scales that fp16 would round, of an int4 constant only embeddings read.
+  // Q4_0 blocks hold fp16 scales, and a linear's mul_mat reads them there, so
+  // only such a weight loads as unit-scale blocks whose gathered rows are
+  // multiplied by these scales.
+  std::optional<std::vector<float>> exact_row_scales(ValueId id) const {
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    const AffineGroupQuant* quant = affine_quant(meta);
+    if (quant == nullptr || quant->scale_dtype == ScalarType::Half ||
+        constant_binding(id) == nullptr ||
+        !std::ranges::all_of(
+            method_.graph.value(id).consumer_ids, [this](NodeId consumer) {
+              return op_key(method_.graph.node(consumer).target) ==
+                  "aten.embedding.default";
+            })) {
+      return std::nullopt;
+    }
+    std::vector<float> scales = load_q4_scales(meta);
+    if (std::ranges::all_of(scales, [](float scale) {
+          return ggml_fp16_to_fp32(ggml_fp32_to_fp16(scale)) == scale;
+        })) {
+      return std::nullopt;
+    }
+    return scales;
+  }
+
+  std::vector<float> load_q4_scales(const TensorMeta& meta) const {
     const AffineGroupQuant& quant = q4_affine(meta);
     const std::optional<OwnedBytes> scales =
         read_constant(quant.scale_data_key);
@@ -613,8 +637,7 @@ class GgmlExecutable final : public EngineExecutable {
             quant.zero_point_data_key + "'");
       }
     }
-    return affine_int4_to_q4_0(
-        meta, packed, to_float_vector(scales->span(), quant.scale_dtype));
+    return to_float_vector(scales->span(), quant.scale_dtype);
   }
 
   // The binding of a constant with data that no op writes.
@@ -842,14 +865,29 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
-    const size_t count = static_cast<size_t>(std::ranges::count_if(
-        method_.data_bindings,
-        [this](const DataBinding& binding) { return is_persistent(binding); }));
+    size_t count = 0;
+    // The float scales of int4 weights that load as unit-scale blocks.
+    std::unordered_map<ValueId, std::vector<float>> float_scales;
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (!is_persistent(binding)) {
+        continue;
+      }
+      ++count;
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
+        check_q4_consumers(binding.value_id, binding.key);
+      }
+      if (std::optional<std::vector<float>> scales =
+              exact_row_scales(binding.value_id)) {
+        float_scales.emplace(binding.value_id, std::move(*scales));
+      }
+    }
     if (count == 0) {
       return;
     }
     ggml_init_params params{
-        .mem_size = ggml_tensor_overhead() * (count + 16),
+        .mem_size = ggml_tensor_overhead() * (count + float_scales.size() + 16),
         .mem_buffer = nullptr,
         .no_alloc = true,
     };
@@ -865,13 +903,19 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
-        check_q4_consumers(binding.value_id, binding.key);
-      }
       ggml_tensor* tensor =
           new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
+      if (float_scales.contains(binding.value_id)) {
+        const AffineGroupQuant& quant = q4_affine(meta);
+        ggml_tensor* scales = new_tensor(
+            persistent_context_.get(),
+            GGML_TYPE_F32,
+            {meta.sizes[0], meta.sizes[1] / quant.group_size});
+        ggml_set_name(scales, quant.scale_data_key.c_str());
+        row_scales_.emplace(binding.value_id, scales);
+      }
     }
 
     persistent_buffer_.reset(ggml_backend_alloc_ctx_tensors(
@@ -940,7 +984,17 @@ class GgmlExecutable final : public EngineExecutable {
       ByteSpan span = bytes->span();
       std::vector<uint8_t> converted;
       if (is_q4) {
-        converted = load_q4_0(meta, span);
+        const auto entry = float_scales.find(binding.value_id);
+        if (entry == float_scales.end()) {
+          converted = affine_int4_to_q4_0(meta, span, load_q4_scales(meta));
+        } else {
+          converted = affine_int4_to_q4_0(
+              meta, span, std::vector<float>(entry->second.size(), 1.0f));
+          ggml_tensor* row_scales = row_scales_.at(binding.value_id);
+          ggml_backend_tensor_set(
+              row_scales, entry->second.data(), 0, ggml_nbytes(row_scales));
+          loaded += ggml_nbytes(row_scales);
+        }
         span = converted;
       } else if (narrow) {
         converted = narrow_to_int32(span);
@@ -1312,6 +1366,8 @@ class GgmlExecutable final : public EngineExecutable {
   ggml_backend_buffer_ptr output_staging_;
   std::vector<uint8_t> output_host_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
+  // Float scales of the Q4_0 weights with unit block scales, by weight.
+  std::unordered_map<ValueId, ggml_tensor*> row_scales_;
   bool executed_ = false;
   std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
   // Per-output-channel factors applied to convolution weights at load.
@@ -1336,6 +1392,7 @@ GraphInstance GgmlExecutable::build_graph(
                                inputs_,
                                outputs_,
                                persistent_,
+                               row_scales_,
                                rope_freq_factors_,
                                batch_norms_,
                                std::move(truncated),

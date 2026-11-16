@@ -123,6 +123,7 @@ def define_common_targets(is_fbcode = False):
 
     python_unittest_remote_gpu(
         name = "test_conv_implicit_gemm",
+        env = {"EXECUTORCH_CUDA_EXHAUSTIVE_TESTS": "1"},
         srcs = [
             "test_conv_implicit_gemm.py",
         ],

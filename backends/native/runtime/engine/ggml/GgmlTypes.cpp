@@ -105,12 +105,13 @@ const AffineGroupQuant* affine_quant(const TensorMeta& meta) {
 }
 
 // Symmetric int4 groups that are whole multiples of 32 map onto Q4_0 blocks.
-// Q4_0 stores the scale as fp16, so scales are narrowed at load.
+// Q4_0 stores the scale as fp16, so scales are narrowed at load unless the
+// executor keeps them as row scales.
 const AffineGroupQuant& q4_affine(const TensorMeta& meta) {
   const AffineGroupQuant* quant = affine_quant(meta);
   if (quant == nullptr || quant->quant_min != -8 || quant->quant_max != 7 ||
       quant->group_size <= 0 || quant->group_size % kQ40BlockElements != 0 ||
-      meta.sizes.size() != 2 || meta.sizes[0] <= 0 ||
+      meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
       meta.sizes[1] % quant->group_size != 0) {
     throw std::runtime_error(
         "ggml: affine weights must be int4 [N, K] with groups divisible by 32");
