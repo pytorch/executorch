@@ -87,11 +87,10 @@ void main() {
 #endif
 
   OUT_T out_texel = apply_unary_op(op_type, in_texel, PARAM_A, PARAM_B);
-  // Input padding lanes are assumed zero, so only ops that map zero to a
-  // nonzero value need to mask them.
-  if (!unary_op_preserves_zero(op_type) &&
-      any(notEqual(
-          apply_unary_op(op_type, IN_T(0), PARAM_A, PARAM_B), OUT_T(0)))) {
+  // Input padding lanes are assumed zero, so only ops that may map zero to a
+  // nonzero value need to mask them. The op is not evaluated at zero to skip
+  // the mask: the Mali-G715 compiler folds min(max(0, a), b) to 0 when b < 0.
+  if (!unary_op_preserves_zero(op_type)) {
     out_texel = mask_padding_lanes(out_texel, idx, outp, out_packed_dim);
   }
 

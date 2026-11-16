@@ -10,9 +10,11 @@
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <atomic>
 #include <mutex>
 #include <numeric>
 #include <random>
+#include <thread>
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
 
@@ -20,6 +22,8 @@
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstdio>
@@ -131,6 +135,16 @@ bool may_use_more_than_one_cpu() {
   std::exit(EXIT_SUCCESS);
 }
 #endif
+
+// Puts back the thread count a test changed, also when the test fails early.
+struct RestoreThreadCount {
+  ::executorch::extension::threadpool::ThreadPool* threadpool;
+  uint32_t threads;
+  ~RestoreThreadCount() {
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    threadpool->_unsafe_reset_threadpool(threads);
+  }
+};
 } // namespace
 
 TEST(ThreadPoolTest, ParallelAdd) {
@@ -268,6 +282,64 @@ TEST(TestNoThreadPoolGuard, TestRunWithGuard) {
   ASSERT_EQ(inner, 6);
 }
 
+TEST(ThreadPoolTest, ResetKeepsSharedPthreadpoolUntilReleased) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  auto held = ::executorch::extension::threadpool::get_shared_pthreadpool();
+  ASSERT_EQ(held.get(), ::executorch::extension::threadpool::get_pthreadpool());
+  EXPECT_EQ(held.use_count(), 2);
+  const std::weak_ptr<pthreadpool> released = held;
+
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(3));
+  EXPECT_NE(
+      ::executorch::extension::threadpool::get_shared_pthreadpool().get(),
+      held.get());
+  std::vector<uint8_t> ran(64);
+  pthreadpool_parallelize_1d(
+      held.get(),
+      [](void* context, size_t item) {
+        static_cast<uint8_t*>(context)[item] = 1;
+      },
+      ran.data(),
+      ran.size(),
+      0);
+  EXPECT_EQ(ran, std::vector<uint8_t>(64, 1));
+
+  held.reset();
+  EXPECT_TRUE(released.expired());
+}
+
+TEST(ThreadPoolTest, PthreadpoolGettersDuringReset) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // Reads the pool on other threads, as delegate loads do, during resets.
+  std::atomic<bool> done{false};
+  std::thread shared_loader([&done] {
+    while (!done) {
+      ::executorch::extension::threadpool::get_shared_pthreadpool();
+    }
+  });
+  std::thread raw_loader([&done] {
+    while (!done) {
+      ::executorch::extension::threadpool::get_pthreadpool();
+    }
+  });
+  for (uint32_t i = 0; i < 100; ++i) {
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    EXPECT_TRUE(threadpool->_unsafe_reset_threadpool(2 + i % 2));
+  }
+  done = true;
+  shared_loader.join();
+  raw_loader.join();
+}
+
 #if defined(__linux__) && !defined(__ANDROID__)
 // gtest runs death tests before the other tests, so the forked child creates
 // the pool itself, and the CPU limit it sets does not reach the other tests.
@@ -287,5 +359,32 @@ TEST(ThreadPoolDeathTest, DefaultSizeHonorsCpuAffinity) {
       : "pool 1 perf 0 end";
   EXPECT_EXIT(
       print_counts_on_one_cpu(), ExitedWithCode(EXIT_SUCCESS), expected);
+}
+
+TEST(ThreadPoolTest, ForkedChildReleasesInheritedSharedPthreadpool) {
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const RestoreThreadCount restore{
+      threadpool, static_cast<uint32_t>(threadpool->get_thread_count())};
+  // Destroying an inherited pool crashes once its thread stacks overflow
+  // glibc's 40 MiB stack cache; 32 threads do with stacks as small as 1 MiB.
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(32));
+  auto held = ::executorch::extension::threadpool::get_shared_pthreadpool();
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  ASSERT_TRUE(threadpool->_unsafe_reset_threadpool(2));
+  // The child holds the last reference to a threadpool whose threads stayed
+  // in the parent. Not a death test, whose "threadsafe" style would start the
+  // child over with a threadpool of its own.
+  const pid_t child = fork();
+  ASSERT_NE(child, -1);
+  if (child == 0) {
+    held.reset();
+    std::_Exit(EXIT_SUCCESS);
+  }
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
+      << "wait status " << status;
 }
 #endif

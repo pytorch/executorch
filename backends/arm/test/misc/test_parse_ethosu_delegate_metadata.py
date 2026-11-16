@@ -61,7 +61,7 @@ class TestEthosUDelegateMetadata(unittest.TestCase):
         self.assertIs(record.platform, EthosUPlatform.CoreDriver)
         self.assertEqual(record.macs_per_cycle, 256)
         self.assertTrue(record.success)
-        self.assertEqual(record.register_base, 0x50000000)
+        self.assertEqual(record.device_identifier, 0x50000000)
         self.assertEqual(record.cycle_count, 123456)
         self.assertIsInstance(record.cycle_count, float)
         self.assertFalse(record.cycle_overflow)
@@ -77,6 +77,27 @@ class TestEthosUDelegateMetadata(unittest.TestCase):
         self.assertFalse(record.counters[1].overflow)
         self.assertEqual(record.counters[1].count, 11)
         self.assertIsInstance(record.counters[1].count, float)
+
+    def test_linux_device_path(self) -> None:
+        header = _HEADER.pack(_MAGIC_PREFIX + b"1", 1, 256, 1, 2, 0, 123, 1)
+        counter = _COUNTER.pack(EthosUPmuEvent.ETHOSU_PMU_NPU_IDLE, 42, 0)
+        path = b"/dev/ethosu0"
+        metadata = header + counter + struct.pack("<I", len(path)) + path
+        record = parse_pmu_profile_event(metadata)
+        self.assertIs(record.platform, EthosUPlatform.LinuxDriver)
+        self.assertEqual(record.device_identifier, path.decode())
+        self.assertEqual(record.counters[0].count, 42)
+        self.assertFalse(record.cycle_overflow)
+        sample = parse_ethosu_delegate_pmu_metadata([metadata])["ethosu_pmu"][0]
+        self.assertEqual(sample["device_identifier"], path.decode())
+        for invalid in (
+            header + counter,
+            metadata[:-1],
+            metadata + b"x",
+            header + counter + struct.pack("<I", 1) + b"\xff",
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                parse_pmu_profile_event(invalid)
 
     def test_cycle_overflow_returns_nan(self) -> None:
         """Use NaN when the cycle counter overflows."""
@@ -134,7 +155,7 @@ class TestEthosUDelegateMetadata(unittest.TestCase):
                 "overflow",
             ),
             "unknown platform": (
-                valid[:12] + struct.pack("<I", 1) + valid[16:],
+                valid[:12] + struct.pack("<I", 2) + valid[16:],
                 "Unknown Ethos-U platform ID",
             ),
             "unknown flags": (

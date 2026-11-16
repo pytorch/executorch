@@ -26,17 +26,6 @@ constexpr std::string_view kEmbedding = "torch.ops.aten.embedding.default";
 constexpr const char* kEmbeddingQ4gsw =
     "torch.ops.et_vk.embedding_q4gsw.default";
 
-const Argument*
-get_arg(const Node& node, std::string_view name, size_t position) {
-  const auto found = std::ranges::find_if(
-      node.inputs,
-      [name](const NamedArgument& input) { return input.name == name; });
-  if (found != node.inputs.end()) {
-    return &found->arg;
-  }
-  return position < node.inputs.size() ? &node.inputs[position].arg : nullptr;
-}
-
 const TensorMeta* tensor_meta(const Graph& graph, const Argument* arg) {
   if (arg == nullptr || arg->kind() != ArgKind::Tensor ||
       !valid(arg->as_tensor().id)) {
@@ -65,12 +54,12 @@ bool rewrite_embedding_4bit(const Graph& graph, Node& node) {
     return false;
   }
 
-  const Argument* weight = get_arg(node, "weight", 0);
-  const Argument* scales = get_arg(node, "weight_scales", 1);
-  const Argument* zero_points = get_arg(node, "weight_zero_points", 2);
-  const Argument* quant_min = get_arg(node, "weight_quant_min", 3);
-  const Argument* quant_max = get_arg(node, "weight_quant_max", 4);
-  const Argument* indices = get_arg(node, "indices", 5);
+  const Argument* weight = find_arg(node, "weight", 0);
+  const Argument* scales = find_arg(node, "weight_scales", 1);
+  const Argument* zero_points = find_arg(node, "weight_zero_points", 2);
+  const Argument* quant_min = find_arg(node, "weight_quant_min", 3);
+  const Argument* quant_max = find_arg(node, "weight_quant_max", 4);
+  const Argument* indices = find_arg(node, "indices", 5);
   if (weight == nullptr || scales == nullptr || indices == nullptr ||
       zero_points == nullptr || zero_points->kind() != ArgKind::None ||
       !is_int(quant_min, -8) || !is_int(quant_max, 7)) {
@@ -120,8 +109,8 @@ bool rewrite_quantized_embedding(Method& method, NodeId node_id) {
   if (!node.is_call() || node.target != kEmbedding) {
     return false;
   }
-  const Argument* weight = get_arg(node, "weight", 0);
-  const Argument* indices = get_arg(node, "indices", 1);
+  const Argument* weight = find_arg(node, "weight", 0);
+  const Argument* indices = find_arg(node, "indices", 1);
   const TensorMeta* weight_meta = tensor_meta(graph, weight);
   const TensorMeta* indices_meta = tensor_meta(graph, indices);
   if (weight_meta == nullptr || indices_meta == nullptr ||

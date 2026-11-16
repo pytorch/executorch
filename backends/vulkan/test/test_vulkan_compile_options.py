@@ -49,6 +49,12 @@ class TestVulkanCompileOptions(unittest.TestCase):
         round_tripped = self._round_trip({"force_fp16": True})
         self.assertTrue(round_tripped.get("force_fp16"))
 
+    def test_skip_fusion_patterns_round_trips(self) -> None:
+        for patterns in ({"rms_norm", "conv2d_with_epilogue"}, set()):
+            with self.subTest(patterns=patterns):
+                round_tripped = self._round_trip({"skip_fusion_patterns": patterns})
+                self.assertEqual(round_tripped.get("skip_fusion_patterns"), patterns)
+
     def test_external_constants_max_data_bytes_round_trips_uint64_bounds(
         self,
     ) -> None:

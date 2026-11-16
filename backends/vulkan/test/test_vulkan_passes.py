@@ -2,6 +2,7 @@ import unittest
 from itertools import product
 from typing import List, Optional, Tuple
 
+import executorch.backends.vulkan.patterns as vk_patterns
 import torch
 
 from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
@@ -18,6 +19,7 @@ from executorch.backends.vulkan.op_registry import (
     unwrap_identity_repeat,
 )
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.patterns.conv2d_with_epilogue import activation_of
 from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkDataType
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -528,6 +530,199 @@ class TestFoldForceFp16Casts(unittest.TestCase):
                     any("_to_copy" in n or "_to_dim_order_copy" in n for n in op_names),
                     op_names,
                 )
+
+
+class ResidualConvModule(torch.nn.Module):
+    """conv(x) combined with a residual, as selected by `variant`."""
+
+    def __init__(self, variant: str, activation=None):
+        super().__init__()
+        self.variant = variant
+        self.activation = activation
+        conv = torch.nn.ConvTranspose2d if variant == "transposed" else torch.nn.Conv2d
+        self.conv = conv(16, 16, kernel_size=3, padding=1)
+        self.scale = torch.nn.Parameter(torch.randn(1, 16, 1, 1))
+        self.residual = torch.nn.Parameter(torch.randn(1, 16, 12, 12))
+
+    def forward(self, x, other):
+        y = self.conv(x)
+        if self.variant == "scaled":
+            out = y + x * self.scale
+        elif self.variant == "input_scaled":
+            out = y + x * other
+        elif self.variant in ("swapped", "transposed"):
+            out = x + y
+        elif self.variant == "sub_swapped":
+            out = x - y
+        elif self.variant == "mul":
+            out = x * y
+        elif self.variant == "self":
+            out = y + y
+        elif self.variant == "param_residual":
+            out = y + self.residual
+        elif self.variant == "param_scaled":
+            out = y + self.residual * self.scale
+        elif self.variant == "broadcast":
+            out = y + other
+        elif self.variant == "shared":
+            return y + x, y
+        else:
+            out = torch.sub(y, x, alpha=0.5)
+        return out if self.activation is None else self.activation(out)
+
+
+class TestConv2dEpilogueFusion(unittest.TestCase):
+    def _lowered_ops(self, model, inputs, **partitioner_kwargs):
+        graphs = vulkan_delegate_graphs(
+            lower_to_vulkan(model.eval(), inputs, **partitioner_kwargs)
+        )
+        return [op.name for graph in graphs for op in graph.chain]
+
+    def _op_names(self, model, other_sizes=(1, 16, 12, 12)):
+        inputs = (torch.randn(1, 16, 12, 12), torch.randn(other_sizes))
+        return self._lowered_ops(model, inputs)
+
+    def _conv_activation_ops(self, activation, **partitioner_kwargs):
+        model = torch.nn.Sequential(
+            torch.nn.Conv2d(16, 16, kernel_size=3, padding=1), activation
+        )
+        inputs = (torch.randn(1, 16, 12, 12),)
+        return self._lowered_ops(model, inputs, **partitioner_kwargs)
+
+    def test_fused(self):
+        for variant, activation, other_sizes in (
+            ("scaled", None, (1, 16, 12, 12)),
+            ("swapped", torch.nn.ReLU(), (1, 16, 12, 12)),
+            ("sub", torch.nn.Hardtanh(-1.0, 2.0), (1, 16, 12, 12)),
+            ("scaled", torch.nn.LeakyReLU(0.2), (1, 16, 12, 12)),
+            ("transposed", torch.nn.ReLU(), (1, 16, 12, 12)),
+            ("mul", torch.nn.ReLU(), (1, 16, 12, 12)),
+        ):
+            with self.subTest(variant=variant, activation=activation):
+                ops = self._op_names(
+                    ResidualConvModule(variant, activation), other_sizes
+                )
+                self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 1)
+                self.assertEqual(ops.count("aten.convolution.default"), 0)
+                self.assertFalse(
+                    any(
+                        op.startswith(("aten.add", "aten.sub", "aten.mul"))
+                        for op in ops
+                    )
+                )
+                self.assertFalse(any("relu" in op or "hardtanh" in op for op in ops))
+
+    def test_activation_fused_without_residual(self):
+        for activation in (
+            torch.nn.ReLU(),
+            torch.nn.ReLU6(),
+            torch.nn.Hardtanh(-1.0, 2.0),
+            torch.nn.LeakyReLU(0.2),
+        ):
+            with self.subTest(activation=activation):
+                ops = self._conv_activation_ops(activation)
+                self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 1)
+                self.assertEqual(ops.count("aten.convolution.default"), 0)
+                self.assertEqual(ops.count("et_vk.conv_with_clamp.default"), 0)
+                self.assertFalse(any("relu" in op or "hardtanh" in op for op in ops))
+
+    def test_conv1d_activation_uses_conv_with_clamp(self):
+        model = torch.nn.Sequential(
+            torch.nn.Conv1d(16, 16, kernel_size=3, padding=1, groups=16),
+            torch.nn.ReLU(),
+        )
+        ops = self._lowered_ops(model, (torch.randn(1, 16, 12),))
+        self.assertEqual(ops.count("et_vk.conv_with_clamp.default"), 1)
+        self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 0)
+
+    def test_skip_fusion_patterns(self):
+        options = {"skip_fusion_patterns": {"conv2d_with_epilogue"}}
+        ops = self._conv_activation_ops(torch.nn.ReLU(), compile_options=options)
+        self.assertEqual(ops.count("et_vk.conv_with_clamp.default"), 1)
+        self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 0)
+
+    def test_skip_fusion_patterns_rejects_invalid_values(self):
+        for value in ("conv2d_with_epilogue", {"no_such_pattern"}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                VulkanPartitioner(compile_options={"skip_fusion_patterns": value})
+
+    def test_conv_exceeding_texture_limits_stays_unfused(self):
+        model = torch.nn.Sequential(
+            torch.nn.Conv2d(16, 16, kernel_size=1), torch.nn.ReLU()
+        )
+        ops = self._lowered_ops(model, (torch.randn(1, 16, 1, 16385),))
+        self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 0)
+        self.assertEqual(ops.count("aten.convolution.default"), 0)
+
+    def test_activation_parameters(self):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        bound = graph.placeholder("bound")
+        for target, args, expected in (
+            (exir_ops.edge.aten.hardtanh.default, (x, 0.0), ("clamp", 0.0, 1.0)),
+            (
+                exir_ops.edge.aten.clamp.default,
+                (x, None, 6.0),
+                ("clamp", float("-inf"), 6.0),
+            ),
+            (exir_ops.edge.aten.clamp.default, (x, bound), None),
+        ):
+            with self.subTest(target=target, args=args):
+                node = graph.call_function(target, args)
+                self.assertEqual(activation_of(node), expected)
+
+    def test_quantized_conv_activation_uses_q8ta(self):
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        model = torch.nn.Sequential(
+            torch.nn.Conv2d(16, 16, kernel_size=3, padding=1), torch.nn.ReLU()
+        )
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
+        edge_program = quantize_and_lower_module(
+            model.eval(), (torch.randn(1, 16, 12, 12),), quantizer
+        )
+        ep = edge_program.exported_program()
+        # The conv and relu the quantized pattern replaces must not match again.
+        self.assertEqual(
+            vk_patterns.replace_all_fusable_subgraphs(ep, ep.graph_module), 1
+        )
+        self.assertEqual(op_node_count(ep.graph_module, "q8ta_conv2d.default"), 1)
+
+    def test_constant_residual_fuses_scaled_residual(self):
+        ops = self._op_names(ResidualConvModule("param_scaled"))
+        self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 1)
+        self.assertEqual(ops.count("aten.mul.Tensor"), 1)
+        self.assertEqual(ops.count("aten.add.Tensor"), 0)
+
+    def test_skipped_replacement_is_not_counted(self):
+        inputs = (torch.randn(1, 16, 12, 12), torch.randn(1, 16, 12, 12))
+        ep = export_to_edge(ResidualConvModule("param_residual"), inputs)
+        self.assertEqual(
+            vk_patterns.replace_all_fusable_subgraphs(ep, ep.graph_module), 0
+        )
+        self.assertEqual(op_node_count(ep.graph_module, "convolution.default"), 1)
+
+    def test_input_scale_stays_unfused(self):
+        ops = self._op_names(ResidualConvModule("input_scaled"), (1, 16, 1, 1))
+        self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 1)
+        self.assertEqual(ops.count("aten.mul.Tensor"), 1)
+
+    def test_not_fused(self):
+        for variant, other_sizes in (
+            ("sub_swapped", (1, 16, 12, 12)),
+            ("broadcast", (1, 16, 1, 1)),
+            ("shared", (1, 16, 12, 12)),
+            ("self", (1, 16, 12, 12)),
+            ("param_residual", (1, 16, 12, 12)),
+        ):
+            with self.subTest(variant=variant):
+                ops = self._op_names(ResidualConvModule(variant), other_sizes)
+                self.assertEqual(ops.count("et_vk.conv2d.with_epilogue"), 0)
+                self.assertEqual(ops.count("aten.convolution.default"), 1)
 
 
 class TestVulkanPasses(unittest.TestCase):
@@ -1140,6 +1335,36 @@ class TestVulkanPasses(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(emb_x + emb_y, eager_ref, atol=1e-3, rtol=1e-3))
 
+    def test_linear_q4gsw_reference_with_padded_scales_and_bias(self):
+        """make_linear_q4gsw_op pads the weight scales and the bias to a multiple
+        of 4 output channels, but not the packed weights. The reference
+        implementation must still return the unpadded output.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        import torch.nn.functional as F
+        from executorch.backends.vulkan.patterns.weight_packing_utils import (
+            pack_4bit_weight_tensor,
+        )
+
+        torch.manual_seed(0)
+        out_channels, in_channels, group_size = 6, 64, 32
+        weight = torch.randint(-8, 8, (out_channels, in_channels), dtype=torch.int8)
+        scales = torch.rand(out_channels, in_channels // group_size) + 0.5
+        bias = torch.randn(out_channels)
+        x = torch.randn(2, in_channels)
+        dq_weight = weight.float() * scales.repeat_interleave(group_size, dim=1)
+        expected = F.linear(x, dq_weight, bias)
+
+        out = torch.ops.et_vk.linear_q4gsw.default(
+            x,
+            pack_4bit_weight_tensor(weight),
+            F.pad(scales.t(), (0, 2)),
+            group_size,
+            F.pad(bias, (0, 2)),
+        )
+        self.assertEqual(out.shape, expected.shape)
+        self.assertTrue(torch.allclose(out, expected, atol=1e-4, rtol=1e-4))
+
     def test_register_param_mutation(self):
         """utils.register_param_mutation is a storage-keyed idempotency guard:
         the first call for a param returns True (proceed and record the tag), a
@@ -1277,6 +1502,75 @@ class TestVulkanPasses(unittest.TestCase):
 
         # We expect at least one custom op to be created
         self.assertGreater(custom_op_count, 0)
+
+    def test_quantized_linear_matches_only_runnable_linears(self):
+        """The quantized linear pattern matches only linears that have a Vulkan
+        custom op: 4-bit weights, with output channels in multiples of 4 for the
+        weight-only op. Other matches would be delegated without a kernel.
+        """
+        from executorch.backends.vulkan.patterns.quantized_linear import (
+            find_quantized_linear_patterns,
+            linear_anchor_nodes,
+        )
+        from torchao.quantization.granularity import PerAxis, PerGroup
+        from torchao.quantization.quant_api import (
+            Int8DynamicActivationIntxWeightConfig,
+            IntxWeightOnlyConfig,
+            quantize_,
+        )
+        from torchao.utils import unwrap_tensor_subclass
+
+        def matches(config, out_channels: int) -> List[bool]:
+            model = torch.nn.Sequential(torch.nn.Linear(64, out_channels))
+            quantize_(model, config)
+            unwrap_tensor_subclass(model)
+            program = torch.export.export(model, (torch.randn(2, 64),), strict=True)
+            ep = to_edge(
+                program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+            ).exported_program()
+            return [
+                find_quantized_linear_patterns(n) is not None
+                for n in ep.graph.nodes
+                if n.target in linear_anchor_nodes
+            ]
+
+        w4 = IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32))
+        da8w4 = Int8DynamicActivationIntxWeightConfig(
+            weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+        )
+        w8 = IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0))
+        self.assertEqual(matches(w4, 8), [True])
+        self.assertEqual(matches(w4, 6), [False])
+        self.assertEqual(matches(da8w4, 6), [True])
+        self.assertEqual(matches(w8, 8), [False])
+
+    def test_partitioner_skips_quant_ops_without_runtime_kernel(self):
+        """The Vulkan runtime implements torchao.dequantize_affine only inside
+        fused patterns. An 8-bit weight-only linear has no fused pattern, so its
+        dequantize_affine must stay outside of the Vulkan delegate.
+        """
+        from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+            VulkanPartitioner,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        model = torch.nn.Sequential(torch.nn.Linear(64, 64))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+        )
+        unwrap_tensor_subclass(model)
+        sample_inputs = (torch.randn(2, 64),)
+        edge_program = to_edge_transform_and_lower(
+            torch.export.export(model, sample_inputs, strict=True),
+            partitioner=[VulkanPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 1)
 
     def test_fuse_q8ta_linear(self):
         """Test that sequential quantized linears fuse into q8ta_linear when output quantization is present."""

@@ -115,6 +115,16 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "import_order",
+        srcs = [
+            "test_import_order.py",
+        ],
+        deps = [
+            "//executorch/exir:lib",
+        ],
+    )
+
+    python_unittest(
         name = "tensor",
         srcs = [
             "test_tensor.py",

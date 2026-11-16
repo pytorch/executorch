@@ -39,6 +39,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    PACKED_LAYOUTS,
     parse_offgraph_kv_manifest,
 )
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
@@ -198,6 +199,45 @@ def _install_small_gpu_override(active):
 
 
 _SMALL_GPU_OVERRIDE = _CompilePatch(_install_small_gpu_override)
+
+
+def _install_grouped_mm_override(active):
+    from torch._inductor.kernel import mm_grouped
+
+    original = mm_grouped.has_grouped_mm_triton_support
+
+    def has_grouped_mm_triton_support() -> bool:
+        if original():
+            return True
+        if not active():
+            return False
+        # The grouped GEMM Triton template uses TMA only on sm_90 and above;
+        # its remaining path works on sm_80. Inductor still offers the
+        # template only on sm_90 and above, and this backend allows no ATen
+        # choice, so below sm_90 a grouped GEMM has nothing to lower to.
+        return torch.cuda.is_available() and torch.cuda.get_device_capability() >= (
+            8,
+            0,
+        )
+
+    mm_grouped.has_grouped_mm_triton_support = has_grouped_mm_triton_support
+
+    def remove() -> None:
+        mm_grouped.has_grouped_mm_triton_support = original
+
+    return remove
+
+
+_GROUPED_MM_OVERRIDE = _CompilePatch(_install_grouped_mm_override)
+
+
+def _allow_grouped_mm_triton_template() -> typing.ContextManager[None]:
+    """Let Inductor offer its grouped GEMM Triton template on sm_80 and above.
+
+    Only threads inside this context get the override; other threads get the
+    original answer.
+    """
+    return _GROUPED_MM_OVERRIDE.scope()
 
 
 def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
@@ -1220,6 +1260,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_index_put_out": None,
             "aoti_torch_cuda_scatter_reduce_two_out": None,
             "aoti_torch_cuda_scatter_src_out": None,
+            "aoti_torch_cuda_masked_select": None,
+            "aoti_torch_cuda_nonzero": None,
         }
 
     @classmethod
@@ -1277,18 +1319,17 @@ class CudaBackend(AotiBackend, BackendDetails):
             ReplaceFusedSdpaWithSdpaPass(),
             ReplaceMaskedCopyWithWherePass(),
         ]
-        cell_layout = any(
-            spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
-            for spec in compile_specs
+        layout = next(
+            (
+                parse_offgraph_kv_manifest(spec.value)["layout"]
+                for spec in compile_specs
+                if spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            ),
+            "sequence",
         )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC:
-                passes.append(
-                    CheckOffGraphKVStepWidthPass(
-                        spec.value, layout="cell" if cell_layout else "sequence"
-                    )
-                )
+                passes.append(CheckOffGraphKVStepWidthPass(spec.value, layout=layout))
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
                 passes.append(
@@ -1441,9 +1482,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
                 cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
-        cell_layout = any(
+        packed_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            and parse_offgraph_kv_manifest(spec.value)["layout"] in PACKED_LAYOUTS
             for spec in compile_specs or []
         )
 
@@ -1464,6 +1505,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
+                    stack.enter_context(_allow_grouped_mm_triton_template())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.
@@ -1497,8 +1539,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         cuda_graph_timing(offload=_moved_program_tensors)
                     )
-                if cell_layout:
-                    # The cell layout's step buffers are constants the graph
+                if packed_layout:
+                    # A packed layout's step buffers are constants the graph
                     # only reads, while the runtime rewrites them before every
                     # forward. Folding them, or inlining a small one as a
                     # literal, would evaluate them at compile time -- on

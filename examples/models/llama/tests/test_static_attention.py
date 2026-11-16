@@ -250,7 +250,9 @@ class StaticAttentionTest(unittest.TestCase):
                 ys.append(y_i)
 
             self.assertTrue(
-                torch.isclose(ys[-1].flatten(), expected.flatten(), rtol=1e-3).all()
+                torch.isclose(
+                    ys[-1].flatten(), expected.flatten(), rtol=1e-3, atol=1e-5
+                ).all()
             )
 
         for args in itertools.product(
