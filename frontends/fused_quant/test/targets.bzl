@@ -3,6 +3,21 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 def define_common_targets():
 
     runtime.python_test(
+        name = "test_recipe",
+        srcs = ["test_recipe.py"],
+        preload_deps = ["//executorch/kernels/quantized:aot_lib"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:_warnings",
+            "//executorch/export:lib",
+            "//executorch/frontends/fused_quant:quantizer",
+            "//executorch/frontends/fused_quant:recipe",
+            "//executorch/runtime:runtime",
+            "//pytorch/ao:torchao",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_quantizer",
         srcs = ["test_quantizer.py"],
         deps = [

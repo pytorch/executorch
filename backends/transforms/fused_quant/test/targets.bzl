@@ -272,6 +272,20 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_passes",
+        srcs = ["test_passes.py"],
+        deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            "//executorch/backends/transforms/fused_quant:fuse_add_into_linear",
+            "//executorch/backends/transforms/fused_quant:fuse_mul_into_linear",
+            "//executorch/backends/transforms/fused_quant:passes",
+            "//executorch/backends/transforms/fused_quant:prequantize_embedding",
+            "//executorch/backends/transforms/fused_quant:split_linear_at_slices",
+            "//executorch/backends/transforms/fused_quant:to_channels_last",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_op_numerics",
         srcs = ["test_op_numerics.py"],
         deps = [
