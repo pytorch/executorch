@@ -531,41 +531,9 @@ class CudaWeightCollector:
 
             storage_key = _storage_key(fqn, device_type)
             if not is_offgraph_kv:
-                if storage_key in storages or storage_key in stored:
-                    raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
-                # Library-local constants are keyed per shared library, so
-                # only FQN weights can match an earlier method's storage.
-                library_local = _is_aoti_library_local_fqn(fqn)
-                shareable = tensor.is_cuda and not library_local
-                first = self._stored_storages.get(storage_key)
-                moved = (
-                    capture.moved_sources.get(StorageWeakRef(tensor.untyped_storage()))
-                    if shareable
-                    else None
+                self._write_or_reuse_storage(
+                    fqn, storage_key, tensor, directory, capture, storages, stored
                 )
-                if moved is not None and tensor._version != moved.moved_version:
-                    moved = None
-                written = self._written_sources.get(storage_key)
-                if (
-                    moved is not None
-                    and written is not None
-                    and written.identity == moved.identity
-                ):
-                    stored.add(storage_key)
-                elif (
-                    shareable
-                    and first is not None
-                    and _same_cuda_storage(first, tensor)
-                ):
-                    stored.add(storage_key)
-                else:
-                    storages[storage_key] = _materialize_storage(tensor, directory)
-                    if shareable:
-                        self._stored_storages.setdefault(storage_key, tensor)
-                    if moved is not None and (
-                        written is None or written.source.expired()
-                    ):
-                        self._written_sources[storage_key] = moved
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -611,6 +579,47 @@ class CudaWeightCollector:
 
         trim_host_memory()
         return CudaWeightArtifact(entries=entries, storages=storages, stored=stored)
+
+    def _write_or_reuse_storage(
+        self,
+        fqn: str,
+        storage_key: str,
+        tensor: torch.Tensor,
+        directory: str,
+        capture: _CudaWeightCapture,
+        storages: Dict[str, FileBackedData],
+        stored: Set[str],
+    ) -> None:
+        """Write ``tensor``'s storage unless an earlier method wrote the same one."""
+        if storage_key in storages or storage_key in stored:
+            raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
+        # Library-local constants are keyed per shared library, so only FQN
+        # weights can match an earlier method's storage.
+        shareable = tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
+        first = self._stored_storages.get(storage_key)
+        moved = (
+            capture.moved_sources.get(StorageWeakRef(tensor.untyped_storage()))
+            if shareable
+            else None
+        )
+        if moved is not None and tensor._version != moved.moved_version:
+            moved = None
+        written = self._written_sources.get(storage_key)
+        if (
+            moved is not None
+            and written is not None
+            and written.identity == moved.identity
+        ):
+            stored.add(storage_key)
+            return
+        if shareable and first is not None and _same_cuda_storage(first, tensor):
+            stored.add(storage_key)
+            return
+        storages[storage_key] = _materialize_storage(tensor, directory)
+        if shareable:
+            self._stored_storages.setdefault(storage_key, tensor)
+        if moved is not None and (written is None or written.source.expired()):
+            self._written_sources[storage_key] = moved
 
     def _merge_aoti_data(
         self,
