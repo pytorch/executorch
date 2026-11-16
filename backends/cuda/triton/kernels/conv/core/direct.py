@@ -322,7 +322,7 @@ def _flat_row_same_size(
 
 
 @triton.jit
-def _flat_kernel(
+def _flat_kernel(  # noqa: C901
     x_ptr,
     w_ptr,
     b_ptr,
