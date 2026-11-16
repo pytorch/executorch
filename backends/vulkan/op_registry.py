@@ -568,19 +568,6 @@ def register_quantizedequantize_cpp_ops():
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.torchao.quantize_affine.default,
-        exir_ops.edge.torchao.dequantize_affine.default,
-    ]
-)
-def register_torchao_quantize_dequantize():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_BUFFER,
-        supports_resize=True,
-    )
-
-
 # =============================================================================
 # Q8taQuantizeDequantize.cpp
 # =============================================================================
