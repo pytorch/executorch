@@ -10,6 +10,26 @@ on:
         default: ci-image:executorch-ubuntu-22.04-clang12
 
 jobs:
+  shutdown:
+    name: Session shutdown (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Test shutdown without model or native dependencies
+        run: python examples/llm_server/python/tests/test_session_runtime_shutdown.py -v
+
   docker-image:
     name: Resolve CI docker image
     uses: ./.github/workflows/_docker-image.yml
