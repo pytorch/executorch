@@ -140,6 +140,11 @@ None if runtime.is_oss else fbcode_target(
         "QNN_EXECUTOR_RUNNER": "$(location //executorch/examples/qualcomm/executor_runner:qnn_executor_runner)",
         "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
     },
+    # quantized_decomposed out variants for tests that leave a q/dq node on CPU,
+    # see :test_passes.
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":test_qnn_delegate",
     ],
