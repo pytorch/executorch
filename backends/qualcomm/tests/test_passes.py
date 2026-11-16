@@ -1669,6 +1669,31 @@ class TestPasses(unittest.TestCase):
                     expected, [op.GetOpWrapper().GetOpType() for op in ops]
                 )
 
+    def test_convert_full_like_to_full_keeps_skipped_nodes(self):
+        # A skipped full_like stays on CPU, and I64toI32 keeps its int64
+        # result only if it still finds it in the skip sets.
+        class FullLikeInt64(torch.nn.Module):
+            def forward(self, x):
+                return torch.full_like(x, 2**40, dtype=torch.int64)
+
+        module = FullLikeInt64()
+        sample_input = (torch.randn(2, 3),)
+        for skip in (
+            {"skip_node_op_set": {"aten.full_like.default"}},
+            {"skip_node_id_set": {"aten_full_like_default"}},
+        ):
+            with self.subTest(skip=skip):
+                ep = to_edge(
+                    torch.export.export(module, sample_input, strict=True)
+                ).exported_program()
+                gm = ConvertFullLikeToFull(**skip)(ep.graph_module).graph_module
+                gm = I64toI32(ep, **skip)(gm).graph_module
+                self.assertIn(
+                    exir_ops.edge.aten.full_like.default,
+                    {node.target for node in gm.graph.nodes},
+                )
+                torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+
     def test_convert_full_like_to_full(self):
         sample_input = (torch.randn(2, 3), torch.randn(2, 3))
         # An int fill on a float input must still give a float tensor.
