@@ -10,6 +10,13 @@ def define_common_targets(is_fbcode = False):
 
 
     runtime.python_library(
+        name = "export_utils",
+        srcs = ["export_utils.py"],
+        visibility = ["//executorch/..."],
+        deps = ["//caffe2:torch"],
+    )
+
+    runtime.python_library(
         name = "exported_module",
         srcs = [
             "exported_module.py",
@@ -18,6 +25,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":export_utils",
             "//caffe2:torch",
             "//executorch/exir:dynamic_shape",
             "//executorch/exir:lib",

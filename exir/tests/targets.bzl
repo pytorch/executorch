@@ -221,6 +221,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/examples/models/llama:custom_kv_cache",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
             "//executorch/extension/pybindings:portable_lib",  # @manual
+            "//executorch/test/end2end:export_utils",
         ],
     )
 

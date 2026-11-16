@@ -8,7 +8,6 @@
 
 import typing
 import unittest
-from contextlib import contextmanager
 from copy import deepcopy
 from typing import List, Optional, Tuple
 
@@ -61,6 +60,7 @@ from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from executorch.runtime import Runtime
+from executorch.test.end2end.export_utils import patch_forward
 from torch import nn
 from torch._higher_order_ops import cond as torch_cond, map as torch_map
 from torch.export import Dim, export
@@ -74,26 +74,6 @@ class WrapperModule(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         return self.fn(*args, **kwargs)
-
-
-@contextmanager
-def patch_forward(obj: torch.nn.Module, new_method):
-    """Helper method to make it easier to cleanly torch.export() a method on a
-    module that is not `forward`.
-
-    TODO(suo): upstream this to torch.export.wrapper.
-    """
-    # Save the original method
-    original_method = obj.forward
-
-    # Patch the method
-    obj.forward = new_method.__get__(obj, obj.__class__)
-
-    try:
-        yield
-    finally:
-        # Restore the original method
-        obj.forward = original_method
 
 
 class TestEmit(unittest.TestCase):

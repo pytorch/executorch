@@ -16,7 +16,7 @@ We are telling `pip install -e .` to treat `src/executorch` as the root of the `
 This allows us to perform `pip install -e .` successfully and enables the execution of the following command:
 
 ```bash
-python -c "from executorch.exir import CaptureConfig"
+python -c "from executorch.exir import EdgeCompileConfig"
 ```
 
 ## Long Term Solution
