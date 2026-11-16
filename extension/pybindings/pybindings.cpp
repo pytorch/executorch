@@ -728,38 +728,153 @@ struct RuntimeErrorScope final {
   std::unique_ptr<PendingLogs> logs_;
 };
 
+// The Python type of a call's tensor outputs. ATen bindings always return
+// torch tensors.
+enum class PortableTensorOutput { Torch, ExecuTorch };
+
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
 
-enum class PortableTensorOutput { Torch, ExecuTorch };
+constexpr char kTensorOutputWarning[] =
+    "ExecuTorch returns torch.Tensor outputs for a call whose tensor inputs "
+    "are not torch.Tensor. A future release will return ExecuTorchResult "
+    "outputs for such a call. To keep torch.Tensor outputs, pass torch.Tensor "
+    "inputs. To choose the type for every call, set "
+    "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT to torch or executorch before "
+    "importing ExecuTorch. With executorch, PyTorch is not loaded.";
 
-PortableTensorOutput& portable_tensor_output() {
-  static PortableTensorOutput output = PortableTensorOutput::Torch;
+// Set from EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT when the extension loads.
+std::optional<PortableTensorOutput>& tensor_output_override() {
+  static std::optional<PortableTensorOutput> output;
   return output;
 }
 
 void configure_portable_tensor_output() {
   const char* value = std::getenv(kTensorOutputEnvironmentVariable);
-  if (value != nullptr && std::strcmp(value, "executorch") == 0) {
-    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+  if (value == nullptr) {
     return;
   }
-  if (value != nullptr && std::strcmp(value, "torch") != 0) {
+  if (std::strcmp(value, "executorch") == 0) {
+    tensor_output_override() = PortableTensorOutput::ExecuTorch;
+    return;
+  }
+  if (std::strcmp(value, "torch") != 0) {
     throw py::value_error(
         std::string(kTensorOutputEnvironmentVariable) +
         " must be either 'torch' or 'executorch', but was '" + value + "'");
   }
-  try {
-    py::module_::import("torch");
-    (void)loaded_torch_module();
-    portable_tensor_output() = PortableTensorOutput::Torch;
-  } catch (py::error_already_set& error) {
-    if (value != nullptr || !error.matches(PyExc_ImportError)) {
-      throw;
-    }
-    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+  py::module_::import("torch");
+  tensor_output_override() = PortableTensorOutput::Torch;
+}
+
+// Points a warning at the code that called ExecuTorch rather than at
+// ExecuTorch's own Python wrappers, such as Method.execute.
+int caller_stacklevel() {
+  int level = 1;
+  for (auto frame = py::reinterpret_borrow<py::object>(
+           reinterpret_cast<PyObject*>(PyEval_GetFrame()));
+       frame && !frame.attr("f_back").is_none() &&
+       py::str(frame.attr("f_globals").attr("get")("__name__", ""))
+               .cast<std::string>()
+               .rfind("executorch.", 0) == 0;
+       frame = frame.attr("f_back")) {
+    ++level;
   }
+  return level;
+}
+
+// Whether torch is imported, importing it if it can be.
+bool torch_available() {
+  // Read and written with the GIL held. An import inside a function-local
+  // static's initializer could deadlock, since the import lets other threads
+  // run and one of them could then wait for that static while holding the GIL.
+  static bool torch_missing = false;
+  if (loaded_torch_module() == nullptr) {
+    // Checked only while torch is not loaded, so a torch imported after a call
+    // found it missing is used.
+    if (torch_missing) {
+      return false;
+    }
+    // A None in sys.modules blocks torch only until it is removed.
+    if (PyDict_GetItemString(PyImport_GetModuleDict(), "torch") == Py_None) {
+      return false;
+    }
+    try {
+      // Before Python 3.13, PyImport_ImportModule raises KeyError, not the
+      // ImportError, in a thread that waited for another thread's import.
+      py::module_::import("importlib").attr("import_module")("torch");
+    } catch (py::error_already_set& error) {
+      // As when torch was imported with ExecuTorch, a torch that fails with
+      // an ImportError, such as for a missing library, counts as missing.
+      // Any other error is reported.
+      if (!error.matches(PyExc_ImportError)) {
+        try {
+          error.value().attr("add_note")(
+              "ExecuTorch imports torch here to return torch.Tensor outputs "
+              "or to wait for CUDA work. Set "
+              "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch before "
+              "importing ExecuTorch to skip it.");
+        } catch (...) {
+          // add_note is best effort; never hide the original error.
+        }
+        throw;
+      }
+      torch_missing = true;
+      return false;
+    }
+  }
+  return true;
+}
+
+// Picks the type of a call's tensor outputs. A later release will follow the
+// call's tensor inputs, including inputs kept from earlier calls: torch.Tensor
+// if any of them is one, and ExecuTorchResult if all are other tensors. Until
+// then, a call whose type that rule would change keeps torch.Tensor outputs
+// whenever torch can be imported, as before, and warns. A call with no tensor
+// inputs returns torch.Tensor whenever torch can be imported, now and later,
+// so its type never depends on what imported torch first. Picking the type for
+// a call that returns no tensor never imports torch.
+PortableTensorOutput portable_tensor_output(
+    bool returns_tensor,
+    bool torch_input,
+    bool other_tensor_input) {
+  if (const auto& output = tensor_output_override()) {
+    return *output;
+  }
+  if (torch_input) {
+    return PortableTensorOutput::Torch;
+  }
+  if (!returns_tensor || !torch_available()) {
+    return PortableTensorOutput::ExecuTorch;
+  }
+  // Every call whose type will change warns, so Python's warning filters
+  // decide what shows: a warning hidden at one call still shows at a later one.
+  if (other_tensor_input &&
+      PyErr_WarnEx(
+          PyExc_FutureWarning, kTensorOutputWarning, caller_stacklevel()) !=
+          0) {
+    // An error filter made the warning an exception. A call that runs the
+    // method picks the type first, so it raises before the run.
+    throw py::error_already_set();
+  }
+  return PortableTensorOutput::Torch;
+}
+
+// From the declared outputs, so the type is picked before the method runs.
+// An output bound to a caller's tensor comes back as that tensor, so it does
+// not count.
+bool returns_tensor(
+    const MethodMeta& meta,
+    const std::vector<py::object>& bound_outputs = {}) {
+  for (size_t i = 0; i < meta.num_outputs(); ++i) {
+    const auto tag = meta.output_tag(i);
+    const bool bound = i < bound_outputs.size() && bound_outputs[i];
+    if (tag.ok() && tag.get() == Tag::Tensor && !bound) {
+      return true;
+    }
+  }
+  return false;
 }
 #endif
 
@@ -1221,6 +1336,39 @@ class BufferTensor final {
   std::vector<uint8_t> dim_order_;
   executorch::aten::ScalarType scalar_type_;
 };
+
+// The dtype of host data that ExecuTorchResult.from_host() is told to read as
+// `dtype`. The data comes the way results of that dtype export it: in the
+// buffer format of that dtype, which int8 shares with qint8, or, for dtypes
+// such as bfloat16 that PEP 3118 cannot describe, as unsigned integers of the
+// same width. Any other mismatch is refused, so data is never reinterpreted
+// by mistake.
+executorch::aten::ScalarType host_data_dtype(
+    executorch::aten::ScalarType buffer_type,
+    const std::string& dtype) {
+  using executorch::aten::ScalarType;
+  const auto named = scalar_type_from_name(dtype);
+  if (!named) {
+    throw py::value_error("Unsupported dtype '" + dtype + "'");
+  }
+  const char* format = python_dtype(*named).buffer_format;
+  const bool readable = format != nullptr
+      ? std::strcmp(format, python_dtype(buffer_type).buffer_format) == 0
+      : runtime::elementSize(buffer_type) == runtime::elementSize(*named) &&
+          (buffer_type == ScalarType::Byte ||
+           buffer_type == ScalarType::UInt16 ||
+           buffer_type == ScalarType::UInt32 ||
+           buffer_type == ScalarType::UInt64);
+  if (!readable) {
+    throw py::value_error(
+        "dtype " + dtype + " cannot read a buffer of " +
+        python_dtype(buffer_type).torch_name +
+        ". Pass data in the buffer format of that dtype or, for a dtype the "
+        "buffer protocol cannot describe, unsigned integers of the same "
+        "width.");
+  }
+  return *named;
+}
 
 bool is_torch_tensor(const py::handle& value) {
   static PyObject* tensor_type = nullptr;
@@ -2079,9 +2227,9 @@ py::object dlpack_output_owner(
 py::object module_aliased_torch_output(
     const executorch::aten::Tensor& tensor,
     const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
-    const std::string& method_name) {
-  if (torch_inputs.empty() ||
-      portable_tensor_output() != PortableTensorOutput::Torch ||
+    const std::string& method_name,
+    PortableTensorOutput output) {
+  if (torch_inputs.empty() || output != PortableTensorOutput::Torch ||
       tensor.nbytes() == 0) {
     return py::none();
   }
@@ -2220,6 +2368,18 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
+// Bindings built without CUDA support wait for CUDA work through torch, which
+// used to be imported with ExecuTorch. So a wait imports it, unless the
+// setting keeps torch out.
+void synchronize_device_for_call(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (tensor_output_override() != PortableTensorOutput::ExecuTorch) {
+    torch_available();
+  }
+#endif
+  synchronize_device(index);
+}
+
 // The Python boundary is synchronous, and each wait is for the whole device,
 // so one wait per device covers every tensor of a run. Before the run, another
 // library may still be writing a CUDA input on its own streams: a torch tensor,
@@ -2248,7 +2408,7 @@ void synchronize_tensor_devices(const Method& method) {
     add(method.get_output(i));
   }
   for (const auto index : devices) {
-    synchronize_device(index);
+    synchronize_device_for_call(index);
   }
 }
 
@@ -2515,9 +2675,10 @@ class PyCallerStreamScope final {
 
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
+    PortableTensorOutput output,
     bool clone = true,
     py::object owner = py::none()) {
-  if (portable_tensor_output() == PortableTensorOutput::ExecuTorch) {
+  if (output == PortableTensorOutput::ExecuTorch) {
     return py::cast(std::make_shared<PyExecuTorchResult>(
         tensor, clone, clone ? py::none() : std::move(owner)));
   }
@@ -2759,6 +2920,7 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
 
 inline py::list get_outputs_as_py_list(
     const std::vector<EValue>& outputs,
+    PortableTensorOutput output,
     bool clone_outputs = true,
     py::object owner = py::none(),
     const std::vector<py::object>& output_owners = {},
@@ -2791,9 +2953,10 @@ inline py::list get_outputs_as_py_list(
           i < handed_over.size() && handed_over[i];
       list[i] = returns_without_copy
           ? portable_tensor_result(
-                v.toTensor(), /*clone=*/false, handed_over[i])
+                v.toTensor(), output, /*clone=*/false, handed_over[i])
           : portable_tensor_result(
                 v.toTensor(),
+                output,
                 clone_outputs,
                 output_owners.empty() ? owner : output_owners[i]);
 #endif
@@ -2849,6 +3012,21 @@ struct PyBundledModule : public BundledModule {
       size_t testset_idx,
       double rtol = 1e-5,
       double atol = 1e-8) {
+    auto tensor_output = PortableTensorOutput::Torch;
+#ifndef USE_ATEN_LIB
+    {
+      const auto meta = this->method_meta(method_name);
+      THROW_IF_ERROR(
+          meta.error(),
+          "Failed to get metadata for method %s",
+          method_name.c_str());
+      // The inputs come from the bundled program, so Python passed no tensors.
+      tensor_output = portable_tensor_output(
+          returns_tensor(meta.get()),
+          /*torch_input=*/false,
+          /*other_tensor_input=*/false);
+    }
+#endif
     // Execute the method
     auto result = BundledModule::execute(method_name, testset_idx);
     if (!result.ok()) {
@@ -2857,6 +3035,7 @@ struct PyBundledModule : public BundledModule {
           "Method execution failed with status 0x%" PRIx32,
           static_cast<uint32_t>(result.error()));
     }
+    const auto& outputs = result.get();
 #ifndef USE_ATEN_LIB
     {
       const auto method = this->method(method_name);
@@ -2869,8 +3048,7 @@ struct PyBundledModule : public BundledModule {
 #endif
 
     // Convert outputs to py::list
-    const auto& outputs = result.get();
-    py::list py_outputs = get_outputs_as_py_list(outputs);
+    py::list py_outputs = get_outputs_as_py_list(outputs, tensor_output);
 
     Error status = BundledModule::verify_method_outputs(
         method_name, testset_idx, rtol, atol);
@@ -3593,9 +3771,11 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       retained[i] = std::move(new_input_owners[i]);
     }
+    auto tensor_output = PortableTensorOutput::Torch;
 #ifndef USE_ATEN_LIB
-    // The run reads inputs kept from earlier calls too, so the wait and the
-    // output owners below cover every installed input, not only this call's.
+    // The run reads inputs kept from earlier calls too, so the output type,
+    // the wait and the output owners below cover every installed input, not
+    // only this call's.
     buffer_inputs.clear();
     torch_inputs.clear();
     dlpack_inputs.clear();
@@ -3610,6 +3790,10 @@ struct PyModule final {
         dlpack_inputs.push_back(owner.dlpack);
       }
     }
+    tensor_output = portable_tensor_output(
+        returns_tensor(method_meta),
+        !torch_inputs.empty(),
+        !buffer_inputs.empty() || !dlpack_inputs.empty());
     synchronize_tensor_devices(method);
 #endif
     auto outputs = module_->execute(method_name);
@@ -3641,6 +3825,7 @@ struct PyModule final {
 #endif
     auto result = get_outputs_as_py_list(
         outputs.get(),
+        tensor_output,
         clone_outputs,
         std::move(output_owner),
         output_owners,
@@ -3652,7 +3837,7 @@ struct PyModule final {
         const auto& output = (*outputs)[i];
         if (output.isTensor()) {
           auto alias = module_aliased_torch_output(
-              output.toTensor(), torch_inputs, method_name);
+              output.toTensor(), torch_inputs, method_name, tensor_output);
           if (!alias.is_none()) {
             result[i] = std::move(alias);
           }
@@ -4633,6 +4818,18 @@ struct PyMethod final {
           "' has no outputs to return: it has not executed since its last "
           "set_inputs(), or that execution failed. Call execute() first.");
     }
+    return read_outputs(tensor_output(caller_outputs_), clone_outputs);
+  }
+
+  py::list call(const py::object& inputs, bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
+    set_inputs(inputs);
+    const auto output = tensor_output(bound_outputs_);
+    execute_installed(/*inputs_just_installed=*/true);
+    return read_outputs(output, clone_outputs);
+  }
+
+  py::list read_outputs(PortableTensorOutput output, bool clone_outputs) {
     std::vector<EValue> result(storage_->method->outputs_size());
 
     Error get_outputs_status = storage_->method->get_outputs(
@@ -4669,20 +4866,13 @@ struct PyMethod final {
     }
 
     // Retrieve outputs
-    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    py::list outputs = get_outputs_as_py_list(result, output, clone_outputs);
     for (size_t i = 0; i < caller_backed.size(); ++i) {
       if (caller_backed[i]) {
         outputs[i] = caller_backed[i];
       }
     }
     return outputs;
-  }
-
-  py::list call(const py::object& inputs, bool clone_outputs = true) {
-    ObjectLock lock(mutex_);
-    set_inputs(inputs);
-    execute_installed(/*inputs_just_installed=*/true);
-    return get_outputs(clone_outputs);
   }
 
   py::object get_attribute(const std::string& name) {
@@ -4700,18 +4890,24 @@ struct PyMethod final {
 #else
     // No execute() in this call has waited for the work that last wrote it.
     if (!attr->device().is_cpu() && attr->nbytes() != 0) {
-      synchronize_device(attr->device().index());
+      synchronize_device_for_call(attr->device().index());
     }
     // Mutable state lives in the method's planned memory. Anything else is a
     // constant, which can sit in read-only pages, so it is never returned as
     // writable: a torch tensor cannot be read-only, so torch gets a copy.
     const bool constant = attr->nbytes() != 0 &&
         !storage_->memory->owns_data(attr->const_data_ptr());
-    if (constant && portable_tensor_output() == PortableTensorOutput::Torch) {
-      return portable_tensor_result(attr.get(), /*clone=*/true);
+    // An attribute does not come from the inputs of set_inputs().
+    const auto output = portable_tensor_output(
+        /*returns_tensor=*/true,
+        /*torch_input=*/false,
+        /*other_tensor_input=*/false);
+    if (constant && output == PortableTensorOutput::Torch) {
+      return portable_tensor_result(attr.get(), output, /*clone=*/true);
     }
     auto result = portable_tensor_result(
         attr.get(),
+        output,
         /*clone=*/false,
         borrowed_output_owner(attr.get()));
     if (constant) {
@@ -4774,6 +4970,20 @@ struct PyMethod final {
 
   bool is_bound_output(size_t index) const {
     return index < bound_outputs_.size() && bool(bound_outputs_[index]);
+  }
+
+  // Uses the inputs of the last successful set_inputs(), and the outputs bound
+  // for the run that the outputs come from.
+  PortableTensorOutput tensor_output(
+      const std::vector<py::object>& bound_outputs) {
+#ifdef USE_ATEN_LIB
+    return PortableTensorOutput::Torch;
+#else
+    return portable_tensor_output(
+        returns_tensor(storage_->method->method_meta(), bound_outputs),
+        !torch_inputs_.empty(),
+        !buffer_inputs_.empty() || !dlpack_inputs_.empty());
+#endif
   }
 
   std::optional<size_t> aliased_input(size_t index) const {
@@ -4855,9 +5065,10 @@ struct PyMethod final {
     std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs;
   };
 
-  py::object aliased_torch_output(const executorch::aten::Tensor& tensor) {
-    if (torch_inputs_.empty() ||
-        portable_tensor_output() != PortableTensorOutput::Torch ||
+  py::object aliased_torch_output(
+      const executorch::aten::Tensor& tensor,
+      PortableTensorOutput output) {
+    if (torch_inputs_.empty() || output != PortableTensorOutput::Torch ||
         tensor.nbytes() == 0) {
       return py::none();
     }
@@ -4909,7 +5120,8 @@ struct PyMethod final {
   // result stays independent.
   std::optional<py::object> hand_over_device_output(
       size_t index,
-      const executorch::aten::Tensor& tensor) {
+      const executorch::aten::Tensor& tensor,
+      PortableTensorOutput output) {
     const auto slot = device_buffer_slot(tensor);
     if (!slot) {
       return std::nullopt;
@@ -4925,10 +5137,11 @@ struct PyMethod final {
         std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
     const std::shared_ptr<void> memory(holder, buffer->data());
     py::object result;
-    if (portable_tensor_output() == PortableTensorOutput::Torch) {
+    if (output == PortableTensorOutput::Torch) {
       auto* retained = new std::shared_ptr<void>(memory);
       result = portable_tensor_result(
           tensor,
+          output,
           /*clone=*/false,
           py::capsule(retained, [](void* pointer) {
             delete static_cast<std::shared_ptr<void>*>(pointer);
@@ -5109,6 +5322,7 @@ struct PyMethod final {
 
   py::list get_outputs_as_py_list(
       const std::vector<EValue>& outputs,
+      PortableTensorOutput output,
       bool clone_outputs = true) {
     const auto outputs_size = outputs.size();
     py::list list(outputs_size);
@@ -5143,13 +5357,14 @@ struct PyMethod final {
           continue;
         }
         if (clone_outputs) {
-          if (const auto handed = hand_over_device_output(i, v.toTensor())) {
+          if (const auto handed =
+                  hand_over_device_output(i, v.toTensor(), output)) {
             list[i] = *handed;
             continue;
           }
         }
         if (!clone_outputs) {
-          auto alias = aliased_torch_output(v.toTensor());
+          auto alias = aliased_torch_output(v.toTensor(), output);
           if (!alias.is_none()) {
             list[i] = std::move(alias);
             continue;
@@ -5157,6 +5372,7 @@ struct PyMethod final {
         }
         list[i] = portable_tensor_result(
             v.toTensor(),
+            output,
             clone_outputs,
             clone_outputs && v.toTensor().device().is_cpu()
                 ? py::none()
@@ -5447,6 +5663,15 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
   return result;
 }
 
+auto refuse_scalar_conversion(const char* problem) {
+  return [problem](const PyExecuTorchResult&) -> py::object {
+    throw py::type_error(
+        std::string("ExecuTorchResult ") + problem +
+        ". Convert it first, for example with numpy.asarray(result) or "
+        "torch.from_dlpack(result).");
+  };
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -5491,9 +5716,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #else
   configure_portable_tensor_output();
   m.attr("_uses_aten") = false;
-  m.attr("_tensor_output") =
-      portable_tensor_output() == PortableTensorOutput::Torch ? "torch"
-                                                              : "executorch";
+  const auto& tensor_output = tensor_output_override();
+  m.attr("_tensor_output") = !tensor_output
+      ? py::object(py::none())
+      : py::str(
+            *tensor_output == PortableTensorOutput::Torch ? "torch"
+                                                          : "executorch");
 #endif
   py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
       m,
@@ -5559,10 +5787,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "Return a copy of this result in CPU memory.")
       .def_static(
           "from_host",
-          [](const py::object& source, int device_index) {
+          [](const py::object& source,
+             int device_index,
+             const std::optional<std::string>& dtype) {
             if (py::isinstance<PyExecuTorchResult>(source)) {
-              return source.cast<std::shared_ptr<PyExecuTorchResult>>()
-                  ->to_device(device_index);
+              const auto result =
+                  source.cast<std::shared_ptr<PyExecuTorchResult>>();
+              if (dtype && *dtype != result->dtype()) {
+                throw py::value_error(
+                    "dtype " + *dtype + " does not match the result's dtype " +
+                    result->dtype());
+              }
+              return result->to_device(device_index);
             }
             const BufferTensor host(source);
             return PyExecuTorchResult::from_host(
@@ -5571,14 +5807,26 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
                     host.sizes().begin(), host.sizes().end()),
                 std::vector<executorch::aten::StridesType>(
                     host.strides().begin(), host.strides().end()),
-                host.scalar_type(),
+                dtype ? host_data_dtype(host.scalar_type(), *dtype)
+                      : host.scalar_type(),
                 device_index);
           },
           py::arg("source"),
           py::arg("device_index") = 0,
+          py::kw_only(),
+          py::arg("dtype") = py::none(),
           "Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA "
-          "device, for use as a method input. Requires bindings built with "
-          "CUDA support.")
+          "device, for use as a method input. dtype, such as \"bfloat16\", "
+          "is the dtype of the copy, for data that comes the way results of "
+          "that dtype export it: for dtypes the buffer protocol cannot "
+          "describe, as unsigned integers of the same width. Requires "
+          "bindings built with CUDA support.")
+      // Python would otherwise treat a result as always true, and int() and
+      // float() would parse its bytes as text.
+      .def("__bool__", refuse_scalar_conversion("has no truth value"))
+      .def("__int__", refuse_scalar_conversion("cannot be converted to int"))
+      .def(
+          "__float__", refuse_scalar_conversion("cannot be converted to float"))
       .def("__repr__", &PyExecuTorchResult::repr);
 #ifndef USE_ATEN_LIB
   py::class_<

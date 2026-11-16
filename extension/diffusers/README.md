@@ -1,9 +1,10 @@
 # Diffusers
 
 This directory provides experimental export and Python runtime support for
-Hugging Face checkpoints using `StableDiffusionPipeline` or
-`StableDiffusionXLPipeline`. The exported PTE stores the text encoder, denoiser
-and VAE methods together with the metadata needed by the runner.
+Hugging Face checkpoints using `StableDiffusionPipeline`,
+`StableDiffusionXLPipeline`, or `FluxPipeline`. The exported PTE stores
+the text encoder, denoiser and VAE methods together with the metadata needed
+by the runner.
 
 All Python APIs in this package are experimental and may change without notice.
 
@@ -30,6 +31,9 @@ python -m executorch.export.huggingface.diffusers.export \
 ```
 
 Use `stabilityai/stable-diffusion-xl-base-1.0` to export SDXL.
+
+Use `black-forest-labs/FLUX.1-schnell` or `black-forest-labs/FLUX.1-dev` to
+export FLUX.
 
 ### Run
 
