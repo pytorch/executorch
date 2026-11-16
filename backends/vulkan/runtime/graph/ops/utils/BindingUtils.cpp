@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 namespace vkcompute {
 
 uint32_t bind_values_to_descriptor_set(

@@ -10,6 +10,11 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <stddef.h>
+#include <stdint.h>
+#include <mutex>
+#include <vector>
+
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
@@ -20,6 +25,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
+
+#include "vulkan/vulkan_core.h"
 
 namespace vkcompute {
 namespace vkapi {

@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QPackUtils.h>
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 namespace vkcompute {
 
 void pack4(const uint8_t* w_ptr, uint8_t* b_ptr, uint32_t N, uint32_t K) {

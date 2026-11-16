@@ -8,6 +8,12 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <string.h>
+#include <memory>
+
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>

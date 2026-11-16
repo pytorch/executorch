@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/SymInt.h>
 
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
 namespace vkcompute {
 
 SymInt::SymInt(api::Context* context_p, const int32_t val)

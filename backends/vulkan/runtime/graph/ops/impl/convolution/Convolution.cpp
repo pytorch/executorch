@@ -8,6 +8,20 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 
+#include <stdint.h>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv1d/Conv1d.h>

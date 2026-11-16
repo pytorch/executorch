@@ -8,8 +8,10 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <stdint.h>
 #include <string>
 
 namespace vkcompute {

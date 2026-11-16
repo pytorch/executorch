@@ -8,6 +8,15 @@
 
 #pragma once
 
+#include <functional>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>

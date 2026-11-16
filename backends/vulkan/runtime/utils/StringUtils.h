@@ -9,6 +9,7 @@
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
 
+#include <stddef.h>
 #include <ostream>
 #include <sstream>
 #include <string>

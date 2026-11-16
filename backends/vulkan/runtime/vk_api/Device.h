@@ -14,8 +14,12 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string>
 #include <vector>
+
+#include "vulkan/vulkan_core.h"
 
 namespace vkcompute {
 namespace vkapi {

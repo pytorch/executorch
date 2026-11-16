@@ -8,6 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv1d/Conv1d.h>
 
+#include <stdint.h>
+#include <string>
+
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv1d/Conv1dDirect.h>

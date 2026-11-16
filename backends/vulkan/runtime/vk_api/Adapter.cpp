@@ -12,9 +12,18 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <algorithm>
+#include <iterator>
 #include <iomanip>
 #include <sstream>
 #include <utility>
+
+#include <executorch/backends/vulkan/runtime/vk_api/AdapterCapabilityOverrides.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Device.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 
 namespace vkcompute {
 namespace vkapi {

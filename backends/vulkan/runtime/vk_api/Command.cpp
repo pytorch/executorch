@@ -6,10 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Command.h>
 
+#include <stdint.h>
+#include <vector>
 #include <mutex>
+
+#include "vulkan/vulkan_core.h"
 
 namespace vkcompute {
 namespace vkapi {

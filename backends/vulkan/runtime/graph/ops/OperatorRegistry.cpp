@@ -8,6 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <utility>
+
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+
 namespace vkcompute {
 
 bool OperatorRegistry::has_op(const std::string& name) {

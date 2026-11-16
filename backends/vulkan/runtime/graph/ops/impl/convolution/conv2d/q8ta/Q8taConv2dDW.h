@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <stdint.h>
+
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QuantizationConfig.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 

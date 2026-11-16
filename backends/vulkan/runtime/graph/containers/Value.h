@@ -10,6 +10,16 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <stdint.h>
+#include <memory>
+#include <new>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>

@@ -8,7 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 
+#include <utility>
 #include <sstream>
+
+#include <executorch/backends/vulkan/runtime/utils/StringUtils.h>
 
 #ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
 #ifndef _GNU_SOURCE

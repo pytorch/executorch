@@ -8,6 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 
+#include <string>
+
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {

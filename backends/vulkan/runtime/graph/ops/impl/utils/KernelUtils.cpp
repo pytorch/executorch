@@ -8,6 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 namespace vkcompute {
 
 utils::ivec2 make_ivec2_from_list(ComputeGraph& graph, ValueRef vref) {

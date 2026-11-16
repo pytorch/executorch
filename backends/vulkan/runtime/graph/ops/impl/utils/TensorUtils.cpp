@@ -8,6 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
+#include <stddef.h>
+#include <algorithm>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+
 namespace vkcompute {
 
 //

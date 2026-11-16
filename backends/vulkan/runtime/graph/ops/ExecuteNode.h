@@ -8,6 +8,12 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <functional>
+#include <string>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
