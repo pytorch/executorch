@@ -6,12 +6,18 @@
 
 # pyre-strict
 
+import copy
 from typing import Any, Callable, Dict, final, List, Optional, Tuple
 
 import executorch.backends.vulkan.utils as vk_utils
 
 import torch
-from executorch.backends.vulkan.op_registry import OpFeatures, OpKey
+from executorch.backends.vulkan.op_registry import (
+    allow_node,
+    OpFeatures,
+    OpKey,
+    vulkan_supported_ops,
+)
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -24,6 +30,30 @@ def _arange_bounds_are_static(node: torch.fx.Node) -> bool:
     return not any(isinstance(arg, torch.fx.Node) for arg in node.args[:3])
 
 
+def _webgpu_features(
+    target: OpKey,
+    check: Callable[[torch.fx.Node, Callable[[torch.fx.Node], bool]], bool],
+) -> OpFeatures:
+    """A copy of the Vulkan features of `target` whose input check is
+    `check(node, vulkan_check)`."""
+    vulkan_features = vulkan_supported_ops[target]
+    vulkan_check = vulkan_features.are_node_inputs_supported_fn or allow_node
+    features = copy.copy(vulkan_features)
+    features.are_node_inputs_supported_fn = lambda node: check(node, vulkan_check)
+    return features
+
+
+def _layer_norm_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # The kernel normalizes over the last dim only; leading normalized dims
+    # are allowed only when they are 1.
+    normalized_shape = node.args[1]
+    if not isinstance(normalized_shape, (list, tuple)):
+        return False
+    return all(d == 1 for d in normalized_shape[:-1]) and vulkan_check(node)
+
+
 # Ops whose WebGPU kernels cover less than the Vulkan registry advertises, so the
 # unsupported forms stay on CPU instead of failing at delegate init.
 _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
@@ -33,7 +63,14 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
         inputs_dtypes={torch.float32, torch.int32, torch.int64},
         are_node_inputs_supported_fn=_arange_bounds_are_static,
     ),
+    exir_ops.edge.aten.native_layer_norm.default: _webgpu_features(
+        exir_ops.edge.aten.native_layer_norm.default, _layer_norm_check
+    ),
 }
+
+
+# Vulkan fusion patterns whose fused ops the WebGPU runtime does not implement.
+_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue"}
 
 
 @final
@@ -48,6 +85,11 @@ class WebGPUPartitioner(Partitioner):
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
     ) -> None:
+        compile_options = dict(compile_options or {})
+        compile_options["skip_fusion_patterns"] = {
+            *compile_options.get("skip_fusion_patterns", ()),
+            *_WEBGPU_SKIP_FUSION_PATTERNS,
+        }
         self._vulkan_partitioner = VulkanPartitioner(
             compile_options=compile_options,
             operator_blocklist=operator_blocklist,

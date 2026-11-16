@@ -1,6 +1,8 @@
 ## Summary
 [Spark-X2.5](https://huggingface.co/collections/XHToken/spark-x25) is a compact, efficient general-purpose language model series developed by [XHToken](https://github.com/XHToken/Spark-X2.5), available in two variants — 1.7B and 4B. The models use a hybrid attention architecture that combines one full-attention layer with three sliding-window attention layers, natively supporting context windows of up to 1M tokens and 200+ languages.
 
+[Spark-X2.6](https://huggingface.co/XHToken/Spark-X2.6-1.7B) (1.7B and 4B) shares the same architecture and export flow; use `+base.model_class="spark_x2_6_1_7b"` / `"spark_x2_6_4b"` with `config/spark_x2_6_1_7b_config.json` / `config/spark_x2_6_4b_config.json`.
+
 ## Architecture highlights
 - **Hybrid attention**: 3 sliding-window attention layers + 1 full-attention layer (repeating)
 - **Per-layer-type RoPE**: full-attention layers use `rope_theta=5M, partial_rotary_factor=0.25`; sliding-attention layers use `rope_theta=10K, partial_rotary_factor=1.0`

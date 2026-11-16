@@ -542,7 +542,27 @@ class GgmlExecutable final : public EngineExecutable {
             "' may only feed linear or embedding weights, not '" + node.target +
             "'");
       }
+      if (op == "aten.linear.default" &&
+          !options_.allow_activation_quant_for_weight_only &&
+          !has_dequantized_input(node)) {
+        throw std::runtime_error(
+            "ggml: weight-only quantized linear '" + node.name +
+            "' needs allow_activation_quant_for_weight_only, since ggml "
+            "quantizes its activations");
+      }
     }
+  }
+
+  bool has_dequantized_input(const Node& linear) const {
+    const NamedArgument* input = find_arg(linear, "input", 0);
+    if (input == nullptr || input->arg.kind() != ArgKind::Tensor) {
+      return false;
+    }
+    const NodeId producer =
+        method_.graph.value(input->arg.as_tensor().id).producer_id;
+    return valid(producer) &&
+        op_key(method_.graph.node(producer).target) ==
+        "torchao.dequantize_affine.default";
   }
 
   // Converters read some dtypes through typed pointers, so the package's bytes

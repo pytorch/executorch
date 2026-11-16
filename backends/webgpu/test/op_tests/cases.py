@@ -1330,6 +1330,14 @@ def _layer_norm_suite() -> WebGPUTestSuite:
                 construct={"normalized_shape": 1024},
                 inputs=(InputSpec(shape=(1, 8, 1024), gen=_ln_ramp),),
             ),
+            # Built at 128 rows, run at 125.
+            Case(
+                name="dynamic_rows_128_to_125",
+                construct={"normalized_shape": 512},
+                export_inputs=(InputSpec(shape=(1, 128, 512), gen=_ln_ramp),),
+                inputs=(InputSpec(shape=(1, 125, 512), gen=_ln_ramp),),
+                dynamic_shapes=({1: torch.export.Dim("ln_rows", min=1, max=128)},),
+            ),
         ],
         atol=1e-4,
         rtol=1e-3,

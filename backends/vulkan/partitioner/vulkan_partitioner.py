@@ -397,6 +397,18 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
             compile_specs.append(CompileSpec(key, value.to_bytes(8, "little")))
             continue
 
+        if key == "skip_fusion_patterns":
+            if (
+                isinstance(value, str)
+                or not set(value) <= vk_patterns.fusable_patterns.keys()
+            ):
+                raise ValueError(
+                    "skip_fusion_patterns must be a collection of pattern names "
+                    f"from {sorted(vk_patterns.fusable_patterns)}, got {value!r}"
+                )
+            compile_specs.append(CompileSpec(key, ",".join(sorted(value)).encode()))
+            continue
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
@@ -516,7 +528,8 @@ class VulkanPartitioner(Partitioner):
 
         # Get all fusable subgraphs from fuse_patterns
         fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
-            exported_program.graph_module
+            exported_program.graph_module,
+            self.options.get("skip_fusion_patterns", ()),
         )
 
         # small_texture_limits opts into the conservative 3D texture limit that is

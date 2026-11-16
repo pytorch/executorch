@@ -21,7 +21,9 @@
 #include "test_utils.h"
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <utility>
 
 //
 // SDPA Mode Enum
@@ -819,6 +821,31 @@ TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_s) {
   test_vulkan_general_sdpa(1, 2, 5, 4, 32, false);
 }
 
+// Non-aligned L and D are width dims, so their buffer rows carry padding
+TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_l_and_d) {
+  for (const bool has_bias : {false, true}) {
+    for (const int kv_seq_len : {1, 5, 7}) {
+      for (const int head_dim : {3, 6, 8}) {
+        SCOPED_TRACE(
+            ::testing::Message()
+            << "bias=" << has_bias << " L=" << kv_seq_len << " D=" << head_dim);
+        test_vulkan_general_sdpa(1, 2, 5, kv_seq_len, head_dim, has_bias);
+      }
+    }
+  }
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_l_and_d_fp16) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/2,
+      /*q_seq_len=*/5,
+      /*kv_seq_len=*/7,
+      /*head_dim=*/6,
+      /*has_bias=*/true,
+      /*dtype=*/at::kHalf);
+}
+
 // Large number of heads
 TEST(VulkanGeneralSDPATest, test_general_sdpa_many_heads) {
   test_vulkan_general_sdpa(1, 8, 4, 8, 32, false);
@@ -891,4 +918,165 @@ TEST(VulkanSDPATest, test_sdpa_op_gqa_group4) {
 
   test_vulkan_sdpa(
       0, {5, 1, 1, 1, 1, 3, 1}, head_dim, num_heads, num_kv_heads, 1);
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_unaligned_head_dim) {
+  const int head_dim = 6;
+  const int num_heads = 4;
+  const int num_kv_heads = 2;
+
+  test_vulkan_sdpa(0, {3, 1, 1, 2}, head_dim, num_heads, num_kv_heads, 1);
+}
+
+// q, k and v arrive with NaN in their head_dim padding, as when the ops that
+// produce them leave padding unwritten. Only the logical head_dim may be read.
+void test_vulkan_sdpa_ignores_head_dim_padding(const int seq_len) {
+  using namespace vkcompute;
+  const int64_t head_dim = 6;
+  const int64_t num_heads = 2;
+  const int64_t num_kv_heads = 1;
+  const int64_t max_seq_len = 8;
+  const std::vector<int64_t> q_sizes = {1, seq_len, num_heads, head_dim};
+  const std::vector<int64_t> kv_sizes = {1, seq_len, num_kv_heads, head_dim};
+  const std::vector<int64_t> cache_sizes = {
+      1, max_seq_len, num_kv_heads, head_dim};
+
+  ComputeGraph graph(GraphConfig{});
+  // Each input is a view of a buffer that holds its row padding explicitly.
+  const auto add_padded_input = [&](const std::vector<int64_t>& sizes) {
+    std::vector<int64_t> padded_sizes = sizes;
+    padded_sizes.back() = utils::align_up_4(head_dim);
+    const IOValueRef padded =
+        graph.add_input_tensor(padded_sizes, vkapi::kFloat, utils::kBuffer);
+    return std::make_pair(
+        padded, graph.add_tensor_view(padded.value, sizes, {0, 1, 2, 3}));
+  };
+  const auto [q_padded, r_q] = add_padded_input(q_sizes);
+  const auto [k_padded, r_k] = add_padded_input(kv_sizes);
+  const auto [v_padded, r_v] = add_padded_input(kv_sizes);
+  const ValueRef r_k_cache =
+      graph.add_tensor(cache_sizes, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_v_cache =
+      graph.add_tensor(cache_sizes, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_input_pos = graph.add_symint(0);
+  const ValueRef r_out =
+      graph.add_tensor(q_sizes, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_dummy_out =
+      graph.add_tensor({1}, vkapi::kFloat, utils::kBuffer);
+
+  VK_GET_OP_FN("update_cache.default")
+  (graph, {r_k, r_k_cache, r_input_pos, r_dummy_out});
+  VK_GET_OP_FN("update_cache.default")
+  (graph, {r_v, r_v_cache, r_input_pos, r_dummy_out});
+  VK_GET_OP_FN("llama.custom_sdpa.default")
+  (graph,
+   {
+       r_q,
+       r_k_cache,
+       r_v_cache,
+       r_input_pos,
+       kDummyValueRef, // attn_mask
+       kDummyValueRef, // dropout_p
+       kDummyValueRef, // is_causal
+       kDummyValueRef, // scale
+       r_out,
+   });
+  const ValueRef staging_out = graph.set_output_tensor(r_out);
+  graph.prepare();
+  graph.prepack();
+
+  const auto options = at::device(at::kCPU).dtype(at::kFloat);
+  const at::Tensor q = at::rand(q_sizes, options);
+  const at::Tensor k = at::rand(kv_sizes, options);
+  const at::Tensor v = at::rand(kv_sizes, options);
+  const auto copy_with_nan_padding = [&](const IOValueRef& padded,
+                                         const at::Tensor& x) {
+    const at::Tensor data = at::constant_pad_nd(
+        x, {0, utils::align_up_4(head_dim) - head_dim}, NAN);
+    graph.maybe_cast_and_copy_into_staging(
+        padded.staging, data.const_data_ptr(), data.numel(), vkapi::kFloat);
+  };
+  copy_with_nan_padding(q_padded, q);
+  copy_with_nan_padding(k_padded, k);
+  copy_with_nan_padding(v_padded, v);
+  graph.execute();
+
+  at::Tensor vk_out = at::empty(q_sizes, options);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel(), vkapi::kFloat);
+
+  at::Tensor k_cache = at::zeros(cache_sizes, options);
+  at::Tensor v_cache = at::zeros(cache_sizes, options);
+  const at::Tensor reference_out = sdpa_reference_impl(
+      q, k, v, k_cache, v_cache, 0, seq_len, {}, 0.0, true, {});
+  EXPECT_TRUE(at::allclose(reference_out, vk_out));
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_ignores_head_dim_padding) {
+  // A single token uses the cooperative attention kernel; more use the tiled
+  // one.
+  for (const int seq_len : {1, 3}) {
+    SCOPED_TRACE(::testing::Message() << "seq_len=" << seq_len);
+    test_vulkan_sdpa_ignores_head_dim_padding(seq_len);
+  }
+}
+
+// Fused SDPA counterpart of test_vulkan_sdpa_ignores_head_dim_padding.
+TEST(VulkanSDPATest, test_general_sdpa_ignores_head_dim_padding) {
+  using namespace vkcompute;
+  const int64_t head_dim = 6;
+  const int64_t padded_head_dim = utils::align_up_4(head_dim);
+  const std::vector<int64_t> q_sizes = {1, 2, 3, head_dim};
+  const std::vector<int64_t> kv_sizes = {1, 2, 5, head_dim};
+
+  ComputeGraph graph(GraphConfig{});
+  // Each input is a view of a buffer that holds its row padding explicitly.
+  const auto add_padded_input = [&](const std::vector<int64_t>& sizes) {
+    std::vector<int64_t> padded_sizes = sizes;
+    padded_sizes.back() = padded_head_dim;
+    const IOValueRef padded =
+        graph.add_input_tensor(padded_sizes, vkapi::kFloat, utils::kBuffer);
+    return std::make_pair(
+        padded, graph.add_tensor_view(padded.value, sizes, {0, 1, 2, 3}));
+  };
+  const auto [q_padded, r_q] = add_padded_input(q_sizes);
+  const auto [k_padded, r_k] = add_padded_input(kv_sizes);
+  const auto [v_padded, r_v] = add_padded_input(kv_sizes);
+  const ValueRef r_out =
+      graph.add_tensor(q_sizes, vkapi::kFloat, utils::kBuffer);
+
+  VK_GET_OP_FN("et_vk.sdpa.default")
+  (graph,
+   {
+       r_q,
+       r_k,
+       r_v,
+       kDummyValueRef, // attn_mask
+       kDummyValueRef, // scale
+       r_out,
+   });
+  const ValueRef staging_out = graph.set_output_tensor(r_out);
+  graph.prepare();
+  graph.prepack();
+
+  const auto options = at::device(at::kCPU).dtype(at::kFloat);
+  const at::Tensor q = at::rand(q_sizes, options);
+  const at::Tensor k = at::rand(kv_sizes, options);
+  const at::Tensor v = at::rand(kv_sizes, options);
+  const auto copy_with_nan_padding = [&](const IOValueRef& padded,
+                                         const at::Tensor& x) {
+    const at::Tensor data =
+        at::constant_pad_nd(x, {0, padded_head_dim - head_dim}, NAN);
+    graph.maybe_cast_and_copy_into_staging(
+        padded.staging, data.const_data_ptr(), data.numel(), vkapi::kFloat);
+  };
+  copy_with_nan_padding(q_padded, q);
+  copy_with_nan_padding(k_padded, k);
+  copy_with_nan_padding(v_padded, v);
+  graph.execute();
+
+  at::Tensor vk_out = at::empty(q_sizes, options);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel(), vkapi::kFloat);
+  EXPECT_TRUE(at::allclose(general_sdpa_reference_impl(q, k, v), vk_out));
 }

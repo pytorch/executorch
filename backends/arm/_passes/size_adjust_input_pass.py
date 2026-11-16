@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
 from executorch.backends.arm.tosa.specification import get_context_shape_env
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -383,7 +384,7 @@ class SizeAdjustInputPass(ArmPass):
                 # symints with shared sub-expressions get hash-consed into
                 # one subgraph. Plain ints pass through unchanged.
                 flat = [a for args in slice_args for a in args]
-                materialized = iter(graph.materialize_symints(flat))
+                materialized = iter(materialize_symints(graph, flat))
                 # Pop exactly len(args) values from the materialized iterator
                 # and pack them back into a tuple -- regroups the flat list
                 # of lifted values into the original (dim, start, end) shape.

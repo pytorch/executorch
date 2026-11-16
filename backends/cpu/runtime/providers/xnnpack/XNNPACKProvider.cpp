@@ -6,7 +6,12 @@
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
+#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <xnnpack.h>
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+#include "src/xnnpack/subgraph.h" // @manual
+#endif
 
 #include <algorithm>
 #include <array>
@@ -14,12 +19,16 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
+using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -38,6 +47,17 @@ Error check(xnn_status status, const char* operation) {
       return cpu_xnn_error;                                      \
     }                                                            \
   } while (false)
+
+bool check_profiling(Error error, const char* operation) {
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "CPU XNNPACK profiling %s failed: %u",
+        operation,
+        static_cast<unsigned int>(error));
+  }
+  return error == Error::Ok;
+}
 
 bool constant(const ptn::Value& value) {
   return value.role == ptn::ValueRole::Parameter ||
@@ -228,9 +248,28 @@ class XNNState {
     CPU_XNN_CHECK(xnn_create_workspace(&workspace));
     return Error::Ok;
   }
+  // Runtime creation packs these copies and never reads them again.
+  Result<Buffer> allocate_packing_source(size_t bytes) {
+    auto storage = allocate_buffer(packing_sources_, bytes);
+    if (storage.ok()) {
+      packing_source_bytes_ += storage->readable_bytes;
+    }
+    return storage;
+  }
+  size_t release_packing_sources() {
+    converted_weights.clear();
+    packing_sources_.reset();
+    return std::exchange(packing_source_bytes_, 0);
+  }
   std::map<std::pair<ptn::ValueId, bool>, Buffer> converted_weights;
+  /// Numbers ETDump operator names uniquely across the provider's regions.
+  std::unordered_map<std::string, uint32_t> operator_counts;
   xnn_workspace_t workspace = nullptr;
   xnn_weights_cache_t cache = nullptr;
+
+ private:
+  extension::MallocMemoryAllocator packing_sources_;
+  size_t packing_source_bytes_ = 0;
 };
 
 class XNNExecutable final : public Executable {
@@ -315,13 +354,27 @@ class XNNExecutable final : public Executable {
         return error;
       }
     }
+    uint32_t runtime_flags = 0;
+#ifdef ET_EVENT_TRACER_ENABLED
+    auto* tracer = context_.execution.event_tracer;
+    if (tracer &&
+        tracer->event_tracer_profiling_level() >
+            EventTracerProfilingLevel::kProfileMethodOnly) {
+      runtime_flags |= XNN_FLAG_BASIC_PROFILING;
+    }
+#endif
     CPU_XNN_CHECK(xnn_create_runtime_v4(
         subgraph_,
         state_.cache,
         state_.workspace,
         context_.execution.threadpool,
-        0,
+        runtime_flags,
         &runtime_));
+    if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
+      profiling_ = check_profiling(
+          profiler_.initialize(runtime_, &state_.operator_counts),
+          "initialization");
+    }
     return Error::Ok;
   }
 
@@ -340,6 +393,11 @@ class XNNExecutable final : public Executable {
           "XNNPACK inferred a different semantic shape for %s",
           context_.graph.value(binding.id).name.c_str());
     }
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+    if (profiling_) {
+      check_profiling(describe_operators(), "metadata");
+    }
+#endif
     return Error::Ok;
   }
 
@@ -362,18 +420,66 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  Error run(const ExecutionContext&) override {
+  Error run(const ExecutionContext& context) override {
+    // Closes a session left open by a caller that skipped submit_trace.
+    submit_trace();
     ET_CHECK_OR_RETURN_ERROR(
         bound_, InvalidState, "XNNPACK requires a successful bind");
     // Shared workspace growth can relocate another region's internal values.
     CPU_XNN_CHECK(
         xnn_setup_runtime_v2(runtime_, external_.size(), external_.data()));
+    tracing_ = profiling_ &&
+        check_profiling(profiler_.start(context.event_tracer), "start");
     CPU_XNN_CHECK(xnn_invoke_runtime(runtime_));
     return Error::Ok;
   }
 
+  void submit_trace() override {
+    if (tracing_) {
+      tracing_ = false;
+      check_profiling(profiler_.end(), "end");
+    }
+  }
+
  private:
   friend const XNNOp* find_op(std::string_view target);
+
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  // Reads XNNPACK's internal runtime, which the public API does not expose.
+  // xnn_get_runtime_profiling_info reports names and timings for opdata with a
+  // primary operator, in opdata order; this must apply the same filter.
+  Error describe_operators() {
+    std::vector<std::string> shapes;
+    for (size_t index = 0; index < runtime_->num_ops; ++index) {
+      const auto& op = runtime_->opdata[index];
+      if (op.operator_objects[0] != nullptr) {
+        shapes.push_back(
+            "{\"inputs\":" + value_shapes(op.inputs, op.num_inputs) +
+            ",\"outputs\":" + value_shapes(op.outputs, op.num_outputs) + "}");
+      }
+    }
+    return profiler_.set_operator_metadata(std::move(shapes));
+  }
+
+  std::string value_shapes(const uint32_t* ids, uint32_t count) const {
+    std::string text = "[";
+    for (uint32_t index = 0; index < count; ++index) {
+      text += index ? "," : "";
+      if (ids[index] == XNN_INVALID_VALUE_ID ||
+          ids[index] >= runtime_->num_values) {
+        text += "null";
+        continue;
+      }
+      const auto& shape = runtime_->values[ids[index]].shape;
+      text += "[";
+      for (size_t dim = 0; dim < shape.num_dims; ++dim) {
+        text += (dim ? "," : "") + std::to_string(shape.dim[dim]);
+      }
+      text += "]";
+    }
+    return text + "]";
+  }
+#endif
 
   std::vector<size_t> dimensions(ptn::ValueId id) const {
     const auto& sizes = context_.graph.value(id).tensor_meta().sizes;
@@ -470,8 +576,7 @@ class XNNExecutable final : public Executable {
       if (cached != state_.converted_weights.end()) {
         packed = static_cast<const float*>(cached->second.data);
       } else {
-        auto storage = allocate_buffer(
-            context_.allocator,
+        auto storage = state_.allocate_packing_source(
             tensor_bytes(context_.graph.value(weight)).get());
         if (!storage.ok()) {
           return storage.error();
@@ -931,8 +1036,7 @@ class XNNExecutable final : public Executable {
         : arg(node, 2).as_tensor().id;
     if (bias != XNN_INVALID_VALUE_ID &&
         dimensions(bias) != std::vector<size_t>{channels}) {
-      auto broadcast =
-          allocate_buffer(context_.allocator, channels * sizeof(float));
+      auto broadcast = state_.allocate_packing_source(channels * sizeof(float));
       if (!broadcast.ok()) {
         return broadcast.error();
       }
@@ -1104,6 +1208,9 @@ class XNNExecutable final : public Executable {
   bool bound_ = false;
   std::vector<Binding> bindings_;
   std::vector<xnn_external_value> external_;
+  XNNProfiler profiler_;
+  bool profiling_ = false;
+  bool tracing_ = false;
 };
 
 const XNNOp* find_op(std::string_view target) {
@@ -1150,6 +1257,24 @@ const XNNOp* find_op(std::string_view target) {
         return candidate.target == target;
       });
   return found == kOps.end() ? nullptr : &*found;
+}
+
+// XNNPACK packs constants in these positions while creating the runtime and
+// reads every other operand on each run.
+bool packed_operand(const Kernel& node, ptn::ValueId id) {
+  if (node.target == "torch.ops.aten.linear.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        (arg(node, 1).as_tensor().id == id ||
+         (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
+          arg(node, 2).as_tensor().id == id));
+  }
+  if (node.target == "torch.ops.aten.bmm.default") {
+    return arg(node, 0).as_tensor().id != id &&
+        arg(node, 1).as_tensor().id == id;
+  }
+  const auto convolution = parse_convolution(node);
+  return convolution && convolution->input != id &&
+      (convolution->weight == id || convolution->bias == id);
 }
 
 class XNNImplementation final : public KernelImplementation {
@@ -1223,12 +1348,7 @@ class XNNImplementation final : public KernelImplementation {
           continue;
         }
         // A constant can also feed an unpacked operation in this region.
-        const bool packed_use =
-            node.target == "torch.ops.aten.linear.default" &&
-            arg(node, 0).as_tensor().id != value.id &&
-            (arg(node, 1).as_tensor().id == value.id ||
-             (arg(node, 2).kind() == ptn::ArgKind::Tensor &&
-              arg(node, 2).as_tensor().id == value.id));
+        const bool packed_use = packed_operand(node, value.id);
         packed |= packed_use;
         retained |= !packed_use;
       }
@@ -1270,12 +1390,17 @@ class XNNProvider final : public KernelProvider {
       CPU_XNN_CHECK(xnn_finalize_weights_cache(
           state_.cache, xnn_weights_cache_finalization_kind_hard));
     }
+    released_private_constant_bytes_ += state_.release_packing_sources();
     return Error::Ok;
+  }
+  size_t released_private_constant_bytes() const override {
+    return released_private_constant_bytes_;
   }
 
  private:
   XNNState state_;
   XNNImplementation implementation_;
+  size_t released_private_constant_bytes_ = 0;
 };
 } // namespace
 // Referenced by generated provider registries and provider tests.

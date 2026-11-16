@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, TypeVar, Union
 
 import torch
 
@@ -462,7 +462,16 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
-    """
+    """Sets the number of threads in the CPU thread pool.
+
+    Call it before loading methods. A method loaded earlier keeps its XNNPACK
+    parts on the old thread pool until the method is destroyed, while its other
+    kernels use the new count and its ``CpuBackend`` parts fail to run. A
+    ``Program`` from ``executorch.runtime`` and an ``ExecuTorchModule`` keep the
+    methods they loaded, so load the method from a new one to use the new count.
+    Calling it while a ``CpuBackend`` part is loading or running is not safe.
+    A count of 0, or the current count, changes nothing.
+
     .. warning::
 
         This API is experimental and subject to change without notice.
@@ -477,3 +486,26 @@ def _threadpool_get_thread_count() -> int:
         This API is experimental and subject to change without notice.
     """
     ...
+
+class _CudaStream:
+    """A non-blocking CUDA stream on ``device`` (-1: current device). Only with
+    CUDA; use executorch.runtime.cuda.Stream.
+    """
+
+    def __init__(self, device: int) -> None: ...
+    @property
+    def handle(self) -> int: ...
+    @property
+    def device(self) -> int: ...
+    def close(self) -> None: ...
+
+class _CallerStreamScope:
+    """Selects a CUDA stream for this thread's delegates. Only with CUDA.
+
+    Use executorch.runtime.cuda.stream.
+    """
+
+    def __init__(self, stream: Union[_CudaStream, int]) -> None: ...
+    can_check_device: ClassVar[bool]
+    def __enter__(self) -> None: ...
+    def __exit__(self, *args: Any) -> None: ...

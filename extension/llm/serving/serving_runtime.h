@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -54,7 +55,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::int32_t default_max_new_tokens = 256;
   // Snapshots for new sessions and clean replacements; zero disables reuse.
   // Explicit open/reset bypass reuse. When enabled, provision
-  // max_sessions + prefix_cache_capacity + 1 executor rows.
+  // max_sessions + prefix_cache_capacity + resolved_prefix_captures() rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
   // Requires cache capacity; zero captures only the initial prompt.
@@ -70,12 +71,37 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Empty uses global LRU without protected early checkpoints.
   // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
+  // Transient rows shared by prompt capture and named-session replacement.
+  // Zero matches request concurrency, bounded by max_sessions; replacements
+  // compete with prompt captures for these rows.
+  // Automatic checkpoint mode needs at most two rows because collection is
+  // serialized; one replacement may overlap. Positive values override sizing.
+  std::size_t max_prefix_captures = 0;
+
+  std::size_t resolved_prefix_captures() const {
+    if (prefix_cache_capacity == 0) {
+      return 0;
+    }
+    if (max_prefix_captures != 0) {
+      return max_prefix_captures;
+    }
+    const auto concurrency = std::min(max_sessions, max_requests);
+    return prefix_checkpoint_interval || prefix_checkpoint_policy
+        ? std::min(concurrency, std::size_t{2})
+        : concurrency;
+  }
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
 // operation.
 using LifecycleResult ET_EXPERIMENTAL = std::optional<ServingError>;
 using LifecycleCallback ET_EXPERIMENTAL = std::function<void(LifecycleResult)>;
+struct ET_EXPERIMENTAL CloseResult {
+  LifecycleResult error;
+  // Meaningful on success: false means the session was already absent.
+  bool existed = false;
+};
+using CloseCallback ET_EXPERIMENTAL = std::function<void(CloseResult)>;
 using GenerateResult ET_EXPERIMENTAL =
     std::variant<RequestHandle, ServingError>;
 
@@ -135,6 +161,11 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Session closure is through RAII, not synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
+
+  // Same idempotent close, additionally reporting whether a slot existed.
+  void close_session_with_result_async(
+      std::string key,
+      CloseCallback on_complete);
 
   // Cold replacement, retaining the key and logical slot throughout. Success
   // means reopening and old-response callback cleanup completed. Failure
@@ -196,6 +227,9 @@ class ET_EXPERIMENTAL ServingRuntime {
   // opening, reopening, and unavailable keys, but not commands still waiting
   // to reserve a slot.
   ServingInfo info() const;
+  // Decoded default EOS markers for adapters that hide output after EOS while
+  // generation continues. nullopt if no tokenizer or any marker cannot decode.
+  std::optional<std::vector<std::string>> default_stop_strings() const;
 
   // Idempotent, including concurrent callers. Stops admission, completes all
   // accepted operations/requests, and joins control, Runner, and delivery

@@ -287,6 +287,9 @@ test_run_ethos_u55() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
+    # Verify the runner links and runs without ethosu_execution_stats.
+    examples/arm/run.sh --et_build_root=arm_test/test_run_no_stats --target=ethos-u55-128 --model_name=add --extra_build_flags="-DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF"
+
     echo "${TEST_SUITE_NAME}: Test target Ethos-U65"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py --bundleio

@@ -132,7 +132,7 @@ uint32_t SpecVar::val_size() const {
     case SpecVar::Type::UINT:
       return sizeof(uint32_t);
     case SpecVar::Type::BOOL:
-      return sizeof(bool);
+      return sizeof(VkBool32);
   }
   return 4;
 }

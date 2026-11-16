@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load(":targets.bzl", "define_common_targets")
 
@@ -19,6 +24,7 @@ fbcode_target(_kind = runtime.python_library,
         "schema_flatcc.py",
     ],
     visibility = [
+        "//executorch/backends/arm/test:etdump_to_chrome_trace",
         "//executorch/devtools/...",
     ],
     deps = [
@@ -36,6 +42,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
     },
     visibility = [
+        "//executorch/backends/arm/test:etdump_to_chrome_trace",
         "//executorch/devtools/...",
         "//executorch/runtime/test/...",
     ],

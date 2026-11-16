@@ -28,10 +28,12 @@ void check_adamw_step_args(
   VK_CHECK_COND(graph.dtype_of(v) == vkapi::kFloat);
   VK_CHECK_COND(graph.dtype_of(grad) == vkapi::kFloat);
 
-  const int32_t numel = graph.numel_of(param);
-  VK_CHECK_COND(graph.numel_of(m) == numel);
-  VK_CHECK_COND(graph.numel_of(v) == numel);
-  VK_CHECK_COND(graph.numel_of(grad) == numel);
+  // The shader indexes every tensor with the same padded buffer offset.
+  for (const ValueRef tensor : {m, v, grad}) {
+    VK_CHECK_COND(graph.sizes_of(tensor) == graph.sizes_of(param));
+    VK_CHECK_COND(
+        graph.hashed_layout_of(tensor) == graph.hashed_layout_of(param));
+  }
 }
 
 void add_adamw_step_node(
@@ -78,10 +80,9 @@ void add_adamw_step_node(
        {v, vkapi::kReadWrite},
        {grad, vkapi::kRead}},
       // Shader params buffers
-      {},
+      {graph.buffer_meta_ubo(param)},
       // Push Constants
-      {graph.numel_pc_of(param),
-       PushConstantDataInfo(pc0.data(), sizeof(pc0)),
+      {PushConstantDataInfo(pc0.data(), sizeof(pc0)),
        PushConstantDataInfo(pc1.data(), sizeof(pc1))},
       // Specialization Constants
       {},

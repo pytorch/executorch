@@ -932,6 +932,7 @@ TEST_F(CudaKVCacheTest, GrowthDropsACapturedGraphOnlyWhenStorageMoves) {
   ASSERT_EQ(cudaMalloc(&static_input, 16), cudaSuccess);
   graph.static_input_ptrs = {static_input};
   graph.static_input_nbytes = {16};
+  graph.static_input_sizes = {{4}};
   ASSERT_EQ(kv.commit_step(3), Error::Ok);
 
   // Fits the current storage: the graph keeps replaying.
@@ -950,6 +951,7 @@ TEST_F(CudaKVCacheTest, GrowthDropsACapturedGraphOnlyWhenStorageMoves) {
   EXPECT_EQ(graph.warmup_remaining, 1);
   EXPECT_TRUE(graph.static_input_ptrs.empty());
   EXPECT_TRUE(graph.static_input_nbytes.empty());
+  EXPECT_TRUE(graph.static_input_sizes.empty());
   EXPECT_EQ(graph.graph_exec, nullptr);
 
   // Once recaptured, later steps that fit replay it untouched.
@@ -1039,14 +1041,13 @@ TEST_F(CudaKVCacheTest, RetiringAGraphFreesWhatItsLastLaunchAllocated) {
           graph.graph,
           cudaGraphInstantiateFlagAutoFreeOnLaunch),
       cudaSuccess);
+  ASSERT_EQ(cudaGraphLaunch(graph.graph_exec, stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  EXPECT_GE(graph_mem_in_use(), before + kBytes);
   graph.note_graph_allocations();
   // Only the allocation the graph leaves outstanding is its to free.
   ASSERT_EQ(graph.graph_allocations.size(), 1);
   EXPECT_EQ(graph.graph_allocations[0], output);
-
-  ASSERT_EQ(cudaGraphLaunch(graph.graph_exec, stream), cudaSuccess);
-  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
-  EXPECT_GE(graph_mem_in_use(), before + kBytes);
 
   graph.release();
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);

@@ -209,6 +209,10 @@ class VulkanImage final {
     return handles_.sampler;
   }
 
+  inline const SamplerProperties& sampler_properties() const {
+    return sampler_properties_;
+  }
+
   Package package() const {
     return {
         handles_.image,

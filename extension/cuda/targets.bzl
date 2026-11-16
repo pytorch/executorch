@@ -21,19 +21,20 @@ def define_common_targets():
     )
 
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
-    # share a caller's stream. The caller-stream thread-local must be one
-    # instance per process, so the main target stays shareable: OSS cxx_library
-    # defaults force_static=True, which would duplicate the thread-local into
-    # every dependent shared object (see export.h). The :caller_stream_static
-    # variant stays available for fully-static consumers.
+    # share a caller's stream. The caller-stream and current-stream
+    # thread-locals must each be one instance per process, so the main target
+    # stays shareable: OSS cxx_library defaults force_static=True, which would
+    # duplicate them into every dependent shared object (see export.h).
     runtime.cxx_library(
         name = "caller_stream",
         srcs = [
             "caller_stream.cpp",
+            "current_stream.cpp",
             "device_guard.cpp",
         ],
         exported_headers = [
             "caller_stream.h",
+            "current_stream.h",
             "device_guard.h",
         ],
         exported_deps = [

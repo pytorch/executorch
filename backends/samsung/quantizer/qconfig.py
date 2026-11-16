@@ -9,6 +9,8 @@ from enum import IntEnum, unique
 from typing import Callable, Optional
 
 import torch
+
+from executorch.backends.samsung.quantizer.observers import PerChannelClippingObserver
 from torchao.quantization.pt2e import (
     FusedMovingAvgObsFakeQuantize,
     MinMaxObserver,
@@ -21,7 +23,9 @@ from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 @unique
 class Precision(IntEnum):
+    A16W4 = 2
     A8W8 = 3
+    A16W8 = 6
 
 
 @dataclass(eq=True, frozen=True)
@@ -36,10 +40,14 @@ def get_quant_config(
     precision: Precision,
     is_per_channel: bool = False,
     is_qat: bool = False,
+    enable_spin: bool = False,
+    act_observer_cls: type = MinMaxObserver,
 ) -> QuantizationConfig:
 
     precision_mappings = {
+        Precision.A16W4: get_a16w4_enn_quant_config,
         Precision.A8W8: get_a8w8_enn_quant_config,
+        Precision.A16W8: get_a16w8_enn_quant_config,
     }
     if precision not in precision_mappings:
         raise RuntimeError("Unrecognized precision setting.")
@@ -47,7 +55,14 @@ def get_quant_config(
     is_weight_symm = is_per_channel
 
     qconfig_fn = precision_mappings[precision]
-    return qconfig_fn(is_per_channel, is_qat, wei_symmetric=is_weight_symm)
+    return qconfig_fn(
+        is_per_channel=is_per_channel,
+        is_qat=is_qat,
+        act_symmetric=False,
+        wei_symmetric=is_weight_symm,
+        enable_spin=enable_spin,
+        act_observer_cls=act_observer_cls,
+    )
 
 
 def _get_activation_qspec(
@@ -80,7 +95,13 @@ def _get_activation_qspec(
 
 
 def _get_weight_qspec(
-    dtype, is_symmetric, is_per_channel, is_qat, quant_min=None, quant_max=None
+    dtype,
+    is_symmetric,
+    is_per_channel,
+    is_qat,
+    quant_min=None,
+    quant_max=None,
+    enable_spin=False,
 ):
     assert is_symmetric or not is_per_channel, "Not support asymm+perchannel mode"
 
@@ -100,7 +121,10 @@ def _get_weight_qspec(
         qscheme = (
             torch.per_channel_symmetric if is_symmetric else torch.per_channel_affine
         )
-        observer_cls = PerChannelMinMaxObserver
+        if enable_spin:
+            observer_cls = PerChannelClippingObserver
+        else:
+            observer_cls = PerChannelMinMaxObserver
 
     if is_qat:
         observer_cls = FusedMovingAvgObsFakeQuantize
@@ -126,9 +150,71 @@ def _get_weight_qspec(
 
 
 def get_a8w8_enn_quant_config(
-    is_per_channel=True, is_qat=False, act_symmetric=False, wei_symmetric=False
+    is_per_channel=True,
+    is_qat=False,
+    act_symmetric=False,
+    wei_symmetric=False,
+    enable_spin=False,
+    act_observer_cls=MinMaxObserver,
 ) -> QuantizationConfig:
-    act_quantization_spec = _get_activation_qspec(torch.int8, act_symmetric, is_qat)
+    act_quantization_spec = _get_activation_qspec(
+        torch.int8, act_symmetric, is_qat, observer_cls=act_observer_cls
+    )
+    wgt_quantization_spec = _get_weight_qspec(
+        torch.int8, wei_symmetric, is_per_channel, is_qat, enable_spin=enable_spin
+    )
+    bias_quantization_spec = None
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=wgt_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+    return quantization_config
+
+
+def get_a16w4_enn_quant_config(
+    is_per_channel=True,
+    is_qat=False,
+    act_symmetric=False,
+    wei_symmetric=True,
+    enable_spin=False,
+    act_observer_cls=MinMaxObserver,
+) -> QuantizationConfig:
+    act_quantization_spec = _get_activation_qspec(
+        torch.int16, act_symmetric, is_qat, observer_cls=act_observer_cls
+    )
+
+    wgt_quantization_spec = _get_weight_qspec(
+        torch.int8,
+        wei_symmetric,
+        is_per_channel,
+        is_qat,
+        quant_min=-8,
+        quant_max=7,
+        enable_spin=enable_spin,
+    )
+    bias_quantization_spec = None
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=wgt_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+    return quantization_config
+
+
+def get_a16w8_enn_quant_config(
+    is_per_channel=True,
+    is_qat=False,
+    act_symmetric=False,
+    wei_symmetric=True,
+    enable_spin=False,
+    act_observer_cls=MinMaxObserver,
+) -> QuantizationConfig:
+    act_quantization_spec = _get_activation_qspec(
+        torch.int16, act_symmetric, is_qat, observer_cls=act_observer_cls
+    )
     wgt_quantization_spec = _get_weight_qspec(
         torch.int8, wei_symmetric, is_per_channel, is_qat
     )

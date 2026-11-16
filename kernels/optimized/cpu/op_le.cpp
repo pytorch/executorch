@@ -57,9 +57,20 @@ Tensor& opt_le_tensor_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Handle optimized broadcast cases
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
-      auto le_lambda = [](auto x, auto y) { return x.le(y); };
-      torch::executor::handle_broadcast_elementwise<CTYPE>(
-          ctx, le_lambda, a, b, out, selected_optimized_path);
+      if (selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+        auto le_lambda = [](auto x, auto y) { return y.le(x); };
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, le_lambda, a, b, out, selected_optimized_path);
+      } else {
+        auto le_lambda = [](auto x, auto y) { return x.le(y); };
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, le_lambda, a, b, out, selected_optimized_path);
+      }
     });
   } else {
     internal::comparison_tensor_out<std::less_equal, op_name>(ctx, a, b, out);

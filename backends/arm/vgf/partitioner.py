@@ -7,16 +7,19 @@ from typing import final, Optional, Sequence
 
 import torch
 
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
+)
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
 from executorch.backends.arm.vgf.backend import MUTABLE_BUFFER_OWNERSHIP_KEY
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec, PartitionResult
-from executorch.exir.backend.utils import tag_mutated_buffer
+from executorch.exir.backend.utils import tag_mutated_buffer, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import chain, OperatorSupportBase
 
 
 @final
@@ -47,6 +50,23 @@ class VgfPartitioner(TOSAPartitioner):
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
         self._requires_resolved_tensor_shapes = False
+
+    def _create_operator_support(
+        self,
+        containing_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+    ) -> OperatorSupportBase:
+        return chain(
+            CheckResolvedTensorShapes(
+                reporter,
+                targets=(
+                    exir_ops.edge.aten.view_copy.default,
+                    exir_ops.edge.aten.permute_copy.default,
+                ),
+                reject_symbolic_scalars=True,
+            ),
+            super()._create_operator_support(containing_program, reporter),
+        )
 
     def _validate_mutable_buffers(self, exported_program: ExportedProgram) -> None:
         signature = exported_program.graph_signature
@@ -103,6 +123,22 @@ class VgfPartitioner(TOSAPartitioner):
                     f"mutation tag={mutation_tag}, consumers=[{consumers}]."
                 )
 
+    def _check_mutable_buffers_owned(self, exported_program: ExportedProgram) -> None:
+        # tag_mutated_buffer also keeps a buffer out of the delegate when its
+        # new value is returned or read outside it, which
+        # _validate_mutable_buffers does not see. Aliasing needs the delegate
+        # to own the buffer.
+        signature = exported_program.graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        for node in exported_program.graph.nodes:
+            buffer_name = signature.inputs_to_buffers.get(node.name)
+            if buffer_name in mutated and "delegation_tag" not in node.meta:
+                raise ValueError(
+                    f"VGF mutable buffer {buffer_name!r} cannot be aliased: its "
+                    "new value is returned or read outside the delegated "
+                    "partition."
+                )
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """Partition the program and tag TOSA-compatible subgraphs.
 
@@ -133,4 +169,5 @@ class VgfPartitioner(TOSAPartitioner):
             }
             self._validate_mutable_buffers(result.tagged_exported_program)
             tag_mutated_buffer(result.tagged_exported_program)
+            self._check_mutable_buffers_owned(result.tagged_exported_program)
         return result

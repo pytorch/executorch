@@ -19,7 +19,7 @@ import json
 import os
 
 import torch
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 
 # Importing cases populates op_test_registry via the @register_op_test decorators.
 from executorch.backends.webgpu.test.op_tests import cases  # noqa: F401
@@ -67,7 +67,7 @@ def export_case(suite: WebGPUTestSuite, case) -> tuple[torch.nn.Module, tuple, o
         export_inputs = tuple(_materialize(s) for s in case.export_inputs)
     ep = torch.export.export(module, export_inputs, dynamic_shapes=case.dynamic_shapes)
     prog = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
+        ep, partitioner=[WebGPUPartitioner()]
     ).to_executorch()
     return module, inputs, prog
 

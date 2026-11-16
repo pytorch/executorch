@@ -471,6 +471,21 @@ class _Emitter(torch.fx.Interpreter):
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
 
+            # data_ptr() is dereferenced from the host below; for non-CPU storage
+            # (e.g. CUDA) that read can segfault instead of raising (#21545).
+            storage_device = typing.cast(torch.UntypedStorage, spec.storage).device
+            if spec.allocated_memory != 0 and storage_device.type != "cpu":
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Constant tensor storage is on device '{storage_device}', "
+                        "but constants serialized into the program must be in CPU "
+                        "memory. Move them to CPU before export (e.g. model.cpu()), "
+                        "or delegate the ops that use them to a backend that "
+                        "accepts device tensors.",
+                    )
+                )
+
             buffer_data = (
                 bytes(
                     ctypes.cast(

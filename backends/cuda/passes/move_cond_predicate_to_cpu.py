@@ -55,6 +55,10 @@ class MoveCondPredicateToCpuPass:
     In this example if we keep `self.initialized` on GPU, we will need to copy it to CPU for every forward pass.
     We move the predicate to CPU to avoid device to host copies.
     This pass is only applicable to models that use torch.cond and its predicate is a constant buffer.
+
+    A method this pass changes keeps a constant in host memory, so the CUDA backend runs it
+    without a CUDA graph even when one is requested: a graph would keep the branch the capture
+    call took.
     """
 
     requires_exported_program = True

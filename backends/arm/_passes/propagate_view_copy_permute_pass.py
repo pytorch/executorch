@@ -116,8 +116,15 @@ class TosaPropagationOverrides(_BasePass):
                 )
         return super().is_swappable(next_node)
 
-    def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
+    def is_backend_elementwise(self, node: torch.fx.Node) -> bool:
         return node.target == exir_ops.backend.tosa.TABLE.default
+
+    def _layout_dependent_inputs(
+        self, node: torch.fx.Node, rank: int
+    ) -> list[torch.fx.Node]:
+        if node.target == exir_ops.backend.tosa.TABLE.default:
+            return list(node.all_input_nodes[:1])
+        return super()._layout_dependent_inputs(node, rank)
 
     def blocks_crossing(self, node: torch.fx.Node) -> bool:
         return node.target == exir_ops.backend.tosa.SCATTER.default
@@ -125,8 +132,6 @@ class TosaPropagationOverrides(_BasePass):
     def is_elementwise(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.backend.tosa.RESCALE.default:
             return self._is_per_tensor_rescale(node)
-        if node.target == exir_ops.backend.tosa.TABLE.default:
-            return True
         return super().is_elementwise(node)
 
     def _is_per_tensor_rescale(self, node: torch.fx.Node) -> bool:

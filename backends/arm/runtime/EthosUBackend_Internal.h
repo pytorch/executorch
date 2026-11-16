@@ -73,10 +73,12 @@ namespace executorch {
 namespace backends {
 namespace arm {
 
+inline constexpr size_t ETHOSU_SCRATCH_ALIGNMENT = 16;
+
 struct PlatformState;
 
 struct ExecutionHandle {
-  PlatformState* platform_state;
+  PlatformState* platform_state = nullptr;
   VelaHandles handles{};
   // Dedicated persistent (Vela region 5) buffer for delegate-owned streaming
   // state, base address 5. Kept separate from the scratch region (base 1) so

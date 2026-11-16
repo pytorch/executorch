@@ -11,73 +11,11 @@ set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the built test executable for pytest.
 """
 
 import asyncio
-import json
-import os
-import socket
-from contextlib import asynccontextmanager
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
-from executorch.examples.llm_server.python.multiplexed_worker_client import (
-    MultiplexedWorkerClient,
-)
 from executorch.examples.llm_server.python.worker_client import WorkerError
-
-
-@pytest.fixture(scope="module")
-def native_worker():
-    """Require an explicitly selected, freshly built native test executable."""
-    executable = os.environ.get("EXECUTORCH_TEST_MULTIPLEXED_WORKER")
-    if not executable:
-        pytest.skip("set EXECUTORCH_TEST_MULTIPLEXED_WORKER to the native test target")
-    assert Path(executable).is_file(), executable
-    return executable
-
-
-@asynccontextmanager
-async def _active_peer(executable):
-    loop = asyncio.get_running_loop()
-    parent, child = socket.socketpair()
-    parent.setblocking(False)
-    proc = None
-    client = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            executable,
-            "--validation-worker",
-            str(child.fileno()),
-            pass_fds=(child.fileno(),),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            limit=1024 * 1024,
-        )
-        child.close()
-        ready = json.loads(await proc.stdout.readline())
-        assert ready["ready"] and ready["multiplexed"]
-        client = MultiplexedWorkerClient(
-            proc,
-            max_named_sessions=ready["max_named_sessions"],
-            max_inflight_requests=2,
-        )
-        peer = client.generate("active peer", SimpleNamespace(max_new_tokens=3))
-        # Native execute() is blocked on this socket until explicitly released.
-        assert await loop.sock_recv(parent, 1) == b"A"
-        assert not peer._state.completion.done()
-        yield client, peer, parent
-    finally:
-        parent.close()
-        child.close()
-        try:
-            if client is not None:
-                await client.close()
-        finally:
-            if proc is not None:
-                if proc.returncode is None:
-                    proc.kill()
-                await proc.wait()
 
 
 async def _finish_peer_and_reuse(client, peer, gate):
@@ -133,12 +71,12 @@ async def _finish_peer_and_reuse(client, peer, gate):
     ],
 )
 def test_invalid_request_is_local_with_native_peer(
-    native_worker, reserved, prompt, config
+    active_peer, reserved, prompt, config
 ):
     """Reject parser-unsafe values before writing, without failing active work."""
 
     async def scenario():
-        async with _active_peer(native_worker) as (client, peer, gate):
+        async with active_peer() as (client, peer, gate):
             request_id = client.reserve_request() if reserved else None
             # Observe actual stdin writes; do not replace the transport or parser.
             with patch.object(
@@ -163,11 +101,11 @@ def test_invalid_request_is_local_with_native_peer(
 @pytest.mark.parametrize(
     "operation", ["open_session", "reset_session", "close_session"]
 )
-def test_invalid_lifecycle_is_local_with_native_peer(native_worker, operation):
+def test_invalid_lifecycle_is_local_with_native_peer(active_peer, operation):
     """Apply the same local encoding checks to session control operations."""
 
     async def scenario():
-        async with _active_peer(native_worker) as (client, peer, gate):
+        async with active_peer() as (client, peer, gate):
             with patch.object(
                 client._proc.stdin, "write", wraps=client._proc.stdin.write
             ) as write:
@@ -185,11 +123,11 @@ def test_invalid_lifecycle_is_local_with_native_peer(native_worker, operation):
     asyncio.run(bounded())
 
 
-def test_valid_non_bmp_nested_values_and_integer_boundaries(native_worker):
+def test_valid_non_bmp_nested_values_and_integer_boundaries(active_peer):
     """Keep native-representable Unicode and integer endpoints usable."""
 
     async def scenario():
-        async with _active_peer(native_worker) as (client, peer, gate):
+        async with active_peer() as (client, peer, gate):
             await _finish_peer_and_reuse(client, peer, gate)
             stream = client.generate(
                 "unused",
@@ -215,3 +153,14 @@ def test_valid_non_bmp_nested_values_and_integer_boundaries(native_worker):
         await asyncio.wait_for(scenario(), timeout=15)
 
     asyncio.run(bounded())
+
+
+def test_idempotent_native_close_reports_whether_it_freed_a_slot(active_peer):
+    async def scenario():
+        async with active_peer() as (client, peer, gate):
+            await _finish_peer_and_reuse(client, peer, gate)
+            assert await client.close_session("missing") is False
+            assert await client.close_session("session-\U0001f600") is True
+            assert await client.close_session("session-\U0001f600") is False
+
+    asyncio.run(asyncio.wait_for(scenario(), 15))

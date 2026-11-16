@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # load("//caffe2/test/fb:defs.bzl", "define_tests")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -57,6 +62,11 @@ def define_arm_tests():
         "ops/test_split.py",
     ]
 
+    # Models
+    test_files += [
+        "models/test_upsample_slice_concat.py",
+    ]
+
     # Modules
     test_files += [
         "modules/test_moe.py",
@@ -80,6 +90,7 @@ def define_arm_tests():
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
+        "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
         "misc/test_vela_persistent_region.py",
         "misc/test_delegated_state_partitioning.py",
@@ -117,6 +128,7 @@ def define_arm_tests():
     if runtime.is_oss:
         test_files += [
             "misc/test_docgen_op_support.py",
+            "misc/test_etdump_to_chrome_trace.py",
             "misc/test_public_api_manifest.py",
             "misc/test_validate_public_api_manifest.py",
         ]
@@ -137,6 +149,7 @@ def define_arm_tests():
                 "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+                "EMULATION_LAYER_VERSION": "0.9.0",
             })
 
         python_pytest(
@@ -156,7 +169,11 @@ def define_arm_tests():
             ]),
             deps = ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "//executorch/backends/arm/test:model_converter_resource",
-            ]) + [
+            ]) + ([
+                "//executorch/backends/arm/scripts:etdump_to_chrome_trace",
+                "//executorch/devtools/etdump:schema_flatcc",
+                "//executorch/devtools/etdump:serialize",
+            ] if test_name == "etdump_to_chrome_trace" else []) + [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test:mxfp_test_common",
@@ -187,13 +204,18 @@ def define_arm_tests():
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "//executorch/examples/models/llama:llama_transformer",
                 "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/transformers:transformers",
+                "fbsource//third-party/pypi/typing-extensions:typing-extensions",
             ] if test_file == "modules/test_moe.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
             ] if test_file == "misc/test_version_xfail.py" else []) + ([
                 "//executorch/exir:schema",
                 "//executorch/exir/_serialize:lib",
-            ] if test_file == "misc/test_diff_pte.py" else []),
+            ] if test_file == "misc/test_diff_pte.py" else []) + ([
+                "//executorch/backends/transforms:fuse_identical_input_transforms_pass",
+                "//executorch/backends/transforms:utils",
+            ] if test_file == "passes/test_propagate_permutes_views_pass.py" else []),
         )
 
     runtime.cxx_test(

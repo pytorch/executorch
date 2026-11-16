@@ -362,11 +362,42 @@ TOSA_EXT_SHAPE_SupportList: Final[Set] = {
     operator.floordiv,
 }
 
+# Operators that delegate with an int64 operand under PRO-INT with EXT-INT64.
+# Each lowers to TOSA operators that EXT-INT64 defines for i64 under PRO-INT.
+# The list is not exhaustive. An absent operator narrows to int32 the way it
+# does without the extension.
+TOSA_PRO_INT_EXT_INT64_SupportList: Final[Set] = {
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.aten.abs.default,
+    exir_ops.edge.aten.add.Tensor,
+    exir_ops.edge.aten.bitwise_and.Tensor,
+    exir_ops.edge.aten.bitwise_not.default,
+    exir_ops.edge.aten.bitwise_or.Tensor,
+    exir_ops.edge.aten.bitwise_xor.Tensor,
+    exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.constant_pad_nd.default,
+    exir_ops.edge.aten.expand_copy.default,
+    exir_ops.edge.aten.flip.default,
+    exir_ops.edge.aten.maximum.default,
+    exir_ops.edge.aten.minimum.default,
+    exir_ops.edge.aten.mul.Tensor,
+    exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.pad.default,
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.repeat.default,
+    exir_ops.edge.aten.select_copy.int,
+    exir_ops.edge.aten.squeeze_copy.dims,
+    exir_ops.edge.aten.sub.Tensor,
+    exir_ops.edge.aten.unsqueeze_copy.default,
+    exir_ops.edge.aten.view_copy.default,
+}
+
 
 __all__ = [
     "TOSA_EXT_CONTROL_FLOW_SupportList",
     "TOSA_EXT_MXFP_SupportList",
     "TOSA_EXT_SHAPE_SupportList",
+    "TOSA_PRO_INT_EXT_INT64_SupportList",
     "TOSA_PRO_INT_SupportList",
     "TOSA_PRO_MIXED_INT_SupportList",
     "TOSA_PRO_FP_SupportList",

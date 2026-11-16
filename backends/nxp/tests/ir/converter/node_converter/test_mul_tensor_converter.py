@@ -15,7 +15,9 @@ from executorch.backends.nxp.backend.ops_aliases import (
     MulTensor,
 )
 
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
     to_quantized_edge_program,

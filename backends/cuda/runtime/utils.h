@@ -231,10 +231,13 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
       std::memcpy(tmp.data(), src_data, span_nbytes);
     } else {
       if (stream) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost, stream));
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+      } else {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost));
       }
-      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
-          tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost));
     }
 
     const size_t ndim = slim_tensor->dim();
@@ -298,6 +301,43 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
   return executorch::runtime::Error::Ok;
 }
 } // namespace
+
+/**
+ * Whether copying an output's raw bytes into its ETensor puts every element
+ * where the ETensor expects it, which is how a CUDA graph replay lands it.
+ *
+ * The ETensor may still have its previous shape, so its strides can be stale
+ * for dynamic shapes. Its expected strides come from its dim order and the
+ * output's sizes instead, the way resizing it computes them. Size-1 dims never
+ * move an element, so their strides may differ.
+ *
+ * @param output Pointer to the output SlimTensor (must not be null).
+ * @param etensor Pointer to the destination ETensor (must not be null).
+ * @return True if the raw copy is correct, including when there is nothing
+ *     to copy.
+ */
+inline bool output_is_raw_copyable(
+    const executorch::backends::aoti::slim::SlimTensor* output,
+    const executorch::runtime::etensor::Tensor* etensor) {
+  const size_t ndim = output->dim();
+  if (ndim != static_cast<size_t>(etensor->dim())) {
+    return false;
+  }
+  if (output->numel() == 0) {
+    return true;
+  }
+  const auto dim_order = etensor->dim_order();
+  int64_t expected_stride = 1;
+  for (size_t i = ndim; i > 0; --i) {
+    const int64_t d = dim_order[i - 1];
+    const int64_t size = output->size(d);
+    if (size != 1 && output->stride(d) != expected_stride) {
+      return false;
+    }
+    expected_stride *= size;
+  }
+  return true;
+}
 
 /**
  * Copies data from a SlimTensor to an ETensor asynchronously.

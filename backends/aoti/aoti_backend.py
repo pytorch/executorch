@@ -28,6 +28,45 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+    DATA_NAME = "data_name"
+
+
+# The name becomes a file name on every platform, so keep it short, to portable
+# characters, and clear of Windows device names such as NUL. Without re.ASCII,
+# IGNORECASE lets [A-Za-z] match letters like the Kelvin sign. A leading '-'
+# reads as an option on a command line. Some writers add .ptd only when it is
+# missing, so "encoder" and "encoder.ptd" could both write encoder.ptd.
+_DATA_NAME_PATTERN = re.compile(
+    r"(?!(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\.|$))(?!.*\.ptd$)"
+    r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,199}",
+    re.IGNORECASE | re.ASCII,
+)
+
+
+def _checked_data_name(data_name: str) -> str:
+    if not _DATA_NAME_PATTERN.fullmatch(data_name):
+        raise ValueError(
+            f"Invalid data name {data_name!r}: use up to 200 ASCII letters, "
+            "digits, '_', '-' and '.', do not start with '.' or '-', do not end "
+            "with '.ptd', and avoid Windows device names such as NUL"
+        )
+    return data_name
+
+
+def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
+    """Inductor options for a program that writes a buffer.
+
+    They turn off Inductor's joint-graph constant folding for the whole
+    program, not only for the buffers it writes. Before torch 2.15, that
+    folding can turn the update of a one-element buffer, such as a counter,
+    into its value at export, so every call writes that same value
+    (https://github.com/pytorch/pytorch/pull/185077).
+
+    TODO: remove once the pinned torch is 2.15 or newer.
+    """
+    if program.graph_signature.buffers_to_mutate:
+        return {"joint_graph_constant_folding": False}
+    return {}
 
 
 @experimental(
@@ -263,9 +302,13 @@ class AotiBackend(ABC):
         Preprocess the edge program and compile it using AOTInductor.
         Weights are always separated from the SO file.
         """
+        # First, so that a backend keeping its data in the .pte refuses a data
+        # name before anything is compiled.
+        data_name = cls.data_name_from_compile_specs(compile_specs)
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
+        options.update(_written_buffer_options(edge_program))
 
         # Move the edge_program to the target device. Routed through a hook so
         # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
@@ -288,9 +331,9 @@ class AotiBackend(ABC):
                 custom_pass(device_edge_program.graph_module)
 
         # ``run_decompositions`` retraces the complete ExportedProgram even
-        # when none of the table's operators occur in the graph. The in-place
-        # passes above preserve graph inputs and outputs, so the existing graph
-        # signature remains valid when the decomposition table cannot apply.
+        # when none of the table's operators occur in the graph. Nothing else
+        # rebuilds the graph signature, so the in-place passes above must keep
+        # it valid when the decomposition table cannot apply.
         if contains_any_call_fn_target_op(
             device_edge_program.graph_module, decomposition_table
         ):
@@ -367,9 +410,7 @@ class AotiBackend(ABC):
         named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
-        external_tag = (
-            f"aoti_{device_name}_blob" if cls.save_data_externally() else None
-        )
+        external_tag = data_name if cls.save_data_externally() else None
 
         named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
@@ -403,6 +444,38 @@ class AotiBackend(ABC):
             COMPILE_SPEC_KEYS.METHOD_NAME.value,
             method_name.encode("utf-8"),
         )
+
+    @classmethod
+    def generate_data_name_compile_spec(cls, data_name: str) -> CompileSpec:
+        """
+        Generate a CompileSpec that names the external data file, written as
+        ``<data_name>.ptd``, so several programs can share a folder.
+        """
+        cls._check_saves_data_externally()
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.DATA_NAME.value,
+            _checked_data_name(data_name).encode("utf-8"),
+        )
+
+    @classmethod
+    def data_name_from_compile_specs(cls, compile_specs: List[CompileSpec]) -> str:
+        """
+        The external data file name, without ``.ptd``, set by
+        generate_data_name_compile_spec, or ``aoti_<device>_blob`` by default.
+        """
+        for spec in compile_specs:
+            if spec.key == COMPILE_SPEC_KEYS.DATA_NAME.value:
+                cls._check_saves_data_externally()
+                return _checked_data_name(spec.value.decode("utf-8"))
+        return f"aoti_{cls.get_device_name()}_blob"
+
+    @classmethod
+    def _check_saves_data_externally(cls) -> None:
+        if not cls.save_data_externally():
+            raise ValueError(
+                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
+                "data name"
+            )
 
     @classmethod
     def method_name_from_compile_specs(

@@ -17,6 +17,9 @@ from typing import Any, Dict, final, List, Optional, Tuple, Union
 
 import coremltools as ct
 import coremltools.optimize as cto
+from coremltools.converters.mil import Builder as mb
+from coremltools.converters.mil.mil.passes.graph_pass import AbstractGraphPass
+from coremltools.converters.mil.mil.passes.pass_registry import register_pass
 from executorch.backends.apple.coreml import executorchcoreml
 from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
     _get_ct_inputs,
@@ -65,6 +68,46 @@ def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
         if gathers and len(gathers) < len(ops):
             shared += [op.name for op in gathers]
     return shared
+
+
+@register_pass(namespace="executorch", override=True, name="copy_reused_outputs")
+class _CopyReusedOutputs(AbstractGraphPass):
+    """
+    Gives each output of the program a value of its own.
+
+    coremltools converts ops such as clone into nothing, and keeps a tile that
+    changes nothing, such as one from a same-shape expand, only when it makes
+    an output. So a partition can return one of its own inputs, or one value
+    twice, directly or through such a tile. Core ML then hands back one of
+    those outputs wrong, such as all zeros or the bytes of another output.
+    """
+
+    def apply(self, prog):
+        for function in prog.functions.values():
+            seen = set(function.inputs.values())
+            outputs, tiles = [], []
+            for output in function.outputs:
+                value = output
+                if (
+                    output.op is not None
+                    and output.op.op_type == "tile"
+                    and output.op.x.sym_type == output.sym_type
+                ):
+                    tiles.append(output.op)
+                    value = output.op.x
+                if value is not output or value in seen:
+                    with function:
+                        copy = mb.identity(x=value)
+                    # coremltools wants every op to carry the source program's
+                    # scopes, which set_outputs, unlike a var replacement, skips.
+                    # The copy takes those of the output it replaces.
+                    function._copy_scope_info(output, copy)
+                    value = copy
+                seen.add(value)
+                outputs.append(value)
+            function.set_outputs(outputs)
+            # A pass list without dead_code_elimination would keep such a tile.
+            function.remove_ops([op for op in tiles if not op.outputs[0].child_ops])
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -565,6 +608,7 @@ class CoreMLBackend(BackendDetails):
         )
         compute_units = CoreMLBackend.compute_unit_from_compile_specs(compile_specs)
         pass_pipeline = CoreMLBackend.pass_pipeline_from_compile_specs(compile_specs)
+        pass_pipeline.append_pass("executorch::copy_reused_outputs")
         enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
             compile_specs
         )

@@ -288,7 +288,7 @@ class TestReorderPasses(unittest.TestCase):
             0,
         )
 
-    def _advance_two_branch_quantize(
+    def _two_branch_quantize_graph(
         self,
         first_qparams: Tuple[float, int],
         second_qparams: Tuple[float, int],
@@ -311,12 +311,33 @@ class TestReorderPasses(unittest.TestCase):
                 )
             )
         builder.output(quantized)
+        return builder.get_graph_module()
+
+    def _advance_two_branch_quantize(
+        self,
+        first_qparams: Tuple[float, int],
+        second_qparams: Tuple[float, int],
+    ) -> torch.fx.GraphModule:
         graph_module = cast(
             PassResult,
-            AdvanceQuantizeOpAboveDefInBranchPass()(builder.get_graph_module()),
+            AdvanceQuantizeOpAboveDefInBranchPass()(
+                self._two_branch_quantize_graph(first_qparams, second_qparams)
+            ),
         ).graph_module
         graph_module.graph.eliminate_dead_code()
         return graph_module
+
+    def test_reports_whether_it_advanced_a_quantize(self) -> None:
+        for second_qparams, advanced in (((0.1, 10), True), ((2.0, 4), False)):
+            with self.subTest(advanced=advanced):
+                result = cast(
+                    PassResult,
+                    AdvanceQuantizeOpAboveDefInBranchPass()(
+                        self._two_branch_quantize_graph((0.1, 10), second_qparams)
+                    ),
+                )
+
+                self.assertEqual(result.modified, advanced)
 
     def test_does_not_advance_quantize_when_qparams_differ(self) -> None:
         # Requantizing from one hoisted quantize can clip or coarsen a branch, so

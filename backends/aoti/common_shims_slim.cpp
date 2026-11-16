@@ -10,6 +10,9 @@
 #include <executorch/runtime/platform/abort.h>
 #include <executorch/runtime/platform/log.h>
 
+// Keep this file free of static and thread_local state: a Windows build
+// without EXECUTORCH_BUILD_SHARED links it twice (see backends/cuda).
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -33,6 +36,19 @@ AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
     return Error::InvalidArgument;
   }
   *ret_sizes = const_cast<int64_t*>(tensor->sizes().data());
+  return Error::Ok;
+}
+
+AOTITorchError
+aoti_torch_get_size(Tensor* tensor, int64_t d, int64_t* ret_size) {
+  if (tensor == nullptr || ret_size == nullptr) {
+    return Error::InvalidArgument;
+  }
+  const auto ndim = static_cast<int64_t>(tensor->dim());
+  if (d < -ndim || d >= ndim) {
+    return Error::InvalidArgument;
+  }
+  *ret_size = tensor->size(d);
   return Error::Ok;
 }
 
@@ -130,6 +146,10 @@ AOTITorchError aoti_torch_get_device_index(
 
 int32_t aoti_torch_dtype_float32() {
   return 6; // ScalarType::Float
+}
+
+int32_t aoti_torch_dtype_float64() {
+  return 7; // ScalarType::Double
 }
 
 int32_t aoti_torch_dtype_bfloat16() {

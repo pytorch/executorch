@@ -216,6 +216,27 @@ TEST(MaterializeViewCopiesTest, GivesCloneTheMemoryFormatAliasLacks) {
   EXPECT_EQ(graph.node(0).inputs[1].arg.kind(), ArgKind::None);
 }
 
+TEST(MaterializeViewCopiesTest, CopiesTransposeAsPermute) {
+  Graph graph = make_permute_graph(/*dynamic_source=*/false);
+  graph.values[0] = Value("input", ScalarType::Float, {2, 3, 4});
+  graph.values[1] = Value("transpose", ScalarType::Float, {4, 3, 2});
+  graph.values[1].alias_id = 0;
+  graph.node(0).target = "torch.ops.aten.transpose.int";
+  graph.node(0).inputs = {
+      {.name = "self", .arg = TensorArg{0}},
+      {.name = "dim0", .arg = IntArg{.value = -1}},
+      {.name = "dim1", .arg = IntArg{.value = 0}},
+  };
+
+  EXPECT_EQ(materialize_view_copies(graph, {1}), 1);
+  EXPECT_EQ(graph.node(0).target, "torch.ops.aten.permute_copy.default");
+  ASSERT_EQ(graph.node(0).inputs.size(), 2);
+  EXPECT_EQ(graph.node(0).inputs[1].name, "dims");
+  EXPECT_EQ(
+      graph.node(0).inputs[1].arg.as_int_list().values,
+      (std::vector<int64_t>{2, 1, 0}));
+}
+
 TEST(MaterializeViewCopiesTest, LeavesPermuteOfStaticSourceAsAlias) {
   Graph graph = make_permute_graph(/*dynamic_source=*/false);
 

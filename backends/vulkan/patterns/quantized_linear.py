@@ -27,6 +27,13 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 
 
+def _keeps_last_dim(view_node: torch.fx.Node) -> bool:
+    """True if `view_node` leaves its input's last dim unchanged."""
+    src = view_node.args[0]
+    assert isinstance(src, torch.fx.Node)
+    return str(src.meta["val"].shape[-1]) == str(view_node.meta["val"].shape[-1])
+
+
 class QuantizedLinearMatch(PatternMatch):
     def __init__(self, mm_node: torch.fx.Node) -> None:  # noqa: C901
         self.anchor_node = mm_node
@@ -98,8 +105,14 @@ class QuantizedLinearMatch(PatternMatch):
         anchor_primary_input_node = self.anchor_node.args[input_arg_idx]
         assert isinstance(anchor_primary_input_node, torch.fx.Node)
 
-        # Skip potential view_copy between dq and linear
-        if utils.is_view_copy_node(anchor_primary_input_node):
+        # Skip potential view_copy between dq and linear. Only the view that
+        # flattens the leading dims of a decomposed N-D linear may be skipped: the
+        # fused op takes the N-D input and contracts its last dim, so a reshape that
+        # changes the last dim (e.g. merging heads, [S, H, D] -> [S, H * D]) must
+        # stay in the graph.
+        if utils.is_view_copy_node(anchor_primary_input_node) and _keeps_last_dim(
+            anchor_primary_input_node
+        ):
             self.all_nodes.append(anchor_primary_input_node)
             anchor_primary_input_node = anchor_primary_input_node.args[
                 0
@@ -185,8 +198,16 @@ class QuantizedLinearMatch(PatternMatch):
         self.output_view_copy_node = None
         if len(self.output_node.users) == 1:
             cur_node = list(self.output_node.users)[0]
-            # Skip potential view_copy between linear and output quantize
-            if utils.is_view_copy_node(cur_node) and len(cur_node.users) == 1:
+            # Skip potential view_copy between linear and output quantize. Only
+            # the view that restores the leading dims of a decomposed N-D linear
+            # belongs to the pattern: the fused op replaces `output_node` and
+            # produces input.shape[:-1] + [N], so any other reshape that follows
+            # the linear must stay in the graph.
+            if (
+                utils.is_view_copy_node(cur_node)
+                and len(cur_node.users) == 1
+                and self._is_restoring_view(cur_node)
+            ):
                 self.output_view_copy_node = cur_node
                 self.all_nodes.append(self.output_view_copy_node)
                 self.output_node = self.output_view_copy_node
@@ -203,6 +224,16 @@ class QuantizedLinearMatch(PatternMatch):
                 self.output_zeros_node = self.quantize_output_node.args[2]
 
         self.match_found = True
+
+    def _is_restoring_view(self, view_node: torch.fx.Node) -> bool:
+        """True if `view_node` has the fused op's output shape, input.shape[:-1] + [N]."""
+        in_shape = self.pattern_input_node.meta["val"].shape
+        out_shape = self.anchor_node.meta["val"].shape
+        expected = list(in_shape[:-1]) + [out_shape[-1]]
+        actual = list(view_node.meta["val"].shape)
+        return len(expected) == len(actual) and all(
+            str(a) == str(b) for a, b in zip(expected, actual)
+        )
 
     def is_weight_only_quantized(self) -> bool:
         return self.dequantize_input_node is None

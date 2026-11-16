@@ -13,7 +13,10 @@ import torch
 from executorch.backends.arm import arm_vela
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.ethosu.backend import EthosUBackend
-from executorch.backends.arm.scripts.aot_arm_compiler import _get_compile_spec
+from executorch.backends.arm.scripts.aot_arm_compiler import (
+    _get_args,
+    _get_compile_spec,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import EthosUPipelineINTBase
 from executorch.backends.arm.tosa.backend import TOSABackend
@@ -138,6 +141,7 @@ def test_aot_scratch_capacity(target, system_config, memory_mode, limit, expecte
         config="Arm/vela.ini",
         enable_debug_mode=None,
         direct_drive=False,
+        plan_delegate_scratch=False,
         intermediates=None,
     )
     assert _get_compile_spec(args).max_scratch_size == expected
@@ -163,6 +167,7 @@ def test_aot_custom_u55_scratch_capacity(compile_scratch, system_config, config,
         config=config,
         enable_debug_mode=None,
         direct_drive=False,
+        plan_delegate_scratch=False,
         intermediates=None,
     )
     compile_spec = _get_compile_spec(args)
@@ -184,3 +189,59 @@ def test_real_vela_scratch_exceeds_capacity():
         RuntimeError, match="exceeding the configured capacity of 1 bytes"
     ):
         pipeline.run()
+
+
+@pytest.mark.parametrize("plan_delegate_scratch", [False, True])
+@pytest.mark.parametrize("direct_drive", [False, True])
+def test_aot_planned_scratch_is_independent_of_direct_drive(
+    plan_delegate_scratch, direct_drive
+):
+    args = SimpleNamespace(
+        target="ethos-u85-256",
+        system_config=None,
+        memory_mode=None,
+        max_scratch_size=None,
+        config="Arm/vela.ini",
+        enable_debug_mode=None,
+        direct_drive=direct_drive,
+        plan_delegate_scratch=plan_delegate_scratch,
+        intermediates=None,
+    )
+    compile_spec = _get_compile_spec(args)
+    restored = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert restored.plan_delegate_scratch is plan_delegate_scratch
+    assert ("--separate-io-regions" in restored.compiler_flags) is direct_drive
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_aot_planned_scratch_flag(monkeypatch, enabled):
+    args = [
+        "aot_arm_compiler",
+        "--model_name",
+        "model.py",
+        "--target",
+        "ethos-u55-128",
+        "--delegate",
+    ]
+    if enabled:
+        args.append("--plan-delegate-scratch")
+    monkeypatch.setattr("sys.argv", args)
+    assert _get_compile_spec(_get_args()).plan_delegate_scratch is enabled
+
+
+def test_aot_planned_scratch_rejects_non_ethosu_target(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "aot_arm_compiler",
+            "--model_name",
+            "model.py",
+            "--target",
+            "TOSA-1.0+INT",
+            "--plan-delegate-scratch",
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        _get_args()
+    assert error.value.code == 2
+    assert "requires an Ethos-U target" in capsys.readouterr().err

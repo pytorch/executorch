@@ -40,6 +40,7 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:portable_lib",
@@ -76,6 +77,7 @@ fbcode_target(
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
     ],

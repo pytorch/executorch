@@ -45,12 +45,11 @@ constexpr int64_t kDefaultEthosUTimeoutNs = 60000000000LL;
 struct LinuxDriverOptions {
   std::string device_path = "/dev/ethosu0";
   int64_t timeout_ns = kDefaultEthosUTimeoutNs;
-  bool enable_cycle_counter = true;
-  std::array<uint32_t, ETHOSU_PMU_EVENT_MAX> pmu_events{};
 };
 
 struct PlatformState {
   LinuxDriverOptions options;
+  bool warned_ignored_planned_scratch = false;
   std::shared_ptr<EthosU::Network> network;
   std::shared_ptr<EthosU::Buffer> constant_buffer;
   std::shared_ptr<EthosU::Buffer> intermediate_buffer;
@@ -86,8 +85,6 @@ LinuxDriverOptions parse_linux_options(ArrayRef<CompileSpec> specs) {
   LinuxDriverOptions options;
   constexpr char kDeviceKey[] = "ethosu.device";
   constexpr char kTimeoutKey[] = "ethosu.timeout_ns";
-  constexpr char kCycleCounterKey[] = "ethosu.enable_cycle_counter";
-  constexpr char kPmuPrefix[] = "ethosu.pmu_event";
 
   for (const CompileSpec& spec : specs) {
     if (spec.key == nullptr) {
@@ -108,27 +105,6 @@ LinuxDriverOptions parse_linux_options(ArrayRef<CompileSpec> specs) {
         options.timeout_ns = timeout;
       }
       continue;
-    }
-
-    if (strcmp(spec.key, kCycleCounterKey) == 0) {
-      uint8_t enabled = 0;
-      if (read_scalar_value(spec, &enabled)) {
-        options.enable_cycle_counter = enabled != 0;
-      }
-      continue;
-    }
-
-    if (strncmp(spec.key, kPmuPrefix, strlen(kPmuPrefix)) == 0) {
-      const char* index_str = spec.key + strlen(kPmuPrefix);
-      char* endptr = nullptr;
-      long idx = std::strtol(index_str, &endptr, 10);
-      if (endptr != index_str && idx >= 0 &&
-          idx < static_cast<long>(ETHOSU_PMU_EVENT_MAX)) {
-        uint32_t event = 0;
-        if (read_scalar_value(spec, &event)) {
-          options.pmu_events[static_cast<size_t>(idx)] = event;
-        }
-      }
     }
   }
 
@@ -258,8 +234,8 @@ Error invoke_linux_driver(
         state.ofm_buffers.end(),
         state.intermediate_buffer,
         state.constant_buffer,
-        options.pmu_events,
-        options.enable_cycle_counter);
+        std::array<uint32_t, ETHOSU_PMU_EVENT_MAX>{},
+        true);
 
     if (inference->wait(options.timeout_ns)) {
       ET_LOG(
@@ -278,7 +254,7 @@ Error invoke_linux_driver(
       return Error::InvalidState;
     }
 
-    if (options.enable_cycle_counter) {
+    {
       try {
         ET_LOG(
             Info,
@@ -428,7 +404,7 @@ bool needs_scratch_allocation() {
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
 // cppcheck-suppress unusedFunction
 Error platform_execute(
-    BackendExecutionContext& /*context*/,
+    BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
@@ -453,10 +429,17 @@ Error platform_execute(
     linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
   }
 
-  const PlatformState* state = execution_handle->platform_state;
+  PlatformState* state = execution_handle->platform_state;
   if (state == nullptr) {
     ET_LOG(Error, "Ethos-U Linux backend missing platform state");
     return Error::InvalidState;
+  }
+  if (!context.scratch_buffers().empty() &&
+      !state->warned_ignored_planned_scratch) {
+    ET_LOG(
+        Info,
+        "WARNING: Planned Ethos-U scratch is unused on Linux Direct Drive; using driver-managed scratch instead");
+    state->warned_ignored_planned_scratch = true;
   }
   return invoke_linux_driver(
       handles,

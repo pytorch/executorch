@@ -70,6 +70,8 @@ class EthosUCompileSpec(ArmCompileSpec):
         max_scratch_size (int | None): Maximum delegate scratch arena size in
             bytes for the deployment platform. Checked against Vela's output;
             independent of Vela's arena cache size. None disables the check.
+        plan_delegate_scratch (bool): Declare delegate scratch for AOT
+            memory planning. Defaults to False.
 
     """
 
@@ -78,6 +80,7 @@ class EthosUCompileSpec(ArmCompileSpec):
     _MAX_SCRATCH_SIZE_KEY = "max_scratch_size"
     _DELEGATE_MUTABLE_BUFFERS_KEY = "delegate_mutable_buffers"
     _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
+    _PLAN_DELEGATE_SCRATCH_KEY = "plan_delegate_scratch"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -150,10 +153,12 @@ class EthosUCompileSpec(ArmCompileSpec):
         config_ini: str | None = "Arm/vela.ini",
         external_block_placements: VelaExternalBlockPlacements | None = None,
         max_scratch_size: int | None = None,
+        plan_delegate_scratch: bool = False,
     ):
         self.target = target
         self.max_scratch_size = max_scratch_size
         self.delegate_mutable_buffers = False
+        self.plan_delegate_scratch = plan_delegate_scratch
         self.external_block_placements = (
             VelaExternalBlockPlacements()
             if external_block_placements is None
@@ -216,6 +221,8 @@ class EthosUCompileSpec(ArmCompileSpec):
                     self._MAX_SCRATCH_SIZE_KEY, str(self.max_scratch_size).encode()
                 )
             )
+        if self.plan_delegate_scratch:
+            compile_specs.append(CompileSpec(self._PLAN_DELEGATE_SCRATCH_KEY, b"True"))
         block_placements = self.external_block_placements.to_block_placements()
         if block_placements:
             # CompileSpec values are bytes, so use deterministic JSON to
@@ -243,6 +250,12 @@ class EthosUCompileSpec(ArmCompileSpec):
         compile_spec.max_scratch_size = (
             int(max_scratch_size) if max_scratch_size is not None else None
         )
+        plan_delegate_scratch = specs.get(cls._PLAN_DELEGATE_SCRATCH_KEY)
+        compile_spec.plan_delegate_scratch = (
+            str(plan_delegate_scratch).lower() in ("1", "true", "yes")
+            if plan_delegate_scratch is not None
+            else False
+        )
         serialized_placements = specs.get(cls._EXTERNAL_BLOCK_PLACEMENTS_KEY)
         if serialized_placements is None:
             compile_spec.external_block_placements = VelaExternalBlockPlacements()
@@ -262,6 +275,8 @@ class EthosUCompileSpec(ArmCompileSpec):
 
     def _validate(self):
         """Validate the configuration against supported Ethos-U settings."""
+        if type(self.plan_delegate_scratch) is not bool:
+            raise ValueError("plan_delegate_scratch must be a boolean.")
         if self.max_scratch_size is not None and (
             type(self.max_scratch_size) is not int or self.max_scratch_size <= 0
         ):

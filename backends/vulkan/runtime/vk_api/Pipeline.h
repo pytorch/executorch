@@ -38,7 +38,7 @@ struct SpecVar final {
     int32_t as_int32;
     uint32_t as_uint32;
     float as_float;
-    bool as_bool;
+    VkBool32 as_bool;
   };
 
   Value value;

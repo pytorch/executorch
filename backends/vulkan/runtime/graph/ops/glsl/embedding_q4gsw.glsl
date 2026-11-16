@@ -33,6 +33,8 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
+#include "indexing.glslh"
+
 // Output uses the graph's storage type
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 // Indices use the graph's storage type
@@ -47,6 +49,9 @@ ${layout_declare_tensor(B, "r", "t_scales", SCALES_DTYPE, "buffer")}
 
 // Output sizes in WHCN order
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
+${layout_declare_ubo(B, "BufferMetadata", "scales")}
+$if STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "indices")}
 
 layout(push_constant) uniform PushConstants {
   int group_size;
@@ -133,12 +138,15 @@ void main() {
   const int num_indices = out_sizes.y * out_sizes.z * out_sizes.w;
 
   const int indices_idx = z_idx * out_height + y_idx;
-  if (block_in_row >= blocks_per_row || indices_idx >= num_indices) {
+  if (block_in_row >= blocks_per_row || y_idx >= out_height ||
+      indices_idx >= num_indices) {
     return;
   }
 
 #ifdef OUTPUT_BUFFER
-  const int embedding_idx = t_indices[indices_idx];
+  // Contiguous width-packed indices: Y selects a column, Z flattens outer rows.
+  const int indices_bufi = z_idx * int(stride_at(indices, 1)) + y_idx;
+  const int embedding_idx = t_indices[indices_bufi];
 #else
   const ivec4 in_texel =
       texelFetch(t_indices, ivec3(indices_idx >> 2, 0, 0), 0);
@@ -146,12 +154,13 @@ void main() {
 #endif
 
   const int base_dim = block_in_row << 5;
-  const int groups_per_row = embed_dim / group_size;
+  const int scales_stride =
+      int(ndim(scales) > 1u ? stride_at(scales, 1) : stride_at(scales, 0));
 
   [[unroll]] for (int t = 0; t < 8; t++) {
     const int dim = base_dim + (t << 2);
     const float scale =
-        float(t_scales[embedding_idx * groups_per_row + dim / group_size]);
+        float(t_scales[embedding_idx * scales_stride + dim / group_size]);
 
     const VEC4_T vals =
         load_embedding_weights(embedding_idx, dim, embed_dim, scale);
