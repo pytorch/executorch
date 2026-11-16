@@ -1232,17 +1232,19 @@ lib.impl("swiglu", swiglu_impl, "CompositeExplicitAutograd")
 
 def rms_norm_impl(
     x: torch.Tensor,
-    weight: torch.Tensor,
+    weight: Optional[torch.Tensor],
     eps: float,
 ) -> torch.Tensor:
     input_dtype = x.dtype
     variance = x.float().pow(2).mean(-1, keepdim=True)
     x_normed = x.float() * torch.rsqrt(variance + eps)
-    return (x_normed * weight.float()).to(input_dtype)
+    if weight is not None:
+        x_normed = x_normed * weight.float()
+    return x_normed.to(input_dtype)
 
 
 name = "rms_norm"
-lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
+lib.define(f"{name}(Tensor x, Tensor? weight, float eps) -> Tensor")
 lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
 rms_norm_op = getattr(getattr(torch.ops, namespace), name)
 

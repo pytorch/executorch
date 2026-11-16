@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -68,6 +68,17 @@ class ArangeModule(torch.nn.Module):
 class DynamicArangeModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + torch.arange(0, x.shape[0], 1, dtype=torch.float32)
+
+
+class RmsNormModule(torch.nn.Module):
+    def __init__(self, affine: bool) -> None:
+        super().__init__()
+        self.weight: Optional[torch.nn.Parameter] = (
+            torch.nn.Parameter(torch.ones(8)) if affine else None
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.ops.et_vk.rms_norm(x, self.weight, 1e-5)
 
 
 class TestWebGPUPartitioner(unittest.TestCase):
@@ -486,6 +497,29 @@ class TestWebGPUPartitioner(unittest.TestCase):
                 self.assertIn(
                     exir_ops.edge.aten.convolution.default,
                     self._targets(non_lowered),
+                )
+
+    def _rms_norm_is_delegated(self, partitioner: Partitioner, affine: bool) -> bool:
+        exported_program = torch.export.export(
+            RmsNormModule(affine), (torch.rand(2, 8),)
+        )
+        result = partitioner.partition(to_edge(exported_program).exported_program())
+        (node,) = [
+            node
+            for node in result.tagged_exported_program.graph.nodes
+            if node.target == exir_ops.edge.et_vk.rms_norm.default
+        ]
+        return "delegation_tag" in node.meta
+
+    def test_rms_norm_without_weight_stays_on_cpu(self) -> None:
+        # Vulkan implements a None weight; the WebGPU kernel does not.
+        for affine in (True, False):
+            with self.subTest(affine=affine):
+                self.assertEqual(
+                    self._rms_norm_is_delegated(WebGPUPartitioner(), affine), affine
+                )
+                self.assertTrue(
+                    self._rms_norm_is_delegated(VulkanPartitioner(), affine)
                 )
 
 
