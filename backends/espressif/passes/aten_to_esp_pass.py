@@ -83,9 +83,19 @@ def _mul_args(node: Node, quantize: Node) -> tuple | None:
     params = [_qparams(arg) for arg in (*inputs, quantize)]
     if any(param is None for param in params):
         return None
-    values = [arg.args[0].meta.get("val") for arg in inputs] + [
-        quantize.meta.get("val")
-    ]
+    if not all(
+        isinstance(arg.meta.get("val"), torch.Tensor)
+        and arg.meta["val"].dtype == torch.float32
+        for arg in (*inputs, node)
+    ):
+        return None
+    return _mul_kernel_args(
+        [arg.args[0] for arg in inputs], params, quantize.meta.get("val")
+    )
+
+
+def _mul_kernel_args(inputs, params, output_value) -> tuple | None:
+    values = [arg.meta.get("val") for arg in inputs] + [output_value]
     if not all(
         isinstance(value, torch.Tensor)
         and value.dtype == torch.int8
@@ -95,19 +105,13 @@ def _mul_args(node: Node, quantize: Node) -> tuple | None:
         for value in values
     ) or not all(value.shape == values[0].shape for value in values[1:]):
         return None
-    if not all(
-        isinstance(arg.meta.get("val"), torch.Tensor)
-        and arg.meta["val"].dtype == torch.float32
-        for arg in (*inputs, node)
-    ):
-        return None
     rescale = _mul_multiplier(*params)
     if rescale is None:
         return None
     input1, input2, output = params
     return (
-        inputs[0].args[0],
-        inputs[1].args[0],
+        inputs[0],
+        inputs[1],
         -input1.zp,
         -input2.zp,
         output.zp,

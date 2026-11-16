@@ -14,13 +14,25 @@ from pathlib import Path
 import pytest
 import torch
 from executorch.backends.espressif.passes import EspPassManager
+from executorch.backends.espressif.passes.lower_to_esp import LowerToEsp
 from executorch.backends.espressif.quantizer import EspNNQuantizer
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import (
     Quantize,
     RunPasses,
     StageType,
+    ToEdge,
     ToEdgeTransformAndLower,
+)
+from executorch.backends.transforms.fused_quant.decompose_fused_quant import (
+    AssertNoFusedQuantOps,
+    DecomposeFusedQuant,
+)
+from executorch.backends.transforms.remove_unused_constants_pass import (
+    RemoveUnusedConstantsPass,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
 )
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
@@ -31,6 +43,18 @@ from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
     to_edge_transform_and_lower,
+)
+from executorch.exir.pass_manager import ExportedProgramPassManager
+from executorch.export import (
+    export,
+    ExportRecipe,
+    LoweringRecipe,
+    QuantizationRecipe,
+    StageType as ExportStageType,
+)
+from executorch.frontends.fused_quant.quantizer.quantizer import (
+    FusedQuantQuantizer,
+    get_core_aten_quantizers,
 )
 from torch.utils._pytree import tree_flatten
 
@@ -56,6 +80,60 @@ class EspToEdgeTransformAndLower(ToEdgeTransformAndLower):
         )
 
 
+class EspCompileFusedQuant(ToEdge):
+    def __init__(self, quantizer, calibration_samples):
+        super().__init__()
+        self.quantizer = quantizer
+        self.calibration_samples = calibration_samples
+
+    def _fuse(self, graph_module):
+        self.quantizer.fuse(graph_module)
+        return graph_module
+
+    def run(self, artifact, inputs=None):
+        session = export(
+            artifact,
+            example_inputs=[inputs],
+            export_recipe=ExportRecipe(
+                quantization_recipe=QuantizationRecipe(
+                    quantizers=[self.quantizer],
+                    preserve_ops=self.quantizer.preserved_ops(),
+                    calibration_inputs_fn=lambda: self.calibration_samples or [inputs],
+                    post_convert_passes=[self._fuse],
+                ),
+                lowering_recipe=LoweringRecipe(
+                    edge_compile_config=EdgeCompileConfig(
+                        _skip_dim_order=True,
+                        _core_aten_ops_exception_list=self.quantizer.preserved_ops(),
+                    ),
+                ),
+                pipeline_stages=[
+                    ExportStageType.QUANTIZE,
+                    ExportStageType.TORCH_EXPORT,
+                    ExportStageType.TO_EDGE,
+                ],
+            ),
+        )
+        self.edge_dialect_program = session.get_edge_program_manager()
+
+
+class EspRunFusedQuantPasses(RunPasses):
+    def __init__(self):
+        super().__init__(ExportedProgramPassManager)
+
+    def run(self, artifact, inputs=None):
+        self.edge_or_aten_program = artifact.transform(
+            ExportedProgramPassManager(
+                [
+                    LowerToEsp(),
+                    DecomposeFusedQuant(),
+                    RemoveUnusedConstantsPass(),
+                    AssertNoFusedQuantOps(),
+                ]
+            )
+        )
+
+
 class EspTester(Tester):
     def __init__(self, module, example_inputs, calibration_samples=None):
         stages = self.default_stage_classes()
@@ -65,6 +143,23 @@ class EspTester(Tester):
         stages[StageType.RUN_PASSES] = EspRunPasses
         stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = EspToEdgeTransformAndLower
         super().__init__(module, example_inputs, stages)
+        self.calibration_samples = calibration_samples
+
+    def compile_fused_quant(self, quantizer=None):
+        if quantizer is None:
+            quantizer = FusedQuantQuantizer(
+                get_core_aten_quantizers(
+                    get_symmetric_quantization_config(is_per_channel=False),
+                    get_symmetric_quantization_config(is_per_channel=True),
+                )
+            )
+        return self._run_stage(
+            EspCompileFusedQuant(quantizer, self.calibration_samples),
+            self.example_inputs,
+        )
+
+    def run_fused_quant_passes(self):
+        return self.run_passes(EspRunFusedQuantPasses())
 
     def test_dialect(
         self,
@@ -92,7 +187,9 @@ class EspTester(Tester):
         if not build_path:
             pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory")
 
-        self.quantize().export().to_edge().run_passes()
+        if self.cur is None:
+            self.quantize().export().to_edge().run_passes()
+        assert self.cur == StageType.RUN_PASSES
         expected, _ = tree_flatten(
             self.get_artifact().exported_program().module()(*self.example_inputs)
         )
