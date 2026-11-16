@@ -1178,10 +1178,7 @@ class GgmlOpsTest(unittest.TestCase):
     def test_embedding_4bit(self):
         model = torch.nn.Embedding(10, 64)
         _quantize_8da4w(model, group_size=64)
-        # Only the Q4_0 fp16 scales round, so this fails on a nibble swap.
-        self._check(
-            model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),), atol=2e-3, rtol=1e-3
-        )
+        self._check(model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
 
     def test_embedding_4bit_rejects_asymmetric(self):
         model = torch.nn.Embedding(10, 64)
