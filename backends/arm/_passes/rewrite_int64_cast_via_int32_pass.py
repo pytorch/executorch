@@ -58,6 +58,7 @@ class RewriteInt64CastViaInt32Pass(ArmOpTargetedPass):
                     node.target,
                     args=(node,),
                     kwargs={"dtype": output_dtype},
+                    from_node=node,
                 )
             for user in users:
                 user.replace_input_with(node, cast_after)
