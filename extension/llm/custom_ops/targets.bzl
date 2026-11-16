@@ -1,3 +1,7 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 load("@fbsource//xplat/executorch/build:build_variables.bzl", "EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load(
