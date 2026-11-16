@@ -230,15 +230,39 @@ SHAPES = [
     ("32ch_s2", "32 ch 5x5 125x125 x2", (2, 32, 125, 125), 32, 5, 2, 0, True),
     ("32ch_s2", "32 ch 3x3 61x61 x2", (2, 32, 61, 61), 32, 3, 2, 0, True),
     ("32ch_s2", "32 ch 3x3 30x30 x2", (2, 32, 30, 30), 32, 3, 2, 0, True),
+    # 1-D convolutions over sequences of 4 to 64 steps at batch 1.
+    ("1d_k5", "2-512 ch T16", (1, 2, 16), 512, 5, 1, 2, True),
+    ("1d_k5", "512 ch T16", (1, 512, 16), 512, 5, 1, 2, True),
+    ("1d_k5", "512-1024 ch T8", (1, 512, 8), 1024, 5, 1, 2, True),
+    ("1d_k5", "1024 ch T8", (1, 1024, 8), 1024, 5, 1, 2, True),
+    ("1d_k5", "1024-2048 ch T4", (1, 1024, 4), 2048, 5, 1, 2, True),
+    ("1d_k5", "2048 ch T4", (1, 2048, 4), 2048, 5, 1, 2, True),
+    ("1d_k5", "4096-1024 ch T4", (1, 4096, 4), 1024, 5, 1, 2, True),
+    ("1d_k5", "2048-512 ch T8", (1, 2048, 8), 512, 5, 1, 2, True),
+    ("1d_k5", "512 ch T64", (1, 512, 64), 512, 5, 1, 2, True),
+    ("1d_k5", "1024 ch T32", (1, 1024, 32), 1024, 5, 1, 2, True),
+    ("1d_k5", "2048 ch T16", (1, 2048, 16), 2048, 5, 1, 2, True),
+    ("1d_k1", "2-512 ch T16", (1, 2, 16), 512, 1, 1, 0, True),
+    ("1d_k1", "512-1024 ch T8", (1, 512, 8), 1024, 1, 1, 0, True),
+    ("1d_k1", "1024-2048 ch T4", (1, 1024, 4), 2048, 1, 1, 0, True),
+    ("1d_k1", "4096-1024 ch T4", (1, 4096, 4), 1024, 1, 1, 0, True),
+    ("1d_k1", "2048-512 ch T8", (1, 2048, 8), 512, 1, 1, 0, True),
+    ("1d_k1", "512-2 ch T16", (1, 512, 16), 2, 1, 1, 0, True),
+    ("1d_k1", "1024-2048 ch T16", (1, 1024, 16), 2048, 1, 1, 0, True),
+    ("1d_k3_s2", "512 ch T16", (1, 512, 16), 512, 3, 2, 1, True),
+    ("1d_k3_s2", "1024 ch T8", (1, 1024, 8), 1024, 3, 2, 1, True),
+    ("1d_k3_s2", "512 ch T64", (1, 512, 64), 512, 3, 2, 1, True),
+    ("1d_k3_s2", "1024 ch T32", (1, 1024, 32), 1024, 3, 2, 1, True),
 ]
 
 
-def shape_cases(precision, layout):
+def shape_cases(precision, layout, groups=None):
     return [
         Case(
             **{**asdict(_case(f"{group} {label}", *rest, precision)), "layout": layout}
         )
         for group, label, *rest in SHAPES
+        if groups is None or group in groups
     ]
 
 
@@ -420,10 +444,17 @@ def triton_runner(x, w, b, case):
     return run, schedule
 
 
+def _conv1d(x, w, b, stride, padding=(0,)):
+    """The backend's ``conv1d_to_conv2d``: a 2-D convolution over a unit last dim."""
+    out = F.conv2d(x.unsqueeze(-1), w.unsqueeze(-1), b, (stride[0], 1), (padding[0], 0))
+    return out.squeeze(-1)
+
+
 def aten_conv(x, w, b, case):
-    """What the exported graph holds: a separate pad for asymmetric padding, and
-    a contiguous output where the graph records one."""
-    conv = {1: F.conv1d, 2: F.conv2d, 3: F.conv3d}[len(case.kernel)]
+    """What the CUDA backend gives Inductor: a separate pad for asymmetric
+    padding, a 1-D convolution as a 2-D one, and a contiguous output where the
+    graph records one."""
+    conv = {1: _conv1d, 2: F.conv2d, 3: F.conv3d}[len(case.kernel)]
     if case.before == case.after:
         out = conv(x, w, b, case.stride, case.before)
     else:
@@ -554,6 +585,9 @@ def main():
         choices=["nchw", "channels_last", "cl_to_nchw"],
         help="cl_to_nchw: channels-last input, contiguous output (as exported on CUDA)",
     )
+    parser.add_argument(
+        "--groups", help="shapes suite: comma-separated groups, e.g. 3x3,1d_k5"
+    )
     parser.add_argument("--shard", default="0/1", help="run cases i::n of the suite")
     parser.add_argument("--warm", action="store_true", help="do not flush L2")
     parser.add_argument("--threshold", type=float, default=1.25)
@@ -561,7 +595,9 @@ def main():
     args = parser.parse_args()
 
     cases = {
-        "shapes": lambda: shape_cases(args.precision, args.layout),
+        "shapes": lambda: shape_cases(
+            args.precision, args.layout, args.groups and args.groups.split(",")
+        ),
         "envelope": lambda: envelope_cases(args.precision.split(",")),
         "boundary": lambda: boundary_cases(args.precision, args.layout),
     }[args.suite]()
