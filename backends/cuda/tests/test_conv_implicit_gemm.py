@@ -7,6 +7,7 @@
 """triton::convolution on dense convolutions: every schedule and K order of
 the implicit-GEMM template against an FP64 reference."""
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -16,6 +17,17 @@ import torch.nn.functional as F
 
 _TOLERANCE = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 1.6e-2}
 _TF32_TOLERANCE = 5e-3
+# Every case of every sweep. Without it, a sweep runs its first dtype and layout
+# on every geometry and the others on every third geometry. The Buck target sets
+# it; the OSS CI's CUDA shards have no time for the full sweeps.
+_EXHAUSTIVE = os.environ.get("EXECUTORCH_CUDA_EXHAUSTIVE_TESTS") == "1"
+
+
+def _swept(i, primary):
+    """Whether a sweep runs a case on its ``i``-th geometry: every ``primary``
+    case (its first dtype and layout), and the others on every third geometry
+    unless exhaustive."""
+    return _EXHAUSTIVE or primary or i % 3 == 0
 
 
 def _reference(x, w, b, stride, before, after):
@@ -154,6 +166,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             (geometry, layout, layout == "weight_cl" or i % 2 == 0)
             for i, geometry in enumerate(geometries)
             for layout in layouts
+            if _swept(i, dtype == torch.float32 and layout == "contiguous")
         ]
         for (shape, c_out, kernel, stride, before, after), layout, bias in cases:
             x, w, b = self.tensors(shape, c_out, kernel, dtype=dtype, bias=bias)
