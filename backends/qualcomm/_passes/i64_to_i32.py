@@ -158,23 +158,14 @@ class I64toI32(ExportPass):
     def _record_original_output_dtype(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
             # Keep track of original output dtype so we ensure the dtype of the graph is consistent with nn.Module
-            if is_graph_output(n):
-                if isinstance(n.meta["val"], (tuple, list)):
-                    dtype_list = [
-                        tensor.dtype if tensor is not None else None
-                        for tensor in n.meta["val"]
-                    ]
-                    n.meta[QCOM_ORIG_DTYPE] = dtype_list
-                else:
-                    n.meta[QCOM_ORIG_DTYPE] = n.meta["val"].dtype
+            # The getitems of a multi-output node, such as topk, are graph
+            # outputs too, and each output is cast back there.
+            if is_graph_output(n) and isinstance(n.meta["val"], torch.Tensor):
+                n.meta[QCOM_ORIG_DTYPE] = n.meta["val"].dtype
 
     def _preserve_output_dtype(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
             if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
-                # The getitems of a multi-output node, such as topk, are graph
-                # outputs too, and each output is cast back there.
-                if isinstance(n.meta["val"], (tuple, list)):
-                    continue
                 if n.meta["val"].dtype != n.meta[QCOM_ORIG_DTYPE]:
                     if n.meta[QCOM_ORIG_DTYPE] != torch.int64:
                         logging.warning(
