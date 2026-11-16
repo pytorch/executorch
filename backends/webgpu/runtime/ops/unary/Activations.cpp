@@ -13,8 +13,10 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/erf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/mul_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
@@ -129,6 +131,11 @@ void elu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       input_scale);
 }
 
+void erf_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_unary_op(
+      graph, args.at(0), args.at(1), kErfWGSL, kErfWorkgroupSizeX, "erf");
+}
+
 void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.clamp.default args: [in, min, max, out]; min/max None -> +/-inf.
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
@@ -172,6 +179,24 @@ void pow_scalar_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       exponent);
 }
 
+void mul_scalar_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // aten.mul.Scalar args: [in, other, out]; other = min slot.
+  const auto vt = graph.get_value_type(args.at(1));
+  if (vt != WebGPUGraph::ValueType::Int &&
+      vt != WebGPUGraph::ValueType::Double) {
+    throw std::runtime_error(
+        "WebGPU mul.Scalar: other must be an Int or Double");
+  }
+  add_unary_op(
+      graph,
+      args.at(0),
+      args.at(2),
+      kMulScalarWGSL,
+      kMulScalarWorkgroupSizeX,
+      "mul_scalar",
+      utils::scalar_or(graph, args.at(1), 0.0f));
+}
+
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
@@ -187,9 +212,11 @@ WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.hardswish.default, hardswish_impl);
   WEBGPU_REGISTER_OP(aten.silu.default, silu_impl);
   WEBGPU_REGISTER_OP(aten.elu.default, elu_impl);
+  WEBGPU_REGISTER_OP(aten.erf.default, erf_impl);
   WEBGPU_REGISTER_OP(aten.clamp.default, clamp_impl);
   WEBGPU_REGISTER_OP(aten.hardtanh.default, hardtanh_impl);
   WEBGPU_REGISTER_OP(aten.pow.Tensor_Scalar, pow_scalar_impl);
+  WEBGPU_REGISTER_OP(aten.mul.Scalar, mul_scalar_impl);
 }
 
 } // namespace executorch::backends::webgpu

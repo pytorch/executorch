@@ -239,7 +239,7 @@ installed by the `Test Native Engines` workflow. The Vulkan job builds
 
 Native GGML builds the GGML subtree of the llama.cpp submodule at
 `backends/native/third-party/llama.cpp`, pinned to
-`620d2225cc436ab0b001e3200e590e3b286ef9ab`. This matches the Buck dependency
+`b1b770d90d94cad9e9ea5b993bdbc383a522fb28`. This matches the Buck dependency
 used to validate this CMake integration. The build requires `GGML_CPU=ON`
 and `GGML_BACKEND_DL=OFF`, which are the defaults.
 

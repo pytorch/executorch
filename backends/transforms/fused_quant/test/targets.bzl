@@ -51,62 +51,17 @@ def define_common_targets():
             ":test_helpers",
             "fbsource//third-party/pypi/parameterized:parameterized",
             "//executorch/backends/transforms/fused_quant:fold_batch_norm",
-            "//executorch/backends/transforms/fused_quant:replace_batch_norm_with_conv",
             "//caffe2:torch",
         ],
     )
 
     runtime.python_test(
-        name = "test_fuse_add_softmax_into_masked_softmax",
-        srcs = ["test_fuse_add_softmax_into_masked_softmax.py"],
+        name = "test_tensor_constants",
+        srcs = ["test_tensor_constants.py"],
         deps = [
             ":test_helpers",
             "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:fuse_add_softmax_into_masked_softmax",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_replace_batch_norm_with_conv",
-        srcs = ["test_replace_batch_norm_with_conv.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:replace_batch_norm_with_conv",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:utils",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_fold_input_free_subgraphs",
-        srcs = ["test_fold_input_free_subgraphs.py"],
-        deps = [
-            ":test_helpers",
-            "//executorch/backends/transforms/fused_quant:fold_input_free_subgraphs",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_replace_adaptive_avg_pool_with_avg_pool",
-        srcs = ["test_replace_adaptive_avg_pool_with_avg_pool.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:replace_adaptive_avg_pool_with_avg_pool",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_replace_clamp_with_hardtanh",
-        srcs = ["test_replace_clamp_with_hardtanh.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:replace_clamp_with_hardtanh",
+            "//executorch/backends/transforms/fused_quant:tensor_constants",
             "//caffe2:torch",
         ],
     )

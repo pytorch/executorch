@@ -103,6 +103,16 @@ class Conv1dChain(torch.nn.Module):
         return self.conv3(torch.relu(self.conv2(y) + y))
 
 
+class TransposedConv1dChain(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv1d(8, 8, 3, padding=1)
+
+    def forward(self, x):
+        return self.conv2(torch.relu(self.conv1(x).transpose(1, 2)).transpose(1, 2))
+
+
 class Apply(torch.nn.Module):
     def __init__(self, fn) -> None:
         super().__init__()
@@ -699,6 +709,19 @@ def test_conv1d_chain_keeps_only_the_boundary_layout_copies():
             op="call_function", target=exir_ops.edge.cortex_m.transpose.default
         )
     ] == [[0, 2, 1], [0, 2, 1]]
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_user_transposed_conv1d_chain_keeps_only_the_boundary_layout_copies():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(TransposedConv1dChain().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
     assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
