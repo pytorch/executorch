@@ -16,10 +16,12 @@ import json
 import tempfile
 import unittest
 
+import numpy as np
 import torch
 
 from executorch.examples.models.phonon.export_phonon import (
     lower_phonon,
+    quantize_asymmetric_int4,
     quantize_scheme,
     source_transforms_for,
 )
@@ -31,6 +33,7 @@ from executorch.examples.models.phonon.model import (
     Phonon,
     PhononConfig,
     program_metadata,
+    StreamingConvTranspose1d,
 )
 from executorch.examples.models.phonon.run_phonon import (
     EagerPrograms,
@@ -42,12 +45,16 @@ from executorch.examples.models.phonon.run_phonon import (
 )
 from executorch.examples.models.phonon.source_transformations import (
     compute_weights_in,
+    ComputeIn,
+    ConvTranspose1dAsConv1d,
     use_webgpu_compat_ops,
 )
 from executorch.examples.models.phonon.tests.reference import (
     FlowLMReference,
     MimiReference,
 )
+from executorch.exir import to_edge_transform_and_lower
+from torch.export import export
 
 TINY = PhononConfig(
     dim=64,
@@ -208,9 +215,25 @@ class TestPrograms(unittest.TestCase):
             self.assertEqual(tuple(pcm.shape), (1, 1, cfg.frame_samples))
             self.assertLess(max_diff(pcm, ref.decode(latent)), 1e-4)
 
+    def test_stateful_mimi_matches_state_io(self):
+        mimi = build_programs(self.model)["mimi_decode"]
+        stateful = build_programs(self.model, mimi_state_in_program=True)["mimi_decode"]
+        g = torch.Generator().manual_seed(3)
+        # Two utterances: the second reset must clear the first one's state.
+        for _ in range(2):
+            state = mimi_zero_state(TINY)
+            for k in range(4):
+                latent = torch.randn(1, 1, TINY.latent_dim, generator=g)
+                with torch.no_grad():
+                    want, *state = mimi(latent, *state)
+                    got = stateful(latent, torch.tensor([1.0 if k == 0 else 0.0]))
+                self.assertLess(max_diff(got, want), 1e-6)
+
     def test_weight_names_are_unique_across_programs(self):
         # The CUDA backend shares a weight between methods when the names match.
         programs = build_programs(self.model, "sdpa")
+        for transform in source_transforms_for("cuda", False):
+            transform(programs)
         compute_weights_in(programs, torch.bfloat16)
         owner = {}
         for name, program in programs.items():
@@ -235,27 +258,68 @@ class TestPrograms(unittest.TestCase):
                 for a, b in zip(outputs, programs[name](*inputs[name])):
                     self.assertLess(max_diff(a, b), 1e-4)
 
-    def test_vulkan_swaps_preserve_outputs(self):
+    def _check_swaps(self, backend: str, counts: list[int]):
         inputs = example_inputs(TINY)
         programs = build_programs(self.model)
         with torch.no_grad():
             before = programs["mimi_decode"](*inputs["mimi_decode"])
-        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
-        counts = [t(programs) for t in source_transforms_for("vulkan", False)]
-        self.assertEqual(counts, [7, 1, 2])
+        self.assertEqual(
+            [t(programs) for t in source_transforms_for(backend, False)], counts
+        )
         with torch.no_grad():
             after = programs["mimi_decode"](*inputs["mimi_decode"])
         for a, b in zip(before, after):
             self.assertLess(max_diff(a, b), 1e-4)
 
+    def test_vulkan_swaps_preserve_outputs(self):
+        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("vulkan", [7, 1, 2])
+
+    def test_xnnpack_swaps_preserve_outputs(self):
+        # The depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("xnnpack", [1, 2])
+
+    def test_cuda_swaps_preserve_outputs(self):
+        self._check_swaps("cuda", [1, 2])
+
+    def test_mlx_swaps_preserve_outputs(self):
+        # 7 ELUs, the depthwise upsampler, 2 decoder transposed convs.
+        self._check_swaps("mlx", [7, 1, 2])
+
+    def test_conv_transpose_as_conv_matches(self):
+        torch.manual_seed(0)
+        for stride, steps, bias in (
+            (1, 1, True),
+            (4, 16, False),
+            (5, 1, True),
+            (6, 16, True),
+        ):
+            convtr = torch.nn.ConvTranspose1d(
+                6, 3, 2 * stride, stride=stride, bias=bias
+            )
+            x = torch.randn(1, 6, steps)
+            with torch.no_grad():
+                got = ConvTranspose1dAsConv1d(convtr)(x)
+                self.assertLess(max_diff(got, convtr(x)), 1e-5, stride)
+
     def test_compute_weights_in_keeps_float32_io(self):
+        # --dtype bf16 is for CUDA and MLX, which apply the Mimi swaps first.
         inputs = example_inputs(TINY)
         programs = build_programs(self.model)
         with torch.no_grad():
             before = programs["mimi_decode"](*inputs["mimi_decode"])
+        for transform in source_transforms_for("cuda", False):
+            transform(programs)
         self.assertGreater(compute_weights_in(programs, torch.bfloat16), 0)
+        mimi = programs["mimi_decode"]
+        convtrs = [
+            m.convtr for m in mimi.modules() if isinstance(m, StreamingConvTranspose1d)
+        ]
+        self.assertEqual(len(convtrs), 3)
+        for convtr in convtrs:
+            self.assertIsInstance(convtr, ComputeIn)
         with torch.no_grad():
-            after = programs["mimi_decode"](*inputs["mimi_decode"])
+            after = mimi(*inputs["mimi_decode"])
         for a, b in zip(before, after):
             self.assertEqual(b.dtype, torch.float32)
             self.assertLess(max_diff(a, b), 0.05 * (a.abs().max().item() + 1e-6))
@@ -337,15 +401,62 @@ class TestExport(unittest.TestCase):
         for a, b in zip(got, want):
             self.assertLess(max_diff(a, b), 1e-4)
 
+    def test_stateful_mimi_program_keeps_state_between_calls(self):
+        try:
+            from executorch.extension.pybindings.portable_lib import (
+                _load_for_executorch,
+            )
+        except ImportError:
+            self.skipTest("ExecuTorch pybindings are not available")
+        model = random_model().to_half_split_rope()
+        stateful = build_programs(model, mimi_state_in_program=True)["mimi_decode"]
+        inputs = example_inputs(TINY, mimi_state_in_program=True)["mimi_decode"]
+        program = to_edge_transform_and_lower(
+            {"mimi_decode": export(stateful, inputs, strict=False)}
+        ).to_executorch()
+        g = torch.Generator().manual_seed(4)
+        with tempfile.TemporaryDirectory() as d:
+            with open(f"{d}/mimi.pte", "wb") as f:
+                program.write_to_file(f)
+            module = _load_for_executorch(f"{d}/mimi.pte")
+            for reset in (1.0, 0.0, 0.0, 1.0, 0.0):
+                args = (torch.randn(1, 1, TINY.latent_dim, generator=g),)
+                args += (torch.tensor([reset]),)
+                with torch.no_grad():
+                    want = stateful(*args)
+                got = module.run_method("mimi_decode", list(args))[0]
+                self.assertLess(max_diff(got, want), 1e-4)
+
     def test_bf16_only_on_supported_backends(self):
         with self.assertRaises(ValueError):
             lower_phonon(random_model().to_half_split_rope(), "vulkan", dtype="bf16")
 
+    def test_quantize_picks_the_scheme_of_the_backend(self):
+        self.assertEqual(quantize_scheme("xnnpack", "4bit", None), ("8da4w", "fp32"))
+        self.assertEqual(quantize_scheme("vulkan", "4bit", None), ("4w", "fp32"))
+        self.assertEqual(quantize_scheme("cuda", "4bit", None), ("4w", "bf16"))
+        self.assertEqual(quantize_scheme("mlx", "8bit", "bf16"), ("8w", "bf16"))
+        self.assertEqual(quantize_scheme("vulkan", None, None), (None, "fp32"))
+
     def test_quantize_only_with_a_kernel(self):
-        self.assertEqual(quantize_scheme("xnnpack", "4bit"), "8da4w")
-        self.assertIsNone(quantize_scheme("vulkan", None))
-        with self.assertRaises(ValueError):
-            quantize_scheme("vulkan", "4bit")
+        for backend, quantize, dtype in (
+            ("vulkan", "8bit", None),
+            ("portable", "4bit", None),
+            ("cuda", "4bit", "fp32"),
+            ("xnnpack", None, "bf16"),
+        ):
+            with self.assertRaises(ValueError, msg=f"{backend} {quantize}"):
+                quantize_scheme(backend, quantize, dtype)
+
+    def test_asymmetric_int4_skips_incompatible_linears(self):
+        torch.manual_seed(0)
+        module = torch.nn.Sequential(torch.nn.Linear(64, 16), torch.nn.Linear(16, 8))
+        x = torch.randn(4, 64)
+        want = module(x)
+        quantize_asymmetric_int4(module, 32)
+        self.assertIsNot(type(module[0].weight), torch.nn.Parameter)
+        self.assertIs(type(module[1].weight), torch.nn.Parameter)
+        self.assertLess(max_diff(module(x), want), 0.1)
 
     def test_xnnpack_lowering_delegates(self):
         _, _, delegation, _ = self._lower("xnnpack")
@@ -399,10 +510,25 @@ class TestHost(unittest.TestCase):
         self.assertEqual(pcm.size, info["frames"] * TINY.frame_samples)
         again, _ = runner.synthesize("hi there", speaker, temperature=0.0)
         self.assertTrue((pcm == again).all())
+        stateful = PhononRunner(
+            EagerPrograms(
+                build_programs(model, mimi_state_in_program=True),
+                program_metadata(model, mimi_state_in_program=True),
+            ),
+            lambda text: [1, 2, 3][: len(text.split())],
+        )
+        for _ in range(2):
+            got, _ = stateful.synthesize("hi there", speaker, temperature=0.0)
+            self.assertLess(np.abs(got - pcm).max(), 1e-5)
 
     def test_contract_is_json_serializable(self):
         json.dumps(io_contract(PhononConfig()))
         self.assertEqual(len(io_contract(PhononConfig())["mimi_decode"]["inputs"]), 16)
+        stateful = io_contract(PhononConfig(), mimi_state_in_program=True)
+        self.assertEqual(
+            [x["name"] for x in stateful["mimi_decode"]["inputs"]], ["latent", "reset"]
+        )
+        self.assertEqual(len(stateful["mimi_decode"]["outputs"]), 1)
 
 
 if __name__ == "__main__":
