@@ -6,7 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 #
 # Build the Cadence generic (reference) op-level gtest tests for the host and
-# run them.
+# run them, then build and run cadence_op_registry_test, which checks that every
+# op in backends/cadence/aot/functions.yaml is registered by cadence_ops_lib.
 #
 # Unlike backends/cadence/build_cadence_runner.sh (built -fno-exceptions
 # -fno-rtti), the gtest tests need exceptions + RTTI, so those flags are NOT set
@@ -14,8 +15,11 @@
 
 set -euo pipefail
 
-TEST_TARGET=cadence_generic_op_tests
-TEST_BIN="cmake-out/backends/cadence/generic/operators/tests/${TEST_TARGET}"
+BUILD_TARGETS=(cadence_generic_op_tests cadence_op_registry_test)
+TEST_BINS=(
+  cmake-out/backends/cadence/generic/operators/tests/cadence_generic_op_tests
+  cmake-out/backends/cadence/cadence_op_registry_test
+)
 
 rm -rf cmake-out
 cmake \
@@ -28,6 +32,9 @@ cmake \
   -DPYTHON_EXECUTABLE="$(which python3)" \
   -Bcmake-out .
 
-cmake --build cmake-out --target "${TEST_TARGET}" -j"$(nproc)"
+cmake --build cmake-out --target "${BUILD_TARGETS[@]}" -j"$(nproc)"
 
-"${TEST_BIN}"
+for TEST_BIN in "${TEST_BINS[@]}"; do
+  echo "=== running $(basename "${TEST_BIN}") ==="
+  "${TEST_BIN}"
+done
