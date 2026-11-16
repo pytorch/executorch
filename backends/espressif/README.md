@@ -35,6 +35,10 @@ for supported configurations. Shared quantization rules also cover
 operators that retain portable execution. The delegate's supported
 operators and export example are described below.
 
+Spatial operators use contiguous NHWC tensors; model inputs and outputs
+retain their original layout. Layout copies remain visible in the
+operator-library report.
+
 ## Contents
 
 ```
