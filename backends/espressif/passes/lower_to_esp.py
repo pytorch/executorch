@@ -84,8 +84,9 @@ def _add_multipliers(
     return *multipliers[0], *multipliers[1], left_shift, *multipliers[2]
 
 
-def _binary_kernel_args(inputs, params, output_value, rescale_fn) -> tuple | None:
-    values = [arg.meta.get("val") for arg in inputs] + [output_value]
+def _binary_kernel_args(node, params, rescale_fn) -> tuple | None:
+    inputs = node.args[:2]
+    values = [arg.meta.get("val") for arg in inputs] + [node.meta.get("val")]
     if not all(
         isinstance(value, torch.Tensor)
         and value.dtype == torch.int8
@@ -93,7 +94,24 @@ def _binary_kernel_args(inputs, params, output_value, rescale_fn) -> tuple | Non
         and 0 < value.numel() <= torch.iinfo(torch.int32).max
         and value.is_contiguous()
         for value in values
-    ) or not all(value.shape == values[0].shape for value in values[1:]):
+    ):
+        return None
+    if node.target == exir_ops.edge.fused_quant.mul.default:
+        # ESP-NN repeats one trailing block of input2 across the full input1.
+        if values[0].numel() < values[1].numel():
+            inputs = inputs[::-1]
+            params[0], params[1] = params[1], params[0]
+            values[0], values[1] = values[1], values[0]
+        rank = max(values[0].dim(), values[1].dim())
+        full_shape = (1,) * (rank - values[0].dim()) + tuple(values[0].shape)
+        block_shape = tuple(values[1].shape)
+        while block_shape and block_shape[0] == 1:
+            block_shape = block_shape[1:]
+        if values[2].shape != full_shape or (
+            block_shape and full_shape[-len(block_shape) :] != block_shape
+        ):
+            return None
+    elif not all(value.shape == values[0].shape for value in values[1:]):
         return None
     input1, input2, output = params
     # Portable float32 quantization multiplies by the reciprocal output scale.
@@ -184,12 +202,7 @@ class LowerToEsp(ExportedProgramPassBase):
             ]
             if any(param is None for param in params):
                 continue
-            args = _binary_kernel_args(
-                node.args[:2],
-                params,
-                node.meta.get("val"),
-                rescale_fn,
-            )
+            args = _binary_kernel_args(node, params, rescale_fn)
             if args is None:
                 continue
             with graph.inserting_before(node):

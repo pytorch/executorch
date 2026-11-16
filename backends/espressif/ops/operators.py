@@ -42,7 +42,7 @@ def quantized_mul_int8_meta(
     output_multiplier,
     output_shift,
 ):
-    return torch.empty_like(input1)
+    return input1.new_empty(torch.broadcast_shapes(input1.shape, input2.shape))
 
 
 @impl(lib, "quantized_mul_int8", "CompositeExplicitAutograd")
