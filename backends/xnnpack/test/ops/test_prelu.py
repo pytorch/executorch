@@ -4,10 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import gc
-import tempfile
 import unittest
-from pathlib import Path
 
 import torch
 from executorch.backends.test.harness.stages import StageType
@@ -15,7 +12,6 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.runtime import Runtime, Verification
 
 
 class TestPrelu(unittest.TestCase):
@@ -54,26 +50,6 @@ class TestPrelu(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
-    def _load_and_compare_from_file(self, write_program, inputs, expected):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            pte_path = Path(temp_dir) / "prelu.pte"
-            with pte_path.open("wb") as f:
-                write_program(f)
-
-            rt = Runtime.get()
-            program = rt.load_program(pte_path, verification=Verification.Minimal)
-            method = program.load_method("forward")
-            actual = method.execute(inputs)[0].clone()
-
-            # The program mmaps the .pte and keeps it mapped for as long as it
-            # or any of its methods is alive. Windows refuses to delete a
-            # mapped file, so release everything before the temp dir is
-            # cleaned up.
-            del method, program
-            gc.collect()
-
-            self.assertTrue(torch.allclose(expected, actual, atol=1e-5))
-
     @unittest.skip("XNNPACK Expects FP16 inputs but FP32 weights")
     def _test_fp16_prelu(self):
         module = self.PReLU().to(torch.float16)
@@ -103,8 +79,10 @@ class TestPrelu(unittest.TestCase):
         tester.to_executorch()
         tester.serialize()
 
-        buf = tester.stages[StageType.SERIALIZE].artifact
-        self._load_and_compare_from_file(lambda f: f.write(buf), (x,), expected)
+        actual = Tester.execute_from_file(
+            tester.stages[StageType.SERIALIZE].artifact, (x,)
+        )[0]
+        self.assertTrue(torch.allclose(expected, actual, atol=1e-5))
 
     def test_fp32_prelu_constant_weight_empty_decompositions_file_load(self):
         module = self.ConstWPrelu().eval()
@@ -123,4 +101,5 @@ class TestPrelu(unittest.TestCase):
             config=ExecutorchBackendConfig(extract_delegate_segments=True)
         )
 
-        self._load_and_compare_from_file(et_pm.write_to_file, (x,), expected)
+        actual = Tester.execute_from_file(et_pm.buffer, (x,))[0]
+        self.assertTrue(torch.allclose(expected, actual, atol=1e-5))

@@ -136,8 +136,10 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/elu_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/erf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/mul_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
@@ -159,7 +161,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 141> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -490,6 +492,13 @@ constexpr std::array<WebGPUShaderInfo, 141> kShaderRegistry = {{
         kEmbeddingQ4gswWorkgroupSizeZ,
     },
     {
+        "erf",
+        kErfWGSL,
+        kErfWorkgroupSizeX,
+        kErfWorkgroupSizeY,
+        kErfWorkgroupSizeZ,
+    },
+    {
         "et_vk_sdpa_av",
         kEtVkSdpaAvWGSL,
         kEtVkSdpaAvWorkgroupSizeX,
@@ -705,6 +714,13 @@ constexpr std::array<WebGPUShaderInfo, 141> kShaderRegistry = {{
         kMmVec4WorkgroupSizeX,
         kMmVec4WorkgroupSizeY,
         kMmVec4WorkgroupSizeZ,
+    },
+    {
+        "mul_scalar",
+        kMulScalarWGSL,
+        kMulScalarWorkgroupSizeX,
+        kMulScalarWorkgroupSizeY,
+        kMulScalarWorkgroupSizeZ,
     },
     {
         "native_layer_norm",

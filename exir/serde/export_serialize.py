@@ -2115,7 +2115,7 @@ class GraphModuleDeserializer:
             meta_val.append(self.serialized_name_to_meta[name])
             # The derived `getitem` nodes should have the same stacktrace as the
             # original `fx_node`
-            individual_output.meta.update(deserialized_metadata)
+            individual_output.meta.update(copy.deepcopy(deserialized_metadata))
 
         def generate_getitems(meta_val, fx_node: torch.fx.Node, args):
             for idx, arg in enumerate(args):
@@ -2131,7 +2131,7 @@ class GraphModuleDeserializer:
                     )
                     meta_val.append([])
                     generate_getitems(meta_val[-1], list_output, arg)
-                    list_output.meta.update(deserialized_metadata)
+                    list_output.meta.update(copy.deepcopy(deserialized_metadata))
                     list_output.meta["val"] = meta_val[-1]
                 else:
                     raise NotImplementedError(f"Unimplemented node output type: {arg}")

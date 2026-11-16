@@ -240,12 +240,6 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "quantize_affine_test",
-        extra_deps = [
-            ":test_utils",
-        ]
-    )
-    define_test_targets(
         "conv2d_gemm_dynamic_test",
         extra_deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",

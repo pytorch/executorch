@@ -50,12 +50,41 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
         bash .ci/scripts/test_espressif_idf_nightly.sh prepare "${RUNNER_ARTIFACT_DIR}"
+        bash .ci/scripts/test_espressif_idf_nightly.sh torch "${RUNNER_ARTIFACT_DIR}"
+        # Runs the release stamp's checks at a throwaway local tag, so they do
+        # not first run at a real one. The check of the executorch package,
+        # which --version stops before, runs only when publishing.
+        git tag -f "v$(cat version.txt)"
+        bash examples/espressif/build_idf_component.sh --version --version-suffix ""
+        # Exercises fetch, which otherwise runs only when publishing, on a
+        # local copy of the tar that publishing keeps.
+        tar -cf "${RUNNER_TEMP}/release.tar" -C "${RUNNER_ARTIFACT_DIR}" version dist models
+        bash .ci/scripts/test_espressif_idf_nightly.sh fetch "${RUNNER_TEMP}/fetched" \
+          "file://${RUNNER_TEMP}/release.tar" "$(sha256sum "${RUNNER_TEMP}/release.tar" | cut -d' ' -f1)"
         # The registry's validation of the packed archive, last, since it
         # installs the component manager into this environment.
-        pip install --progress-bar off "idf-component-manager~=3.1"
-        version=$(cat "${RUNNER_ARTIFACT_DIR}/version")
-        compote component upload --namespace pytorch --name executorch \
-          --archive "${RUNNER_ARTIFACT_DIR}/dist/executorch_${version}.tgz" --dry-run --allow-existing
+        bash .ci/scripts/upload_espressif_idf_component.sh "${RUNNER_ARTIFACT_DIR}" \
+          https://components.espressif.com --dry-run
+
+  # The dev versions' wheel check, which publishing otherwise first runs on a
+  # run on the nightly branch.
+  dev-wheel-check:
+    name: Rehearse the dev version's wheel check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      - run: |
+          set -euo pipefail
+          git fetch -q --shallow-since='60 days ago' origin \
+            +refs/heads/nightly:refs/remotes/origin/nightly
+          bash .ci/scripts/test_espressif_idf_nightly.sh rehearse "${RUNNER_TEMP}/wheel"
 
   build:
     name: ESP-IDF ${{ matrix.idf-version }} (${{ matrix.shard }}/4)

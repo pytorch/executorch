@@ -82,6 +82,15 @@ TEST(LowerRMSNormTest, RewritesPortableWeightedNorm) {
   EXPECT_NO_THROW(validate_graph(method.graph));
 }
 
+TEST(LowerRMSNormTest, ReadsUnnamedInputsByPosition) {
+  Method method = make_rms_norm();
+  for (NamedArgument& input : method.graph.node(2).inputs) {
+    input.name.clear();
+  }
+
+  EXPECT_EQ(lower_rms_norms(method.graph), 1);
+}
+
 TEST(LowerRMSNormTest, RejectsMismatchedNormalizedShape) {
   Method method = make_rms_norm();
   method.graph.node(2).inputs[1].arg = IntListArg{{8}};
