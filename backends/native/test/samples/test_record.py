@@ -13,6 +13,7 @@ from types import ModuleType
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.native.test.samples import rms_norm
 from executorch.backends.native.test.samples.cases import (
     Case,
     chain,
@@ -124,6 +125,13 @@ class RecordTest(unittest.TestCase):
             path = Path(tmp) / "embedding.ptn"
             record([case], schemes()["int4wo_g32"], path, dtypes=["f32"])
             self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
+
+    def test_rms_norm_fits_only_the_float_scheme(self) -> None:
+        cases = rms_norm.cases()
+        for name, scheme in schemes().items():
+            self.assertEqual(
+                any(scheme.fits(case.model) for case in cases), name == "float", name
+            )
 
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)
