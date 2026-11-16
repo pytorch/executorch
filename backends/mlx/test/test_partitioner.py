@@ -18,7 +18,10 @@ import torch.nn as nn
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
-from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
+from executorch.backends.mlx.test.test_utils import (
+    get_mlx_node_counts,
+    inspect_pte_file,
+)
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -1035,6 +1038,26 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             expected.index_copy_(0, indices, update)
             cache, _ = method.execute([cache, indices, update])
             self.assertTrue(torch.equal(cache, expected))
+
+    def test_schema_version_marks_programs_that_write_inputs(self):
+        # A runtime that predates mutated_inputs would skip the write-back, so
+        # only a program that writes inputs requires schema version 2.
+        class ReadOnly(nn.Module):
+            def forward(self, data, indices, update):
+                return data.index_copy(0, indices, update).sum(0)
+
+        inputs = (torch.randn(16, 8), torch.tensor([1]), torch.randn(1, 8))
+        for model, version in ((self.IndexCopyInput(0), "2"), (ReadOnly(), "1")):
+            with self.subTest(model=type(model).__name__):
+                program = _lower(model.eval(), tuple(t.clone() for t in inputs))
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    self.assertEqual(
+                        inspect_pte_file(path)["graph"]["version"], version
+                    )
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    method.execute([t.clone() for t in inputs])
 
     class ReadThenIndexCopy(nn.Module):
         def forward(self, data, indices, update):

@@ -345,7 +345,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               "' (expected integer)");
         }
       }
-      constexpr int kMaxSupportedVersion = 1;
+      // Version 2: mutated_inputs, which an older runtime would ignore.
+      constexpr int kMaxSupportedVersion = 2;
       if (schema_version > kMaxSupportedVersion) {
         throw std::runtime_error(
             "This .pte requires ExecuTorch MLX runtime version " +

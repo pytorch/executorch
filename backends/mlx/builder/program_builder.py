@@ -1127,6 +1127,20 @@ class MLXProgramBuilder:
         num_non_temp_tensors = sum(num_tensors.values()) - num_tensors[IdSpace.Temp]
         return [tensor_meta.get(i) for i in range(num_non_temp_tensors)]
 
+    @staticmethod
+    def _min_runtime_version(mutated_inputs: List[int]) -> int:
+        """The oldest MLX runtime that can run this program correctly.
+
+        The runtime rejects a program whose version exceeds the one it
+        supports, so a program only requires a newer runtime when it uses a
+        feature an older one would silently ignore.
+        """
+        # Version 2: a runtime that predates mutated_inputs would skip the
+        # write-back into those inputs.
+        if mutated_inputs:
+            return 2
+        return 1
+
     def _build_mlx_graph(self) -> MLXGraph:
         # Check support
         for node, info in self.node_info.items():
@@ -1160,7 +1174,7 @@ class MLXProgramBuilder:
         num_values_count = sum(num_values.values())
 
         return MLXGraph(
-            version="1",
+            version=str(self._min_runtime_version(mutated_inputs)),
             num_constant_tensors=num_constant_tensors,
             num_input_tensors=num_tensors[IdSpace.Input],
             num_output_tensors=num_tensors[IdSpace.Output],
