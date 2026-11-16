@@ -35,6 +35,7 @@ from executorch.exir.backend.utils import (
     tag_in_place_input_mutations,
     tag_mutated_buffer,
 )
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.tests.models import MLP
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
@@ -883,6 +884,53 @@ class TestDelegateWritesUserInput(unittest.TestCase):
         self.assertEqual(
             sum(n.target == torch.ops.aten.copy_.default for n in graph.nodes), 1
         )
+
+    def _assert_delegate_survives_to_executorch(self, lowered) -> None:
+        # Nothing reads the delegate's outputs, so only its side effect keeps it.
+        def calls(graph):
+            return [n for n in graph.nodes if n.target == executorch_call_delegate]
+
+        (call,) = calls(lowered.exported_program().graph)
+        self.assertEqual(len(call.users), 0)
+        program = lowered.to_executorch()
+        self.assertEqual(len(calls(program.exported_program().graph)), 1)
+        self.assertEqual(len(program.executorch_program.execution_plan[0].delegates), 1)
+
+    def test_delegate_whose_only_effect_is_an_input_write_is_kept(self) -> None:
+        class UpdateOnly(torch.nn.Module):
+            def forward(self, k, k_cache, pos):
+                k_cache.index_copy_(2, pos, k)
+                return k_cache
+
+        self._assert_delegate_survives_to_executorch(
+            self._lower(UpdateOnly(), _InPlaceInputPartitioner())
+        )
+
+    def test_delegate_whose_only_effect_is_a_buffer_write_is_kept(self) -> None:
+        class BufferUpdateOnly(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("k_cache", torch.zeros(1, 2, 8, 4))
+
+            def forward(self, k, pos):
+                self.k_cache.index_copy_(2, pos, k)
+                return (pos,)
+
+        ep = torch.export.export(
+            BufferUpdateOnly(), (torch.ones(1, 2, 1, 4), torch.tensor([3])), strict=True
+        )
+        self._assert_delegate_survives_to_executorch(
+            exir.to_edge(ep).to_backend(_BufferOwningPartitioner())
+        )
+
+
+class _BufferOwningPartitioner(AllNodesPartitionerDemo):
+    """Delegates every node and takes ownership of the buffers it mutates."""
+
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
+        result = super().partition(edge_exported_program)
+        tag_mutated_buffer(edge_exported_program)
+        return result
 
     def test_input_read_on_host_is_written_back(self) -> None:
         class ReadOnHostThenUpdate(torch.nn.Module):

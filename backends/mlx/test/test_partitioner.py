@@ -1014,6 +1014,28 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
 
+    class IndexCopyInputOnly(nn.Module):
+        def forward(self, cache, indices, update):
+            cache.index_copy_(0, indices, update)
+            return cache
+
+    def test_delegate_whose_only_effect_is_the_input_write(self):
+        # The method returns the input itself, so nothing reads the delegate's
+        # outputs; dead code elimination must still keep it.
+        model = self.IndexCopyInputOnly().eval()
+        cache = torch.zeros(16, 8)
+        program = _lower(model, (cache.clone(), torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
+        self.assertEqual(_delegate_count(program), 1)
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected.index_copy_(0, indices, update)
+            cache, _ = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+
     class ReadThenIndexCopy(nn.Module):
         def forward(self, data, indices, update):
             before = data.sum(0)
