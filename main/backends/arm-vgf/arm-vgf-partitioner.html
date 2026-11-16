@@ -2012,7 +2012,8 @@ static-shape <code class="docutils literal notranslate"><span class="pre">int8</
 <p>Args:</p>
 <ul class="simple">
 <li><p><strong>compile_spec</strong>: The Vgf compilation specification.</p></li>
-<li><p><strong>additional_checks</strong>: Optional sequence of additional operator support checks.</p></li>
+<li><p><strong>additional_checks</strong>: Optional sequence of additional operator support
+checks.</p></li>
 </ul>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfPartitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">Node</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]]]:</span>
 </pre></div>
