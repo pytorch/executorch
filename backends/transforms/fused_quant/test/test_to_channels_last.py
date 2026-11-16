@@ -12,6 +12,13 @@ from typing import Any
 import executorch.exir.dialects.fused_quant.ops  # noqa
 import torch
 from executorch.backends.test.program_builder import ProgramBuilder
+from executorch.backends.transforms.fused_quant.decompose_fused_quant import (
+    AssertNoFusedQuantOps,
+    DecomposeFusedQuant,
+)
+from executorch.backends.transforms.fused_quant.optimization_passes.to_channels_first import (
+    ToChannelsFirst,
+)
 from executorch.backends.transforms.fused_quant.optimization_passes.to_channels_last import (
     ToChannelsLast,
 )
@@ -149,9 +156,9 @@ def _build_fused_quant_max_pool2d_with_indices_graph(
     inp_qparams = (
         create_per_axis_qparams(
             builder,
-            input_shape[1],
+            input_shape[-3],
             len(input_shape),
-            axis=1,
+            axis=len(input_shape) - 3,
             dtype=torch.float32,
             vary_values=True,
         )
@@ -161,9 +168,9 @@ def _build_fused_quant_max_pool2d_with_indices_graph(
     out_qparams = (
         create_per_axis_qparams(
             builder,
-            input_shape[1],
+            input_shape[-3],
             len(input_shape),
-            axis=1,
+            axis=len(input_shape) - 3,
             vary_values=True,
         )
         if per_channel_qparams
@@ -196,9 +203,9 @@ def _build_fused_quant_avg_pool2d_graph(
     inp_qparams = (
         create_per_axis_qparams(
             builder,
-            input_shape[1],
+            input_shape[-3],
             len(input_shape),
-            axis=1,
+            axis=len(input_shape) - 3,
             dtype=torch.float32,
             vary_values=True,
         )
@@ -208,9 +215,9 @@ def _build_fused_quant_avg_pool2d_graph(
     out_qparams = (
         create_per_axis_qparams(
             builder,
-            input_shape[1],
+            input_shape[-3],
             len(input_shape),
-            axis=1,
+            axis=len(input_shape) - 3,
             vary_values=True,
         )
         if per_channel_qparams
@@ -598,6 +605,100 @@ class ToChannelsLastTest(unittest.TestCase):
             tuple(get_arg(pool, "out_scale", torch.fx.Node).meta["val"].shape),
             (1, 1, 1, 4),
         )
+
+    @parameterized.expand(
+        [
+            (pool, per_channel)
+            for pool in ("max", "avg")
+            for per_channel in (False, True)
+        ]
+    )
+    def test_unbatched_pool_stays_portable(
+        self, pool: str, per_channel_qparams: bool
+    ) -> None:
+        if pool == "max":
+            program, inp = _build_fused_quant_max_pool2d_with_indices_graph(
+                (4, 7, 9),
+                ([3, 3], [2, 2], [1, 1], [1, 1], False),
+                per_channel_qparams=per_channel_qparams,
+            )
+        else:
+            program, inp = _build_fused_quant_avg_pool2d_graph(
+                (4, 7, 9),
+                ([3, 3], [2, 2], [1, 1], False, True, None),
+                per_channel_qparams=per_channel_qparams,
+            )
+        expected = program.module()(inp)
+        original_graph = str(program.graph)
+
+        result = ToChannelsLast().call(program.graph_module)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(str(program.graph), original_graph)
+        self.assert_bit_exact(expected, program.module()(inp))
+        decomposed = DecomposeFusedQuant()(program).exported_program
+        AssertNoFusedQuantOps()(decomposed)
+        self.assert_bit_exact(expected, decomposed.module()(inp))
+
+    @parameterized.expand(["max", "avg"])
+    def test_mixed_batched_and_unbatched_pools(self, pool: str) -> None:
+        builder = ProgramBuilder()
+        batched = torch.randint(-128, 128, (1, 4, 7, 9), dtype=torch.int8)
+        inputs = (batched, batched.squeeze(0).clone())
+        placeholders = [
+            builder.placeholder(name, inp)
+            for name, inp in zip(("batched", "unbatched"), inputs)
+        ]
+        target = (
+            exir_ops.edge.fused_quant.max_pool2d_with_indices.default
+            if pool == "max"
+            else exir_ops.edge.fused_quant.avg_pool2d.default
+        )
+        channels_last_target = (
+            exir_ops.edge.fused_quant.max_pool2d_with_indices_channels_last.default
+            if pool == "max"
+            else exir_ops.edge.fused_quant.avg_pool2d_channels_last.default
+        )
+        outputs = []
+        for inp in placeholders:
+            node = builder.call_operator(
+                op=target,
+                args=(
+                    inp,
+                    *create_per_tensor_qparams(builder, dtype=torch.float32),
+                    *create_per_tensor_qparams(builder),
+                    [3, 3],
+                    [2, 2],
+                    [1, 1],
+                    *(([1, 1], False) if pool == "max" else (False, True, None)),
+                ),
+            )
+            if pool == "max":
+                outputs.extend(builder.call_getitem(node, index) for index in (0, 1))
+            else:
+                outputs.append(node)
+        builder.output(outputs)
+        program = builder.get_program()
+        expected = program.module()(*inputs)
+
+        result = ToChannelsLast().call(program.graph_module)
+
+        self.assertTrue(result.modified)
+        [portable_pool] = program.graph.find_nodes(op="call_function", target=target)
+        self.assertEqual(get_arg(portable_pool, "inp").name, "unbatched")
+        self.assertEqual(
+            len(
+                program.graph.find_nodes(
+                    op="call_function", target=channels_last_target
+                )
+            ),
+            1,
+        )
+        self.assert_bit_exact(expected, program.module()(*inputs))
+        ToChannelsFirst().call(program.graph_module)
+        decomposed = DecomposeFusedQuant()(program).exported_program
+        AssertNoFusedQuantOps()(decomposed)
+        self.assert_bit_exact(expected, decomposed.module()(*inputs))
 
     def test_leaves_claimed_node_alone(self) -> None:
         """Of two identical pools, only the unclaimed one is relaid out."""

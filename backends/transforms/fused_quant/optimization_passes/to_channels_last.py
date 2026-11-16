@@ -270,6 +270,9 @@ class ToChannelsLast(ExportPass):
     Colored nodes are left alone: a backend that claimed an op is going to lower
     it itself, and relayouting would take it away. See
     :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
+
+    Unbatched 2-D pools remain channels-first for portable decomposition;
+    the channels-last pooling operators require 4-D inputs.
     """
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:
@@ -298,7 +301,7 @@ class ToChannelsLast(ExportPass):
             op="call_function",
             target=exir_ops.edge.fused_quant.max_pool2d_with_indices.default,
         ):
-            if is_colored(node):
+            if is_colored(node) or get_arg(node, "inp", fx.Node).meta["val"].dim() != 4:
                 continue
             _convert_max_pool2d_with_indices_to_channels_last(node)
             modified = True
@@ -307,7 +310,7 @@ class ToChannelsLast(ExportPass):
             op="call_function",
             target=exir_ops.edge.fused_quant.avg_pool2d.default,
         ):
-            if is_colored(node):
+            if is_colored(node) or get_arg(node, "inp", fx.Node).meta["val"].dim() != 4:
                 continue
             _convert_avg_pool2d_to_channels_last(node)
             modified = True
