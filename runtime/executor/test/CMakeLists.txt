@@ -156,6 +156,7 @@ et_cxx_test(
   extension_data_loader
   extension_flat_tensor
   extension_runner_util
+  program_schema
 )
 add_dependencies(method_test generated_pte_files)
 set_property(TEST method_test PROPERTY ENVIRONMENT ${test_env})

@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/executor/method_meta.h>
+#include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
@@ -308,10 +309,8 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}, // Count constant returns as
-                                    // memory planned.
+      deserialization::is_memory_planned(*tensor_value),
+      std::string_view{nullptr, 0},
       tensor_device(tensor_value));
 }
 
@@ -366,10 +365,8 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
-      tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}, // Count constant returns as
-                                    // memory planned.
+      deserialization::is_memory_planned(*tensor_value),
+      std::string_view{nullptr, 0},
       tensor_device(tensor_value));
 }
 
@@ -415,7 +412,6 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
               index);
           auto t_name =
               tensor_value->extra_tensor_info()->fully_qualified_name();
-          // Count constant returns as memory planned
           return TensorInfo::create(
               Span<const int32_t>(
                   tensor_value->sizes()->data(), tensor_value->sizes()->size()),
@@ -424,8 +420,7 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
                   tensor_value->dim_order()->size()),
               static_cast<executorch::aten::ScalarType>(
                   tensor_value->scalar_type()),
-              tensor_value->allocation_info() != nullptr ||
-                  tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
+              deserialization::is_memory_planned(*tensor_value),
               std::string_view{t_name->c_str(), t_name->size()},
               tensor_device(tensor_value));
         }
