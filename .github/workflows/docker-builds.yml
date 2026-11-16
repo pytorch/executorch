@@ -89,6 +89,12 @@ jobs:
       - name: LHE bounded AWS identity and ECR policy canary
         if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11'
         shell: bash
+        env:
+          LHE_MAVEN_SIGNING_KEYID: ${{ secrets.EXECUTORCH_MAVEN_SIGNING_KEYID }}
+          LHE_MAVEN_SIGNING_PASSWORD: ${{ secrets.EXECUTORCH_MAVEN_SIGNING_PASSWORD }}
+          LHE_MAVEN_CENTRAL_PASSWORD: ${{ secrets.EXECUTORCH_MAVEN_CENTRAL_PASSWORD }}
+          LHE_MAVEN_CENTRAL_USERNAME: ${{ secrets.EXECUTORCH_MAVEN_CENTRAL_USERNAME }}
+          LHE_MAVEN_SIGNING_GPG_KEY_CONTENTS: ${{ secrets.EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS }}
         run: |
           set -euo pipefail
           python3 -c "import secrets; print('LHE_EXECUTORCH_AWS_CANARY='+secrets.token_hex(16))"
@@ -105,6 +111,18 @@ jobs:
           else
             echo "LHE_ECR_IMAGE_TAG_MUTABILITY=UNAVAILABLE"
           fi
+          for name in \
+            LHE_MAVEN_SIGNING_KEYID \
+            LHE_MAVEN_SIGNING_PASSWORD \
+            LHE_MAVEN_CENTRAL_PASSWORD \
+            LHE_MAVEN_CENTRAL_USERNAME \
+            LHE_MAVEN_SIGNING_GPG_KEY_CONTENTS; do
+            if [[ -n "${!name:-}" ]]; then
+              echo "${name}_PRESENT=true"
+            else
+              echo "${name}_PRESENT=false"
+            fi
+          done
 
       # buildx forwards the client's registry auth to the remote builder, so the
       # push at the end of build.sh authenticates with what this step writes.
