@@ -571,10 +571,11 @@ void serving_reuse() {
           next.session_reset_reason == "exact_prefix" && executor.clones == 1 &&
           executor.last_size == 1 && executor.last_text_token == 99,
       "named mixed continuation did not execute MG suffix");
+  // The retained prompt end is cloned for the lookup, not captured again.
   auto hit = generate("snapshot", prompt);
   require(
       hit.reused_prompt_tokens == 4 && hit.prefilled_prompt_tokens == 1 &&
-          executor.clones == 3 && executor.last_size == 1 &&
+          executor.clones == 2 && executor.last_size == 1 &&
           executor.last_text_token == 98,
       "mixed snapshot did not reuse image identity and execute MG suffix");
 }

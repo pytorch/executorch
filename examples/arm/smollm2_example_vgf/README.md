@@ -119,13 +119,16 @@ Use the recommended command above with these changes:
 ```bash
 export.output_dir=outputs/$(date +%F)/$(date +%H-%M-%S)_static_kvq_linear16a8w \
 export.output_name=smollm2_vgf_static_kvq_linear16a8w.pte \
-model.static_quantize_kv_cache=True
+model.static_quantize_kv_cache=True \
+backend.vgf.alias_buffer_mutations=True
 ```
 
 The static KV-cache path uses symmetric per-head-dimension scales with
 zero-point `0` and dequantizes the cache back to float for the existing
-attention path. Treat its accuracy and performance as experimental until they
-have been validated for the target hardware and context length.
+attention path. The aliasing option internalizes the cache input/output pairs
+as persistent VGF state; it has no effect on TOSA or Ethos-U exports. Treat its
+accuracy and performance as experimental until they have been validated for
+the target hardware and context length.
 
 Alternative `linear8a8w` mode:
 
@@ -268,7 +271,8 @@ below.
 
 Build a reusable 1000-prompt file from `wikitext-2-raw-v1` and evaluate
 perplexity on the first 100 prompts for KV-cache FP32, `linear8a8w`, and
-`linear16a8w`:
+`linear16a8w`, including the experimental static INT8 KV cache. Four
+independent VKML runner processes score disjoint prompt shards:
 
 ```bash
 OUT_DIR=outputs/$(date +%F)/$(date +%H-%M-%S)_smollm2_vgf_eval
@@ -278,6 +282,8 @@ python examples/arm/smollm2_example_vgf/eval_wikitext_perplexity.py \
   --pte-fp32 "${OUT_DIR}/smollm2_vgf_kv_fp32.pte" \
   --pte-linear8a8w "${OUT_DIR}/smollm2_vgf_kv_linear8a8w.pte" \
   --pte-linear16a8w "${OUT_DIR}/smollm2_vgf_kv_linear16a8w.pte" \
+  --pte-static-kvq-linear16a8w \
+    "${OUT_DIR}/smollm2_vgf_static_kvq_linear16a8w.pte" \
   --tokenizer data/tokenizers/smollm2/tokenizer.json \
   --prompts-file "${OUT_DIR}/wikitext_prompts_1000.txt" \
   --num-prompts 1000 \
@@ -285,6 +291,8 @@ python examples/arm/smollm2_example_vgf/eval_wikitext_perplexity.py \
   --max-seq-length 128 \
   --max-prompt-tokens 128 \
   --max-tokens-per-prompt 64 \
+  --input-dtype int32 \
+  --workers 4 \
   --use-kv-cache \
   --refresh-prompts
 ```
@@ -295,6 +303,13 @@ Notes:
 - Perplexity is computed on the first 100 prompts from that file.
 - KV-cache prompts are scored step-by-step with `token` and `input_pos`
   inputs, so this path is slower but matches the recommended decode contract.
+- `--input-dtype` defaults to `int64` for older KV exports. Use `int32` for
+  exports with int32 token and position inputs, as in the example above.
+- `--workers` launches one independent VKML runner per worker. Each owns its
+  mutable KV buffers and scores a disjoint prompt shard; only NLL and token
+  totals are combined in the parent process.
+- Start with `--workers 2` on memory-constrained systems because model and
+  delegate memory scale approximately with the number of workers.
 - `--max-tokens-per-prompt` controls how many tokens are scored from each
   prompt. Use `64` for comparison with the static-window baseline, or a larger
   value to stress a longer KV context.

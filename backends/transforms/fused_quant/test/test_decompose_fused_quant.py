@@ -23,6 +23,7 @@ from executorch.backends.transforms.fused_quant.test.helpers import (
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import add_constant, get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.frontends.fused_quant.colorer import CLAIM_KEY
 from torch import fx
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
@@ -299,12 +300,12 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             op="call_function",
             target=exir_ops.edge.fused_quant.requantize.default,
         )
-        requantize_node.meta["delegation_tag"] = "test_backend"
+        requantize_node.meta[CLAIM_KEY] = "test_backend"
 
         result = DecomposeFusedQuant()(program)
 
         self.assertFalse(result.modified)
-        self.assertEqual(requantize_node.meta["delegation_tag"], "test_backend")
+        self.assertEqual(requantize_node.meta[CLAIM_KEY], "test_backend")
         self.assertIn(requantize_node, result.exported_program.graph.nodes)
 
     def test_rejects_group_quantization(self) -> None:

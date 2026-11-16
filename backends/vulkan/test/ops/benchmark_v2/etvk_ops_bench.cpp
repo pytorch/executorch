@@ -11,9 +11,11 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ShaderBenchmark.h>
+#include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/Validation.h>
 
 #include <gflags/gflags.h>
 
+#include <cmath>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -44,6 +46,11 @@ DEFINE_string(
     error_mode,
     "report",
     "Error handling: report or throw; skip disables validation for compatibility.");
+DEFINE_string(
+    fault_rel,
+    "",
+    "Test hook: scale every GPU output by 1 + fault_rel before validation, so "
+    "a correctness gate can be shown to fail.");
 DEFINE_uint32(
     table_name_max_chars,
     32,
@@ -112,6 +119,18 @@ int main(int argc, char* argv[]) {
       throw std::invalid_argument(
           "validation_only requires validation_mode=all or first and "
           "error_mode=report or throw");
+    }
+    if (!FLAGS_fault_rel.empty()) {
+      size_t parsed = 0;
+      double fault_rel = 0;
+      try {
+        fault_rel = std::stod(FLAGS_fault_rel, &parsed);
+      } catch (const std::logic_error&) {
+      }
+      if (parsed != FLAGS_fault_rel.size() || !std::isfinite(fault_rel)) {
+        throw std::invalid_argument("fault_rel must be a finite number");
+      }
+      set_validation_fault_rel(fault_rel);
     }
     std::ifstream file(FLAGS_config);
     if (!file) {

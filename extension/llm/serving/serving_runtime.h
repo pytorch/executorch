@@ -35,6 +35,11 @@ namespace extension {
 namespace llm {
 namespace serving {
 
+// Initial captures the prompt end of each generation that creates its session,
+// including every anonymous request but not the first generation after an
+// explicit open or reset. Every captures the prompt end of every generation.
+enum class ET_EXPERIMENTAL PromptEndCapture { Initial, Every };
+
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
   // Decoder-position context bound and reported metadata; 0 means unknown.
@@ -53,16 +58,25 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Snapshots for new sessions and clean replacements; zero disables reuse.
-  // Explicit open/reset bypass reuse. When enabled, provision
-  // max_sessions + prefix_cache_capacity + resolved_prefix_captures() rows.
+  // Shared snapshots for matching full prompts, including retries and the
+  // first generation after open/reset. Zero disables reuse. When enabled,
+  // provision max_sessions + prefix_cache_capacity + resolved_prefix_captures()
+  // rows.
   std::size_t prefix_cache_capacity = 0;
   // Capture at absolute interval multiples and the initial prompt end.
-  // Requires cache capacity; zero captures only the initial prompt.
+  // Requires cache capacity; zero disables periodic capture.
   std::size_t prefix_checkpoint_interval = 0;
-  // Override the interval with increasing checkpoints in (start,
-  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
-  // capacity. Runs on control; must not block or reenter the runtime.
+  // Without an interval or custom policy, prompt ends are captured best effort:
+  // one already retained is refreshed instead of cloned again, and a snapshot
+  // is published and its transient row released at the request's first update
+  // after the clone settles, or when the request finishes. Every requires cache
+  // capacity and is rejected with an interval or policy, whose serialized
+  // checkpoint lane would drop prompt ends while another checkpoint is pending.
+  PromptEndCapture prefix_checkpoint_prompt_end = PromptEndCapture::Initial;
+  // Override the interval and prompt-end capture with increasing checkpoints
+  // in (start, prompt.size()]; return prompt.size() to keep the prompt end.
+  // Invalid or throwing policies skip capture. Requires cache capacity. Runs
+  // on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
       const batching::PrefixIdentity& prompt,
       batching::Position start,
@@ -74,8 +88,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Transient rows shared by prompt capture and named-session replacement.
   // Zero matches request concurrency, bounded by max_sessions; replacements
   // compete with prompt captures for these rows.
-  // Automatic checkpoint mode needs at most two rows because collection is
-  // serialized; one replacement may overlap. Positive values override sizing.
+  // Periodic/custom checkpoints need at most two automatic rows because
+  // collection is serialized; one replacement may overlap. Prompt-end capture
+  // keeps the concurrent budget. Positive values override sizing.
   std::size_t max_prefix_captures = 0;
 
   std::size_t resolved_prefix_captures() const {
@@ -109,10 +124,10 @@ class ET_EXPERIMENTAL ServingRuntime {
  public:
   // Owns one Runner and its scheduler. The borrowed executor must outlive
   // shutdown/destruction and must not be driven by another Runner concurrently.
-  // Initialization happens on the engine thread. A null scheduler or zero
-  // session, operation, request, or event/token limit leaves an inert runtime:
-  // no threads start, info().ready is false, and operations return
-  // InvalidArgument.
+  // Initialization happens on the engine thread. A null scheduler, a zero
+  // session, operation, request, or event/token limit, or prefix settings that
+  // break their documented requirements leave an inert runtime: no threads
+  // start, info().ready is false, and operations return InvalidArgument.
   ServingRuntime(
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
@@ -153,6 +168,8 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Opens may queue during initialization; success means an empty session is
   // owned, or the key was already open. An initial open failure releases its
   // slot. Opening an unavailable key fails with NotReady; use reset to retry.
+  // Opening an existing key preserves its state. Subsequent generation may
+  // reuse shared snapshots matching the supplied full prompt.
   void open_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> open_session_async(std::string key);
 
@@ -167,12 +184,13 @@ class ET_EXPERIMENTAL ServingRuntime {
       std::string key,
       CloseCallback on_complete);
 
-  // Cold replacement, retaining the key and logical slot throughout. Success
-  // means reopening and old-response callback cleanup completed. Failure
-  // destroys the old state and leaves the
-  // key unavailable, still reserving its slot until reset succeeds or close
-  // releases it. A missing key returns SessionNotFound. Cancels the old
-  // request; stale completion cannot claim the replacement. No prefix reuse.
+  // Discards live state and history, retaining the key and logical slot.
+  // Success means reopening and old-response callback cleanup completed.
+  // Failure destroys the old state and leaves the key unavailable, still
+  // reserving its slot until reset succeeds or close releases it. A missing key
+  // returns SessionNotFound. Cancels the old request; stale completion cannot
+  // claim the replacement. Shared snapshots remain available to subsequent
+  // generation with a matching full prompt.
   void reset_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> reset_session_async(std::string key);
 
@@ -183,9 +201,11 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Same-key execution overlap is Busy. Work admitted after close/reset waits
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
-  // capture cleanup. Exact strict prefixes continue; clean replacements may
-  // clone a common committed prefix when prefix caching is enabled. Other
-  // histories cold-replay. Sinks share one delivery thread and must do
+  // capture cleanup. Exact strict prefixes continue. With prefix caching
+  // enabled, replacements and retries may reuse matching shared snapshots;
+  // clean replacements may also clone a common committed live prefix.
+  // Unusable live state is discarded; absent a usable snapshot, prefill starts
+  // from the full supplied prompt. Sinks share one delivery thread and must do
   // short, bounded work: no blocking I/O, waits for runtime work, or
   // synchronous shutdown/destruction of the runtime. A text/flush sink throw
   // disables output and selects a failure. A terminal sink throw is logged;

@@ -35,7 +35,6 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeLinalgVectorNorm,
@@ -238,11 +237,6 @@ class QnnPassManager(PassManager):
             DecomposeExpM1,
             DecomposeFill,
             DecomposeVar,
-            # DecomposeFloorDivide does not apply to the annotation pipeline,
-            # since the CPU QDQ model would reduce accuracy.
-            # We keep div and floor operations in floating-point to maintain precision.
-            # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
-            DecomposeFloorDivide,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
@@ -349,6 +343,17 @@ class QnnPassManager(PassManager):
         }
 
     @classmethod
+    def _get_terminal_passes(cls):
+        return [ResolveDebugHandle]
+
+    @classmethod
+    def _move_terminal_passes_to_end(cls, passes):
+        for p in cls._get_terminal_passes():
+            passes.remove(p)
+            passes.append(p)
+        return passes
+
+    @classmethod
     def get_capture_program_passes(cls):
         """Build an ordered mapping of passes with activation flags and init defaults.
 
@@ -411,7 +416,7 @@ class QnnPassManager(PassManager):
             self.add_pass(p)
         self.solve_constraints()
 
-        sorted_passes = self.passes
+        sorted_passes = self._move_terminal_passes_to_end(self.passes)
         self._reset()
         for p in sorted_passes:
             if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:

@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from facto.inputgen.specs.model import Spec
 
 Inputs = tuple[torch.Tensor, ...]
+# Draws a tensor of the given shape from a generator, as torch.randn does.
+Sampler = Callable[..., torch.Tensor]
 
 # Caps a suite case's input and output elements over its samples, keeping at
 # least one sample: a large output alone has enough elements for statistics.
@@ -30,7 +32,8 @@ _ELEMENT_BUDGET = 1 << 16
 class Case:
     name: str
     model: torch.nn.Module
-    # Positional float32 inputs of each sample; the count may vary by case.
+    # Positional inputs of each sample, floating ones float32; the count may
+    # vary by case.
     inputs: list[Inputs]
     # `{dim: Dim}` of each positional input. A dynamic case's inputs are the
     # calls of one sample, which run in order on one executable.
@@ -41,20 +44,27 @@ def outputs(result) -> list[torch.Tensor]:
     return list(result) if isinstance(result, (tuple, list)) else [result]
 
 
-def draws(count: int, *shapes: tuple[int, ...]) -> list[Inputs]:
-    """`count` samples of standard-normal inputs of the given shapes, from a fixed
-    seed, so equal calls return equal samples."""
+def draws(
+    count: int, *shapes: tuple[int, ...], sampler: Sampler = torch.randn
+) -> list[Inputs]:
+    """`count` samples of inputs of the given shapes from `sampler`, standard
+    normal by default, and a fixed seed, so equal calls return equal samples."""
     generator = torch.Generator().manual_seed(0)
     return [
-        tuple(torch.randn(shape, generator=generator) for shape in shapes)
+        tuple(sampler(shape, generator=generator) for shape in shapes)
         for _ in range(count)
     ]
 
 
-def chain(name: str, model: torch.nn.Module, *shapes: tuple[int | Dim, ...]) -> Case:
-    """A dynamic case with standard-normal inputs of `shapes`, from a fixed seed.
-    Each Dim starts mid-range, which export traces, then visits both bounds and
-    returns, every other Dim in the opposite order."""
+def chain(
+    name: str,
+    model: torch.nn.Module,
+    *shapes: tuple[int | Dim, ...],
+    sampler: Sampler = torch.randn,
+) -> Case:
+    """A dynamic case with inputs of `shapes` from `sampler`, standard normal by
+    default, and a fixed seed. Each Dim starts mid-range, which export traces,
+    then visits both bounds and returns, every other Dim in the opposite order."""
     dims = list(dict.fromkeys(d for s in shapes for d in s if not isinstance(d, int)))
     walks = {}
     for k, d in enumerate(dims):
@@ -63,7 +73,7 @@ def chain(name: str, model: torch.nn.Module, *shapes: tuple[int | Dim, ...]) -> 
     generator = torch.Generator().manual_seed(0)
     inputs = [
         tuple(
-            torch.randn(
+            sampler(
                 [walks[d][step] if d in walks else d for d in s], generator=generator
             )
             for s in shapes
@@ -74,6 +84,17 @@ def chain(name: str, model: torch.nn.Module, *shapes: tuple[int | Dim, ...]) -> 
         {i: d for i, d in enumerate(s) if not isinstance(d, int)} for s in shapes
     )
     return Case(name, model, inputs, dynamic_shapes)
+
+
+class Parallel(torch.nn.Module):
+    """Modules on one input, each giving its own output."""
+
+    def __init__(self, *modules: torch.nn.Module) -> None:
+        super().__init__()
+        self.branches = torch.nn.ModuleList(modules)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return tuple(m(x) for m in self.branches)
 
 
 class _SuiteRunner:

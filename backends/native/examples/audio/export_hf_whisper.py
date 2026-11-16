@@ -40,7 +40,10 @@ import os
 
 import torch
 import torch.nn as nn
-from executorch.backends.native.examples.hf_llm.hf_utils import report_lowering
+from executorch.backends.native.examples.hf_llm.hf_utils import (
+    PositionedStaticLayer,
+    report_lowering,
+)
 from executorch.exir.native import to_native
 from torch.export import Dim, export, ExportedProgram
 from transformers import (
@@ -174,6 +177,8 @@ class WhisperDecoder(nn.Module):
             dtype=torch.float32,
             device=torch.device("cpu"),
         )
+        for i, old in enumerate(self.self_cache.layers):
+            self.self_cache.layers[i] = PositionedStaticLayer.replacing(old, old.dtype)
         self.cross_cache = DynamicCache(config=config)
         self.cache = EncoderDecoderCache(self.self_cache, self.cross_cache)
         for layer_idx in range(config.decoder_layers):
@@ -195,6 +200,11 @@ class WhisperDecoder(nn.Module):
         cache_position: torch.Tensor,
         *cross_kv: torch.Tensor,
     ) -> torch.Tensor:
+        # transformers 5 takes positions from the cache's length, not
+        # cache_position, both for cache writes and position embeddings.
+        for layer in self.self_cache.layers:
+            layer.cumulative_length = cache_position[:1].clone()
+            layer.positions = cache_position
         num_layers = len(self.cross_cache.layers)
         for layer_idx, layer in enumerate(self.cross_cache.layers):
             layer.keys = cross_kv[layer_idx]
@@ -210,6 +220,7 @@ class WhisperDecoder(nn.Module):
             past_key_values=self.cache,
             use_cache=True,
             cache_position=cache_position,
+            position_ids=cache_position.unsqueeze(0),
         ).last_hidden_state
         return self.proj_out(hidden)
 

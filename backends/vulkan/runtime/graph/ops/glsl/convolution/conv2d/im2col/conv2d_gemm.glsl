@@ -41,20 +41,17 @@
 
 $if IN_STORAGE == "buffer" and DTYPE == "half":
   ${define_explicit_type_extensions(DTYPE)}
+  #define HAS_FLOAT16_ACCUMULATION
 
 // VEC4_T is the input storage's natural texel type, which is also the tile type
 // (the linear_fp_*_tile headers default the tile vec4 type to VEC4_T). For the
 // buffer/half path this resolves to f16vec4, so the GEMM inner loop accumulates
-// in true FP16 — the fma emits mad.f16 and the accumulators live in half-width
-// registers. Texture-sampled half always returns vec4, so FP16 accumulation is
-// naturally confined to the buffer (Mali) path; the texture variants (Adreno),
-// where FP16 accumulation regresses, stay vec4 / FP32 with no extra gating.
+// in true FP16 with f16 multiplies and adds, and the accumulators live in
+// half-width registers. Texture-sampled half always returns vec4, so FP16
+// accumulation is naturally confined to the buffer (Mali) path; the texture
+// variants (Adreno), where FP16 accumulation regresses, stay vec4 / FP32 with
+// no extra gating.
 #define VEC4_T ${texel_load_type(DTYPE, IN_STORAGE)}
-
-// OUT_VEC4_T is the output surface type. t_out is always texture3d, whose
-// imageStore ABI takes vec4 (fp32) regardless of DTYPE, so the accumulator tile
-// is cast from VEC4_T to OUT_VEC4_T at store time.
-#define OUT_VEC4_T ${texel_load_type(DTYPE, "texture3d")}
 
 #define TILE_M4 ${TILE_M4}
 #define TILE_K4 ${TILE_K4}
@@ -84,10 +81,12 @@ $else:
   ${layout_declare_tensor(B, "r", "t_in", DTYPE, IN_STORAGE)}
 ${layout_declare_tensor(B, "r", "t_weight_packed", DTYPE, "texture2d")}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_tensor(B, "r", "t_residual", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "r", "t_scale", DTYPE, "texture2d")}
 
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 
-// Push constants are uploaded in 16-byte chunks (one ivec4 each).
+// Push constants: gemm_dims, then the epilogue parameters.
 // K4_total is shape-independent (it depends only on C_in and the conv kernel
 // dims), so it is safe to bake at build time even under dynamic shapes.
 // M = H_out * W_out IS shape-dependent, so it is derived at runtime from the
@@ -101,18 +100,24 @@ ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 // global W_out / H_out come from the refreshed out_sizes UBO.
 layout(push_constant) uniform restrict Block {
   ivec4 gemm_dims;   // (K4_total, OH_OFFSET, OH_TILE, _unused)
-  vec4  clamp_vals;  // (out_min, out_max, _unused, _unused)
+  float activation_a;
+  float activation_b;
+  float residual_alpha;
 };
 
 #define K4_TOTAL  gemm_dims.x
 #define OH_OFFSET gemm_dims.y
 #define OH_TILE   gemm_dims.z
-#define OUT_MIN   clamp_vals.x
-#define OUT_MAX   clamp_vals.y
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "activation_type", "0")}
+${layout_declare_spec_const(C, "bool", "has_activation", "false")}
+${layout_declare_spec_const(C, "int", "activation_op", "0")}
+${layout_declare_spec_const(C, "bool", "has_residual", "false")}
+${layout_declare_spec_const(C, "bool", "has_scale", "false")}
+${layout_declare_spec_const(C, "int", "residual_op", "0")}
+
+#include "conv2d_epilogue.glslh"
 
 #include "gemm/tile_utils/linear_fp_input_tile.glslh"
 #include "gemm/tile_utils/linear_fp_packed_weight_tile_load.glslh"
@@ -175,21 +180,23 @@ void store_output_tile_with_checks(
     const int M_TILE,
     const int H_out,
     const int W_out) {
+  vec4 scale[TILE_N4];
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    scale[n4] = has_scale && n4_start + n4 < N4
+        ? texelFetch(t_scale, ivec2(n4_start + n4, 0), 0)
+        : vec4(1);
+  }
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       const int m_local = m_start + m;
       const int ow = m_local % W_out;
       const int oh = OH_OFFSET + m_local / W_out;
       if (m_local < M_TILE && oh < H_out && n4_start + n4 < N4) {
-        // Cast the accumulator (f16vec4 for the buffer/half path) to the
-        // texture3d output surface type for the activation clamp and store.
-        OUT_VEC4_T texel = OUT_VEC4_T(out_tile.data[m][n4]);
-        if (activation_type == 1) {
-          texel = max(texel, OUT_VEC4_T(0.0));
-        } else if (activation_type == 2) {
-          texel = clamp(texel, OUT_VEC4_T(OUT_MIN), OUT_VEC4_T(OUT_MAX));
-        }
-        imageStore(t_out, ivec3(ow, oh, n4_start + n4), texel);
+        const ivec3 pos = ivec3(ow, oh, n4_start + n4);
+        imageStore(
+            t_out,
+            pos,
+            apply_epilogue(out_tile.data[m][n4], pos, scale[n4]));
       }
     }
   }

@@ -693,6 +693,19 @@ command = [
 ]
 
 [[linter]]
+code = 'ETVKJSONFORMAT'
+include_patterns = [
+    'backends/vulkan/test/ops/benchmark_v2/**/*.json',
+]
+command = [
+    'python',
+    'backends/vulkan/test/ops/benchmark_v2/format_json.py',
+    '--lintrunner',
+    '@{{PATHSFILE}}',
+]
+is_formatter = true
+
+[[linter]]
 code = 'RUFF_DOCS'
 include_patterns = [
   'backends/arm/__init__.py',

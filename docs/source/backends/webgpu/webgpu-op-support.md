@@ -9,8 +9,9 @@ and the generated native test catalog is defined in
 
 ## Compatibility Considerations
 
-- `WebGPUPartitioner` is a thin wrapper over `VulkanPartitioner`; it preserves
-  Vulkan partitioning behavior and does not add WebGPU capability policy.
+- `WebGPUPartitioner` is a thin wrapper over `VulkanPartitioner`; apart from
+  skipping fusions the WebGPU runtime does not implement, it preserves Vulkan
+  partitioning behavior and does not add WebGPU capability policy.
 - Support can depend on tensor rank, shape, layout, and data type in addition
   to the operator name.
 - FP16 shader paths require a WebGPU adapter exposing `shader-f16`.
