@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import Optional
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -17,15 +19,29 @@ class ConvertFullLikeToFull(ExportPass):
     the shape of its input, and when it is a delegate's only output, QNN
     drops the ops that only feed it together with the delegate input, which
     ExecuTorch still passes. A full reads nothing, so those ops are removed
-    here instead. I64toI32 casts every int64 full to int32 but not a
-    full_like, so an int64 full_like is kept.
+    here instead. A full_like the partitioner skips stays on CPU, so it is
+    kept. I64toI32 casts every int64 full to int32 but not a full_like, so
+    an int64 full_like is kept too.
     """
+
+    def __init__(
+        self,
+        skip_node_id_set: Optional[set] = None,
+        skip_node_op_set: Optional[set] = None,
+    ):
+        super().__init__()
+        self.skip_node_id_set = skip_node_id_set or set()
+        self.skip_node_op_set = skip_node_op_set or set()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         modified = False
         for node in list(graph.nodes):
-            if node.target != exir_ops.edge.aten.full_like.default:
+            if (
+                node.target != exir_ops.edge.aten.full_like.default
+                or node.name in self.skip_node_id_set
+                or node.target.__name__ in self.skip_node_op_set
+            ):
                 continue
             val = node.meta["val"]
             if val.dtype == torch.int64 or not all(
