@@ -38,6 +38,7 @@ class I64toI32(ExportPass):
     CPU, and so do an op the partitioner skips and an op whose data types or
     shapes keep it off QNN. Their int64 results stay int64, and a QNN op
     reads them through an int32 cast.
+    They read int64 inputs, and QNN results that were int64, as int64 too.
     """
 
     # This dict is to ensure that the input of the OPs are int64 due to PyTorch and CPU kernel restrictions.
@@ -90,23 +91,38 @@ class I64toI32(ExportPass):
             ):
                 node.meta[QCOM_KEEP_INT64] = True
 
+    def _cast(self, value, dtype):
+        # The cast takes the meta of the value it casts, not of the op that
+        # reads it, since every later reader shares it.
+        return super().call_operator(
+            self.copy_op,
+            (value,),
+            {"dtype": dtype},
+            NodeMetadata({**value.node.meta, QCOM_INSERTED_CAST: True}),
+        )
+
     def _cast_to_int32(self, res, meta):
         # QNN builders handle integer tensors such as indices as int32, so no
         # int64 result may reach them: argmax, a sum of bools or topk indices.
         if self._is_tensor_of_dtype(res.data, torch.int64):
-            return super().call_operator(
-                self.copy_op,
-                (res,),
-                {"dtype": torch.int32},
-                NodeMetadata({**meta.data, QCOM_INSERTED_CAST: True}),
-            )
+            res = self._cast(res, torch.int32)
+        # An op that reads only int32 inputs gives int32 without a cast.
+        if self._is_tensor_of_dtype(meta["val"], torch.int64):
+            self.narrowed_results[res.node] = None
         return res
 
-    def _read_int32(self, arg, meta):
+    def _read_int32(self, arg):
         if arg.node in self.cpu_results:
             if self.cpu_results[arg.node] is None:
-                self.cpu_results[arg.node] = self._cast_to_int32(arg, meta)
+                self.cpu_results[arg.node] = self._cast_to_int32(arg, arg.node.meta)
             return self.cpu_results[arg.node]
+        return arg
+
+    def _read_int64(self, arg):
+        if arg.node in self.narrowed_results:
+            if self.narrowed_results[arg.node] is None:
+                self.narrowed_results[arg.node] = self._cast(arg, torch.int64)
+            return self.narrowed_results[arg.node]
         return arg
 
     def _keep_cpu_result(self, res):
@@ -118,19 +134,14 @@ class I64toI32(ExportPass):
         if self._runs_on_cpu(op, meta):
             # Casting a product, for example, to int32 would wrap it, and some
             # CPU kernels need int64, like the zero point of quantize_per_token.
-            # An op that also reads an int32 tensor reads these results cast too,
-            # so that ops like masked_scatter get matching dtypes.
-            if any(
-                isinstance(arg, ProxyValue)
-                and self._is_tensor_of_dtype(arg.data, torch.int32)
-                for arg in pytree.tree_leaves((args, kwargs))
-            ):
-                args, kwargs = pytree.tree_map_only(
-                    ProxyValue, lambda arg: self._read_int32(arg, meta), (args, kwargs)
-                )
+            # A QNN result that was int64 is read cast back up, which loses
+            # nothing.
+            args, kwargs = pytree.tree_map_only(
+                ProxyValue, self._read_int64, (args, kwargs)
+            )
             return self._keep_cpu_result(super().call_operator(op, args, kwargs, meta))
         args, kwargs = pytree.tree_map_only(
-            ProxyValue, lambda arg: self._read_int32(arg, meta), (args, kwargs)
+            ProxyValue, self._read_int32, (args, kwargs)
         )
         res = super().call_operator(op, args, kwargs, meta)
         # The index casts added for I64_IN_OPS must stay int64.
@@ -238,10 +249,20 @@ class I64toI32(ExportPass):
                         )
                         to_dst_node.meta["val"] = node_val.to(torch.int32)
                         to_dst_node.meta[QCOM_INSERTED_CAST] = True
+                        self.input_casts.append(to_dst_node)
 
                         # Replace usage of the src dtype result with the dst dtype result.
                         n.replace_all_uses_with(to_dst_node)
                         to_dst_node.args = (n,)
+
+    def _read_int64_inputs_on_cpu(self, graph_module: torch.fx.GraphModule):
+        # The int32 cast of an int64 input may already have wrapped it.
+        for cast in self.input_casts:
+            for user in list(cast.users):
+                if self._runs_on_cpu(user.target, user.meta):
+                    user.replace_input_with(cast, cast.args[0])
+            if not cast.users:
+                graph_module.graph.erase_node(cast)
 
     def _cast_op_args_to_i64(self, graph_module: torch.fx.GraphModule):
         # input will be cast to i32 during call_operator dtype propogation
@@ -279,13 +300,18 @@ class I64toI32(ExportPass):
         # Record original output dtype to ensure that if user expects int64 as output,
         # convert the output back to int64 if it is casted from int64->int32.
         self._record_original_output_dtype(graph_module)
+        self.input_casts = []
         self._cast_constant_to_int32(graph_module)
         self._cast_op_args_to_i64(graph_module)
         self._mark_ops_kept_on_cpu(graph_module)
+        self._read_int64_inputs_on_cpu(graph_module)
         # The int32 cast of each int64 result of a CPU op, made when a QNN op
-        # first reads it.
-        self.cpu_results = {}
+        # first reads it, and the int64 cast of each QNN result that was int64,
+        # made when a CPU op first reads it.
+        self.cpu_results, self.narrowed_results = {}, {}
         graph_module = super().call(graph_module).graph_module
+        for node in graph_module.graph.nodes:
+            node.meta.pop(QCOM_KEEP_INT64, None)
         self._preserve_output_dtype(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)

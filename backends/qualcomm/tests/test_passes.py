@@ -78,6 +78,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_INSERTED_CAST,
+    QCOM_KEEP_INT64,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
@@ -1721,6 +1722,10 @@ class TestPasses(unittest.TestCase):
             def forward(self, x, k, mask):
                 return (x[:, 0] > 0.5).long().masked_scatter(mask, k)
 
+        class SumIntoSum(torch.nn.Module):
+            def forward(self, x, k, mask):
+                return (x > 0.5).sum(-1).masked_scatter(mask, k + k)
+
         sample_input = (
             torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),
             torch.tensor([3, 4]),
@@ -1732,6 +1737,8 @@ class TestPasses(unittest.TestCase):
             (SumIntoInput(), False),
             (TopkIndicesIntoInput(), False),
             (LongIntoInput(), True),
+            # The add reads only int32 inputs, so it gives int32 without a cast.
+            (SumIntoSum(), False),
         )
         for module, skip_dim_order in cases:
             with self.subTest(type(module).__name__):
@@ -1746,9 +1753,10 @@ class TestPasses(unittest.TestCase):
         # QNN has no builder for prod or for per-token quantization, so they
         # run on CPU: an int32 cast would wrap the product, and the CPU
         # quantize_per_token needs an int64 zero point. A QNN op, like the
-        # index here, still reads the product as int32, and so does a CPU op
-        # that mixes it with an int32 cast. The CPU max pool backward needs
-        # int64 indices too.
+        # index here, still reads the product as int32. A CPU op that mixes it
+        # with an int32 tensor reads that tensor cast up to int64 instead, so
+        # the product does not wrap. The CPU max pool backward needs int64
+        # indices too.
         qd = torch.ops.quantized_decomposed
         index = exir_ops.edge.aten.index.Tensor
         quantize = exir_ops.edge.quantized_decomposed.quantize_per_token.default
@@ -1775,6 +1783,10 @@ class TestPasses(unittest.TestCase):
             def forward(self, x, mask, k):
                 return (x > 0).prod(-1).masked_scatter(mask, k)
 
+        class FmodOfProd(torch.nn.Module):
+            def forward(self, x):
+                return torch.fmod(x.prod(0, keepdim=True), x.sum(0, keepdim=True))
+
         class MaxPoolBackward(torch.nn.Module):
             def forward(self, x, grad):
                 _, indices = torch.ops.aten.max_pool2d_with_indices(x, [2, 2])
@@ -1791,9 +1803,12 @@ class TestPasses(unittest.TestCase):
         )
         cases = (
             (Prod(), prod_input, None),
+            # The int32 cast of this int64 input would wrap 2**33 to 0.
+            (Prod(), (torch.tensor([[2**33, 3]]),), None),
             (ProdIndex(), (torch.randn(2, 3),), (index, torch.int32)),
             (PerTokenQuant(), (torch.randn(2, 3),), (quantize, torch.int64)),
             (ProdIntoInput(), mix_input, None),
+            (FmodOfProd(), (torch.tensor([100000, 100000, 3, 1]),), None),
             (MaxPoolBackward(), pool_input, (backward, torch.int64)),
         )
         for module, sample_input, read in cases:
@@ -1827,7 +1842,20 @@ class TestPasses(unittest.TestCase):
             def forward(self, x):
                 return (x.double() * x.double()).long()
 
+        class SelectOfProd(torch.nn.Module):
+            def forward(self, x, index):
+                return x.prod(-1).index_select(0, index)
+
+        class Pow4OfSum(torch.nn.Module):
+            def forward(self, x):
+                total = (x > 0).sum(-1)
+                return total * total * total * total
+
         big = (torch.tensor([[2**30, 2**30]], dtype=torch.int32),)
+        select_input = (
+            torch.tensor([[65536, 65536]], dtype=torch.int32),
+            torch.tensor([0], dtype=torch.int32),
+        )
         cases = (
             ("skipped op", Sum(), big, {"skip_node_op_set": {"aten.sum.dim_IntList"}}),
             (
@@ -1837,6 +1865,20 @@ class TestPasses(unittest.TestCase):
                 {"skip_node_id_set": {"aten_sum_dim_int_list"}},
             ),
             ("float64 input", LongOfDouble(), (torch.tensor([1e5]),), {}),
+            (
+                "skipped op with an int32 input",
+                SelectOfProd(),
+                select_input,
+                {"skip_node_op_set": {"aten.index_select.default"}},
+            ),
+            # QNN casts the sum to int32, and the skipped muls must read it
+            # cast back up, or 300**4 wraps.
+            (
+                "skipped ops reading a QNN result",
+                Pow4OfSum(),
+                (torch.ones(1, 300),),
+                {"skip_node_op_set": {"aten.mul.Tensor"}},
+            ),
         )
         for name, module, sample_input, kwargs in cases:
             with self.subTest(name):
@@ -1845,6 +1887,43 @@ class TestPasses(unittest.TestCase):
                 ).exported_program()
                 gm = I64toI32(ep, **kwargs)(ep.graph_module).graph_module
                 torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
+
+    def test_i64_to_i32_casts_take_the_meta_of_their_input(self):
+        # A cast between QNN and CPU describes the value it casts, not the op
+        # that reads it, and the pass leaves no QCOM_KEEP_INT64 behind.
+        class IndexOfProd(torch.nn.Module):
+            def forward(self, x):
+                index = (x > 0).prod(-1)
+                return x[:, index]
+
+        class SquareOfSum(torch.nn.Module):
+            def forward(self, x):
+                total = (x > 0).sum(-1)
+                return total * total
+
+        cases = (
+            (IndexOfProd(), {}),
+            (SquareOfSum(), {"skip_node_op_set": {"aten.mul.Tensor"}}),
+        )
+        for module, kwargs in cases:
+            with self.subTest(type(module).__name__):
+                ep = to_edge(
+                    torch.export.export(module, (torch.randn(2, 3),), strict=True)
+                ).exported_program()
+                gm = I64toI32(ep, **kwargs)(ep.graph_module).graph_module
+                casts = [
+                    n
+                    for n in gm.graph.nodes
+                    if n.meta.get(QCOM_INSERTED_CAST) and "stack_trace" in n.meta
+                ]
+                self.assertTrue(casts)
+                for cast in casts:
+                    self.assertEqual(
+                        cast.meta["stack_trace"], cast.args[0].meta["stack_trace"]
+                    )
+                self.assertFalse(
+                    [n for n in gm.graph.nodes if QCOM_KEEP_INT64 in n.meta]
+                )
 
     def test_i64_to_i32_casts_back_multi_output_results(self):
         # topk of an int64 sum returns int64 values and indices.
