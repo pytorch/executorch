@@ -132,7 +132,7 @@ ScalarType device_dtype(ScalarType dtype) {
 
 template <typename T>
 T load_element(const void* data, size_t i) {
-  T value;
+  T value{};
   std::memcpy(
       &value, static_cast<const uint8_t*>(data) + i * sizeof(T), sizeof(T));
   return value;
