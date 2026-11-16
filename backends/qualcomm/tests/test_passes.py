@@ -2517,6 +2517,7 @@ class TestPasses(unittest.TestCase):
                 self.dtype = dtype
                 self.constant = constant
                 self.register_buffer("ones", torch.ones(2, 2, dtype=dtype))
+                self.register_buffer("row", torch.ones(4, dtype=dtype))
 
             def forward(self, x):
                 return torch.cat([(x > 0).to(self.dtype), self.constant(self)], 1)
@@ -2524,6 +2525,12 @@ class TestPasses(unittest.TestCase):
         constants = {
             "full": lambda m: torch.full((2, 2), 1, dtype=m.dtype),
             "buffer": lambda m: m.ones,
+            "view of a full": lambda m: torch.full((4,), 1, dtype=m.dtype).view(2, 2),
+            "reshape of a buffer": lambda m: m.row.reshape(2, 2),
+            "permute of a buffer": lambda m: m.ones.t(),
+            "expand of a full": lambda m: torch.full((1, 2), 1, dtype=m.dtype).expand(
+                2, 2
+            ),
         }
         # Quantized first: some QNN SDKs crash on a quantized lowering that
         # follows an fp16 one in the same process. Quantized HTP graphs read
