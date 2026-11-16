@@ -21,6 +21,10 @@ records the kernels Inductor launched, which shows the path it took (e.g. a
 
 Precisions: ``fp32`` (TF32 off everywhere), ``tf32`` (TF32 allowed; needs a
 PyTorch whose Inductor conv templates can use TF32), ``fp16`` and ``bf16``.
+Layouts: NCHW, channels-last input with channels-last output, and
+channels-last input with the contiguous output a graph exported on CUDA
+records (``cl_to_nchw``: triton::convolution gets ``output_strides``, the
+other paths a ``contiguous()`` that Inductor may fuse).
 
 Suites: ``shapes`` (dense and kernel == stride convolutions at representative
 shapes), ``envelope`` (each axis of what the
@@ -398,7 +402,11 @@ def _args(case):
 
 
 def triton_runner(x, w, b, case):
-    args = _args(case)
+    output_strides = None
+    if case.layout == "cl_to_nchw":
+        shape = aten_conv(x.to("meta"), w.to("meta"), None, case).shape
+        output_strides = list(torch.empty(shape, device="meta").stride())
+    args = (*_args(case), output_strides)
     stream = torch.cuda.Stream()
     with torch.cuda.stream(stream), autotune_launch_params() as stats:
         convolution(x, w, b, *args)
@@ -413,12 +421,17 @@ def triton_runner(x, w, b, case):
 
 
 def aten_conv(x, w, b, case):
-    """What the exported graph holds: a separate pad for asymmetric padding."""
+    """What the exported graph holds: a separate pad for asymmetric padding, and
+    a contiguous output where the graph records one."""
     conv = {1: F.conv1d, 2: F.conv2d, 3: F.conv3d}[len(case.kernel)]
     if case.before == case.after:
-        return conv(x, w, b, case.stride, case.before)
-    pad = [p for pair in zip(reversed(case.before), reversed(case.after)) for p in pair]
-    return conv(F.pad(x, pad), w, b, case.stride)
+        out = conv(x, w, b, case.stride, case.before)
+    else:
+        pad = [
+            p for pair in zip(reversed(case.before), reversed(case.after)) for p in pair
+        ]
+        out = conv(F.pad(x, pad), w, b, case.stride)
+    return out.contiguous() if case.layout == "cl_to_nchw" else out
 
 
 def inductor_runner(x, w, b, case):
@@ -470,7 +483,7 @@ def _tensors(case):
         else None
     )
     memory_format = torch.channels_last if x.dim() == 4 else torch.channels_last_3d
-    if case.layout == "channels_last":
+    if case.layout in ("channels_last", "cl_to_nchw"):
         x = x.to(memory_format=memory_format)
     if case.layout == "weight_cl":
         w = w.to(memory_format=memory_format)
@@ -535,7 +548,12 @@ def main():
         default="fp32",
         help="fp32, tf32, fp16 or bf16; the envelope suite takes a comma-separated list",
     )
-    parser.add_argument("--layout", default="nchw", choices=["nchw", "channels_last"])
+    parser.add_argument(
+        "--layout",
+        default="nchw",
+        choices=["nchw", "channels_last", "cl_to_nchw"],
+        help="cl_to_nchw: channels-last input, contiguous output (as exported on CUDA)",
+    )
     parser.add_argument("--shard", default="0/1", help="run cases i::n of the suite")
     parser.add_argument("--warm", action="store_true", help="do not flush L2")
     parser.add_argument("--threshold", type=float, default=1.25)
