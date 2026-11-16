@@ -1304,12 +1304,41 @@ jobs:
         # Run unit test
         pnpm test
 
+  cache-cifar10-nxp:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Restore CIFAR-10 cache
+        id: cifar10-cache
+        uses: actions/cache@v4
+        with:
+          path: cifar-10-python.tar.gz
+          key: cifar-10-python-v1
+
+      - name: Download CIFAR-10
+        if: steps.cifar10-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          curl -fSL --retry 3 --connect-timeout 30 -o cifar-10-python.tar.gz \
+            https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz
+          echo "c58f30108f718f92721af3b95e74349a  cifar-10-python.tar.gz" | md5sum -c -
+
+      - name: Upload CIFAR-10 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cifar10-dataset
+          path: cifar-10-python.tar.gz
+          retention-days: 1 # artifact retention only. Cached dataset is dropped after 7 days of no access, default via Github Actions
+
   unittest-nxp-neutron:
+    needs: cache-cifar10-nxp
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
+      download-artifact: cifar10-dataset
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1321,6 +1350,10 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+
+        # Use the cached CIFAR-10 dataset so torchvision skips the download
+        mkdir -p data
+        tar -xzf "${RUNNER_ARTIFACT_DIR}/cifar-10-python.tar.gz" -C data
 
         # Install eIQ packages
         pip install -r backends/nxp/requirements-eiq.txt
