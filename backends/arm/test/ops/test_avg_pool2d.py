@@ -94,6 +94,14 @@ test_modules = {
         AvgPool2d(3, 3, 1, True, True),
         (torch.rand(1, 1, 5, 5),),
     ),
+    "ceil_mode_last_window_dropped": lambda: (
+        AvgPool2d(1, 2, 0, True, False),
+        (torch.rand(1, 16, 56, 57),),
+    ),
+    "ceil_mode_last_window_dropped_count_include_pad": lambda: (
+        AvgPool2d(2, 3, 1, True, True),
+        (torch.rand(1, 16, 56, 56),),
+    ),
     "divisor_override": lambda: (
         AvgPool2d(3, 2, 1, False, False, divisor_override=2),
         (torch.rand(1, 1, 14, 14),),
@@ -108,6 +116,14 @@ test_modules = {
     ),
     "divisor_override_ceil_mode_count_include_pad": lambda: (
         AvgPool2d(3, 2, 1, True, True, divisor_override=2),
+        (torch.rand(1, 1, 14, 14),),
+    ),
+    "divisor_override_ceil_mode_no_padding": lambda: (
+        AvgPool2d(3, 2, 0, True, False, divisor_override=2),
+        (torch.rand(1, 1, 15, 14),),
+    ),
+    "divisor_override_ceil_mode_no_padding_count_include_pad": lambda: (
+        AvgPool2d(3, 2, 0, True, True, divisor_override=4),
         (torch.rand(1, 1, 14, 14),),
     ),
     "non_divisible_no_padding": lambda: (

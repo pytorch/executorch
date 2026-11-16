@@ -18,6 +18,7 @@ on:
       - backends/cpu/runtime/**
       - backends/native/**
       - backends/cadence/utils/FACTO
+      - backends/test/suite/operators/test_embedding.py
       - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
