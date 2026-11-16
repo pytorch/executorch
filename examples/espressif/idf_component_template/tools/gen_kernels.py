@@ -204,7 +204,7 @@ def _check_out(out, inputs):
         )
 
 
-def _select(args, root_ops, tmp):
+def _select(args, select_ops_list, tmp):
     """Writes one selection yaml per input; returns (op origins, models, backends, requested).
 
     `requested` is the ops that --ops and --oplist select, which only those
@@ -220,9 +220,9 @@ def _select(args, root_ops, tmp):
         selection = tmp / f"model{len(sources)}.yaml"
         gen_oplist.gen_oplist(selection, model_file_path=str(pte))
         sources[selection] = str(pte)
-    if root_ops:
+    if select_ops_list:
         selection = tmp / "ops.yaml"
-        gen_oplist.gen_oplist(selection, root_ops=",".join(root_ops))
+        gen_oplist.gen_oplist(selection, select_ops_list=",".join(select_ops_list))
         sources[selection] = "--ops"
     for oplist in args.oplist:
         if not oplist.is_file():
@@ -257,7 +257,7 @@ def _codegen(libraries, by_library, component_dir, tmp, staging):
         work = tmp / name
         (work / "gen").mkdir(parents=True)
         oplist = work / "selected_operators.yaml"
-        gen_oplist.gen_oplist(oplist, root_ops=",".join(by_library[name]))
+        gen_oplist.gen_oplist(oplist, select_ops_list=",".join(by_library[name]))
         gen.generate(
             source_path=str(component_dir / "tools/codegen"),
             install_dir=str(work / "gen"),
@@ -284,8 +284,10 @@ def generate(args):
         component_dir
     )
     _check_out(out, [p.resolve() for p in args.pte + args.oplist])
-    root_ops = sorted({op.strip() for arg in args.ops for op in arg.split(",")} - {""})
-    if not (args.pte or root_ops or args.oplist):
+    select_ops_list = sorted(
+        {op.strip() for arg in args.ops for op in arg.split(",")} - {""}
+    )
+    if not (args.pte or select_ops_list or args.oplist):
         raise GenKernelsError("nothing to select: pass --pte, --ops or --oplist")
     libraries, prim_source, prim_ops = _load_libraries(component_dir)
 
@@ -294,7 +296,7 @@ def generate(args):
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            origins, models, backends, requested = _select(args, root_ops, tmp)
+            origins, models, backends, requested = _select(args, select_ops_list, tmp)
             by_library, prims, unknown = assign_ops(
                 set(origins), [(n, ops) for n, _, ops in libraries], prim_ops
             )

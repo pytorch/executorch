@@ -226,7 +226,7 @@ def test_records_model_hash(component, tmp_path):
 
 def test_records_requested_ops(component, tmp_path):
     pte = str(save_pte(tmp_path / "m.pte"))
-    oplist = gen_oplist(tmp_path / "ops.yaml", root_ops="aten::div.out")
+    oplist = gen_oplist(tmp_path / "ops.yaml", select_ops_list="aten::div.out")
     out = tmp_path / "kernels"
     assert run(component, out, "--pte", pte) == 0
     assert read_bundle(out)["ops"] == []
@@ -317,14 +317,16 @@ def test_requested_ops_from_buck_shaped_oplist(component, tmp_path):
         tmp_path / "x/buck-out/v2/gen/fbsource/0123abcd/app/__ops_et_oplist__/out"
     )
     buck_out.mkdir(parents=True)
-    oplist = gen_oplist(buck_out / "selected_operators.yaml", root_ops="aten::div.out")
+    oplist = gen_oplist(
+        buck_out / "selected_operators.yaml", select_ops_list="aten::div.out"
+    )
     out = tmp_path / "kernels"
     assert run(component, out, "--oplist", str(oplist)) == 0
     assert read_bundle(out)["ops"] == ["aten::div.out"]
 
 
 def test_oplist_input(component, tmp_path):
-    oplist = gen_oplist(tmp_path / "ops.yaml", root_ops="aten::mul.out")
+    oplist = gen_oplist(tmp_path / "ops.yaml", select_ops_list="aten::mul.out")
     out = tmp_path / "kernels"
     assert run(component, out, "--oplist", str(oplist)) == 0
     assert read_bundle(out)["libraries"] == {"portable": ["aten::mul.out"]}
