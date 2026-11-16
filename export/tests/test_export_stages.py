@@ -10,7 +10,7 @@ from __future__ import annotations
 import gc
 import unittest
 import weakref
-from unittest.mock import call, Mock, patch
+from unittest.mock import call, MagicMock, Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
@@ -34,7 +34,12 @@ from executorch.export.stages import (
 )
 from torch.export import ExportedProgram
 from torchao.core.config import AOBaseConfig
-from torchao.quantization.pt2e.quantizer import Quantizer as TorchAOPT2EQuantizer
+from torchao.quantization.pt2e import MinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    QuantizationAnnotation,
+    QuantizationSpec,
+    Quantizer as TorchAOPT2EQuantizer,
+)
 
 
 class SimpleTestModel(torch.nn.Module):
@@ -58,6 +63,42 @@ class MethodConfigTestModel(torch.nn.Module):
         if self.use_prefill:
             return x * self.weight + self.bias + self.constant
         return x * self.weight - self.bias - self.constant
+
+
+class RunningTotalTestModel(torch.nn.Module):
+    """Keeps a running total of its inputs in a buffer, as a stateful model does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("total", torch.zeros(4))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.total.add_(x)
+        return self.total * 2
+
+
+class MulOutputQuantizer(TorchAOPT2EQuantizer):
+    """Observes the output of every mul."""
+
+    def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=0,
+            quant_max=255,
+            qscheme=torch.per_tensor_affine,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=MinMaxObserver,
+        )
+        for node in model.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Tensor
+        ):
+            node.meta["quantization_annotation"] = QuantizationAnnotation(
+                output_qspec=spec, _annotated=True
+            )
+        return model
+
+    def validate(self, model: torch.fx.GraphModule) -> None:
+        pass
 
 
 class TestPipelineArtifact(unittest.TestCase):
@@ -711,7 +752,7 @@ class TestQuantizeStage(unittest.TestCase):
         # Mock the quantization chain
         mock_composed_quantizer = Mock()
         mock_composable_quantizer.return_value = mock_composed_quantizer
-        mock_prepared_model = Mock()
+        mock_prepared_model = MagicMock()
         mock_prepare_pt2e.return_value = mock_prepared_model
         mock_quantized_model = Mock()
         mock_convert_pt2e.return_value = mock_quantized_model
@@ -1006,7 +1047,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_exported_program.module.return_value = Mock()
         mock_torch_export.return_value = mock_exported_program
         mock_composable_quantizer.return_value = Mock()
-        mock_prepare_pt2e.return_value = Mock()
+        mock_prepare_pt2e.return_value = MagicMock()
         mock_convert_pt2e.return_value = Mock()
 
         stage = QuantizeStage(mock_recipe)
@@ -1095,7 +1136,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_exported_program.module.return_value = mock_graph
         mock_torch_export.return_value = mock_exported_program
         mock_composable_quantizer.return_value = Mock()
-        mock_prepare_pt2e.return_value = Mock()
+        mock_prepare_pt2e.return_value = MagicMock()
         mock_convert_pt2e.return_value = Mock()
 
         stage = QuantizeStage(mock_recipe)
@@ -1195,7 +1236,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_exported_program.module.return_value = Mock()
         mock_torch_export.return_value = mock_exported_program
         mock_composable_quantizer.return_value = Mock()
-        mock_prepared_model = Mock()
+        mock_prepared_model = MagicMock()
         mock_prepare_pt2e.return_value = mock_prepared_model
         mock_convert_pt2e.return_value = Mock()
 
@@ -1238,7 +1279,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_exported_program.module.return_value = Mock()
         mock_torch_export.return_value = mock_exported_program
         mock_composable_quantizer.return_value = Mock()
-        mock_prepared_model = Mock()
+        mock_prepared_model = MagicMock()
         mock_prepare_pt2e.return_value = mock_prepared_model
         mock_convert_pt2e.return_value = Mock()
 
@@ -1248,6 +1289,42 @@ class TestQuantizeStage(unittest.TestCase):
 
         # The prepared model must be called with the example inputs (one tuple)
         mock_prepared_model.assert_called_once_with(*self.example_inputs[0])
+
+    def test_calibration_leaves_the_model_buffers_as_it_found_them(self) -> None:
+        """Calibration does not advance the model's state, in the program or in the
+        eager model, while the observers keep what it recorded."""
+        model = RunningTotalTestModel()
+        stage = QuantizeStage(QuantizationRecipe(quantizers=[MulOutputQuantizer()]))
+        context = {"example_inputs": {"forward": [(torch.ones(4),)] * 3}}
+
+        stage.run(PipelineArtifact(data={"forward": model}, context=context))
+
+        quantized = stage.get_artifacts().data["forward"]
+        torch.testing.assert_close(model.get_buffer("total"), torch.zeros(4))
+        torch.testing.assert_close(quantized.get_buffer("total"), torch.zeros(4))
+        # The running total reaches 3 over the 3 calibration inputs, so the
+        # observer records outputs up to 6.
+        (quantize,) = quantized.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        )
+        self.assertAlmostEqual(quantize.args[1], 6 / 255)
+
+    def test_training_keeps_what_it_writes_to_the_model_buffers(self) -> None:
+        """QAT training is meant to update buffers, such as batch-norm statistics."""
+        model = RunningTotalTestModel()
+        recipe = QuantizationRecipe(
+            quantizers=[MulOutputQuantizer()],
+            is_qat=True,
+            train_fn=lambda prepared: prepared(torch.ones(4)),
+        )
+        context = {"example_inputs": {"forward": [(torch.ones(4),)]}}
+
+        QuantizeStage(recipe).run(
+            PipelineArtifact(data={"forward": model}, context=context)
+        )
+
+        torch.testing.assert_close(model.get_buffer("total"), torch.ones(4))
 
     def test_run_empty_example_inputs(self) -> None:
         """Test error when example inputs list is empty."""
@@ -1477,7 +1554,7 @@ class TestQuantizeStageExportDynamicShapes(unittest.TestCase):
         mock_ep.module.return_value = Mock()
         mock_torch_export.return_value = mock_ep
         mock_composable_quantizer.return_value = Mock()
-        mock_prepare_pt2e.return_value = Mock()
+        mock_prepare_pt2e.return_value = MagicMock()
         mock_convert_pt2e.return_value = Mock()
 
         recipe = self._make_recipe(is_qat=False, dynamic_batch_size=False)
@@ -1552,7 +1629,7 @@ class TestQuantizeStageExportDynamicShapes(unittest.TestCase):
         mock_ep.module.return_value = Mock()
         mock_torch_export.return_value = mock_ep
         mock_composable_quantizer.return_value = Mock()
-        mock_prepare_pt2e.return_value = Mock()
+        mock_prepare_pt2e.return_value = MagicMock()
         mock_convert_pt2e.return_value = Mock()
 
         recipe = self._make_recipe(is_qat=False, dynamic_batch_size=True)

@@ -12,8 +12,9 @@ import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from contextlib import contextmanager
 from itertools import zip_longest
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Union
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
@@ -48,6 +49,31 @@ def _drop_empty(
     passes_by_method: Dict[str, List[PassType]],
 ) -> Dict[str, List[PassType]]:
     return {method: p for method, p in passes_by_method.items() if p}
+
+
+@contextmanager
+def _preserve_model_buffers(model: torch.fx.GraphModule) -> Iterator[None]:
+    """Restore the buffers of a prepared model's own state on exit.
+
+    Calibration runs the model, so every buffer its forward writes to changes
+    with each calibration input. Those are the eager model's buffers too. The
+    buffers of the observers and fake quantizes, which prepare inserts as
+    ``call_module`` nodes, are the calibration statistics and are kept.
+    """
+    observers = tuple(
+        f"{node.target}." for node in model.graph.find_nodes(op="call_module")
+    )
+    saved = [
+        (buffer, buffer.detach().clone())
+        for name, buffer in model.named_buffers()
+        if not name.startswith(observers)
+    ]
+    try:
+        yield
+    finally:
+        with torch.no_grad():
+            for buffer, value in saved:
+                buffer.copy_(value)
 
 
 class PipelineArtifact:
@@ -651,8 +677,10 @@ class QuantizeStage(Stage):
                 else:
                     calibration_inputs = example_inputs[method_name]
 
-                for calibration_input in calibration_inputs:
-                    prepared_model(*calibration_input)
+                # Calibration observes the model without changing its state.
+                with _preserve_model_buffers(prepared_model):
+                    for calibration_input in calibration_inputs:
+                        prepared_model(*calibration_input)
 
             # Pass 3: pre-convert passes.
             prepared_model = self._apply_passes(
