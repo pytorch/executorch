@@ -4,13 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Implicit-GEMM template: dense (groups 1) forward convolution.
+"""Implicit-GEMM template: dense (groups 1) 1-D, 2-D and 3-D forward convolution.
 
 The convolution is a GEMM of the output pixels (``M = N * OD * OH * OW``) by the
 output channels, reducing over ``K = C_in * KD * KH * KW``; input tiles are
 gathered from the input as the GEMM walks K. The kernel is written once for
-(D, H, W): a 2-D convolution has a unit depth, which, like every shape, stride
-and geometry argument, is constexpr and compiles away; so does every bounds
+(D, H, W): lower ranks have unit leading dims, which, like every shape, stride
+and geometry argument, are constexpr and compile away; so does every bounds
 check the geometry cannot fail (all of them when kernel == stride and
 there is no padding). Tiles are autotuned. K is walked in
 one of two orders:
@@ -80,8 +80,6 @@ def _output_size(call: ConvCall) -> list[int]:
 
 def _geometry_reason(call: ConvCall) -> Optional[str]:
     x, w, p = call.input, call.weight, call.params
-    if p.rank not in (2, 3):
-        return f"implicit GEMM: {p.rank}-D convolution, needs 2-D or 3-D"
     if p.transposed:
         return "implicit GEMM: transposed convolution"
     if any(d != 1 for d in p.dilation):
