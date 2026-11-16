@@ -13,8 +13,8 @@
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
-#include "NeutronDriver.h"
-#include "NeutronErrors.h"
+#include <NeutronDriver.h>
+#include <NeutronErrors.h>
 
 using namespace std;
 

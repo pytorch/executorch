@@ -25,6 +25,9 @@ set(MCUX_SDK_PROJECT_NAME executorch_cifarnet.elf)
 
 set(EXECUTORCH_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
+set(EIQ_NEUTRON_TARGET imxrt700)
+include(${EXECUTORCH_ROOT_DIR}/backends/nxp/cmake/neutron_sdk.cmake)
+
 # CPU and FPU flags required for Cortex-M33 with single-precision FPU.
 set(CPU_FLAGS "-mcpu=cortex-m33 -mthumb -mfloat-abi=hard -mfpu=fpv5-sp-d16")
 set(CPU_DEFINES
@@ -95,6 +98,7 @@ target_include_directories(
   ${MCUX_SDK_PROJECT_NAME}
   PRIVATE
     ${MODEL_DIR}
+    ${EIQ_NEUTRON_TARGET_INCLUDE_DIR}
     ${SdkRootDirPath}/arch/arm/CMSIS/Core/Include
     ${SdkRootDirPath}/devices/RT/RT700/MIMXRT798S
     ${SdkRootDirPath}/devices/RT/RT700/MIMXRT798S/cm33_core0
