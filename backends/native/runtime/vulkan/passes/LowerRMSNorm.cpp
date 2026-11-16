@@ -48,6 +48,7 @@ bool is_valid_weight(
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 size_t lower_rms_norms(Graph& graph) {
   size_t count = 0;
   for (const NodeId node_id : graph.schedule) {

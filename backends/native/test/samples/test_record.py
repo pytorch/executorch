@@ -13,13 +13,13 @@ from types import ModuleType
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.native.test.samples import rms_norm
 from executorch.backends.native.test.samples.cases import (
     Case,
     chain,
     draws,
     suite_cases,
 )
-from executorch.backends.native.test.samples.ops import ops
 from executorch.backends.native.test.samples.record import DTYPES, record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
@@ -127,7 +127,7 @@ class RecordTest(unittest.TestCase):
             self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
 
     def test_rms_norm_fits_only_the_float_scheme(self) -> None:
-        cases = ops()["rms_norm"].cases()
+        cases = rms_norm.cases()
         for name, scheme in schemes().items():
             self.assertEqual(
                 any(scheme.fits(case.model) for case in cases), name == "float", name
