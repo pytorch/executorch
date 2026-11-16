@@ -297,19 +297,6 @@ class RecomposeRmsNorm(ExportPass):
             return None
         return input_node
 
-    @staticmethod
-    def _erase_unused(node):
-        # Erased right away, so a node another norm shares counts its users
-        # right in _is_skipped.
-        nodes, erased = [node], set()
-        while nodes:
-            node = nodes.pop()
-            if node in erased or node.users or node.op != "call_function":
-                continue
-            erased.add(node)
-            nodes.extend(node.all_input_nodes)
-            node.graph.erase_node(node)
-
     def call(self, graph_module: torch.fx.GraphModule):
         assert (
             self.quantization_capture or self.edge_program is not None
@@ -408,7 +395,9 @@ class RecomposeRmsNorm(ExportPass):
                 # A later norm may take this one as its input.
                 if input_node in self.runtime_nodes:
                     self.runtime_nodes.add(rms_node)
-                self._erase_unused(output_node)
+                # Erased right away, so a node another norm shares counts its
+                # users right in _is_skipped.
+                graph.eliminate_dead_code()
 
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
