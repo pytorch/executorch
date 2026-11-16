@@ -39,7 +39,7 @@ supported calls keep the regular lowering.
 
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import Optional
 
 import torch
 import triton
@@ -52,6 +52,7 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     ConvCall,
     ConvParams,
     max_offset,
+    Schedule,
     SUPPORTED_DTYPES,
 )
 from executorch.backends.cuda.triton.routing import device_supports
@@ -64,12 +65,6 @@ MAX_GROUP_CHANNELS = 8
 # Larger multipliers take the other schedules.
 MAX_MULT_MULTIPLIER = 16
 _INT32_MAX = 2**31 - 1
-
-
-class Schedule(NamedTuple):
-    name: str
-    # The compute capability the export GPU needs; 0: every NVIDIA GPU.
-    min_capability: int
 
 
 SCHEDULES = (
