@@ -31,6 +31,7 @@ from ..serialization.xts3 import (
     SOFTMAX_OUTPUT_ZERO_POINT,
     TENSOR_FLAG_GRAPH_INPUT,
     TENSOR_FLAG_GRAPH_OUTPUT,
+    TENSOR_FLAG_STATE,
     TRANSPOSE_CONV_PARAMS,
     TRANSPOSE_CONV_PARAMS_SIZE,
     UPSAMPLE_HEADER,
@@ -229,6 +230,23 @@ class ReferenceInterpreter:
         self.outputs = list(graph.outputs) or [
             t.tensor_id for t in graph.tensors if t.flags & TENSOR_FLAG_GRAPH_OUTPUT
         ]
+        self.states: dict[int, np.ndarray] = {}
+        self.reset_states()
+
+    def reset_states(self) -> None:
+        """Restores every delegate-owned state tensor to its initial value."""
+        for state_id, _ in self.graph.states:
+            tensor = self.graph.tensors[state_id]
+            self.states[state_id] = (
+                np.frombuffer(
+                    self.graph.constant_data,
+                    dtype=np.int8,
+                    count=int(np.prod(tensor.shape)),
+                    offset=tensor.data_offset,
+                )
+                .copy()
+                .reshape(device_shape(tensor))
+            )
 
     def constant(self, tensor_id: int) -> np.ndarray:
         tensor = self.graph.tensors[tensor_id]
@@ -252,7 +270,8 @@ class ReferenceInterpreter:
         raise KeyError(f"Tensor {tensor_id} has not been produced")
 
     def run(self, inputs: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
-        values: dict[int, np.ndarray] = {}
+        """Runs one invoke; delegate-owned state carries over to the next."""
+        values: dict[int, np.ndarray] = dict(self.states)
         for tensor_id in self.inputs:
             tensor = self.graph.tensors[tensor_id]
             data = np.asarray(inputs[tensor_id], dtype=np.int8)
@@ -263,6 +282,8 @@ class ReferenceInterpreter:
             values[tensor_id] = data
         for operation in self.graph.operations:
             values[operation.outputs[0]] = self._run_operation(operation, values)
+        for state_id, update_id in self.graph.states:
+            self.states[state_id] = values[update_id].copy()
         return values
 
     def run_outputs(self, inputs: list[np.ndarray]) -> list[np.ndarray]:
@@ -593,7 +614,9 @@ def plan_activation_arena(  # noqa: C901
     for tensor in graph.tensors:
         if tensor.is_constant or (external_io and tensor.flags & io_flags):
             continue
-        first[tensor.tensor_id] = -1 if tensor.flags & TENSOR_FLAG_GRAPH_INPUT else big
+        first[tensor.tensor_id] = (
+            -1 if tensor.flags & (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_STATE) else big
+        )
         last[tensor.tensor_id] = (
             op_count if tensor.flags & TENSOR_FLAG_GRAPH_OUTPUT else -1
         )
@@ -607,8 +630,21 @@ def plan_activation_arena(  # noqa: C901
             if tensor_id in first:
                 first[tensor_id] = min(first[tensor_id], index)
                 last[tensor_id] = max(last[tensor_id], index)
+    # A state keeps its slot for the whole graph. Its update shares that slot
+    # when no operation reads the state at or after the update's first write.
+    in_place = {}
+    for state_id, update_id in graph.states:
+        if last[state_id] < first[update_id]:
+            in_place[update_id] = state_id
+        else:
+            last[update_id] = op_count
+        last[state_id] = op_count
     order = sorted(
-        (tensor_id for tensor_id in sizes if first[tensor_id] != big),
+        (
+            tensor_id
+            for tensor_id in sizes
+            if first[tensor_id] != big and tensor_id not in in_place
+        ),
         key=lambda tensor_id: (-sizes[tensor_id], tensor_id),
     )
     offsets: dict[int, int] = {}
@@ -631,6 +667,8 @@ def plan_activation_arena(  # noqa: C901
                     moved = True
         offsets[tensor_id] = candidate
         arena = max(arena, candidate + sizes[tensor_id])
+    for update_id, state_id in in_place.items():
+        offsets[update_id] = offsets[state_id]
     return arena, offsets
 
 

@@ -143,6 +143,58 @@ The application then binds its buffers once, with `Method::set_input()` and
 to update a state tensor in place): the delegate detects the overlap and
 writes that output through its staging buffer after all operators have run.
 
+### Streaming state
+
+A streaming model keeps a few frames of history between calls in a mutable
+buffer. By default the buffer stays in the program, which passes it to the
+delegate and back on every call. With `delegate_mutable_buffers=True`, the
+delegate that reads and updates a buffer owns it instead: the program loses
+that input and output, and the delegate keeps the buffer as int8 in its arena,
+written in place when no operator reads the old value after the new one is
+produced.
+
+```python
+class Streaming(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("frames", torch.zeros(1, 40, 2, 1))
+        self.conv = torch.nn.Conv2d(40, 32, (3, 1))
+
+    def forward(self, x):  # x: (1, 40, 1, 1), one new frame
+        window = torch.cat([self.frames, x], dim=2)
+        self.frames.copy_(window[:, :, 1:])
+        return self.conv(window)
+
+# ... prepare_pt2e, calibrate, convert_pt2e as above, then reset the buffer
+# that calibration updated before exporting.
+edge, report = to_espnn_edge(
+    torch.export.export(quantized, (torch.zeros(1, 40, 1, 1),)),
+    delegate_mutable_buffers=True,
+)
+print(report["delegated_buffers"])  # ['frames']
+```
+
+The delegate takes a buffer only when one partition holds every access to it
+and the buffer is read and written with the same int8 quantization, as a
+`cat` and slice shift register is with `EspNNQuantizer`. Other buffers stay
+in the program, with a warning.
+
+On the device, each loaded method has its own state. It starts from the
+buffer's initial value when the method is loaded and persists across
+`execute()` calls. `reset_delegate_states()` (from `espnn/espnn_backend.h`)
+or the `reset_states` backend option restores the initial state of every
+EspNNBackend delegate before its next `execute()`; to reset one method alone,
+load it again. After an `execute()` that fails, the state is undefined until
+it is reset. The reset may be requested from any task.
+
+```cpp
+executorch::backends::espressif::reset_delegate_states();
+// or, through the generic backend-option API:
+executorch::runtime::BackendOptions<1> options;
+options.set_option("reset_states", true);
+executorch::runtime::set_option("EspNNBackend", options.view());
+```
+
 ## Running on the ESP32-S3
 
 You need ESP-IDF and an activated ESP-IDF shell.

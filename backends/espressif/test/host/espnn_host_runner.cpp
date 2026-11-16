@@ -14,6 +14,7 @@
  *
  *   espnn_host_runner PROGRAM IO_DIR STEPS [--instances N] [--share-io]
  *                     [--alias INPUT:OUTPUT]... [--misalign]
+ *                     [--reset-before STEP]...
  *
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
  * output o to IO_DIR/out_<k>_<s>_<o>.bin: the raw bytes of the tensor in its
@@ -23,8 +24,10 @@
  * buffers through set_input and set_output_data_ptr, and --alias makes an
  * input and an output share one buffer: that input is then read from its file
  * at step 0 only and afterwards holds the output of the previous step.
- * --misalign places every runner buffer one byte past a 16-byte boundary. At
- * the end, the runner prints the delegates' memory as a STATS line.
+ * --misalign places every runner buffer one byte past a 16-byte boundary.
+ * --reset-before asks EspNNBackend, through its reset_states backend option,
+ * to restore its delegates' state before that step. At the end, the runner
+ * prints the delegates' memory as a STATS line.
  */
 
 #include <cstdio>
@@ -37,6 +40,8 @@
 
 #include <espnn/espnn_backend.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -141,10 +146,13 @@ int main(int argc, char** argv) {
   bool share_io = false;
   size_t misalign = 0;
   std::vector<std::pair<size_t, size_t>> aliases;
+  std::vector<int> resets;
   for (int a = 4; a < argc; ++a) {
     const std::string arg = argv[a];
     if (arg == "--instances" && a + 1 < argc) {
       instance_count = std::atoi(argv[++a]);
+    } else if (arg == "--reset-before" && a + 1 < argc) {
+      resets.push_back(std::atoi(argv[++a]));
     } else if (arg == "--share-io") {
       share_io = true;
     } else if (arg == "--misalign") {
@@ -228,6 +236,19 @@ int main(int argc, char** argv) {
   }
 
   for (int step = 0; step < steps; ++step) {
+    for (int reset : resets) {
+      if (reset != step)
+        continue;
+      executorch::runtime::BackendOptions<1> options;
+      if (options.set_option(
+              executorch::backends::espressif::kResetStatesOption, true) !=
+          Error::Ok)
+        fail("BackendOptions::set_option");
+      Error error = executorch::runtime::set_option(
+          executorch::backends::espressif::kEspNNBackendId, options.view());
+      if (error != Error::Ok)
+        fail("set_option", static_cast<int>(error));
+    }
     for (int k = 0; k < instance_count; ++k) {
       Instance& instance = instances[k];
       for (size_t i = 0; i < instance.inputs.size(); ++i) {
@@ -266,13 +287,15 @@ int main(int argc, char** argv) {
   const auto stats = executorch::backends::espressif::delegate_stats();
   std::printf(
       "STATS delegates=%u arena=%zu scratch=%zu parameters=%zu tables=%zu "
-      "staging=%zu\n",
+      "staging=%zu states=%u states_in_place=%u\n",
       static_cast<unsigned>(stats.delegates),
       stats.arena_bytes,
       stats.scratch_bytes,
       stats.parameter_bytes,
       stats.table_bytes,
-      stats.staging_bytes);
+      stats.staging_bytes,
+      static_cast<unsigned>(stats.states),
+      static_cast<unsigned>(stats.states_updated_in_place));
 
   return 0;
 }

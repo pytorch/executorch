@@ -41,6 +41,12 @@ from executorch.backends.espressif.test import (
     test_int8_lowering as lowering_cases,
     test_int8_ops as op_cases,
 )
+from executorch.backends.espressif.test.test_mutable_buffers import (
+    lower_input_as_state,
+    lower_stateful,
+    ShiftRegister,
+    StateReadLate,
+)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes import MemoryPlanningPass
@@ -452,3 +458,54 @@ def test_input_returned_as_output(tmp_path, channels_last, alias):
         expected = as_list(emulator(*inputs))
         assert torch.equal(expected[1], inputs[1])
         assert_matches(outputs[step], expected, channels_last)
+
+
+def stateful_steps(count: int):
+    return random_steps([(1, 4, 1, 1)], count, seed=7)
+
+
+@pytest.mark.parametrize(
+    "model_class, in_place", [(ShiftRegister, 1), (StateReadLate, 0)]
+)
+def test_delegate_owned_state_persists(tmp_path, model_class, in_place):
+    exported, program, report = lower_stateful(model_class())
+    assert report["delegated_buffers"] == ["state"]
+    assert len(exported.graph_signature.user_inputs) == 1
+    assert not exported.graph_signature.buffers_to_mutate
+    steps = stateful_steps(5)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["states"] == 1
+    assert stats["states_in_place"] == in_place
+    # The state changes the outputs, so the check above depends on it.
+    replay = ProgramEmulator(exported)
+    stateful = [as_list(replay(*inputs))[0] for inputs in steps]
+    fresh = [as_list(ProgramEmulator(exported)(*inputs))[0] for inputs in steps]
+    assert not all(torch.equal(a, b) for a, b in zip(stateful, fresh))
+
+
+def test_state_updated_from_a_graph_input(tmp_path):
+    exported, program, _ = lower_input_as_state()
+    steps = stateful_steps(4)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["states"] == 1
+
+
+def test_state_reset_and_instances(tmp_path):
+    exported, program, _ = lower_stateful(ShiftRegister())
+    steps = stateful_steps(6)
+    first, second = run_host(
+        tmp_path, program, steps, "--instances", 2, "--reset-before", 4
+    )[0]
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        if step == 4:
+            emulator.reset_states()
+        expected = as_list(emulator(*inputs))
+        assert_matches(first[step], expected)
+        assert_matches(second[step], expected)

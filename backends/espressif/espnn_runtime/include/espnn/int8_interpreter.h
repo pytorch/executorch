@@ -204,6 +204,18 @@ class Int8Interpreter {
   size_t scratch_bytes() const {
     return scratch_size_;
   }
+  /// Number of delegate-owned state tensors (mutable buffers).
+  size_t state_count() const {
+    return graph_.num_states;
+  }
+  /// Number of states whose new value is written in place over the old one
+  /// rather than copied after the last operation.
+  size_t states_updated_in_place() const;
+  /**
+   * Restores every state tensor to its initial value. load() does this too.
+   * Not thread-safe with respect to invoke() on the same interpreter.
+   */
+  void reset_states();
   /// Size of the per-operation and per-tensor tables kept in RAM after load().
   size_t table_bytes() const;
   /// Size of the precomputed requantization tables.
@@ -262,6 +274,7 @@ class Int8Interpreter {
   int32_t* params_ = nullptr;
   size_t params_size_ = 0;
   int64_t* op_us_ = nullptr;
+  uint16_t updates_in_place_ = 0;
   uint32_t inputs_[MAX_GRAPH_IO]{};
   uint32_t outputs_[MAX_GRAPH_IO]{};
   size_t input_count_ = 0;

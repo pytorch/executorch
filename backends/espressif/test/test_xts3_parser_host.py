@@ -88,6 +88,8 @@ def _layout(graph: xts3.XTS3Graph):
         io_table = xts3.IO_TABLE_HEADER_SIZE + 4 * (
             len(graph.inputs) + len(graph.outputs)
         )
+    if graph.version >= 8:
+        io_table += xts3.STATE_TABLE_HEADER_SIZE + 8 * len(graph.states)
     tensors = xts3.HEADER_SIZE + io_table
     if graph.version >= 7:
         tensors += -tensors % 4
@@ -223,4 +225,40 @@ def test_parser_rejects_misaligned_int32_constants(parser):
     assert parser({"aligned": blob, "misaligned": corrupted}) == {
         "aligned": "accept",
         "misaligned": "reject",
+    }
+
+
+def test_parser_validates_state_tables(parser):
+    from executorch.backends.espressif.test import test_mutable_buffers as stateful
+
+    exported, _, _ = stateful.lower_stateful(stateful.ShiftRegister())
+    (graph,) = stateful.delegate_graphs(exported)
+    blob = xts3.serialize_graph(graph)
+    assert graph.version == xts3.XTS3_STATE_VERSION
+    ((state, update),) = graph.states
+    table = xts3.HEADER_SIZE + xts3.IO_TABLE_HEADER_SIZE
+    table += 4 * (len(graph.inputs) + len(graph.outputs))
+    tensors, _ = _layout(graph)
+    flags = tensors + xts3.TENSOR_SIZE * state + 9
+    blobs = {
+        "valid": blob,
+        "unpaired": _patch(blob, table, "<H", 0),
+        "not_a_state": _patch(blob, flags, "<B", blob[flags] & ~xts3.TENSOR_FLAG_STATE),
+        "self_pair": _patch(blob, table + 8, "<I", state),
+        "out_of_range": _patch(blob, table + 8, "<I", len(graph.tensors)),
+        "state_flag_in_v7": _patch(blob, 4, "<H", 7),
+        "reserved": _patch(blob, table + 2, "<H", 1),
+    }
+    # The Python parser checks the table's structure too.
+    for name in ("out_of_range", "reserved"):
+        with pytest.raises(ValueError):
+            xts3.parse_graph(blobs[name])
+    assert parser(blobs) == {
+        "valid": "accept",
+        "unpaired": "reject",
+        "not_a_state": "reject",
+        "self_pair": "reject",
+        "out_of_range": "reject",
+        "state_flag_in_v7": "reject",
+        "reserved": "reject",
     }

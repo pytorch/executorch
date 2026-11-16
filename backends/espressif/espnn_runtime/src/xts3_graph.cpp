@@ -554,6 +554,8 @@ bool validate_int8_dataflow(const GraphView& graph) {
       produced.set(i);
       ++input_count;
     }
+    if ((tensor.flags & TENSOR_FLAG_STATE) != 0)
+      produced.set(i);
     if ((tensor.flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0)
       ++output_count;
   }
@@ -641,6 +643,38 @@ bool validate_int8_dataflow(const GraphView& graph) {
       return false;
     }
   }
+  TensorSet paired_states;
+  TensorSet paired_updates;
+  for (uint32_t k = 0; k < graph.num_states; ++k) {
+    uint32_t state_id = 0;
+    uint32_t update_id = 0;
+    TensorRecord state{};
+    TensorRecord update{};
+    graph_state_pair(graph, k, state_id, update_id);
+    read_tensor(graph, state_id, state);
+    read_tensor(graph, update_id, update);
+    const uint8_t not_an_update = TENSOR_FLAG_STATE | TENSOR_FLAG_CONSTANT |
+        TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT;
+    if ((state.flags & TENSOR_FLAG_STATE) == 0 ||
+        (update.flags & not_an_update) != 0 || !produced[update_id] ||
+        paired_states[state_id] || paired_updates[update_id] ||
+        !same_shape(state, update) || !same_quantization(state, update)) {
+      std::printf(
+          "ERROR: state pair %u is invalid\n", static_cast<unsigned>(k));
+      return false;
+    }
+    paired_states.set(state_id);
+    paired_updates.set(update_id);
+  }
+  for (uint32_t i = 0; i < graph.header.num_tensors; ++i) {
+    TensorRecord tensor{};
+    read_tensor(graph, i, tensor);
+    if ((tensor.flags & TENSOR_FLAG_STATE) != 0 && !paired_states[i]) {
+      std::printf(
+          "ERROR: state tensor %u has no update\n", static_cast<unsigned>(i));
+      return false;
+    }
+  }
   return true;
 }
 
@@ -655,9 +689,8 @@ int32_t read_le_i32(const uint8_t* p) {
 }
 
 bool is_int8_graph_version(uint32_t version) {
-  return version == GRAPH_ESP_NN_INT8_VERSION ||
-      version == GRAPH_ESP_NN_INT8_IO_VERSION ||
-      version == GRAPH_ESP_NN_INT8_ALIGNED_VERSION;
+  return version >= GRAPH_ESP_NN_INT8_VERSION &&
+      version <= GRAPH_ESP_NN_INT8_STATE_VERSION;
 }
 
 namespace {
@@ -707,6 +740,18 @@ uint32_t graph_input_id(const GraphView& graph, uint32_t index) {
                                     : UINT32_MAX;
   }
   return flagged_tensor(graph, TENSOR_FLAG_GRAPH_INPUT, index);
+}
+
+bool graph_state_pair(
+    const GraphView& graph,
+    uint32_t index,
+    uint32_t& state_id,
+    uint32_t& update_id) {
+  if (graph.state_ids == nullptr || index >= graph.num_states)
+    return false;
+  state_id = read_u32(graph.state_ids + 8 * index);
+  update_id = read_u32(graph.state_ids + 8 * index + 4);
+  return true;
 }
 
 uint32_t graph_output_id(const GraphView& graph, uint32_t index) {
@@ -896,6 +941,25 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
     graph.tensor_table_offset =
         GRAPH_HEADER_SIZE + GRAPH_IO_TABLE_HEADER_SIZE + io_bytes;
   }
+  if (graph.header.version >= GRAPH_ESP_NN_INT8_STATE_VERSION) {
+    const size_t at = graph.tensor_table_offset;
+    if (!range_valid(at, GRAPH_STATE_TABLE_HEADER_SIZE, size))
+      return false;
+    graph.num_states = read_u16(data + at);
+    const size_t state_bytes = 8U * static_cast<size_t>(graph.num_states);
+    if (graph.num_states > MAX_GRAPH_STATES || read_u16(data + at + 2) != 0 ||
+        !range_valid(at + GRAPH_STATE_TABLE_HEADER_SIZE, state_bytes, size)) {
+      std::printf("ERROR: graph state table is invalid\n");
+      return false;
+    }
+    graph.state_ids = data + at + GRAPH_STATE_TABLE_HEADER_SIZE;
+    for (uint32_t i = 0; i < 2U * graph.num_states; ++i) {
+      if (read_u32(graph.state_ids + 4 * i) >= graph.header.num_tensors)
+        return false;
+    }
+    graph.tensor_table_offset =
+        at + GRAPH_STATE_TABLE_HEADER_SIZE + state_bytes;
+  }
   if (graph.header.version >= GRAPH_ESP_NN_INT8_ALIGNED_VERSION) {
     const size_t padded = (graph.tensor_table_offset + 3U) & ~size_t{3};
     if (!range_valid(
@@ -905,7 +969,7 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
       return false;
     for (size_t i = graph.tensor_table_offset; i < padded; ++i) {
       if (data[i] != 0) {
-        std::printf("ERROR: graph IO table padding is not zero\n");
+        std::printf("ERROR: graph table padding is not zero\n");
         return false;
       }
     }
@@ -938,7 +1002,8 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
   graph.parameter_data = data + graph.parameter_offset;
   graph.constant_data = data + graph.constant_offset;
 
-  const unsigned allowed_flags = 0x0FU;
+  const unsigned allowed_flags =
+      graph.header.version >= GRAPH_ESP_NN_INT8_STATE_VERSION ? 0x1FU : 0x0FU;
   for (uint32_t i = 0; i < graph.header.num_tensors; ++i) {
     TensorRecord tensor{};
     read_tensor(graph, i, tensor);
@@ -988,6 +1053,17 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
       return false;
     }
     const size_t data_size = tensor_data_size(tensor);
+    const bool is_state = (tensor.flags & TENSOR_FLAG_STATE) != 0;
+    if (is_state &&
+        (is_constant ||
+         (tensor.flags &
+          (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT)) != 0 ||
+         !range_valid(
+             tensor.constant_offset, data_size, graph.header.constant_size))) {
+      std::printf(
+          "ERROR: state tensor %u is invalid\n", static_cast<unsigned>(i));
+      return false;
+    }
     const bool misaligned_int32 = is_constant &&
         tensor.dtype == static_cast<uint8_t>(DataType::INT32) &&
         (tensor.constant_offset % sizeof(int32_t)) != 0;
@@ -997,7 +1073,7 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
         (is_constant &&
          !range_valid(
              tensor.constant_offset, data_size, graph.header.constant_size)) ||
-        (!is_constant && tensor.constant_offset != 0)) {
+        (!is_constant && !is_state && tensor.constant_offset != 0)) {
       std::printf(
           "ERROR: tensor %u constant data range or shape is invalid\n",
           static_cast<unsigned>(i));

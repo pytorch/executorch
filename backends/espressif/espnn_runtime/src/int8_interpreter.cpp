@@ -314,7 +314,7 @@ bool Int8Interpreter::load(
         "ERROR: model is XTS3 v%u; the int8 runtime requires v%u to v%u\n",
         static_cast<unsigned>(graph_.header.version),
         static_cast<unsigned>(GRAPH_ESP_NN_INT8_VERSION),
-        static_cast<unsigned>(GRAPH_ESP_NN_INT8_ALIGNED_VERSION));
+        static_cast<unsigned>(GRAPH_ESP_NN_INT8_STATE_VERSION));
     return false;
   }
   const bool misaligned =
@@ -381,6 +381,7 @@ bool Int8Interpreter::load(
     reset();
     return false;
   }
+  reset_states();
   if (options_.copy_constants_to_psram && blob_copy_ == nullptr &&
       heap_caps_get_total_size(MALLOC_CAP_SPIRAM) != 0) {
     const size_t largest =
@@ -466,7 +467,9 @@ bool Int8Interpreter::plan_memory() {
                             : 0);
   for (uint32_t i = 0; i < tensor_count; ++i) {
     first[i] =
-        (tensors_[i].flags & TENSOR_FLAG_GRAPH_INPUT) != 0 ? -1 : INT32_MAX;
+        (tensors_[i].flags & (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_STATE)) != 0
+        ? -1
+        : INT32_MAX;
     last[i] =
         (tensors_[i].flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0 ? op_count : -1;
     bytes[i] = align_up(tensor_data_size(tensors_[i]), ARENA_ALIGNMENT);
@@ -496,6 +499,24 @@ bool Int8Interpreter::plan_memory() {
       if (last[id] < op)
         last[id] = op;
     }
+  }
+
+  // A state keeps its slot across invokes, so it is live for the whole graph.
+  // Its update is written straight into that slot when no operation reads the
+  // state at or after the update's first write; otherwise the update gets its
+  // own slot and is copied over the state after the last operation.
+  updates_in_place_ = 0;
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if (last[state] < first[update]) {
+      updates_in_place_ |= 1U << k;
+      planned[update] = true;
+    } else {
+      last[update] = op_count;
+    }
+    last[state] = op_count;
   }
 
   size_t arena_size = 0;
@@ -532,6 +553,13 @@ bool Int8Interpreter::plan_memory() {
     offsets[best] = candidate;
     if (candidate + bytes[best] > arena_size)
       arena_size = candidate + bytes[best];
+  }
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if ((updates_in_place_ & (1U << k)) != 0)
+      offsets[update] = offsets[state];
   }
   for (uint32_t i = 0; i < tensor_count; ++i) {
     if ((tensors_[i].flags & unplanned) == 0 && offsets[i] == SIZE_MAX) {
@@ -1107,6 +1135,25 @@ int32_t Int8Interpreter::output_argmax(size_t index) const {
       best = static_cast<int32_t>(i);
   }
   return best;
+}
+
+size_t Int8Interpreter::states_updated_in_place() const {
+  size_t count = 0;
+  for (uint32_t k = 0; k < graph_.num_states; ++k)
+    count += (updates_in_place_ >> k) & 1U;
+  return count;
+}
+
+void Int8Interpreter::reset_states() {
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    std::memcpy(
+        activation(state),
+        tensor_constant_data(graph_, tensors_[state]),
+        tensor_data_size(tensors_[state]));
+  }
 }
 
 size_t Int8Interpreter::table_bytes() const {
@@ -1916,6 +1963,17 @@ bool Int8Interpreter::invoke() {
       last_yield = now;
     }
     op_started = now;
+  }
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if ((updates_in_place_ & (1U << k)) == 0) {
+      std::memcpy(
+          activation(state),
+          activation(update),
+          tensor_data_size(tensors_[state]));
+    }
   }
   const int64_t finished = esp_timer_get_time();
   if (finished - last_yield > YIELD_INTERVAL_US)

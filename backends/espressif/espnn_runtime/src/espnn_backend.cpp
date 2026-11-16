@@ -10,6 +10,7 @@
 
 #include <espnn/espnn_backend.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -36,6 +37,8 @@ using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;
+using executorch::runtime::BackendOption;
+using executorch::runtime::BackendOptionContext;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
@@ -50,6 +53,9 @@ namespace espressif {
 namespace {
 
 DelegateStats g_stats{};
+// Incremented by each reset request; a delegate whose state is older restores
+// its initial state before its next execute.
+std::atomic<uint32_t> g_state_generation{0};
 
 constexpr float kHalfEvenRoundingBias = 12582912.0f;
 
@@ -199,6 +205,7 @@ bool store_output(
 struct DelegateState {
   Int8Interpreter interpreter;
   bool profiled = false;
+  uint32_t state_generation = 0;
   // Device-layout copies of the inputs and outputs whose tensors the
   // interpreter cannot use directly (float, NCHW, misaligned, an input that is
   // also an output, or an output that overlaps an input), one slot per input
@@ -285,11 +292,16 @@ class EspNNBackendInterface final : public BackendInterface {
     }
     if (state->interpreter.constants_copied())
       processed->Free();
+    state->state_generation =
+        g_state_generation.load(std::memory_order_relaxed);
     ++g_stats.delegates;
     g_stats.arena_bytes += state->interpreter.arena_bytes();
     g_stats.scratch_bytes += state->interpreter.scratch_bytes();
     g_stats.parameter_bytes += state->interpreter.parameter_bytes();
     g_stats.table_bytes += state->interpreter.table_bytes();
+    g_stats.states += state->interpreter.state_count();
+    g_stats.states_updated_in_place +=
+        state->interpreter.states_updated_in_place();
     return state;
   }
 
@@ -309,6 +321,14 @@ class EspNNBackendInterface final : public BackendInterface {
       return Error::InvalidArgument;
     }
     const int64_t started = esp_timer_get_time();
+    if (interpreter.state_count() != 0) {
+      const uint32_t generation =
+          g_state_generation.load(std::memory_order_relaxed);
+      if (generation != state->state_generation) {
+        interpreter.reset_states();
+        state->state_generation = generation;
+      }
+    }
     // An aligned int8 tensor already in the device layout is used in place;
     // any other goes through a staging slot.
     Int8TensorInfo info{};
@@ -431,6 +451,22 @@ class EspNNBackendInterface final : public BackendInterface {
     return Error::Ok;
   }
 
+  Error set_option(
+      BackendOptionContext&,
+      const Span<BackendOption>& backend_options) override {
+    for (const BackendOption& option : backend_options) {
+      const bool* value = std::get_if<bool>(&option.value);
+      if (std::strcmp(option.key, kResetStatesOption) != 0 ||
+          value == nullptr) {
+        std::printf("EspNN delegate: unknown option %s\n", option.key);
+        return Error::NotSupported;
+      }
+      if (*value)
+        reset_delegate_states();
+    }
+    return Error::Ok;
+  }
+
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr)
       static_cast<DelegateState*>(handle)->~DelegateState();
@@ -457,6 +493,10 @@ DelegateStats delegate_stats() {
 
 [[maybe_unused]] void reset_delegate_stats() {
   g_stats = {};
+}
+
+void reset_delegate_states() {
+  g_state_generation.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace espressif
