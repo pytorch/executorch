@@ -172,7 +172,7 @@ ROUTED_LAYOUTS = SAME_ORDER_LAYOUTS | {
 MIN_ROUTED_REORDERING_ELEMENTS = 2 * 8 * 28 * 28
 
 
-def worth_routing(call: ConvCall) -> Optional[str]:
+def worth_routing(call: ConvCall) -> Optional[str]:  # noqa: C901
     """Why a call ``supports`` accepts is left to the regular lowering, or None."""
     x, w, p = call.input, call.weight, call.params
     if max(p.stride) > MAX_ROUTED_STRIDE:
@@ -347,7 +347,7 @@ def _flat_row_same_size(
 
 
 @triton.jit
-def _flat_kernel(
+def _flat_kernel(  # noqa: C901
     x_ptr,
     w_ptr,
     b_ptr,
