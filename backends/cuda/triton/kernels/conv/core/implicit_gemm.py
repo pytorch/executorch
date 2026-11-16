@@ -35,6 +35,9 @@ the bias in FP32 before the single store:
 
 from __future__ import annotations
 
+import itertools
+import math
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -108,9 +111,184 @@ def supports(call: ConvCall) -> Optional[str]:
     return None
 
 
+@dataclass(frozen=True)
+class RoutedFamily:
+    """Geometries benchmarked together: every (kernel, stride, padding) listed,
+    with symmetric padding, up to ``max_batch`` images of at most
+    ``max_spatial`` pixels per dimension."""
+
+    name: str
+    geometries: tuple[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]], ...]
+    max_batch: int
+    max_spatial: tuple[int, ...]
+
+
+# The range where benchmarks/conv/benchmark_implicit_gemm.py finds every
+# measured call significantly faster than Inductor's Triton conv template:
+# 3-channel inputs, which the flat K order walks without the empty
+# lanes of the template's channel blocks, in the geometry families below, with
+# a dense NCHW or channels-last input and a contiguous weight (the layouts the
+# benchmark measures). Its ``boundary`` suite measures ``boundary_calls()``:
+# each geometry at every corner of these limits.
+ROUTED_CHANNELS = 3
+MIN_ROUTED_OUT_CHANNELS = 32
+MAX_ROUTED_OUT_CHANNELS = 1280
+MIN_ROUTED_OUTPUT_PIXELS = 256
+MAX_ROUTED_INPUT_PIXELS = 1024 * 1024
+MAX_ROUTED_OUTPUT_ELEMENTS = 1 << 24
+ROUTED_FAMILIES = (
+    RoutedFamily(
+        "window",
+        tuple(
+            ((k, k), (s, s), (p, p))
+            for k in (3, 5, 7)
+            for s in (1, 2, 4)
+            if s <= k
+            for p in (0, k // 2)
+        ),
+        256,
+        (1024, 1024),
+    ),
+    RoutedFamily(
+        "kernel_stride_2d",
+        tuple(((k, k), (k, k), (0, 0)) for k in (2, 4, 8, 14, 16, 32)),
+        256,
+        (1024, 1024),
+    ),
+    RoutedFamily(
+        "kernel_stride_3d",
+        tuple((k, k, (0, 0, 0)) for k in ((1, 4, 4), (2, 14, 14), (2, 16, 16))),
+        2048,
+        (4, 1024, 1024),
+    ),
+)
+
+
+def _benchmarked_layout(x: torch.Tensor, w: torch.Tensor) -> bool:
+    """A dense, unsliced NCHW or channels-last input and a contiguous weight."""
+    channels_last = torch.channels_last if x.dim() == 4 else torch.channels_last_3d
+    dense_input = x.is_contiguous() or x.is_contiguous(memory_format=channels_last)
+    return (
+        dense_input
+        and x.storage_offset() == 0
+        and w.is_contiguous()
+        and w.storage_offset() == 0
+    )
+
+
+def _family(call: ConvCall) -> Optional[RoutedFamily]:
+    p = call.params
+    if p.padding_before != p.padding_after:
+        return None
+    geometry = (tuple(call.weight.shape[2:]), p.stride, p.padding_before)
+    return next((f for f in ROUTED_FAMILIES if geometry in f.geometries), None)
+
+
 def worth_routing(call: ConvCall) -> Optional[str]:
     """Why a call ``supports`` accepts is left to the regular lowering, or None."""
-    return "implicit GEMM: not benchmarked"
+    x, w, p = call.input, call.weight, call.params
+    if all(k == 1 for k in w.shape[2:]):
+        return "implicit GEMM: a 1x1 convolution keeps the regular lowering"
+    tensor_cores = x.dtype != torch.float32 or conv_allows_tf32()
+    if tensor_cores and not device_supports(SCHEDULES[1].min_capability, x.device):
+        return (
+            f"implicit GEMM: {x.dtype} without tensor cores on the export GPU "
+            "is not benchmarked"
+        )
+    if x.shape[1] != ROUTED_CHANNELS:
+        return f"implicit GEMM: {x.shape[1]} input channels are not benchmarked faster"
+    if not _benchmarked_layout(x, w):
+        return (
+            f"implicit GEMM: input strides {list(x.stride())} (offset "
+            f"{x.storage_offset()}) or weight strides {list(w.stride())} are not "
+            "a benchmarked layout"
+        )
+    family = _family(call)
+    if family is None:
+        return (
+            f"implicit GEMM: kernel {list(w.shape[2:])}, stride {list(p.stride)}, "
+            f"padding {list(p.padding_before)}/{list(p.padding_after)} is not a "
+            "benchmarked geometry"
+        )
+    outputs = x.shape[0] * math.prod(_output_size(call))
+    if (
+        x.shape[0] > family.max_batch
+        or any(e > m for e, m in zip(x.shape[2:], family.max_spatial))
+        or x.shape[0] * math.prod(x.shape[2:]) > MAX_ROUTED_INPUT_PIXELS
+        or not MIN_ROUTED_OUT_CHANNELS <= w.shape[0] <= MAX_ROUTED_OUT_CHANNELS
+        or outputs < MIN_ROUTED_OUTPUT_PIXELS
+        or outputs * w.shape[0] > MAX_ROUTED_OUTPUT_ELEMENTS
+    ):
+        return (
+            f"implicit GEMM: input {list(x.shape)} with {w.shape[0]} output "
+            f"channels is outside the benchmarked {family.name} range"
+        )
+    return None
+
+
+def _outputs(batch, extent, kernel, stride, padding) -> int:
+    return batch * math.prod(
+        (e + 2 * p - k) // s + 1 for e, k, s, p in zip(extent, kernel, stride, padding)
+    )
+
+
+def boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) of every routed geometry at
+    every corner of its limits: each spatial dimension at its smallest (one
+    output) or largest extent with the fewest images that give
+    ``MIN_ROUTED_OUTPUT_PIXELS`` outputs, and the most images of the smallest
+    extent; extents halved until the input fits ``MAX_ROUTED_INPUT_PIXELS`` and
+    the output fits ``MIN_ROUTED_OUT_CHANNELS``; with the fewest and the most
+    output channels the limits allow."""
+    calls = []
+    for family in ROUTED_FAMILIES:
+        for kernel, stride, padding in family.geometries:
+            smallest = tuple(k - 2 * p for k, p in zip(kernel, padding))
+            corners = [
+                (None, e) for e in itertools.product(*zip(smallest, family.max_spatial))
+            ]
+            corners.append((family.max_batch, smallest))
+            for batch, extent in corners:
+                extent = list(extent)
+                while True:
+                    images = batch
+                    per_image = _outputs(1, extent, kernel, stride, padding)
+                    if images is None:
+                        images = -(-MIN_ROUTED_OUTPUT_PIXELS // per_image)
+                    images = min(
+                        images,
+                        family.max_batch,
+                        MAX_ROUTED_INPUT_PIXELS // math.prod(extent),
+                    )
+                    outputs = images * per_image
+                    fits = (
+                        math.prod(extent) <= MAX_ROUTED_INPUT_PIXELS
+                        and MAX_ROUTED_OUTPUT_ELEMENTS // max(outputs, 1)
+                        >= MIN_ROUTED_OUT_CHANNELS
+                    )
+                    if fits or list(extent) == list(smallest):
+                        break
+                    i = max(range(len(extent)), key=lambda d: extent[d] - smallest[d])
+                    extent[i] = max(smallest[i], extent[i] // 2)
+                batch = images
+                if outputs < MIN_ROUTED_OUTPUT_PIXELS:
+                    continue
+                most = min(
+                    MAX_ROUTED_OUT_CHANNELS, MAX_ROUTED_OUTPUT_ELEMENTS // outputs
+                )
+                for out_channels in (MIN_ROUTED_OUT_CHANNELS, most):
+                    calls.append(
+                        (
+                            (batch, ROUTED_CHANNELS, *extent),
+                            out_channels,
+                            kernel,
+                            stride,
+                            padding,
+                        )
+                    )
+    return list(dict.fromkeys(calls))
 
 
 def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
