@@ -15,13 +15,26 @@ Each delegate payload is a compact int8 graph (XTS3) that the delegate's
 interpreter executes. A host reference interpreter reproduces the device
 arithmetic, so fully delegated programs are checked bit-exactly.
 
+The Fused Quant **operator-library flow is under development** alongside the
+delegate. The two flows have distinct quantizers:
+
+| Quantizer | Export flow |
+|---|---|
+| `EspNNQuantizer` | Existing delegate: PT2E Q/DQ graphs partitioned by `EspNNPartitioner` into `EspNNBackend` delegates |
+| `get_esp_fused_quant_quantizer` | Operator library: shared Fused Quant annotation and fusion, followed by `EspPassManager` lowering to direct ESP-NN operators or portable fallback |
+
+Both flows use ESP-NN kernels. The operator library currently accelerates
+int8 tensor multiply with equal input shapes; its shared quantization rules
+also cover operators that still execute through portable fallback. The
+delegate's supported operators and export example are described below.
+
 ## Contents
 
 ```
 backends/espressif/
   espnn_preprocess.py        EspNNBackend: BackendDetails.preprocess -> XTS3 graph
   partition/                 EspNNPartitioner: int8 regions -> delegate, rest -> CPU
-  quantizer/                 EspNNQuantizer: PT2E int8 annotations ESP-NN can execute
+  quantizer/                 EspNNQuantizer (delegate), get_esp_fused_quant_quantizer (operator library)
   lowering.py                to_espnn_edge(): export -> edge -> lowered program + report
   serialization/             XTS3 format writer and parser, op lowering rules
   reference/                 bit-exact host model of the ESP-NN kernels and the CPU fallback
@@ -60,7 +73,7 @@ program and runs on the CPU, including float ops, LSTM, layer norm and
 attention matmuls. The partitioner reports what it delegated and what it left
 behind. Pass `allow_cpu_fallback=False` to make leftover operators an error.
 
-## Quantize and lower a model
+## Quantize and lower with the delegate
 
 [`examples/espressif/quantize_and_lower.py`](../../examples/espressif/quantize_and_lower.py)
 contains the whole flow:
@@ -246,6 +259,44 @@ for (;;) {
   }
 }
 ```
+
+## Export with the Fused Quant operator library
+
+Use the shared export API with `get_esp_fused_quant_recipe()`. The recipe
+configures `get_esp_fused_quant_quantizer`, calibrates the model, fuses Q/DQ into Fused
+Quant operators, and runs `EspPassManager`. Unsupported operators decompose
+to portable kernels before serialization. No delegate partitions are created.
+
+```python
+from executorch.backends.espressif import (
+    get_esp_fused_quant_recipe,
+    get_operator_library_report,
+)
+from executorch.export import export
+
+session = export(
+    model.eval(),
+    example_inputs=[example_inputs],
+    export_recipe=get_esp_fused_quant_recipe(
+        calibration_inputs_fn=lambda: calibration_samples,
+    ),
+)
+edge = session.get_edge_program_manager()
+print(get_operator_library_report(edge))
+with open("model_esp_ops.pte", "wb") as f:
+    f.write(session.get_executorch_program_manager().buffer)
+```
+
+Each calibration sample is a tuple matching the model's inputs. Pass
+`allow_cpu_fallback=False` to the recipe to reject remaining portable compute;
+Q/DQ boundary operators are allowed. The report lists portable compute and
+counts accelerated operators across all methods.
+
+For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
+`-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime
+still needs the portable fallback operators and Q/DQ kernels described below.
+`to_espnn_edge()` is the separate delegate entry point; its former
+`use_operator_library` option is replaced by this recipe.
 
 ## Running on the ESP32-S3
 

@@ -6,15 +6,79 @@
 
 import copy
 import math
+from ctypes import c_float
+from dataclasses import dataclass
+
+import executorch.backends.espressif.ops.operators  # noqa: F401
 
 import torch
+from executorch.backends.espressif.utils.quantization import quantize_multiplier
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.transforms.utils import get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
 from torch.fx import GraphModule
 
-from .aten_to_esp_pass import _mul_kernel_args, _QParams
+
+@dataclass(frozen=True)
+class _QParams:
+    scale: float
+    zp: int
+
+
+def _mul_multiplier(
+    input1: _QParams, input2: _QParams, output: _QParams
+) -> tuple[int, int] | None:
+    rescale = input1.scale * input2.scale / output.scale
+    if not math.isfinite(rescale) or rescale <= 0:
+        return None
+    try:
+        multiplier, shift = quantize_multiplier(rescale)
+    except ValueError:
+        return None
+    # ESP-NN forms (1 << -shift) - 1 with signed int32 arithmetic.
+    if shift < -30:
+        return None
+    max_input1 = max(abs(-128 - input1.zp), abs(127 - input1.zp))
+    max_input2 = max(abs(-128 - input2.zp), abs(127 - input2.zp))
+    max_product = max_input1 * max_input2
+    if max_product << max(shift, 0) > torch.iinfo(torch.int32).max - abs(output.zp):
+        return None
+    # Account for float32 rounding of both the scales and dequantized inputs.
+    max_float1 = c_float(max_input1 * c_float(input1.scale).value).value
+    max_float2 = c_float(max_input2 * c_float(input2.scale).value).value
+    if (
+        not math.isfinite(max_float1)
+        or not math.isfinite(max_float2)
+        or max_float1 * max_float2 > torch.finfo(torch.float32).max
+    ):
+        return None
+    return multiplier, shift
+
+
+def _mul_kernel_args(inputs, params, output_value) -> tuple | None:
+    values = [arg.meta.get("val") for arg in inputs] + [output_value]
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dtype == torch.int8
+        and all(type(dim) is int for dim in value.shape)
+        and 0 < value.numel() <= torch.iinfo(torch.int32).max
+        and value.is_contiguous()
+        for value in values
+    ) or not all(value.shape == values[0].shape for value in values[1:]):
+        return None
+    rescale = _mul_multiplier(*params)
+    if rescale is None:
+        return None
+    input1, input2, output = params
+    return (
+        inputs[0],
+        inputs[1],
+        -input1.zp,
+        -input2.zp,
+        output.zp,
+        *rescale,
+    )
 
 
 def _qparams(program, node, prefix):
