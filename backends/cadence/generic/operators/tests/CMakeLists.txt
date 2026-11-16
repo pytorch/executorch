@@ -84,17 +84,10 @@ target_include_directories(
 )
 
 # Direct-call: link the libs that define the kernels under test. custom_ops has
-# the cadence-specific ops; aten_ops_cadence has the aten-compliant ones;
-# cadence_kernels is the shared kernel layer; executorch provides the platform
-# layer the tests' runtime_init() needs. No cadence_ops_lib registry is needed
-# for direct-call tests.
+# the cadence-specific ops; cadence_kernels is the shared kernel layer;
+# executorch provides the platform layer the tests' runtime_init() needs. No
+# cadence_ops_lib registry is needed for direct-call tests.
 target_link_libraries(
-  cadence_generic_op_tests
-  PRIVATE gtest
-          gtest_main
-          gmock
-          executorch
-          custom_ops
-          aten_ops_cadence
-          cadence_kernels
+  cadence_generic_op_tests PRIVATE gtest gtest_main gmock executorch custom_ops
+                                   cadence_kernels
 )
