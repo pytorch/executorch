@@ -13,6 +13,7 @@ from executorch.backends.native.test.samples.cases import (
     chain,
     draws,
     facto_cases,
+    Parallel,
     suite_cases,
 )
 from executorch.backends.native.test.samples.schemes import GGUF_SUPER_SCALES
@@ -79,17 +80,6 @@ def _facto_case(name: str, x, weight, bias) -> Case:
     if bias is not None:
         model.bias.data = bias
     return Case(name, model, [(x,)])
-
-
-class _Parallel(torch.nn.Module):
-    """nn.Linears on one input, each giving its own output."""
-
-    def __init__(self, *linears: torch.nn.Linear) -> None:
-        super().__init__()
-        self.linears = torch.nn.ModuleList(linears)
-
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
-        return tuple(m(x) for m in self.linears)
 
 
 class _Pair(torch.nn.Module):
@@ -202,7 +192,7 @@ def cases() -> list[Case]:
         # One output per family of GGUF super-block scales.
         Case(
             "scale_families",
-            _Parallel(*(torch.nn.Linear(256, 32) for _ in GGUF_SUPER_SCALES["q4_k"])),
+            Parallel(*(torch.nn.Linear(256, 32) for _ in GGUF_SUPER_SCALES["q4_k"])),
             draws(2, (4, 256)),
         ),
         # FACTO varies one argument at a time, so only every fifth tuple is kept,
