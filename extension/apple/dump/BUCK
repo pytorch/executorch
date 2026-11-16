@@ -19,16 +19,10 @@ non_fbcode_target(_kind = fb_apple_library,
         "//xplat/executorch/kernels/portable:generated_libApple",
     ],
     visibility = EXECUTORCH_CLIENTS,
-    deps = select({
-        "ovr_config//os:macos": [
-            "//xplat/executorch/devtools/etdump:etdump_flatccAppleMac",
-            "//xplat/executorch/extension/apple:ExecuTorch",
-        ],
-        "DEFAULT": [
-            "//xplat/executorch/devtools/etdump:etdump_flatccApple",
-            "//xplat/executorch/extension/apple:ExecuTorch",
-        ],
-    }),
+    deps = [
+        "//xplat/executorch/devtools/etdump:etdump_flatccApple",
+        "//xplat/executorch/extension/apple:ExecuTorch",
+    ],
 )
 
 fb_apple_resource(
