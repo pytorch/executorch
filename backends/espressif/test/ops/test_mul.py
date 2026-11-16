@@ -70,10 +70,15 @@ class EspBroadcastMul(EspMulWithFloatUsers):
 
 
 class EspMulAdd(EspMul):
+    ops_before_transforms = {
+        _FUSED_MUL: 1,
+        exir_ops.edge.fused_quant.add.default: 1,
+    }
     ops_after_transforms = {
         _MUL: 0,
         _ESP_MUL: 1,
-        exir_ops.edge.aten.add.Tensor: 1,
+        exir_ops.edge.aten.add.Tensor: 0,
+        exir_ops.edge.esp_nn.quantized_add_int8.default: 1,
     }
 
     def forward(self, x, y):
@@ -111,7 +116,7 @@ test_cases = {
         EspBroadcastMul(),
         (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (3,))),
     ),
-    "portable_add": EspTestCase(
+    "mul_add": EspTestCase(
         EspMulAdd(),
         (ramp_tensor(-1, 1, (17,)), ramp_tensor(2, -2, (17,))),
     ),

@@ -57,7 +57,37 @@ def _mul_multiplier(
     return multiplier, shift
 
 
-def _mul_kernel_args(inputs, params, output_value) -> tuple | None:
+def _add_multipliers(
+    input1: _QParams, input2: _QParams, output: _QParams
+) -> tuple[int, ...] | None:
+    # Portable float32 quantization multiplies by the reciprocal output scale.
+    if not math.isfinite(c_float(1.0 / output.scale).value):
+        return None
+    left_shift = 20
+    twice_max_scale = 2 * max(input1.scale, input2.scale)
+    rescales = (
+        input1.scale / twice_max_scale,
+        input2.scale / twice_max_scale,
+        twice_max_scale / ((1 << left_shift) * output.scale),
+    )
+    try:
+        multipliers = [quantize_multiplier(rescale) for rescale in rescales]
+    except ValueError:
+        return None
+    if any(not -30 <= shift <= 0 for _, shift in multipliers):
+        return None
+    max_float1 = c_float(
+        max(abs(-128 - input1.zp), abs(127 - input1.zp)) * c_float(input1.scale).value
+    ).value
+    max_float2 = c_float(
+        max(abs(-128 - input2.zp), abs(127 - input2.zp)) * c_float(input2.scale).value
+    ).value
+    if max_float1 + max_float2 > torch.finfo(torch.float32).max:
+        return None
+    return *multipliers[0], *multipliers[1], left_shift, *multipliers[2]
+
+
+def _binary_kernel_args(inputs, params, output_value, rescale_fn) -> tuple | None:
     values = [arg.meta.get("val") for arg in inputs] + [output_value]
     if not all(
         isinstance(value, torch.Tensor)
@@ -68,7 +98,7 @@ def _mul_kernel_args(inputs, params, output_value) -> tuple | None:
         for value in values
     ) or not all(value.shape == values[0].shape for value in values[1:]):
         return None
-    rescale = _mul_multiplier(*params)
+    rescale = rescale_fn(*params)
     if rescale is None:
         return None
     input1, input2, output = params
@@ -107,8 +137,20 @@ def _qparams(program, node, prefix):
     return _QParams(scale, zero_point)
 
 
+_BINARY_LOWERINGS = {
+    exir_ops.edge.fused_quant.mul.default: (
+        exir_ops.edge.esp_nn.quantized_mul_int8.default,
+        _mul_multiplier,
+    ),
+    exir_ops.edge.fused_quant.add.default: (
+        exir_ops.edge.esp_nn.quantized_add_int8.default,
+        _add_multipliers,
+    ),
+}
+
+
 class LowerToEsp(ExportedProgramPassBase):
-    """Lower supported fused-quant multiply operators to ESP-NN."""
+    """Lower supported fused-quant operators to ESP-NN."""
 
     def call(self, exported_program):
         # The pass manager copies programs shallowly; decomposition also retires
@@ -127,26 +169,31 @@ class LowerToEsp(ExportedProgramPassBase):
 
         modified = False
         for node in list(graph.nodes):
-            if node.target != exir_ops.edge.fused_quant.mul.default:
+            lowering = _BINARY_LOWERINGS.get(node.target)
+            if lowering is None:
                 continue
+            if (
+                node.target == exir_ops.edge.fused_quant.add.default
+                and get_arg(node, "alpha") != 1
+            ):
+                continue
+            target, rescale_fn = lowering
             params = [
                 _qparams(exported_program, node, prefix)
                 for prefix in ("inp", "other", "out")
             ]
             if any(param is None for param in params):
                 continue
-            args = _mul_kernel_args(
+            args = _binary_kernel_args(
                 node.args[:2],
                 params,
                 node.meta.get("val"),
+                rescale_fn,
             )
             if args is None:
                 continue
             with graph.inserting_before(node):
-                replacement = graph.call_function(
-                    exir_ops.edge.esp_nn.quantized_mul_int8.default,
-                    args,
-                )
+                replacement = graph.call_function(target, args)
             replacement.meta = node.meta.copy()
             node.replace_all_uses_with(replacement)
             graph.erase_node(node)
