@@ -78,6 +78,27 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
                 ops = layout_ops
                 target = "executorch.exir.memory.view"
             elif isinstance(target, (EdgeOpOverload, OpOverload)):
+                if target._schema.name == "aten::permute_copy":
+                    dims = list(node.args[1])
+                    neighbors = (
+                        [node.args[0]]
+                        if dims == [0, 3, 1, 2]
+                        else list(node.users) if dims == [0, 2, 3, 1] else []
+                    )
+                    if any(
+                        isinstance(neighbor.target, (EdgeOpOverload, OpOverload))
+                        and neighbor.target._schema.name
+                        == "esp_nn::quantized_max_pool2d_int8"
+                        for neighbor in neighbors
+                    ):
+                        layout_ops.append(
+                            {
+                                "method": method,
+                                "name": node.name,
+                                "target": target.name(),
+                            }
+                        )
+                        continue
                 if target._schema.name in {
                     "quantized_decomposed::quantize_per_tensor",
                     "quantized_decomposed::dequantize_per_tensor",
@@ -116,7 +137,7 @@ def get_esp_fused_quant_recipe(
 
     Use with executorch.export.export(). Supported Fused Quant operators become
     direct ESP-NN calls; other operators decompose to portable kernels. Setting
-    allow_cpu_fallback=False rejects remaining compute, excluding Q/DQ.
+    allow_cpu_fallback=False rejects remaining compute, excluding Q/DQ and required NHWC layout copies.
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()

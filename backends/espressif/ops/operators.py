@@ -41,6 +41,32 @@ lib.define(
 )
 
 
+lib.define(
+    "quantized_max_pool2d_int8(Tensor input, int[2] kernel_size, int[2] stride, "
+    "int[2] padding) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, "
+    "int[2] padding, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("esp_nn::quantized_max_pool2d_int8")
+def quantized_max_pool2d_int8_meta(input, kernel_size, stride, padding):
+    batch, height, width, channels = input.shape
+    output_height = (height + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
+    output_width = (width + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
+    return input.new_empty((batch, output_height, output_width, channels))
+
+
+@impl(lib, "quantized_max_pool2d_int8", "CompositeExplicitAutograd")
+def quantized_max_pool2d_int8(input, kernel_size, stride, padding):
+    result = torch.nn.functional.max_pool2d(
+        input.permute(0, 3, 1, 2).to(torch.float32), kernel_size, stride, padding
+    )
+    return result.permute(0, 2, 3, 1).to(torch.int8).contiguous()
+
+
 @register_fake("esp_nn::quantized_mul_int8")
 def quantized_mul_int8_meta(
     input1,

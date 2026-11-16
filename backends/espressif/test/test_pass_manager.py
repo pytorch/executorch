@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import math
 
 import pytest
 import torch
@@ -276,9 +277,16 @@ def test_operator_library_reports_all_methods():
     assert all(not plan.delegates for plan in serialized.execution_plan)
 
 
-@pytest.mark.parametrize("model", [MultiplyAndFloatUsers(), MultiplyWithConstants()])
-def test_lowering_is_isolated_and_idempotent(model):
-    inputs = (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))
+@pytest.mark.parametrize(
+    "model, inputs",
+    [
+        (MultiplyAndFloatUsers(), (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))),
+        (MultiplyWithConstants(), (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))),
+        (torch.nn.MaxPool2d(2), (torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)),
+    ],
+    ids=["multiply", "constants", "maxpool"],
+)
+def test_lowering_is_isolated_and_idempotent(model, inputs):
     tester = EspTester(model, inputs).export_fused_quant().to_edge()
     reference = tester.get_artifact().exported_program()
     reference_before = copy.deepcopy(reference)
@@ -303,4 +311,65 @@ def test_lowering_is_isolated_and_idempotent(model):
         )
         program.validate()
     torch.testing.assert_close(reference.module()(*inputs), expected, atol=0, rtol=0)
+    tester.to_executorch().serialize()
+
+
+def test_strict_export_accepts_and_reports_required_layout_copies():
+    session = export(
+        torch.nn.MaxPool2d(2),
+        example_inputs=[(torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)],
+        export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+    )
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert report["esp_nn_ops"] == 1
+    assert report["cpu_ops"] == []
+    assert len(report["layout_ops"]) == 2
+    assert all(op["target"] == "aten::permute_copy.out" for op in report["layout_ops"])
+    assert session.get_executorch_program_manager().buffer
+
+
+def test_strict_export_rejects_user_permute():
+    class PermuteAndPool(torch.nn.Module):
+        def forward(self, x):
+            return torch.nn.functional.max_pool2d(x.permute(0, 1, 3, 2), 2)
+
+    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
+        export(
+            PermuteAndPool(),
+            example_inputs=[(torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+def test_strict_export_rejects_portable_pool():
+    with pytest.raises(RuntimeError, match="aten::max_pool2d_with_indices"):
+        export(
+            torch.nn.MaxPool2d(2),
+            example_inputs=[(torch.ones(1, 5, 5, 7),)],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+@pytest.mark.parametrize(
+    "model, shape",
+    [
+        (torch.nn.Conv1d(4, 8, 3), (1, 4, 9)),
+        (torch.nn.Conv2d(4, 8, 3), (1, 4, 7, 9)),
+        (torch.nn.AvgPool2d(2), (1, 4, 7, 9)),
+        (torch.nn.AvgPool2d(2), (4, 7, 9)),
+    ],
+    ids=["conv1d", "conv2d", "avgpool", "unbatched_avgpool"],
+)
+def test_other_spatial_operators_remain_portable(model, shape):
+    inputs = (torch.linspace(-1, 1, math.prod(shape)).reshape(shape),)
+    tester = EspTester(model, inputs).export_fused_quant().to_edge()
+    expected = tester.get_artifact().exported_program().module()(*inputs)
+    tester.run_passes()
+    assert get_operator_library_report(tester.get_artifact())["esp_nn_ops"] == 0
+    torch.testing.assert_close(
+        tester.get_artifact().exported_program().module()(*inputs),
+        expected,
+        atol=0,
+        rtol=0,
+    )
     tester.to_executorch().serialize()
