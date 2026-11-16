@@ -1,10 +1,13 @@
 # Reusable: build + run the Cadence Xtensa op-level gtest tests for one core on
 # the Instruction Set Simulator (xt-run). Mirrors _xtensa_build.yml's native
 # OIDC skeleton (running xt-run needs the same licensed toolchain),
-# then builds the gtest op-test ELF and runs it on the simulator. The runner
-# cross-compile and these op tests are separate build configs (the tests need
-# exceptions/RTTI that the runner build disables), so this is a self-contained
-# job rather than consuming the runner artifact.
+# then builds the gtest op-test ELF and runs it on the simulator. On backends
+# that opt in, test-cadence-xtensa.sh also builds and runs
+# cadence_op_registry_test, which checks that cadence_ops_lib registers every
+# op in the backend's functions yaml. The runner cross-compile and these op
+# tests are separate build configs (the tests need exceptions/RTTI that the
+# runner build disables), so this is a self-contained job rather than
+# consuming the runner artifact.
 name: xtensa-test
 
 on:
