@@ -9,17 +9,19 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import pytest
 import torch
-from executorch.backends.espressif.export import get_esp_fused_quant_recipe
+from executorch.backends.espressif.lowering import get_esp_fused_quant_recipe
 from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import (
     Export,
     RunPasses,
     StageType,
+    ToEdge,
     ToEdgeTransformAndLower,
 )
 from executorch.backends.transforms.fused_quant.graph_utils import (
@@ -50,8 +52,12 @@ class EspRunPasses(RunPasses):
 
 
 class EspToEdgeTransformAndLower(ToEdgeTransformAndLower):
-    def __init__(self):
-        super().__init__(edge_compile_config=EdgeCompileConfig())
+    def __init__(
+        self,
+        *,
+        edge_compile_config: EdgeCompileConfig | None = None,
+    ):
+        super().__init__(edge_compile_config=edge_compile_config or EdgeCompileConfig())
 
     def run(self, artifact, inputs=None, generate_etrecord: bool = False) -> None:
         self.edge_dialect_program = to_edge_transform_and_lower(
@@ -67,12 +73,14 @@ class EspExportFusedQuant(Export):
         super().__init__()
         self.quantizer = quantizer
         self.calibration_samples = calibration_samples
+        self.edge_compile_config = None
 
     def run(self, artifact, inputs=None):
         recipe = get_esp_fused_quant_recipe(
             calibration_inputs_fn=lambda: self.calibration_samples or [inputs],
             quantizer=self.quantizer,
         )
+        self.edge_compile_config = recipe.lowering_recipe.edge_compile_config
         recipe.pipeline_stages = [
             ExportStageType.QUANTIZE,
             ExportStageType.TORCH_EXPORT,
@@ -90,10 +98,16 @@ class EspTester(Tester):
         self.calibration_samples = calibration_samples
 
     def export_fused_quant(self, quantizer=None):
-        return self._run_stage(
-            EspExportFusedQuant(quantizer, self.calibration_samples),
-            self.example_inputs,
+        stage = EspExportFusedQuant(quantizer, self.calibration_samples)
+        self._run_stage(stage, self.example_inputs)
+        self.stage_classes[StageType.TO_EDGE] = partial(
+            ToEdge, edge_compile_config=stage.edge_compile_config
         )
+        self.stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = partial(
+            EspToEdgeTransformAndLower,
+            edge_compile_config=stage.edge_compile_config,
+        )
+        return self
 
     def test_dialect(
         self,

@@ -14,6 +14,7 @@ from executorch.backends.espressif.test.tester import (
     ramp_tensor,
 )
 from executorch.backends.test.suite.operators.test_mul import Model
+from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
@@ -23,6 +24,7 @@ from executorch.frontends.fused_quant.quantizer.quantizer import (
     FusedQuantQuantizer,
     OpQuantizer,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 _MUL = exir_ops.edge.aten.mul.Tensor
 _FUSED_MUL = exir_ops.edge.fused_quant.mul.default
@@ -185,6 +187,49 @@ def test_dialect_partially_quantized_mul_falls_back(float_edge):
     )
     tester.check_node_count({_FUSED_MUL: 1})
     expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    tester.run_passes().check_node_count({_FUSED_MUL: 0, _ESP_MUL: 0, _MUL: 1})
+    torch.testing.assert_close(
+        tester.get_artifact().exported_program().module()(*case.example_inputs),
+        expected,
+        atol=0,
+        rtol=0,
+    )
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize("float_operand", [0, 1], ids=["left", "right"])
+def test_dialect_single_quantized_mul_operand_falls_back(float_operand):
+    class OneQuantizedInput(OpQuantizer):
+        def annotate_node(self, node: torch.fx.Node) -> None:
+            super().annotate_node(node)
+            node.meta[Q_ANNOTATION_KEY].input_qspec_map[node.args[float_operand]] = None
+
+    quantizer = FusedQuantQuantizer(
+        [
+            OneQuantizedInput(
+                torch.ops.aten.mul.Tensor,
+                torch.ops.fused_quant.mul.default,
+                get_symmetric_quantization_config(),
+                activation_names=("input", "other"),
+            )
+        ]
+    )
+    case = test_cases["float_users"]
+    tester = (
+        EspTester(case.model, case.example_inputs)
+        .export_fused_quant(quantizer)
+        .to_edge()
+        .check_node_count({_FUSED_MUL: 1})
+    )
+    reference = tester.get_artifact().exported_program()
+    mul = next(node for node in reference.graph.nodes if node.target == _FUSED_MUL)
+    float_prefix = ("inp", "other")[float_operand]
+    quantized_prefix = ("other", "inp")[float_operand]
+    assert get_qparams_from_node(mul, float_prefix) is None
+    assert get_qparams_from_node(mul, quantized_prefix) is not None
+    assert get_qparams_from_node(mul, "out") is not None
+    expected = reference.module()(*case.example_inputs)
+
     tester.run_passes().check_node_count({_FUSED_MUL: 0, _ESP_MUL: 0, _MUL: 1})
     torch.testing.assert_close(
         tester.get_artifact().exported_program().module()(*case.example_inputs),
