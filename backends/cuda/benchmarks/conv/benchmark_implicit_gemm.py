@@ -67,6 +67,17 @@ class Case:
     bias: bool
     precision: str = "fp32"
     layout: str = "nchw"
+    # The padding is a separate pad op before a padding-0 convolution, as the
+    # model writes it; both paths run that pad.
+    explicit_pad: bool = False
+
+
+@dataclass(frozen=True)
+class Pad:
+    """An explicit pad before a padding-0 convolution, per spatial dim."""
+
+    before: tuple[int, ...]
+    after: tuple[int, ...]
 
 
 def _case(label, shape, out_channels, kernel, stride, padding, bias, precision):
@@ -75,19 +86,27 @@ def _case(label, shape, out_channels, kernel, stride, padding, bias, precision):
     def expand(v):
         return tuple(v) if isinstance(v, tuple) else (v,) * rank
 
-    padding = expand(padding)
+    if isinstance(padding, Pad):
+        before, after, explicit = padding.before, padding.after, True
+    else:
+        before = after = expand(padding)
+        explicit = False
     return Case(
         label,
         shape,
         out_channels,
         expand(kernel),
         expand(stride),
-        padding,
-        padding,
+        before,
+        after,
         bias,
         precision,
+        explicit_pad=explicit,
     )
 
+
+_CAUSAL = Pad((2, 1, 1), (0, 1, 1))
+_CACHED = Pad((0, 1, 1), (0, 1, 1))
 
 # (group, label, input shape, C_out, kernel, stride, padding, bias)
 SHAPES = [
@@ -230,6 +249,98 @@ SHAPES = [
     ("32ch_s2", "32 ch 5x5 125x125 x2", (2, 32, 125, 125), 32, 5, 2, 0, True),
     ("32ch_s2", "32 ch 3x3 61x61 x2", (2, 32, 61, 61), 32, 3, 2, 0, True),
     ("32ch_s2", "32 ch 3x3 30x30 x2", (2, 32, 30, 30), 32, 3, 2, 0, True),
+    # Causal 3x3x3 convolutions pad time in front and space by 1 in a
+    # separate pad; chunked inputs carry two cached time steps in front.
+    (
+        "3x3x3",
+        "12-160 ch 1x112x224",
+        (1, 12, 1, 112, 224),
+        160,
+        3,
+        1,
+        _CAUSAL,
+        True,
+    ),
+    (
+        "3x3x3",
+        "160 ch 1x112x224",
+        (1, 160, 1, 112, 224),
+        160,
+        3,
+        1,
+        _CAUSAL,
+        True,
+    ),
+    ("3x3x3", "320 ch 1x56x112", (1, 320, 1, 56, 112), 320, 3, 1, _CAUSAL, True),
+    ("3x3x3", "640 ch 1x28x56", (1, 640, 1, 28, 56), 640, 3, 1, _CAUSAL, True),
+    ("3x3x3", "640 ch 1x14x28", (1, 640, 1, 14, 28), 640, 3, 1, _CAUSAL, True),
+    (
+        "3x3x3",
+        "160 ch 18x64x64 x2",
+        (2, 160, 18, 64, 64),
+        160,
+        3,
+        1,
+        _CACHED,
+        True,
+    ),
+    (
+        "3x3x3",
+        "320 ch 18x32x32 x2",
+        (2, 320, 18, 32, 32),
+        320,
+        3,
+        1,
+        _CACHED,
+        True,
+    ),
+    ("3x3x3", "640 ch 6x8x8 x2", (2, 640, 6, 8, 8), 640, 3, 1, _CACHED, True),
+    (
+        "3x3x3",
+        "160 ch 10x128x160 x3",
+        (3, 160, 10, 128, 160),
+        160,
+        3,
+        1,
+        _CACHED,
+        True,
+    ),
+    ("1x1x1", "160-320 ch 1x56x112", (1, 160, 1, 56, 112), 320, 1, 1, 0, True),
+    ("1x1x1", "320-640 ch 1x28x56", (1, 320, 1, 28, 56), 640, 1, 1, 0, True),
+    ("1x1x1", "96 ch 1x14x28", (1, 96, 1, 14, 28), 96, 1, 1, 0, True),
+    ("1x1x1", "160-320 ch 16x32x32 x2", (2, 160, 16, 32, 32), 320, 1, 1, 0, True),
+    ("1x1x1", "320-640 ch 8x16x16 x2", (2, 320, 8, 16, 16), 640, 1, 1, 0, True),
+    ("1x1x1", "96 ch 4x8x8 x2", (2, 96, 4, 8, 8), 96, 1, 1, 0, True),
+    (
+        "3x1x1_s2",
+        "320 ch 17x16x16 x2",
+        (2, 320, 17, 16, 16),
+        320,
+        (3, 1, 1),
+        (2, 1, 1),
+        0,
+        True,
+    ),
+    (
+        "3x1x1_s2",
+        "640 ch 9x8x8 x2",
+        (2, 640, 9, 8, 8),
+        640,
+        (3, 1, 1),
+        (2, 1, 1),
+        0,
+        True,
+    ),
+    (
+        "3x1x1_s2",
+        "320 ch 9x16x20 x3",
+        (3, 320, 9, 16, 20),
+        320,
+        (3, 1, 1),
+        (2, 1, 1),
+        0,
+        True,
+    ),
     # 1-D convolutions over sequences of 4 to 64 steps at batch 1.
     ("1d_k5", "2-512 ch T16", (1, 2, 16), 512, 5, 1, 2, True),
     ("1d_k5", "512 ch T16", (1, 512, 16), 512, 5, 1, 2, True),
@@ -425,21 +536,29 @@ def _args(case):
     )
 
 
+def _pad(x, case):
+    pad = [p for pair in zip(reversed(case.before), reversed(case.after)) for p in pair]
+    return F.pad(x, pad)
+
+
 def triton_runner(x, w, b, case):
     output_strides = None
     if case.layout == "cl_to_nchw":
         shape = aten_conv(x.to("meta"), w.to("meta"), None, case).shape
         output_strides = list(torch.empty(shape, device="meta").stride())
-    args = (*_args(case), output_strides)
+    args = list(_args(case)) + [output_strides]
+    padded = case.explicit_pad or case.before != case.after
+    if padded:
+        args[1] = args[2] = [0] * len(case.kernel)
     stream = torch.cuda.Stream()
     with torch.cuda.stream(stream), autotune_launch_params() as stats:
-        convolution(x, w, b, *args)
+        convolution(_pad(x, case) if padded else x, w, b, *args)
     stream.synchronize()
     schedule = stats.picks[0].choice if stats.picks else "igemm_ffma"
 
     def run():
         with force_conv_candidate(schedule):
-            return convolution(x, w, b, *args)
+            return convolution(_pad(x, case) if padded else x, w, b, *args)
 
     return run, schedule
 
@@ -451,17 +570,14 @@ def _conv1d(x, w, b, stride, padding=(0,)):
 
 
 def aten_conv(x, w, b, case):
-    """What the CUDA backend gives Inductor: a separate pad for asymmetric
-    padding, a 1-D convolution as a 2-D one, and a contiguous output where the
-    graph records one."""
+    """What the CUDA backend gives Inductor: a separate pad for explicit or
+    asymmetric padding, a 1-D convolution as a 2-D one, and a contiguous output
+    where the graph records one."""
     conv = {1: _conv1d, 2: F.conv2d, 3: F.conv3d}[len(case.kernel)]
-    if case.before == case.after:
-        out = conv(x, w, b, case.stride, case.before)
+    if case.explicit_pad or case.before != case.after:
+        out = conv(_pad(x, case), w, b, case.stride)
     else:
-        pad = [
-            p for pair in zip(reversed(case.before), reversed(case.after)) for p in pair
-        ]
-        out = conv(F.pad(x, pad), w, b, case.stride)
+        out = conv(x, w, b, case.stride, case.before)
     return out.contiguous() if case.layout == "cl_to_nchw" else out
 
 
