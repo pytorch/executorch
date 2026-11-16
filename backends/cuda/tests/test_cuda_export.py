@@ -175,6 +175,35 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 )
             self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
 
+    def test_grouped_mm_triton_template_allowed_from_sm80_during_compile(self):
+        from torch._inductor.kernel import mm_grouped
+
+        original = mm_grouped.has_grouped_mm_triton_support
+        with mock.patch.object(
+            torch.cuda, "is_available", return_value=True
+        ), mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(8, 0)
+        ), mock.patch.object(
+            torch.version, "hip", None
+        ):
+            self.assertFalse(mm_grouped.has_grouped_mm_triton_support())
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertTrue(mm_grouped.has_grouped_mm_triton_support())
+            self.assertIs(mm_grouped.has_grouped_mm_triton_support, original)
+
+    def test_grouped_mm_triton_template_stays_refused_below_sm80(self):
+        from torch._inductor.kernel import mm_grouped
+
+        with mock.patch.object(
+            torch.cuda, "is_available", return_value=True
+        ), mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(7, 5)
+        ), mock.patch.object(
+            torch.version, "hip", None
+        ):
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertFalse(mm_grouped.has_grouped_mm_triton_support())
+
     def test_small_gpu_override_is_skipped_on_rocm(self):
         from torch._inductor import utils as inductor_utils
 
@@ -442,6 +471,38 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
+
+    def test_grouped_mm_export(self):
+        """A grouped GEMM lowers below sm_90, where Inductor offers its
+        Triton template only from sm_90 and this backend allows no ATen
+        choice (pytorch/executorch#24902)."""
+
+        class GroupedMm(torch.nn.Module):
+            def forward(self, x, weight, offs):
+                return torch._grouped_mm(x, weight, offs)
+
+        torch.manual_seed(0)
+        experts, tokens_per_expert, in_dim, out_dim = 4, 32, 64, 64
+        x = torch.randn(
+            experts * tokens_per_expert,
+            in_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        weight = torch.randn(
+            experts, in_dim, out_dim, dtype=torch.bfloat16, device="cuda"
+        )
+        offs = torch.arange(
+            tokens_per_expert,
+            (experts + 1) * tokens_per_expert,
+            tokens_per_expert,
+            dtype=torch.int32,
+            device="cuda",
+        )
+        edge_program_manager = self._export_to_cuda_with_lower(
+            GroupedMm(), (x, weight, offs)
+        )
+        self.assertIsNotNone(edge_program_manager, "Grouped MM operation export failed")
 
     def test_detach(self):
         """Edge turns detach into detach_copy, which has no CUDA kernel of its own."""

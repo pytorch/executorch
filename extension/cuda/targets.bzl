@@ -1,3 +1,5 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -7,6 +9,13 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+
+    # Outside fbcode the CUDA headers resolve only on CUDA platforms.
+    cuda_kwargs = {} if is_fbcode() or runtime.is_oss else {
+        "platforms": [CXX],
+        "compatible_with": ["ovr_config//cuda:has_cuda"],
+    }
+
     # Keep runtime types independent of the caller-stream implementation.
     runtime.cxx_library(
         name = "runtime_api",
@@ -15,9 +24,10 @@ def define_common_targets():
             "runtime_api.h",
         ],
         visibility = ["PUBLIC"],
-        external_deps = [
+        exported_external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
 
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
@@ -54,6 +64,7 @@ def define_common_targets():
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
 
     runtime.cxx_library(
@@ -82,4 +93,5 @@ def define_common_targets():
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
