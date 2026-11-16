@@ -33,6 +33,7 @@ def define_common_targets():
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
             "//executorch/extension/threadpool:threadpool",
+            "//executorch/runtime/executor:pte_data_map",
         ],
     )
 

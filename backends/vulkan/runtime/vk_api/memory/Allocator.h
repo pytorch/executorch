@@ -80,6 +80,14 @@ class Allocator final {
 
   VulkanBuffer create_staging_buffer(const VkDeviceSize, const CopyDirection);
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+  VulkanBuffer import_android_hardware_buffer(
+      AHardwareBuffer* ahb,
+      const VkBufferUsageFlags usage) {
+    return VulkanBuffer::import_android_hardware_buffer(allocator_, ahb, usage);
+  }
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
   VulkanBuffer create_storage_buffer(
       const VkDeviceSize,
       const bool allocate_memory = true);

@@ -97,7 +97,8 @@ _VARIANTS = [
 ]
 
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
-# quantized linears, judged against golden-int8_act.
+# quantized linears, judged against golden-int8_act. ggml_sample_test_no_linear
+# judges the other ops without it.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
@@ -109,7 +110,7 @@ _VARIANTS = [
         env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
         # TODO: run the others in CI once they pass.
-        labels = [] if v["suffix"] + name == "_act_quant" else ci.labels(ci.map(ci.skip_test())),
+        labels = [] if v["suffix"] + name in ("_act_quant", "_no_linear") else ci.labels(ci.map(ci.skip_test())),
         test_main = "//executorch/backends/native/test/samples:sample_test_main",
         deps = [":ggml_engine_host" + v["suffix"]],
         **v.get("compat", {})
@@ -118,6 +119,7 @@ _VARIANTS = [
     for name, flags in [
         ("", []),
         ("_act_quant", ["--allow_activation_quant_for_weight_only"]),
+        ("_no_linear", ["--gtest_filter=-linear_*"]),
     ]
 ]
 

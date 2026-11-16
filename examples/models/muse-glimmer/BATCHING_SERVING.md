@@ -224,6 +224,40 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
 
 ## Session Behavior
 
+With prefix caching enabled, `--prefix-checkpoint-prompt-end initial` (the default)
+captures the prompt end of each request that creates a session, including every
+anonymous request. `--prefix-checkpoint-prompt-end every` captures the prompt end of
+every request, including tool-result continuations and replacements. It requires
+`--prefix-cache-entries > 0` and cannot be combined with a nonzero
+`--prefix-checkpoint-interval`, whose serialized capture lane would drop prompt ends
+while another checkpoint is pending. Capture is best effort. Without periodic
+checkpoints, a prompt end already in the cache is refreshed instead of cloned again,
+and a snapshot becomes reusable and frees its capture slot at the source request's
+first output after the clone completes, or when the request finishes.
+
+A snapshot only helps a request whose prompt starts with the same tokens. The server
+splices each named session's generated tokens, including reasoning, into its earlier
+assistant turns, so `every` mainly helps that session after a turn that was
+cancelled, cut short by a stop string, or failed. The retry or next turn then reuses
+that turn's prompt if the interruption came after its first output token, and
+otherwise the previous turn's prompt, instead of only the opening prompt that
+`initial` keeps. Other sessions, anonymous requests, and sessions whose transcript
+cache was cleared render those turns as text, and earlier reasoning is rendered only
+when the client echoes `reasoning_content`. Such requests usually match that
+session's snapshots only up to the first assistant turn, which `initial` already
+keeps.
+
+All snapshots share the bounded cache and global LRU, and with `every` each captured
+turn takes an entry, so new turns can evict earlier prompts. On MLX, snapshots share
+no KV storage: each keeps the source's whole KV buffers, including growth slack and
+full sliding-window buffers, and the source's next decode step copies them, so
+memory grows with the number and length of retained snapshots. Use fewer entries with `every` at long contexts, and measure
+memory, capture overhead, and reuse before enabling it. An explicit
+`--prefix-capture-slots` below request concurrency can leave replacements and
+retries without a row under `every`, so they prefill cold. Retained snapshots are
+shared by all clients, and `cached_tokens` reports matches, so enable prefix caching
+only when clients trust each other.
+
 - Named sessions persist by default. `--evict-idle-sessions` allows the server to
   close the least recently used idle session when logical session slots are exhausted, clearing
   its transcript cache as well. Active requests and queued users of a session are
@@ -320,14 +354,15 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 `model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
 pool: requests, `--prefix-cache-entries` snapshots, and the resolved number of
 capture slots when snapshots are enabled. `--prefix-capture-slots 0` (the default)
-matches request concurrency, capped at two when checkpoints are enabled; a
-positive value sets an explicit limit. Their total reservation must leave one
+matches request concurrency, including with `--prefix-checkpoint-prompt-end every`;
+periodic checkpoints cap the automatic count at two; a positive value sets an
+explicit limit. Their total reservation must leave one
 cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
 reduce the context or slot counts if they do not fit.
-The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
-session's cells by reference, sharing the prompt's KV rather than copying it.
+The cell pool tracks at most 64 resident sessions. Unlike on MLX, prefix snapshots
+clone a session's cells by reference, sharing the prompt's KV rather than copying it.
 
 For DFlash, export the tapped target and packed draft with
 `export_dflash --backend cuda --use-offgraph-kv-cache` (add `--draft-max-cells`

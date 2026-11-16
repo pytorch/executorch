@@ -9,9 +9,11 @@
 set -eu
 
 target="cortex-m55"
+toolchain="arm-none-eabi-gcc"
 for arg in "$@"; do
     case $arg in
       --target=*) target="${arg#*=}";;
+      --toolchain=*) toolchain="${arg#*=}";;
       *) ;;
     esac
 done
@@ -28,7 +30,7 @@ fi
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON"
+${build_executorch} --devtools --toolchain="${toolchain}" --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON"
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"
@@ -85,4 +87,4 @@ ops_list=(
     cortex_m::quantized_batch_matmul.out
 )
 
-${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="$(join_by_comma "${ops_list[@]}")" --extra_build_flags="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON -DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0 -DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF"
+${build_executor_runner} --pte=semihosting --bundleio --toolchain="${toolchain}" --target="${target}" --output="${build_root_test_dir}" --select_ops_list="$(join_by_comma "${ops_list[@]}")" --extra_build_flags="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON -DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0 -DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF"

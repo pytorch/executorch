@@ -472,8 +472,9 @@ void add_conv2d_direct_node(
     const bool has_bias,
     const bool force_masked,
     const bool fast_tiled) {
-  const Conv2dEpilogueParams epilogue_params =
-      create_conv2d_epilogue_params(epilogue);
+  const Conv2dEpilogueParams epilogue_params = create_conv2d_epilogue_params(
+      epilogue,
+      graph.dtype_of(out) == vkapi::kHalf && !graph.get_bool(transposed));
   vkapi::ParamsBindList param_buffers = {
       graph.logical_limits_ubo(out),
       graph.sizes_ubo(in),

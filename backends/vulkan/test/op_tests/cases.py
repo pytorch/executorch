@@ -2204,6 +2204,11 @@ def get_tan_inputs():
     ]
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.test_name_suffix = "dedicated"
+    # Vulkan bounds sin and cos to 2^-11 absolute error and derives tan's
+    # precision from sin(x) / cos(x). For inputs in [0, 1] this tolerance covers
+    # the resulting worst-case error.
+    test_suite.atol = "5e-4"
+    test_suite.rtol = "1.2e-3"
     test_suite.check_zero_padding = True
     return test_suite
 
