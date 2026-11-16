@@ -16,7 +16,8 @@ interpreter executes. A host reference interpreter reproduces the device
 arithmetic, so fully delegated programs are checked bit-exactly.
 
 The Fused Quant **operator-library flow is under development** alongside the
-delegate. The two flows have distinct quantizers:
+delegate. Its experimental recipe is a standalone factory, following the shared
+Fused Quant frontend convention. The two flows have distinct quantizers:
 
 | Quantizer | Export flow |
 |---|---|
@@ -35,7 +36,7 @@ backends/espressif/
   espnn_preprocess.py        EspNNBackend: BackendDetails.preprocess -> XTS3 graph
   partition/                 EspNNPartitioner: int8 regions -> delegate, rest -> CPU
   quantizer/                 EspNNQuantizer (delegate), get_esp_fused_quant_quantizer (operator library)
-  lowering.py                to_espnn_edge(): export -> edge -> lowered program + report
+  lowering.py                delegate lowering, Fused Quant operator-library recipe + report
   serialization/             XTS3 format writer and parser, op lowering rules
   reference/                 bit-exact host model of the ESP-NN kernels and the CPU fallback
   espnn_runtime/             ESP-IDF component: XTS3 interpreter + ExecuTorch BackendInterface
@@ -291,6 +292,18 @@ Each calibration sample is a tuple matching the model's inputs. Pass
 `allow_cpu_fallback=False` to the recipe to reject remaining portable compute;
 Q/DQ boundary operators are allowed. The report lists portable compute and
 counts accelerated operators across all methods.
+Reports also accept the graph after `to_executorch()`: memory views appear as
+layout operations, allocation nodes are omitted, and operator targets include
+their lowered `.out` overloads.
+
+`EspPassManager` expects Fused Quant Edge programs. Legacy PT2E Q/DQ graphs
+passed directly to it retain portable execution; export float models with
+`get_esp_fused_quant_recipe()` to use the operator library. The recipe uses
+explicit layout operations rather than dim-order operators, matching the
+ESP-IDF runtime and the operator implementation tests.
+When checking supported int8 operators, lowering rejects malformed per-tensor
+qparams, such as non-positive scales or out-of-range zero points. Valid
+unsupported configurations remain portable.
 
 For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
 `-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime

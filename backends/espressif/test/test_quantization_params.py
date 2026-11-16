@@ -231,9 +231,12 @@ def test_float32_overflow_preserves_portable_results(multiply_program):
         (1.0, 0, 1, -1),
     ],
 )
-def test_invalid_qparams_are_not_accelerated(multiply_program, prefix, qparams):
+def test_invalid_qparams_fail_export(multiply_program, prefix, qparams):
     _set_qparams(multiply_program, prefix, *qparams)
-    assert not LowerToEsp()(multiply_program).modified
+    with pytest.raises(
+        ValueError, match=f"{_mul_node(multiply_program).name}: {prefix}"
+    ):
+        LowerToEsp()(multiply_program)
 
 
 @pytest.mark.parametrize(
@@ -276,6 +279,7 @@ def test_dynamic_shapes_stay_portable():
         fused, inputs, dynamic_shapes=({0: batch}, {0: batch})
     )
     edge = to_edge(program).exported_program()
+    assert any(node.target == _FUSED_MUL for node in edge.graph.nodes)
     assert not LowerToEsp()(edge).modified
 
 

@@ -9,8 +9,11 @@
 """ESP-NN backend for Espressif ESP32 chips (ESP32-S3, ESP32, ESP32-P4, ...)."""
 
 from .espnn_preprocess import EspNNBackend
-from .export import get_esp_fused_quant_recipe, get_operator_library_report
-from .lowering import to_espnn_edge
+from .lowering import (
+    get_esp_fused_quant_recipe,
+    get_operator_library_report,
+    to_espnn_edge,
+)
 from .partition import EspNNPartitioner
 from .quantizer import EspNNQuantizer, get_esp_fused_quant_quantizer
 

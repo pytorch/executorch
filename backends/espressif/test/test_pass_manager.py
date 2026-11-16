@@ -15,6 +15,10 @@ from executorch.backends.espressif import (
 from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.espressif.test.tester import EspRunPasses, EspTester
 from executorch.backends.test.harness.stages import Quantize
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    get_qparams_from_node,
+    get_scale,
+)
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.export import export
@@ -29,6 +33,11 @@ class MultiplyAndFloatUsers(torch.nn.Module):
     def forward(self, x, y):
         product = x * y
         return product, torch.sin(x), torch.sin(product)
+
+
+class MultiplyReshapeAndSin(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.sin((x * y).reshape(-1))
 
 
 def _output_scale(program):
@@ -56,6 +65,7 @@ def test_entry_points_preserve_program_behavior(entry_point):
     )
     edge = tester.get_artifact()
     assert edge.compile_config._check_ir_validity
+    assert edge.compile_config._skip_dim_order
     edge.exported_program().validate()
     tester.to_executorch().serialize()
     program = deserialize_pte_binary(tester.get_artifact()).program
@@ -83,12 +93,68 @@ def test_public_entry_points_keep_delegate_and_operator_library_separate():
         export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
     edge = session.get_edge_program_manager()
-    assert get_operator_library_report(edge) == {"esp_nn_ops": 1, "cpu_ops": []}
+    assert get_operator_library_report(edge) == {
+        "esp_nn_ops": 1,
+        "cpu_ops": [],
+        "layout_ops": [],
+    }
     assert edge.compile_config._check_ir_validity
     serialized = deserialize_pte_binary(
         session.get_executorch_program_manager().buffer
     ).program
     assert not serialized.execution_plan[0].delegates
+
+
+@pytest.mark.parametrize(
+    "model", [Multiply(), MultiplyAndFloatUsers(), MultiplyReshapeAndSin()]
+)
+def test_public_recipe_preserves_numerics(model):
+    inputs = (
+        torch.linspace(-1, 1, 6).reshape(2, 3),
+        torch.linspace(-2, 2, 6).reshape(2, 3),
+    )
+    outputs = []
+
+    def capture_lowered_outputs(edge):
+        outputs.append(edge.exported_program().module()(*inputs))
+        return []
+
+    recipe = get_esp_fused_quant_recipe()
+    recipe.lowering_recipe.edge_manager_transform_passes.append(capture_lowered_outputs)
+    session = export(model, example_inputs=[inputs], export_recipe=recipe)
+    reference = session.get_exported_program()
+    mul = next(
+        node
+        for node in reference.graph.nodes
+        if node.target == torch.ops.fused_quant.mul.default
+    )
+    scale = get_scale(reference, get_qparams_from_node(mul, "out"))
+    assert len(outputs) == 1
+    torch.testing.assert_close(
+        outputs[0], reference.module()(*inputs), atol=scale, rtol=0
+    )
+    tester = EspTester(model, inputs).export_fused_quant().to_edge().run_passes()
+    torch.testing.assert_close(
+        outputs[0],
+        tester.get_artifact().exported_program().module()(*inputs),
+        atol=0,
+        rtol=0,
+    )
+    assert session.get_executorch_program_manager().buffer
+
+
+def test_public_report_classifies_memory_views_as_layout():
+    inputs = (torch.ones(2, 3), torch.ones(2, 3))
+    session = export(
+        MultiplyReshapeAndSin(),
+        example_inputs=[inputs],
+        export_recipe=get_esp_fused_quant_recipe(),
+    )
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert {op["target"] for op in report["cpu_ops"]} == {"aten::sin.out"}
+    assert {op["target"] for op in report["layout_ops"]} == {
+        "executorch.exir.memory.view"
+    }
 
 
 def test_operator_library_strict_mode_rejects_remaining_compute():
@@ -110,6 +176,7 @@ def test_operator_library_strict_mode_accepts_no_compute():
     assert get_operator_library_report(session.get_edge_program_manager()) == {
         "esp_nn_ops": 0,
         "cpu_ops": [],
+        "layout_ops": [],
     }
 
 
@@ -181,7 +248,11 @@ def test_operator_library_reports_all_methods():
         constant_methods={"version": 1},
     )
     edge = session.get_edge_program_manager()
-    assert get_operator_library_report(edge) == {"esp_nn_ops": 2, "cpu_ops": []}
+    assert get_operator_library_report(edge) == {
+        "esp_nn_ops": 2,
+        "cpu_ops": [],
+        "layout_ops": [],
+    }
     serialized = deserialize_pte_binary(
         session.get_executorch_program_manager().buffer
     ).program

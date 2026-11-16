@@ -14,6 +14,7 @@ import executorch.backends.espressif.ops.operators  # noqa: F401
 import torch
 from executorch.backends.espressif.utils.quantization import quantize_multiplier
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
+from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
@@ -84,19 +85,24 @@ def _mul_kernel_args(inputs, params, output_value) -> tuple | None:
 def _qparams(program, node, prefix):
     params = get_qparams_from_node(node, prefix)
     dtype = torch.int8 if prefix == "out" else torch.float32
-    if (
-        params is None
-        or not params.is_per_tensor()
-        or params.dtype != dtype
-        or (params.quant_min, params.quant_max) != (-128, 127)
-    ):
+    if params is None or not params.is_per_tensor() or params.dtype != dtype:
         return None
+    if prefix != "out" and get_arg(node, prefix).meta["val"].dtype != torch.int8:
+        return None
+    if not -128 <= params.quant_min <= params.quant_max <= 127:
+        raise ValueError(
+            f"{node.name}: {prefix} has an invalid int8 quantization range"
+        )
     scale = get_constant(program, params.scale)
     zero_point = get_constant(program, params.zero_point)
     if scale is None or zero_point is None:
         return None
     scale, zero_point = float(scale.item()), int(zero_point.item())
-    if not math.isfinite(scale) or scale <= 0 or not -128 <= zero_point <= 127:
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError(f"{node.name}: {prefix} scale must be finite and positive")
+    if not -128 <= zero_point <= 127:
+        raise ValueError(f"{node.name}: {prefix} has an invalid int8 zero point")
+    if (params.quant_min, params.quant_max) != (-128, 127):
         return None
     return _QParams(scale, zero_point)
 
