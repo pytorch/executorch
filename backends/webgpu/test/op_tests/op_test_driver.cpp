@@ -163,7 +163,8 @@ class OpCase : public ::testing::Test {
           e_.atol,
           e_.rtol,
           &max_abs,
-          &max_rel))
+          &max_rel,
+          e_.equal_nan))
           << "max_abs=" << max_abs << " max_rel=" << max_rel;
     }
   }

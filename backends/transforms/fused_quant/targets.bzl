@@ -45,6 +45,7 @@ def define_common_targets():
         srcs = ["decompose_fused_quant.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             ":pass_base",
@@ -58,66 +59,23 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "tensor_constants",
+        srcs = ["pre_quantize_passes/tensor_constants.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    runtime.python_library(
         name = "fold_batch_norm",
         srcs = ["pre_quantize_passes/fold_batch_norm.py"],
         visibility = _VISIBILITY,
         deps = [
-            ":pass_base",
+            ":tensor_constants",
             "//caffe2:torch",
             "//executorch/backends/transforms:permute_pass_utils",
-            "//executorch/backends/transforms:utils",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/passes:constant_prop_pass",
-        ],
-    )
-
-    runtime.python_library(
-        name = "fuse_add_softmax_into_masked_softmax",
-        srcs = ["pre_quantize_passes/fuse_add_softmax_into_masked_softmax.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            ":pass_base",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:permute_pass_utils",
-            "//executorch/backends/transforms:utils",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/passes:constant_prop_pass",
-        ],
-    )
-
-    runtime.python_library(
-        name = "replace_batch_norm_with_conv",
-        srcs = ["pre_quantize_passes/replace_batch_norm_with_conv.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            ":pass_base",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:permute_pass_utils",
-            "//executorch/backends/transforms:utils",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/passes:constant_prop_pass",
-        ],
-    )
-
-    runtime.python_library(
-        name = "fold_input_free_subgraphs",
-        srcs = ["pre_quantize_passes/fold_input_free_subgraphs.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            "//caffe2:torch",
-            "//executorch/backends/transforms:utils",
-            "//executorch/exir:pass_base",
-        ],
-    )
-
-    runtime.python_library(
-        name = "replace_adaptive_avg_pool_with_avg_pool",
-        srcs = ["pre_quantize_passes/replace_adaptive_avg_pool_with_avg_pool.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            "//caffe2:torch",
-            "//executorch/backends/transforms:permute_pass_utils",
-            "//executorch/backends/transforms:utils",
         ],
     )
 
@@ -150,6 +108,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_last.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//executorch/exir/dialects/fused_quant:ops_utils",
@@ -165,6 +124,7 @@ def define_common_targets():
         srcs = ["optimization_passes/to_channels_first.py"],
         visibility = _VISIBILITY,
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",

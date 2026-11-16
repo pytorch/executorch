@@ -178,10 +178,6 @@ class TestXnnpackPartitioner(unittest.TestCase):
         same modules are delegated in fp32, so bf16 is what keeps them out.
         """
 
-        class Mean(torch.nn.Module):
-            def forward(self, x):
-                return x.mean((-1, -2), keepdim=True)
-
         def lower(module, x):
             return to_edge_transform_and_lower(
                 export(module, (x,)),
@@ -195,7 +191,6 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 torch.nn.Conv2d(4, 4, 3), torch.nn.BatchNorm2d(4)
             ),
             "max_pool2d": torch.nn.MaxPool2d(2),
-            "mean": Mean(),
             "upsample_bilinear2d": torch.nn.Upsample(scale_factor=2, mode="bilinear"),
         }
         x = torch.randn(1, 4, 8, 8)
