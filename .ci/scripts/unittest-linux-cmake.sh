@@ -33,6 +33,8 @@ bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
 
 source .ci/scripts/torchci-report-args.sh unittest-linux-cmake
 
+source .ci/scripts/setup-hf-cache.sh
+
 # Run pytest with coverage
 pytest -n auto --cov=./ --cov-report=xml \
   ${TORCHCI_REPORT_ARGS[@]+"${TORCHCI_REPORT_ARGS[@]}"}

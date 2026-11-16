@@ -992,7 +992,6 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
         x_node, w_node = n.args[0:2]
         b_node = n.args[2] if len(n.args) > 2 else None
 
-        needs_cast = x_node.meta["val"].dtype != self.output_dtype
         has_bias = b_node is not None
         has_per_tensor_scale = True
 
@@ -1004,6 +1003,18 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
         if not isinstance(per_tensor_scale_value, FakeTensor):
             if per_tensor_scale_value.item() == 1.0:
                 has_per_tensor_scale = False
+
+        # Unlike PyTorch's scalar multiplication, MLX promotes a bf16 result
+        # times a 0-dim float32 scale to float32. Account for bias promotion too,
+        # then restore the output dtype before subsequent ops consume it.
+        result_dtype = x_node.meta["val"].dtype
+        if has_per_tensor_scale:
+            result_dtype = torch.promote_types(
+                result_dtype, per_tensor_scale_value.dtype
+            )
+        if has_bias:
+            result_dtype = torch.promote_types(result_dtype, b_node.meta["val"].dtype)
+        needs_cast = result_dtype != self.output_dtype
 
         x, w, scales, bias, per_tensor_scale = P.slot_map(
             [x_node, self.qdata, self.scale, b_node, self.per_tensor_scale]

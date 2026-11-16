@@ -6,11 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
+#include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
@@ -18,7 +21,11 @@
 #include <xnnpack.h>
 
 #include <array>
+#include <cstring>
+#include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 using executorch::aten::Tensor;
 using executorch::backends::xnnpack::delegate::XNNExecutor;
@@ -279,6 +286,218 @@ TEST(XNNCompilerTest, RuntimeKeepsItsThreadpoolAcrossReset) {
 
   backend->destroy(handle.get());
   EXPECT_TRUE(loaded_with.expired());
+}
+
+namespace {
+
+constexpr uint32_t kChannels = 4;
+
+// Serves float constants by name and counts how often each one is freed.
+class FreeCountingDataMap final : public runtime::NamedDataMap {
+ public:
+  explicit FreeCountingDataMap(std::map<std::string, std::vector<float>> data)
+      : data_(std::move(data)) {}
+
+  int frees(const std::string& key) const {
+    auto it = frees_.find(key);
+    return it == frees_.end() ? 0 : it->second;
+  }
+
+  runtime::Result<const runtime::TensorLayout> get_tensor_layout(
+      std::string_view /*key*/) const override {
+    return Error::NotImplemented;
+  }
+
+  runtime::Result<runtime::FreeableBuffer> get_data(
+      std::string_view key) const override {
+    auto it = data_.find(std::string(key));
+    if (it == data_.end()) {
+      return Error::NotFound;
+    }
+    return runtime::FreeableBuffer(
+        it->second.data(),
+        it->second.size() * sizeof(float),
+        [](void* context, void* data, size_t /*size*/) {
+          static_cast<const FreeCountingDataMap*>(context)->record_free(data);
+        },
+        const_cast<FreeCountingDataMap*>(this));
+  }
+
+  Error load_data_into(std::string_view /*key*/, void* /*buffer*/, size_t)
+      const override {
+    return Error::NotImplemented;
+  }
+
+  runtime::Result<uint32_t> get_num_keys() const override {
+    return static_cast<uint32_t>(data_.size());
+  }
+
+  runtime::Result<const char*> get_key(uint32_t index) const override {
+    auto it = data_.begin();
+    std::advance(it, index);
+    return it->first.c_str();
+  }
+
+ private:
+  void record_free(const void* data) const {
+    for (const auto& [key, values] : data_) {
+      if (values.data() == data) {
+        frees_[key]++;
+      }
+    }
+  }
+
+  std::map<std::string, std::vector<float>> data_;
+  mutable std::map<std::string, int> frees_;
+};
+
+// y = mean(fc(x, weight, bias) - bias): the subtract reads the bias that the
+// fully connected node packs, and the mean is lowered to XNNStaticMean.
+std::vector<uint8_t> buildSharedBiasGraph() {
+  flatbuffers::FlatBufferBuilder builder;
+  enum : uint32_t { kInput, kWeight, kBias, kFc, kSub, kOutput, kNumValues };
+  struct Value {
+    std::vector<uint32_t> dims;
+    uint32_t constant_buffer_idx;
+    uint32_t external_id;
+    uint32_t flags;
+  };
+  const std::array<Value, kNumValues> value_specs = {{
+      {{1, kChannels}, 0, 0, XNN_VALUE_FLAG_EXTERNAL_INPUT},
+      {{kChannels, kChannels}, 1, XNN_INVALID_VALUE_ID, 0},
+      {{kChannels}, 2, XNN_INVALID_VALUE_ID, 0},
+      {{1, kChannels}, 0, XNN_INVALID_VALUE_ID, 0},
+      {{1, kChannels}, 0, XNN_INVALID_VALUE_ID, 0},
+      {{1, 1}, 0, 1, XNN_VALUE_FLAG_EXTERNAL_OUTPUT},
+  }};
+  std::vector<flatbuffers::Offset<fb_xnnpack::XValue>> values;
+  for (uint32_t id = 0; id < kNumValues; ++id) {
+    const Value& v = value_specs[id];
+    const auto tensor = fb_xnnpack::CreateXNNTensorValue(
+        builder,
+        fb_xnnpack::XNNDatatype::xnn_datatype_fp32,
+        static_cast<uint32_t>(v.dims.size()),
+        builder.CreateVector(v.dims),
+        v.constant_buffer_idx,
+        v.external_id,
+        v.flags,
+        id);
+    values.push_back(fb_xnnpack::CreateXValue(
+        builder, fb_xnnpack::XValueUnion::XNNTensorValue, tensor.Union()));
+  }
+
+  const std::array<flatbuffers::Offset<fb_xnnpack::XNode>, 3> nodes = {
+      fb_xnnpack::CreateXNode(
+          builder,
+          fb_xnnpack::XNodeUnion::XNNFullyConnected,
+          fb_xnnpack::CreateXNNFullyConnected(
+              builder, kInput, kWeight, kBias, kFc)
+              .Union()),
+      fb_xnnpack::CreateXNode(
+          builder,
+          fb_xnnpack::XNodeUnion::XNNSubtract,
+          fb_xnnpack::Create_XNNNode2x1(builder, kFc, kBias, kSub).Union()),
+      fb_xnnpack::CreateXNode(
+          builder,
+          fb_xnnpack::XNodeUnion::XNNStaticMean,
+          fb_xnnpack::Create_XNNStaticReduce(
+              builder,
+              builder.CreateVector<uint32_t>({1}),
+              kSub,
+              kOutput,
+              XNN_FLAG_KEEP_DIMS)
+              .Union()),
+  };
+
+  const std::array<flatbuffers::Offset<fb_xnnpack::ConstantDataOffset>, 3>
+      constant_data = {
+          fb_xnnpack::CreateConstantDataOffset(builder, 0, 0),
+          fb_xnnpack::CreateConstantDataOffsetDirect(
+              builder,
+              UINT64_MAX,
+              kChannels * kChannels * sizeof(float),
+              "weight"),
+          fb_xnnpack::CreateConstantDataOffsetDirect(
+              builder, UINT64_MAX, kChannels * sizeof(float), "bias"),
+      };
+
+  const auto graph = fb_xnnpack::CreateXNNGraph(
+      builder,
+      builder.CreateString("0"),
+      builder.CreateVector(nodes.data(), nodes.size()),
+      builder.CreateVector(values),
+      /*num_externs=*/2,
+      builder.CreateVector<uint32_t>({0}),
+      builder.CreateVector<uint32_t>({1}),
+      /*constant_buffer=*/0,
+      /*mem_buffer_sizes=*/0,
+      builder.CreateVector(constant_data.data(), constant_data.size()));
+  fb_xnnpack::FinishXNNGraphBuffer(builder, graph);
+
+  // Constants are only looked up by name when the payload has an XNNHeader.
+  constexpr uint32_t kFlatbufferOffset = 32;
+  const uint32_t flatbuffer_size = builder.GetSize();
+  std::vector<uint8_t> payload(kFlatbufferOffset + flatbuffer_size);
+  std::memcpy(
+      payload.data() + XNNHeader::kMagicOffset,
+      XNNHeader::kMagic,
+      XNNHeader::kMagicSize);
+  auto put = [&payload](size_t offset, uint64_t value, size_t size) {
+    for (size_t i = 0; i < size; ++i) {
+      payload[offset + i] = static_cast<uint8_t>(value >> (8 * i));
+    }
+  };
+  put(XNNHeader::kHeaderLengthOffset, XNNHeader::kMinSize, 2);
+  put(XNNHeader::kFlatbufferDataOffsetOffset, kFlatbufferOffset, 4);
+  put(XNNHeader::kFlatbufferDataSizeOffset, flatbuffer_size, 4);
+  put(XNNHeader::kConstantDataOffsetOffset, payload.size(), 4);
+  put(XNNHeader::kConstantDataSizeOffset, 0, 8);
+  std::memcpy(
+      payload.data() + kFlatbufferOffset,
+      builder.GetBufferPointer(),
+      flatbuffer_size);
+  return payload;
+}
+
+} // namespace
+
+TEST(XNNCompilerTest, FreesPackedWeightsButNotSharedBias) {
+  runtime::runtime_init();
+  const std::vector<uint8_t> payload = buildSharedBiasGraph();
+  for (bool use_weight_cache : {false, true}) {
+    SCOPED_TRACE(use_weight_cache);
+    FreeCountingDataMap data_map({
+        {"weight", std::vector<float>(kChannels * kChannels, 1.0f)},
+        {"bias", std::vector<float>(kChannels, 2.0f)},
+    });
+    std::array<uint8_t, 4096> allocator_memory{};
+    runtime::MemoryAllocator allocator(
+        allocator_memory.size(), allocator_memory.data());
+    XNNWeightsCache weights_cache;
+    if (use_weight_cache) {
+      ASSERT_EQ(
+          weights_cache.initialize_for_runtime(&allocator, &data_map),
+          Error::Ok);
+    }
+
+    std::optional<XNNExecutor> executor(std::in_place, nullptr);
+    ASSERT_EQ(
+        XNNCompiler::compileModel(
+            payload.data(),
+            payload.size(),
+            &*executor,
+            &weights_cache,
+            /*workspace=*/nullptr,
+            &data_map,
+            XNNCompilerOptions{.use_weight_cache = use_weight_cache}),
+        Error::Ok);
+
+    EXPECT_EQ(data_map.frees("weight"), 1);
+    EXPECT_EQ(data_map.frees("bias"), 0);
+
+    executor.reset();
+    EXPECT_EQ(data_map.frees("bias"), 1);
+  }
 }
 
 } // namespace executorch::backends::xnnpack::delegate

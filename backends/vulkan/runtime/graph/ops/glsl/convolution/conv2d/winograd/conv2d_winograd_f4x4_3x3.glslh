@@ -1,0 +1,82 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Transforms of Winograd F(4x4, 3x3) with interpolation points 0,
+ * +-sqrt(2)/2, +-sqrt(2) and infinity, whose small coefficients keep f16
+ * rounding error low.
+ *
+ * Like every Winograd configuration, it orders its points as 0, then each pair
+ * +-p, then infinity. The input transform computes the two rows of a pair
+ * together, and the element functions share the terms of a pair.
+ *
+ * A 2D transform applies the 1D transform to each column of a tile, then to
+ * each row of the result. Pass constant k to the element functions, so that
+ * only the nonzero terms and the loads they read remain.
+ *
+ * The including shader defines VEC4_T.
+ */
+
+#ifndef CONV2D_WINOGRAD_F4X4_3X3_GLSLH
+#define CONV2D_WINOGRAD_F4X4_3X3_GLSLH
+
+// The weight transform. Row i holds (1, p_i, p_i^2).
+const float G[6][3] = float[6][3](
+    float[3](1.0, 0.0, 0.0),
+    float[3](1.0, 0.70710678, 0.5),
+    float[3](1.0, -0.70710678, 0.5),
+    float[3](1.0, 1.41421356, 2.0),
+    float[3](1.0, -1.41421356, 2.0),
+    float[3](0.0, 0.0, 1.0));
+
+const float BT[6][6] = float[6][6](
+    float[6](1.0, 0.0, -2.5, 0.0, 1.0, 0.0),
+    float[6](0.0, 0.94280904, 1.33333333, -0.47140452, -0.66666667, 0.0),
+    float[6](0.0, -0.94280904, 1.33333333, 0.47140452, -0.66666667, 0.0),
+    float[6](0.0, -0.11785113, -0.08333333, 0.23570226, 0.16666667, 0.0),
+    float[6](0.0, 0.11785113, -0.08333333, -0.23570226, 0.16666667, 0.0),
+    float[6](0.0, 1.0, 0.0, -2.5, 0.0, 1.0));
+
+const float AT[4][6] = float[4][6](
+    float[6](1.0, 1.0, 1.0, 1.0, 1.0, 0.0),
+    float[6](0.0, 0.70710678, -0.70710678, 1.41421356, -1.41421356, 0.0),
+    float[6](0.0, 0.5, 0.5, 2.0, 2.0, 0.0),
+    float[6](0.0, 0.35355339, -0.35355339, 2.82842712, -2.82842712, 1.0));
+
+// Element k of B^T x, for a row or column x of 6 elements.
+VEC4_T bt_transform_element(const VEC4_T x[6], const int k) {
+  if (k == 0) {
+    return x[0] + x[4] - VEC4_T(2.5) * x[2];
+  }
+  if (k == 5) {
+    return x[1] + x[5] - VEC4_T(2.5) * x[3];
+  }
+  if (k == 1 || k == 2) {
+    const VEC4_T a = VEC4_T(BT[1][1]) * x[1] + VEC4_T(BT[1][3]) * x[3];
+    const VEC4_T b = VEC4_T(BT[1][2]) * x[2] + VEC4_T(BT[1][4]) * x[4];
+    return k == 1 ? b + a : b - a;
+  }
+  const VEC4_T a = VEC4_T(BT[3][3]) * x[3] + VEC4_T(BT[3][1]) * x[1];
+  const VEC4_T b = VEC4_T(BT[3][4]) * x[4] + VEC4_T(BT[3][2]) * x[2];
+  return k == 3 ? b + a : b - a;
+}
+
+// Element k of A^T x, for a row or column x of 6 elements.
+VEC4_T at_transform_element(const VEC4_T x[6], const int k) {
+  if (k == 0 || k == 2) {
+    const VEC4_T p = x[1] + x[2];
+    const VEC4_T q = x[3] + x[4];
+    return k == 0 ? x[0] + p + q : VEC4_T(AT[2][1]) * p + VEC4_T(AT[2][3]) * q;
+  }
+  const VEC4_T p = x[1] - x[2];
+  const VEC4_T q = x[3] - x[4];
+  return k == 1 ? VEC4_T(AT[1][1]) * p + VEC4_T(AT[1][3]) * q
+                : VEC4_T(AT[3][1]) * p + VEC4_T(AT[3][3]) * q + x[5];
+}
+
+#endif // CONV2D_WINOGRAD_F4X4_3X3_GLSLH
