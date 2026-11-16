@@ -32,6 +32,26 @@ def define_common_targets(is_fbcode = False):
         ),
     )
 
+    python_unittest_remote_gpu(
+        name = "test_triton_replacement",
+        srcs = [
+            "test_triton_replacement.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/backends/cuda:triton_routing",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
     runtime.python_library(
         name = "autotune_test_utils",
         srcs = [
