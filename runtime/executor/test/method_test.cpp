@@ -8,8 +8,11 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <unordered_map>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -18,6 +21,7 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -30,6 +34,7 @@ using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::testing::ManagedMemoryManager;
+using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -369,6 +374,62 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   auto input_err =
       method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   EXPECT_NE(input_err, Error::Ok);
+}
+
+// Program validation skips the byte count check for a dynamic input and leaves
+// it to set_input(), and with minimal verification nothing checks it at load.
+// Without it, a memory-planned input sized from such a bound gets a buffer too
+// small for the tensor set_input() copies in. Here the dynamic input of the cat
+// program gets a ComplexDouble upper bound of 2^30 x 2^30, whose byte count
+// wraps to 0 on a 64-bit machine. The flatbuffer cannot gain a memory plan in
+// place, so this input stays caller-owned, and set_input() refuses it all the
+// same, as it did before reading the bound straight from the program.
+TEST_F(MethodTest, SetInputRejectsABoundWhoseByteCountOverflows) {
+  std::ifstream file(
+      std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"),
+      std::ios::binary);
+  ASSERT_TRUE(file.good());
+  std::vector<uint8_t> bytes(
+      (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  auto* plan = executorch_flatbuffer::GetMutableProgram(bytes.data())
+                   ->mutable_execution_plan()
+                   ->GetMutableObject(0);
+  auto* input = static_cast<executorch_flatbuffer::Tensor*>(
+      plan->mutable_values()
+          ->GetMutableObject(plan->inputs()->Get(0))
+          ->mutable_val());
+  ASSERT_EQ(
+      input->shape_dynamism(),
+      executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND);
+  ASSERT_EQ(input->sizes()->size(), 2);
+  ASSERT_TRUE(
+      input->mutate_scalar_type(static_cast<executorch_flatbuffer::ScalarType>(
+          executorch::aten::ScalarType::ComplexDouble)));
+  input->mutable_sizes()->Mutate(0, 1 << 30);
+  input->mutable_sizes()->Mutate(1, 1 << 30);
+
+  BufferDataLoader loader(bytes.data(), bytes.size());
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::Ok);
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  double data[8] = {};
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::ComplexDouble,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+      Error::InvalidArgument);
 }
 
 // The "cat" model (ModuleDynamicCatUnallocatedIO) is DYNAMIC_BOUND with a
