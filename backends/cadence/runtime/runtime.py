@@ -9,6 +9,7 @@
 
 import logging
 import numbers
+import os
 import tempfile
 from typing import Any, Optional, Sequence, Union
 
@@ -19,14 +20,18 @@ import torch
 
 from executorch.backends.cadence.runtime import utils
 from executorch.backends.cadence.runtime.etdump import CadenceETDump
-from executorch.backends.cadence.runtime.executor import Executor
+from executorch.backends.cadence.runtime.executor import (
+    BundledProgramManager,
+    Executor,
+    RUNNER_PATH,
+)
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.schema import DataLocation
 
 from numpy import ndarray
 
-from torch.utils._pytree import TreeSpec
+from torch.utils._pytree import tree_flatten, TreeSpec
 
 
 def get_op_names(program: et_schema.Program, execution_plan_id: int = 0) -> set[str]:
@@ -70,8 +75,25 @@ def run(
     if working_dir is None:
         working_dir = tempfile.mkdtemp(dir="/tmp")
 
+    # The runner dumps the outputs into its ETDump debug buffer, at 64-byte
+    # boundaries. Keep at least the runner's default size of 256 KiB.
+    output_vals = executorch_prog.exported_program().graph.output_node().meta["val"]
+    debug_buffer_size = max(
+        256 * 1024,
+        sum(
+            val.nbytes + 64
+            for val in tree_flatten(output_vals)[0]
+            if isinstance(val, torch.Tensor)
+        ),
+    )
+
     # initialize e2e Executor with executorch_cfg.
-    executor = Executor(working_dir, file_name=file_name, force_rebuild=force_rebuild)
+    executor = Executor(
+        working_dir,
+        file_name=file_name,
+        force_rebuild=force_rebuild,
+        debug_buffer_size=debug_buffer_size,
+    )
 
     # run Executor
     executor()
@@ -86,6 +108,35 @@ def run(
     outputs = torch.utils._pytree.tree_unflatten(outputs, out_spec)
 
     return outputs
+
+
+def run_bundled(executorch_prog: ExecutorchProgramManager, inputs: Any) -> Any:
+    """
+    Bundle the inputs with the program, run it on a cadence_runner that is
+    already built, and return the outputs.
+    """
+    if not os.path.isfile(RUNNER_PATH):
+        raise FileNotFoundError(
+            f"{RUNNER_PATH} not found. Build it with "
+            "backends/cadence/build_cadence_runner.sh from the repository root."
+        )
+    test_data = BundledProgramManager.bundled_program_test_data_gen(
+        method="forward", inputs=inputs, expected_outputs=[]
+    )
+    manager = BundledProgramManager([test_data])
+    buffer = manager._serialize(
+        executorch_prog, manager.get_method_test_suites(), test_data
+    )
+    file_name = "program"
+    with tempfile.TemporaryDirectory() as working_dir:
+        with open(os.path.join(working_dir, f"{file_name}.bpte"), "wb") as f:
+            f.write(buffer)
+        return run(
+            executorch_prog,
+            inputs,
+            working_dir=working_dir,
+            file_name=file_name,
+        )
 
 
 def compare(

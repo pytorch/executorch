@@ -8,6 +8,7 @@ non_fbcode_target(_kind = define_common_targets,)
 # !!!! fbcode/executorch/backends/cadence/runtime/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
 
 load(":targets.bzl", "define_common_targets")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 
@@ -29,6 +30,28 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/devtools:lib",
         "//executorch/exir:lib",
         ":etdump",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_executor",
+    srcs = [
+        "tests/test_executor.py",
+    ],
+    deps = [
+        ":runtime",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_runtime",
+    srcs = [
+        "tests/test_runtime.py",
+    ],
+    deps = [
+        ":runtime",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
     ],
 )
 

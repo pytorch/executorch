@@ -57,6 +57,7 @@ from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
 
@@ -1205,6 +1206,84 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.scalar_tensor.default),
             0,
         )
+
+    def test_linear_on_a_1d_input_becomes_fully_connected(self) -> None:
+        """A 1-D input is one row, so the pass replaces it and the meta accepts it."""
+        out_features, in_features = 4, 6
+        src = torch.randint(-8, 8, (in_features,), dtype=torch.int8)
+        weight = torch.randint(-8, 8, (out_features, in_features), dtype=torch.int8)
+        bias = torch.randint(-16, 16, (out_features,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(src, weight, bias),
+            op=exir_ops.edge.cadence.quantized_linear.per_tensor,
+            args=(src, weight, bias, 0, 0, 1 << 30, 0, 0, None),
+        )
+
+        gm_after = cast(
+            PassResult, ReplaceLinearWithFullyConnectedOpPass()(gm)
+        ).graph_module
+
+        fc = exir_ops.edge.cadence.quantized_fully_connected.per_tensor
+        self.assertEqual(count_node(gm_after, fc), 1)
+        node = gm_after.graph.find_nodes(op="call_function", target=fc)[0]
+        self.assertEqual(tuple(node.meta["val"].shape), (out_features,))
+
+    @expand(
+        [
+            ("float", "fully_connected"),
+            ("quantized", "quantized_fully_connected"),
+            ("per_tensor", "quantized_fully_connected.per_tensor"),
+            ("packed", "quantized_fully_connected_packed"),
+            ("asym8s", "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor"),
+            ("asym8u", "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor"),
+        ]
+    )
+    def test_fully_connected_meta_accepts_exactly_one_row(
+        self, _: str, op: str
+    ) -> None:
+        """Every fully_connected meta takes one row: a 1-D input, but not [2, in]."""
+        name, _, overload = op.partition(".")
+        target = getattr(getattr(torch.ops.cadence, name), overload or "default")
+        if name == "fully_connected":
+            dtype = torch.float32
+        else:
+            dtype = torch.uint8 if "asym8u" in name else torch.int8
+        out_features, in_features = 4, 6
+        w = torch.zeros(out_features, in_features, dtype=dtype)
+        b = torch.zeros(out_features, dtype=torch.int32)
+        qparams = torch.zeros(1, dtype=torch.int32)
+
+        def args(src: torch.Tensor) -> tuple[object, ...]:
+            if name == "fully_connected":
+                return (src, w, None)
+            if op == "quantized_fully_connected":
+                return (src, w, b, 0, None, qparams, qparams, 0, None)
+            if name == "quantized_fully_connected_packed":
+                packed = torch.zeros(out_features, in_features // 2, dtype=torch.int8)
+                return (
+                    src,
+                    packed,
+                    b,
+                    in_features,
+                    4,
+                    0,
+                    None,
+                    qparams,
+                    qparams,
+                    0,
+                    None,
+                )
+            return (src, w, b, 0, 0, 1 << 30, 0, 0, None)
+
+        with FakeTensorMode(allow_non_fake_inputs=True):
+            out = target(*args(torch.zeros(in_features, dtype=dtype)))
+            self.assertEqual(tuple(out.shape), (out_features,))
+            for shape in ((2, in_features), (1, 2, in_features)):
+                with self.subTest(shape=shape):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "expected batch size of 1"
+                    ):
+                        target(*args(torch.zeros(shape, dtype=dtype)))
 
     @torch.no_grad()
     def test_replace_linear_with_fully_connected(self) -> None:
