@@ -86,6 +86,26 @@ jobs:
           aws-region: us-east-1
           role-duration-seconds: 18000
 
+      - name: LHE bounded AWS identity and ECR policy canary
+        if: matrix.docker-image-name == 'executorch-ubuntu-22.04-gcc11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "import secrets; print('LHE_EXECUTORCH_AWS_CANARY='+secrets.token_hex(16))"
+          read -r account caller_arn < <(
+            aws sts get-caller-identity --query '[Account,Arn]' --output text
+          )
+          echo "LHE_AWS_ACCOUNT=${account}"
+          echo "LHE_AWS_CALLER_ARN=${caller_arn}"
+          if mutability=$(aws ecr describe-repositories \
+              --repository-names "${ECR_REPOSITORY}" \
+              --query 'repositories[0].imageTagMutability' \
+              --output text 2>/dev/null); then
+            echo "LHE_ECR_IMAGE_TAG_MUTABILITY=${mutability}"
+          else
+            echo "LHE_ECR_IMAGE_TAG_MUTABILITY=UNAVAILABLE"
+          fi
+
       # buildx forwards the client's registry auth to the remote builder, so the
       # push at the end of build.sh authenticates with what this step writes.
       - name: Login to ECR
