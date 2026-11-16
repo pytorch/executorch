@@ -146,12 +146,49 @@ if(EXECUTORCH_BUILD_CADENCE_RUNNER)
   target_link_options(cadence_executor_runner PRIVATE -static -lm)
 endif()
 
-# Cadence op-level gtest tests, cross-compiled for the Xtensa ISS (run via
-# xt-run). Built only when EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the
-# selected backend ships a tests dir. See .ci/scripts/test-cadence-xtensa.sh.
+# Cadence op-level gtest tests. Built only when
+# EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the selected backend ships a tests
+# dir. See .ci/scripts/test-cadence-generic.sh (generic, on the host) and
+# .ci/scripts/test-cadence-xtensa.sh (Xtensa backends, on the ISS via xt-run).
 if(EXECUTORCH_BUILD_CADENCE_OP_TESTS
    AND EXISTS
        "${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests/CMakeLists.txt"
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests)
+
+  # Op-registry gtest: links cadence_ops_lib the way cadence_executor_runner
+  # does and checks that every op codegen selected from the backend's functions
+  # yaml is in the kernel registry after runtime_init(). The op list is read at
+  # build time from cadence_ops_lib's selected_operators.yaml. gtest comes from
+  # the op-test dir above.
+  get_target_property(_cadence_ops_lib_dir cadence_ops_lib BINARY_DIR)
+  set(_selected_ops_yaml
+      ${_cadence_ops_lib_dir}/cadence_ops_lib/selected_operators.yaml
+  )
+  set(_selected_ops_h
+      ${CMAKE_CURRENT_BINARY_DIR}/cadence_ops_lib_selected_ops.h
+  )
+  add_custom_command(
+    OUTPUT ${_selected_ops_h}
+    COMMAND
+      ${PYTHON_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/utils/gen_selected_ops_header.py
+      --oplist-yaml=${_selected_ops_yaml} --output-path=${_selected_ops_h}
+    DEPENDS ${_selected_ops_yaml}
+            ${CMAKE_CURRENT_SOURCE_DIR}/utils/gen_selected_ops_header.py
+  )
+  add_executable(
+    cadence_op_registry_test cadence_op_registry_test.cpp ${_selected_ops_h}
+  )
+  target_compile_definitions(
+    cadence_op_registry_test PRIVATE GTEST_HAS_PTHREAD=0
+  )
+  target_include_directories(
+    cadence_op_registry_test PRIVATE ${_common_include_directories}
+                                     ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  target_link_libraries(
+    cadence_op_registry_test PRIVATE gtest gtest_main executorch
+                                     cadence_ops_lib
+  )
 endif()
