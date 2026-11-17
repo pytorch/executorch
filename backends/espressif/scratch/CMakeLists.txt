@@ -9,18 +9,44 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(esp_nn_scratch LANGUAGES C CXX)
 endif()
 
+if(MSVC
+   OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+)
+  message(
+    FATAL_ERROR
+      "ESP-NN scratch bindings require GNU-style section flags; MSVC-style toolchains are unsupported."
+  )
+endif()
+
 set(ESP_NN_LOCAL_PATH
     ""
     CACHE PATH "ESP-NN 1.5.0 sources for scratch sizing"
 )
 if(ESP_NN_LOCAL_PATH)
+  if(NOT EXISTS "${ESP_NN_LOCAL_PATH}/include/esp_nn.h"
+     OR NOT EXISTS "${ESP_NN_LOCAL_PATH}/idf_component.yml"
+  )
+    message(
+      FATAL_ERROR "ESP_NN_LOCAL_PATH must name an ESP-NN 1.5.0 source tree."
+    )
+  endif()
+  file(STRINGS "${ESP_NN_LOCAL_PATH}/idf_component.yml" esp_nn_version
+       REGEX "^version:[ \t]*['\"]?1\\.5\\.0['\"]?[ \t]*$"
+  )
+  if(NOT esp_nn_version)
+    message(FATAL_ERROR "ESP_NN_LOCAL_PATH must contain ESP-NN version 1.5.0.")
+  endif()
   set(esp_nn_SOURCE_DIR "${ESP_NN_LOCAL_PATH}")
 else()
   include(FetchContent)
   FetchContent_Declare(
     esp_nn
     URL https://github.com/espressif/esp-nn/archive/refs/tags/v1.5.0.tar.gz
-        SOURCE_SUBDIR src/convolution
+    URL_HASH
+      SHA256=63e8432b00c354eecb7dfab7133c47bc50023337cd6ea1c4dec67ca1060fef17
+    # Populate sources without adding ESP-NN's ESP-IDF component CMake project.
+    SOURCE_SUBDIR src/convolution
   )
   FetchContent_MakeAvailable(esp_nn)
 endif()
