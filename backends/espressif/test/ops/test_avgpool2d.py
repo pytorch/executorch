@@ -98,18 +98,18 @@ test_cases = {
     "channels_4": EspTestCase(EspAvgPool2d(kernel_size=2), (_input((1, 4, 5, 5)),)),
     "channels_8": EspTestCase(EspAvgPool2d(), (_input((1, 8, 9, 11)),)),
     "channels_12": EspTestCase(EspAvgPool2d(), (_input((1, 12, 9, 11)),)),
-    "batches": EspTestCase(EspAvgPool2d(), (_input((3, 4, 7, 8)),)),
+    "batches": EspTestCase(EspAvgPool2d(), (_input((3, 4, 7, 9)),)),
     "rectangular": EspTestCase(
         EspAvgPool2d(
             kernel_size=(3, 2), stride=(2, 1), padding=(1, 0), count_include_pad=False
         ),
-        (_input((1, 8, 7, 5)),),
+        (_input((1, 8, 7, 9)),),
     ),
     "negative_padding": EspTestCase(
         EspAvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=False),
-        (_input((1, 4, 7, 7), negative=True),),
+        (_input((1, 4, 7, 9), negative=True),),
     ),
-    "identity": EspTestCase(EspAvgPool2d(kernel_size=1), (_input((1, 4, 3, 3)),)),
+    "identity": EspTestCase(EspAvgPool2d(kernel_size=1), (_input((1, 4, 3, 5)),)),
     "global": EspTestCase(EspAvgPool2d(kernel_size=(5, 7)), (_input((1, 4, 5, 7)),)),
     "single_row": EspTestCase(EspAvgPool2d(), (_input((1, 8, 3, 9)),)),
     "large_window": EspTestCase(
@@ -123,24 +123,24 @@ test_cases = {
             .reshape(1, 4, 1, 8),
         ),
     ),
-    "chain": EspTestCase(EspAvgPoolChain(), (_input((1, 4, 9, 9)),)),
+    "chain": EspTestCase(EspAvgPoolChain(), (_input((1, 4, 9, 11)),)),
     "add_between_pools": EspTestCase(EspAvgPoolAddChain(), (_input((1, 4, 9, 9)),)),
     "add_producer": EspTestCase(EspAvgPoolAndAdd(), (_input((1, 4, 7, 7)),)),
     "constant_between_pools": EspTestCase(
         EspAvgPoolWithBuffer(), (torch.linspace(-2, 4, 64).reshape(1, 4, 4, 4),)
     ),
-    "float_users": EspTestCase(EspAvgPoolWithFloatUsers(), (_input((1, 4, 7, 8)),)),
-    "wide_output_channels_4_fallback": EspTestCase(
-        EspAvgPool2d(kernel_size=2, supported=False), (_input((1, 4, 5, 7)),)
+    "float_users": EspTestCase(EspAvgPoolWithFloatUsers(), (_input((1, 4, 7, 9)),)),
+    "wide_output_channels_4": EspTestCase(
+        EspAvgPool2d(kernel_size=2), (_input((1, 4, 5, 7)),)
     ),
-    "tall_output_channels_4_fallback": EspTestCase(
-        EspAvgPool2d(kernel_size=2, supported=False), (_input((1, 4, 7, 5)),)
+    "tall_output_channels_4": EspTestCase(
+        EspAvgPool2d(kernel_size=2), (_input((1, 4, 7, 5)),)
     ),
-    "wide_output_channels_8_fallback": EspTestCase(
-        EspAvgPool2d(kernel_size=2, supported=False), (_input((1, 8, 5, 7)),)
+    "wide_output_channels_8": EspTestCase(
+        EspAvgPool2d(kernel_size=2), (_input((1, 8, 5, 7)),)
     ),
-    "tall_output_channels_8_fallback": EspTestCase(
-        EspAvgPool2d(kernel_size=2, supported=False), (_input((1, 8, 7, 5)),)
+    "tall_output_channels_8": EspTestCase(
+        EspAvgPool2d(kernel_size=2), (_input((1, 8, 7, 5)),)
     ),
     "channel_tail_fallback": EspTestCase(
         EspAvgPool2d(supported=False), (_input((1, 5, 7, 8)),)
@@ -154,7 +154,7 @@ test_cases = {
     "divisor_override_fallback": EspTestCase(
         EspAvgPool2d(supported=False, divisor_override=2), (_input((1, 4, 7, 8)),)
     ),
-    "unbatched": EspTestCase(EspAvgPool2d(supported=False), (_input((4, 7, 9)),)),
+    "unbatched": EspTestCase(EspAvgPool2d(), (_input((4, 7, 9)),)),
 }
 
 

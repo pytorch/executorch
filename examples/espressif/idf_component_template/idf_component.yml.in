@@ -25,5 +25,5 @@ dependencies:
   ## Pinned to the production registry, because the staging registry records
   ## a dependency without a registry_url as one of its own.
   espressif/esp-nn:
-    version: "^1.4"
+    version: "1.5.0"
     registry_url: https://components.espressif.com
