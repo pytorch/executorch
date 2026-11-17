@@ -70,7 +70,7 @@ std::string pick_conv2d_dw_shader(
     const ValueRef weight_data,
     const ValueRef out,
     const bool stride_equals_dilation,
-    const bool clamp_out) {
+    const std::optional<bool> b1x1_override) {
   std::string kernel_name = "conv2d_dw";
   kernel_name.reserve(kShaderNameReserve);
 
@@ -90,14 +90,12 @@ std::string pick_conv2d_dw_shader(
     kernel_name += is_3x3 ? "_output_tile_3x3" : "_output_tile_5x5";
     // Mali spills with the default 4x2 output tile: each invocation holds 8
     // accumulators and loads an overlapping input window for each of them.
-    if (stride_equals_dilation && graph.device_is_mali()) {
+    if (stride_equals_dilation &&
+        b1x1_override.value_or(graph.device_is_mali())) {
       kernel_name += "_b1x1";
     }
   }
 
-  if (clamp_out) {
-    kernel_name += "_clamp";
-  }
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   return kernel_name;
@@ -173,11 +171,6 @@ struct Conv2dDWParams final {
   int in_group_size;
 };
 
-struct OutputParams final {
-  float out_min;
-  float out_max;
-};
-
 void add_conv2d_dw_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -191,8 +184,13 @@ void add_conv2d_dw_node(
     const std::string& kernel_name,
     const Kernel2dParams& kernel_params,
     const Conv2dDWParams& extra_params,
-    const OutputParams& out_params) {
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args) {
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
+  const Conv2dEpilogueParams epilogue_params =
+      create_conv2d_epilogue_params(epilogue, false);
+  vkapi::SpecVarList spec_vars;
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
   vkapi::ParamsBindList param_buffers;
   std::vector<PushConstantDataInfo> push_constants;
@@ -222,7 +220,7 @@ void add_conv2d_dw_node(
             &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
         PushConstantDataInfo(
             &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
-        PushConstantDataInfo(&out_params, sizeof(out_params)),
+        PushConstantDataInfo(&epilogue_params, sizeof(epilogue_params)),
     };
   } else {
     param_buffers = {
@@ -230,7 +228,7 @@ void add_conv2d_dw_node(
         graph.sizes_ubo(in),
         graph.create_params_buffer(kernel_params),
         graph.create_params_buffer(extra_params),
-        graph.create_params_buffer(out_params),
+        graph.create_params_buffer(epilogue_params),
     };
   }
 
@@ -244,15 +242,23 @@ void add_conv2d_dw_node(
       conv2d_dw_gwg,
       conv2d_dw_lwg,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
+      {{out, vkapi::kWrite},
+       {{in, arg_weight, arg_bias, epilogue_args.residual, epilogue_args.scale},
+        vkapi::kRead}},
       // Shader params buffers
       param_buffers,
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      spec_vars,
       // Resize Args
-      {weight_data, stride, padding, dilation, transposed_ref, output_padding},
+      {weight_data,
+       stride,
+       padding,
+       dilation,
+       transposed_ref,
+       output_padding,
+       epilogue.residual},
       // Resizing Logic
       resize_conv2d_node));
 }
@@ -270,9 +276,8 @@ void conv2d_dw_impl(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef out,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val) {
+    const Conv2dEpilogue& epilogue,
+    const std::optional<bool> b1x1_override) {
   ValueRef arg_weight = prepack_dw_weights(graph, weight_data);
   ValueRef arg_bias = prepack_biases(
       graph,
@@ -281,6 +286,8 @@ void conv2d_dw_impl(
       /* transposed = */ false,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, /* transposed = */ false);
 
   const std::vector<int64_t> in_sizes = graph.sizes_of(in);
   if (in_sizes.at(0) > 1) {
@@ -312,10 +319,8 @@ void conv2d_dw_impl(
       utils::safe_downcast<int32_t>(utils::align_up_4(weight_sizes.at(1)));
   Conv2dDWParams extra_params = {overlay_region, in_group_size};
 
-  OutputParams out_params = {out_min_val, out_max_val};
-
   std::string kernel_name = pick_conv2d_dw_shader(
-      graph, weight_data, out, stride_equals_dilation, clamp_out);
+      graph, weight_data, out, stride_equals_dilation, b1x1_override);
 
   add_conv2d_dw_node(
       graph,
@@ -330,7 +335,8 @@ void conv2d_dw_impl(
       kernel_name,
       kernel_params,
       extra_params,
-      out_params);
+      epilogue,
+      Conv2dEpilogueArgs(epilogue, in, arg_bias, packed_scale));
 }
 
 } // namespace vkcompute

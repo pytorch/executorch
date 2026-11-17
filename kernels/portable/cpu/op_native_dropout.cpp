@@ -63,7 +63,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
               utils::SupportedTensorDtypes::SAME_AS_COMMON>(
               [](const CTYPE_COMPUTE val, const CTYPE_COMPUTE mask_val) {
                 if (!mask_val) {
-                  return static_cast<decltype(val)>(0);
+                  return static_cast<CTYPE_COMPUTE>(0);
                 }
                 return val;
               },

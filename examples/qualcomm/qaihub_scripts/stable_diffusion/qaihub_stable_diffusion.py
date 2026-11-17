@@ -14,9 +14,9 @@ import torch
 from diffusers import EulerDiscreteScheduler, UNet2DConditionModel
 from diffusers.models.embeddings import get_timestep_embedding
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.utils.utils import (
@@ -240,7 +240,7 @@ def inference(args, qnn_config, compiler_specs, pte_files):
         "vae_output": vae_output,
     }
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_files,
         workspace=f"/data/local/tmp/executorch/{args.pte_prefix}",
@@ -256,15 +256,15 @@ def inference(args, qnn_config, compiler_specs, pte_files):
         input_unet = input_unet + (time_emb,)
 
     qnn_executor_runner_args = [
-        f"--text_encoder_path {adb.workspace}/{args.pte_prefix}_text_encoder.pte",
-        f"--unet_path {adb.workspace}/{args.pte_prefix}_unet.pte",
-        f"--vae_path {adb.workspace}/{args.pte_prefix}_vae.pte",
-        f"--input_list_path {adb.workspace}/input_list.txt",
-        f"--output_folder_path {adb.output_folder}",
+        f"--text_encoder_path {device.workspace}/{args.pte_prefix}_text_encoder.pte",
+        f"--unet_path {device.workspace}/{args.pte_prefix}_unet.pte",
+        f"--vae_path {device.workspace}/{args.pte_prefix}_vae.pte",
+        f"--input_list_path {device.workspace}/input_list.txt",
+        f"--output_folder_path {device.output_folder}",
         f'--prompt "{args.prompt}"',
         f"--guidance_scale {args.guidance_scale}",
         f"--num_time_steps {args.num_time_steps}",
-        f"--vocab_json {adb.workspace}/vocab.json",
+        f"--vocab_json {device.workspace}/vocab.json",
     ]
     if args.fix_latents:
         qnn_executor_runner_args.append("--fix_latents")
@@ -299,7 +299,7 @@ def inference(args, qnn_config, compiler_specs, pte_files):
 
     qnn_executor_runner_args = " ".join(
         [
-            f"cd {adb.workspace} &&",
+            f"cd {device.workspace} &&",
             f"./qaihub_stable_diffusion_runner {' '.join(qnn_executor_runner_args)}",
         ]
     )
@@ -320,8 +320,8 @@ def inference(args, qnn_config, compiler_specs, pte_files):
             file.write(flattened_tensor.numpy().tobytes())
         files.append(os.path.join(args.artifact, "latents.raw"))
 
-    adb.push(inputs=input_unet, files=files)
-    adb.execute(custom_runner_cmd=qnn_executor_runner_args)
+    device.push(inputs=input_unet, files=files)
+    device.execute(custom_runner_cmd=qnn_executor_runner_args)
 
     output_image = []
 
@@ -331,7 +331,7 @@ def inference(args, qnn_config, compiler_specs, pte_files):
                 np.fromfile(f, dtype=np.float32).reshape(1, 512, 512, 3)
             )
 
-    adb.pull(host_output_path=args.artifact, callback=post_process_vae)
+    device.pull(host_output_path=args.artifact, callback=post_process_vae)
 
     if args.fix_latents:
         broadcast_ut_result(output_image, seed)

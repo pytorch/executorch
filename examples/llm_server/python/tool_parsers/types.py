@@ -31,3 +31,4 @@ class ParseResult:
 
     normal_text: str = ""
     calls: list[ToolCallItem] = field(default_factory=list)
+    incomplete: bool = False

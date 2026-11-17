@@ -10,23 +10,8 @@
   "max_dispatches": 512,
   "reference": "copy",
   "bindings": [
-    {
-      "buffer": {
-        "name": "output",
-        "sizes": [65536],
-        "dtype": "float32",
-        "access": "write",
-        "data": {"fill": 0}
-      }
-    },
-    {
-      "buffer": {
-        "name": "input",
-        "sizes": [65536],
-        "dtype": "float32",
-        "data": {"rand_uniform_float": [-1, 1]}
-      }
-    },
+    {"buffer": {"name": "output", "sizes": [65536], "dtype": "float32", "access": "write", "data": {"fill": 0}}},
+    {"buffer": {"name": "input", "sizes": [65536], "dtype": "float32", "data": {"rand_uniform_float": [-1, 1]}}},
     {"meta_ubo": "output", "field": "numel"}
   ],
   "outputs": ["output"]

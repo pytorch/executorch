@@ -99,7 +99,7 @@ def _run_rocm_runner(module, inputs, output_strides, pte, ptd, tmpdir):
     ]
 
 
-def _run_et_aoti(module, inputs, triton_mode="OFF"):
+def _run_et_aoti(module, inputs):
     """Export and run a model through the ExecuTorch CUDA AOTI backend."""
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -108,14 +108,10 @@ def _run_et_aoti(module, inputs, triton_mode="OFF"):
         ExecutorchBackendConfig,
         to_edge_transform_and_lower,
     )
-    from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
 
     ep = torch.export.export(module, inputs, strict=True)
-    compile_specs = [
-        CudaBackend.generate_method_name_compile_spec("forward"),
-        CompileSpec(key="triton_kernel_mode", value=triton_mode.encode()),
-    ]
+    compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
     partitioner = {"forward": [CudaPartitioner(compile_specs)]}
     et_prog = to_edge_transform_and_lower(
         {"forward": ep},
@@ -170,19 +166,15 @@ class TestOutputStrideRearrange(unittest.TestCase):
             raise unittest.SkipTest("BF16 not supported on this GPU")
 
     def _check_sdpa(self, module, inputs, label):
-        """Run model through ExecuTorch AOTI with both Triton ON and OFF."""
+        """Run model through ExecuTorch AOTI and compare with eager."""
         with torch.no_grad():
             eager = module(*inputs).float().cpu()
 
-        for mode in ["OFF", "ON"]:
-            with self.subTest(triton_mode=mode):
-                result = _run_et_aoti(module, inputs, triton_mode=mode)[0].float()
-                rel = (result - eager).abs() / eager.abs().clamp(min=1e-6)
-                self.assertLess(
-                    rel.mean().item(),
-                    0.2,
-                    f"{label} triton={mode} mean_rel={rel.mean():.4f} too large",
-                )
+        result = _run_et_aoti(module, inputs)[0].float()
+        rel = (result - eager).abs() / eager.abs().clamp(min=1e-6)
+        self.assertLess(
+            rel.mean().item(), 0.2, f"{label} mean_rel={rel.mean():.4f} too large"
+        )
 
     def test_fast_path_no_mask(self):
         """No mask SDPA — output strides match, uses fast byte copy path."""
@@ -314,6 +306,17 @@ class _MaskedCounter(nn.Module):
     def forward(self, x, mask):
         self.calls.add_(1)
         return self.calls.clone(), x[mask]
+
+
+class _ConstantRow(nn.Module):
+    """AOTI returns a part of a constant through aoti_torch_clone."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.randn(3, 4))
+
+    def forward(self, x):
+        return self.table[1], x * 2
 
 
 class _HostFlag(nn.Module):
@@ -530,6 +533,20 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             with self.subTest(call=i):
                 self.assertIsInstance(out, torch.Tensor)
                 torch.testing.assert_close(out, torch.tensor([i + 1.0]))
+
+    def test_constant_copy_runs_without_a_graph(self):
+        # A capture cannot record the copy that returns a part of a constant,
+        # so the capture call has to run without a graph.
+        torch.manual_seed(0)
+        module = _ConstantRow().eval()
+        inputs = [torch.randn(4) for _ in range(6)]
+        with _RuntimeLog() as log:
+            outputs = self._run_with_cuda_graph(module, (inputs[0],), inputs)
+        self.assertEqual(log.text.count("capture failed for 'forward'"), 1)
+        for i, out in enumerate(outputs):
+            with self.subTest(call=i):
+                self.assertIsInstance(out, torch.Tensor)
+                torch.testing.assert_close(out, module.table[1])
 
     def test_output_shape_changes_at_capture(self):
         torch.manual_seed(0)

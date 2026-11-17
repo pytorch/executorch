@@ -8,8 +8,12 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm.tosa.cast_support import supported_tosa_casts
+from executorch.backends.arm.tosa.cast_support import (
+    INT64_WIDENING_CASTS,
+    supported_tosa_casts,
+)
 from executorch.backends.arm.tosa.specification import (
+    context_supports_int64,
     get_context_spec,
     TosaSpecification,
 )
@@ -76,12 +80,16 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
         comparison_dtypes = set()
         if tosa_spec.support_integer():
             comparison_dtypes.add(torch.int32)
+            if tosa_spec.support_extension("int64"):
+                comparison_dtypes.add(torch.int64)
         if tosa_spec.support_float():
             comparison_dtypes.update({torch.float16, torch.float32})
             if tosa_spec.support_extension("bf16"):
                 comparison_dtypes.add(torch.bfloat16)
 
         supported_casts = supported_tosa_casts(tosa_spec)
+        if context_supports_int64():
+            supported_casts |= set(INT64_WIDENING_CASTS)
         if (
             cast_dtype not in comparison_dtypes
             or (
@@ -113,10 +121,11 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
             }:
                 return super().call_operator(op, args, kwargs, meta)
 
+            int_dtypes = {torch.int8, torch.int16, torch.int32, torch.bool, torch.uint8}
+            if tosa_spec.support_extension("int64"):
+                int_dtypes.add(torch.int64)
             if not tosa_spec.support_integer() or any(
-                dtype
-                not in {torch.int8, torch.int16, torch.int32, torch.bool, torch.uint8}
-                for dtype in arg_dtypes
+                dtype not in int_dtypes for dtype in arg_dtypes
             ):
                 raise ValueError(
                     f"{op} cannot cast {arg_dtypes} to a {tosa_spec} comparison dtype."

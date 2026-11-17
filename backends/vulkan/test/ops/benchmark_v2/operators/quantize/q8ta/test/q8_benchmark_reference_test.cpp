@@ -30,10 +30,12 @@ Json tensor_arg(
              : "constant"},
         {"data", data}}}};
 }
-std::vector<double> compute(const char* op, const Json& args) {
-  const Json spec =
+std::vector<double>
+compute(const char* op, const Json& args, bool int8_dot_product = true) {
+  Json spec =
       parse_configs({{"operator", op}, {"args_sweep", Json::array({args})}})
           .front();
+  spec["reference_context"] = {{"int8_dot_product", int8_dot_product}};
   auto data = make_tensor_data(spec.at("tensors"));
   data.erase("output");
   return reference_outputs(spec, {}, data, 2).at("output");
@@ -328,6 +330,43 @@ TEST(
   EXPECT_EQ(
       compute("et_vk.linear_q8ta_q8csw.default", args),
       (std::vector<double>{.5}));
+}
+TEST(
+    Q8BenchmarkReference,
+    ActivationQuantizedConvolutionUsesWeightOnlyFallbackWithoutIntegerDot) {
+  const Json args = Json::array(
+      {tensor_arg("input", {1, 1, 1, 1}, {.5}),
+       {{"float", .07f}},
+       {{"int", -3}},
+       tensor_arg("weight", {1, 4}, {64, 0, 0, 0}, "int8"),
+       tensor_arg("sums", {1}, {64}, "int32"),
+       tensor_arg("scales", {1}, {.25}),
+       tensor_arg("bias", {1}, {.5}),
+       {{"int_list", {1, 1}}},
+       {{"int_list", {1, 1}}},
+       {{"int_list", {0, 0}}},
+       {{"int_list", {1, 1}}},
+       {{"int", 1}},
+       tensor_arg("output", {1, 1, 1, 1}, {{"fill", 0}})});
+  EXPECT_EQ(
+      compute("et_vk.conv2d_q8ta_q8csw.default", args, false),
+      (std::vector<double>{8.5}));
+}
+TEST(
+    Q8BenchmarkReference,
+    ActivationQuantizedLinearUsesWeightOnlyFallbackWithoutIntegerDot) {
+  const Json args = Json::array(
+      {tensor_arg("input", {1, 1}, {.5}),
+       {{"float", .07f}},
+       {{"int", -3}},
+       tensor_arg("weight", {1, 1}, {64}, "int8"),
+       tensor_arg("sums", {1}, {64}, "int32"),
+       tensor_arg("scales", {1}, {.25}),
+       tensor_arg("bias", {1}, {.5}),
+       tensor_arg("output", {1, 1}, {{"fill", 0}})});
+  EXPECT_EQ(
+      compute("et_vk.linear_q8ta_q8csw.default", args, false),
+      (std::vector<double>{8.5}));
 }
 } // namespace
 } // namespace vkcompute::shader_profiling

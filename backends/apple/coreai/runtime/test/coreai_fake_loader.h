@@ -9,6 +9,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 #include <atomic>
 #import "ETCoreAIBridge.h"
 
@@ -30,17 +31,29 @@ struct FakeBridgeState {
   bool multiple_io = false;
   bool retain_binding_completion = false;
   bool retain_execution_completion = false;
+  // Function names the fake model has; nil means only "main".
+  NSSet<NSString*>* functions = nil;
+  // Binding this function fails like a load failure; the others still bind.
+  NSString* fail_function = nil;
+  std::atomic<int> function_bindings{0};
+  useconds_t execute_delay_us = 0;
   NSString* last_bundle = nil;
+  // Written by the execution that last completed, before its completion.
+  NSString* last_function = nil;
   dispatch_semaphore_t input_ready = nil;
   dispatch_semaphore_t allow_input_read = nil;
   std::atomic<int> architecture_queries{0};
   std::atomic<int> executions{0};
+  std::atomic<int> active_executions{0};
+  std::atomic<int> max_active_executions{0};
   std::atomic<int> output_copies{0};
   std::atomic<int> output_owners{0};
   std::atomic<const void*> last_output_destination{nullptr};
   std::atomic<int> sessions{0};
   std::atomic<int> prepared_models{0};
   std::atomic<int> loaders{0};
+  std::atomic<int> last_compute_unit{-1};
+  std::atomic<int> last_expect_frequent_reshapes{-1};
   std::atomic<const void*> last_input_bytes{nullptr};
   std::atomic<size_t> last_input_byte_count{0};
   std::atomic<unsigned char> last_input_first_byte{0};
@@ -71,6 +84,7 @@ class ScopedFakeBridgeState final {
 
 @interface FakeSession : NSObject<ETCoreAISession>
 @property(nonatomic, strong) id<ETCoreAIPreparedModel> preparedPin;
+@property(nonatomic, copy) NSString* function;
 @end
 
 @interface FakePreparedModel : NSObject<ETCoreAIPreparedModel>

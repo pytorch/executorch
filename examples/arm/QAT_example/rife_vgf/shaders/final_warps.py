@@ -57,6 +57,7 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
         )
     ]
     zero_points = ""
+    output_unsigned = blend is not None and blend.output_rescale is not None
     if blend is not None:
         functions.extend(
             _rescale_source(name, node)
@@ -79,7 +80,10 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
             )
             for i, value in enumerate(values)
         )
+        if blend.output_rescale is not None:
+            functions.append(_rescale_source("rescaleToUint8", blend.output_rescale))
     source = source.replace("@FUSE_BLEND@", str(int(blend is not None)))
+    source = source.replace("@OUTPUT_UNSIGNED@", str(int(output_unsigned)))
     source = source.replace("@BLEND_ZERO_POINTS@", zero_points)
     source = source.replace(
         "@COMPLEMENT_TABLE@",

@@ -104,8 +104,8 @@ REGISTER_REFERENCE_FUNCTIONS {
   REGISTER_REFERENCE_FN(add, add_reference);
   REGISTER_SHADER_REFERENCE(buffer_to_buffer_float, copy);
   REGISTER_SHADER_REFERENCE(buffer_to_buffer_half, copy);
-  REGISTER_SHADER_REFERENCE(binary_add_texture3d_float, add);
-  REGISTER_SHADER_REFERENCE(binary_add_texture3d_half, add);
+  REGISTER_SHADER_REFERENCE(binary_op_texture3d_float, add);
+  REGISTER_SHADER_REFERENCE(binary_op_texture3d_half, add);
 }
 
 } // namespace vkcompute::shader_profiling::reference

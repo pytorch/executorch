@@ -6,6 +6,7 @@
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/Conv2dRouteCommon.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace vkcompute::shader_profiling::convolution {
@@ -16,12 +17,15 @@ void supported(bool condition, const std::string& message) {
   }
 }
 
-void check_options(const Json& options, bool intermediate_storage) {
+void check_options(
+    const Json& options,
+    const std::vector<std::string>& allowed) {
   if (!options.is_object()) {
     throw std::invalid_argument("Route options must be an object");
   }
   for (const auto& item : options.items()) {
-    if (!intermediate_storage || item.key() != "intermediate_storage") {
+    if (std::find(allowed.begin(), allowed.end(), item.key()) ==
+        allowed.end()) {
       throw std::invalid_argument(
           "Unknown convolution route option: " + item.key());
     }

@@ -29,6 +29,8 @@ enum class FaultPoint {
   AfterSDK,
   BeforeEvict,
   AfterEvict,
+  // Observation only: the result is ignored.
+  BeforeSharedLoadWait,
 };
 
 #if defined(COREAI_FAULT_INJECTION) && COREAI_FAULT_INJECTION

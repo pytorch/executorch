@@ -331,9 +331,9 @@ class AotiBackend(ABC):
                 custom_pass(device_edge_program.graph_module)
 
         # ``run_decompositions`` retraces the complete ExportedProgram even
-        # when none of the table's operators occur in the graph. The in-place
-        # passes above preserve graph inputs and outputs, so the existing graph
-        # signature remains valid when the decomposition table cannot apply.
+        # when none of the table's operators occur in the graph. Nothing else
+        # rebuilds the graph signature, so the in-place passes above must keep
+        # it valid when the decomposition table cannot apply.
         if contains_any_call_fn_target_op(
             device_edge_program.graph_module, decomposition_table
         ):

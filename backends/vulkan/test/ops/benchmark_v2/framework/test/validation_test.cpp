@@ -115,7 +115,7 @@ TEST_F(BenchmarkValidation, IncompleteShaderGridReportsOutputMismatches) {
 TEST_F(BenchmarkValidation, StagedTextureAdditionUsesOneTargetDescriptorSet) {
   const Json spec =
       parse_configs(
-          {{"shader", "binary_add_texture3d_float"},
+          {{"shader", "binary_op_texture3d_float"},
            {"gwg_size", "default_pick_gwg"},
            {"lwg_size", {10, 10, 1}},
            {"bindings",
@@ -179,13 +179,11 @@ TEST_F(BenchmarkValidation, StagedLinearUsesConstantWeightsAndOptionalBias) {
          {"max_dispatches", 2}});
     const auto host_data = prepare_tensor_data(typed);
     const auto expected = host_data;
-    EXPECT_EQ(
-        benchmark_operator(typed, host_data, true)
-            .at("validation")
-            .at("status"),
-        "PASS");
-    EXPECT_TRUE(
-        benchmark_operator(typed, host_data).contains("wall_time_operator_us"));
+    const Report validated = benchmark_operator(typed, host_data, true);
+    EXPECT_EQ(validated.at("validation").at("status"), "PASS");
+    const Report timed = benchmark_operator(typed, host_data);
+    EXPECT_TRUE(timed.contains("wall_time_operator_us"));
+    EXPECT_EQ(validated.at("execute_nodes"), timed.at("execute_nodes"));
     EXPECT_EQ(
         benchmark_operator(typed, host_data, true)
             .at("validation")
@@ -222,6 +220,23 @@ TEST_F(BenchmarkValidation, BenchmarkAddsRegisteredWorkAndWallThroughput) {
         expected,
         1e-12);
   }
+}
+
+TEST_F(BenchmarkValidation, SustainedReplaySkipsTimestampPass) {
+  Json spec = copy_case({8, 1, 1});
+  spec.update(
+      {{"sustain_s", 0.05},
+       {"target_ms", 0.01},
+       {"warmup_runs", 0},
+       {"max_dispatches", 2}});
+  const Report result = benchmark_shader(spec, prepare_tensor_data(spec));
+  const auto& window = result.at("sustain_monotonic_ns");
+  EXPECT_GE(
+      window.at("end").get<int64_t>() - window.at("begin").get<int64_t>(),
+      50000000);
+  EXPECT_EQ(
+      result.at("benchmark_runs"), result.at("wall_time_batch_us").size());
+  EXPECT_TRUE(result.at("gpu_timestamp_batch_us").empty());
 }
 
 TEST_F(BenchmarkValidation, UnsupportedShaderIsRejectedBeforePipelineCreation) {

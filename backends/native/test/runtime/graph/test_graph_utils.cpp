@@ -6,7 +6,12 @@
 
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 
+#include <array>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -298,6 +303,57 @@ TEST(GraphUtilsTest, ValidateAllowsSparseTensorListOutputs) {
   graph.rebuild_def_use();
 
   EXPECT_NO_THROW(validate_graph(graph));
+}
+
+TEST(GraphUtilsTest, FindArgMatchesNameThenUnnamedPosition) {
+  const Node node{
+      .name = "op",
+      .target = "test.op",
+      .inputs =
+          {{.arg = TensorArg{0}},
+           {.name = "scale", .arg = FloatArg{0.5}},
+           {.name = "flag", .arg = BoolArg{true}}},
+  };
+  EXPECT_EQ(tensor_id(find_arg(node, "input", 0)), 0);
+  EXPECT_EQ(find_arg(node, "flag", 0), &node.inputs[2].arg);
+  // A named input belongs to its own parameter, even at another's position.
+  EXPECT_EQ(find_arg(node, "mask", 1), nullptr);
+  EXPECT_EQ(find_arg(node, "dropout", 3), nullptr);
+  EXPECT_EQ(tensor_id(find_arg(node, "scale", 1)), std::nullopt);
+}
+
+TEST(GraphUtilsTest, IsBoolOrAbsentTakesDefaultWhenAbsent) {
+  const Argument literal = BoolArg{true};
+  const Argument symbolic = BoolArg{.value = true, .id = 0};
+  EXPECT_TRUE(is_bool_or_absent(nullptr, false));
+  EXPECT_TRUE(is_bool_or_absent(&literal, true));
+  EXPECT_FALSE(is_bool_or_absent(&literal, false));
+  EXPECT_FALSE(is_bool_or_absent(&symbolic, true));
+}
+
+TEST(GraphUtilsTest, FloatOrAbsentReadsOnlyLiterals) {
+  const Argument literal = FloatArg{0.5};
+  const Argument symbolic = FloatArg{.value = 0.5, .id = 0};
+  const Argument none = NoneArg{};
+  EXPECT_EQ(float_or_absent(nullptr, 1.0), 1.0);
+  EXPECT_EQ(float_or_absent(&literal, 1.0), 0.5);
+  EXPECT_EQ(float_or_absent(&symbolic, 1.0), std::nullopt);
+  EXPECT_EQ(float_or_absent(&none, 1.0), std::nullopt);
+}
+
+TEST(GraphUtilsTest, InputsFitSchemaRejectsUnknownNamesAndExtraInputs) {
+  constexpr std::array<std::string_view, 2> params{"self", "dim"};
+  const auto node = [](std::vector<std::string> names) {
+    Node n;
+    for (std::string& name : names) {
+      n.inputs.push_back({.name = std::move(name), .arg = IntArg{0}});
+    }
+    return n;
+  };
+  EXPECT_TRUE(inputs_fit_schema(node({"dim"}), params));
+  EXPECT_TRUE(inputs_fit_schema(node({"", ""}), params));
+  EXPECT_FALSE(inputs_fit_schema(node({"self", "keepdim"}), params));
+  EXPECT_FALSE(inputs_fit_schema(node({"", "", ""}), params));
 }
 // cppcheck-suppress-end syntaxError
 

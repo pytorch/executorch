@@ -86,7 +86,7 @@ void check_conv_args(
 
 void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (graph.dim_of(args[0]) == 4) {
-    return conv2d_impl(graph, args);
+    return conv2d_with_epilogue_impl(graph, args);
   }
   return conv1d_impl(graph, args);
 }
@@ -95,6 +95,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.convolution.default, conv);
   VK_REGISTER_OP(conv_with_clamp.default, conv);
   VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv);
+  VK_REGISTER_OP(et_vk.conv2d.with_epilogue, conv2d_with_epilogue_impl);
 }
 
 } // namespace vkcompute

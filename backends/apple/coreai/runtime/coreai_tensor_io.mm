@@ -377,16 +377,21 @@ Error copy_staged(
 } // namespace
 
 Error execute_session(
-    id<ETCoreAISession> session,
     Span<EValue*> args,
     size_t input_count,
-    size_t output_count) {
-  ET_CHECK_OR_RETURN_ERROR(
-      session != nil, DelegateInvalidHandle, "Missing Core AI session");
+    size_t output_count,
+    const std::function<Result<id<ETCoreAISession>>()>& select_session) {
   auto validated = validate_arguments(args, input_count, output_count);
   if (!validated.ok()) {
     return validated.error();
   }
+  auto selected = select_session();
+  if (!selected.ok()) {
+    return selected.error();
+  }
+  id<ETCoreAISession> session = selected.get();
+  ET_CHECK_OR_RETURN_ERROR(
+      session != nil, DelegateInvalidHandle, "Missing Core AI session");
   auto inputs = borrow_inputs(args, validated.get(), input_count);
   if (!inputs.ok()) {
     return inputs.error();

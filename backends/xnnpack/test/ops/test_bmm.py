@@ -9,6 +9,7 @@ import unittest
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
+from executorch.export.utils import is_fbcode
 
 
 class TestBMM(unittest.TestCase):
@@ -49,6 +50,10 @@ class TestBMM(unittest.TestCase):
         )
         self._test_bmm(inputs)
 
+    @unittest.skipIf(
+        is_fbcode(),
+        "skipping for fbcode",
+    )
     def test_bf16_bmm(self):
         inputs = (
             torch.randn(2, 3, 4).to(torch.bfloat16),

@@ -161,6 +161,18 @@ add_dependencies(method_test generated_pte_files)
 set_property(TEST method_test PROPERTY ENVIRONMENT ${test_env})
 
 et_cxx_test(
+  method_input_layout_test
+  SOURCES
+  method_input_layout_test.cpp
+  EXTRA_LIBS
+  portable_ops_lib
+  portable_kernels
+  extension_data_loader
+)
+add_dependencies(method_input_layout_test generated_pte_files)
+set_property(TEST method_input_layout_test PROPERTY ENVIRONMENT ${test_env})
+
+et_cxx_test(
   method_meta_test SOURCES method_meta_test.cpp EXTRA_LIBS
   extension_data_loader program_schema
 )

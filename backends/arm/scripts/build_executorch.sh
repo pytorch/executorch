@@ -40,7 +40,7 @@ help() {
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --cmake-args=<ARGS>       Additional arguments passed to cmake configure"
-    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
+    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
     echo "  --target_cpu=<CPU>        Override the toolchain's default TARGET_CPU (e.g. cortex-m4). Switching target_cpu reuses the same cmake-out dir, so clear ${et_build_root}/cmake-out first to avoid stale per-CPU artifacts. Default: unset (toolchain default)."
     exit 0
 }
@@ -65,6 +65,8 @@ done
 
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-none-eabi-clang" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
@@ -72,7 +74,7 @@ elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
     is_linux_musl=1
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
-    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc}"
     exit 1;
 fi
 toolchain_cmake=$(realpath ${toolchain_cmake})

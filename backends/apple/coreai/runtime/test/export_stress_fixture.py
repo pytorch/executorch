@@ -60,19 +60,11 @@ class TagResidualBoundary:
         raise RuntimeError("Missing residual boundary")
 
 
-def export_fixture(output_dir):
-    # Distinct weights keep SDK artifacts separate from the playground model.
-    torch.manual_seed(20261029)
-    model = ResidualMLP().eval().half().requires_grad_(False)
-    sample = torch.randn(1, 32, dtype=torch.float16)
-    with torch.no_grad():
-        expected = model(sample)
-    assert expected.dtype == torch.float16 and torch.isfinite(expected).all()
-    exported = torch.export.export(model, (sample,))
+def lower(exported, multifunction):
     lowered = to_edge_transform_and_lower(
         exported,
         transform_passes=[*get_default_passes(), TagResidualBoundary()],
-        partitioner=[CoreAIPartitioner()],
+        partitioner=[CoreAIPartitioner(multifunction=multifunction)],
         compile_config=get_default_compile_config(),
     )
     graph = lowered.exported_program().graph_module
@@ -88,9 +80,26 @@ def export_fixture(output_dir):
         and (node.op != "call_function" or node.target not in allowed)
     ]
     assert len(fallback) == 1 and fallback[0].target == exir_ops.edge.aten.relu.default
+    return lowered
+
+
+def export_fixture(output_dir):
+    # Distinct weights keep SDK artifacts separate from the playground model.
+    torch.manual_seed(20261029)
+    model = ResidualMLP().eval().half().requires_grad_(False)
+    sample = torch.randn(1, 32, dtype=torch.float16)
+    with torch.no_grad():
+        expected = model(sample)
+    assert expected.dtype == torch.float16 and torch.isfinite(expected).all()
+    exported = torch.export.export(model, (sample,))
     output_dir.mkdir(parents=True, exist_ok=True)
-    with (output_dir / "model.pte").open("wb") as stream:
-        lowered.to_executorch().write_to_file(stream)
+    # The two partitions become two functions of one Core AI model.
+    for name, multifunction in (
+        ("model.pte", False),
+        ("model_multifunction.pte", True),
+    ):
+        with (output_dir / name).open("wb") as stream:
+            lower(exported, multifunction).to_executorch().write_to_file(stream)
     (output_dir / "fixture.json").write_text(
         json.dumps(
             {

@@ -85,12 +85,34 @@ find_package(Threads REQUIRED)
 add_library(
   ethosu_execution_stats_test_library STATIC
   "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats_CoreDriver.cpp"
 )
 target_include_directories(
   ethosu_execution_stats_test_library
   PRIVATE
     "${EXECUTORCH_ROOT}/.."
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+target_compile_definitions(
+  ethosu_execution_stats_test_library PRIVATE ET_EVENT_TRACER_ENABLED
+)
+target_link_libraries(
+  ethosu_execution_stats_test_library PUBLIC executorch_core
+)
+
+add_library(
+  ethosu_execution_stats_no_trace_test_library STATIC
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats_CoreDriver.cpp"
+)
+target_include_directories(
+  ethosu_execution_stats_no_trace_test_library
+  PRIVATE
+    "${EXECUTORCH_ROOT}/.."
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+target_link_libraries(
+  ethosu_execution_stats_no_trace_test_library PUBLIC executorch_core
 )
 
 add_executable(
@@ -105,8 +127,8 @@ target_include_directories(
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
 )
 target_link_libraries(
-  ethosu_execution_stats_test PRIVATE ethosu_execution_stats_test_library
-                                      Threads::Threads
+  ethosu_execution_stats_test
+  PRIVATE ethosu_execution_stats_no_trace_test_library Threads::Threads
 )
 add_test(NAME ethosu_execution_stats COMMAND ethosu_execution_stats_test)
 set_tests_properties(
@@ -124,9 +146,12 @@ target_include_directories(
     "${EXECUTORCH_ROOT}/.."
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
 )
-target_link_libraries(
-  ethosu_pmu_callbacks_test PRIVATE ethosu_execution_stats_test_library
-                                    Threads::Threads
+target_compile_definitions(
+  ethosu_pmu_callbacks_test PRIVATE ET_EVENT_TRACER_ENABLED
+)
+target_link_libraries(ethosu_pmu_callbacks_test PRIVATE Threads::Threads)
+executorch_target_whole_archive(
+  ethosu_pmu_callbacks_test ethosu_execution_stats_test_library
 )
 add_test(NAME ethosu_pmu_callbacks COMMAND ethosu_pmu_callbacks_test)
 set_tests_properties(
@@ -175,3 +200,89 @@ set_tests_properties(
   PROPERTIES LABELS "arm;ethos-u;runtime;memory_allocation;fvp" RESOURCE_LOCK
              arm_ethos_u_runtime
 )
+
+set(ETHOSU_LINUX_DRIVER_SOURCE_DIR
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/linux_driver_stack"
+    CACHE PATH "Linux driver source used by the PMU adapter tests"
+)
+if(EXISTS
+   "${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/kernel/include/direct/interface/ethosu_direct_interface_u65.h"
+)
+  include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUPmu.cmake)
+  function(add_linux_stats_test_library TARGET)
+    add_library(
+      ${TARGET} STATIC
+      "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+      "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats_LinuxDriver.cpp"
+    )
+    target_include_directories(
+      ${TARGET}
+      PUBLIC
+        "${EXECUTORCH_ROOT}/.."
+        "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_driver_stub"
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+    )
+    target_compile_definitions(
+      ${TARGET} PUBLIC EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1 ${ARGN}
+    )
+    target_link_libraries(${TARGET} PUBLIC executorch_core)
+    arm_add_ethosu_linux_pmu_events(
+      ${TARGET} "${ETHOSU_LINUX_DRIVER_SOURCE_DIR}"
+    )
+  endfunction()
+  add_linux_stats_test_library(
+    ethosu_linux_execution_stats_test_library ET_EVENT_TRACER_ENABLED
+  )
+  add_linux_stats_test_library(ethosu_linux_no_trace_test_library)
+  add_executable(
+    ethosu_linux_execution_stats_test
+    "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_execution_stats_test.cpp"
+    "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp"
+  )
+  target_link_libraries(
+    ethosu_linux_execution_stats_test PRIVATE GTest::gtest_main
+  )
+  executorch_target_whole_archive(
+    ethosu_linux_execution_stats_test ethosu_linux_execution_stats_test_library
+  )
+  add_test(NAME ethosu_linux_execution_stats
+           COMMAND ethosu_linux_execution_stats_test
+  )
+
+  foreach(stats_mode IN ITEMS linked unlinked)
+    add_executable(
+      ethosu_linux_stats_${stats_mode}_test
+      "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_optional_stats_test.cpp"
+      "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp"
+    )
+    target_include_directories(
+      ethosu_linux_stats_${stats_mode}_test
+      PRIVATE "${EXECUTORCH_ROOT}/.."
+              "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_driver_stub"
+    )
+    target_compile_definitions(
+      ethosu_linux_stats_${stats_mode}_test
+      PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    target_link_libraries(
+      ethosu_linux_stats_${stats_mode}_test PRIVATE executorch_core
+                                                    GTest::gtest_main
+    )
+    if(stats_mode STREQUAL "linked")
+      target_compile_definitions(
+        ethosu_linux_stats_linked_test PRIVATE ET_ARM_ETHOSU_TEST_STATS_LINKED
+      )
+      executorch_target_whole_archive(
+        ethosu_linux_stats_linked_test ethosu_linux_no_trace_test_library
+      )
+    endif()
+    add_test(NAME ethosu_linux_stats_${stats_mode}
+             COMMAND ethosu_linux_stats_${stats_mode}_test
+    )
+  endforeach()
+else()
+  message(
+    STATUS
+      "Skipping Linux PMU tests: set ETHOSU_LINUX_DRIVER_SOURCE_DIR to a driver checkout"
+  )
+endif()

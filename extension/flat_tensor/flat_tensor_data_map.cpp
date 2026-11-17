@@ -74,7 +74,8 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
       ET_CHECK_OR_RETURN_ERROR(
           segment_index < segments->size(),
           InvalidExternalData,
-          "Segment index %zu for key %.*s is out of bounds for segment size %d. Malformed PTD file.",
+          "Segment index %zu for key %.*s is out of bounds for segment size %" PRIu32
+          ". Malformed PTD file.",
           static_cast<size_t>(segment_index),
           static_cast<int>(key.size()),
           key.data(),
@@ -255,9 +256,9 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
     uint32_t index) const {
   uint32_t num_keys = get_num_keys().get();
   ET_CHECK_OR_RETURN_ERROR(
-      index >= 0 && index < num_keys,
+      index < num_keys,
       InvalidArgument,
-      "Index %u out of range of size %u",
+      "Index %" PRIu32 " out of range of size %" PRIu32,
       index,
       num_keys);
   return flat_tensor_->named_data()->Get(index)->key()->c_str();
@@ -280,7 +281,8 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   ET_CHECK_OR_RETURN_ERROR(
       fh.ok(),
       InvalidExternalData,
-      "Failed to parse FlatTensor header with error code %u. File may be corrupt.",
+      "Failed to parse FlatTensor header with error code %" PRIu32
+      ". File may be corrupt.",
       static_cast<uint32_t>(fh.error()));
 
   Result<uint64_t> expected_size = get_segment_end_offset(fh.get());
@@ -366,7 +368,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
           root_offset <=
               flat_tensor_data->size() - sizeof(flatbuffers::soffset_t),
       InvalidExternalData,
-      "FlatTensor root table offset %u is invalid for data size %zu",
+      "FlatTensor root table offset %" PRIu32 " is invalid for data size %zu",
       root_offset,
       flat_tensor_data->size());
 
@@ -383,9 +385,9 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   ET_CHECK_OR_RETURN_ERROR(
       flat_tensor->version() <= kMaxSupportedSchemaVersion,
       InvalidExternalData,
-      "FlatTensor schema version %u is newer than the highest this runtime "
-      "supports (%u). Export the data with an older ExecuTorch, or update the "
-      "runtime.",
+      "FlatTensor schema version %" PRIu32
+      " is newer than the highest this runtime supports (%" PRIu32
+      "). Export the data with an older ExecuTorch, or update the runtime.",
       flat_tensor->version(),
       kMaxSupportedSchemaVersion);
 

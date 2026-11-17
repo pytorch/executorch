@@ -185,13 +185,15 @@ def io_mismatches(
     return errors
 
 
-def coreai_io_names(program) -> Tuple[List[str], List[str]]:
+def coreai_io_names(
+    program, entrypoint: str = MAIN_ENTRYPOINT
+) -> Tuple[List[str], List[str]]:
     """Boundary I/O names in graph argument/result order, never dictionary order.
 
     State arguments (marked ``MutableBuffers.buffer_mutation``) and the results
     they name are skipped: they are not ExecuTorch boundary I/O.
     """
-    graph = program._get_graph(MAIN_ENTRYPOINT)
+    graph = program._get_graph(entrypoint)
     arg_attrs = list(graph.arg_attrs)
     res_attrs = list(graph.res_attrs)
     for kind, attrs, types in (
@@ -227,9 +229,10 @@ def assert_io_compatible(
     *,
     input_names: Optional[Sequence[str]] = None,
     output_names: Optional[Sequence[str]] = None,
+    entrypoint: str = MAIN_ENTRYPOINT,
 ) -> None:
     """Raise if the ``.aimodel`` boundary I/O is incompatible with ExecuTorch."""
-    coreai_in, coreai_out = _coreai_io(program)
+    coreai_in, coreai_out = _coreai_io(program, entrypoint)
     edge_in, edge_out = _edge_io(edge_program)
     logger.info(
         "Core AI delegate boundary I/O:\n"
@@ -246,7 +249,7 @@ def assert_io_compatible(
         coreai_out, edge_out, "output"
     )
     if input_names is not None or output_names is not None:
-        actual_inputs, actual_outputs = coreai_io_names(program)
+        actual_inputs, actual_outputs = coreai_io_names(program, entrypoint)
         for kind, actual, expected in (
             ("input", actual_inputs, input_names),
             ("output", actual_outputs, output_names),

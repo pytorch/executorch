@@ -9,8 +9,11 @@ import argparse
 import secrets
 import subprocess  # nosec B404
 import tempfile
+import threading
+from collections import deque
 from pathlib import Path
-from typing import List, Optional, Tuple
+from queue import Empty, Queue
+from typing import Deque, List, Optional, Tuple
 
 import numpy as np
 from pytorch_tokenizers import (  # type: ignore[import-not-found, import-untyped]
@@ -49,7 +52,9 @@ class RunnerSession:
         self._output_prefix: Optional[Path] = None
 
         self._proc: Optional[subprocess.Popen[str]] = None
-        self._recent_stdout: List[str] = []
+        self._stdout_thread: Optional[threading.Thread] = None
+        self._recent_stdout: Deque[str] = deque(maxlen=400)
+        self._completion_events: Queue[bool] = Queue()
 
         self._init_paths()
         if self._persistent:
@@ -85,18 +90,56 @@ class RunnerSession:
             text=True,
             bufsize=1,
         )
+        self._stdout_thread = threading.Thread(target=self._drain_stdout, daemon=True)
+        self._stdout_thread.start()
+
+    def _drain_stdout(self) -> None:
+        assert self._proc is not None
+        assert self._proc.stdout is not None
+        try:
+            for line in self._proc.stdout:
+                self._recent_stdout.append(line)
+                if "VGF_DATA_GRAPH_DEVICE_TIME" in line:
+                    print(line, end="")
+                if "SERVER MODE DONE" in line:
+                    self._completion_events.put(True)
+        finally:
+            self._completion_events.put(False)
 
     def close(self) -> None:
-        if self._proc is not None:
-            self._proc.terminate()
+        proc = self._proc
+        try:
+            if proc is not None:
+                if proc.stdin is not None:
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+                try:
+                    proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+        finally:
             try:
-                self._proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-            self._proc = None
-        if self._tmpdir is not None:
-            self._tmpdir.cleanup()
-            self._tmpdir = None
+                if proc is not None and proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+            finally:
+                try:
+                    if self._stdout_thread is not None:
+                        self._stdout_thread.join(timeout=2)
+                finally:
+                    self._stdout_thread = None
+                    self._proc = None
+                    tmpdir = self._tmpdir
+                    self._tmpdir = None
+                    if tmpdir is not None:
+                        tmpdir.cleanup()
 
     def __enter__(self) -> "RunnerSession":
         return self
@@ -118,17 +161,10 @@ class RunnerSession:
             return
         rc = self._proc.poll()
         if rc is not None:
-            tail = "".join(self._recent_stdout[-200:])
-            # Drain remaining stdout (process has exited).
-            extra = ""
-            if self._proc.stdout is not None:
-                try:
-                    extra = self._proc.stdout.read() or ""
-                except Exception:
-                    extra = ""
+            tail = "".join(self._recent_stdout)
             msg = f"executor_runner exited unexpectedly (rc={rc})"
-            if tail.strip() or extra.strip():
-                msg += "\n\n[executor_runner stdout tail]\n" + tail + extra
+            if tail.strip():
+                msg += "\n\n[executor_runner stdout tail]\n" + tail
             raise RuntimeError(msg)
 
     def run(self, tokens: np.ndarray) -> np.ndarray:
@@ -176,19 +212,14 @@ class RunnerSession:
         self._proc.stdin.write("go\n")
         self._proc.stdin.flush()
 
-        # Wait for sentinel.
-        while True:
+        try:
+            completed = self._completion_events.get(timeout=900)
+        except Empty:
             self._check_proc()
-            line = self._proc.stdout.readline()
-            if line == "":
-                # EOF
-                self._check_proc()
-                raise RuntimeError("executor_runner stdout closed unexpectedly")
-            self._recent_stdout.append(line)
-            if len(self._recent_stdout) > 400:
-                self._recent_stdout = self._recent_stdout[-400:]
-            if "SERVER MODE DONE" in line:
-                break
+            raise TimeoutError("executor_runner did not complete execution") from None
+        if not completed:
+            self._check_proc()
+            raise RuntimeError("executor_runner stdout closed unexpectedly")
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("executor_runner did not write logits output")
         return self._read_logits()
@@ -204,7 +235,11 @@ class KvRunnerSession:
         extra_args: List[str],
         *,
         persistent: bool,
+        input_dtype: Optional[np.dtype] = None,
     ) -> None:
+        self._input_dtype = (
+            input_dtype if input_dtype is not None else np.dtype(np.int64)
+        )
         self._runner = RunnerSession(
             runner=runner,
             pte=pte,
@@ -225,8 +260,8 @@ class KvRunnerSession:
     def run(self, token_id: int, input_pos: int) -> np.ndarray:
         logits = self._runner.run_inputs(
             [
-                np.array([[token_id]], dtype=np.int64),
-                np.array([input_pos], dtype=np.int64),
+                np.array([[token_id]], dtype=self._input_dtype),
+                np.array([input_pos], dtype=self._input_dtype),
             ]
         )
         return logits.reshape(1, -1)[0]
@@ -551,6 +586,7 @@ def run_one_prompt(
         pad_id: Token id used to pad the decode window.
         eos_id: Token id that terminates generation when sampled.
         window: Token window size passed to the exported model.
+        input_dtype: Token input dtype expected by the exported model.
         max_new_tokens: Maximum number of tokens to generate.
         temperature: Sampling temperature passed to `sample_token_topk_topp`.
         top_k: Top-k sampling parameter.
@@ -886,6 +922,7 @@ def main() -> None:
             args.pte,
             args.runner_args,
             persistent=True,
+            input_dtype=input_dtype,
         ) as runner:
             for i, prompt in enumerate(prompts):
                 run_one_prompt_kv(

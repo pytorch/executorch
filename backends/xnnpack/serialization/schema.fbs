@@ -157,6 +157,7 @@ union XNodeUnion {
   XNNCos: _XNNNode1x1,
   XNNApproxGelu: _XNNNode1x1,
   XNNDepthToSpace2d,
+  XNNStaticMean: _XNNStaticReduce,
 }
 
 union XValueUnion {
@@ -297,6 +298,15 @@ table XNNStaticReshape {
 
 table XNNDepthToSpace2d {
   block_size: uint;
+  input_id: uint;
+  output_id: uint;
+  flags: uint;
+}
+
+// A reduction over static axes
+// Not meant to be used directly
+table _XNNStaticReduce {
+  reduction_axes: [uint];
   input_id: uint;
   output_id: uint;
   flags: uint;

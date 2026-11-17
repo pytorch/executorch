@@ -74,10 +74,11 @@ bool ensure_rng_init(cudaStream_t stream) {
       h.seed = (static_cast<unsigned long long>(entropy()) << 32) | entropy();
       h.counter = 0;
       h.base_scratch = 0;
-      // The current device: the stream callers pass from getCurrentCUDAStream
-      // may have been created on it whatever index they looked up, and the
-      // cudaMalloc fallback on a device without memory pools follows this
-      // index rather than the stream.
+      // The current device: a stream handle such as cudaStreamPerThread, which
+      // getCurrentCUDAStream returns when none is selected, names a stream of
+      // the current device whatever index was looked up, and the cudaMalloc
+      // fallback on a device without memory pools follows this index rather
+      // than the stream.
       auto rng =
           CudaAllocator::allocate_stream_ordered(sizeof(RngState), -1, stream);
       if (!rng.ok()) {

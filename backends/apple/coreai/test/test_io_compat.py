@@ -22,6 +22,7 @@ from executorch.backends.apple.coreai import (
     get_default_compile_config,
     get_default_passes,
 )
+from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from executorch.backends.apple.coreai.compiler.io_compat import (
     assert_io_compatible,
     io_mismatches,
@@ -54,7 +55,7 @@ class OrderedNamesTest(unittest.TestCase):
         inputs = ["input_0", "input_1"]
         outputs = ["output_0", "output_1"]
         program = _convert_to_aiprogram(
-            edge, input_names=inputs[::-1], output_names=outputs
+            [(edge, MAIN_ENTRYPOINT, inputs[::-1], outputs)]
         )
         with self.assertRaisesRegex(ValueError, "input names mismatch"):
             assert_io_compatible(

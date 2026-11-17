@@ -33,6 +33,10 @@ void parallel_for(
 const Tensor&
 tensor_arg(const Json& spec, size_t index, const TensorMap& tensors);
 void require(bool condition, const std::string& message);
+// Whether the validated device supports packed int8 dot products. Operators
+// with quantized activations fall back to weight-only quantization without
+// them. Defaults to true when the spec has no reference context.
+bool int8_dot_product(const Json& spec);
 
 } // namespace reference
 
@@ -42,10 +46,13 @@ ReferenceOutputs reference_outputs(
     const Json& actual_dtypes,
     const std::map<std::string, std::vector<uint8_t>>& host_data,
     size_t threads = 0);
+// `fault_rel` scales every actual value by 1 + fault_rel before the comparison,
+// so a correctness gate can be shown to fail on a known error.
 Report compare_outputs(
     const Json& spec,
     const ReferenceOutputs& expected,
     const ReferenceOutputs& actual,
-    const Json& actual_dtypes);
+    const Json& actual_dtypes,
+    double fault_rel = 0);
 
 } // namespace vkcompute::shader_profiling

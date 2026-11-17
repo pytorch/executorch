@@ -31,6 +31,16 @@ class DelegateFixture final {
   runtime::Error init_with_options(
       runtime::Span<const runtime::BackendOption> options,
       runtime::MemoryAllocator* allocator = nullptr);
+  // Adds coreai_cache_dir for this fixture's storage to the other options.
+  template <size_t N>
+  runtime::Error init_with_storage(runtime::BackendOptions<N>& options) {
+    const runtime::Error error =
+        options.set_option("coreai_cache_dir", storage.url.path.UTF8String);
+    if (error != runtime::Error::Ok) {
+      return error;
+    }
+    return init_with_options({options.view().data(), options.view().size()});
+  }
   void reset();
   runtime::Error execute(runtime::Span<runtime::EValue*> args);
 

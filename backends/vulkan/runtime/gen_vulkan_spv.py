@@ -5,8 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 import argparse
 import array
 import codecs
@@ -14,6 +12,7 @@ import copy
 import glob
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -27,7 +26,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import subprocess
 import textwrap
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import yaml
 from yaml.constructor import ConstructorError
@@ -355,6 +354,44 @@ layout(set = 0, binding = {get_slot_val(slot)}) buffer {precision} restrict {get
     return out_str
 
 
+# Vulkan leaves the rounding of a store to an rgba16f image to the device, and
+# some devices round toward zero. Rounding to the nearest f16, ties to even, in
+# the shader makes the store exact. Integer texels are stored as is, and so are
+# f16 texels in shaders that define HAS_FLOAT16_ACCUMULATION before their first
+# writable image declaration; elsewhere, f16 texels widen to vec4 and take the
+# rounding path. Stores to rgba32f images would be rounded too, so a shader may
+# not write both.
+ROUND_F16_IMAGE_STORES = """
+#ifdef WRITES_RGBA32F_IMAGE
+#error "A shader cannot write both rgba16f and rgba32f images"
+#endif
+#ifndef WRITES_RGBA16F_IMAGE
+#define WRITES_RGBA16F_IMAGE
+vec4 round_to_f16(const vec4 v) {
+  const uvec4 u = floatBitsToUint(v);
+  // Keep 10 mantissa bits: add just under half an f16 ulp, plus one when the
+  // kept lowest bit is odd so ties go to even, then clear the 13 dropped bits.
+  vec4 r = uintBitsToFloat((u + 0xFFFu + ((u >> 13) & 1u)) & ~0x1FFFu);
+  // Below the smallest normal f16, round to a multiple of 2^-24.
+  r = mix(r, roundEven(v * 16777216.0) * 5.9604644775390625e-8, lessThan(abs(v), vec4(6.103515625e-5)));
+  r = mix(r, uintBitsToFloat((u & 0x80000000u) | 0x7F800000u), greaterThan(abs(r), vec4(65504.0)));
+  return mix(r, v, isnan(v));
+}
+ivec4 round_to_f16(const ivec4 v) { return v; }
+uvec4 round_to_f16(const uvec4 v) { return v; }
+#ifdef HAS_FLOAT16_ACCUMULATION
+vec4 round_to_f16(const f16vec4 v) { return vec4(v); }
+#endif
+#define imageStore(image, pos, texel) imageStore(image, pos, round_to_f16(texel))
+#endif"""
+
+WRITES_RGBA32F_IMAGE = """
+#ifdef WRITES_RGBA16F_IMAGE
+#error "A shader cannot write both rgba16f and rgba32f images"
+#endif
+#define WRITES_RGBA32F_IMAGE"""
+
+
 def layout_declare_image(
     slot: Union[int, List[int]],
     access_type: str,
@@ -367,6 +404,11 @@ def layout_declare_image(
     image_type = TYPE_MAPPINGS["IMAGE_T"][image_ndim][dtype]
 
     ret_str = f"layout(set = 0, binding = {get_slot_val(slot)}, {image_format}) uniform {precision} restrict {get_access_qualifier(access_type)} {image_type} {var_name};"
+    if access_type.lower() != "r":
+        if image_format == "rgba16f":
+            ret_str += ROUND_F16_IMAGE_STORES
+        elif image_format == "rgba32f":
+            ret_str += WRITES_RGBA32F_IMAGE
 
     if isinstance(slot, list):
         slot[0] = slot[0] + 1
@@ -722,6 +764,30 @@ def preprocess(
     return output_stream.getvalue()
 
 
+def load_shader_regexes(path: str) -> list[re.Pattern[str]]:
+    try:
+        with open(path, encoding="utf-8") as manifest_file:
+            manifest = json.load(manifest_file)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise argparse.ArgumentTypeError(
+            f"Cannot read shader allowlist: {error}"
+        ) from error
+
+    patterns = manifest.get("shader_regexes") if isinstance(manifest, dict) else None
+    if not isinstance(patterns, list) or not patterns:
+        raise argparse.ArgumentTypeError(
+            "Shader allowlist requires a non-empty shader_regexes list"
+        )
+    if any(not isinstance(pattern, str) or not pattern for pattern in patterns):
+        raise argparse.ArgumentTypeError("Shader regexes must be non-empty strings")
+    if len(set(patterns)) != len(patterns):
+        raise argparse.ArgumentTypeError("Shader allowlist contains duplicate regexes")
+    try:
+        return [re.compile(pattern) for pattern in patterns]
+    except re.error as error:
+        raise argparse.ArgumentTypeError(f"Invalid shader regex: {error}") from error
+
+
 class SPVGenerator:
     def __init__(
         self,
@@ -731,6 +797,7 @@ class SPVGenerator:
         glslc_flags: str = "",
         replace_u16vecn: bool = False,
         auto_use_mediump: bool = False,
+        shader_regexes: Sequence[re.Pattern[str]] | None = None,
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -759,6 +826,34 @@ class SPVGenerator:
 
         self.output_file_map: Dict[str, Tuple[str, Dict[str, str]]] = {}
         self.constructOutputMap()
+        if shader_regexes is not None:
+            self.selectShaderRegexes(shader_regexes)
+
+    def selectShaderRegexes(self, shader_regexes: Sequence[re.Pattern[str]]) -> None:
+        if not shader_regexes:
+            raise ValueError("Shader selection must not be empty")
+        available_names = {
+            os.path.basename(name)
+            for name, (source, _) in self.output_file_map.items()
+            if extract_extension(source) == "glsl"
+        }
+        selected_names: set[str] = set()
+        unmatched_patterns = []
+        for pattern in shader_regexes:
+            matches = {name for name in available_names if pattern.fullmatch(name)}
+            if not matches:
+                unmatched_patterns.append(pattern.pattern)
+            selected_names.update(matches)
+        if unmatched_patterns:
+            raise ValueError(
+                f"Shader regexes match no shaders: {', '.join(sorted(unmatched_patterns))}"
+            )
+        self.output_file_map = {
+            name: metadata
+            for name, metadata in self.output_file_map.items()
+            if extract_extension(metadata[0]) != "glsl"
+            or os.path.basename(name) in selected_names
+        }
 
     def addSrcAndYamlFiles(self, src_dir_paths: List[str]) -> None:
         for src_path in src_dir_paths:
@@ -1736,6 +1831,11 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--auto-use-mediump", action="store_true", default=False)
+    parser.add_argument(
+        "--shader-allowlist",
+        type=load_shader_regexes,
+        help="JSON file containing shader_regexes to full-match against expanded names; defaults to all shaders",
+    )
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
     parser.add_argument("--spv_debug", action="store_true", default=False)
@@ -1781,6 +1881,7 @@ def main(argv: List[str]) -> int:
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
         auto_use_mediump=options.auto_use_mediump,
+        shader_regexes=options.shader_allowlist,
     )
     output_spv_files = shader_generator.generateSPV(
         options.output_path,

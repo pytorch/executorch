@@ -10,6 +10,16 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+
+#include <ethosu_pmu_types.h>
+
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+#include <string>
+#endif
+
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/error.h>
 
 // Optional runner hooks. The stats library provides weak no-op definitions.
 extern "C" {
@@ -34,10 +44,38 @@ EthosUStatsBuffer* set_ethosu_stats_buffer(EthosUStatsBuffer* buffer) noexcept;
 // Returns true when this library is linked.
 bool ethosu_execution_metrics_enabled() noexcept;
 
+// Configure counter slots before inference. U55/U65 share four slots; U85 has
+// eight. Short lists are padded with ETHOSU_PMU_NO_EVENT; longer lists are
+// rejected. Pass an empty list to disable event counters for that target.
+// These functions only configure events; collection requires an event tracer
+// or a registered EthosUStatsBuffer. Do not call during inference.
+executorch::runtime::Error set_ethosu55_65_pmu_events(
+    executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept;
+executorch::runtime::Error set_ethosu85_pmu_events(
+    executorch::runtime::ArrayRef<ethosu_pmu_event_type> events) noexcept;
+
 constexpr size_t kMaxPmuEventCounters = 8;
+
+constexpr char kEthosUCycleEventName[] = "ethosu.pmu.counters";
+// Experimental format; layout and fields may change without compatibility.
+// ETDump delegate_debug_metadata starts with "EUC" and ASCII version '1'
+// [0:4], followed by little-endian product [4:8], MACs per cycle [8:12],
+// EthosUPlatform [12:16], flags [16:20] (bit 0: cycle overflow,
+// bit 1: invocation succeeded), register base [20:28], NPU cycle count
+// [28:36], and counter count [36:40].
+// Linux uses zero for register base and appends a little-endian uint32_t
+// device-path byte length and UTF-8 path after the counters.
+// Each active counter then stores a symbolic event ID (4 bytes), count
+// (8 bytes), and overflow (4 bytes). NO_EVENT slots are omitted.
+constexpr size_t kEthosUCycleMetadataHeaderSize = 40;
+constexpr size_t kEthosUCycleCounterMetadataSize = 16;
+// Maximum fixed metadata size; Linux additionally appends its device path.
+constexpr size_t kEthosUCycleMetadataMaxSize = kEthosUCycleMetadataHeaderSize +
+    kMaxPmuEventCounters * kEthosUCycleCounterMetadataSize;
 
 enum class EthosUPlatform : uint8_t {
   CoreDriver,
+  LinuxDriver,
 };
 
 struct EthosUPmuCounter {
@@ -47,12 +85,22 @@ struct EthosUPmuCounter {
 };
 
 struct EthosUExecutionStats {
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  std::string device_identifier;
+#else
   // Register base address of the physical NPU that produced this record.
   uintptr_t device_identifier = 0;
+#endif
   // Ethos-U product identifier for the NPU that produced this record.
   uint32_t product = 0;
+  // Number of MACs per cycle supported by the NPU.
+  uint32_t macs_per_cycle = 0;
   // Platform that produced this record.
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  EthosUPlatform platform = EthosUPlatform::LinuxDriver;
+#else
   EthosUPlatform platform = EthosUPlatform::CoreDriver;
+#endif
   // NPU PMU cycle count for this execution, when available.
   uint64_t cycle_count = 0;
   // Whether cycle_count was measured; zero can be a valid measurement.
@@ -91,12 +139,13 @@ struct EthosUStatsBuffer {
       bool overflow = false) noexcept
       : records(records), capacity(capacity), overflow(overflow) {}
 
-  void append(const EthosUExecutionRecord& record) noexcept {
+  void append(EthosUExecutionRecord record) noexcept {
     lock();
     if (size >= capacity) {
       overflow = true;
     } else {
-      records[size++] = record;
+      records[size] = std::move(record);
+      ++size;
     }
     unlock();
   }

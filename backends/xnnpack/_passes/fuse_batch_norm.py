@@ -238,13 +238,16 @@ class FuseBatchNormPass(XNNPACKPass):
             # Otherwise, this is a linear node.
             fused_weight, fused_bias = fuse_linear_bn_weights(*fuse_args)
 
-        fused_weight_name = (input_node_weight_name + "_fused_bn").replace(".", "_")
+        # Several convolutions or linears can share one weight and fold different
+        # batch norms, so the names must include the batch norm.
+        fused_suffix = f"_{bn.name}_fused_bn"
+        fused_weight_name = (input_node_weight_name + fused_suffix).replace(".", "_")
         if input_node_bias_name == "":
-            fused_bias_name = (input_node_weight_name + "_bias_fused_bn").replace(
+            fused_bias_name = (input_node_weight_name + "_bias" + fused_suffix).replace(
                 ".", "_"
             )
         else:
-            fused_bias_name = (input_node_bias_name + "_fused_bn").replace(".", "_")
+            fused_bias_name = (input_node_bias_name + fused_suffix).replace(".", "_")
 
         # Modify the graph by updating the weight and bias of the conv or linear op
         # with the fused weight and bias params, and replacing all the users

@@ -29,6 +29,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace et = executorch::runtime;
@@ -119,6 +120,7 @@ struct JoinWorkers {
 void round(
     const std::string& pte,
     const std::string& cache,
+    bool share,
     const std::vector<aten::Half>& sample,
     const std::vector<float>& expected,
     size_t threads,
@@ -142,11 +144,14 @@ void round(
             return;
         }
         Input input(sample);
-        et::BackendOptions<1> options;
+        et::BackendOptions<2> options;
         et::LoadBackendOptionsMap option_map;
         check(
             options.set_option("coreai_cache_dir", cache.c_str()),
             "set option");
+        check(
+            options.set_option("coreai_share_multifunction_model", share),
+            "set share option");
         check(
             option_map.set_options("CoreAIBackend", options.view()),
             "set backend options");
@@ -234,15 +239,23 @@ int main(int argc, char** argv) {
     std::cout << threads << " threads x " << iterations
               << " iterations per round\n"
               << "Cache: " << cache << std::endl;
-    for (const char* phase : {"cold", "warm"}) {
-      std::cout << phase << " round" << std::endl;
-      round(
-          (fixture / "model.pte").string(),
-          cache,
-          sample,
-          expected,
-          threads,
-          iterations);
+    // The shared variant puts every thread's delegates on one Core AI model,
+    // so its executions must be serialized to stay correct.
+    for (const auto& [file, share] :
+         {std::pair<const char*, bool>{"model.pte", false},
+          std::pair<const char*, bool>{"model_multifunction.pte", true}}) {
+      for (const char* phase : {"cold", "warm"}) {
+        std::cout << file << (share ? " (shared model) " : " ") << phase
+                  << " round" << std::endl;
+        round(
+            (fixture / file).string(),
+            cache,
+            share,
+            sample,
+            expected,
+            threads,
+            iterations);
+      }
     }
     check(
         executorch::backends::coreai::clear_cache(cache.c_str()),

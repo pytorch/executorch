@@ -18,11 +18,19 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
+from executorch.backends.cuda.triton.replacement_pass import (
+    ReplaceEdgeOpWithTritonOpPass,
+)
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes import replace_complex_with_real_pass
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
+
+_AUTOTUNE_OFFLOAD = "autotune_offload_constants_min_device_fraction"
+_TORCH_CAN_OFFLOAD = hasattr(torch._inductor.config.aot_inductor, _AUTOTUNE_OFFLOAD)
+_LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -82,6 +90,21 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
             CudaBackend.get_aoti_compile_options(
                 [CompileSpec(key="emulate_precision_casts", value=b"MAYBE")]
             )
+
+    def test_low_memory_mode_offloads_weights_during_autotune(self):
+        key = f"aot_inductor.{_AUTOTUNE_OFFLOAD}"
+        default = CudaBackend.get_aoti_compile_options([])
+        self.assertNotIn(key, default)
+        self.assertEqual(
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="low_memory_mode", value=b"OFF")]
+            ),
+            default,
+        )
+        low_memory = CudaBackend.get_aoti_compile_options([_LOW_MEMORY_ON])
+        # The offload is the only compile option low-memory mode changes.
+        expected = dict(default, **{key: 0.0}) if _TORCH_CAN_OFFLOAD else default
+        self.assertEqual(low_memory, expected)
 
     def test_max_autotune_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
@@ -154,6 +177,35 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                     inductor_utils._use_template_for_gpu(layout, [torch.float32])
                 )
             self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
+    def test_grouped_mm_triton_template_allowed_from_sm80_during_compile(self):
+        from torch._inductor.kernel import mm_grouped
+
+        original = mm_grouped.has_grouped_mm_triton_support
+        with mock.patch.object(
+            torch.cuda, "is_available", return_value=True
+        ), mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(8, 0)
+        ), mock.patch.object(
+            torch.version, "hip", None
+        ):
+            self.assertFalse(mm_grouped.has_grouped_mm_triton_support())
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertTrue(mm_grouped.has_grouped_mm_triton_support())
+            self.assertIs(mm_grouped.has_grouped_mm_triton_support, original)
+
+    def test_grouped_mm_triton_template_stays_refused_below_sm80(self):
+        from torch._inductor.kernel import mm_grouped
+
+        with mock.patch.object(
+            torch.cuda, "is_available", return_value=True
+        ), mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(7, 5)
+        ), mock.patch.object(
+            torch.version, "hip", None
+        ):
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertFalse(mm_grouped.has_grouped_mm_triton_support())
 
     def test_small_gpu_override_is_skipped_on_rocm(self):
         from torch._inductor import utils as inductor_utils
@@ -423,6 +475,38 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
 
+    def test_grouped_mm_export(self):
+        """A grouped GEMM lowers below sm_90, where Inductor offers its
+        Triton template only from sm_90 and this backend allows no ATen
+        choice (pytorch/executorch#24902)."""
+
+        class GroupedMm(torch.nn.Module):
+            def forward(self, x, weight, offs):
+                return torch._grouped_mm(x, weight, offs)
+
+        torch.manual_seed(0)
+        experts, tokens_per_expert, in_dim, out_dim = 4, 32, 64, 64
+        x = torch.randn(
+            experts * tokens_per_expert,
+            in_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        weight = torch.randn(
+            experts, in_dim, out_dim, dtype=torch.bfloat16, device="cuda"
+        )
+        offs = torch.arange(
+            tokens_per_expert,
+            (experts + 1) * tokens_per_expert,
+            tokens_per_expert,
+            dtype=torch.int32,
+            device="cuda",
+        )
+        edge_program_manager = self._export_to_cuda_with_lower(
+            GroupedMm(), (x, weight, offs)
+        )
+        self.assertIsNotNone(edge_program_manager, "Grouped MM operation export failed")
+
     def test_detach(self):
         """Edge turns detach into detach_copy, which has no CUDA kernel of its own."""
 
@@ -556,13 +640,21 @@ class TestCudaExport(unittest.TestCase):
             (big, big, v, cu_seq, cu_seq, 16, 16),
         ]
         table = CudaBackend.get_decomposition_table()
-        # On ROCm, varlen_attn runs AOTriton, which lines an explicit window up
-        # with the start of each sequence. The decomposition follows Flash
-        # attention on CUDA, which lines it up with the end, so compare on CUDA.
-        if torch.version.hip is None:
-            for args in cases:
-                for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
-                    torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+        for args in cases:
+            # On ROCm, varlen_attn runs AOTriton, which lines an explicit window
+            # up with the start of each sequence. The decomposition follows
+            # Flash attention on CUDA, which lines it up with the end. The two
+            # agree when the query and key sequences line up, as in
+            # self-attention.
+            window = args[9] if len(args) > 9 else None
+            if (
+                torch.version.hip is not None
+                and window is not None
+                and not torch.equal(args[3], args[4])
+            ):
+                continue
+            for actual, expected in zip(table[op](*args)[:2], op(*args)[:2]):
+                torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
         # Flash attention versions differ on this window, since a query sequence
         # can be longer than max_k + 1.
         with self.assertRaisesRegex(NotImplementedError, "window"):
@@ -605,6 +697,66 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Linear operation export failed")
+
+    @unittest.skipUnless(
+        _TORCH_CAN_OFFLOAD,
+        "This PyTorch cannot move the weights off the GPU during autotuning",
+    )
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_low_memory_mode_holds_weights_once(self):
+        """Autotuning runs kernels on random stand-ins for the weights. In
+        low-memory mode, the real weights leave the GPU meanwhile instead of
+        doubling up."""
+
+        class ScaleShift(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weights = torch.nn.ParameterList(
+                    torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                for weight in self.weights:
+                    x = x * weight + 1
+                return x
+
+        from executorch.runtime import Runtime
+
+        module = ScaleShift().eval()
+        x = torch.randn(1 << 24)
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                _LOW_MEMORY_ON,
+            ],
+        ).to_executorch()
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        # The weights come back from the file, so the program must still match.
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                program.write_to_file(f)
+            program.write_tensor_data_to_file(directory)
+            (data,) = [
+                os.path.join(directory, name)
+                for name in os.listdir(directory)
+                if name.endswith(".ptd")
+            ]
+            method = (
+                Runtime.get().load_program(path, data_path=data).load_method("forward")
+            )
+            (output,) = method.execute([x])
+        with torch.no_grad():
+            expected = module(x)
+        torch.testing.assert_close(output.cpu(), expected, atol=1e-4, rtol=1e-4)
 
     def test_resnet_block(self):
         """Test CUDA export for a ResNet-style block."""
@@ -853,29 +1005,16 @@ class TestCudaExport(unittest.TestCase):
                 )
 
     def test_triton_kernel_mode_off(self):
-        """
-        Test CUDA export with triton_kernel_mode set to OFF for SDPA kernel.
-        This validates that the backend correctly processes the triton_kernel_mode
-        compile spec and can export SDPA operations without Triton kernel replacements.
-        When triton_kernel_mode is OFF, SDPA should be decomposed using the MATH backend.
-        """
-
-        sdpa = SdpaModule()
-
-        # Create compile specs with triton_kernel_mode set to OFF
-        compile_specs = [
-            CudaBackend.generate_method_name_compile_spec("forward"),
-            CompileSpec(key="triton_kernel_mode", value=b"OFF"),
-        ]
-
-        # Test export with triton_kernel_mode=OFF
-        edge_program_manager = self._export_to_cuda_with_lower(
-            sdpa.get_eager_model(), sdpa.get_example_inputs(), compile_specs
-        )
-        self.assertIsNotNone(
-            edge_program_manager,
-            "SDPA kernel export with triton_kernel_mode=OFF failed",
-        )
+        """The deprecated OFF mode warns and is treated as ON."""
+        on = CudaBackend.get_custom_passes([CompileSpec("triton_kernel_mode", b"ON")])
+        with self.assertWarnsRegex(
+            FutureWarning, "triton_kernel_mode=OFF is deprecated"
+        ):
+            off = CudaBackend.get_custom_passes(
+                [CompileSpec("triton_kernel_mode", b"OFF")]
+            )
+        self.assertEqual([type(p) for p in off], [type(p) for p in on])
+        self.assertIsInstance(off[-1], ReplaceEdgeOpWithTritonOpPass)
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for
@@ -897,6 +1036,38 @@ class TestCudaExport(unittest.TestCase):
         finally:
             torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
         self.assertIn("aoti_torch_cuda_scatter_value_out", str(context.exception))
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_masked_select(self):
+        """A direct masked_select call reaches its fallback kernel, unlike a mask
+        index, which Inductor reads as index.Tensor."""
+
+        class MaskedSelectModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.masked_select(x, x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            MaskedSelectModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "ROCm does not build the CUDA-only fallback shims",
+    )
+    def test_nonzero(self):
+        """A direct nonzero call reaches its fallback kernel, unlike a mask index,
+        which Inductor reads as index.Tensor."""
+
+        class NonzeroModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.nonzero(x > 0).sum()
+
+        self._export_to_cuda_with_lower(
+            NonzeroModule(), (torch.randn(2, 3, device="cuda"),)
+        ).to_executorch()
 
     @unittest.skipIf(
         torch.version.hip is not None,
@@ -999,6 +1170,139 @@ class TestCudaExport(unittest.TestCase):
                 outputs = method.execute([x])
                 for output, expected in zip(outputs, model(x), strict=True):
                     torch.testing.assert_close(output.cpu(), expected)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_complex_rotary_embedding(self):
+        """Inductor generates no code for complex numbers, so the backend
+        computes a rotary embedding written with them on real numbers."""
+        from executorch.runtime import Runtime
+
+        class ComplexRope(torch.nn.Module):
+            def __init__(self, precision):
+                super().__init__()
+                self.precision = precision
+                angles = torch.outer(torch.arange(4.0), torch.rand(12)).to(precision)
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x, angles):
+                # A grid of positions takes each axis's part of the frequencies.
+                rows, cols = self.freqs.split([8, 4], dim=1)
+                grid = torch.cat(
+                    [
+                        rows[:2].view(2, 1, -1).expand(2, 2, -1),
+                        cols[:2].view(1, 2, -1).expand(2, 2, -1),
+                    ],
+                    dim=-1,
+                ).view(4, 1, -1)
+                spin = torch.polar(angles.abs(), angles)
+                pairs = torch.view_as_complex(
+                    x.to(self.precision).unflatten(-1, (-1, 2))
+                )
+                rotated = torch.view_as_real(
+                    pairs * grid * spin.unsqueeze(1) * torch.tensor(0.5)
+                )
+                # A view_as_real can also be an output of the program, and two
+                # of one complex tensor become one output in two slots.
+                return (
+                    rotated.flatten(-2).type_as(x),
+                    torch.view_as_real(spin),
+                    torch.view_as_real(spin),
+                )
+
+        angles = torch.randn(4, 12)
+        # Rotary embeddings are often computed in float64, so in complex128.
+        for dtype, precision, device in (
+            (torch.float32, torch.float32, "cpu"),
+            (torch.bfloat16, torch.float32, "cpu"),
+            (torch.float32, torch.float64, "cpu"),
+            # torch.tensor(0.5) stays on the CPU, so on the GPU the product
+            # with it keeps the program complex until the backend moves the
+            # program to the GPU and rewrites it.
+            (torch.float32, torch.float64, "cuda"),
+        ):
+            with self.subTest(dtype=dtype, precision=precision, device=device):
+                model = ComplexRope(precision).to(device)
+                x = torch.randn(4, 3, 24, dtype=dtype)
+                inputs = (x.to(device), angles.to(device))
+                logs = (
+                    self.assertLogs(replace_complex_with_real_pass.logger, "INFO")
+                    if device == "cuda"
+                    else self.assertNoLogs(
+                        replace_complex_with_real_pass.logger, "INFO"
+                    )
+                )
+                with logs:
+                    program = self._export_to_cuda_with_lower(
+                        model, inputs
+                    ).to_executorch()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "model.pte")
+                    with open(path, "wb") as f:
+                        program.write_to_file(f)
+                    program.write_tensor_data_to_file(directory)
+                    (data,) = [
+                        os.path.join(directory, name)
+                        for name in os.listdir(directory)
+                        if name.endswith(".ptd")
+                    ]
+                    method = (
+                        Runtime.get()
+                        .load_program(path, data_path=data)
+                        .load_method("forward")
+                    )
+                    outputs = method.execute([x, angles])
+                for output, expected in zip(outputs, model(*inputs), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected.cpu())
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_complex_product_with_cpu_tensor_without_dims(self):
+        """A program on the GPU can keep tensors with no dims on the CPU, and
+        complex products with them still lower."""
+        from executorch.runtime import Runtime
+
+        class Scaled(torch.nn.Module):
+            def __init__(self, factor):
+                super().__init__()
+                # Unlike buffers, plain attributes stay on the CPU in .to().
+                self.factor = factor
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                return torch.view_as_real(pairs * self.factor).flatten(-2)
+
+        x = torch.randn(4, 8, device="cuda")
+        for factor in (
+            torch.tensor(0.5),
+            torch.polar(torch.tensor(1.0), torch.tensor(0.3)),
+        ):
+            with self.subTest(dtype=factor.dtype):
+                model = Scaled(factor).to("cuda")
+                program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "model.pte")
+                    with open(path, "wb") as f:
+                        program.write_to_file(f)
+                    program.write_tensor_data_to_file(directory)
+                    (data,) = [
+                        os.path.join(directory, name)
+                        for name in os.listdir(directory)
+                        if name.endswith(".ptd")
+                    ]
+                    method = (
+                        Runtime.get()
+                        .load_program(path, data_path=data)
+                        .load_method("forward")
+                    )
+                    (output,) = method.execute([x.cpu()])
+                torch.testing.assert_close(output.cpu(), model(x).cpu())
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
