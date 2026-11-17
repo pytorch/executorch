@@ -177,6 +177,21 @@ def define_common_targets():
         par_style = "xar",
         deps = [
             ":export_delegated_program_lib",
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+            "//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
+        ],
+        visibility = [],  # Private
+    )
+
+    # Same entry point with the quantization dependencies. Only the weight-cache
+    # programs quantize, so torchao is a dependency of this binary alone and the
+    # other exported programs do not rebuild when it changes.
+    runtime.python_binary(
+        name = "export_delegated_quantized_program",
+        main_module = "executorch.test.models.export_delegated_program",
+        par_style = "xar",
+        deps = [
+            ":export_delegated_program_lib",
             "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
             "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
@@ -268,7 +283,7 @@ def define_common_targets():
 
     runtime.genrule(
         name = "exported_xnnp_weight_cache_programs",
-        cmd = "$(exe :export_delegated_program)" +
+        cmd = "$(exe :export_delegated_quantized_program)" +
               " --modules " + ",".join(XNNPACK_WEIGHT_CACHE_MODULES_TO_EXPORT) +
               " --backend_id " + "XnnpackBackend" +
               " --outdir $OUT",
