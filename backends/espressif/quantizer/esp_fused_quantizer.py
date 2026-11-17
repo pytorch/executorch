@@ -53,10 +53,11 @@ class _LinearQuantizer(OpQuantizer):
 class _ConvolutionQuantizer(ConvolutionQuantizer):
     def annotate_node(self, node: torch.fx.Node) -> None:
         super().annotate_node(node)
+        shape = get_arg(node, "input", torch.fx.Node).meta["val"].shape
         if (
             not get_arg(node, "transposed")
-            and get_arg(node, "groups") == 1
-            and get_arg(node, "input", torch.fx.Node).meta["val"].dim() == 4
+            and len(shape) == 4
+            and get_arg(node, "groups") in (1, shape[1])
         ):
             _annotate_bias(node)
 
