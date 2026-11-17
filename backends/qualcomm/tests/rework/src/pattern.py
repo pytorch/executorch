@@ -37,6 +37,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
+    QCOM_SCALE,
+    QCOM_ZERO_POINT,
 )
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -315,10 +317,21 @@ class AnnotateUnbind:
             # TODO: update this once lpai starts to support unpack
             if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
                 partitions = get_source_partitions(gm.graph, target_pass._SOURCE_OPS)
-                nodes = list(partitions.values())[0][0].nodes
+                partition = list(partitions.values())[0][0]
                 assert all(
-                    QCOM_QUANT_ATTRS in n.meta for n in nodes
+                    QCOM_QUANT_ATTRS in n.meta for n in partition.nodes
                 ), "unbind partition nodes should have QCOM_QUANT_ATTRS"
+                if isinstance(module, AnnotateUnbind._Constant):
+                    # without folding this case would be the same as _Basic
+                    dq = partition.input_nodes[0]
+                    assert (
+                        dq.target in dq_ops and dq.args[0].target not in q_ops
+                    ), "the constant should feed its dq directly"
+                    quant_attrs = partition.nodes[0].meta[QCOM_QUANT_ATTRS]
+                    assert [
+                        quant_attrs[QCOM_SCALE],
+                        quant_attrs[QCOM_ZERO_POINT],
+                    ] == list(dq.args[1:3]), "unbind qparams should match its dq"
 
 
 class BuildQuantIo:
