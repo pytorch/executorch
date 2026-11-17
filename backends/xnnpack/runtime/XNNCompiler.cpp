@@ -192,8 +192,11 @@ std::string hashBytesHex(const void* data, size_t size) {
 /*
 The part of a quantized kernel's weights-cache qualifier that comes from the
 kernel's own quantization: the parameters XNNPACK packs together with it.
-`scales`/`scales_size` are the scale bytes handed to XNNPACK, wherever they
-were loaded from.
+
+The qualifier, this part and activationQuantSuffix below, is part of the entry
+names in the cache file. Any change to its format needs a kCacheVersion bump
+in XNNWeightsCache.h: a file written by the previous format would still load,
+and every quantized kernel would then miss and re-pack to heap on each launch.
 */
 std::string quantizedKernelQualifier(
     bool use_weight_cache,
@@ -320,9 +323,6 @@ void qualifyPackedNodeKernel(const CacheNamingContext& ctx, NodePtr node) {
   }
 }
 
-/**
-Gets the constant data pointer associated with the given tensor value.
-Obtaining the constant data pointer can either be from within the flatbuffer
 struct PackingNodeIds {
   uint32_t filter_id;
   uint32_t bias_id;
@@ -330,6 +330,9 @@ struct PackingNodeIds {
   uint32_t output_id;
 };
 
+/**
+Gets the constant data pointer associated with the given tensor value.
+Obtaining the constant data pointer can either be from within the flatbuffer
 payload (deprecated) or via offsets to the constant_data_ptr.
 
 Failures are returned as an Error, and the successful value may be nullptr

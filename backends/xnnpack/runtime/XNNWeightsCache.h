@@ -274,18 +274,21 @@ class XNNWeightsCache {
   // v2: per-entry seed added — old v1 files don't carry seeds and would
   // load with seed=0, mismatching every fresh look_up with a non-zero
   // seed, causing a stampede of re-packs. Reject v1 outright.
-  // v3: entry names carry the kernel's quantization parameters. A v2 file
-  // names the same kernels without them, so none of its entries would ever
-  // hit again and every kernel would be re-packed and appended to it.
+  // v3: entry names of quantized kernels carry the kernel's quantization and
+  // its consumer's activation quantization (quantizedKernelQualifier in
+  // XNNCompiler.cpp). A v2 file names them without, so every quantized
+  // kernel would miss and, the file having loaded, be re-packed to heap as
+  // RepackAfterLoad on each launch without ever reaching the file. Reject
+  // v2 outright.
   static constexpr uint32_t kCacheVersion = 3;
   bool load_packed_cache();
   void reset_for_fresh_write();
   void release_entry(void* packed_data_ptr);
   void full_unload();
+  size_t insert_unnamed(size_t offset, size_t size, uint32_t seed);
   // Runtime Allocator used to reserve memory for packed weights
   MemoryAllocator* runtime_allocator_;
 
-  size_t insert_unnamed(size_t offset, size_t size, uint32_t seed);
   // Named Data Map used to load named data
   const NamedDataMap* named_data_map_;
 
