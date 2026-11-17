@@ -129,7 +129,10 @@ int main(int argc, char** argv) {
   const int psram = 0;
 #endif
   std::printf(
-      "STATS parameters=%zu blob_copied=%d psram=%d\n",
+      "STATS arena=%zu arena_internal=%d parameters=%zu blob_copied=%d "
+      "psram=%d\n",
+      interpreter.arena_bytes(),
+      interpreter.arena_in_internal_ram() ? 1 : 0,
       interpreter.parameter_bytes(),
       interpreter.constants_copied() ? 1 : 0,
       psram);
