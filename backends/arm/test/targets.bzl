@@ -166,7 +166,9 @@ def define_arm_tests():
             env = test_env,
             preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
-            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
+            ] + ([
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+            ] if test_file == "passes/test_rewrite_custom_sdpa_to_tosa_custom_pass.py" else []) + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
             ]),
