@@ -1397,15 +1397,15 @@ class TestPasses(unittest.TestCase):
 
             def forward(self, x):
                 if self.update:
-                    self.table.fill_(1.0)
+                    self.table.clamp_(-10.0, 10.0)
                 t = self.table
                 rms = torch.rsqrt(t.pow(2).mean(-1, keepdim=True) + 1e-6)
                 norm = self.weight * (t * rms)
-                return x + norm if self.add_input else (x * 2, norm)
+                return x + norm if self.add_input else norm
 
         # Only HTP drops a partition that reads nothing at runtime, so a norm of
-        # constants that never meets a runtime value stays decomposed for HTP
-        # and for a pass that does not know the backend. A buffer the model
+        # constants in a graph that reads no runtime value stays decomposed for
+        # HTP and for a pass that does not know the backend. A buffer the model
         # updates is a runtime value, also in the program fresh from
         # torch.export that to_edge_transform_and_lower_to_qnn passes in.
         x = torch.randn(4, 32)
@@ -1417,7 +1417,13 @@ class TestPasses(unittest.TestCase):
             for add_input, update in ((True, False), (False, False), (False, True)):
                 with self.subTest(backend=backend, add_input=add_input, update=update):
                     model = TableNorm(add_input, update)
-                    exported = torch.export.export(model, (x,), strict=True)
+                    # As in to_edge_transform_and_lower_to_qnn, which lifts the
+                    # exponent of pow.
+                    exported = (
+                        get_qnn_pass_manager_cls()().transform_for_export_pipeline(
+                            torch.export.export(model, (x,), strict=True)
+                        )
+                    )
                     ep = to_edge(exported).exported_program()
                     compiler_specs = None
                     if backend_options is not None:
@@ -1434,7 +1440,7 @@ class TestPasses(unittest.TestCase):
                     )
                     torch.testing.assert_close(ep.module()(x), model(x))
 
-    def test_recompose_rms_norm_meets_runtime_values_only_in_delegated_ops(self):
+    def test_recompose_rms_norm_needs_a_partition_that_reads_a_runtime_value(self):
         class TableNorm(torch.nn.Module):  # a norm of a buffer, used with x
             def __init__(self, use):
                 super().__init__()
@@ -1448,18 +1454,25 @@ class TestPasses(unittest.TestCase):
                 norm = self.weight * (t * rms)
                 return self.use(x, norm)
 
-        # On CPU, the op that reads x leaves the norm in a partition of
-        # constants, which HTP drops, and rms_norm has no CPU kernel.
+        # The partitioner merges the norm into a partition that reads x, also
+        # one it is not connected to, unless a CPU op between them would make a
+        # cycle. With only CPU ops reading x, or with such a cycle, the norm is
+        # in a partition of constants, which HTP drops, and rms_norm has no CPU
+        # kernel.
         x = torch.randn(4, 32)
         for name, use, skip_ops, rebuilt in (
             ("add", lambda x, norm: x + norm, None, True),
             ("skipped sub", lambda x, norm: x - norm, {"aten.sub.Tensor"}, False),
-            ("mask index", lambda x, norm: norm[x > 0], None, False),
+            ("mask index", lambda x, norm: norm[x > 0], None, True),
             ("prod", lambda x, norm: x + norm.prod(-1, keepdim=True), None, False),
         ):
             with self.subTest(use=name):
                 model = TableNorm(use)
-                exported = torch.export.export(model, (x,), strict=True)
+                # As in to_edge_transform_and_lower_to_qnn, which lifts the
+                # exponent of pow.
+                exported = get_qnn_pass_manager_cls()().transform_for_export_pipeline(
+                    torch.export.export(model, (x,), strict=True)
+                )
                 ep = to_edge(exported).exported_program()
                 RecomposeRmsNorm(
                     edge_program=exported,
@@ -1472,6 +1485,39 @@ class TestPasses(unittest.TestCase):
                 self.assertEqual(
                     self._rms_norm_kept_weights(ep.graph_module),
                     [True] if rebuilt else [],
+                )
+                torch.testing.assert_close(ep.module()(x), model(x))
+
+    def test_recompose_rms_norm_counts_cpu_results_as_runtime_values(self):
+        class ShiftedTableNorm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.randn(4, 32) * 1000)
+                self.weight = torch.nn.Parameter(torch.randn(32))
+
+            def forward(self, x):
+                t = self.table - 1
+                rms = torch.rsqrt(t.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return self.weight * (t * rms)
+
+        # A skipped sub runs on CPU, and the partitioner counts its output as a
+        # runtime value, so it delegates the norm, which overflows in fp16
+        # unless it is rebuilt. Without the skip nothing reads a runtime value.
+        x = torch.randn(4, 32)
+        model = ShiftedTableNorm()
+        for skip_ops, kept_weights in (({"aten.sub.Tensor"}, [True]), (None, [])):
+            with self.subTest(skip_ops=skip_ops):
+                exported = get_qnn_pass_manager_cls()().transform_for_export_pipeline(
+                    torch.export.export(model, (x,), strict=True)
+                )
+                ep = to_edge(exported).exported_program()
+                RecomposeRmsNorm(
+                    edge_program=exported,
+                    compiler_specs=self._htp_compiler_specs(True),
+                    skip_node_op_set=skip_ops,
+                )(ep.graph_module)
+                self.assertEqual(
+                    self._rms_norm_kept_weights(ep.graph_module), kept_weights
                 )
                 torch.testing.assert_close(ep.module()(x), model(x))
 

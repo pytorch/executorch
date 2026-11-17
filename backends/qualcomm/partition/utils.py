@@ -5,7 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import List, Optional
+import operator
+from typing import Callable, List, Optional, Set
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -13,6 +14,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     q_ops,
     QNN_TENSOR_TYPE_MAP,
 )
+from executorch.backends.qualcomm.builders.node_visitor_manager import (
+    _node_visitor_dict,
+)
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
@@ -23,6 +28,12 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.utils import _pytree as pytree
+
+from .common_defs import (
+    allow_list_operator,
+    not_supported_operator,
+    to_be_implemented_operator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +218,97 @@ def must_stay_on_cpu(node: torch.fx.Node) -> bool:
     return (
         has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node)
     ) or has_data_dependent_shape(node)
+
+
+def may_be_delegated(
+    node: torch.fx.Node,
+    skip_node_id_set: Set[str],
+    skip_node_op_set: Set[str],
+    op_package_ops: Set[str],
+) -> bool:
+    """
+    Whether QnnPartitioner may take the node, as far as can be told without
+    QNN's op validation. `op_package_ops` names the ops that the op packages
+    in the compiler specs build.
+    """
+    if node.op != "call_function":
+        return False
+    if (
+        node.target in allow_list_operator
+        or getattr(node.target, "namespace", None) == OpContextLoader.namespace
+    ):
+        return True
+    return (
+        (
+            getattr(node.target, "__name__", None) in _node_visitor_dict
+            or getattr(node.target, "__name__", None) in op_package_ops
+        )
+        and node.target not in not_supported_operator
+        and node.target not in to_be_implemented_operator
+        and node.name not in skip_node_id_set
+        and node.target.__name__ not in skip_node_op_set
+        and not must_stay_on_cpu(node)
+    )
+
+
+def find_nodes_left_on_cpu(
+    nodes: List[torch.fx.Node],
+    qnn: Set[torch.fx.Node],
+    is_runtime_input: Callable[[torch.fx.Node], bool],
+) -> Set[torch.fx.Node]:
+    """
+    Estimates which of the `qnn` nodes, the ones QNN may take, HTP leaves on
+    CPU because no partition that takes them reads a runtime value: an input
+    outside `qnn` that `is_runtime_input` accepts, such as a user input or
+    the output of a CPU op. `nodes` are all the nodes of the graph, in order.
+    The partitioner merges partitions that are not connected, too, unless
+    that makes a cycle. So a QNN op that reads no runtime value is left on
+    CPU when:
+    - it reaches a QNN op through a CPU op before any QNN op that reads a
+      runtime value, since the partitioner may split it off to avoid a cycle;
+    - the only QNN ops that read a runtime value are getitems of CPU ops,
+      since the partitioner moves those getitems out of their partitions;
+    - such a getitem follows a QNN op, and no chain of QNN ops links the op
+      to a QNN op that reads a runtime value.
+    Ops that QNN rejects or removes later are not known here.
+    """
+    runtime, after_qnn = set(), set()
+    for node in nodes:
+        if node in qnn or not after_qnn.isdisjoint(node.all_input_nodes):
+            after_qnn.add(node)
+        if node in qnn and any(
+            arg in runtime if arg in qnn else is_runtime_input(arg)
+            for arg in node.all_input_nodes
+        ):
+            runtime.add(node)
+    to_qnn, before_cpu = set(), set()
+    for node in reversed(nodes):
+        if node in qnn or not to_qnn.isdisjoint(node.users):
+            to_qnn.add(node)
+        if any(
+            (user in before_cpu and user not in runtime)
+            or (user in to_qnn and user not in qnn)
+            for user in node.users
+        ):
+            before_cpu.add(node)
+    left_on_cpu = (qnn - runtime) & before_cpu
+    cpu_getitems = {
+        node
+        for node in runtime
+        if node.target is operator.getitem and node.args[0] not in qnn
+    }
+    if runtime <= cpu_getitems:
+        return qnn - runtime
+    if not any(node.args[0] in after_qnn for node in cpu_getitems):
+        return left_on_cpu
+    linked, stack = set(runtime), list(runtime)
+    while stack:
+        node = stack.pop()
+        for neighbor in (*node.all_input_nodes, *node.users):
+            if neighbor in qnn and neighbor not in linked:
+                linked.add(neighbor)
+                stack.append(neighbor)
+    return left_on_cpu | (qnn - runtime - linked)
 
 
 def is_quantized(node: torch.fx.Node) -> bool:
