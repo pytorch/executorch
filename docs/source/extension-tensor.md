@@ -120,7 +120,12 @@ auto tensor = make_tensor_ptr(
     ScalarType::Int);       // int scalar type
 ```
 
-The `data` vector must be large enough to accommodate all the elements according to the provided sizes and scalar type.
+The `data` vector must hold exactly as many bytes as the provided sizes and scalar type describe. Its bytes are raw memory, not `Byte` elements: like a `void*` passed to `from_blob`, the scalar type defaults to `ScalarType::Float` when you omit it. To make a `Byte` tensor from a `std::vector<uint8_t>`, pass `ScalarType::Byte`:
+
+```cpp
+std::vector<uint8_t> pixels(224 * 224 * 3);
+auto image = make_tensor_ptr({224, 224, 3}, std::move(pixels), ScalarType::Byte);
+```
 
 #### Non-Owning Data from Raw Pointer
 
@@ -154,6 +159,25 @@ auto tensor = make_tensor_ptr(
 ```
 
 The `TensorPtr` will call the custom deleter when it is destroyed, i.e., when the smart pointer is reset and no more references to the underlying `Tensor` exist.
+
+#### Checking a Layout Without Aborting
+
+`make_tensor_ptr` aborts the process if the dim order or strides are invalid for the sizes, or if the data does not match the sizes. When they come from outside the program, for example from a file or over the network, check them first:
+
+```cpp
+if (validate_tensor_layout(sizes, dim_order, strides) != Error::Ok) {
+  return Error::InvalidArgument;  // reject the input instead of aborting
+}
+// After the check above, this product cannot overflow.
+const auto numel = std::accumulate(
+    sizes.begin(), sizes.end(), size_t(1), std::multiplies<size_t>());
+if (data.size() != numel) {
+  return Error::InvalidArgument;
+}
+auto tensor = make_tensor_ptr(sizes, std::move(data), dim_order, strides);
+```
+
+`validate_tensor_layout` does not look at the data, so check its size yourself, as above. For a `std::vector<uint8_t>` of raw bytes, the expected size is `numel * elementSize(type)` bytes. Compute it with an overflow check, because this product can overflow `size_t` even when `numel` fits.
 
 #### Sharing Existing Tensor
 

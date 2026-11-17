@@ -112,6 +112,19 @@ class VulkanImage final {
       VkSampler,
       const VkImageLayout);
 
+  /*
+   * A non-owning VulkanImage over a VkImage and view that something else
+   * created on the same VkDevice and destroys, e.g. an application sharing the
+   * device.
+   */
+  static VulkanImage alias(
+      VkDevice,
+      const ImageProperties&,
+      VkImage,
+      VkImageView,
+      VkSampler,
+      const VkImageLayout);
+
  protected:
   /*
    * The Copy constructor allows for creation of a class instance that are

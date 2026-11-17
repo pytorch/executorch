@@ -14,6 +14,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace vkcompute::shader_profiling {
@@ -110,6 +111,10 @@ Report benchmark_operator(
   if (first == end) {
     throw std::invalid_argument("Operator produced no execute nodes");
   }
+  Report execute_nodes = Report::array();
+  for (size_t i = first; i < end; ++i) {
+    execute_nodes.push_back(graph.execute_nodes()[i]->name());
+  }
   const Json accesses =
       tensor_accesses(graph, first, end, tensors, args.back());
   std::map<std::string, ValueRef> outputs;
@@ -126,6 +131,7 @@ Report benchmark_operator(
         operator_report(spec, actual_tensor_dtypes(graph, tensors), accesses);
     if (spec.contains("route"))
       result["route"] = route;
+    result["execute_nodes"] = std::move(execute_nodes);
     result["validation"] =
         validate_outputs(spec, graph, tensors, outputs, host_data);
     return result;
@@ -150,12 +156,104 @@ Report benchmark_operator(
     result["route"] = route;
   }
   result["execute_nodes_per_invocation"] = end - first;
-  result["execute_nodes"] = Report::array();
-  for (size_t i = first; i < end; ++i) {
-    result["execute_nodes"].push_back(graph.execute_nodes()[i]->name());
-  }
+  result["execute_nodes"] = std::move(execute_nodes);
   result.update(measure(spec, graph, encode_batch, Json(result)));
   return result;
+}
+
+Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
+  const Json& parameters = spec.at("parameters");
+  const std::vector<Json> operator_cases =
+      parse_configs(parameters.at("operator_case"));
+  reference::require(
+      operator_cases.size() == 1,
+      "Dynamic validation operator_case must expand to one case");
+  Json operator_spec = operator_cases.front();
+  const std::string output_name = parameters.at("output_name");
+  Json input_spec = operator_spec;
+  input_spec["tensors"].erase(output_name);
+  Json output_spec = operator_spec;
+  output_spec["tensors"] = {
+      {output_name, operator_spec.at("tensors").at(output_name)}};
+  auto host_data = prepare_tensor_data(input_spec);
+  const auto input_tensors = create_tensors(input_spec, graph, host_data, true);
+  auto output_data = prepare_tensor_data(output_spec);
+  const auto output_tensors =
+      create_tensors(output_spec, graph, output_data, false);
+  host_data.merge(output_data);
+  auto tensors = input_tensors;
+  tensors.insert(output_tensors.begin(), output_tensors.end());
+  for (const auto& input : graph.inputs())
+    reference::require(
+        input.value != tensors.at(output_name),
+        "Dynamic validation output must not be staged as an input");
+  const auto args = build_operator_args(operator_spec, graph, tensors);
+  build_operator_route(operator_spec, graph, args);
+  Json accesses = Json::object();
+  for (const auto& tensor : tensors)
+    accesses[tensor.first] = tensor.first == output_name ? "write" : "read";
+  const auto staging =
+      add_validation_outputs(operator_spec, graph, tensors, accesses);
+  graph.prepare();
+  graph.prepack();
+  const auto resized_bytes = [&](const std::string& name, const Json& sizes) {
+    return tensor_numel(sizes) * host_data.at(name).size() /
+        tensor_numel(operator_spec.at("tensors").at(name).at("sizes"));
+  };
+  Json validations = Json::array();
+  for (const Json& step : spec.at("validation_steps")) {
+    Json resized = operator_spec;
+    auto data = host_data;
+    const Json& sizes = step.at("tensor_sizes");
+    reference::require(
+        !sizes.contains(output_name),
+        "Dynamic validation steps must not resize the output manually");
+    for (const auto& item : sizes.items()) {
+      const auto shape = item.value().get<std::vector<int64_t>>();
+      const ValueRef ref = input_tensors.at(item.key());
+      bool found = false;
+      for (size_t i = 0; i < graph.inputs().size(); ++i)
+        if (graph.inputs().at(i).value == ref) {
+          graph.resize_input(i, shape);
+          found = true;
+          break;
+        }
+      reference::require(
+          found, "Dynamic validation size target is not a staged input");
+      resized["tensors"][item.key()]["sizes"] = shape;
+      const size_t bytes = resized_bytes(item.key(), item.value());
+      reference::require(
+          bytes <= data.at(item.key()).size(),
+          "Dynamic validation shape exceeds upper input allocation");
+      data.at(item.key()).resize(bytes);
+    }
+    resized["tensors"][output_name]["sizes"] = step.at("expected_output_sizes");
+    graph.propagate_resize();
+    reference::require(
+        graph.sizes_of(tensors.at(output_name)) ==
+            step.at("expected_output_sizes").get<std::vector<int64_t>>(),
+        "Operator output did not resize");
+    const size_t output_bytes =
+        resized_bytes(output_name, step.at("expected_output_sizes"));
+    reference::require(
+        output_bytes <= data.at(output_name).size(),
+        "Dynamic validation output exceeds upper allocation");
+    data.at(output_name).resize(output_bytes);
+    copy_validation_inputs(resized, graph, input_tensors, data);
+    graph.execute();
+    if (step.value("validate_output", true)) {
+      const Json validation =
+          validate_outputs(resized, graph, tensors, staging, data);
+      reference::require(
+          validation.at("status") == "PASS",
+          "Dynamic resize validation failed: " + validation.dump());
+      validations.push_back(validation);
+    }
+  }
+  return {
+      {"status", "PASS"},
+      {"validation_steps", spec.at("validation_steps").size()},
+      {"validated_outputs", validations.size()}};
 }
 
 } // namespace vkcompute::shader_profiling

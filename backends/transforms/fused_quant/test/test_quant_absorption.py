@@ -1416,10 +1416,17 @@ class QuantAbsorptionTest(unittest.TestCase):
         builder.output([add])
         return builder.get_program(), inp
 
+    def test_does_not_absorb_into_consumer_input_by_default(self) -> None:
+        ep, _ = self._build_dequant_quant_pool()
+
+        result = QuantAbsorptionPass()(ep)
+
+        self.assertFalse(result.modified)
+
     def test_absorbs_dequant_quant_into_fused_consumer_input(self) -> None:
         ep, inp = self._build_dequant_quant_pool()
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         (actual,) = result.exported_program.module()(inp)
@@ -1458,7 +1465,7 @@ class QuantAbsorptionTest(unittest.TestCase):
     def test_absorbs_consumer_input_through_view_copy(self) -> None:
         ep, inp = self._build_dequant_quant_pool(input_passthrough="view")
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         (actual,) = result.exported_program.module()(inp)
@@ -1501,7 +1508,7 @@ class QuantAbsorptionTest(unittest.TestCase):
     def test_absorbs_consumer_input_through_permute_copy(self) -> None:
         ep, inp = self._build_dequant_quant_pool(input_passthrough="permute")
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         (actual,) = result.exported_program.module()(inp)
@@ -1546,7 +1553,7 @@ class QuantAbsorptionTest(unittest.TestCase):
             input_passthrough="view", expose_passthrough=True
         )
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertFalse(result.modified)
         self.assertEqual(
@@ -1562,7 +1569,7 @@ class QuantAbsorptionTest(unittest.TestCase):
     def test_absorbs_all_quantized_inputs_of_binary_op(self) -> None:
         ep, inp = self._build_dequant_quant_add()
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         (actual,) = result.exported_program.module()(inp)
@@ -1628,7 +1635,7 @@ class QuantAbsorptionTest(unittest.TestCase):
         )
         expected = ep.module()(inp)
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         actual = result.exported_program.module()(inp)
@@ -1668,7 +1675,7 @@ class QuantAbsorptionTest(unittest.TestCase):
             consumer_input_zero_point=-4,
         )
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertFalse(result.modified)
 
@@ -1683,9 +1690,10 @@ class QuantAbsorptionTest(unittest.TestCase):
         )
 
         result = QuantAbsorptionPass(
+            absorb_into_inputs=True,
             symmetric_quant_input_ops=frozenset(
                 {exir_ops.edge.fused_quant.avg_pool2d_channels_last.default}
-            )
+            ),
         )(ep)
 
         self.assertFalse(result.modified)
@@ -1696,9 +1704,10 @@ class QuantAbsorptionTest(unittest.TestCase):
         ep, inp = self._build_dequant_quant_pool()
 
         result = QuantAbsorptionPass(
+            absorb_into_inputs=True,
             symmetric_quant_input_ops=frozenset(
                 {exir_ops.edge.fused_quant.avg_pool2d_channels_last.default}
-            )
+            ),
         )(ep)
 
         self.assertTrue(result.modified)
@@ -1746,7 +1755,7 @@ class QuantAbsorptionTest(unittest.TestCase):
         builder.output([relu])
         ep = builder.get_program()
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertFalse(result.modified)
         self.assertEqual(
@@ -1762,7 +1771,7 @@ class QuantAbsorptionTest(unittest.TestCase):
     def test_does_not_absorb_shared_quantize(self) -> None:
         ep, _ = self._build_dequant_quant_pool(expose_quant=True)
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertFalse(result.modified)
         self.assertEqual(
@@ -1779,7 +1788,7 @@ class QuantAbsorptionTest(unittest.TestCase):
         ep, inp = self._build_dequant_quant_pool(expose_dequant=True)
         _, expected_dequant = ep.module()(inp)
 
-        result = QuantAbsorptionPass()(ep)
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertTrue(result.modified)
         actual_pool, actual_dequant = result.exported_program.module()(inp)

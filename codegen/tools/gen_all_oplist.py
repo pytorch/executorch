@@ -84,6 +84,100 @@ def _selected_ops_model_dict_is_empty(model_dict: Dict[str, Any]) -> bool:
     )
 
 
+def _write_combined_oplist(
+    model_dicts: List[Dict[str, Any]],
+    output_dir: str,
+    allow_include_all_overloads: bool,
+    check_ops_not_overlapping: bool,
+) -> None:
+    selective_builders = [SelectiveBuilder.from_yaml_dict(m) for m in model_dicts]
+
+    # Optionally check if the operators in the model file list are overlapping.
+    if check_ops_not_overlapping:
+        ops = {}  # type: ignore[var-annotated]
+        for model_dict in model_dicts:
+            for op_name in model_dict["operators"]:
+                if op_name in ops:
+                    debug_info_1 = ",".join(ops[op_name]["debug_info"])
+                    debug_info_2 = ",".join(
+                        model_dict["operators"][op_name]["debug_info"]
+                    )
+                    # Yellow bold: \033[33;1m
+                    # Red bold: \033[31;1m
+                    # Green bold: \033[32;1m
+                    error = f"\033[31;1mOperator {op_name} is used in 2 models: \033[33;1m{debug_info_1} and {debug_info_2}\033[0m"
+                    if "//" not in debug_info_1 and "//" not in debug_info_2:
+                        error += "\nWe can't determine what BUCK targets these model files belong to."
+                        tail = "."
+                    else:
+                        error += "\nPlease run the following commands to find out where is the BUCK target being added as a dependency to your target:\n"
+                        error += f'\n   \033[32;1mbuck2 cquery <mode> "allpaths(<target>, {debug_info_1})"\033[0m'
+                        error += f'\n   \033[32;1mbuck2 cquery <mode> "allpaths(<target>, {debug_info_2})"\033[0m'
+                        tail = "as well as results from BUCK commands listed above."
+
+                    error += (
+                        "\n\nIf issue is not resolved, please post in PyTorch Edge Q&A with this error message"
+                        + tail
+                    )
+                    raise Exception(error)  # noqa: TRY002
+                ops[op_name] = model_dict["operators"][op_name]
+    # We may have 0 selective builders since there may not be any viable
+    # pt_operator_library rule marked as a dep for the pt_operator_registry rule.
+    # This is potentially an error, and we should probably raise an assertion
+    # failure here. However, this needs to be investigated further.
+    selective_builder = SelectiveBuilder.from_yaml_dict({})
+    if len(selective_builders) > 0:
+        selective_builder = reduce(
+            combine_selective_builders,
+            selective_builders,
+        )
+
+    if not allow_include_all_overloads:
+        throw_if_any_op_includes_overloads(selective_builder)
+    with open(os.path.join(output_dir, "selected_operators.yaml"), "wb") as out_file:
+        out_file.write(
+            yaml.safe_dump(
+                selective_builder.to_dict(), default_flow_style=False
+            ).encode("utf-8"),
+        )
+
+
+def gen_all_oplist(
+    output_dir: str,
+    model_file_paths: List[str],
+    allow_include_all_overloads: bool = False,
+    check_ops_not_overlapping: bool = False,
+) -> None:
+    """Combines selected_operators.yaml files into output_dir/selected_operators.yaml.
+
+    Each entry of model_file_paths is a selected_operators.yaml or a directory
+    containing one. Files that select nothing are skipped, and each operator's
+    debug_info names the file that selected it.
+    """
+    model_dicts = []
+    for model_file_name in model_file_paths:
+        if not os.path.isfile(model_file_name):
+            model_file_name = os.path.join(model_file_name, "selected_operators.yaml")
+        print("Processing model file: ", model_file_name)
+        assert os.path.isfile(
+            model_file_name
+        ), f"{model_file_name} is not a valid file path. This is likely a BUCK issue."
+        with open(model_file_name, "rb") as model_file:
+            model_dict = yaml.safe_load(model_file)
+            # It is possible that we created an empty yaml file.
+            # This is because et_operator_library may only contain prim ops.
+            # In that case selected_operators.yaml will be empty.
+            if _selected_ops_model_dict_is_empty(model_dict):
+                continue
+            resolved = resolve_model_file_path_to_buck_target(model_file_name)
+            for op in model_dict["operators"]:
+                model_dict["operators"][op]["debug_info"] = [resolved]
+            model_dicts.append(model_dict)
+    _write_combined_oplist(
+        model_dicts, output_dir, allow_include_all_overloads, check_ops_not_overlapping
+    )
+
+
 # flake8: noqa: C901
 def main(argv: List[Any]) -> None:
     """This binary generates 3 files:
@@ -152,9 +246,13 @@ def main(argv: List[Any]) -> None:
     # If none of the 3 things happened, the build target  has no dependency on any selective build and we should error out.
     if os.path.isfile(options.model_file_list_path):
         print("Processing model file: ", options.model_file_list_path)
-        model_dicts = []
         model_dict = yaml.safe_load(open(options.model_file_list_path))
-        model_dicts.append(model_dict)
+        _write_combined_oplist(
+            [model_dict],
+            options.output_dir,
+            options.allow_include_all_overloads,
+            options.check_ops_not_overlapping,
+        )
     else:
         print(
             "Processing model file list or model directory list: ",
@@ -166,85 +264,17 @@ def main(argv: List[Any]) -> None:
 
         model_file_list_path = options.model_file_list_path[1:]
 
-        model_dicts = []
         with open(model_file_list_path) as model_list_file:
             model_file_names = model_list_file.read().split()
-            assert (
-                len(model_file_names) > 0
-            ), "BUCK was not able to find any `et_operator_library` in the dependency graph of the current ExecuTorch "
-            "build. Please refer to Selective Build wiki page to add at least one."
-            for model_file_name in model_file_names:
-                if not os.path.isfile(model_file_name):
-                    model_file_name = os.path.join(
-                        model_file_name, "selected_operators.yaml"
-                    )
-                print("Processing model file: ", model_file_name)
-                assert os.path.isfile(
-                    model_file_name
-                ), f"{model_file_name} is not a valid file path. This is likely a BUCK issue."
-                with open(model_file_name, "rb") as model_file:
-                    model_dict = yaml.safe_load(model_file)
-                    # It is possible that we created an empty yaml file.
-                    # This is because et_operator_library may only contain prim ops.
-                    # In that case selected_operators.yaml will be empty.
-                    if _selected_ops_model_dict_is_empty(model_dict):
-                        continue
-                    resolved = resolve_model_file_path_to_buck_target(model_file_name)
-                    for op in model_dict["operators"]:
-                        model_dict["operators"][op]["debug_info"] = [resolved]
-                    model_dicts.append(model_dict)
-
-    selective_builders = [SelectiveBuilder.from_yaml_dict(m) for m in model_dicts]
-
-    # Optionally check if the operators in the model file list are overlapping.
-    if options.check_ops_not_overlapping:
-        ops = {}  # type: ignore[var-annotated]
-        for model_dict in model_dicts:
-            for op_name in model_dict["operators"]:
-                if op_name in ops:
-                    debug_info_1 = ",".join(ops[op_name]["debug_info"])
-                    debug_info_2 = ",".join(
-                        model_dict["operators"][op_name]["debug_info"]
-                    )
-                    # Yellow bold: \033[33;1m
-                    # Red bold: \033[31;1m
-                    # Green bold: \033[32;1m
-                    error = f"\033[31;1mOperator {op_name} is used in 2 models: \033[33;1m{debug_info_1} and {debug_info_2}\033[0m"
-                    if "//" not in debug_info_1 and "//" not in debug_info_2:
-                        error += "\nWe can't determine what BUCK targets these model files belong to."
-                        tail = "."
-                    else:
-                        error += "\nPlease run the following commands to find out where is the BUCK target being added as a dependency to your target:\n"
-                        error += f'\n   \033[32;1mbuck2 cquery <mode> "allpaths(<target>, {debug_info_1})"\033[0m'
-                        error += f'\n   \033[32;1mbuck2 cquery <mode> "allpaths(<target>, {debug_info_2})"\033[0m'
-                        tail = "as well as results from BUCK commands listed above."
-
-                    error += (
-                        "\n\nIf issue is not resolved, please post in PyTorch Edge Q&A with this error message"
-                        + tail
-                    )
-                    raise Exception(error)  # noqa: TRY002
-                ops[op_name] = model_dict["operators"][op_name]
-    # We may have 0 selective builders since there may not be any viable
-    # pt_operator_library rule marked as a dep for the pt_operator_registry rule.
-    # This is potentially an error, and we should probably raise an assertion
-    # failure here. However, this needs to be investigated further.
-    selective_builder = SelectiveBuilder.from_yaml_dict({})
-    if len(selective_builders) > 0:
-        selective_builder = reduce(
-            combine_selective_builders,
-            selective_builders,
-        )
-
-    if not options.allow_include_all_overloads:
-        throw_if_any_op_includes_overloads(selective_builder)
-    with open(
-        os.path.join(options.output_dir, "selected_operators.yaml"), "wb"
-    ) as out_file:
-        out_file.write(
-            yaml.safe_dump(
-                selective_builder.to_dict(), default_flow_style=False
-            ).encode("utf-8"),
+        assert (
+            len(model_file_names) > 0
+        ), "BUCK was not able to find any `et_operator_library` in the dependency graph of the current ExecuTorch "
+        "build. Please refer to Selective Build wiki page to add at least one."
+        gen_all_oplist(
+            options.output_dir,
+            model_file_names,
+            options.allow_include_all_overloads,
+            options.check_ops_not_overlapping,
         )
 
 

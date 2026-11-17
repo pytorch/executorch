@@ -225,6 +225,19 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
+// ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x), and
+// ggml's x > 0 ? x : expm1(x).
+void GraphBuilder::lower_elu(const Node& node) {
+  for (const auto& [name, index] :
+       {std::pair{"alpha", 1}, {"scale", 2}, {"input_scale", 3}}) {
+    if (float_arg(node, name, index, 1.0, true) != 1.0) {
+      throw std::runtime_error(
+          "ggml: elu supports only alpha, scale and input_scale 1");
+    }
+  }
+  lower_unary(node, ggml_elu);
+}
+
 // Reduces a run of trailing dimensions, which ggml sees as one row.
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
@@ -291,6 +304,20 @@ void GraphBuilder::lower_sum(const Node& node) {
   auto [rows, sizes] = trailing_rows(node, "sum");
   ggml_context* ctx = instance_.context.get();
   ggml_tensor* result = reshape(ctx, ggml_sum_rows(ctx, rows), sizes);
+  set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// Gathers each row's argmax element. Unlike max pooling, which starts from
+// -FLT_MAX, this keeps an all -inf row at -inf. NaN does not propagate.
+void GraphBuilder::lower_amax(const Node& node) {
+  auto [rows, sizes] = trailing_rows(node, "amax");
+  ggml_context* ctx = instance_.context.get();
+  const int64_t width = rows->ne[0];
+  const int64_t count = rows->ne[1];
+  ggml_tensor* index = ggml_reshape_2d(ctx, ggml_argmax(ctx, rows), 1, count);
+  ggml_tensor* values =
+      ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
+  ggml_tensor* result = reshape(ctx, values, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 

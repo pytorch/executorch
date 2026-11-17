@@ -206,6 +206,11 @@ cmake_dependent_option(
   OFF
 )
 cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER
+  "Build the native GGML CPU Whisper speech recognition runner" OFF
+  "EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
   "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
 )
@@ -213,6 +218,7 @@ announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
 define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF

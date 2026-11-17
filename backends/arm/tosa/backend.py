@@ -145,7 +145,7 @@ class TOSABackend(BackendDetails):
         if dump_debug_info is not None:
             debug_hook = DebugHook(dump_debug_info)
 
-        logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
+        logger.debug(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.

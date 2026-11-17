@@ -28,6 +28,7 @@ fbcode_target(
         "//executorch/exir:lib",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:load",
+        "fbsource//third-party/pypi/accelerate:accelerate",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
         "//pytorch/ao:torchao",
@@ -48,6 +49,7 @@ fbcode_target(
     deps = [
         ":export_hf_llm_lib",
         "//caffe2:torch",
+        "//executorch/export:export_utils",
         "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/transformers:transformers",
     ],

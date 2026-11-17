@@ -372,6 +372,11 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
                 self.static_cache.layers[i].values,
                 persistent=False,
             )
+            self.register_buffer(
+                f"cumulative_length_{i}",
+                self.static_cache.layers[i].cumulative_length,
+                persistent=False,
+            )
 
     def get_example_inputs(self):
         max_hidden_seq_length = self.max_hidden_seq_length
@@ -402,6 +407,9 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
         encoder_attention_mask,
         cache_position,
     ):
+        # StaticLayer writes at cumulative_length and ignores cache_position.
+        for layer in self.static_cache.layers:
+            layer.cumulative_length.copy_(cache_position[0:1])
         # Get outputs from decoder
         outputs = self.decoder(
             input_ids=decoder_input_ids,
