@@ -190,6 +190,37 @@ std::string hashBytesHex(const void* data, size_t size) {
 }
 
 /*
+Name of a constant_data entry, empty for constant_buffer entries and entries
+without a name.
+*/
+std::string constantDataName(GraphPtr flatbuffer_graph, uint32_t buffer_idx) {
+  auto* cd = flatbuffer_graph->constant_data();
+  if (cd == nullptr || buffer_idx >= cd->size()) {
+    return "";
+  }
+  ConstantDataOffsetPtr entry = cd->Get(buffer_idx);
+  if (entry == nullptr || entry->named_key() == nullptr) {
+    return "";
+  }
+  return entry->named_key()->str();
+}
+
+/*
+Identifies the scales of a quantized kernel for its weights-cache qualifier.
+The exporter names a scale buffer after the sha256 of its bytes, so the name
+identifies the content without reading it; only inline scales are hashed here.
+`scales`/`scales_size` are the bytes handed to XNNPACK.
+*/
+std::string scaleIdentity(
+    GraphPtr flatbuffer_graph,
+    uint32_t scale_buffer_idx,
+    const void* scales,
+    size_t scales_size) {
+  std::string name = constantDataName(flatbuffer_graph, scale_buffer_idx);
+  return name.empty() ? hashBytesHex(scales, scales_size) : name;
+}
+
+/*
 The part of a quantized kernel's weights-cache qualifier that comes from the
 kernel's own quantization: the parameters XNNPACK packs together with it.
 
@@ -199,16 +230,10 @@ in XNNWeightsCache.h: a file written by the previous format would still load,
 and every quantized kernel would then miss and re-pack to heap on each launch.
 */
 std::string quantizedKernelQualifier(
-    bool use_weight_cache,
     const char* kind,
-    const void* scales,
-    size_t scales_size,
+    const std::string& scales,
     const std::string& extra) {
-  if (!use_weight_cache) {
-    return "";
-  }
-  return std::string("|") + kind + ":" + hashBytesHex(scales, scales_size) +
-      ":" + extra;
+  return std::string("|") + kind + ":" + scales + ":" + extra;
 }
 
 /*
@@ -278,6 +303,13 @@ void qualifyPackedKernel(
   ctx.weights_cache->qualify_unpacked_name(data->second.data, suffix);
 }
 
+struct PackingNodeIds {
+  uint32_t filter_id;
+  uint32_t bias_id;
+  uint32_t input_id;
+  uint32_t output_id;
+};
+
 /*
 Serialized ids of a node whose filter and bias XNNPACK copies into its own
 packed storage while the runtime is created; nullopt for every other node,
@@ -322,13 +354,6 @@ void qualifyPackedNodeKernel(const CacheNamingContext& ctx, NodePtr node) {
     qualifyPackedKernel(ctx, ids->filter_id, ids->input_id, ids->output_id);
   }
 }
-
-struct PackingNodeIds {
-  uint32_t filter_id;
-  uint32_t bias_id;
-  uint32_t input_id;
-  uint32_t output_id;
-};
 
 /**
 Gets the constant data pointer associated with the given tensor value.
@@ -662,13 +687,11 @@ Error defineTensor(
             /*external_id=*/tensor_value->external_id(),
             /*flags=*/tensor_value->flags(),
             /*id_out=*/&id);
-        {
+        if (use_weight_cache) {
           const float scale_value = qparams->scale();
           kernel_qualifier = quantizedKernelQualifier(
-              use_weight_cache,
               "pt",
-              &scale_value,
-              sizeof(scale_value),
+              hashBytesHex(&scale_value, sizeof(scale_value)),
               std::to_string(qparams->zero_point()));
         }
         break;
@@ -709,29 +732,6 @@ Error defineTensor(
               scale != nullptr, Internal, "Failed to load scale data.");
           scale_numel = qparams->num_scales();
         }
-        status = xnn_define_channelwise_quantized_tensor_value_v2(
-            /*subgraph=*/subgraph_ptr,
-            /*datatype=*/dtype,
-            /*zero_point=*/zero_point,
-            /*scale=*/scale,
-            /*num_dims=*/dims_data.size(),
-            /*channel_dim*/ qparams->channel_dim(),
-            /*dims=*/dims_data.data(),
-            /*data=*/buffer_ptr,
-            /*external_id=*/tensor_value->external_id(),
-            /*flags=*/tensor_value->flags(),
-            /*id_out=*/&id);
-        kernel_qualifier = quantizedKernelQualifier(
-            use_weight_cache,
-            "pc",
-            scale,
-            scale_numel * sizeof(float),
-            std::to_string(qparams->channel_dim()));
-        break;
-      }
-      case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
-        xnn_datatype datatype = getDataType(tensor_value->datatype());
-        ET_CHECK_OR_RETURN_ERROR(
         ET_CHECK_OR_RETURN_ERROR(
             qparams->channel_dim() < dims_data.size(),
             InvalidProgram,
@@ -745,6 +745,33 @@ Error defineTensor(
             scale_numel,
             dims_data[qparams->channel_dim()],
             qparams->channel_dim());
+        status = xnn_define_channelwise_quantized_tensor_value_v2(
+            /*subgraph=*/subgraph_ptr,
+            /*datatype=*/dtype,
+            /*zero_point=*/zero_point,
+            /*scale=*/scale,
+            /*num_dims=*/dims_data.size(),
+            /*channel_dim*/ qparams->channel_dim(),
+            /*dims=*/dims_data.data(),
+            /*data=*/buffer_ptr,
+            /*external_id=*/tensor_value->external_id(),
+            /*flags=*/tensor_value->flags(),
+            /*id_out=*/&id);
+        if (use_weight_cache) {
+          kernel_qualifier = quantizedKernelQualifier(
+              "pc",
+              scaleIdentity(
+                  flatbuffer_graph,
+                  qparams->scale_buffer_idx(),
+                  scale,
+                  scale_numel * sizeof(float)),
+              std::to_string(qparams->channel_dim()));
+        }
+        break;
+      }
+      case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
+        xnn_datatype datatype = getDataType(tensor_value->datatype());
+        ET_CHECK_OR_RETURN_ERROR(
             datatype == xnn_datatype::xnn_datatype_qbint4,
             Internal,
             "Unsupported datatype for per channel group quantization: %d",
@@ -821,13 +848,17 @@ Error defineTensor(
             /*external_id=*/tensor_value->external_id(),
             /*flags=*/tensor_value->flags(),
             /*id_out=*/&id);
-        kernel_qualifier = quantizedKernelQualifier(
-            use_weight_cache,
-            "pcg",
-            scale_data,
-            scale_numel * sizeof(uint16_t),
-            std::to_string(group_size) + ":" +
-                std::to_string(qparams->channel_dim()));
+        if (use_weight_cache) {
+          kernel_qualifier = quantizedKernelQualifier(
+              "pcg",
+              scaleIdentity(
+                  flatbuffer_graph,
+                  qparams->scale_buffer_idx(),
+                  scale_data,
+                  scale_numel * sizeof(uint16_t)),
+              std::to_string(group_size) + ":" +
+                  std::to_string(qparams->channel_dim()));
+        }
         break;
       }
       case fb_xnnpack::XNNQuantParams::PerTokenDynamicQuant: {
