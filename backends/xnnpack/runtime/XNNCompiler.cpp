@@ -903,7 +903,7 @@ Error defineTensor(
 
   // map serialized id to newly generated id
   remapped_ids.emplace(std::make_pair(tensor_value->id_out(), id));
-  if (buffer_ptr != nullptr) {
+  if (cache_naming.use_weight_cache && buffer_ptr != nullptr) {
     cache_naming.value_data[tensor_value->id_out()] = {
         buffer_ptr, std::move(kernel_qualifier)};
   }
@@ -2493,8 +2493,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   CacheNamingContext cache_naming;
   cache_naming.weights_cache = weights_cache;
   cache_naming.use_weight_cache = options.use_weight_cache;
-  for (auto value : *flatbuffer_graph->xvalues()) {
-    cache_naming.values[getSerializedValueId(value)] = value;
+  if (options.use_weight_cache) {
+    for (auto value : *flatbuffer_graph->xvalues()) {
+      cache_naming.values[getSerializedValueId(value)] = value;
+    }
   }
 
   for (auto value : *flatbuffer_graph->xvalues()) {
