@@ -7,11 +7,14 @@
 
 
 import hashlib
+import io
+import logging
 import os
 import struct
 import tempfile
 
 from collections.abc import Mapping
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from math import prod
 from typing import List
@@ -24,6 +27,8 @@ try:
     has_vela = True
 except ImportError:
     has_vela = False
+
+logger = logging.getLogger(__name__)
 
 
 _BLOCK_NAME_LENGTH = 16
@@ -251,8 +256,17 @@ def vela_compile(
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
         if verbose:
-            args.append("--verbose-all")
-        vela.main(" ".join(args).split(" "))
+            args.append("--verbose-weights")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                vela.main(" ".join(args).split(" "))
+        finally:
+            if output := stdout.getvalue().rstrip():
+                logger.info("%s", output)
+            if output := stderr.getvalue().rstrip():
+                logger.warning("%s", output)
 
         np_path = os.path.join(dir, "output", "out_vela.npz")
 
