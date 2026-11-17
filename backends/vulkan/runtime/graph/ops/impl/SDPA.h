@@ -30,11 +30,6 @@ void sdpa_impl_with_shader_override(
     const std::vector<ValueRef>& args,
     ValueRef shader_override);
 
-// has_fused_qk_softmax: the graph also holds the node added by
-// add_sdpa_compute_attn_weights_with_softmax_node for the same attention. Only
-// then does this node (and the matching softmax node) skip its dispatch on
-// decode within the fused cutoff. Leave it false when attn_weights itself is
-// the wanted output.
 void add_sdpa_compute_attn_weights_node(
     ComputeGraph& graph,
     const ValueRef q,
@@ -43,20 +38,7 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_mask,
     const float scale_val,
     const ValueRef attn_weights,
-    const SDPAMode mode,
-    const bool has_fused_qk_softmax = false);
-
-// Decode-only fused Q @ K^T + softmax, LLM mode. It is added alongside the
-// separate attn-weights and softmax nodes, which must be created with
-// has_fused_qk_softmax = true; their work group pickers then make sure exactly
-// one of the two paths dispatches for the current context length.
-void add_sdpa_compute_attn_weights_with_softmax_node(
-    ComputeGraph& graph,
-    const ValueRef q,
-    const ValueRef k,
-    const ValueRef input_pos_symint,
-    const float scale_val,
-    const ValueRef attn_weights_softmax);
+    const SDPAMode mode);
 
 void add_sdpa_attn_weights_softmax_node(
     ComputeGraph& graph,
@@ -65,14 +47,14 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef attn_weights_softmax,
-    const SDPAMode mode,
-    const bool has_fused_qk_softmax = false);
+    const SDPAMode mode);
 
 // Scalar values for the shader_override knob (see add_sdpa_compute_out_node).
 constexpr int64_t kShaderOverrideForceNonGqa = 0;
 constexpr int64_t kShaderOverrideForceGqa = 1;
 constexpr int64_t kShaderOverrideForceTile2 = 2;
 constexpr int64_t kShaderOverrideForceBase = 3;
+constexpr int64_t kShaderOverrideForceSeparateQkSoftmax = 4;
 
 // shader_override: test-only knob selecting the single-token decode AV shader.
 // It is a ValueRef holding one of the kShaderOverride* int64 scalars above, or
@@ -88,6 +70,11 @@ constexpr int64_t kShaderOverrideForceBase = 3;
 //                             variant (tile2 on Adreno).
 //   kShaderOverrideForceTile2  — force the tiled variant regardless of vendor.
 //   kShaderOverrideForceBase   — force the base variant regardless of vendor.
+//   kShaderOverrideForceSeparateQkSoftmax — keep the decode AV shader on auto,
+//                             but serve a short decode context with the
+//                             separate attn-weights and softmax nodes instead
+//                             of the fused QK+softmax node, to A/B the fusion
+//                             on one shape. Only sdpa_impl reads it.
 // Lets the benchmark/test exercise every AV shader on the same shape, and gives
 // the Adreno-only tile2 variant deterministic coverage on any device. Forcing
 // the GQA family requires a GQA-eligible shape (Hq divisible by Hkv, group size
