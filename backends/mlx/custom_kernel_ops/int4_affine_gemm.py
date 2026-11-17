@@ -621,6 +621,8 @@ inline float fold_qparams(float ws, float wb, float d, float sx) {{
 # vector forms take ``float4 v`` for columns n .. n + 3; ``x_load`` reads 16
 # activations at ``xrow + k`` for ``x_vec`` to convert. ``exact_pc`` keeps
 # per-channel sums exact (int8) instead of folding the bias into the decode.
+# ``padded_rows``: the GEMM's activation rows are padded to whole tiles (int8's
+# xq), so sub-tiles past M run on zeros instead of returning early.
 _ACT_SUBS = {
     "int8": {
         "x_elem": "int8_t",
@@ -631,6 +633,7 @@ _ACT_SUBS = {
         "x_load": "const uint4 xv = *(device const uint4*)(xrow + k);",
         "x_vec": "float4(as_type<char4>(xv[i]))",
         "exact_pc": "true",
+        "padded_rows": "true",
         "out_val": "T(x_scale[m] * fma(-x_zero[m], float(w_sum[n]), v))",
         "out_vec": (
             "vec<T, 4>(x_scale[m] * fma(float4(-x_zero[m]), float4(float(w_sum[n]), "
@@ -646,6 +649,7 @@ _ACT_SUBS = {
         "x_load": "const uint4 xv = *(device const uint4*)(xrow + k);",
         "x_vec": "float4(as_type<char4>(xv[i]))",
         "exact_pc": "true",
+        "padded_rows": "true",
         "out_val": "T(x_scale[m] * v)",
         "out_vec": "vec<T, 4>(x_scale[m] * v)",
     },
@@ -661,6 +665,7 @@ _ACT_SUBS = {
         "x_load": "device const vec<T, 4>* xv = (device const vec<T, 4>*)(xrow + k);",
         "x_vec": "float4(xv[i])",
         "exact_pc": "false",
+        "padded_rows": "false",
         "out_val": "T(v)",
         "out_vec": "vec<T, 4>(v)",
     },
@@ -852,6 +857,7 @@ _MPP_TEMPLATE = Template(
     constexpr int SGN = COOP ? 1 : BN / SN;
     constexpr int CAP = SM * SN / 32;
     constexpr int NRN = CAP / (4 * NM) > 0 ? CAP / (4 * NM) : 1;
+    constexpr bool PADDED_ROWS = $padded_rows;
     $def_m
     const int rows = $x_rows;
     const int s = int(threadgroup_position_in_grid.z);
@@ -861,7 +867,7 @@ _MPP_TEMPLATE = Template(
     const int tn = int(threadgroup_position_in_grid.x) * BN;
     const int n0 = (N >= BN ? min(tn, N - BN) : tn) + (COOP ? 0 : (sg % SGN) * SN);
     const int m0 = int(threadgroup_position_in_grid.y) * BM + (COOP ? 0 : (sg / SGN) * SM);
-    if (m0 >= M || n0 >= N) {
+    if ((!PADDED_ROWS && m0 >= M) || (N < BN && n0 >= N)) {
         return;
     }
 
@@ -881,7 +887,7 @@ $operand_setup
 
     int rn[NRN];
     int rm[NM];
-    bool fast = !COOP && N % 4 == 0 && n0 + SN <= N && facc.get_capacity() == CAP;
+    bool fast = !COOP && N % 4 == 0 && (N >= BN || n0 + SN <= N) && facc.get_capacity() == CAP;
     if (fast) {
         #pragma clang loop unroll(full)
         for (int r = 0; r < NRN; ++r) {
@@ -966,19 +972,22 @@ $operand_block
             if (PER_CHANNEL) {
                 break;
             }
+            // A constant trip count (cooperative ops keep the runtime capacity),
+            // positions from facc, and one access per update, as in the
+            // study's kernel; on M4 Max this is the hot loop.
             #pragma clang loop unroll(full)
-            for (ushort i = 0; i < acc.get_capacity(); ++i) {
-                if (acc.is_valid_element(i)) {
-                    const auto c = acc.get_multidimensional_index(i);
+            for (ushort i = 0; i < (COOP ? facc.get_capacity() : CAP); ++i) {
+                if (facc.is_valid_element(i)) {
+                    const auto c = facc.get_multidimensional_index(i);
                     const int n = n0 + int(c[0]);
                     const int m = m0 + int(c[1]);
                     // Rows past M read x_sum's zero padding and are never
                     // stored; columns stay below N unless N < BN.
                     if (N >= BN || n < N) {
                         const size_t wi = size_t(b) * N + n;
-                        facc[i] = fma(float(acc[i]), float(w_scale[wi]), facc[i]);
+                        facc[i] += float(acc[i]) * float(w_scale[wi]);
                         if (BIAS == 3) {
-                            facc[i] = fma(x_sum[size_t(m) * NB + b], float(w_bias[wi]), facc[i]);
+                            facc[i] += x_sum[size_t(m) * NB + b] * float(w_bias[wi]);
                         }
                     }
                 }
@@ -1057,12 +1066,12 @@ $operand_block
         }
     } else {
         #pragma clang loop unroll(full)
-        for (ushort i = 0; i < acc.get_capacity(); ++i) {
-            if (acc.is_valid_element(i)) {
-                const auto c = acc.get_multidimensional_index(i);
+        for (ushort i = 0; i < (COOP ? facc.get_capacity() : CAP); ++i) {
+            if (facc.is_valid_element(i)) {
+                const auto c = facc.get_multidimensional_index(i);
                 const int n = n0 + int(c[0]);
                 const int m = m0 + int(c[1]);
-                if (m < M && n < N) {
+                if (m < M && (N >= BN || n < N)) {
                     const float v = facc[i];
                     $store_slow;
                 }
