@@ -22,8 +22,14 @@ from executorch.export.huggingface.diffusers.export import build_diffusion_metad
 from executorch.export.huggingface.diffusers.pipeline_specs import DiffusionModelInfo
 from executorch.extension.diffusers.metadata import DiffusionMetadata, METADATA_METHODS
 from executorch.extension.diffusers.pipeline_behaviors import (
+    FluxPipelineBehavior,
     SD15PipelineBehavior,
     SDXLPipelineBehavior,
+)
+from executorch.extension.diffusers.pipeline_behaviors.flux import (
+    image_position_ids,
+    pack_latents,
+    unpack_latents,
 )
 from executorch.extension.diffusers.runner import (
     _cast_floating_tensors,
@@ -165,6 +171,82 @@ class GuidanceTest(unittest.TestCase):
             guidance_scale=7.3,
         )
         torch.testing.assert_close(inputs[-1], torch.tensor([7.3]))
+
+    def test_flux_true_cfg_requires_an_explicit_negative_prompt(self):
+        behavior = FluxPipelineBehavior()
+        self.assertFalse(behavior.should_use_cfg(4.0, None))
+        self.assertTrue(behavior.should_use_cfg(4.0, "blurry"))
+
+
+class FluxBehaviorTest(unittest.TestCase):
+    def test_position_ids_preserve_coordinates_with_bfloat16_denoiser(self):
+        inputs = FluxPipelineBehavior().prepare_denoiser_inputs(
+            torch.zeros(1, 260, 16, dtype=torch.bfloat16),
+            torch.zeros(1),
+            (torch.zeros(1, 8, 5), torch.zeros(1, 3)),
+            height=4160,
+            width=16,
+            vae_scale_factor=8,
+            dtype=torch.bfloat16,
+            guidance_scale=None,
+        )
+        self.assertEqual(inputs[5][-1].tolist(), [0, 259, 0])
+        self.assertEqual(inputs[5].dtype, torch.int64)
+
+    def test_packed_latents_round_trip(self):
+        latents = torch.arange(1 * 4 * 4 * 6).reshape(1, 4, 4, 6)
+        packed = pack_latents(latents)
+        self.assertEqual(packed.shape, (1, 6, 16))
+        torch.testing.assert_close(unpack_latents(packed, 32, 48, 8), latents)
+
+    def test_position_ids_encode_rows_and_columns(self):
+        torch.testing.assert_close(
+            image_position_ids(2, 2),
+            torch.tensor([[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1]]),
+        )
+
+    def test_flow_matching_schedule_uses_dynamic_shift(self):
+        class Scheduler:
+            config = SimpleNamespace(
+                base_image_seq_len=4,
+                max_image_seq_len=16,
+                base_shift=0.5,
+                max_shift=1.1,
+            )
+
+            def set_timesteps(self, steps, *, sigmas, mu):
+                self.call = steps, sigmas, mu
+                self.timesteps = torch.arange(steps)
+
+        scheduler = Scheduler()
+        FluxPipelineBehavior().prepare_schedule(
+            scheduler, 4, height=32, width=64, vae_scale_factor=8
+        )
+        self.assertEqual(scheduler.call[0], 4)
+        self.assertAlmostEqual(scheduler.call[1][-1], 0.25)
+        self.assertAlmostEqual(scheduler.call[2], 0.7)
+
+    def test_flow_matching_schedule_uses_scheduler_flow_sigmas(self):
+        scheduler = mock.Mock()
+        scheduler.config = SimpleNamespace(use_flow_sigmas=True)
+        FluxPipelineBehavior().prepare_schedule(
+            scheduler, 4, height=32, width=64, vae_scale_factor=8
+        )
+        self.assertIsNone(scheduler.set_timesteps.call_args.kwargs["sigmas"])
+
+    def test_denoiser_inputs_scale_timestep_and_add_guidance(self):
+        inputs = FluxPipelineBehavior().prepare_denoiser_inputs(
+            torch.zeros(1, 8, 16),
+            torch.tensor([500.0]),
+            (torch.zeros(1, 9, 5), torch.zeros(1, 3)),
+            height=32,
+            width=64,
+            vae_scale_factor=8,
+            dtype=torch.float32,
+            guidance_scale=3.5,
+        )
+        torch.testing.assert_close(inputs[1], torch.tensor([0.5]))
+        torch.testing.assert_close(inputs[-1], torch.tensor([3.5]))
 
 
 class PipelineSpecTest(unittest.TestCase):

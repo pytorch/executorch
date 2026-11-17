@@ -64,7 +64,7 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
                     full_op,
                     args=(
                         (1,),
-                        float(args[1]),
+                        args[1] if isinstance(args[1], int) else float(args[1]),
                     ),
                     kwargs={
                         "dtype": args[0].to_tensor().dtype,

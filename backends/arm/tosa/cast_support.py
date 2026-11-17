@@ -171,5 +171,7 @@ def supported_to_dim_order_casts(tosa_spec: TosaSpecification) -> SupportedCastM
         casts.update(BF16_FP8E4M3_CASTS)
     if tosa_spec.support_extension("bf16") and tosa_spec.support_extension("fp8e5m2"):
         casts.update(BF16_FP8E5M2_CASTS)
+    if tosa_spec.support_extension("int64"):
+        casts.update(INT64_EXTENSION_CASTS)
 
     return _cast_map(casts)

@@ -7,6 +7,7 @@ import importlib
 from types import ModuleType, SimpleNamespace
 
 import pytest
+import torch
 
 _WRAPPER_MODULE = "executorch.backends.cortex_m.library.cmsis_nn"
 _BUNDLED_MODULE = "executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn"
@@ -90,6 +91,26 @@ def test_cmsis_nn_convolve_wrapper_buffer_size() -> None:
     assert buf_size == 576
 
 
+@pytest.mark.parametrize("layout", ["contiguous", "transposed", "sliced"])
+def test_vector_sum_s8_weights_layout(layout) -> None:
+    cmsis_nn = _import_cmsis_nn_wrapper()
+    if layout == "sliced":
+        weights = torch.arange(-24, 24, dtype=torch.int8).reshape(4, 12)[:, ::2]
+    else:
+        weights = torch.arange(-12, 12, dtype=torch.int8).reshape(4, 6)
+        if layout == "transposed":
+            weights = weights.t().contiguous().t()
+    assert weights.is_contiguous() == (layout == "contiguous")
+    bias = torch.arange(4, dtype=torch.int32)
+    input_offset = -7
+    expected = weights.to(torch.int32).sum(dim=1, dtype=torch.int32) * input_offset
+    expected += bias
+
+    effective_bias = cmsis_nn.vector_sum_s8(weights, input_offset, bias)
+
+    torch.testing.assert_close(effective_bias, expected)
+
+
 def test_fallback_with_missing_module(
     modify_available_cmsis_nn_modules,
 ) -> None:
@@ -130,3 +151,28 @@ def test_raise_without_dependency(modify_available_cmsis_nn_modules) -> None:
         match="Cortex-M backend dependencies are not installed",
     ):
         cmsis_nn.resolve_backend(cmsis_nn.CortexM.M55)
+
+
+@pytest.mark.parametrize(
+    "kernel,padding,stride,dilation,expected",
+    [
+        ((1, 1), (0, 0), (1, 1), (1, 1), 0),
+        ((1, 3), (0, 1), (1, 2), (1, 1), 128),
+        ((1, 3), (0, 0), (1, 1), (1, 1), 128),
+        ((1, 3), (0, 2), (1, 1), (1, 2), 128),
+    ],
+)
+def test_packed_scratch_size(kernel, padding, stride, dilation, expected):
+    cmsis_nn = _import_cmsis_nn_wrapper()
+    size = cmsis_nn.convolve_wrapper_buffer_size(
+        cmsis_nn.Backend.MVE,
+        cmsis_nn.DataType.A8W8,
+        input_nhwc=[1, 1, 9, 8],
+        filter_nhwc=[7, *kernel, 8],
+        output_nhwc=[1, 1, 9, 7],
+        padding_hw=padding,
+        stride_hw=stride,
+        dilation_hw=dilation,
+        weights_packed=True,
+    )
+    assert size == expected

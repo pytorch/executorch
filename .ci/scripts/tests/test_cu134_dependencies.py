@@ -338,6 +338,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         "argv",
                         ["install_executorch", "--use-pt-pinned-commit", "--minimal"],
                     ),
+                    patch.object(package_installer, "ensure_pip"),
                     patch.object(
                         package_installer, "python_is_compatible", return_value=True
                     ),
@@ -375,6 +376,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     ),
                     patch.object(self.installer.sys, "platform", "linux"),
                     patch.object(sys, "argv", ["install_executorch"]),
+                    patch.object(package_installer, "ensure_pip"),
                     patch.object(
                         package_installer, "python_is_compatible", return_value=True
                     ),

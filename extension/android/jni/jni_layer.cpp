@@ -638,7 +638,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
          << "]";
 
       jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+          static_cast<uint32_t>(names_result.error()), ss.str());
       return {};
     }
     const auto& methods = names_result.get();

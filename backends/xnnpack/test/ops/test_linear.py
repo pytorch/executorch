@@ -848,6 +848,36 @@ class TestLinear(unittest.TestCase):
                     quant_type="per_tensor",
                 )
 
+    def test_qs8_linear_shared_by_two_activations(self):
+        # The int32 bias is scaled by the input scale of each use, so a linear
+        # applied to activations with different scales needs one bias per use.
+        class SharedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 6)
+                with torch.no_grad():
+                    self.linear.bias.copy_(
+                        torch.tensor([3.0, -3.0, 2.0, -2.0, 1.0, -1.0])
+                    )
+
+            def forward(self, x):
+                return self.linear(x), self.linear(x * 4.0)
+
+        for is_per_channel in (False, True):
+            quant_config = get_symmetric_quantization_config(
+                is_per_channel=is_per_channel
+            )
+            (
+                Tester(SharedLinear().eval(), (torch.rand(2, 5, 8) * 2 - 1,))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs()
+            )
+
     def test_qs8_linear_float_output(self):
         # XNNPACK leaves out a quantized linear whose output is not quantized. The
         # quantize and dequantize of its input then run in a delegate of their own.

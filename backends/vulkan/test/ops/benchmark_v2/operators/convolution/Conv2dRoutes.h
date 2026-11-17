@@ -18,6 +18,10 @@ Json build_conv2d_im2col(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args,
     const Json& options);
+Json build_conv2d_winograd(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const Json& options);
 Json inspect_conv2d_route(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args,

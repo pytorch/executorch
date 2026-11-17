@@ -74,11 +74,19 @@ class QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             self.register_buffer(
                 f"value_cache_{idx}", self.static_cache.layers[idx].values
             )
+            self.register_buffer(
+                f"cumulative_length_{idx}",
+                self.static_cache.layers[idx].cumulative_length,
+                persistent=False,
+            )
         self.cache = EncoderDecoderCache(self.static_cache, DynamicCache())
 
     def forward(
         self, decoder_input_ids, attention_mask, encoder_hidden_states, cache_position
     ):
+        # StaticLayer writes at cumulative_length and ignores cache_position.
+        for layer in self.static_cache.layers:
+            layer.cumulative_length.copy_(cache_position[0:1])
         # Get outputs from decoder
         outputs = self.decoder(
             input_ids=decoder_input_ids,
