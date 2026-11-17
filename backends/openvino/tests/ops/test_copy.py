@@ -51,14 +51,13 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             def forward(self, x):
                 return x.clone(memory_format=torch.channels_last).mean(dim=(2, 3))
 
-        # Run outside, the clone would hand OpenVINO a channels-last input,
-        # which it reads as if it were contiguous.
-        self.execute_layer_test(ChannelsLastMean(), (torch.randn(2, 3, 4, 5),))
+        # The clone stays in the partition, since only the mean reads it.
+        program = self.execute_layer_test(
+            ChannelsLastMean(), (torch.randn(2, 3, 4, 5),)
+        )
+        self.assertEqual(program.executorch_program.execution_plan[0].operators, [])
 
     def test_copy_of_constant_as_output(self):
-        if not self.device.startswith("CPU"):
-            self.skipTest("float copies stay only in float32, the CPU default")
-
         class CopyOfConstant(torch.nn.Module):
             def __init__(self, kind, memory_format=None, dtype=torch.float32):
                 super().__init__()
@@ -89,6 +88,11 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             "parameter": (CopyOfConstant("parameter"), None),
             "buffer": (CopyOfConstant("buffer"), None),
             "lifted tensor": (CopyOfConstant("lifted tensor"), None),
+            # OpenVINO transposes an output in another dim order.
+            "buffer, channels last": (
+                CopyOfConstant("buffer", torch.channels_last),
+                None,
+            ),
             # With dim order off this stays aten.clone, and the portable clone
             # kernel rejects preserve_format.
             "buffer, dim order off": (
@@ -112,8 +116,14 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             torch.bfloat16,
         ):
             cases[f"{dtype} buffer"] = (CopyOfConstant("buffer", dtype=dtype), None)
+        on_cpu = self.device.startswith("CPU")
         for name, (module, config, *compile_specs) in cases.items():
             with self.subTest(case=name):
+                if module.constant.is_floating_point() and not on_cpu:
+                    # Off the CPU, a float copy stays only when f32 is set.
+                    if self.device.startswith("NPU"):
+                        self.skipTest("the NPU does not accept f32")
+                    compile_specs.append(CompileSpec("inference_precision", b"f32"))
                 inputs = (torch.randn(2, 3, 4, 5),)
                 program = self.execute_layer_test(
                     module,
@@ -140,9 +150,9 @@ class TestCopyOperator(BaseOpenvinoOpTest):
             def forward(self, x):
                 return self.body(self.buffer, x)
 
-        def copy_of_copy_and_sin(buffer, x):
-            copy = buffer.clone().clone(memory_format=torch.channels_last)
-            return copy, torch.sin(copy)
+        def copy_of_copy_and_add(buffer, x):
+            copy = buffer.clone().clone()
+            return copy, copy + 1
 
         def copy_and_copy_of_it(buffer, x):
             copy = buffer.clone()
@@ -150,13 +160,8 @@ class TestCopyOperator(BaseOpenvinoOpTest):
 
         floats = torch.randn(2, 3, 4, 5)
         cases = {
-            # OpenVINO writes every output in the default dim order.
-            "channels last": (
-                lambda b, x: (b.clone(memory_format=torch.channels_last), b + x),
-                floats,
-            ),
             # The inner copy must leave too, or export finds a cycle.
-            "copy of a copy, channels last": (copy_of_copy_and_sin, floats),
+            "copy of a copy, int64": (copy_of_copy_and_add, torch.tensor([2, -3])),
             # The CPU plugin computes 64-bit types in 32 bits.
             "int64": (
                 lambda b, x: (b.clone(), x + 1),

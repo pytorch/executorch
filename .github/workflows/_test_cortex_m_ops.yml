@@ -59,6 +59,6 @@ jobs:
         # op set, implementation tests check FVP numerics. Both are parametrized
         # over --cortex-m-target, so a future target-dependent lowering change is
         # caught here. (cortex-m55 runs on pull via the full-suite job.)
-        pytest --config-file=backends/arm/test/pytest.ini \
+        pytest -c backends/arm/test/pytest.ini \
           backends/cortex_m/test/ops \
           --cortex-m-target=${{ matrix.target }}

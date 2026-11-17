@@ -15,7 +15,6 @@ import logging
 import threading
 
 import pytest
-
 from executorch.examples.llm_server.python import session_runtime as session_runtime_mod
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     MultiplexedWorkerClient,
@@ -666,6 +665,7 @@ def test_native_direct_stream_preserves_prefetch_and_final_stats(monkeypatch):
                 prefill_tok_s=80,
                 decode_tok_s=40,
                 vision_encoder_ms=123.5,
+                terminal_received=True,
             )
             assert not client._requests and not runtime._generations
             await runtime.aclose_worker()

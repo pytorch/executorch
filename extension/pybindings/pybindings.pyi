@@ -70,9 +70,15 @@ class ExecuTorchResult:
         ...
 
     @staticmethod
-    def from_host(source: Any, device_index: int = 0) -> ExecuTorchResult:
+    def from_host(
+        source: Any, device_index: int = 0, *, dtype: Optional[str] = None
+    ) -> ExecuTorchResult:
         """Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA device,
         for use as a method input.
+
+        ``dtype``, such as ``"bfloat16"``, is the dtype of the copy, for data
+        that comes the way results of that dtype export it: for dtypes the
+        buffer protocol cannot describe, as unsigned integers of the same width.
 
         Requires bindings built with CUDA support.
         """
@@ -462,7 +468,16 @@ def _reset_profile_results() -> None:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _unsafe_reset_threadpool(num_threads: int) -> None:
-    """
+    """Sets the number of threads in the CPU thread pool.
+
+    Call it before loading methods. A method loaded earlier keeps its XNNPACK
+    parts on the old thread pool until the method is destroyed, while its other
+    kernels use the new count and its ``CpuBackend`` parts fail to run. A
+    ``Program`` from ``executorch.runtime`` and an ``ExecuTorchModule`` keep the
+    methods they loaded, so load the method from a new one to use the new count.
+    Calling it while a ``CpuBackend`` part is loading or running is not safe.
+    A count of 0, or the current count, changes nothing.
+
     .. warning::
 
         This API is experimental and subject to change without notice.

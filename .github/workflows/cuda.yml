@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0, 13.4) using the command:
+# across different CUDA versions (13.0, 13.4) using the command:
 #   ./install_executorch.sh
 #
 # It also runs model accuracy (e2e EXPECTED_OUTPUT checks) and, for the perf
@@ -41,6 +41,7 @@ on:
       - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
       - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
+      - examples/models/phonon/**
       - extension/pybindings/**
       - runtime/__init__.py
       - runtime/cuda.py
@@ -48,6 +49,7 @@ on:
       - exir/passes/insert_write_back_for_buffers_pass.py
       - exir/passes/propagate_device_config.py
       - exir/passes/propagate_device_pass.py
+      - exir/passes/replace_complex_with_real_pass.py
   workflow_dispatch:
     inputs:
       models:
@@ -141,7 +143,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0", "13.4"]
+        cuda-version: ["13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -158,8 +160,8 @@ jobs:
       script: |
         set -eux
 
-        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
-        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        # AOTI model libraries need a newer C++ runtime than the image's system
+        # library; the 13.4 image also needs the thread-local cleanup fix.
         conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
         export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
@@ -235,7 +237,7 @@ jobs:
             -Bcmake-out .
         cmake --build cmake-out -j4
 
-        for model in linear add add_mul resnet18 conv1d sdpa mv2 mv3; do
+        for model in linear add add_mul resnet18 conv1d depthwise_conv sdpa mv2 mv3; do
           python -m examples.cuda.scripts.export --model_name="$model" --output_dir "./"
           ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
         done
@@ -291,7 +293,9 @@ jobs:
 
         # Export the explicit PTX fallback separately. A10G supports 99 KiB of
         # opt-in shared memory per block, so constrain the A100 export to it.
-        for model in linear sdpa; do
+        # depthwise_conv also carries its example input and eager output, for
+        # the clean-environment runs of the consuming jobs.
+        for model in linear sdpa depthwise_conv; do
           model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           mkdir -p "${model_dir}"
           ET_CUDA_TARGET_SMEM_BYTES=101376 \
@@ -300,8 +304,12 @@ jobs:
             --model_name="${model}" \
             --output_dir="${model_dir}" \
             --cuda_include_ptx=ON \
-            --seed=0
+            --seed=0 \
+            --save_example_io
         done
+        # The depthwise convolution must run as the backend's Triton kernel.
+        grep -aqE "_(flat|row8)_kernel" \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv/depthwise_conv.pte"
 
   test-cuda-target-smem-cross-arch:
     name: merge-and-test-cuda-multi-arch-a10g
@@ -379,12 +387,17 @@ jobs:
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
 
-        for model in linear sdpa; do
+        for model in linear sdpa depthwise_conv; do
           model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           ./cmake-out/executor_runner \
             --model_path "${model_dir}/${model}.pte" \
             --data_path "${model_dir}/aoti_cuda_blob.ptd"
         done
+
+        # The A100 export runs here from its PTX, twice, with only the runner
+        # and its libraries in an empty environment.
+        bash .ci/scripts/test_cuda_clean_runtime.sh ./cmake-out/executor_runner \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv" depthwise_conv
 
         # The local native PTE and merged PTE must run on sm86.
         ./cmake-out/executor_runner \
@@ -452,6 +465,11 @@ jobs:
         cmp "${sm80_ptd}" "${fallback_ptd}"
         cmp "${sm80_ptd}" "${merged_ptd}"
 
+        # The A100 export runs natively on this fresh runner, twice, with only
+        # the runner and its libraries in an empty environment.
+        bash .ci/scripts/test_cuda_clean_runtime.sh ./cmake-out/executor_runner \
+          "${RUNNER_ARTIFACT_DIR}/fallback-sm80/depthwise_conv" depthwise_conv
+
         # The local native PTE and merged PTE must run on sm80.
         ./cmake-out/executor_runner \
           --model_path "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
@@ -476,9 +494,9 @@ jobs:
   unittest-cuda:
     name: unittest-cuda (${{ matrix.shard }})
     needs: [changed-files, run-decision]
-    # This job runs the pybindings device test and the device placement test,
-    # so it also has to fire on the pybindings and device pass paths the
-    # workflow filter lists.
+    # This job runs the pybindings device test, the device placement test and
+    # the complex number tests, so it also has to fire on the pybindings and
+    # exir pass paths the workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -493,6 +511,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/insert_write_back_for_buffers_pass.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_config.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/replace_complex_with_real_pass.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     # kernel: Triton kernels and their autotuning. system: lowering passes, op
     # dispatch, export/runtime, and model tests. Together they do not fit the
@@ -506,7 +525,7 @@ jobs:
       id-token: write
       contents: read
     with:
-      timeout: 90
+      timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
@@ -533,6 +552,10 @@ jobs:
           backends/cuda/tests/test_autotune_inputs.py
           backends/cuda/tests/test_autotune_launch_params.py
           backends/cuda/tests/test_triton_mutation_cache.py
+          backends/cuda/tests/test_conv_routing.py
+          backends/cuda/tests/test_conv_binding.py
+          backends/cuda/tests/test_conv_depthwise.py
+          backends/cuda/tests/test_conv_implicit_gemm.py
         )
         # These run in unittest-cuda-quantized-gemm.
         QUANTIZED_GEMM_TESTS=(
@@ -804,6 +827,53 @@ jobs:
         fi
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
+
+  test-cuda-phonon:
+    name: test-cuda-phonon
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/phonon') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+        mkdir -p "${HF_HOME}"
+        # The runner also points HF_HUB_CACHE at the read-only mount.
+        export HF_HUB_CACHE="${HF_HOME}/hub"
+
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        pip install safetensors tokenizers huggingface_hub
+        python -m pytest examples/models/phonon/tests -q
+        python -m executorch.examples.models.phonon.export_phonon \
+          --backend cuda --output-dir phonon_exports/cuda
+        make phonon-cuda
+        cmake-out/examples/models/phonon/phonon_runner \
+          --model_path phonon_exports/cuda/phonon.pte \
+          --data_path phonon_exports/cuda/aoti_cuda_blob.ptd \
+          --text "Hello from ExecuTorch." \
+          --output phonon.wav
+        # 16-bit mono WAV with at least 0.5 s of audio at 24 kHz.
+        test "$(wc -c < phonon.wav)" -gt $((44 + 24000))
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}
@@ -1220,11 +1290,7 @@ jobs:
       matrix:
         include:
           - variant: kquant-17gb
-            mode: solo-text
-          - variant: kquant-17gb
             mode: dflash-image-batching
-          - variant: kquant-17gb
-            mode: dflash-image
           - variant: kquant-dynamic
             mode: solo-text
           - variant: kquant-dynamic

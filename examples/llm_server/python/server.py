@@ -39,6 +39,8 @@ from starlette.requests import ClientDisconnect
 
 from .chat_template import ChatTemplate
 from .errors import APIError
+from .hud import install as install_hud
+from .hud.metrics import record_error, Turn
 from .protocol import ChatCompletionRequest, ModelCard, ModelList
 from .serving_chat import ServingChat
 from .session_runtime import SessionRuntime
@@ -96,13 +98,16 @@ async def _session_op(
 
 
 async def _create_with_disconnect(
-    request: Request, serving: ServingChat, req: ChatCompletionRequest
+    request: Request,
+    serving: ServingChat,
+    req: ChatCompletionRequest,
+    observer: Optional[Turn] = None,
 ):
     async def wait_disconnect():
         while (await request.receive())["type"] != "http.disconnect":
             pass
 
-    creation = asyncio.create_task(serving.create(req))
+    creation = asyncio.create_task(serving.create(req, observer=observer))
     disconnect = asyncio.create_task(wait_disconnect())
     transferred = False
 
@@ -127,22 +132,59 @@ async def _create_with_disconnect(
 
 
 class _ClosingStreamingResponse(StreamingResponse):
-    def __init__(self, content, *, heartbeat_interval=15.0, **kwargs):
+    def __init__(
+        self, content, *, heartbeat_interval=15.0, metrics=None, turn=None, **kwargs
+    ):
         self._source = content
         super().__init__(_with_heartbeats(content, heartbeat_interval), **kwargs)
+        self.metrics = metrics
+        self.turn = turn
 
     async def __call__(self, scope, receive, send):
+        disconnected = False
+        completed = False
+
+        async def observed_receive():
+            nonlocal disconnected
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                disconnected = True
+            return message
+
+        async def observed_send(message):
+            nonlocal completed
+            await send(message)
+            if message["type"] == "http.response.body" and (
+                not message.get("more_body", False)
+                or message.get("body", b"").endswith(b"data: [DONE]\n\n")
+            ):
+                # Clients may disconnect after [DONE], before iterator cleanup.
+                completed = True
+
         try:
-            await super().__call__(scope, receive, send)
+            await super().__call__(scope, observed_receive, observed_send)
+        except (asyncio.CancelledError, ClientDisconnect):
+            disconnected = True
+            raise
+        except Exception as error:
+            record_error(self.turn, type(error).__name__)
+            raise
         finally:
             try:
                 await SessionRuntime._finish_cleanup(
                     asyncio.create_task(self.body_iterator.aclose())
                 )
             finally:
-                await SessionRuntime._finish_cleanup(
-                    asyncio.create_task(self._source.aclose())
-                )
+                try:
+                    await SessionRuntime._finish_cleanup(
+                        asyncio.create_task(self._source.aclose())
+                    )
+                finally:
+                    if self.turn is not None:
+                        self.metrics.finish(
+                            self.turn,
+                            "cancelled" if disconnected and not completed else "done",
+                        )
 
 
 async def _with_heartbeats(stream, interval=15.0):
@@ -218,18 +260,74 @@ def _current_serving(app: FastAPI) -> ServingChat:
     return serving
 
 
+async def _chat_response(app, request, req):
+    try:
+        if req.session_id is not None:
+            ServingChat._validate_session_id(req.session_id)
+    except APIError as error:
+        return JSONResponse(
+            _current_serving(app).error_body(error), status_code=error.status
+        )
+    metrics = app.state.telemetry
+    turn = metrics.begin(req.session_id) if metrics is not None else None
+    transferred = False
+    state = "done"
+    try:
+        result = await _create_with_disconnect(
+            request, _current_serving(app), req, turn
+        )
+        if req.stream:
+            response = _ClosingStreamingResponse(
+                result, media_type="text/event-stream", metrics=metrics, turn=turn
+            )
+            transferred = True
+            return response
+        return JSONResponse(result.model_dump(exclude_none=True))
+    except ClientDisconnect:
+        state = "cancelled"
+        return Response(status_code=499)
+    except asyncio.CancelledError:
+        state = "cancelled"
+        raise
+    except APIError as e:
+        record_error(turn, e.code or e.err_type)
+        return JSONResponse(_current_serving(app).error_body(e), status_code=e.status)
+    except Exception as error:
+        record_error(turn, type(error).__name__)
+        raise
+    finally:
+        if turn is not None and not transferred:
+            metrics.finish(turn, state)
+
+
 def build_app(
     serving: Optional[ServingChat],
     model_id: str,
     *,
     serving_factory: Optional[Callable[[], AsyncContextManager[ServingChat]]] = None,
+    model_path: Optional[str] = None,
+    max_context: Optional[int] = None,
+    max_concurrent_requests: Optional[int] = None,
+    hud: bool = False,
+    listen_address: Optional[str] = None,
 ) -> FastAPI:
     """Build an app with either an injected adapter or a lifespan-owned factory.
 
     The factory owns partial-startup cleanup and awaited runtime shutdown. Direct
     instances retain FastAPI's default lifespan and are not closed by this app.
+    HUD-enabled launchers must capture worker stderr; embedders default to plain logs.
     """
     app = _create_serving_app(serving, serving_factory)
+    app.state.telemetry = None
+    if hud:
+        install_hud(
+            app,
+            model_id,
+            model_path=model_path,
+            context=max_context,
+            capacity=max_concurrent_requests,
+            listen_address=listen_address,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
@@ -277,39 +375,47 @@ def build_app(
         req.session_id = _resolve_session_id(
             req, x_executorch_session_id, session_id_header, x_session_affinity
         )
-        try:
-            result = await _create_with_disconnect(request, _current_serving(app), req)
-        except ClientDisconnect:
-            return Response(status_code=499)
-        except APIError as e:
-            return JSONResponse(
-                _current_serving(app).error_body(e), status_code=e.status
-            )
-        if req.stream:
-            return _ClosingStreamingResponse(result, media_type="text/event-stream")
-        return JSONResponse(result.model_dump(exclude_none=True))
+        return await _chat_response(app, request, req)
 
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension).
-        serving = _current_serving(app)
-        return await _session_op(
-            serving.close_session,
-            session_id,
-            {"closed": True, "session_id": session_id},
-            serving,
-        )
+        closed = False
+        try:
+            serving = _current_serving(app)
+            response = await _session_op(
+                serving.close_session,
+                session_id,
+                {"closed": True, "session_id": session_id},
+                serving,
+            )
+            closed = response.status_code == 200
+            return response
+        finally:
+            if app.state.telemetry is not None:
+                if closed:
+                    app.state.telemetry.close_session(session_id)
+                else:
+                    app.state.telemetry.reset_context(session_id, None)
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
         # Replace a named session's context under its public ID (vendor extension).
-        serving = _current_serving(app)
-        return await _session_op(
-            serving.reset_session,
-            session_id,
-            {"reset": True, "session_id": session_id},
-            serving,
-        )
+        context = None
+        try:
+            serving = _current_serving(app)
+            response = await _session_op(
+                serving.reset_session,
+                session_id,
+                {"reset": True, "session_id": session_id},
+                serving,
+            )
+            if response.status_code == 200:
+                context = 0
+            return response
+        finally:
+            if app.state.telemetry is not None:
+                app.state.telemetry.reset_context(session_id, context)
 
     return app
 

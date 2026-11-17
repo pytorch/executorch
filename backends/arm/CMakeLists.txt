@@ -65,6 +65,18 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     executorch_delegate_ethos_u PRIVATE ${_common_include_directories}
   )
 
+  add_library(
+    ethosu_execution_stats STATIC EXCLUDE_FROM_ALL
+    ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
+  )
+  target_include_directories(
+    ethosu_execution_stats
+    PRIVATE ${_common_include_directories}
+    PUBLIC
+      $<BUILD_INTERFACE:${ETHOS_SDK_PATH}/core_software/core_driver/include>
+  )
+  target_link_libraries(ethosu_execution_stats PUBLIC executorch_core)
+
   if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     target_sources(
       executorch_delegate_ethos_u
@@ -90,20 +102,24 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
-    add_library(
-      ethosu_execution_stats STATIC EXCLUDE_FROM_ALL
-      ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp
+    target_sources(
+      ethosu_execution_stats
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats_CoreDriver.cpp
     )
-    target_include_directories(
-      ethosu_execution_stats PRIVATE ${_common_include_directories}
-    )
-    target_include_directories(
-      ethosu_execution_stats PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
-    )
-    target_link_libraries(
-      ethosu_execution_stats PUBLIC ethosu_core_driver executorch_core
-    )
+    target_link_libraries(ethosu_execution_stats PUBLIC ethosu_core_driver)
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_compile_definitions(
+      executorch_delegate_ethos_u PUBLIC EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    target_compile_definitions(
+      ethosu_execution_stats PUBLIC EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    target_sources(
+      ethosu_execution_stats
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats_LinuxDriver.cpp
+    )
     target_sources(
       executorch_delegate_ethos_u
       PRIVATE
@@ -127,6 +143,14 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       set(ETHOSU_LINUX_DRIVER_SOURCE_DIR ${ethosu_linux_driver_src_SOURCE_DIR})
     endif()
 
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ArmEthosUPmu.cmake)
+    arm_add_ethosu_linux_pmu_events(
+      ethosu_execution_stats "${ETHOSU_LINUX_DRIVER_SOURCE_DIR}"
+    )
+    target_include_directories(
+      ethosu_execution_stats
+      PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/include
+    )
     target_include_directories(
       executorch_delegate_ethos_u
       PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/include

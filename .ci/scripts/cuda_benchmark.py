@@ -588,7 +588,7 @@ class BenchmarkResults:
             workflow_run_id: GitHub workflow run ID
             workflow_run_url: GitHub workflow run URL
             gpu_name: GPU device name (e.g., "Tesla V100", "A100")
-            cuda_driver_version: CUDA driver version (e.g., "12.6", "535.104.05")
+            cuda_driver_version: CUDA driver version (e.g., "13.0", "535.104.05")
 
         Returns:
             List of benchmark records in v3 format
@@ -873,7 +873,7 @@ def main():
         "--cuda_driver_version",
         type=str,
         default=None,
-        help="CUDA driver version (e.g., '12.6', '535.104.05') - optional for v3 format",
+        help="CUDA driver version (e.g., '13.0', '535.104.05') - optional for v3 format",
     )
     parser.add_argument("--verbose", action="store_true", help="Print verbose output")
 

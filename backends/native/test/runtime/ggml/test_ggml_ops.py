@@ -380,10 +380,29 @@ class GgmlOpsTest(unittest.TestCase):
         raw[:, 209] = 0x3C
         return ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
 
+    @staticmethod
+    def _q5_k_weights(rows, cols):
+        # Random Q5_K blocks under an FP16 super-block scale of 2^-10 and min
+        # of 2^-6, so sub-block scales, mins and fifth bits vary by row and
+        # block.
+        raw = torch.randint(0, 256, (rows, cols // 256, 176), dtype=torch.uint8)
+        raw[..., 0:2] = torch.tensor([2**-10], dtype=torch.float16).view(torch.uint8)
+        raw[..., 2:4] = torch.tensor([2**-6], dtype=torch.float16).view(torch.uint8)
+        return ExportableGGUFTensor.from_raw(
+            raw.reshape(rows, -1), "q5_k", torch.float32
+        )
+
+    def test_gguf_q5_k_linear(self):
+        self._check_gguf_linear(self._q5_k_weights(8, 512))
+
     def test_gguf_q6_k_linear(self):
-        model = torch.nn.Linear(256, 8, bias=False)
-        model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
-        representable = torch.full((2, 256), 0.125)
+        self._check_gguf_linear(self._q6_k_weights(8))
+
+    def _check_gguf_linear(self, weight):
+        rows, cols = weight.shape
+        model = torch.nn.Linear(cols, rows, bias=False)
+        model.weight = torch.nn.Parameter(weight, requires_grad=False)
+        representable = torch.full((2, cols), 0.125)
         representable[1, ::2] = -0.125
         # GGML requantizes F32 activations before the dot product: to Q8_K on
         # CPU, which these values survive exactly, and to Q8_1 with an FP16
@@ -399,7 +418,7 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(
             model,
-            (torch.randn(2, 256) / 8,),
+            (torch.randn(2, cols) / 8,),
             atol=0.35,
             rtol=0.02,
             allow_activation_quant_for_weight_only=True,
@@ -443,7 +462,7 @@ class GgmlOpsTest(unittest.TestCase):
             self.assertEqual(shape, tuple(reference.shape))
             actual = torch.frombuffer(bytearray(raw), dtype=reference.dtype)
             torch.testing.assert_close(
-                actual.reshape(shape), reference, atol=atol, rtol=rtol
+                actual.reshape(shape), reference, atol=atol, rtol=rtol, equal_nan=True
             )
 
     def _run_exported(self, model, example, inputs):
@@ -619,6 +638,9 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_tanh(self):
+        self._check(Lambda(torch.tanh), (torch.randn(1, 512) * 3.0,))
+
     def test_gelu(self):
         ops = collections.Counter()
         self._check(Lambda(F.gelu), (torch.randn(2, 3, 4) * 3.0,), graph_ops=ops)
@@ -641,6 +663,18 @@ class GgmlOpsTest(unittest.TestCase):
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
 
+    def test_exp(self):
+        self._check(Lambda(torch.exp), (torch.randn(3, 1, 1).clamp(max=4.6),))
+
+    def test_exp_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(torch.exp),
+                    (torch.randn(2, 3, 4, dtype=dtype),),
+                    rtol=rtol,
+                )
+
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
@@ -652,6 +686,17 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_sqrt(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        self._check(Lambda(torch.sqrt), (x,))
+        self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
+
+    def test_sqrt_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32"):
+            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
 
     def test_conv2d(self):
         self._check(
@@ -846,6 +891,18 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_mean_trailing_dims(self):
         self._check(Lambda(lambda x: x.mean(dim=(-1, -2))), (torch.randn(2, 3, 4, 5),))
+
+    def test_sum_trailing_dims(self):
+        self._check(
+            Lambda(lambda x: x.sum(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
+        )
+        self._check(Lambda(lambda x: x.sum(dim=[2, 3])), (torch.randn(2, 3, 4, 5),))
+
+    def test_amax_trailing_dims(self):
+        self._check(
+            Lambda(lambda x: x.amax(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
+        )
+        self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
@@ -1121,10 +1178,7 @@ class GgmlOpsTest(unittest.TestCase):
     def test_embedding_4bit(self):
         model = torch.nn.Embedding(10, 64)
         _quantize_8da4w(model, group_size=64)
-        # Only the Q4_0 fp16 scales round, so this fails on a nibble swap.
-        self._check(
-            model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),), atol=2e-3, rtol=1e-3
-        )
+        self._check(model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
 
     def test_embedding_4bit_rejects_asymmetric(self):
         model = torch.nn.Embedding(10, 64)
@@ -1453,6 +1507,18 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["CONT"], 0)
 
+    def test_graph_with_as_many_leafs_as_nodes(self):
+        # 2,100 additions of separate constants fit the default graph size of
+        # 4,096 nodes, but the scheduler also hashes their 2,100 leafs.
+        constants = [torch.randn(4) for _ in range(2100)]
+
+        def forward(x):
+            for constant in constants:
+                x = x + constant
+            return x
+
+        self._check(Lambda(forward), (torch.randn(4),))
+
     def test_cached_graphs_refresh_inputs_and_persistent_cache(self):
         t = Dim("t", min=1, max=8)
         ep = torch.export.export(
@@ -1725,6 +1791,19 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(
             Rope(config),
+            (torch.randn(1, 4, 5, 64), torch.tensor([[3, 4, 5, 6, 7]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_rope_zero_frequency_leaves_dims_unrotated(self):
+        # Partial RoPE written as zero inverse frequencies, e.g. Gemma 4's
+        # proportional RoPE: those dims keep their values.
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        model = Rope(config)
+        model.rotary.inv_freq[8:] = 0.0
+        self._check(
+            model,
             (torch.randn(1, 4, 5, 64), torch.tensor([[3, 4, 5, 6, 7]])),
             atol=1e-4,
             rtol=1e-4,

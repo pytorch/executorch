@@ -580,6 +580,13 @@ class TestPerGroupQuant(unittest.TestCase):
         self.assertFalse(qparams.is_per_tensor())
         self.assertFalse(qparams.is_per_channel())
 
+    def test_non_dividing_scale_is_rejected(self) -> None:
+        qparams = _create_per_group_qparams(torch.ones(1, 3))
+        with self.assertRaises(ValueError):
+            qparams.is_per_group([1, 10])
+        with self.assertRaises(ValueError):
+            qparams.is_per_channel([1, 10])
+
     def test_quantize_matches_loop_reference(self) -> None:
         torch.manual_seed(0)
         weight = torch.randn(4, 16)
@@ -897,3 +904,27 @@ class TestOps(unittest.TestCase):
                 *qp,
                 *qp,
             )
+
+    def test_binary_meta_dtype_follows_rank_aware_promotion(self) -> None:
+        # A dimensioned float16 tensor outranks a zero-dim one dequantized to
+        # float32, so ATen returns float16.
+        inp = torch.randn(4, dtype=torch.float16)
+        other = torch.tensor(3, dtype=torch.int8)
+        other_qparams = QuantParamsStruct(
+            torch.tensor([0.5]),
+            torch.tensor([0], dtype=torch.int64),
+            torch.float32,
+            -128,
+            127,
+        )
+        no_qparams = (None, None, torch.float32, -128, 127)
+        qparams = (*no_qparams, *_flat_qparams(other_qparams), *no_qparams)
+
+        eager = torch.ops.fused_quant.add.default(inp, other, *qparams)
+        with FakeTensorMode(allow_non_fake_inputs=True) as mode:
+            fake = torch.ops.fused_quant.add.default(
+                mode.from_tensor(inp), mode.from_tensor(other), *qparams
+            )
+
+        self.assertEqual(eager.dtype, torch.float16)
+        self.assertEqual(fake.dtype, eager.dtype)

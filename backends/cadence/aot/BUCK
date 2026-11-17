@@ -262,6 +262,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/passes:cse_pass",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:spec_prop_pass",
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
     ],
 )
 

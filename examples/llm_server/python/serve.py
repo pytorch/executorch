@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .chat_template import ChatTemplate
+from .hud.worker_logs import capture_worker_logs
 from .multiplexed_worker_client import spawn_multiplexed_worker
 from .server import build_app
 from .serving_chat import ServingChat
@@ -39,23 +40,35 @@ def _parse_preflight_timeout(value):
     return timeout
 
 
-def _validate_limits(parser, args, *, prefix_capture_slots=0) -> int:
-    for flag, value in (
-        ("--max-context", args.max_context),
-        ("--max-sessions", args.max_sessions),
-        ("--max-decode-sequences", args.max_decode_sequences),
-        ("--max-inflight-requests", args.max_inflight_requests),
+def _validate_limits(
+    parser, args, *, prefix_capture_slots=0, prefix_checkpoint_prompt_end="initial"
+) -> int:
+    for flag, value, minimum in (
+        ("--max-context", args.max_context, 1),
+        ("--max-sessions", args.max_sessions, 1),
+        ("--max-decode-sequences", args.max_decode_sequences, 1),
+        ("--max-inflight-requests", args.max_inflight_requests, 1),
+        ("--prefix-cache-entries", args.prefix_cache_entries, 0),
+        ("--prefix-checkpoint-interval", args.prefix_checkpoint_interval, 0),
+        ("--prefix-capture-slots", prefix_capture_slots, 0),
     ):
-        if not 1 <= value <= _MAX_INT32:
-            parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
-    if not 0 <= args.prefix_cache_entries <= _MAX_INT32:
-        parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
-    if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
-        parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
-    if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
-        parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
-    if not 0 <= prefix_capture_slots <= _MAX_INT32:
-        parser.error(f"--prefix-capture-slots must be between 0 and {_MAX_INT32}")
+        if not minimum <= value <= _MAX_INT32:
+            parser.error(f"{flag} must be between {minimum} and {_MAX_INT32}")
+    every_prompt_end = prefix_checkpoint_prompt_end == "every"
+    if every_prompt_end and args.prefix_checkpoint_interval:
+        parser.error(
+            "--prefix-checkpoint-prompt-end every cannot be combined with "
+            "--prefix-checkpoint-interval"
+        )
+    if (
+        args.prefix_checkpoint_interval or every_prompt_end
+    ) and not args.prefix_cache_entries:
+        flag = (
+            "--prefix-checkpoint-prompt-end every"
+            if every_prompt_end
+            else "--prefix-checkpoint-interval"
+        )
+        parser.error(f"{flag} requires --prefix-cache-entries > 0")
     # Mirrors ServingRuntimeConfig::resolved_prefix_captures for row validation.
     if prefix_capture_slots == 0:
         prefix_capture_slots = min(args.max_sessions, args.max_inflight_requests)
@@ -105,6 +118,12 @@ def _parse_args(argv=None):
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
     parser.add_argument(
+        "--prefix-checkpoint-prompt-end",
+        choices=("initial", "every"),
+        default="initial",
+        help="Prompt ends to capture, best effort: initial (requests that create a session) or every (every request)",
+    )
+    parser.add_argument(
         "--prefix-capture-slots",
         type=int,
         default=0,
@@ -114,7 +133,7 @@ def _parse_args(argv=None):
         "--prefix-checkpoint-interval",
         type=int,
         default=0,
-        help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+        help="Periodic checkpoint interval in tokens; 0 disables periodic capture.",
     )
     parser.add_argument(
         "--api-dialect", choices=("openai", "openrouter"), default="openai"
@@ -129,7 +148,12 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    _validate_limits(parser, args, prefix_capture_slots=args.prefix_capture_slots)
+    _validate_limits(
+        parser,
+        args,
+        prefix_capture_slots=args.prefix_capture_slots,
+        prefix_checkpoint_prompt_end=args.prefix_checkpoint_prompt_end,
+    )
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
@@ -173,56 +197,76 @@ def main(argv=None) -> None:
 
     @asynccontextmanager
     async def serving_factory():
-        worker = await spawn_multiplexed_worker(
-            [
-                args.worker_bin,
-                "--pte",
-                args.model_path,
-                "--tokenizer",
-                args.tokenizer_path,
-                "--max_sessions",
-                str(args.max_sessions),
-                "--max_session_tokens",
-                str(args.max_context),
-                "--max_decode_sequences",
-                str(args.max_decode_sequences),
-                "--max_inflight_requests",
-                str(args.max_inflight_requests),
-                "--prefix_cache_entries",
-                str(args.prefix_cache_entries),
-            ]
-            + (
-                ["--prefix_capture_slots", str(args.prefix_capture_slots)]
-                if args.prefix_cache_entries
-                else []
-            )
-            + (
-                ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
-                if args.prefix_checkpoint_interval
-                else []
-            )
-        )
-        runtime = None
-        try:
-            runtime = SessionRuntime(worker)
-            yield ServingChat(
-                runtime,
-                template,
-                args.model_id,
-                max_context=args.max_context,
-                tool_detector_cls=HermesDetector,
-                api_dialect=args.api_dialect,
-                streaming_preflight_timeout=args.streaming_preflight_timeout,
-            )
-        finally:
-            if runtime is None:
-                await SessionRuntime._finish_cleanup(
-                    asyncio.create_task(worker.close())
+        async with capture_worker_logs() as stderr:
+            worker = await spawn_multiplexed_worker(
+                [
+                    args.worker_bin,
+                    "--pte",
+                    args.model_path,
+                    "--tokenizer",
+                    args.tokenizer_path,
+                    "--max_sessions",
+                    str(args.max_sessions),
+                    "--max_session_tokens",
+                    str(args.max_context),
+                    "--max_decode_sequences",
+                    str(args.max_decode_sequences),
+                    "--max_inflight_requests",
+                    str(args.max_inflight_requests),
+                    "--prefix_cache_entries",
+                    str(args.prefix_cache_entries),
+                ]
+                + (
+                    ["--prefix_capture_slots", str(args.prefix_capture_slots)]
+                    if args.prefix_cache_entries
+                    else []
                 )
-            else:
-                await runtime.aclose_worker()
+                + (
+                    [
+                        "--prefix_checkpoint_interval",
+                        str(args.prefix_checkpoint_interval),
+                    ]
+                    if args.prefix_checkpoint_interval
+                    else []
+                )
+                + (
+                    ["--prefix_checkpoint_prompt_end", "every"]
+                    if args.prefix_checkpoint_prompt_end == "every"
+                    else []
+                ),
+                stderr=stderr,
+            )
+            runtime = None
+            try:
+                runtime = SessionRuntime(worker)
+                yield ServingChat(
+                    runtime,
+                    template,
+                    args.model_id,
+                    max_context=args.max_context,
+                    tool_detector_cls=HermesDetector,
+                    api_dialect=args.api_dialect,
+                    streaming_preflight_timeout=args.streaming_preflight_timeout,
+                )
+            finally:
+                if runtime is None:
+                    await SessionRuntime._finish_cleanup(
+                        asyncio.create_task(worker.close())
+                    )
+                else:
+                    await runtime.aclose_worker()
 
-    app = build_app(None, args.model_id, serving_factory=serving_factory)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    app = build_app(
+        None,
+        args.model_id,
+        serving_factory=serving_factory,
+        model_path=args.model_path,
+        max_context=args.max_context,
+        max_concurrent_requests=args.max_inflight_requests,
+        hud=True,
+        listen_address=f"http://{host}:{args.port}",
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 

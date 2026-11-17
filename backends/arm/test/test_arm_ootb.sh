@@ -388,14 +388,11 @@ run_silero_vad_e2e_ethos_u() {
     local build_dir="${work_root}/silero_vad_app"
     local fvp_out_dir="${work_root}/fvp"
     local et_build_dir="${et_root_dir}/cmake-out-arm"
-    local quantized_aot_build_dir="${work_root}/quantized_ops_aot"
-    local python_package_dir="${work_root}/python_package"
     local pte_path="${export_dir}/silero_vad_ethos_u.pte"
     local expected_path="${export_dir}/expected_probs.bin"
     local fvp_log_path="${fvp_out_dir}/fvp.log"
     local validation_threshold="0.55"
     local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
-    local export_pythonpath="${et_root_dir}/third-party/ao:${python_package_dir}:${PYTHONPATH:-}"
     local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
     local platform_cmake_args=()
     if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -413,39 +410,6 @@ run_silero_vad_e2e_ethos_u() {
     echo "${FUNCNAME}: Building ExecuTorch (if needed)"
     cmake --preset arm-baremetal -B "${et_build_dir}"
     cmake --build "${et_build_dir}" --target install -j"$n_proc"
-
-    echo "${FUNCNAME}: Building host quantized AOT library"
-    local python_executable
-    python_executable="$(python3 -c 'import sys; print(sys.executable)')"
-    cmake \
-        -S "${et_root_dir}" \
-        -B "${quantized_aot_build_dir}" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_CPUINFO=OFF \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=OFF \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
-        -DEXECUTORCH_BUILD_XNNPACK=OFF \
-        -DPYTHON_EXECUTABLE="${python_executable}"
-    cmake --build "${quantized_aot_build_dir}" --target quantized_ops_aot_lib -j"$n_proc"
-
-    local quantized_ops_library
-    quantized_ops_library="$(
-        find "${quantized_aot_build_dir}/kernels/quantized" \
-            -name 'libquantized_ops_aot_lib.*' \
-            -type f \
-            -print \
-            -quit
-    )"
-    [[ -n "${quantized_ops_library}" ]] || {
-        echo "${FUNCNAME}: Missing quantized AOT library under ${quantized_aot_build_dir}"
-        return 1
-    }
 
     if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" rev-parse HEAD 2>/dev/null)" != "${model_revision}" ]]; then
         echo "${FUNCNAME}: Cloning Silero VAD repository"
@@ -470,18 +434,8 @@ run_silero_vad_e2e_ethos_u() {
         --duration-seconds 2.5 \
         --output "${validation_audio_path}"
 
-    echo "${FUNCNAME}: Preparing ExecuTorch Python package"
-    rm -rf "${python_package_dir}"
-    (
-        cd "${et_root_dir}"
-        EXECUTORCH_BUILD_PYBIND=OFF python3 setup.py build_py \
-            --build-lib="${python_package_dir}"
-    )
-
     echo "${FUNCNAME}: Exporting quantized Silero VAD PTE"
-    env EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY="${quantized_ops_library}" \
-        PYTHONPATH="${export_pythonpath}" \
-        python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
+    python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
         --jit-model "${jit_path}" \
         --calibration-audio "${calibration_audio_path}" \
         --validation-audio "${validation_audio_path}" \

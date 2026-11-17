@@ -131,6 +131,7 @@ class EnnGraph:
     def _affine_meta_param(param: Any) -> str:
         type_str_affine_table = {
             torch.int8: "AINT8",
+            torch.int16: "AINT16",
         }
         if isinstance(param, str):
             return param

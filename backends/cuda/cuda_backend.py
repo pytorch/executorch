@@ -15,6 +15,7 @@ import shutil
 import sys
 import threading
 import typing
+import warnings
 import weakref
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
@@ -38,15 +39,13 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    PACKED_LAYOUTS,
     parse_offgraph_kv_manifest,
 )
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
-from executorch.backends.cuda.passes.replace_complex_with_real import (
-    ReplaceComplexWithRealPass,
-)
 from executorch.backends.cuda.passes.replace_fused_sdpa import (
     ReplaceFusedSdpaWithSdpaPass,
 )
@@ -65,6 +64,9 @@ from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
@@ -197,6 +199,45 @@ def _install_small_gpu_override(active):
 
 
 _SMALL_GPU_OVERRIDE = _CompilePatch(_install_small_gpu_override)
+
+
+def _install_grouped_mm_override(active):
+    from torch._inductor.kernel import mm_grouped
+
+    original = mm_grouped.has_grouped_mm_triton_support
+
+    def has_grouped_mm_triton_support() -> bool:
+        if original():
+            return True
+        if not active():
+            return False
+        # The grouped GEMM Triton template uses TMA only on sm_90 and above;
+        # its remaining path works on sm_80. Inductor still offers the
+        # template only on sm_90 and above, and this backend allows no ATen
+        # choice, so below sm_90 a grouped GEMM has nothing to lower to.
+        return torch.cuda.is_available() and torch.cuda.get_device_capability() >= (
+            8,
+            0,
+        )
+
+    mm_grouped.has_grouped_mm_triton_support = has_grouped_mm_triton_support
+
+    def remove() -> None:
+        mm_grouped.has_grouped_mm_triton_support = original
+
+    return remove
+
+
+_GROUPED_MM_OVERRIDE = _CompilePatch(_install_grouped_mm_override)
+
+
+def _allow_grouped_mm_triton_template() -> typing.ContextManager[None]:
+    """Let Inductor offer its grouped GEMM Triton template on sm_80 and above.
+
+    Only threads inside this context get the override; other threads get the
+    original answer.
+    """
+    return _GROUPED_MM_OVERRIDE.scope()
 
 
 def _allow_triton_templates_on_small_gpus() -> typing.ContextManager[None]:
@@ -1165,7 +1206,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
         capture = CudaWeightCollector.current_capture()
         capture.artifact = capture.collector.materialize(
-            weights[0], os.path.dirname(blob_path), capture.device_type_for_weight
+            weights[0], os.path.dirname(blob_path), capture
         )
 
         # Keep AotiBackend's existing path contract intact. The compatibility
@@ -1219,6 +1260,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_index_put_out": None,
             "aoti_torch_cuda_scatter_reduce_two_out": None,
             "aoti_torch_cuda_scatter_src_out": None,
+            "aoti_torch_cuda_masked_select": None,
+            "aoti_torch_cuda_nonzero": None,
         }
 
     @classmethod
@@ -1250,15 +1293,12 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """
-        Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
+        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass.
 
-        The Triton kernel replacement behavior can be controlled via compile_specs:
-        - triton_kernel_mode="ON": Use Triton kernels for the calls they support; other calls use the regular lowering
-        - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
+        The replacement pass uses Triton kernels for the calls they support and
+        leaves other calls to the regular lowering. The triton_kernel_mode
+        compile spec is deprecated: "OFF" is treated as "ON".
         """
-        # Parse compile_specs for triton_kernel_mode
-
-        triton_kernel_mode = "ON"  # Default mode
         for spec in compile_specs:
             if spec.key == "triton_kernel_mode":
                 mode = spec.value.decode("utf-8").upper()
@@ -1266,7 +1306,16 @@ class CudaBackend(AotiBackend, BackendDetails):
                     raise ValueError(
                         f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
-                triton_kernel_mode = mode
+                if mode == "OFF":
+                    warnings.warn(
+                        "triton_kernel_mode=OFF is deprecated and is now treated as "
+                        "ON: the CUDA backend replaces the calls its Triton kernels "
+                        "support and leaves the others to the regular lowering. "
+                        "Remove the triton_kernel_mode compile spec; it will be "
+                        "removed in a future release.",
+                        FutureWarning,
+                        stacklevel=2,
+                    )
         passes = [
             RemoveAssertAsyncPass(),
             ReplaceComplexWithRealPass(),
@@ -1275,25 +1324,23 @@ class CudaBackend(AotiBackend, BackendDetails):
             ReplaceFusedSdpaWithSdpaPass(),
             ReplaceMaskedCopyWithWherePass(),
         ]
-        cell_layout = any(
-            spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
-            for spec in compile_specs
+        layout = next(
+            (
+                parse_offgraph_kv_manifest(spec.value)["layout"]
+                for spec in compile_specs
+                if spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            ),
+            "sequence",
         )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC:
-                passes.append(
-                    CheckOffGraphKVStepWidthPass(
-                        spec.value, layout="cell" if cell_layout else "sequence"
-                    )
-                )
+                passes.append(CheckOffGraphKVStepWidthPass(spec.value, layout=layout))
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
                 passes.append(
                     LowerOffGraphKVPass(parse_offgraph_kv_manifest(spec.value))
                 )
-        if triton_kernel_mode == "ON":
-            passes.append(ReplaceEdgeOpWithTritonOpPass())
+        passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
 
     @classmethod
@@ -1439,9 +1486,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
                 cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
-        cell_layout = any(
+        packed_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            and parse_offgraph_kv_manifest(spec.value)["layout"] in PACKED_LAYOUTS
             for spec in compile_specs or []
         )
 
@@ -1462,6 +1509,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
+                    stack.enter_context(_allow_grouped_mm_triton_template())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.
@@ -1495,8 +1543,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         cuda_graph_timing(offload=_moved_program_tensors)
                     )
-                if cell_layout:
-                    # The cell layout's step buffers are constants the graph
+                if packed_layout:
+                    # A packed layout's step buffers are constants the graph
                     # only reads, while the runtime rewrites them before every
                     # forward. Folding them, or inlining a small one as a
                     # literal, would evaluate them at compile time -- on
@@ -1543,14 +1591,30 @@ class CudaBackend(AotiBackend, BackendDetails):
         check on the cache update. They are re-synthesized as zeros for the lifted
         graph and the serialized blob. This activates automatically with low-memory
         mode. Other (non-low-memory) exports use the stock pass.
+
+        Low-memory methods share their CPU weights, so the CPU source of each
+        moved tensor is recorded on the active weight capture. ``materialize``
+        then reuses a storage an earlier method already wrote from the same
+        source view. The moved storages must keep their source's bytes until
+        ``materialize`` runs.
         """
         from torch.export.passes import move_to_device_pass
 
         if not cls._is_low_memory_mode(compile_specs):
             moved = move_to_device_pass(edge_program, device)
-        else:
-            moved = _move_to_device_resize_kv(edge_program, device)
+            _track_moved_tensors(moved)
+            return moved
+        # Only parameters are recorded: low-memory compilation can hand AOTI CPU
+        # clones of buffers (_compile_time_cpu_clones).
+        sources = {
+            name: edge_program.state_dict[name]
+            for name in edge_program.graph_signature.parameters
+        }
+        moved = _move_to_device_resize_kv(edge_program, device)
         _track_moved_tensors(moved)
+        CudaWeightCollector.current_capture().record_moved_sources(
+            sources, dict(moved.state_dict)
+        )
         return moved
 
     @classmethod

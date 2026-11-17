@@ -261,6 +261,9 @@ void add_quantize_and_pack_4w4c_node(
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_input)};
+  if (graph.is_buffer_storage(fp_input)) {
+    param_buffers.append(graph.buffer_meta_ubo(fp_input));
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
@@ -305,6 +308,9 @@ void add_unpack_4w4c_and_dequantize_node(
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_output)};
+  if (graph.is_buffer_storage(fp_output)) {
+    param_buffers.append(graph.buffer_meta_ubo(fp_output));
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&scale, sizeof(scale)),

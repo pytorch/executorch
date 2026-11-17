@@ -81,7 +81,7 @@ void main() {
         in_block[row], input_scale, input_zp);
 
     // Only ops without parameters are dispatched to this shader
-    vec4 out_texel = apply_unary_op(in_texel, 0.0, 0.0);
+    vec4 out_texel = apply_unary_op(op_type, in_texel, 0.0, 0.0);
     out_block[row] = quantize_and_pack(out_texel, output_inv_scale, output_zp);
   }
 

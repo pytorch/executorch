@@ -18,6 +18,7 @@ on:
       - backends/cpu/runtime/**
       - backends/native/**
       - backends/cadence/utils/FACTO
+      - backends/test/suite/operators/test_embedding.py
       - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
@@ -33,6 +34,7 @@ on:
       - backends/vulkan_shared/runtime/**
       - backends/xnnpack/CMakeLists.txt
       - backends/xnnpack/cmake/**
+      - backends/xnnpack/runtime/profiling/**
       - backends/xnnpack/third-party/FXdiv
       - backends/xnnpack/third-party/XNNPACK
       - backends/xnnpack/third-party/cpuinfo
@@ -40,6 +42,7 @@ on:
       - examples/models/llama/tokenizer/**
       - extension/llm/tokenizers
       - extension/llm/export/**
+      - devtools/etdump/**
       - exir/**
       - configurations/**
       - extension/memory_allocator/**
@@ -113,7 +116,7 @@ jobs:
           export CMAKE_PREFIX_PATH="/tmp/native-deps:${CMAKE_PREFIX_PATH:-}"
           export PATH="/tmp/native-deps/bin:${PATH}"
 
-          if [[ "${NATIVE_COMPONENT}" == "ggml" ]]; then
+          if [[ "${NATIVE_COMPONENT}" == "ggml" || "${NATIVE_COMPONENT}" == "cpu" ]]; then
             ./install_requirements.sh --use-pt-pinned-commit
             # The LLM runner test and the op sample generator import executorch from
             # src/ without installing the wheel, so install their export-time

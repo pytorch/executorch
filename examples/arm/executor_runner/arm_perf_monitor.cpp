@@ -16,6 +16,7 @@ using printf_size_t = unsigned long;
 #include <executorch/runtime/platform/log.h>
 #if defined(ET_ARM_ETHOSU_PMU_STATS)
 #include <executorch/backends/arm/runtime/EthosUExecutionStats.h>
+#include <executorch/runtime/platform/assert.h>
 #endif
 
 namespace {
@@ -279,6 +280,22 @@ void StartMeasurements() {
   ethosu_ArmWhenNPURunCycleCountStart = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
 #if defined(ET_ARM_ETHOSU_PMU_STATS)
+#if defined(ET_ARM_ETHOSU55_65_PMU_EVENTS)
+  constexpr ethosu_pmu_event_type u55_u65_pmu_events[] = {
+      ET_ARM_ETHOSU55_65_PMU_EVENTS};
+  ET_CHECK_MSG(
+      executorch::backends::arm::set_ethosu55_65_pmu_events(
+          u55_u65_pmu_events) == executorch::runtime::Error::Ok,
+      "Invalid Ethos-U55/U65 PMU event configuration");
+#endif
+#if defined(ET_ARM_ETHOSU85_PMU_EVENTS)
+  constexpr ethosu_pmu_event_type u85_pmu_events[] = {
+      ET_ARM_ETHOSU85_PMU_EVENTS};
+  ET_CHECK_MSG(
+      executorch::backends::arm::set_ethosu85_pmu_events(u85_pmu_events) ==
+          executorch::runtime::Error::Ok,
+      "Invalid Ethos-U85 PMU event configuration");
+#endif
   ethosu_deviceTotals = {};
   ethosu_deviceCount = 0;
   ethosu_deviceCapacityExceeded = false;

@@ -65,23 +65,31 @@ struct Storage final {
   }
 };
 #endif // USE_ATEN_LIB
-} // namespace
 
-TensorPtr make_tensor_ptr(
-    std::vector<executorch::aten::SizesType> sizes,
-    void* data,
-    std::vector<executorch::aten::DimOrderType> dim_order,
-    std::vector<executorch::aten::StridesType> strides,
-    executorch::aten::ScalarType type,
-    executorch::aten::Device device,
-    executorch::aten::TensorShapeDynamism dynamism,
-    std::function<void(void*)> deleter) {
+// Fills an empty dim_order and computes the strides. Shared by make_tensor_ptr
+// and validate_tensor_layout so the check rejects every layout the factory
+// aborts on. A stride that overflows wraps around unless
+// reject_stride_overflow is set.
+runtime::Error resolve_layout(
+    const std::vector<executorch::aten::SizesType>& sizes,
+    std::vector<executorch::aten::DimOrderType>& dim_order,
+    const std::vector<executorch::aten::StridesType>& strides,
+    bool reject_stride_overflow,
+    std::vector<executorch::aten::StridesType>& computed_strides) {
   const auto dim = sizes.size();
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
+      dim <= runtime::kTensorDimensionLimit,
+      InvalidArgument,
+      "Tensor has %zu dims, more than the limit of %zu",
+      dim,
+      runtime::kTensorDimensionLimit);
+  ET_CHECK_OR_RETURN_ERROR(
       dim_order.empty() || dim_order.size() == dim,
+      InvalidArgument,
       "dim_order size must match sizes or be empty.");
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       strides.empty() || strides.size() == dim,
+      InvalidArgument,
       "strides size must match sizes or be empty.");
 
   if (dim_order.empty()) {
@@ -93,16 +101,32 @@ TensorPtr make_tensor_ptr(
       });
     }
   }
-  std::vector<executorch::aten::StridesType> computed_strides(dim);
-
-  auto error = runtime::dim_order_to_stride(
-      sizes.data(), dim_order.data(), dim, computed_strides.data());
-  ET_CHECK_MSG(error == runtime::Error::Ok, "Failed to compute strides.");
+  ET_CHECK_OR_RETURN_ERROR(
+      runtime::validate_dim_order(dim_order.data(), dim),
+      InvalidArgument,
+      "Invalid dim order: values must be a permutation of [0, %zu)",
+      dim);
+  // Same strides as runtime::dim_order_to_stride, but an overflow is detected.
+  computed_strides.assign(dim, 1);
+  for (size_t i = dim; i > 1; --i) {
+    const auto inner = dim_order[i - 1];
+    const auto outer = dim_order[i - 2];
+    const executorch::aten::StridesType size =
+        sizes[inner] == 0 ? 1 : sizes[inner];
+    const bool overflow = c10::mul_overflows(
+        computed_strides[inner], size, &computed_strides[outer]);
+    ET_CHECK_OR_RETURN_ERROR(
+        !(overflow && reject_stride_overflow),
+        InvalidArgument,
+        "Stride of dim %zu overflows",
+        static_cast<size_t>(outer));
+  }
 
   if (!strides.empty()) {
     for (size_t i = 0; i < dim; i++) {
-      ET_CHECK_MSG(
+      ET_CHECK_OR_RETURN_ERROR(
           strides[i] == computed_strides[i] || sizes[i] == 1,
+          InvalidArgument,
           "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
           "!= %" ET_PRI_SIZES_AND_STRIDES
           " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
@@ -112,10 +136,33 @@ TensorPtr make_tensor_ptr(
           sizes[i]);
     }
   }
+  return runtime::Error::Ok;
+}
+} // namespace
 
+TensorPtr make_tensor_ptr(
+    std::vector<executorch::aten::SizesType> sizes,
+    void* data,
+    std::vector<executorch::aten::DimOrderType> dim_order,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::Device device,
+    executorch::aten::TensorShapeDynamism dynamism,
+    std::function<void(void*)> deleter) {
+  std::vector<executorch::aten::StridesType> computed_strides;
+  // Accept strides that overflow: the runtime builds such tensors, and
+  // aliasing or cloning one calls this. validate_tensor_layout rejects them.
+  const auto error = resolve_layout(
+      sizes,
+      dim_order,
+      strides,
+      /*reject_stride_overflow=*/false,
+      computed_strides);
+  ET_CHECK_MSG(error == runtime::Error::Ok, "Invalid tensor layout.");
   strides = std::move(computed_strides);
 
 #ifndef USE_ATEN_LIB
+  const auto dim = sizes.size();
   executorch::aten::TensorImpl tensor_impl(
       type,
       dim,
@@ -294,6 +341,22 @@ runtime::Error resize_tensor_ptr(
       *tensor,
       executorch::aten::ArrayRef<executorch::aten::SizesType>(
           sizes.data(), sizes.size()));
+}
+
+runtime::Error validate_tensor_layout(
+    const std::vector<executorch::aten::SizesType>& sizes,
+    const std::vector<executorch::aten::DimOrderType>& dim_order,
+    const std::vector<executorch::aten::StridesType>& strides) {
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      executorch::aten::safe_numel(sizes.data(), sizes.size()).error());
+  auto mutable_dim_order = dim_order;
+  std::vector<executorch::aten::StridesType> computed_strides;
+  return resolve_layout(
+      sizes,
+      mutable_dim_order,
+      strides,
+      /*reject_stride_overflow=*/true,
+      computed_strides);
 }
 
 // ---- Device tensor helper ----
