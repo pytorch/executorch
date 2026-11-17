@@ -96,6 +96,99 @@ class ComplexBinaryBroadcastTest : public OperatorTest {
     const Tensor empty = tf.make({0}, {});
     EXPECT_TENSOR_EQ(
         sub_out(empty, tf.make({}, {CTYPE(2, 2)}), make_out({0})), empty);
+
+    // Shapes for the kBroadcast2dBy1d, kBroadcastLastDim, and
+    // kBroadcastNdByNd paths, with the operands in either order.
+    const Tensor a_2x3 = tf.make(
+        {2, 3},
+        {CTYPE(1, 2),
+         CTYPE(3, -1),
+         CTYPE(-2, 4),
+         CTYPE(5, 3),
+         CTYPE(-4, -3),
+         CTYPE(2, -5)});
+    const Tensor b_3 = tf.make({3}, {CTYPE(2, 1), CTYPE(-1, 3), CTYPE(3, -2)});
+    EXPECT_TENSOR_EQ(
+        sub_out(a_2x3, b_3, make_out({2, 3})),
+        tf.make(
+            {2, 3},
+            {CTYPE(-3, 0),
+             CTYPE(5, -7),
+             CTYPE(-8, 8),
+             CTYPE(1, 1),
+             CTYPE(-2, -9),
+             CTYPE(-4, -1)}));
+    EXPECT_TENSOR_EQ(
+        sub_out(b_3, a_2x3, make_out({2, 3})),
+        tf.make(
+            {2, 3},
+            {CTYPE(0, -3),
+             CTYPE(-7, 5),
+             CTYPE(7, -10),
+             CTYPE(-8, -5),
+             CTYPE(7, 9),
+             CTYPE(-1, 8)}));
+
+    const Tensor b_2x1 = tf.make({2, 1}, {CTYPE(3, 2), CTYPE(-2, 1)});
+    EXPECT_TENSOR_EQ(
+        sub_out(a_2x3, b_2x1, make_out({2, 3})),
+        tf.make(
+            {2, 3},
+            {CTYPE(-5, -2),
+             CTYPE(-3, -5),
+             CTYPE(-8, 0),
+             CTYPE(9, 1),
+             CTYPE(0, -5),
+             CTYPE(6, -7)}));
+    EXPECT_TENSOR_EQ(
+        sub_out(b_2x1, a_2x3, make_out({2, 3})),
+        tf.make(
+            {2, 3},
+            {CTYPE(1, -2),
+             CTYPE(-3, 4),
+             CTYPE(7, -6),
+             CTYPE(-12, -5),
+             CTYPE(6, 7),
+             CTYPE(-6, 11)}));
+
+    const Tensor a_2x3x4 = tf.make(
+        {2, 3, 4},
+        {CTYPE(1, 3),   CTYPE(2, -1),   CTYPE(3, 2),   CTYPE(4, -2),
+         CTYPE(5, -3),  CTYPE(6, 1),    CTYPE(7, -2),  CTYPE(8, 4),
+         CTYPE(9, 2),   CTYPE(10, -4),  CTYPE(11, 1),  CTYPE(12, 3),
+         CTYPE(-1, 3),  CTYPE(-2, -1),  CTYPE(-3, 2),  CTYPE(-4, -2),
+         CTYPE(-5, -3), CTYPE(-6, 1),   CTYPE(-7, -2), CTYPE(-8, 4),
+         CTYPE(-9, 2),  CTYPE(-10, -4), CTYPE(-11, 1), CTYPE(-12, 3)});
+    const Tensor b_2x1x4 = tf.make(
+        {2, 1, 4},
+        {CTYPE(2, -1),
+         CTYPE(-1, 2),
+         CTYPE(3, 1),
+         CTYPE(1, -3),
+         CTYPE(-2, 3),
+         CTYPE(1, 1),
+         CTYPE(-3, -2),
+         CTYPE(2, 2)});
+    EXPECT_TENSOR_EQ(
+        sub_out(a_2x3x4, b_2x1x4, make_out({2, 3, 4})),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(-3, 5),  CTYPE(4, -5),   CTYPE(-3, 0), CTYPE(2, 4),
+             CTYPE(1, -1),  CTYPE(8, -3),   CTYPE(1, -4), CTYPE(6, 10),
+             CTYPE(5, 4),   CTYPE(12, -8),  CTYPE(5, -1), CTYPE(10, 9),
+             CTYPE(3, -3),  CTYPE(-4, -3),  CTYPE(3, 6),  CTYPE(-8, -6),
+             CTYPE(-1, -9), CTYPE(-8, -1),  CTYPE(-1, 2), CTYPE(-12, 0),
+             CTYPE(-5, -4), CTYPE(-12, -6), CTYPE(-5, 5), CTYPE(-16, -1)}));
+    EXPECT_TENSOR_EQ(
+        sub_out(b_2x1x4, a_2x3x4, make_out({2, 3, 4})),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(0, -7),   CTYPE(-5, 4),   CTYPE(-3, -3),  CTYPE(-7, 1),
+             CTYPE(-8, 5),   CTYPE(-13, 0),  CTYPE(-11, 5),  CTYPE(-15, -11),
+             CTYPE(-16, -5), CTYPE(-21, 10), CTYPE(-19, -1), CTYPE(-23, -9),
+             CTYPE(0, -3),   CTYPE(5, 3),    CTYPE(3, -6),   CTYPE(10, 6),
+             CTYPE(8, 9),    CTYPE(13, -1),  CTYPE(11, 2),   CTYPE(18, -6),
+             CTYPE(16, -1),  CTYPE(21, 9),   CTYPE(19, -4),  CTYPE(26, -4)}));
   }
 
   template <typename CTYPE, ScalarType DTYPE>

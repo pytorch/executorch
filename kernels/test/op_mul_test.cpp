@@ -403,6 +403,75 @@ class OpMulOutTest : public OperatorTest {
     const Tensor empty = tf.make({0}, {});
     out = make_out({0});
     EXPECT_TENSOR_EQ(op_mul_out(tf.make({}, {CTYPE(2, 2)}), empty, out), empty);
+
+    // Shapes for the optimized kBroadcast2dBy1d, kBroadcastLastDim, and
+    // kBroadcastNdByNd paths, with the operands in either order.
+    const Tensor a_2x3 = tf.make(
+        {2, 3},
+        {CTYPE(1, 2),
+         CTYPE(3, -1),
+         CTYPE(-2, 4),
+         CTYPE(5, 3),
+         CTYPE(-4, -3),
+         CTYPE(2, -5)});
+    const Tensor b_3 = tf.make({3}, {CTYPE(2, 1), CTYPE(-1, 3), CTYPE(3, -2)});
+    const Tensor product_2d_by_1d = tf.make(
+        {2, 3},
+        {CTYPE(0, 5),
+         CTYPE(0, 10),
+         CTYPE(2, 16),
+         CTYPE(7, 11),
+         CTYPE(13, -9),
+         CTYPE(-4, -19)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3, b_3, out), product_2d_by_1d);
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(b_3, a_2x3, out), product_2d_by_1d);
+
+    const Tensor b_2x1 = tf.make({2, 1}, {CTYPE(3, 2), CTYPE(-2, 1)});
+    const Tensor product_last_dim = tf.make(
+        {2, 3},
+        {CTYPE(-1, 8),
+         CTYPE(11, 3),
+         CTYPE(-14, 8),
+         CTYPE(-13, -1),
+         CTYPE(11, 2),
+         CTYPE(1, 12)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3, b_2x1, out), product_last_dim);
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(b_2x1, a_2x3, out), product_last_dim);
+
+    const Tensor a_2x3x4 = tf.make(
+        {2, 3, 4},
+        {CTYPE(1, 3),   CTYPE(2, -1),   CTYPE(3, 2),   CTYPE(4, -2),
+         CTYPE(5, -3),  CTYPE(6, 1),    CTYPE(7, -2),  CTYPE(8, 4),
+         CTYPE(9, 2),   CTYPE(10, -4),  CTYPE(11, 1),  CTYPE(12, 3),
+         CTYPE(-1, 3),  CTYPE(-2, -1),  CTYPE(-3, 2),  CTYPE(-4, -2),
+         CTYPE(-5, -3), CTYPE(-6, 1),   CTYPE(-7, -2), CTYPE(-8, 4),
+         CTYPE(-9, 2),  CTYPE(-10, -4), CTYPE(-11, 1), CTYPE(-12, 3)});
+    const Tensor b_2x1x4 = tf.make(
+        {2, 1, 4},
+        {CTYPE(2, -1),
+         CTYPE(-1, 2),
+         CTYPE(3, 1),
+         CTYPE(1, -3),
+         CTYPE(-2, 3),
+         CTYPE(1, 1),
+         CTYPE(-3, -2),
+         CTYPE(2, 2)});
+    const Tensor product_nd_by_nd = tf.make(
+        {2, 3, 4},
+        {CTYPE(5, 5),    CTYPE(0, 5),    CTYPE(7, 9),   CTYPE(-2, -14),
+         CTYPE(7, -11),  CTYPE(-8, 11),  CTYPE(23, 1),  CTYPE(20, -20),
+         CTYPE(20, -5),  CTYPE(-2, 24),  CTYPE(32, 14), CTYPE(21, -33),
+         CTYPE(-7, -9),  CTYPE(-1, -3),  CTYPE(13, 0),  CTYPE(-4, -12),
+         CTYPE(19, -9),  CTYPE(-7, -5),  CTYPE(17, 20), CTYPE(-24, -8),
+         CTYPE(12, -31), CTYPE(-6, -14), CTYPE(35, 19), CTYPE(-30, -18)});
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3x4, b_2x1x4, out), product_nd_by_nd);
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(op_mul_out(b_2x1x4, a_2x3x4, out), product_nd_by_nd);
   }
 };
 

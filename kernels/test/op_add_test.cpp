@@ -183,6 +183,105 @@ class OpAddOutKernelTest : public OperatorTest {
     out = make_out({0});
     EXPECT_TENSOR_EQ(
         op_add_out(tf.make({}, {CTYPE(2, 2)}), empty, /*alpha=*/2, out), empty);
+
+    // Shapes for the optimized kBroadcast2dBy1d, kBroadcastLastDim, and
+    // kBroadcastNdByNd paths, with the operands in either order.
+    const Tensor a_2x3 = tf.make(
+        {2, 3},
+        {CTYPE(1, 2),
+         CTYPE(3, -1),
+         CTYPE(-2, 4),
+         CTYPE(5, 3),
+         CTYPE(-4, -3),
+         CTYPE(2, -5)});
+    const Tensor b_3 = tf.make({3}, {CTYPE(2, 1), CTYPE(-1, 3), CTYPE(3, -2)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3, b_3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(5, 4),
+             CTYPE(1, 5),
+             CTYPE(4, 0),
+             CTYPE(9, 5),
+             CTYPE(-6, 3),
+             CTYPE(8, -9)}));
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_3, a_2x3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(4, 5),
+             CTYPE(5, 1),
+             CTYPE(-1, 6),
+             CTYPE(12, 7),
+             CTYPE(-9, -3),
+             CTYPE(7, -12)}));
+
+    const Tensor b_2x1 = tf.make({2, 1}, {CTYPE(3, 2), CTYPE(-2, 1)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3, b_2x1, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(7, 6),
+             CTYPE(9, 3),
+             CTYPE(4, 8),
+             CTYPE(1, 5),
+             CTYPE(-8, -1),
+             CTYPE(-2, -3)}));
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_2x1, a_2x3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(5, 6),
+             CTYPE(9, 0),
+             CTYPE(-1, 10),
+             CTYPE(8, 7),
+             CTYPE(-10, -5),
+             CTYPE(2, -9)}));
+
+    const Tensor a_2x3x4 = tf.make(
+        {2, 3, 4},
+        {CTYPE(1, 3),   CTYPE(2, -1),   CTYPE(3, 2),   CTYPE(4, -2),
+         CTYPE(5, -3),  CTYPE(6, 1),    CTYPE(7, -2),  CTYPE(8, 4),
+         CTYPE(9, 2),   CTYPE(10, -4),  CTYPE(11, 1),  CTYPE(12, 3),
+         CTYPE(-1, 3),  CTYPE(-2, -1),  CTYPE(-3, 2),  CTYPE(-4, -2),
+         CTYPE(-5, -3), CTYPE(-6, 1),   CTYPE(-7, -2), CTYPE(-8, 4),
+         CTYPE(-9, 2),  CTYPE(-10, -4), CTYPE(-11, 1), CTYPE(-12, 3)});
+    const Tensor b_2x1x4 = tf.make(
+        {2, 1, 4},
+        {CTYPE(2, -1),
+         CTYPE(-1, 2),
+         CTYPE(3, 1),
+         CTYPE(1, -3),
+         CTYPE(-2, 3),
+         CTYPE(1, 1),
+         CTYPE(-3, -2),
+         CTYPE(2, 2)});
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3x4, b_2x1x4, /*alpha=*/2, out),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(5, 1),   CTYPE(0, 3),   CTYPE(9, 4),    CTYPE(6, -8),
+             CTYPE(9, -5),  CTYPE(4, 5),   CTYPE(13, 0),   CTYPE(10, -2),
+             CTYPE(13, 0),  CTYPE(8, 0),   CTYPE(17, 3),   CTYPE(14, -3),
+             CTYPE(-5, 9),  CTYPE(0, 1),   CTYPE(-9, -2),  CTYPE(0, 2),
+             CTYPE(-9, 3),  CTYPE(-4, 3),  CTYPE(-13, -6), CTYPE(-4, 8),
+             CTYPE(-13, 8), CTYPE(-8, -2), CTYPE(-17, -3), CTYPE(-8, 7)}));
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_2x1x4, a_2x3x4, /*alpha=*/2, out),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(4, 5),    CTYPE(3, 0),    CTYPE(9, 5),    CTYPE(9, -7),
+             CTYPE(12, -7),  CTYPE(11, 4),   CTYPE(17, -3),  CTYPE(17, 5),
+             CTYPE(20, 3),   CTYPE(19, -6),  CTYPE(25, 3),   CTYPE(25, 3),
+             CTYPE(-4, 9),   CTYPE(-3, -1),  CTYPE(-9, 2),   CTYPE(-6, -2),
+             CTYPE(-12, -3), CTYPE(-11, 3),  CTYPE(-17, -6), CTYPE(-14, 10),
+             CTYPE(-20, 7),  CTYPE(-19, -7), CTYPE(-25, 0),  CTYPE(-22, 8)}));
   }
 
   // Common testing for adding two floating point Tensors.

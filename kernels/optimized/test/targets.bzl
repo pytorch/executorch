@@ -45,7 +45,6 @@ def define_common_targets():
         name = "complex_binary_broadcast_test",
         srcs = ["complex_binary_broadcast_test.cpp"],
         deps = [
-            ":supported_features",
             "//executorch/kernels/optimized/cpu:op_add",
             "//executorch/kernels/optimized/cpu:op_div",
             "//executorch/kernels/optimized/cpu:op_mul",
