@@ -302,7 +302,9 @@ def test_conversion_buffers_share_the_arena(
     buffer = edge.to_executorch(config).buffer
     _, loaded = run_host(tmp_path, buffer, [])
     assert loaded["arena"] == arena_slots * sample.numel()
-    assert loaded["staging"] == 0
+    # The staging buffer, allocated at init, covers outputs outside the arena.
+    bound = output_int8 and channels_last and not legacy
+    assert loaded["staging"] == ((sample.numel() + 15) // 16 * 16 if bound else 0)
     steps = random_steps([shape], 2)
     steps = [
         [
@@ -317,7 +319,7 @@ def test_conversion_buffers_share_the_arena(
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
     assert stats["arena"] == loaded["arena"]
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_partitions_keep_independent_conversion_plans(tmp_path):
@@ -332,7 +334,7 @@ def test_partitions_keep_independent_conversion_plans(tmp_path):
     assert stats["delegates"] == 2
     # Inputs are always copied; both partitions' outputs need conversion.
     assert stats["arena"] == 32 + 32
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_inputs_are_copied_for_exports_that_bound_them(tmp_path):
@@ -373,7 +375,7 @@ def test_inputs_are_copied_for_exports_that_bound_them(tmp_path):
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), True)
     assert stats["arena"] == 2 * sample.numel()
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_instances_run_independently(tmp_path):
@@ -552,7 +554,7 @@ def test_device_layout_io_is_used_in_place(tmp_path, channels_last):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
     # Inputs and NCHW outputs use the arena; channels-last outputs are bound
     # directly.
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
     if channels_last:
         assert arena_holds_plan(
             stats,
@@ -608,10 +610,13 @@ def test_misaligned_buffers_are_staged(tmp_path):
     exported, program, _ = lower_streaming(channels_last=True)
     emulator = ProgramEmulator(exported)
     steps = int8_steps(2, channels_last=True)
+    _, loaded = run_host(tmp_path, program, [], "--share-io", "--misalign")
     (outputs,), stats = run_host(tmp_path, program, steps, "--share-io", "--misalign")
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), True)
-    assert stats["staging"] > 0
+    # Staged through the buffer allocated at init; execute() allocates nothing.
+    assert stats["staged"] > 0
+    assert stats["staging"] == loaded["staging"] > 0
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
@@ -627,7 +632,7 @@ def test_outputs_read_by_operators_keep_their_slots(tmp_path, channels_last):
     for step, inputs in enumerate(steps):
         expected = as_list(emulator(*inputs))
         assert_matches(outputs[step][2:], expected[2:], channels_last)
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
     if channels_last:
         assert arena_holds_plan(
             stats,
@@ -741,4 +746,4 @@ def test_streaming_example_runs_without_copies(tmp_path):
     emulator = ProgramEmulator(edge.exported_program())
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
-    assert stats["states"] == 2 and stats["staging"] == 0
+    assert stats["states"] == 2 and stats["staged"] == 0

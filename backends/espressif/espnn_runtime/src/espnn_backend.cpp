@@ -201,7 +201,8 @@ struct DelegateState {
   uint32_t conversion_slots = 0;
   bool profiled = false;
   uint32_t state_generation = 0;
-  // Copies of misaligned outputs that are not in the arena.
+  // Copies of outputs outside the arena whose memory is misaligned, in output
+  // order.
   int8_t* staging = nullptr;
 
   ~DelegateState() {
@@ -209,41 +210,68 @@ struct DelegateState {
       heap_caps_free(staging);
   }
 
-  int8_t* staging_slot(size_t slot) {
+  // A graph tensor returned more than once is written where its first
+  // output is bound, and a graph input returned as an output stays where
+  // the input is bound; both are copied to their outputs afterwards.
+  bool returned_again(size_t o) const {
+    Int8TensorInfo info{};
+    Int8TensorInfo other{};
+    if (!interpreter.output_info(o, info))
+      return false;
+    for (size_t earlier = 0; earlier < o; ++earlier) {
+      if (interpreter.output_info(earlier, other) &&
+          other.tensor_id == info.tensor_id)
+        return true;
+    }
+    for (size_t i = 0; i < interpreter.input_count(); ++i) {
+      if (interpreter.input_info(i, other) && other.tensor_id == info.tensor_id)
+        return true;
+    }
+    return false;
+  }
+
+  // Offset of output end's staging copy, the staging buffer's size for
+  // end = output_count(), or SIZE_MAX if that overflows.
+  size_t staging_offset(size_t end) const {
     const size_t inputs = interpreter.input_count();
-    const size_t slots = inputs + interpreter.output_count();
-    size_t offset = 0;
     size_t total = 0;
-    for (size_t k = inputs; k < slots; ++k) {
-      if ((conversion_slots & (1U << k)) != 0)
-        continue;
+    for (size_t o = 0; o < end; ++o) {
       Int8TensorInfo info{};
-      if (!interpreter.output_info(k - inputs, info))
-        return nullptr;
-      if (k == slot)
-        offset = total;
-      const size_t bytes = (info.bytes + 15) & ~static_cast<size_t>(15);
-      if (info.bytes > SIZE_MAX - 15 || bytes > SIZE_MAX - total)
-        return nullptr;
-      total += bytes;
+      if ((conversion_slots & (1U << (inputs + o))) != 0 || returned_again(o) ||
+          !interpreter.output_info(o, info))
+        continue;
+      if (info.bytes > SIZE_MAX - 15 - total)
+        return SIZE_MAX;
+      total += (info.bytes + 15) & ~static_cast<size_t>(15);
     }
-    if (staging == nullptr) {
-      staging = static_cast<int8_t*>(heap_caps_aligned_alloc(
-          16, total, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-      if (staging == nullptr) {
-        staging = static_cast<int8_t*>(
-            heap_caps_aligned_alloc(16, total, MALLOC_CAP_8BIT));
+    return total;
+  }
+
+  // Only misaligned outputs use the staging buffer, so it goes to PSRAM when
+  // there is any and leaves internal RAM to the arena.
+  bool allocate_staging() {
+    const size_t total = staging_offset(interpreter.output_count());
+    if (total == 0)
+      return true;
+    void* memory = nullptr;
+    if (total != SIZE_MAX) {
+      memory = heap_caps_aligned_alloc(
+          16, total, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (memory == nullptr) {
+        memory = heap_caps_aligned_alloc(
+            16, total, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
       }
-      if (staging == nullptr) {
-        std::printf(
-            "EspNN delegate: cannot allocate %u staging bytes\n",
-            static_cast<unsigned>(total));
-        return nullptr;
-      }
-      std::memset(staging, 0, total);
-      g_stats.staging_bytes += total;
     }
-    return staging + offset;
+    if (memory == nullptr) {
+      std::printf(
+          "EspNN delegate: cannot allocate %u staging bytes\n",
+          static_cast<unsigned>(total));
+      return false;
+    }
+    staging = static_cast<int8_t*>(memory);
+    std::memset(staging, 0, total);
+    g_stats.staging_bytes += total;
+    return true;
   }
 };
 
@@ -295,6 +323,10 @@ class EspNNBackendInterface final : public BackendInterface {
     state->conversion_slots = options.external_io
         ? state->interpreter.conversion_slots()
         : UINT32_MAX;
+    if (!state->allocate_staging()) {
+      state->~DelegateState();
+      return Error::MemoryAllocationFailed;
+    }
     if (state->interpreter.constants_copied())
       processed->Free();
     state->state_generation =
@@ -366,21 +398,7 @@ class EspNNBackendInterface final : public BackendInterface {
         staged_outputs |= 1U << o;
         continue;
       }
-      // A graph tensor returned more than once is written where its first
-      // output is bound, and a graph input returned as an output stays where
-      // the input is bound; both are copied to their outputs afterwards.
-      bool repeated = false;
-      for (size_t earlier = 0; ok && earlier < o; ++earlier) {
-        Int8TensorInfo first{};
-        interpreter.output_info(earlier, first);
-        repeated = repeated || first.tensor_id == info.tensor_id;
-      }
-      for (size_t i = 0; ok && i < inputs; ++i) {
-        Int8TensorInfo input{};
-        interpreter.input_info(i, input);
-        repeated = repeated || input.tensor_id == info.tensor_id;
-      }
-      if (ok && repeated) {
+      if (ok && state->returned_again(o)) {
         staged_outputs |= 1U << o;
       } else if (ok) {
         Tensor tensor = args[inputs + o]->toTensor();
@@ -389,11 +407,10 @@ class EspNNBackendInterface final : public BackendInterface {
             arena_aligned(tensor.const_data_ptr())) {
           ok = interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>());
         } else {
-          int8_t* slot = state->staging_slot(inputs + o);
-          if (slot == nullptr)
-            return Error::MemoryAllocationFailed;
-          ok = interpreter.bind_output(o, slot);
+          ok = interpreter.bind_output(
+              o, state->staging + state->staging_offset(o));
           staged_outputs |= 1U << o;
+          ++g_stats.staged_outputs;
         }
       }
       if (!ok) {

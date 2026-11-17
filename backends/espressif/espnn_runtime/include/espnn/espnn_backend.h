@@ -42,9 +42,11 @@ struct DelegateStats {
   size_t scratch_bytes;
   size_t parameter_bytes;
   size_t table_bytes;
-  /// Sum of the buffers that delegates allocated on their first execute()
-  /// for inputs and outputs they cannot use in place.
+  /// Sum of the buffers that delegates allocated at init() for outputs
+  /// whose memory turns out not to be 16-byte aligned, and the number of
+  /// outputs that execute() wrote through them.
   size_t staging_bytes;
+  uint32_t staged_outputs;
   /// Delegate-owned state tensors (mutable buffers), and how many of them
   /// are updated in place rather than copied after the last operator.
   uint32_t states;
