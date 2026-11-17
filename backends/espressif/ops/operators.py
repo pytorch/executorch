@@ -57,6 +57,15 @@ lib.define(
     "quantized_avg_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, "
     "int[2] padding, *, Tensor(a!) out) -> Tensor(a!)"
 )
+lib.define(
+    "quantized_linear_int8(Tensor input, Tensor weight, Tensor? bias, "
+    "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset) -> Tensor"
+)
+lib.define(
+    "quantized_linear_int8.out(Tensor input, Tensor weight, Tensor? bias, "
+    "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
 
 
 @register_fake("esp_nn::quantized_max_pool2d_int8")
@@ -182,3 +191,29 @@ def quantized_add_int8(
     )
     result = requantize(total, output_multiplier, output_shift) + output_offset
     return result.clamp(-128, 127).to(torch.int8)
+
+
+@register_fake("esp_nn::quantized_linear_int8")
+def quantized_linear_int8_meta(
+    input, weight, bias, output_multiplier, output_shift, input_offset, output_offset
+):
+    return input.new_empty((*input.shape[:-1], weight.shape[0]))
+
+
+@impl(lib, "quantized_linear_int8", "CompositeExplicitAutograd")
+def quantized_linear_int8(
+    input, weight, bias, output_multiplier, output_shift, input_offset, output_offset
+):
+    accumulator = (input.to(torch.int64) + input_offset) @ weight.to(torch.int64).T
+    if bias is not None:
+        accumulator = accumulator + bias
+    result = torch.stack(
+        [
+            requantize(accumulator[..., channel], int(multiplier), int(shift))
+            for channel, (multiplier, shift) in enumerate(
+                zip(output_multiplier, output_shift)
+            )
+        ],
+        dim=-1,
+    )
+    return (result + output_offset).clamp(-128, 127).to(torch.int8)
