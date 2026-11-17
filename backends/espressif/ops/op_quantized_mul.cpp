@@ -32,50 +32,31 @@ Tensor& quantized_mul_int8_out(
     int64_t output_shift,
     Tensor& out) {
   const auto numel = input1.numel();
-  const auto block_size = input2.numel();
   ET_KERNEL_CHECK(
       ctx,
-      numel <= std::numeric_limits<int32_t>::max() && block_size > 0 &&
-          block_size <= numel,
+      numel >= 0 && numel <= std::numeric_limits<int32_t>::max(),
       InvalidArgument,
       out);
   const auto size = static_cast<size_t>(numel);
   ET_KERNEL_CHECK(
       ctx,
-      size <= input1.nbytes() &&
-          static_cast<size_t>(block_size) <= input2.nbytes() &&
+      size <= input1.nbytes() && size <= input2.nbytes() &&
           size <= out.nbytes(),
       InvalidArgument,
       out);
 
-  if (block_size == numel) {
-    esp_nn_mul_elementwise_s8(
-        input1.const_data_ptr<int8_t>(),
-        input2.const_data_ptr<int8_t>(),
-        static_cast<int32_t>(input1_offset),
-        static_cast<int32_t>(input2_offset),
-        out.mutable_data_ptr<int8_t>(),
-        static_cast<int32_t>(output_offset),
-        static_cast<int32_t>(output_multiplier),
-        static_cast<int32_t>(output_shift),
-        std::numeric_limits<int8_t>::min(),
-        std::numeric_limits<int8_t>::max(),
-        static_cast<int32_t>(numel));
-  } else {
-    esp_nn_mul_broadcast_channel_s8(
-        input1.const_data_ptr<int8_t>(),
-        input2.const_data_ptr<int8_t>(),
-        static_cast<int32_t>(input1_offset),
-        static_cast<int32_t>(input2_offset),
-        out.mutable_data_ptr<int8_t>(),
-        static_cast<int32_t>(output_offset),
-        static_cast<int32_t>(output_multiplier),
-        static_cast<int32_t>(output_shift),
-        std::numeric_limits<int8_t>::min(),
-        std::numeric_limits<int8_t>::max(),
-        static_cast<int32_t>(numel / block_size),
-        static_cast<int32_t>(block_size));
-  }
+  esp_nn_mul_elementwise_s8(
+      input1.const_data_ptr<int8_t>(),
+      input2.const_data_ptr<int8_t>(),
+      static_cast<int32_t>(input1_offset),
+      static_cast<int32_t>(input2_offset),
+      out.mutable_data_ptr<int8_t>(),
+      static_cast<int32_t>(output_offset),
+      static_cast<int32_t>(output_multiplier),
+      static_cast<int32_t>(output_shift),
+      std::numeric_limits<int8_t>::min(),
+      std::numeric_limits<int8_t>::max(),
+      static_cast<int32_t>(numel));
   return out;
 }
 

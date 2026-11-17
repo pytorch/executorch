@@ -29,11 +29,17 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 _MUL = exir_ops.edge.aten.mul.Tensor
 _FUSED_MUL = exir_ops.edge.fused_quant.mul.default
 _ESP_MUL = exir_ops.edge.esp_nn.quantized_mul_int8.default
+_ESP_MUL_BROADCAST = exir_ops.edge.esp_nn.quantized_mul_broadcast_int8.default
 
 
 class EspMul(Model):
     ops_before_transforms = {_FUSED_MUL: 1}
-    ops_after_transforms = {_MUL: 0, _ESP_MUL: 1}
+    ops_after_transforms = {_MUL: 0, _ESP_MUL: 1, _ESP_MUL_BROADCAST: 0}
+
+    def __init__(self, *, broadcast=False):
+        super().__init__()
+        if broadcast:
+            self.ops_after_transforms = {_MUL: 0, _ESP_MUL: 0, _ESP_MUL_BROADCAST: 1}
 
 
 class EspSelfMul(EspMul):
@@ -42,8 +48,8 @@ class EspSelfMul(EspMul):
 
 
 class EspConstantMul(EspMul):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *, broadcast=False):
+        super().__init__(broadcast=broadcast)
         self.register_buffer("weight", torch.linspace(3, -2, 17))
 
     def forward(self, x):
@@ -52,11 +58,15 @@ class EspConstantMul(EspMul):
 
 class EspMulChain(EspMul):
     ops_before_transforms = {_FUSED_MUL: 2}
-    ops_after_transforms = {_MUL: 0, _ESP_MUL: 2}
+    ops_after_transforms = {_MUL: 0, _ESP_MUL: 2, _ESP_MUL_BROADCAST: 0}
 
     def forward(self, x, y):
         product = x * y
         return product * x, torch.sin(product), torch.sin(x)
+
+
+class EspMixedMulChain(EspMulChain):
+    ops_after_transforms = {_MUL: 0, _ESP_MUL: 1, _ESP_MUL_BROADCAST: 1}
 
 
 class EspMulWithFloatUsers(EspMul):
@@ -66,7 +76,7 @@ class EspMulWithFloatUsers(EspMul):
 
 
 class EspUnsupportedBroadcastMul(EspMulWithFloatUsers):
-    ops_after_transforms = {_MUL: 1, _ESP_MUL: 0}
+    ops_after_transforms = {_MUL: 1, _ESP_MUL: 0, _ESP_MUL_BROADCAST: 0}
 
 
 class EspMulAdd(EspMul):
@@ -77,6 +87,7 @@ class EspMulAdd(EspMul):
     ops_after_transforms = {
         _MUL: 0,
         _ESP_MUL: 1,
+        _ESP_MUL_BROADCAST: 0,
         exir_ops.edge.aten.add.Tensor: 0,
         exir_ops.edge.esp_nn.quantized_add_int8.default: 1,
     }
@@ -113,47 +124,55 @@ test_cases = {
         (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (2, 3))),
     ),
     "broadcast": EspTestCase(
-        EspMulWithFloatUsers(),
+        EspMulWithFloatUsers(broadcast=True),
         (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (3,))),
     ),
     "broadcast_reversed": EspTestCase(
-        EspMulWithFloatUsers(),
+        EspMulWithFloatUsers(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (3,)), ramp_tensor(3, -4, (2, 3))),
     ),
     "broadcast_block": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (2, 3, 16)), ramp_tensor(3, -4, (1, 3, 16))),
     ),
     "broadcast_block_reversed": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (3, 16)), ramp_tensor(3, -4, (2, 3, 16))),
     ),
     "broadcast_tail": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (3, 17)), ramp_tensor(3, -4, (1, 17))),
     ),
     "broadcast_singleton_dim": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (2, 3, 1, 5)), ramp_tensor(3, -4, (3, 1, 5))),
     ),
     "broadcast_scalar": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (2, 3)), torch.tensor(-2.0)),
     ),
     "broadcast_scalar_reversed": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (torch.tensor(-2.0), ramp_tensor(-1.5, 2.5, (2, 3))),
     ),
     "broadcast_scalar_leading_ones": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (torch.full((1, 1, 1), -2.0), ramp_tensor(-1.5, 2.5, (2, 3))),
     ),
     "broadcast_equal_numel": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (ramp_tensor(-1.5, 2.5, (2, 3)), ramp_tensor(3, -4, (1, 2, 3))),
     ),
+    "broadcast_equal_numel_reversed": EspTestCase(
+        EspMul(broadcast=True),
+        (ramp_tensor(-1.5, 2.5, (1, 2, 3)), ramp_tensor(3, -4, (2, 3))),
+    ),
     "broadcast_constant": EspTestCase(
-        EspConstantMul(), (ramp_tensor(-1.5, 2.5, (3, 17)),)
+        EspConstantMul(broadcast=True), (ramp_tensor(-1.5, 2.5, (3, 17)),)
+    ),
+    "mixed_chain": EspTestCase(
+        EspMixedMulChain(),
+        (ramp_tensor(-1, 1, (3, 17)), ramp_tensor(2, -2, (17,))),
     ),
     "broadcast_inner_fallback": EspTestCase(
         EspUnsupportedBroadcastMul(),
@@ -182,7 +201,7 @@ test_cases = {
         ],
     ),
     "broadcast_saturation": EspTestCase(
-        EspMul(),
+        EspMul(broadcast=True),
         (
             torch.tensor([[-2.0, -2.0, 2.0, 2.0]]).repeat(2, 1),
             torch.tensor([-2.0, 2.0, -2.0, 2.0]),
@@ -199,7 +218,10 @@ test_cases = {
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_dialect_mul(test_case):
-    accelerated = test_case.model.ops_after_transforms[_ESP_MUL] > 0
+    accelerated = any(
+        test_case.model.ops_after_transforms[op] > 0
+        for op in (_ESP_MUL, _ESP_MUL_BROADCAST)
+    )
     tester = EspTester(
         test_case.model,
         test_case.example_inputs,
@@ -214,7 +236,7 @@ def test_dialect_mul(test_case):
     if accelerated:
         tester.check_node_count({exir_ops.edge.aten.expand_copy.default: 0})
         for node in tester.get_artifact().exported_program().graph.nodes:
-            if node.target == _ESP_MUL:
+            if node.target in (_ESP_MUL, _ESP_MUL_BROADCAST):
                 assert node.args[0].meta["val"].numel() == node.meta["val"].numel()
     if isinstance(test_case.model, EspMulWithFloatUsers):
         actual = (
@@ -228,7 +250,10 @@ def test_dialect_mul(test_case):
     assert not plan.delegates
     assert not any(op.name.startswith("fused_quant::") for op in plan.operators)
     operators = {(op.name, op.overload) for op in plan.operators}
-    assert (("esp_nn::quantized_mul_int8", "out") in operators) == accelerated
+    for op in (_ESP_MUL, _ESP_MUL_BROADCAST):
+        assert ((op._schema.name, "out") in operators) == (
+            test_case.model.ops_after_transforms[op] > 0
+        )
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
@@ -251,7 +276,12 @@ def test_dialect_scalar_literal_mul_stays_portable():
     tester.check_node_count({scalar_target: 1})
     expected = tester.get_artifact().exported_program().module()(*inputs)
     tester.run_passes().check_node_count(
-        {scalar_target: 0, _ESP_MUL: 0, exir_ops.edge.aten.mul.Scalar: 1}
+        {
+            scalar_target: 0,
+            _ESP_MUL: 0,
+            _ESP_MUL_BROADCAST: 0,
+            exir_ops.edge.aten.mul.Scalar: 1,
+        }
     )
     torch.testing.assert_close(
         tester.get_artifact().exported_program().module()(*inputs),
@@ -283,7 +313,9 @@ def test_dialect_partially_quantized_mul_falls_back(float_edge):
     )
     tester.check_node_count({_FUSED_MUL: 1})
     expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
-    tester.run_passes().check_node_count({_FUSED_MUL: 0, _ESP_MUL: 0, _MUL: 1})
+    tester.run_passes().check_node_count(
+        {_FUSED_MUL: 0, _ESP_MUL: 0, _ESP_MUL_BROADCAST: 0, _MUL: 1}
+    )
     torch.testing.assert_close(
         tester.get_artifact().exported_program().module()(*case.example_inputs),
         expected,
@@ -326,7 +358,9 @@ def test_dialect_single_quantized_mul_operand_falls_back(float_operand):
     assert get_qparams_from_node(mul, "out") is not None
     expected = reference.module()(*case.example_inputs)
 
-    tester.run_passes().check_node_count({_FUSED_MUL: 0, _ESP_MUL: 0, _MUL: 1})
+    tester.run_passes().check_node_count(
+        {_FUSED_MUL: 0, _ESP_MUL: 0, _ESP_MUL_BROADCAST: 0, _MUL: 1}
+    )
     torch.testing.assert_close(
         tester.get_artifact().exported_program().module()(*case.example_inputs),
         expected,

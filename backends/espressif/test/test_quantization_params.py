@@ -35,6 +35,7 @@ _FUSED_ADD = exir_ops.edge.fused_quant.add.default
 _ESP_ADD = exir_ops.edge.esp_nn.quantized_add_int8.default
 _FUSED_MUL = exir_ops.edge.fused_quant.mul.default
 _ESP_MUL = exir_ops.edge.esp_nn.quantized_mul_int8.default
+_ESP_MUL_BROADCAST = exir_ops.edge.esp_nn.quantized_mul_broadcast_int8.default
 
 
 class Multiply(torch.nn.Module):
@@ -162,7 +163,9 @@ def test_broadcast_keeps_qparams_with_operands(reverse):
         _set_qparams(program, prefix, scale, zero_point)
     expected = program.module()(*inputs)
     lowered = EspPassManager()(program).exported_program
-    mul = next(node for node in lowered.graph.nodes if node.target == _ESP_MUL)
+    mul = next(
+        node for node in lowered.graph.nodes if node.target == _ESP_MUL_BROADCAST
+    )
     assert [arg.name for arg in mul.args[:2]] == [
         arg.name for arg in (source_inputs[::-1] if reverse else source_inputs)
     ]
@@ -271,7 +274,10 @@ def test_float32_overflow_preserves_portable_results(
         program.module()(inputs, inputs), expected, atol=0, rtol=0
     )
     lowered = EspPassManager()(program).exported_program
-    assert not any(node.target in (_ESP_MUL, _ESP_ADD) for node in lowered.graph.nodes)
+    assert not any(
+        node.target in (_ESP_MUL, _ESP_MUL_BROADCAST, _ESP_ADD)
+        for node in lowered.graph.nodes
+    )
     torch.testing.assert_close(
         lowered.module()(inputs, inputs), expected, atol=0, rtol=0
     )

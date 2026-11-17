@@ -19,6 +19,15 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_mul_broadcast_int8(Tensor input1, Tensor input2, int input1_offset, "
+    "int input2_offset, int output_offset, int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_mul_broadcast_int8.out(Tensor input1, Tensor input2, int input1_offset, "
+    "int input2_offset, int output_offset, int output_multiplier, int output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_add_int8(Tensor input1, Tensor input2, int input1_offset, "
     "int input2_offset, int output_offset, int input1_multiplier, int input1_shift, "
     "int input2_multiplier, int input2_shift, int left_shift, "
@@ -42,10 +51,24 @@ def quantized_mul_int8_meta(
     output_multiplier,
     output_shift,
 ):
+    return torch.empty_like(input1)
+
+
+@register_fake("esp_nn::quantized_mul_broadcast_int8")
+def quantized_mul_broadcast_int8_meta(
+    input1,
+    input2,
+    input1_offset,
+    input2_offset,
+    output_offset,
+    output_multiplier,
+    output_shift,
+):
     return input1.new_empty(torch.broadcast_shapes(input1.shape, input2.shape))
 
 
 @impl(lib, "quantized_mul_int8", "CompositeExplicitAutograd")
+@impl(lib, "quantized_mul_broadcast_int8", "CompositeExplicitAutograd")
 def quantized_mul_int8(
     input1,
     input2,

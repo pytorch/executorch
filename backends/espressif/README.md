@@ -30,6 +30,10 @@ for supported configurations. Shared quantization rules also cover
 operators that retain portable execution. The delegate's supported
 operators and export example are described below.
 
+Lowering selects `esp_nn::quantized_mul_int8` for equal input shapes and
+`esp_nn::quantized_mul_broadcast_int8` for trailing-block broadcasts. Each
+operator calls its ESP-NN kernel through a separate C++ wrapper.
+
 ## Contents
 
 ```

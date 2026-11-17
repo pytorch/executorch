@@ -205,6 +205,11 @@ class LowerToEsp(ExportedProgramPassBase):
             args = _binary_kernel_args(node, params, rescale_fn)
             if args is None:
                 continue
+            if (
+                node.target == exir_ops.edge.fused_quant.mul.default
+                and args[0].meta["val"].shape != args[1].meta["val"].shape
+            ):
+                target = exir_ops.edge.esp_nn.quantized_mul_broadcast_int8.default
             with graph.inserting_before(node):
                 replacement = graph.call_function(target, args)
             replacement.meta = node.meta.copy()
