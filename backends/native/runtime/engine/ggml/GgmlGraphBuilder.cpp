@@ -75,7 +75,7 @@ std::vector<ValueId> output_ids(const Node& node) {
   return ids;
 }
 
-static std::vector<int64_t> broadcast_shape(
+std::vector<int64_t> broadcast_shape(
     const std::vector<int64_t>& a,
     const std::vector<int64_t>& b) {
   const size_t rank = std::max(a.size(), b.size());
@@ -701,6 +701,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_elu(node);
   } else if (key == "aten.sqrt.default") {
     lower_sqrt(node);
+  } else if (key == "aten.pow.Tensor_Scalar") {
+    lower_pow(node);
   } else if (key == "aten.convolution.default") {
     lower_convolution(node);
   } else if (key == "aten._native_batch_norm_legit_no_training.default") {
@@ -739,6 +741,10 @@ void GraphBuilder::lower(const Node& node) {
     lower_update_cache(node);
   } else if (key == "llama.custom_sdpa.default") {
     lower_custom_sdpa(node);
+  } else if (key == "aten.where.self") {
+    lower_where(node);
+  } else if (key == "aten.logical_not.default") {
+    lower_logical_not(node);
   } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
     lower_compare(node, /*strict=*/false);
   } else if (key == "aten.lt.Tensor" || key == "aten.lt.Scalar") {
