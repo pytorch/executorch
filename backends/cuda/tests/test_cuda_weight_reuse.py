@@ -6,6 +6,8 @@
 
 """CudaWeightCollector writes a weight storage the methods share only once."""
 
+import contextlib
+import gc
 import tempfile
 import unittest
 from unittest import mock
@@ -40,6 +42,20 @@ def _as_bytes(buffer) -> bytes:
     return buffer if isinstance(buffer, bytes) else buffer.to_bytes()
 
 
+@contextlib.contextmanager
+def _counting_writes():
+    """Yields the sizes of the storages the collector writes."""
+    writes = []
+    materialize_storage = cuda_weight_collector._materialize_storage
+
+    def counting(tensor, directory):
+        writes.append(tensor.untyped_storage().nbytes())
+        return materialize_storage(tensor, directory)
+
+    with mock.patch.object(cuda_weight_collector, "_materialize_storage", counting):
+        yield writes
+
+
 class CudaWeightReuseTest(unittest.TestCase):
     def setUp(self) -> None:
         if not torch.cuda.is_available():
@@ -49,9 +65,8 @@ class CudaWeightReuseTest(unittest.TestCase):
 
     def _method(self, collector, so_key, weights):
         """One method's preprocess: materialize, then add to the shared store."""
-        artifact = collector.materialize(
-            weights, self.directory.name, lambda _: AOTI_DEVICE_TYPE_CUDA
-        )
+        with collector.capture(lambda _: AOTI_DEVICE_TYPE_CUDA) as capture:
+            artifact = collector.materialize(weights, self.directory.name, capture)
         result = _parent_result(so_key)
         collector.add_preprocess_result(result, artifact, "cuda")
         return artifact, result
@@ -60,14 +75,7 @@ class CudaWeightReuseTest(unittest.TestCase):
         weight = torch.randn(1024, 33, device="cuda")
         bias = torch.arange(7, dtype=torch.int8, device="cuda")
         collector = CudaWeightCollector()
-        writes = []
-        materialize_storage = cuda_weight_collector._materialize_storage
-
-        def counting(tensor, directory):
-            writes.append(tensor.untyped_storage().nbytes())
-            return materialize_storage(tensor, directory)
-
-        with mock.patch.object(cuda_weight_collector, "_materialize_storage", counting):
+        with _counting_writes() as writes:
             first, first_result = self._method(
                 collector, "so-0", _weights(w=weight, b=bias)
             )
@@ -169,3 +177,185 @@ class CudaWeightReuseTest(unittest.TestCase):
         self.assertFalse(same(base, base[:8].clone()))
         empty = torch.empty(0, dtype=torch.uint8, device="cuda")
         self.assertTrue(same(empty, empty.clone()))
+
+    def _moved_method(self, collector, so_key, sources, replace=None, update=None):
+        """A method whose weights are moved from ``sources`` and freed after it.
+
+        ``replace`` drops the moved copies before AOTI sees them (as a pass
+        replacing them would) and returns the tensors to materialize instead.
+        ``update`` writes to the moved copies before AOTI sees them.
+        """
+        moved = {name: tensor.to("cuda") for name, tensor in sources.items()}
+        with collector.capture(lambda _: AOTI_DEVICE_TYPE_CUDA) as capture:
+            capture.record_moved_sources(sources, moved)
+            if update is not None:
+                with torch.no_grad():
+                    for tensor in moved.values():
+                        update(tensor)
+            if replace is not None:
+                shapes = {name: tensor.shape for name, tensor in moved.items()}
+                # Only the capture's records may keep the storages alive.
+                moved.clear()
+                gc.collect()
+                moved = replace(shapes)
+            artifact = collector.materialize(
+                _weights(**moved), self.directory.name, capture
+            )
+        result = _parent_result(so_key)
+        collector.add_preprocess_result(result, artifact, "cuda")
+        for tensor in moved.values():
+            tensor.untyped_storage().resize_(0)
+        return artifact, result
+
+    def test_freed_copies_of_one_source_are_written_once(self) -> None:
+        sources = {
+            "w": torch.randn(1024, 33),
+            "b": torch.arange(7, dtype=torch.int8),
+        }
+        collector = CudaWeightCollector()
+        with _counting_writes() as writes:
+            first, first_result = self._moved_method(collector, "so-0", sources)
+            second, second_result = self._moved_method(collector, "so-1", sources)
+            third, _ = self._moved_method(collector, "so-2", sources)
+        collector.finish()
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(second.storages, {})
+        self.assertEqual(third.storages, {})
+        self.assertEqual(second.stored, {e.storage_key for e in second.entries})
+        self.assertEqual(
+            decode_cuda_aoti_metadata(second_result.processed_bytes).entries,
+            decode_cuda_aoti_metadata(first_result.processed_bytes).entries,
+        )
+        stored = {
+            key: _as_bytes(collector._store.buffers[index])
+            for key, index in collector._store.key_to_buffer_idx.items()
+        }
+        for entry in decode_cuda_aoti_metadata(first_result.processed_bytes).entries:
+            self.assertEqual(
+                stored[entry.storage_key],
+                sources[entry.fqn].contiguous().view(torch.uint8).numpy().tobytes(),
+            )
+
+    def test_another_source_with_the_same_key_is_written_and_checked(self) -> None:
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", {"w": torch.randn(256, 8)})
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(collector, "so-1", {"w": torch.randn(256, 8)})
+
+    def test_a_source_view_with_other_metadata_is_written_again(self) -> None:
+        base = torch.randn(64, 16)
+        for first, second in (
+            (base, base[:32]),  # shape
+            (base[:32], base[32:]),  # storage offset
+            (base[:, :8], base[:, ::2]),  # strides
+        ):
+            with self.subTest(second=(second.shape, second.storage_offset())):
+                collector = CudaWeightCollector()
+                with _counting_writes() as writes:
+                    self._moved_method(collector, "so-0", {"w": first})
+                    with self.assertRaisesRegex(ValueError, "with different data"):
+                        self._moved_method(collector, "so-1", {"w": second})
+                self.assertEqual(len(writes), 2)
+
+    def test_a_source_updated_in_place_is_written_and_checked(self) -> None:
+        sources = {"w": torch.nn.Parameter(torch.randn(256, 8))}
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", sources)
+        with torch.no_grad():
+            sources["w"].add_(1)
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(collector, "so-1", sources)
+
+    def test_a_moved_copy_written_before_materialize_is_checked(self) -> None:
+        sources = {"w": torch.randn(256, 8)}
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", sources)
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(
+                collector, "so-1", sources, update=lambda tensor: tensor.add_(1)
+            )
+
+    def test_a_storage_freed_before_materialize_is_not_matched(self) -> None:
+        sources = {"w": torch.randn(256, 8)}
+        collector = CudaWeightCollector()
+        self._moved_method(collector, "so-0", sources)
+        # Same source, but the moved copy is freed before AOTI sees it and a
+        # storage with other bytes is allocated, possibly at its old address:
+        # it must be read and checked.
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._moved_method(
+                collector,
+                "so-1",
+                sources,
+                replace=lambda shapes: {
+                    name: torch.randn(shape, device="cuda")
+                    for name, shape in shapes.items()
+                },
+            )
+
+    def test_a_freed_written_source_lets_a_live_source_take_over(self) -> None:
+        collector = CudaWeightCollector()
+        first = torch.randn(256, 8)
+        with _counting_writes() as writes:
+            self._moved_method(collector, "so-0", {"w": first})
+            shared = first.clone()
+            del first
+            self._moved_method(collector, "so-1", {"w": shared})
+            self._moved_method(collector, "so-2", {"w": shared})
+        self.assertEqual(len(writes), 2)
+
+
+class _TwoMethodLinear(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(64, 48)
+        # A persistent buffer keeps the per-method handling.
+        self.register_buffer("scale", (torch.rand(48) + 0.5).to(torch.bfloat16))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x) * self.scale
+
+
+class CudaWeightReuseExportTest(unittest.TestCase):
+    """Lowers two methods through CudaBackend, as a real export does."""
+
+    def setUp(self) -> None:
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA required")
+
+    def _lower(self, low_memory: bool):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        module = _TwoMethodLinear().eval()
+        programs = {
+            name: torch.export.export(module, (torch.randn(rows, 64),), strict=True)
+            for name, rows in (("forward_1", 1), ("forward_4", 4))
+        }
+
+        def partitioner(name):
+            specs = [CudaBackend.generate_method_name_compile_spec(name)]
+            if low_memory:
+                specs.append(CompileSpec("low_memory_mode", b"ON"))
+            return [CudaPartitioner(specs)]
+
+        with _counting_writes() as writes:
+            to_edge_transform_and_lower(
+                programs,
+                partitioner={name: partitioner(name) for name in programs},
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        return writes
+
+    # The linear weight, its bias and the bf16 buffer.
+    _SIZES = (64 * 48 * 4, 48 * 4, 48 * 2)
+
+    def test_low_memory_methods_write_shared_weights_once(self) -> None:
+        writes = self._lower(low_memory=True)
+        self.assertEqual([writes.count(size) for size in self._SIZES], [1, 1, 2])
+
+    def test_default_mode_writes_each_methods_own_copy(self) -> None:
+        writes = self._lower(low_memory=False)
+        self.assertEqual([writes.count(size) for size in self._SIZES[:2]], [2, 2])
