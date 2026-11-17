@@ -8,6 +8,9 @@ import os.path
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import (
+    NumericalStatsOutputComparator,
+)
 
 from executorch.backends.nxp.tests.config_importer import test_config
 from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import (
@@ -15,9 +18,6 @@ from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import
 )
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,

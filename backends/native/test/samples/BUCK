@@ -8,6 +8,7 @@ fbcode_target(
     name = "record",
     srcs = [
         "cases.py",
+        "embedding.py",
         "linear.py",
         "ops.py",
         "record.py",
@@ -41,6 +42,7 @@ fbcode_target(
         ":record",
         "//caffe2:torch",
         "//executorch/exir/native:native",
+        "//executorch/extension/llm/export:gguf",
         "//pytorch/ao:torchao",
     ],
 )

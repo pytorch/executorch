@@ -343,6 +343,52 @@ test_minimal_classic_ml_ethos_u55() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_pmu_counters_example_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test PMU collection example on Ethos-U55"
+
+    local build_dir="${et_root_dir}/arm_test/pmu_counters_example_ethos_u55"
+    local pte_path="${build_dir}/mv2.pte"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=mv2 \
+        --target=ethos-u55-128 \
+        --delegate \
+        --quantize \
+        --output="${pte_path}"
+
+    cmake \
+        -S examples/arm/pmu_counters_example_ethos_u \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}"
+    cmake --build "${build_dir}" --target arm_pmu_runner -j"$(nproc)"
+
+    (
+        set -o pipefail
+        cd "${build_dir}"
+        export PYTHONPATH="${et_root_dir}${PYTHONPATH:+:${PYTHONPATH}}"
+        "${et_root_dir}/backends/arm/scripts/run_fvp.sh" \
+            --elf="${build_dir}/arm_pmu_runner" \
+            --target=ethos-u55-128 | tee run_fvp.log
+        grep -Fq "Model executed successfully." run_fvp.log
+        grep -Eq '^  cycles: [0-9]+ overflow=[01]$' run_fvp.log
+        grep -Eq '^  event 97: [0-9]+ overflow=[01]$' run_fvp.log
+        grep -Eq '^  event 112: [0-9]+ overflow=[01]$' run_fvp.log
+        test -s etdump.bin
+
+        python3 "${et_root_dir}/examples/arm/pmu_counters_example_ethos_u/parse_etdump.py" \
+            | tee parse_etdump.log
+        grep -Fq "'ethosu_pmu':" parse_etdump.log
+        grep -Fq "EthosUPmuProfileEvent(" parse_etdump.log
+        grep -Fq "ETHOSU_PMU_MAC_ACTIVE" parse_etdump.log
+        grep -Fq "ETHOSU_PMU_NPU_IDLE" parse_etdump.log
+    )
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 test_minimal_classic_ml_cortex_m55() {
     echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Cortex-M55"
 
