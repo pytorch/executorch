@@ -12,6 +12,9 @@ sdpa_compute_attn_weights_coop:
     TILE_K4: 1
     TILE_N4: 1
     FUSE_SOFTMAX: false
+    # Shared attn_weights row of the FUSE_SOFTMAX variant, in texels. Must equal
+    # kFusedSoftmaxMaxContextTexels in SDPA.cpp.
+    MAX_CONTEXT_TEXEL_LEN: 64
   generate_variant_forall:
     combination:
       parameter_names: [IO_STORAGE, K_CACHE_STORAGE]

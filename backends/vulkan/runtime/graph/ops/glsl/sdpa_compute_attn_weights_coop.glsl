@@ -35,10 +35,8 @@ $if FUSE_SOFTMAX:
   #define FUSE_SOFTMAX
   // Cap on the attn_weights row held in shared memory, in texels. The host only
   // selects this variant when the context fits within this bound (see
-  // use_fused_qk_softmax() in SDPA.cpp), so the indexing below is in range.
-  // Must equal kFusedSoftmaxMaxContextTexels in SDPA.cpp, which derives the
-  // host's context length cutoff from it.
-  #define MAX_CONTEXT_TEXEL_LEN 64
+  // use_fused_qk_softmax() in SDPA.cpp); a longer context writes nothing.
+  #define MAX_CONTEXT_TEXEL_LEN ${MAX_CONTEXT_TEXEL_LEN}
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
 
@@ -65,7 +63,8 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
 
 #ifdef FUSE_SOFTMAX
 
-// The scaled and masked attn_weights row, one array per texel component.
+// The scaled and masked attn_weights row, one array per texel component, so
+// that the workers, which each own one texel, access consecutive words.
 shared T row_attn_w_x[MAX_CONTEXT_TEXEL_LEN];
 shared T row_attn_w_y[MAX_CONTEXT_TEXEL_LEN];
 shared T row_attn_w_z[MAX_CONTEXT_TEXEL_LEN];
@@ -121,13 +120,16 @@ bool compute_attn_weight_tile(
     const int s,
     const int q_h,
     const int kv_h,
-    const int D4,
-    const int D,
-    const int S,
-    const int Q_H,
-    const int context_len,
-    const int C,
-    const int KV_H) {
+    const int context_len) {
+  // head dim, sequence length, number of Q heads, max context length and
+  // number of K heads
+  const int D = q_sizes.x;
+  const int D4 = div_up_4(D);
+  const int S = q_sizes.z;
+  const int Q_H = q_sizes.y;
+  const int C = k_sizes.z;
+  const int KV_H = k_sizes.y;
+
   initialize(out_tile);
 
   FPInputTile q_tile;
@@ -213,10 +215,6 @@ void main() {
   // idx along output num_q_heads dim
   const int q_h = int(gl_GlobalInvocationID.z);
 
-  // head dimension
-  const int D = q_sizes.x;
-  // texel size of head_dim, over which the dot product is accumulated
-  const int D4 = div_up_4(D);
   // number of Q heads
   const int Q_H = q_sizes.y;
   // sequence length
@@ -225,9 +223,6 @@ void main() {
 
   // number of K/V heads
   const int KV_H = k_sizes.y;
-  // Max context length
-  const int C = k_sizes.z;
-  const int C4 = div_up_4(C);
 
   int kv_h = q_h;
   if (KV_H < Q_H) {
@@ -239,8 +234,11 @@ void main() {
   const int context_texel_len = div_up_4(context_len);
 
 #ifdef FUSE_SOFTMAX
-  // bounds check
-  if (s >= S || q_h >= Q_H) {
+  // bounds check. A context longer than the shared row is never selected by
+  // the host; if it is dispatched anyway, write nothing rather than overrun the
+  // row. s and q_h are uniform over the work group, so the whole work group
+  // returns together and the barriers below stay uniform.
+  if (s >= S || q_h >= Q_H || context_texel_len > MAX_CONTEXT_TEXEL_LEN) {
     return;
   }
 
@@ -251,7 +249,7 @@ void main() {
 
     FPOutTile out_tile;
     const bool tile_in_mask_region = compute_attn_weight_tile(
-        out_tile, 0, 1, c, s, q_h, kv_h, D4, D, S, Q_H, context_len, C, KV_H);
+        out_tile, 0, 1, c, s, q_h, kv_h, context_len);
     if (!tile_in_mask_region) {
       VEC4_T inv_scale_vec = VEC4_T(inv_scale);
       apply_scale_and_mask(out_tile, inv_scale_vec, input_pos, c, s);
@@ -283,13 +281,7 @@ void main() {
       s,
       q_h,
       kv_h,
-      D4,
-      D,
-      S,
-      Q_H,
-      context_len,
-      C,
-      KV_H);
+      context_len);
 
   partial_sums[worker_id] = out_tile;
 
