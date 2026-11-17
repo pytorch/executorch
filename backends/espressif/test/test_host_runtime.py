@@ -50,6 +50,7 @@ from executorch.backends.espressif.test.test_mutable_buffers import (
     StateReadLate,
 )
 from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quantize_io_pass import quantize_input, quantize_output
@@ -253,9 +254,9 @@ def test_host_delegate_matches_reference(tmp_path, name, model, shapes):
         pytest.param(False, False, False, False, 2, 2, id="float-nchw"),
         pytest.param(False, False, True, False, 2, 2, id="float-nhwc"),
         pytest.param(True, True, False, False, 2, 2, id="int8-nchw"),
-        pytest.param(True, True, True, False, 2, 1, id="int8-nhwc"),
+        pytest.param(True, True, True, False, 2, 2, id="int8-nhwc"),
         pytest.param(False, True, True, False, 1, 1, id="float-input-only"),
-        pytest.param(True, False, True, False, 1, 1, id="float-output-only"),
+        pytest.param(True, False, True, False, 1, 2, id="float-output-only"),
         pytest.param(False, False, False, True, 2, 2, id="legacy-float"),
         pytest.param(True, True, True, True, 2, 2, id="legacy-int8"),
     ],
@@ -324,8 +325,49 @@ def test_partitions_keep_independent_conversion_plans(tmp_path):
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
     assert stats["delegates"] == 2
-    # First partition: only its output needs conversion. Second: both I/O.
-    assert stats["arena"] == 16 + 32
+    # Inputs are always copied; both partitions' outputs need conversion.
+    assert stats["arena"] == 32 + 32
+    assert stats["staging"] == 0
+
+
+def test_inputs_are_copied_for_exports_that_bound_them(tmp_path):
+    # Exports that recorded no conversion slots for compatible inputs.
+    sample = torch.zeros(1, 16, 8, 8).contiguous(memory_format=torch.channels_last)
+    program = torch.export.export(AddChain(2), (sample,), strict=True)
+    quantize_input(program, 0)
+    quantize_output(program, 0)
+    edge, _ = to_espnn_edge(program, allow_cpu_fallback=False)
+    for module in edge.exported_program().graph_module.children():
+        if isinstance(module, LoweredBackendModule):
+            module.compile_specs[:] = [
+                (
+                    CompileSpec(spec.key, bytes(4))
+                    if spec.key == "espnn_io_conversion_slots"
+                    else spec
+                )
+                for spec in module.compile_specs
+            ]
+    config = ExecutorchBackendConfig(
+        memory_planning_pass=MemoryPlanningPass(
+            alloc_graph_input=False, alloc_graph_output=False
+        )
+    )
+    generator = torch.Generator().manual_seed(2)
+    steps = [
+        [
+            torch.randint(
+                -128, 128, sample.shape, generator=generator, dtype=torch.int8
+            ).contiguous(memory_format=torch.channels_last)
+        ]
+        for _ in range(2)
+    ]
+    (outputs,), stats = run_host(
+        tmp_path, edge.to_executorch(config).buffer, steps, "--share-io"
+    )
+    emulator = ProgramEmulator(edge.exported_program())
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)), True)
+    assert stats["arena"] == 2 * sample.numel()
     assert stats["staging"] == 0
 
 
@@ -490,7 +532,8 @@ def test_device_layout_io_is_used_in_place(tmp_path, channels_last):
     (outputs,), stats = run_host(tmp_path, program, steps, "--share-io")
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
-    # NCHW I/O uses the arena; channels-last I/O is bound directly.
+    # Inputs and NCHW outputs use the arena; channels-last outputs are bound
+    # directly.
     assert stats["staging"] == 0
     if channels_last:
         assert stats["arena"] == sum(

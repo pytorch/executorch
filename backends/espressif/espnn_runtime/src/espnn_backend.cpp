@@ -114,12 +114,6 @@ bool arena_aligned(const void* data) {
   return reinterpret_cast<uintptr_t>(data) % 16 == 0;
 }
 
-bool overlaps(const void* a, size_t a_bytes, const void* b, size_t b_bytes) {
-  const uintptr_t a_begin = reinterpret_cast<uintptr_t>(a);
-  const uintptr_t b_begin = reinterpret_cast<uintptr_t>(b);
-  return a_begin < b_begin + b_bytes && b_begin < a_begin + a_bytes;
-}
-
 bool load_input(
     const Int8TensorInfo& info,
     Layout layout,
@@ -207,7 +201,7 @@ struct DelegateState {
   uint32_t conversion_slots = 0;
   bool profiled = false;
   uint32_t state_generation = 0;
-  // Alignment and aliasing fallbacks for I/O that is not already in the arena.
+  // Copies of misaligned outputs that are not in the arena.
   int8_t* staging = nullptr;
 
   ~DelegateState() {
@@ -220,12 +214,11 @@ struct DelegateState {
     const size_t slots = inputs + interpreter.output_count();
     size_t offset = 0;
     size_t total = 0;
-    for (size_t k = 0; k < slots; ++k) {
+    for (size_t k = inputs; k < slots; ++k) {
       if ((conversion_slots & (1U << k)) != 0)
         continue;
       Int8TensorInfo info{};
-      if (k < inputs ? !interpreter.input_info(k, info)
-                     : !interpreter.output_info(k - inputs, info))
+      if (!interpreter.output_info(k - inputs, info))
         return nullptr;
       if (k == slot)
         offset = total;
@@ -340,40 +333,20 @@ class EspNNBackendInterface final : public BackendInterface {
         state->state_generation = generation;
       }
     }
-    // Conversion buffers share the activation arena; compatible I/O is bound
-    // directly, independently of ExecuTorch's input/output memory planning.
+    // Inputs are copied into their arena slots, so outputs may be written over
+    // the caller's input buffers. Output conversion buffers share the arena;
+    // compatible outputs are bound directly, independently of ExecuTorch's
+    // output memory planning.
     Int8TensorInfo info{};
     for (size_t i = 0; i < inputs; ++i) {
       const Layout layout =
           args[i]->isTensor() && interpreter.input_info(i, info)
           ? tensor_layout(args[i]->toTensor(), info)
           : Layout::kInvalid;
-      bool ok = layout != Layout::kInvalid;
-      if (ok && (state->conversion_slots & (1U << i)) != 0) {
-        ok = load_input(
-            info, layout, args[i]->toTensor(), interpreter.input_data(i));
-      } else if (ok) {
-        const Tensor& tensor = args[i]->toTensor();
-        // An input that is also returned as an output is staged, so that
-        // outputs written over the caller's input buffers cannot change it.
-        bool returned = false;
-        for (size_t o = 0; o < outputs; ++o) {
-          Int8TensorInfo output{};
-          interpreter.output_info(o, output);
-          returned = returned || output.tensor_id == info.tensor_id;
-        }
-        if (tensor.scalar_type() == ScalarType::Char &&
-            layout == Layout::kDevice &&
-            arena_aligned(tensor.const_data_ptr()) && !returned) {
-          ok = interpreter.bind_input(i, tensor.const_data_ptr<int8_t>());
-        } else {
-          int8_t* slot = state->staging_slot(i);
-          if (slot == nullptr)
-            return Error::MemoryAllocationFailed;
-          ok = load_input(info, layout, tensor, slot) &&
-              interpreter.bind_input(i, slot);
-        }
-      }
+      const bool ok =
+          layout != Layout::kInvalid &&
+          load_input(
+              info, layout, args[i]->toTensor(), interpreter.input_data(i));
       if (!ok) {
         std::printf(
             "EspNN delegate: input %u has an unsupported dtype, shape or dim order\n",
@@ -410,20 +383,9 @@ class EspNNBackendInterface final : public BackendInterface {
         staged_outputs |= 1U << o;
       } else if (ok) {
         Tensor tensor = args[inputs + o]->toTensor();
-        // The operations may still read an input after writing an output, so
-        // an output that shares memory with an input is staged.
-        bool direct = tensor.scalar_type() == ScalarType::Char &&
-            layout == Layout::kDevice && arena_aligned(tensor.const_data_ptr());
-        for (size_t i = 0; direct && i < inputs; ++i) {
-          Int8TensorInfo input{};
-          interpreter.input_info(i, input);
-          direct = !overlaps(
-              tensor.const_data_ptr(),
-              info.bytes,
-              interpreter.input_data(i),
-              input.bytes);
-        }
-        if (direct) {
+        if (tensor.scalar_type() == ScalarType::Char &&
+            layout == Layout::kDevice &&
+            arena_aligned(tensor.const_data_ptr())) {
           ok = interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>());
         } else {
           int8_t* slot = state->staging_slot(inputs + o);

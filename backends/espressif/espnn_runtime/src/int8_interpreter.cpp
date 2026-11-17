@@ -467,17 +467,20 @@ bool Int8Interpreter::plan_memory() {
     std::printf("ERROR: unable to allocate memory-planner tables\n");
     return false;
   }
+  // Kernels may load whole vectors past the end of a tensor they read, which
+  // stays within the arena but not within a caller's buffer, so graph inputs
+  // are always planned.
   const auto unplanned = [&](uint32_t id) {
     if ((tensors_[id].flags & TENSOR_FLAG_CONSTANT) != 0)
       return true;
     if (!options_.external_io ||
         (tensors_[id].flags &
-         (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT)) == 0)
+         (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT)) !=
+            TENSOR_FLAG_GRAPH_OUTPUT)
       return false;
-    for (size_t k = 0; k < input_count_ + output_count_; ++k) {
-      const uint32_t io =
-          k < input_count_ ? inputs_[k] : outputs_[k - input_count_];
-      if (io == id && (options_.conversion_slots & (1U << k)) != 0)
+    for (size_t o = 0; o < output_count_; ++o) {
+      if (outputs_[o] == id &&
+          (options_.conversion_slots & (1U << (input_count_ + o))) != 0)
         return false;
     }
     return true;
@@ -593,23 +596,28 @@ bool Int8Interpreter::plan_memory() {
   // Loading then needs at most the tensor offsets alongside the arena.
   plan_buffers.release();
 
-  // With external_io, a graph whose every activation is an input or output
-  // needs no arena.
+  // With external_io, a graph whose every activation is an output needs no
+  // arena.
   arena_size_ = arena_size;
   if (arena_size_ == 0)
     return true;
-  arena_ = static_cast<uint8_t*>(allocate_preferring_internal(
-      arena_size_,
-      options_.prefer_internal_arena,
-      options_.internal_reserve_bytes,
-      &arena_internal_));
+  // Readable bytes after the last slot, for kernels that load a whole vector
+  // past the end of a tensor.
+  const size_t allocated = arena_size_ + ARENA_ALIGNMENT;
+  arena_ = allocated < arena_size_
+      ? nullptr
+      : static_cast<uint8_t*>(allocate_preferring_internal(
+            allocated,
+            options_.prefer_internal_arena,
+            options_.internal_reserve_bytes,
+            &arena_internal_));
   if (arena_ == nullptr) {
     std::printf(
         "ERROR: unable to allocate %u-byte activation arena\n",
         static_cast<unsigned>(arena_size_));
     return false;
   }
-  std::memset(arena_, 0, arena_size_);
+  std::memset(arena_, 0, allocated);
   for (uint32_t i = 0; i < tensor_count; ++i) {
     if (offsets[i] != SIZE_MAX)
       tensor_data_[i] = reinterpret_cast<int8_t*>(arena_ + offsets[i]);
@@ -1000,13 +1008,6 @@ void Int8Interpreter::rebase_constants(const uint8_t* old_base, size_t size) {
 
 int8_t* Int8Interpreter::activation(uint32_t tensor_id) const {
   return tensor_data_[tensor_id];
-}
-
-bool Int8Interpreter::bind_input(size_t index, const int8_t* data) {
-  if (!loaded_ || !options_.external_io || index >= input_count_)
-    return false;
-  tensor_data_[inputs_[index]] = const_cast<int8_t*>(data);
-  return true;
 }
 
 bool Int8Interpreter::bind_output(size_t index, int8_t* data) {
@@ -1936,10 +1937,6 @@ bool Int8Interpreter::invoke() {
   if (!loaded_)
     return false;
   if (options_.external_io) {
-    for (size_t i = 0; i < input_count_; ++i) {
-      if (tensor_data_[inputs_[i]] == nullptr)
-        return false;
-    }
     for (size_t o = 0; o < output_count_; ++o) {
       if (tensor_data_[outputs_[o]] == nullptr)
         return false;

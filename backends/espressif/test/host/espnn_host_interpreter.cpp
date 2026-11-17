@@ -16,8 +16,8 @@
  *
  * The graph is placed OFFSET bytes past a 16-byte boundary, so that a test can
  * load it from addresses with any alignment. Inputs and outputs are raw
- * device-layout (NHWC) int8 files. With --external-io, inputs and outputs are
- * bound to runner buffers, the outputs prefilled with 0x5a.
+ * device-layout (NHWC) int8 files. With --external-io, outputs are bound to
+ * runner buffers prefilled with 0x5a.
  */
 
 #include <cstdint>
@@ -85,21 +85,14 @@ int main(int argc, char** argv) {
   if (inputs.size() != interpreter.input_count() ||
       outputs.size() != interpreter.output_count())
     return fail("wrong number of inputs or outputs");
-  std::vector<std::vector<uint64_t>> bound(inputs.size() + outputs.size());
-  for (size_t k = 0; options.external_io && k < bound.size(); ++k) {
+  std::vector<std::vector<uint64_t>> bound(outputs.size());
+  for (size_t o = 0; options.external_io && o < bound.size(); ++o) {
     Int8TensorInfo info{};
-    if (k < inputs.size())
-      interpreter.input_info(k, info);
-    else
-      interpreter.output_info(k - inputs.size(), info);
-    bound[k].resize(info.bytes / 8 + 2);
-    int8_t* buffer = reinterpret_cast<int8_t*>(bound[k].data());
-    if (k < inputs.size()) {
-      interpreter.bind_input(k, buffer);
-    } else {
-      std::memset(buffer, 0x5a, info.bytes);
-      interpreter.bind_output(k - inputs.size(), buffer);
-    }
+    interpreter.output_info(o, info);
+    bound[o].resize(info.bytes / 8 + 2);
+    int8_t* buffer = reinterpret_cast<int8_t*>(bound[o].data());
+    std::memset(buffer, 0x5a, info.bytes);
+    interpreter.bind_output(o, buffer);
   }
   for (size_t i = 0; i < inputs.size(); ++i) {
     Int8TensorInfo info{};

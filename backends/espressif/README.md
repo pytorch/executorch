@@ -103,22 +103,25 @@ Calibrate on a few hundred real samples; random data gives useless scales.
 
 ### Inputs and outputs
 
-The delegate keeps rank-4 tensors in NHWC order. It uses an int8 input or
-output directly when its buffer is 16-byte aligned and already in this
-layout: the tensor is not rank 4, has one channel or one pixel, or has a
-channels-last dim order. Each input and output is handled independently,
-whether its buffer is memory-planned by ExecuTorch or supplied by the caller.
+The delegate keeps rank-4 tensors in NHWC order. Inputs are always copied
+into slots in the delegate's activation arena, quantized or transposed if
+needed, because ESP-NN kernels may load whole vectors past the end of a
+tensor they read. The delegate writes an int8 output directly when its
+buffer is 16-byte aligned and already in this layout: the tensor is not
+rank 4, has one channel or one pixel, or has a channels-last dim order. Each
+output is handled independently, whether its buffer is memory-planned by
+ExecuTorch or supplied by the caller.
 
-Float tensors and NCHW tensors with several channels and pixels need dtype
-or layout conversion. The exporter records which I/O slots need conversion,
-so their int8 buffers can share the delegate's activation arena with
-intermediate tensors. Older exports without this metadata use the arena for
-all I/O. Misalignment or overlapping I/O may require a separate staging
-buffer, allocated on the first `execute()` that needs it.
+Float outputs and NCHW outputs with several channels and pixels need dtype
+or layout conversion. The exporter records which outputs need conversion,
+so their int8 buffers can share the arena with intermediate tensors. Older
+exports without this metadata use the arena for all outputs. A misaligned
+output goes through a separate staging buffer, allocated on the first
+`execute()` that needs it.
 
 For the smallest and fastest program, give the delegate int8, channels-last
 inputs and outputs and leave them out of ExecuTorch's memory plan, so that
-the application's own buffers are used:
+the application's own buffers are used without conversion:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig
@@ -145,8 +148,8 @@ pte = edge.to_executorch(config).buffer
 The application then binds its buffers once, with `Method::set_input()` and
 `Method::set_output_data_ptr()`, and each step is a call to
 `Method::execute()`. An output may share memory with an input (for example,
-to update a state tensor in place): the delegate detects the overlap and
-writes that output through its staging buffer after all operators have run.
+to update a state tensor in place), since the inputs are copied before any
+operator runs.
 
 ### Streaming state
 

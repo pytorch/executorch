@@ -43,10 +43,10 @@ def _io_conversion_slots(program, graph) -> int:
             continue
         seen.add(tensor_id)
         tensor = node.meta["val"]
-        # Returned inputs need a protected copy even when their layout matches.
-        returned_input = slot < len(graph.inputs) and tensor_id in graph.outputs
+        # Kernels may load whole vectors past the end of a tensor they read, so
+        # inputs are always copied into the arena.
         if (
-            returned_input
+            slot < len(graph.inputs)
             or tensor.dtype != torch.int8
             or (
                 tensor.dim() == 4

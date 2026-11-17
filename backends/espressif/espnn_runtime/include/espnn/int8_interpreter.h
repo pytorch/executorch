@@ -49,11 +49,13 @@ struct Int8RuntimeOptions {
   /// operation. Saves memory, but the scratch then lives wherever the arena
   /// does (PSRAM for a large model).
   bool scratch_in_arena = false;
-  /// Bind graph I/O to caller-provided device-layout (NHWC) buffers, outside
-  /// this interpreter's arena, except the slots selected by conversion_slots.
+  /// Bind graph outputs to caller-provided device-layout (NHWC) buffers,
+  /// outside this interpreter's arena, except the slots selected by
+  /// conversion_slots. Graph inputs always have arena slots.
   bool external_io = false;
-  /// With external_io, include these I/O slots in the arena for conversion.
-  /// Bits select slots in input-then-output order, determined at export time.
+  /// With external_io, include these output slots in the arena for
+  /// conversion. Bits select slots in input-then-output order, determined at
+  /// export time.
   uint32_t conversion_slots = 0;
 };
 
@@ -131,17 +133,12 @@ class Int8Interpreter {
   bool output_info(size_t index, Int8TensorInfo& info) const;
   /**
    * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
-   * buffer of input_info().bytes, the storage of input @p index until it is
-   * bound again. invoke() only reads it.
+   * buffer of output_info().bytes, the storage of output @p index until it is
+   * bound again. An output that is also a graph input cannot be bound:
+   * output_data() returns the input's slot.
    *
-   * @retval false external_io is off or @p index is out of range.
-   */
-  bool bind_input(size_t index, const int8_t* data);
-  /**
-   * Same for output @p index. invoke() writes the buffer while it may still
-   * read the inputs, so it must not overlap a bound input. An output that is
-   * also a graph input cannot be bound: output_data() returns the input's
-   * buffer.
+   * @retval false external_io is off, @p index is out of range, or the output
+   *     is a graph input.
    */
   bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
