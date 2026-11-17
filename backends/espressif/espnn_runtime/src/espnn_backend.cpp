@@ -116,12 +116,6 @@ Error missing_data(const char* kind, size_t index) {
   return Error::InvalidArgument;
 }
 
-// The kernels may rely on the activation arena's 16-byte alignment, so only
-// buffers aligned like it are used in place.
-bool arena_aligned(const void* data) {
-  return reinterpret_cast<uintptr_t>(data) % 16 == 0;
-}
-
 bool load_input(
     const Int8TensorInfo& info,
     Layout layout,
@@ -414,12 +408,11 @@ class EspNNBackendInterface final : public BackendInterface {
       if (ok && state->returned_again(o)) {
         staged_outputs |= 1U << o;
       } else if (ok) {
+        // bind_output() refuses a misaligned buffer.
         Tensor tensor = args[inputs + o]->toTensor();
-        if (tensor.scalar_type() == ScalarType::Char &&
-            layout == Layout::kDevice &&
-            arena_aligned(tensor.const_data_ptr())) {
-          ok = interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>());
-        } else {
+        if (tensor.scalar_type() != ScalarType::Char ||
+            layout != Layout::kDevice ||
+            !interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>())) {
           ok = interpreter.bind_output(
               o, state->staging + state->staging_offset(o));
           staged_outputs |= 1U << o;

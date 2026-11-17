@@ -1044,6 +1044,8 @@ int8_t* Int8Interpreter::activation(uint32_t tensor_id) const {
 
 bool Int8Interpreter::bind_output(size_t index, int8_t* data) {
   if (!loaded_ || !options_.external_io || index >= output_count_ ||
+      data == nullptr ||
+      reinterpret_cast<uintptr_t>(data) % ARENA_ALIGNMENT != 0 ||
       in_arena(tensor_data_[outputs_[index]]))
     return false;
   tensor_data_[outputs_[index]] = data;
