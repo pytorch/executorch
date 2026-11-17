@@ -16,6 +16,8 @@ from executorch.backends.espressif import (
     to_espnn_edge,
 )
 from executorch.backends.espressif.passes import EspPassManager
+from executorch.backends.espressif.scratch import get_scratch_queries
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.backends.espressif.test.tester import EspRunPasses, EspTester
 from executorch.backends.test.harness.stages import Quantize
 from executorch.backends.transforms.fused_quant.graph_utils import (
@@ -118,10 +120,13 @@ def test_public_entry_points_keep_delegate_and_operator_library_separate():
         export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
     edge = session.get_edge_program_manager()
-    assert get_operator_library_report(edge) == {
-        "esp_nn_ops": 1,
-        "cpu_ops": [],
-        "layout_ops": [],
+    report = get_operator_library_report(edge)
+    assert report["esp_nn_ops"] == 1
+    assert report["cpu_ops"] == []
+    assert report["layout_ops"] == []
+    assert {op["target"] for op in report["quantization_ops"]} == {
+        "quantized_decomposed::quantize_per_tensor.out",
+        "quantized_decomposed::dequantize_per_tensor.out",
     }
     assert edge.compile_config._check_ir_validity
     serialized = deserialize_pte_binary(
@@ -202,6 +207,7 @@ def test_operator_library_strict_mode_accepts_no_compute():
         "esp_nn_ops": 0,
         "cpu_ops": [],
         "layout_ops": [],
+        "quantization_ops": [],
     }
 
 
@@ -273,11 +279,11 @@ def test_operator_library_reports_all_methods():
         constant_methods={"version": 1},
     )
     edge = session.get_edge_program_manager()
-    assert get_operator_library_report(edge) == {
-        "esp_nn_ops": 2,
-        "cpu_ops": [],
-        "layout_ops": [],
-    }
+    report = get_operator_library_report(edge)
+    assert report["esp_nn_ops"] == 2
+    assert report["cpu_ops"] == []
+    assert report["layout_ops"] == []
+    assert {op["method"] for op in report["quantization_ops"]} == {"forward", "other"}
     serialized = deserialize_pte_binary(
         session.get_executorch_program_manager().buffer
     ).program
@@ -462,6 +468,93 @@ def test_strict_export_rejects_portable_pool():
         export(
             torch.nn.MaxPool2d(2),
             example_inputs=[(torch.ones(1, 5, 5, 7),)],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+def test_strict_export_rejects_layout_without_accelerated_compute():
+    class PermuteAndReshape(torch.nn.Module):
+        def forward(self, x):
+            return x.permute(1, 0).reshape(-1)
+
+    inputs = (torch.arange(12, dtype=torch.float32).reshape(3, 4),)
+    model = PermuteAndReshape()
+    session = export(
+        model,
+        example_inputs=[inputs],
+        export_recipe=get_esp_fused_quant_recipe(),
+    )
+    edge = session.get_edge_program_manager()
+    report = get_operator_library_report(edge)
+    assert report["esp_nn_ops"] == 0
+    assert report["cpu_ops"] == []
+    assert report["quantization_ops"] == []
+    assert {op["target"] for op in report["layout_ops"]} == {
+        "aten::permute_copy.out",
+        "aten::view_copy.out",
+    }
+    torch.testing.assert_close(
+        edge.exported_program().module()(*inputs), model(*inputs)
+    )
+    assert session.get_executorch_program_manager().buffer
+    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
+        export(
+            model,
+            example_inputs=[inputs],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+@pytest.mark.parametrize(
+    "spatial",
+    [
+        torch.nn.Conv2d(4, 8, 3),
+        torch.nn.Conv2d(4, 4, 3, groups=4),
+        torch.nn.MaxPool2d(2),
+        torch.nn.AvgPool2d(2),
+    ],
+    ids=["conv2d", "depthwise", "maxpool", "avgpool"],
+)
+def test_strict_export_rejects_layout_after_hoisted_activation(spatial):
+    if (
+        isinstance(spatial, torch.nn.Conv2d)
+        and get_scratch_queries(EspTarget.ESP32S3, EspKernelMode.OPTIMIZED) is None
+    ):
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
+    model = torch.nn.Sequential(spatial, torch.nn.Sigmoid())
+    inputs = (torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)
+    session = export(
+        model,
+        example_inputs=[inputs],
+        export_recipe=get_esp_fused_quant_recipe(),
+    )
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert report["esp_nn_ops"] == 2
+    assert report["cpu_ops"] == []
+    assert len(report["layout_ops"]) == 2
+    assert all(op["target"] == "aten::permute_copy.out" for op in report["layout_ops"])
+    assert {op["target"] for op in report["quantization_ops"]} == {
+        "quantized_decomposed::quantize_per_tensor.out",
+        "quantized_decomposed::dequantize_per_tensor.out",
+    }
+    assert session.get_executorch_program_manager().buffer
+    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
+        export(
+            model,
+            example_inputs=[inputs],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+def test_strict_export_rejects_compute_after_layout():
+    class PermuteAndSin(torch.nn.Module):
+        def forward(self, x):
+            return torch.sin(x.permute(1, 0))
+
+    with pytest.raises(RuntimeError, match=r"forward\.\w+ \(aten::sin\)"):
+        export(
+            PermuteAndSin(),
+            example_inputs=[(torch.ones(3, 4),)],
             export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
         )
 
