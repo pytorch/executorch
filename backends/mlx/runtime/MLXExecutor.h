@@ -166,6 +166,11 @@ struct ExecutionState {
   // Init chain flag: when true, set_tensor allows writing to constants
   bool is_init_chain{false};
 
+  // Load-time option values for ChoiceOptionNode / IntOptionNode, keyed by
+  // option key: the choice index or int each key resolved to at init (the
+  // delegate's runtime spec, else the node's default). Survive reset().
+  std::unordered_map<std::string, int32_t> options;
+
   // Logging context
   size_t current_op_idx{0};
   const char* current_op_name{nullptr};

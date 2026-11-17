@@ -971,6 +971,56 @@ def _validate_offgraph_prefill(
         )
 
 
+_LINEAR_REQUANT_FLAGS = (
+    "int8_int4",
+    "fp_int4",
+    "nvfp4",
+    "int4_affine",
+)
+
+
+def _validate_linear_requant(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    chosen = [
+        "--" + f.replace("_", "-") for f in _LINEAR_REQUANT_FLAGS if getattr(args, f)
+    ]
+    if chosen and (args.backend != "mlx" or not args.gguf):
+        parser.error(f"{chosen[0]} requires --backend mlx and --gguf.")
+    if len(chosen) > 1:
+        parser.error(f"{' and '.join(chosen)} are mutually exclusive.")
+
+
+def _add_int4_affine_args(parser: argparse.ArgumentParser) -> None:
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        AFFINE_SCHEMES,
+    )
+
+    parser.add_argument(
+        "--int4-affine",
+        choices=("int8_asym", "int8_sym", "fp", "runtime"),
+        default=None,
+        help="MLX + --gguf only: requantize every decoder linear and lm_head to "
+        "asymmetric int4 with a scheme per layer group (--affine-attn, "
+        "--affine-ffn, --affine-lm-head), running 'pc' / 'gs256' linears with "
+        "int8 dynamic per-token asymmetric activations (int8_asym), symmetric ones "
+        "(int8_sym), fp16 / bf16 activations (fp), or whichever the MLX "
+        "backend options int8_activations / int8_activations_min_m / "
+        "int8_activations_scheme pick at load (runtime; default fp) "
+        "(mlx::{int8_asym,int8_sym,fp}_int4_affine_gemm / mlx::int4_affine_gemm, "
+        "needs a Metal 4 GPU).",
+    )
+    for group, name in (("attn", "attention"), ("ffn", "FFN"), ("lm-head", "lm_head")):
+        parser.add_argument(
+            f"--affine-{group}",
+            choices=AFFINE_SCHEMES,
+            default="pc",
+            help=f"With --int4-affine: {name} weights as int4 with a float scale "
+            "and zero point per channel ('pc') or per 256 weights ('gs256'), or "
+            "MLX 4-bit affine gs=32 run by MLX's quantized matmul ('mlx').",
+        )
+
+
 def main() -> None:
     from executorch.examples.models.muse_glimmer.loaders.quantize_and_save import (
         RECIPE_NAMES,
@@ -1084,6 +1134,29 @@ def main() -> None:
         "Default 512.",
     )
     parser.add_argument(
+        "--int8-int4",
+        action="store_true",
+        help="MLX + --gguf only: requantize every decoder linear and lm_head to "
+        "symmetric per-channel int4 and run them with symmetric int8 dynamic "
+        "per-token activations (mlx::int8_sym_int4_affine_gemm, needs a Metal 4 "
+        "GPU).",
+    )
+    parser.add_argument(
+        "--fp-int4",
+        action="store_true",
+        help="MLX + --gguf only: requantize every decoder linear and lm_head to "
+        "symmetric per-channel int4 and run them with fp16 / bf16 activations "
+        "(mlx::fp_int4_affine_gemm, needs a Metal 4 GPU).",
+    )
+    parser.add_argument(
+        "--nvfp4",
+        action="store_true",
+        help="MLX + --gguf only: requantize every decoder linear and lm_head to "
+        "NVFP4 (E2M1 values, E4M3 scales per 16 weights, fp32 per-tensor scale) "
+        "run by MLX's nvfp4 quantized matmul.",
+    )
+    _add_int4_affine_args(parser)
+    parser.add_argument(
         "--mmproj",
         default=None,
         help="Optional path to the vision projector GGUF "
@@ -1107,6 +1180,7 @@ def main() -> None:
         "0-34. The default preserves the original all-BF16 encoder.",
     )
     args = parser.parse_args()
+    _validate_linear_requant(parser, args)
 
     _validate_offgraph_prefill(parser, args)
     if args.backend == "cuda" and args.use_offgraph_kv_cache and args.mmproj:
@@ -1145,6 +1219,15 @@ def main() -> None:
             max_seq_len=max_seq_len,
             backend=args.backend,
             activation_dtype=activation_dtype,
+            int8_int4=args.int8_int4,
+            fp_int4=args.fp_int4,
+            nvfp4=args.nvfp4,
+            int4_affine_act=args.int4_affine,
+            int4_affine_schemes={
+                "attn": args.affine_attn,
+                "ffn": args.affine_ffn,
+                "lm_head": args.affine_lm_head,
+            },
             **loader_kwargs,
         )
     elif args.mlx:

@@ -24,6 +24,11 @@ struct MuseGlimmerBackendConfig {
   batching::Token bos_id = 200000;
   bool use_dflash = false;
   int dflash_n_draft = 0; // zero uses the exported maximum minus one
+  // MLX int4 affine GEMM runtime options (models exported with --int4-affine
+  // runtime). Empty / zero selects the chip default.
+  std::string int8_activations;
+  int int8_activations_min_m = 0;
+  std::string int8_activations_scheme;
 };
 
 struct MuseGlimmerBackend {

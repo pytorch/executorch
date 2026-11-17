@@ -18,16 +18,61 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <exception>
 #include <initializer_list>
 #include <limits>
 #include <random>
+
+#include <sys/sysctl.h>
 
 namespace executorch::extension::llm {
 namespace {
 using runtime::Error;
 constexpr const char* kDecoder = "forward_from_embeddings";
 constexpr const char* kBackend = "MLXBackend";
+
+// N of an "Apple M<N> ..." CPU, or 0 if unknown.
+int apple_silicon_generation() {
+  char brand[128] = {};
+  size_t size = sizeof(brand);
+  int generation = 0;
+  if (sysctlbyname("machdep.cpu.brand_string", brand, &size, nullptr, 0) != 0 ||
+      std::sscanf(brand, "Apple M%d", &generation) != 1) {
+    return 0;
+  }
+  return generation;
+}
+
+// Options read by mlx::int4_affine_gemm (--int4-affine runtime exports; other
+// programs ignore them). Default: int8 symmetric activations from 5 tokens on
+// M5 and later, fp activations otherwise.
+template <size_t N>
+Error set_int4_affine_options(
+    const MuseGlimmerBackendConfig& config,
+    runtime::BackendOptions<N>& options) {
+  const std::string mode = !config.int8_activations.empty()
+      ? config.int8_activations
+      : (apple_silicon_generation() >= 5 ? "min_m" : "never");
+  const int min_m =
+      config.int8_activations_min_m > 0 ? config.int8_activations_min_m : 5;
+  const std::string scheme = config.int8_activations_scheme.empty()
+      ? "symmetric"
+      : config.int8_activations_scheme;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      options.set_option("int8_activations", mode.c_str()));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      options.set_option("int8_activations_min_m", min_m));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      options.set_option("int8_activations_scheme", scheme.c_str()));
+  ET_LOG(
+      Info,
+      "Muse Glimmer: MLX int8_activations=%s min_m=%d scheme=%s",
+      mode.c_str(),
+      min_m,
+      scheme.c_str());
+  return Error::Ok;
+}
 
 bool tensor_abi(
     const runtime::TensorInfo& info,
@@ -261,7 +306,8 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
         config.image_limits.max_image_pixels <= 0 ||
         config.image_limits.max_image_dimension <= 0 ||
         config.dflash_n_draft < 0 ||
-        (config.dflash_n_draft != 0 && !config.use_dflash)) {
+        (config.dflash_n_draft != 0 && !config.use_dflash) ||
+        config.int8_activations_min_m < 0) {
       return Error::InvalidArgument;
     }
     std::vector<std::string> data_files;
@@ -531,6 +577,10 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
             config.max_sessions));
     executor->dflash_ = std::move(dflash);
     executor->target_taps_ = target_taps;
+    ET_CHECK_OK_OR_RETURN_ERROR(executor->load_options_.set_option(
+        backends::mlx::kClearCacheIntervalKey, 1));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        set_int4_affine_options(config, executor->load_options_));
     return MuseGlimmerBackend{std::move(executor), spec};
 #if ET_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
@@ -548,15 +598,11 @@ bool MuseGlimmerMLXExecutor::initialize() {
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    runtime::BackendOptions<2> options;
-    auto error = options.set_option(backends::mlx::kClearCacheIntervalKey, 1);
-    if (error == Error::Ok) {
-      error = batching::load_method_with_cache(
-          *module_, kDecoder, kBackend, install_guard_, options);
-    }
+    auto error = batching::load_method_with_cache(
+        *module_, kDecoder, kBackend, install_guard_, load_options_);
     if (error == Error::Ok && dflash_) {
       error = batching::load_method_with_cache(
-          *module_, "draft_forward", kBackend, *dflash_->guard, options);
+          *module_, "draft_forward", kBackend, *dflash_->guard, load_options_);
     }
     if (error == Error::Ok) {
       error = embeddings_->initialize(*module_);

@@ -1016,6 +1016,25 @@ table IfNode {
     else_chain_idx: uint32;            // index into MLXGraph.instruction_chains
 }
 
+// Load-time option with a fixed set of string values: out = the index in
+// `choices` of the delegate's runtime spec `key` (a string), or of `default_value`
+// when the spec is unset. The backend resolves the spec once at init and
+// rejects a value not in `choices`. Lets IfNode pick a branch per load.
+table ChoiceOptionNode {
+    out: Vid (required);
+    key: string (required);
+    choices: [string] (required);
+    default_value: string (required);  // must be one of choices
+}
+
+// Load-time int option: out = the delegate's runtime spec `key` (an int), or
+// `default_value` when the spec is unset. Resolved once at init.
+table IntOptionNode {
+    out: Vid (required);
+    key: string (required);
+    default_value: int32;
+}
+
 table RandomBitsNode {
     out: Tid (required);
     shape: [IntOrVid] (required);
@@ -1211,7 +1230,9 @@ union OpNode {
     UpdateAndAttendNode,
     TruncNode,
     FlipNode,
-    CummaxNode
+    CummaxNode,
+    ChoiceOptionNode,
+    IntOptionNode
     // BC: Add new op nodes here (append only)
 }
 

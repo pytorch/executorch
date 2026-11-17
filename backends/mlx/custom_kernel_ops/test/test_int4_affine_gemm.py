@@ -6,7 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for ``mlx::int8_int4_affine_gemm`` and ``mlx::fp_int4_affine_gemm``.
+Tests for ``mlx::{int8_asym,int8_sym,fp}_int4_affine_gemm`` and
+``mlx::int4_affine_gemm`` (activation mode chosen by load-time options).
 
 Compares the prologue + runtime-selected matvec / grouped full-K / split-K
 GEMM against the eager reference for int8 and fp activations, group sizes 64,
@@ -30,8 +31,11 @@ from executorch.backends.mlx.custom_kernel_ops.int4_affine_gemm import (
     AffinePlan,
     GROUP_SIZES,
     Int4AffineLinear,
+    INT8_ACTIVATIONS,
+    INT8_ACTIVATIONS_MIN_M,
+    INT8_ACTIVATIONS_SCHEME,
+    pack_int4,
 )
-from executorch.backends.mlx.custom_kernel_ops.int8_intx_gemm import pack_int4
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 _TOLERANCES = {
@@ -70,6 +74,7 @@ class Int4AffineGemmTest(OpTestCase):
         dtype: torch.dtype = torch.bfloat16,
         test_m: Optional[int] = None,
         qparam_dtype: torch.dtype = torch.float16,
+        options: Optional[Dict[str, object]] = None,
     ):
         self.m = m
         self.n = n
@@ -79,17 +84,36 @@ class Int4AffineGemmTest(OpTestCase):
         self.dtype = dtype
         self.test_m = test_m
         self.qparam_dtype = qparam_dtype
+        # act == "runtime": the MLX backend options for the run.
+        self.options = options or {}
+        self.runner_args = tuple(
+            a
+            for key, value in self.options.items()
+            for a in ("--backend-option", f"{key}={value}")
+        )
         dtype_name = str(dtype).removeprefix("torch.")
         dyn = f"_dyn{test_m}" if test_m is not None else ""
         gs_name = f"gs{group_size}" if group_size is not None else "pc"
         qp = "_qpf32" if qparam_dtype == torch.float32 else ""
+        opts = "".join(f"_{v}" for v in self.options.values())
         self.name = (
             f"{act}_int4_affine_gemm_{gs_name}_m{m}_n{n}_k{k}_{dtype_name}{dyn}{qp}"
+            f"{opts}"
         )
         self.rtol, self.atol = _TOLERANCES[dtype]
-        self.expected_node_counts = {
-            "MetalKernelNode": _kernel_count(n, k, group_size or k, act, m, test_m)
-        }
+        if act == "runtime":
+            # Every activation mode's kernels, plus the three option nodes.
+            self.expected_node_counts = {
+                "MetalKernelNode": sum(
+                    _kernel_count(n, k, group_size or k, a, m, test_m) for a in ACTS
+                ),
+                "ChoiceOptionNode": 2,
+                "IntOptionNode": 1,
+            }
+        else:
+            self.expected_node_counts = {
+                "MetalKernelNode": _kernel_count(n, k, group_size or k, act, m, test_m)
+            }
 
     @classmethod
     def get_test_configs(cls) -> List["Int4AffineGemmTest"]:
@@ -144,7 +168,7 @@ class Int4AffineGemmTest(OpTestCase):
             {"m": 17, "n": 512, "k": 1024, "dtype": torch.float32, "group_size": 128},
             {"m": 33, "n": 95, "k": 192, "group_size": None},
         ]
-        # int8sym shares every GEMM kernel with int8; cover its quantize and
+        # int8_sym shares every GEMM kernel with int8_asym; cover its quantize and
         # epilogue on each lowering (matvec, cooperative split-K, per-SIMD-group
         # tiles, tuned decode, dynamic M).
         sym_shapes = [
@@ -156,19 +180,39 @@ class Int4AffineGemmTest(OpTestCase):
         ]
         configs = [
             cls(**s, act=act, group_size=gs)
-            for act in ("int8", "fp")
+            for act in ("int8_asym", "fp")
             for gs in GROUP_SIZES
             for s in shapes
             if gs is None or s["k"] % gs == 0
         ]
         configs += [
-            cls(**s, act="int8sym", group_size=gs)
+            cls(**s, act="int8_sym", group_size=gs)
             for gs in GROUP_SIZES
             for s in sym_shapes
             if gs is None or s["k"] % gs == 0
         ]
         configs += [cls(**s, act=act) for act in ACTS for s in both_acts]
-        return configs + [cls(**s, act="int8") for s in int8_only]
+        # mlx::int4_affine_gemm: the defaults (fp), int8 always with either
+        # scheme, and "min_m" on both sides of its threshold at dynamic M.
+        always = {INT8_ACTIVATIONS: "always"}
+        min_m = {INT8_ACTIVATIONS: "min_m"}
+        runtime = [
+            ({"m": 33, "n": 96, "k": 1024, "group_size": 128}, {}),
+            ({"m": 33, "n": 96, "k": 1024, "group_size": 128}, always),
+            (
+                {"m": 33, "n": 96, "k": 1024, "group_size": 128},
+                {**always, INT8_ACTIVATIONS_SCHEME: "symmetric"},
+            ),
+            ({"m": 5, "n": 96, "k": 1024, "group_size": None}, always),
+            ({"m": 8, "n": 320, "k": 1024, "group_size": 256, "test_m": 40}, min_m),
+            ({"m": 8, "n": 320, "k": 1024, "group_size": 256, "test_m": 2}, min_m),
+            (
+                {"m": 8, "n": 320, "k": 1024, "group_size": 256, "test_m": 40},
+                {**min_m, INT8_ACTIVATIONS_MIN_M: 64},
+            ),
+        ]
+        configs += [cls(**s, act="runtime", options=o) for s, o in runtime]
+        return configs + [cls(**s, act="int8_asym") for s in int8_only]
 
     def create_model(self) -> nn.Module:
         gs = self.group_size or self.k
@@ -188,6 +232,27 @@ class Int4AffineGemmTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return self._make_inputs(self.m)
+
+    def _selected_act(self, m: int) -> str:
+        """The kernels mlx::int4_affine_gemm runs at M under self.options."""
+        mode = self.options.get(INT8_ACTIVATIONS, "never")
+        int8 = mode == "always" or (
+            mode == "min_m" and m >= self.options.get(INT8_ACTIVATIONS_MIN_M, 8)
+        )
+        if not int8:
+            return "fp"
+        symmetric = self.options.get(INT8_ACTIVATIONS_SCHEME) == "symmetric"
+        return "int8_sym" if symmetric else "int8_asym"
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if self.act != "runtime":
+            return model(*test_inputs)
+        # Eager runs the op of the activation mode the options select.
+        model.act = self._selected_act(test_inputs[0].shape[0])
+        try:
+            return model(*test_inputs)
+        finally:
+            model.act = "runtime"
 
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
         return self._make_inputs(self.test_m if self.test_m is not None else self.m)

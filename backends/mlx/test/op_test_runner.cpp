@@ -46,13 +46,17 @@
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 
+#include <cerrno>
+#include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace ::executorch::extension;
@@ -216,8 +220,35 @@ void print_usage(const char* prog_name) {
       << "  --kv-cache <capacity,n_layers,n_kv_heads,head_dim[,dtype]>\n"
       << "                   Install an off-graph KV cache for the run;\n"
       << "                   dtype is an ET ScalarType (default 6/Float)\n"
+      << "  --backend-option <key=value>\n"
+      << "                   MLX backend option for the load (repeatable); an\n"
+      << "                   int when value parses as one, else a string\n"
       << "  --verbose        Print verbose output\n"
       << std::endl;
+}
+
+// Sets one MLX backend option: an int when value parses as one, else a
+// string. BackendOptions copies the key, so a key known only at runtime works
+// once it is in a char array of the maximum key length.
+template <size_t N>
+bool set_backend_option(
+    ::executorch::runtime::BackendOptions<N>& opts,
+    const std::string& key,
+    const std::string& value) {
+  using ::executorch::runtime::kMaxOptionKeyLength;
+  if (key.empty() || key.size() >= kMaxOptionKeyLength) {
+    return false;
+  }
+  char k[kMaxOptionKeyLength] = {};
+  std::memcpy(k, key.data(), key.size());
+  char* end = nullptr;
+  errno = 0;
+  const long v = std::strtol(value.c_str(), &end, 10);
+  if (!value.empty() && *end == '\0' && errno == 0 && v >= INT_MIN &&
+      v <= INT_MAX) {
+    return opts.set_option(k, static_cast<int>(v)) == Error::Ok;
+  }
+  return opts.set_option(k, value.c_str()) == Error::Ok;
 }
 
 // Parse "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]" into cache
@@ -269,6 +300,7 @@ int main(int argc, char* argv[]) {
   std::string input_path;
   std::string output_path;
   std::string kv_cache_spec;
+  std::vector<std::pair<std::string, std::string>> backend_options;
   bool verbose = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -281,6 +313,15 @@ int main(int argc, char* argv[]) {
       output_path = argv[++i];
     } else if (arg == "--kv-cache" && i + 1 < argc) {
       kv_cache_spec = argv[++i];
+    } else if (arg == "--backend-option" && i + 1 < argc) {
+      const std::string kv = argv[++i];
+      const size_t eq = kv.find('=');
+      if (eq == std::string::npos || eq == 0) {
+        std::cerr << "Invalid --backend-option (want key=value): " << kv
+                  << std::endl;
+        return 1;
+      }
+      backend_options.emplace_back(kv.substr(0, eq), kv.substr(eq + 1));
     } else if (arg == "--verbose") {
       verbose = true;
     } else if (arg == "--help" || arg == "-h") {
@@ -331,14 +372,25 @@ int main(int argc, char* argv[]) {
 
     Module module(pte_path);
     Error load_error = Error::Ok;
-    if (cache_install_guard) {
-      ::executorch::runtime::BackendOptions<1> mlx_opts;
+    ::executorch::runtime::BackendOptions<8> mlx_opts;
+    if (cache_install_guard &&
+        cache_install_guard->set_option(mlx_opts) != Error::Ok) {
+      std::cerr << "Failed to set cache_key backend option" << std::endl;
+      return 1;
+    }
+    for (const auto& [key, value] : backend_options) {
+      if (!set_backend_option(mlx_opts, key, value)) {
+        std::cerr << "Failed to set backend option " << key << "=" << value
+                  << std::endl;
+        return 1;
+      }
+    }
+    if (mlx_opts.view().size() > 0) {
       ::executorch::runtime::LoadBackendOptionsMap options_map;
-      if (cache_install_guard->set_option(mlx_opts) != Error::Ok ||
-          options_map.set_options(
+      if (options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
-              Error::Ok) {
-        std::cerr << "Failed to set cache_key backend option" << std::endl;
+          Error::Ok) {
+        std::cerr << "Failed to set MLX backend options" << std::endl;
         return 1;
       }
       load_error = module.load(options_map);

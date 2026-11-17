@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Callable
 
 import torch
 
@@ -509,6 +510,465 @@ def _validate_backend(backend: str) -> None:
         raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda', 'mlx'.")
 
 
+# GGUF requantization (MLX): decoder linears and lm_head are dequantized in
+# row chunks and requantized, one weight (or fusion group) at a time.
+
+_REQUANT_FUSION_GROUPS: dict[str, list[str]] = {
+    "layers.{}.self_attn.qkv_proj": [
+        "layers.{}.self_attn.q_proj",
+        "layers.{}.self_attn.k_proj",
+        "layers.{}.self_attn.v_proj",
+        "layers.{}.self_attn.og_proj",
+    ],
+    "layers.{}.mlp.gate_up_proj": [
+        "layers.{}.mlp.gate_proj",
+        "layers.{}.mlp.up_proj",
+    ],
+}
+
+
+def _is_requant_linear(fqn: str) -> bool:
+    return fqn == "lm_head.weight" or (
+        fqn.startswith("layers.") and fqn.endswith("_proj.weight")
+    )
+
+
+def _float_rows(value: torch.Tensor) -> Callable[[int, int], torch.Tensor]:
+    """``rows(start, end)`` dequantizes rows ``[start, end)`` of a GGUF (or
+    float) ``[N, K]`` weight to fp32 without materializing the rest."""
+    from executorch.extension.llm.export.gguf import (
+        _dequantize_gguf,
+        ExportableGGUFTensor,
+    )
+
+    if isinstance(value, ExportableGGUFTensor):
+
+        def rows(start, end):
+            return _dequantize_gguf(
+                value.raw[start:end], value.ggml_type, torch.float32
+            )
+
+    elif type(value) is torch.Tensor and value.dtype.is_floating_point:
+
+        def rows(start, end):
+            return value[start:end].float()
+
+    else:
+        raise TypeError(f"Cannot requantize {type(value).__name__}")
+    return rows
+
+
+# Per-channel MLX requant kinds: symmetric int4 weights (a zero point of 0) run
+# by mlx::{int8_sym,fp}_int4_affine_gemm.
+_PER_CHANNEL_ACTS = {"int8_int4": "int8_sym", "fp_int4": "fp"}
+
+
+def _per_channel_linear(kind: str, w_packed: torch.Tensor, w_scale: torch.Tensor):
+    from executorch.backends.mlx.custom_kernel_ops.int4_affine_gemm import (
+        Int4AffineLinear,
+    )
+
+    scale = w_scale[:, None]
+    return Int4AffineLinear(
+        w_packed, scale, torch.zeros_like(scale), _PER_CHANNEL_ACTS[kind]
+    )
+
+
+def _per_channel_sd_from_gguf(
+    gguf_path: str, activation_dtype: torch.dtype, kind: str
+) -> tuple[dict, dict]:
+    """Stream a GGUF into ``(other_sd, packed)``: ``packed`` maps each linear
+    module FQN to ``(w_packed, w_scale)``, requantized to symmetric per-channel
+    int4; everything else lands in ``other_sd`` cast to ``activation_dtype``."""
+    from executorch.backends.mlx.custom_kernel_ops.int4_affine_gemm import (
+        quantize_int4_sym_per_channel,
+    )
+    from executorch.extension.llm.export.load import iter_checkpoint
+    from executorch.extension.llm.export.quant import to_default
+    from executorch.extension.llm.export.quant.convert import maybe_cast
+
+    other_sd, packed = {}, {}
+    for fqn, value in iter_checkpoint(
+        gguf_path, key_map=gguf_to_model_key, convert=to_default
+    ):
+        if _is_requant_linear(fqn):
+            packed[fqn[: -len(".weight")]] = quantize_int4_sym_per_channel(
+                _float_rows(value), value.shape[0]
+            )
+            print(f"  {kind}: {fqn} {tuple(value.shape)}", flush=True)
+        else:
+            other_sd[fqn] = maybe_cast(value, activation_dtype)
+        del value
+    return other_sd, packed
+
+
+def _fuse_packed(packed: dict, n_layers: int) -> None:
+    """Concatenate packed shards (tuples of tensors whose rows are output
+    channels, e.g. ``(w_packed, w_scale)``) into fused projections, in place.
+    Per-row quantization parameters make output-row concatenation exact."""
+    for fused_tmpl, shard_tmpls in _REQUANT_FUSION_GROUPS.items():
+        for layer in range(n_layers):
+            shards = [t.format(layer) for t in shard_tmpls]
+            shards = [s for s in shards if s in packed]
+            if not shards:
+                continue
+            parts = [packed.pop(s) for s in shards]
+            packed[fused_tmpl.format(layer)] = tuple(
+                torch.cat(field) for field in zip(*parts)
+            )
+
+
+def _fuse_weights(sd: dict, n_layers: int) -> None:
+    """Fuse requantized shard weights (``ExportableInt4Tensor`` etc.) left in
+    ``sd`` into the same fused projections, in place."""
+    from executorch.extension.llm.export.quant import fuse_along_output
+
+    for fused_tmpl, shard_tmpls in _REQUANT_FUSION_GROUPS.items():
+        for layer in range(n_layers):
+            shards = [f"{t.format(layer)}.weight" for t in shard_tmpls]
+            shards = [s for s in shards if s in sd]
+            if shards:
+                sd[f"{fused_tmpl.format(layer)}.weight"] = fuse_along_output(
+                    [sd.pop(s) for s in shards]
+                )
+
+
+def _finalize_requant(
+    other_sd: dict,
+    packed: dict,
+    config,
+    activation_dtype: torch.dtype,
+    make_linear: Callable[..., torch.nn.Module],
+    in_per_byte: int,
+    label: str,
+    *,
+    defer_runtime_buffers: bool = False,
+):
+    """Build the fused model with each ``packed`` module replaced by
+    ``make_linear(*packed[fqn])`` (``in_per_byte`` input features per packed
+    byte) and ``other_sd`` assigned to the rest."""
+    from executorch.examples.models.muse_glimmer.model.model import (
+        materialize_runtime_buffers,
+        MuseGlimmerModel,
+    )
+    from executorch.extension.llm.export.load import assign_state_dict
+    from executorch.extension.llm.export.quant import identity
+
+    _fuse_packed(packed, config.n_layers)
+    _fuse_weights(other_sd, config.n_layers)
+
+    def fused(module: str) -> bool:
+        return module in packed or f"{module}.weight" in other_sd
+
+    config.fuse_qko = False
+    config.fuse_qkv = fused("layers.0.self_attn.qkv_proj")
+    config.fuse_gate_up = fused("layers.0.mlp.gate_up_proj")
+    print("Building fused model on meta device...")
+    with torch.device("meta"):
+        model = MuseGlimmerModel(config)
+
+    for fqn, fields in packed.items():
+        parent_fqn, _, attr = fqn.rpartition(".")
+        parent = model.get_submodule(parent_fqn) if parent_fqn else model
+        old = getattr(parent, attr)
+        w_packed = fields[0]
+        shape = (w_packed.shape[0], in_per_byte * w_packed.shape[1])
+        if (old.out_features, old.in_features) != shape:
+            raise ValueError(
+                f"{fqn}: checkpoint shape {shape} does not match model "
+                f"{(old.out_features, old.in_features)}"
+            )
+        setattr(parent, attr, make_linear(*fields))
+    packed.clear()
+
+    assign_state_dict(model, other_sd, convert=identity)
+    if not defer_runtime_buffers:
+        materialize_runtime_buffers(model, dtype=activation_dtype)
+    model.eval()
+    print(f"Model: {config.n_layers} layers, dim={config.dim} ({label} linears)")
+    return model
+
+
+def _finalize_per_channel(
+    other_sd: dict,
+    packed: dict,
+    config,
+    activation_dtype: torch.dtype,
+    kind: str,
+    *,
+    defer_runtime_buffers: bool = False,
+):
+    return _finalize_requant(
+        other_sd,
+        packed,
+        config,
+        activation_dtype,
+        lambda w_packed, w_scale: _per_channel_linear(kind, w_packed, w_scale),
+        2,
+        kind,
+        defer_runtime_buffers=defer_runtime_buffers,
+    )
+
+
+# Asymmetric int4 affine MLX path: each layer group (attention, FFN, lm_head)
+# gets its own scheme. "pc" / "gs256" requantize to int4 with a float scale and
+# zero point per channel / per 256 weights, run by mlx::int8_asym_int4_affine_gemm
+# or mlx::fp_int4_affine_gemm (int8 or fp activations); "mlx" requantizes to
+# 4-bit affine gs=32, run by MLX's built-in quantized matmul.
+
+AFFINE_GROUPS = ("attn", "ffn", "lm_head")
+AFFINE_SCHEMES = ("pc", "gs256", "mlx")
+_AFFINE_GROUP_SIZE = {"pc": None, "gs256": 256}
+_REQUANT_CHUNK_ROWS = 4096
+
+
+def _affine_group(fqn: str) -> str:
+    if fqn == "lm_head.weight":
+        return "lm_head"
+    if ".self_attn." in fqn:
+        return "attn"
+    if ".mlp." in fqn:
+        return "ffn"
+    raise ValueError(f"{fqn}: not an attention, FFN, or lm_head linear")
+
+
+def _mlx_q4_gs32(
+    rows: Callable[[int, int], torch.Tensor], n: int, activation_dtype: torch.dtype
+) -> torch.Tensor:
+    """4-bit asymmetric min / max gs=32 ``ExportableInt4Tensor`` (MLX's affine
+    quantized matmul), quantized ``_REQUANT_CHUNK_ROWS`` rows at a time."""
+    from executorch.extension.llm.export.quant import (
+        fuse_along_output,
+        QuantConfig,
+        to_default,
+    )
+    from executorch.extension.llm.export.quant.convert import maybe_cast
+    from executorch.extension.llm.export.quant.quantize import quantize_weight
+
+    config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+    chunks = [
+        maybe_cast(
+            to_default(
+                "",
+                quantize_weight(
+                    rows(start, min(start + _REQUANT_CHUNK_ROWS, n)), config
+                ),
+            ),
+            activation_dtype,
+        )
+        for start in range(0, n, _REQUANT_CHUNK_ROWS)
+    ]
+    return chunks[0] if len(chunks) == 1 else fuse_along_output(chunks)
+
+
+def _affine_sd_from_gguf(
+    gguf_path: str, activation_dtype: torch.dtype, schemes: dict[str, str]
+) -> tuple[dict, dict]:
+    """Stream a GGUF into ``(other_sd, packed)``: ``packed`` maps each "pc" /
+    "gs256" linear module FQN to ``(w_packed, scale, zero)`` from
+    ``quantize_int4_affine``; "mlx" linears land in ``other_sd`` as
+    ``ExportableInt4Tensor`` weights, everything else cast to
+    ``activation_dtype``."""
+    from executorch.backends.mlx.custom_kernel_ops.int4_affine_gemm import (
+        quantize_int4_affine,
+    )
+    from executorch.extension.llm.export.load import iter_checkpoint
+    from executorch.extension.llm.export.quant import to_default
+    from executorch.extension.llm.export.quant.convert import maybe_cast
+
+    other_sd, packed = {}, {}
+    for fqn, value in iter_checkpoint(
+        gguf_path, key_map=gguf_to_model_key, convert=to_default
+    ):
+        if _is_requant_linear(fqn):
+            scheme = schemes[_affine_group(fqn)]
+            rows, n = _float_rows(value), value.shape[0]
+            if scheme == "mlx":
+                other_sd[fqn] = _mlx_q4_gs32(rows, n, activation_dtype)
+            else:
+                packed[fqn[: -len(".weight")]] = quantize_int4_affine(
+                    rows, n, _AFFINE_GROUP_SIZE[scheme], _REQUANT_CHUNK_ROWS
+                )
+            print(f"  int4 affine {scheme}: {fqn} {tuple(value.shape)}", flush=True)
+        else:
+            other_sd[fqn] = maybe_cast(value, activation_dtype)
+        del value
+    return other_sd, packed
+
+
+def _finalize_affine(
+    other_sd: dict,
+    packed: dict,
+    config,
+    activation_dtype: torch.dtype,
+    act: str,
+    schemes: dict[str, str],
+    *,
+    defer_runtime_buffers: bool = False,
+):
+    from executorch.backends.mlx.custom_kernel_ops.int4_affine_gemm import (
+        Int4AffineLinear,
+    )
+
+    label = f"int4 affine {act}: " + ", ".join(
+        f"{g} {schemes[g]}" for g in AFFINE_GROUPS
+    )
+    return _finalize_requant(
+        other_sd,
+        packed,
+        config,
+        activation_dtype,
+        lambda w_packed, scale, zero: Int4AffineLinear(w_packed, scale, zero, act),
+        2,
+        label,
+        defer_runtime_buffers=defer_runtime_buffers,
+    )
+
+
+# NVFP4 MLX path: E2M1 values with E4M3 scales per 16 weights and an fp32
+# per-tensor scale. Shards of one fusion group share the per-tensor scale so they
+# fuse exactly.
+#
+# MLX runs the nvfp4 matmul without the per-tensor scale and multiplies it into
+# the output afterwards, so the fp16 matmul output is inflated by 1 / scale.
+# torchao's choice (largest block scale -> E4M3 max 448) inflates by ~10^4 and
+# overflows fp16 for MG's K. A scale _NVFP4_HEADROOM times larger, rounded up to
+# a power of two, keeps block scales out of E4M3 subnormals (same accuracy on MG
+# weights) while inflating the output only ~16-128x.
+
+_NVFP4_BLOCK = 16
+_NVFP4_CHUNK_ROWS = 4096
+_NVFP4_HEADROOM = 256
+
+
+def _quantize_nvfp4_group(
+    values: list[torch.Tensor], activation_dtype: torch.dtype
+) -> list[torch.Tensor]:
+    """Requantize weights to ``ExportableNVFP4Tensor`` with one shared
+    per-tensor scale, dequantizing ``_NVFP4_CHUNK_ROWS`` rows at a time."""
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+    from torchao.prototype.mx_formats.nvfp4_tensor import (
+        nvfp4_quantize,
+        per_tensor_amax_to_scale,
+    )
+
+    sources = [(_float_rows(v), v.shape[0]) for v in values]
+
+    def chunks(rows, n):
+        for start in range(0, n, _NVFP4_CHUNK_ROWS):
+            yield rows(start, min(start + _NVFP4_CHUNK_ROWS, n))
+
+    amax = max(w.abs().max() for rows, n in sources for w in chunks(rows, n))
+    scale = per_tensor_amax_to_scale(amax).float() * _NVFP4_HEADROOM
+    per_tensor_scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    out = []
+    for rows, n in sources:
+        qdata, scales = [], []
+        for w in chunks(rows, n):
+            s, q = nvfp4_quantize(w, _NVFP4_BLOCK, per_tensor_scale)
+            scales.append(s.view(torch.uint8))
+            qdata.append(q)
+        out.append(
+            ExportableNVFP4Tensor(
+                torch.cat(qdata).view(torch.uint32),
+                torch.cat(scales),
+                # MLX multiplies this into the matmul output; fp32 would
+                # promote it. Exact: the scale is a power of two.
+                per_tensor_scale.to(activation_dtype),
+                _NVFP4_BLOCK,
+                activation_dtype,
+            )
+        )
+    return out
+
+
+def _requant_group(fqn: str) -> tuple[str, int] | None:
+    """``(fused template, layer)`` if ``fqn`` is a shard of a fusion group."""
+    if not fqn.startswith("layers."):
+        return None
+    layer = int(fqn.split(".")[1])
+    module = fqn[: -len(".weight")]
+    for tmpl, shard_tmpls in _REQUANT_FUSION_GROUPS.items():
+        if any(module == t.format(layer) for t in shard_tmpls):
+            return tmpl, layer
+    return None
+
+
+def _nvfp4_sd_from_gguf(gguf_path: str, activation_dtype: torch.dtype) -> dict:
+    """Stream a GGUF into a state dict whose decoder linears and ``lm_head``
+    are ``ExportableNVFP4Tensor``s, with q/k/v/og and gate/up already fused.
+
+    Fusion-group shards are held (still GGUF-compressed) until their layer is
+    complete, then requantized together with a shared per-tensor scale."""
+    from executorch.extension.llm.export.load import iter_checkpoint
+    from executorch.extension.llm.export.quant import fuse_along_output, to_default
+    from executorch.extension.llm.export.quant.convert import maybe_cast
+
+    sd: dict[str, torch.Tensor] = {}
+    pending: dict[tuple[str, int], dict[str, torch.Tensor]] = {}
+
+    def flush(keep_layer: int | None = None) -> None:
+        for key in [k for k in pending if k[1] != keep_layer]:
+            tmpl, layer = key
+            shards = pending.pop(key)
+            order = [
+                f"{t.format(layer)}.weight"
+                for t in _REQUANT_FUSION_GROUPS[tmpl]
+                if f"{t.format(layer)}.weight" in shards
+            ]
+            fused = fuse_along_output(
+                _quantize_nvfp4_group([shards[f] for f in order], activation_dtype)
+            )
+            sd[f"{tmpl.format(layer)}.weight"] = fused
+            print(f"  nvfp4: {tmpl.format(layer)} {tuple(fused.shape)}", flush=True)
+
+    for fqn, value in iter_checkpoint(
+        gguf_path, key_map=gguf_to_model_key, convert=to_default
+    ):
+        layer = int(fqn.split(".")[1]) if fqn.startswith("layers.") else None
+        flush(keep_layer=layer)
+        group = _requant_group(fqn) if _is_requant_linear(fqn) else None
+        if group is not None:
+            pending.setdefault(group, {})[fqn] = value
+        elif _is_requant_linear(fqn):
+            (sd[fqn],) = _quantize_nvfp4_group([value], activation_dtype)
+            print(f"  nvfp4: {fqn} {tuple(value.shape)}", flush=True)
+        else:
+            sd[fqn] = maybe_cast(value, activation_dtype)
+        del value
+    flush()
+    return sd
+
+
+def _finalize_nvfp4(
+    sd: dict,
+    config,
+    activation_dtype: torch.dtype,
+    *,
+    defer_runtime_buffers: bool = False,
+):
+    from executorch.examples.models.muse_glimmer.model.model import (
+        materialize_runtime_buffers,
+        MuseGlimmerModel,
+    )
+    from executorch.extension.llm.export.load import assign_state_dict
+    from executorch.extension.llm.export.quant import identity
+
+    config.fuse_qko = False
+    config.fuse_qkv = "layers.0.self_attn.qkv_proj.weight" in sd
+    config.fuse_gate_up = "layers.0.mlp.gate_up_proj.weight" in sd
+    print("Building fused model on meta device...")
+    with torch.device("meta"):
+        model = MuseGlimmerModel(config)
+    assign_state_dict(model, sd, convert=identity)
+    sd.clear()
+    if not defer_runtime_buffers:
+        materialize_runtime_buffers(model, dtype=activation_dtype)
+    model.eval()
+    print(f"Model: {config.n_layers} layers, dim={config.dim} (nvfp4 linears)")
+    return model
+
+
 # mmproj (vision encoder) loading.
 
 _VISION_LAYER_MAP: dict[str, str] = {
@@ -713,9 +1173,41 @@ def load_gguf_model(
     activation_dtype: torch.dtype = torch.bfloat16,
     *,
     defer_runtime_buffers: bool = False,
+    int8_int4: bool = False,
+    fp_int4: bool = False,
+    nvfp4: bool = False,
+    int4_affine_act: str | None = None,
+    int4_affine_schemes: dict[str, str] | None = None,
 ) -> tuple:
-    """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``."""
+    """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``.
+
+    At most one of these (MLX only) requantizes every decoder linear and
+    ``lm_head``:
+      * ``int8_int4``: symmetric per-channel int4 with symmetric int8 dynamic
+        per-token activations (``mlx::int8_sym_int4_affine_gemm`` with a zero
+        point of 0).
+      * ``fp_int4``: symmetric per-channel int4 with fp16 / bf16 activations
+        (``mlx::fp_int4_affine_gemm`` with a zero point of 0).
+      * ``nvfp4``: NVFP4 run by MLX's ``nvfp4`` quantized matmul.
+      * ``int4_affine_act`` ("int8_asym" / "int8_sym" / "fp" / "runtime"): asymmetric
+        int4 with a scheme per layer group from ``int4_affine_schemes``
+        (``AFFINE_GROUPS`` -> ``AFFINE_SCHEMES``, default "pc"): "pc" / "gs256"
+        run by ``mlx::{int8_asym,int8_sym,fp}_int4_affine_gemm``, or for "runtime"
+        ``mlx::int4_affine_gemm`` (activations picked by MLX backend options at
+        load), "mlx" by MLX's 4-bit gs=32 affine quantized matmul.
+    """
     _validate_backend(backend)
+    flags = {
+        "int8_int4": int8_int4,
+        "fp_int4": fp_int4,
+        "nvfp4": nvfp4,
+        "int4_affine": int4_affine_act is not None,
+    }
+    chosen = [name for name, on in flags.items() if on]
+    if chosen and backend != "mlx":
+        raise ValueError(f"{chosen[0]} linears require backend='mlx'")
+    if len(chosen) > 1:
+        raise ValueError(f"{' and '.join(chosen)} are mutually exclusive")
     from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
 
     if config is None:
@@ -725,6 +1217,39 @@ def load_gguf_model(
             )
         )
     print(f"Loading GGUF from {gguf_path}...")
+    kind = next((c for c in chosen if c in _PER_CHANNEL_ACTS), None)
+    if kind is not None:
+        other_sd, packed = _per_channel_sd_from_gguf(gguf_path, activation_dtype, kind)
+        model = _finalize_per_channel(
+            other_sd,
+            packed,
+            config,
+            activation_dtype,
+            kind,
+            defer_runtime_buffers=defer_runtime_buffers,
+        )
+        return model, config
+    if int4_affine_act is not None:
+        schemes = {g: "pc" for g in AFFINE_GROUPS} | (int4_affine_schemes or {})
+        other_sd, packed = _affine_sd_from_gguf(gguf_path, activation_dtype, schemes)
+        model = _finalize_affine(
+            other_sd,
+            packed,
+            config,
+            activation_dtype,
+            int4_affine_act,
+            schemes,
+            defer_runtime_buffers=defer_runtime_buffers,
+        )
+        return model, config
+    if nvfp4:
+        model = _finalize_nvfp4(
+            _nvfp4_sd_from_gguf(gguf_path, activation_dtype),
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        )
+        return model, config
     atomic_sd = _atomic_sd_from_gguf(gguf_path, activation_dtype)
     return (
         _finalize(

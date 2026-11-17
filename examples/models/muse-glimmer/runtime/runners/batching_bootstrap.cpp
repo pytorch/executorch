@@ -25,6 +25,19 @@ DEFINE_string(backend, "cuda", "Executor backend");
 #else
 DEFINE_string(backend, "mlx", "Executor backend");
 #endif
+DEFINE_string(
+    int8_activations,
+    "",
+    "MLX int4 affine GEMMs: never, always, or min_m; empty selects min_m on "
+    "M5 and later, never otherwise");
+DEFINE_int32(
+    int8_activations_min_m,
+    0,
+    "Tokens from which min_m uses int8 activations; zero selects 5");
+DEFINE_string(
+    int8_activations_scheme,
+    "",
+    "Int8 activations: symmetric or asymmetric; empty selects symmetric");
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
 DEFINE_int32(
     max_session_tokens,
@@ -111,6 +124,9 @@ create_muse_glimmer_batching_runtime() {
   backend.bos_id = FLAGS_bos_id;
   backend.use_dflash = FLAGS_dflash;
   backend.dflash_n_draft = FLAGS_dflash_n_draft;
+  backend.int8_activations = FLAGS_int8_activations;
+  backend.int8_activations_min_m = FLAGS_int8_activations_min_m;
+  backend.int8_activations_scheme = FLAGS_int8_activations_scheme;
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(

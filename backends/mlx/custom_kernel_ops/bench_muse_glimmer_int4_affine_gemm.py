@@ -6,54 +6,45 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Benchmark ``mlx::int8_intx_gemm`` (dynamic per-token int8 activations x
-per-channel int4 or int2 weights, INT32 accumulation; kernels ``int8_int4`` and
-``int8_int2``) and ``mlx::fp_int4_gemm`` (fp16 / bf16 activations x per-channel
-int4 weights, FP32 accumulation) against MLX ``quantized_matmul`` (4-bit affine,
-group size 32) on every Muse Glimmer GEMM shape, and estimate total Muse
-Glimmer GEMM time per forward pass.
+Benchmark the ``mlx::{int8_asym,int8_sym,fp}_int4_affine_gemm`` kernels (int4
+weights with a float scale and zero point per group or per channel; dynamic
+per-token asymmetric or symmetric int8 activations, or fp16 / bf16
+activations) against MLX ``quantized_matmul`` (4-bit affine, group size 32) on
+every Muse Glimmer GEMM shape, and estimate total Muse Glimmer GEMM time per
+forward pass.
 
-For each activation dtype, shape, M (token batch size), and kernel
-(``--kernels``), every tile config is checked against a reference and timed.
-The sweep matches what the op lowers to:
+Kernels are ``{int8_asym,int8_sym,fp}_affine_{gs64,gs128,gs256,pc}`` (``pc`` = per
+channel; default ``int8_sym_affine_pc`` and ``fp_affine_pc``).
+
+For each activation dtype, shape, M (token batch size), and kernel, every
+tile config is checked against a reference and timed. The sweep matches what
+the op lowers to:
     * M <= ``--matvec-max-m`` (4): the matvec kernel, which streams packed
       weights like MLX's qmv. Rows per threadgroup MR in {1, 2, 4} up to M are
       tried; MR < M launches ceil(M / MR) threadgroup rows (MR = 3 compiles
-      badly and is skipped). fp_int4 also sweeps the qmv_wide-style kernel:
+      badly and is skipped). fp kernels also sweep the qmv_wide-style kernel:
       ``--wide-kl`` lanes per channel, M or ceil(M / 2) rows per threadgroup.
-    * M >= ``--mpp-min-m`` (3), or no matvec (K % 512 != 0): MPP tiles (BM x
-      BN, BM capped at max(8, M) since larger
-      tiles only add padding rows, and BM >= 32 for M >= 128). Full-K
-      (``--splits`` 1) runs MPP over all
-      of K; split-K (S > 1) gives each of S threadgroups per output tile K / S
-      and a reduce kernel adds the partials and applies the scales.
-    M in both ranges sweeps both and keeps the fastest, which finds the
-    decode / MPP crossover (int8 plans switch to MPP at M = 3, fp at M = 5).
-int8_int4 / int8_int2 quantize activations first (included in their times).
-
-``mlx::int8_int4_affine_gemm`` / ``mlx::fp_int4_affine_gemm`` (asymmetric
-activations and int4 weights with a scale and bias per group) are opt-in
-kernels ``{int8,int8sym,fp}_affine_{gs64,gs128,gs256,pc}`` (``pc`` = per
-channel; ``int8sym`` = symmetric activations). ``int8sym_digant_gs256``
-(opt-in) is the M5 Max study's group-wise kernel
-(``mlx::int8_sym_int4_gs256_gemm``'s launch path), swept over its tile space,
-which includes our large-M winners, or only its pinned configs
-(``--digant-pinned``), for comparison with ``int8sym_affine_gs256``.
-Small M sweeps their matvec and qmv_wide-style kernels; larger M sweeps
-per-SIMD-group MPP tiles (16 x 64 / 16 x 32 sub-tiles below BM = 32, 32 x 32
-above), split-K (grouped weights: ceil(groups / splits) per split, the last
-may have fewer, as in the study's kernel), and for grouped weights the bias term
-as an MPP call (b1) or after the group loop (b3). Their prologue (int8 quantize
-or fp group sums) is included in their times; scale / bias planes are
-``--affine-qparam-dtype``.
-Tile selection has two rounds: every config is timed with ``--iters``, then
-the ``--refine-top`` fastest configs of each lowering (full-K, split-K), plus
-an affine kernel's current tuned plan, are re-timed over ``--refine-rounds``
-interleaved rounds (median per config). Configs within ``--tie-pct`` of the
-fastest count as tied, and a fixed preference picks among them (the current
-tuned plan, else one launch over split-K, wider BN, shorter BM, b1), so near
-ties do not flip between runs. ``--save-json`` keeps the refined times so
-``--emit-plans`` can re-pick with another ``--tie-pct``. Each kernel's winner
+    * M >= ``--mpp-min-m`` (3), or no matvec (K % 512 != 0): per-SIMD-group
+      MPP tiles (16 x 64 / 16 x 32 sub-tiles below BM = 32, 32 x 32 above;
+      cooperative 8- / 16-row tiles at small M), split-K (grouped weights:
+      ceil(groups / splits) per split, the last may have fewer; a reduce kernel adds the partials), and for grouped
+      weights the bias term as an MPP call (b1) or after the group loop (b3).
+    M in both ranges sweeps both, which finds the decode / MPP crossover.
+The prologue (int8 quantize or fp group sums) is included in the times; scale
+/ bias planes are ``--affine-qparam-dtype``.
+Tile selection is repeatable and fair to GPU warm-up and clock changes. The
+sweep times every config in ``--sweep-rounds`` whole passes (alternating
+direction, median per config), interleaved across kernels and tile families.
+Each kernel's fastest config and those within ``--promote-pct`` of it, one
+split count at a time in turn, each in a fixed preference order (fewer
+splits, decode before MPP, wider BN, shorter BM, larger sub-tile, b1), up to
+``--refine-max``, are re-timed over
+``--refine-rounds`` rounds that visit every kernel's candidates in turn
+(median per config). Among configs within ``--tie-pct`` of the fastest
+refined time, the first by the same preference wins, so near ties resolve
+the same way every run. ``--save-json`` keeps the refined times;
+``--emit-plans`` pools them across files and re-picks with ``--tie-pct``.
+Each kernel's winner
 is then re-timed against MLX: they alternate ``--final-repeats`` times and the
 median of each is the reported (official) number, so all are measured under
 the same GPU conditions. The Muse Glimmer estimate is ``sum over shapes of
@@ -66,7 +57,7 @@ int8 and fp activations). ``--save-json`` keeps the per-shape results so
 
 Just run::
 
-    python -m executorch.backends.mlx.custom_kernel_ops.test.bench_muse_glimmer_gemm
+    python -m executorch.backends.mlx.custom_kernel_ops.bench_muse_glimmer_int4_affine_gemm
 
 and send back the output. ``--verbose`` prints every tile config.
 
@@ -95,12 +86,7 @@ import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 import mlx.core as mx
-from executorch.backends.mlx.custom_kernel_ops import (
-    fp_int4_gemm as fp4,
-    int4_affine_gemm as aff,
-    int8_intx_gemm as op,
-    int8_sym_int4_gs256 as sym,
-)
+from executorch.backends.mlx.custom_kernel_ops import int4_affine_gemm as aff
 
 # Muse Glimmer (MuseGlimmerConfig defaults): 52 identical decoder layers with
 # fused Q/K/V/output-gate and fused gate/up projections, plus lm_head.
@@ -127,8 +113,8 @@ GROUPS: Dict[str, Tuple[str, ...]] = {
     "ffn": ("gate_up", "down"),
     "lm_head": ("lm_head",),
 }
-# Mixed-scheme presets: kernel per layer group, "{act}" filled with int8 and
-# fp, "mlx" = MLX 4-bit affine at --group-size. Numbers refer to the
+# Mixed-scheme presets: kernel per layer group, "{act}" filled with each of
+# aff.ACTS, "mlx" = MLX 4-bit affine at --group-size. Numbers refer to the
 # experiment list; KV-cache quantization (bf16, MLX Q4 at 5.0 bpw, Q4 gs=32 at
 # 4.5 bpw) only changes SDPA, so presets that differ only in KV share a GEMM
 # time. lm_head follows FFN.
@@ -150,140 +136,34 @@ PRESETS: Dict[str, Dict[str, str]] = {
     },
     "mlx FFN + mlx ATTN": {"ffn": "mlx", "attn": "mlx", "lm_head": "mlx"},
 }
-DEFAULT_KERNELS = ("int8_int4", "int8_int2", "fp_int4")
 AFFINE_KERNELS = tuple(
     f"{act}_affine_{'pc' if gs is None else f'gs{gs}'}"
     for act in aff.ACTS
     for gs in aff.GROUP_SIZES
 )
-# The M5 Max study's group-wise kernel (mlx::int8_sym_int4_gs256_gemm, its
-# launch path) for comparison with int8sym_affine_gs256.
-DIGANT_KERNEL = "int8sym_digant_gs256"
-KERNELS = DEFAULT_KERNELS + AFFINE_KERNELS + (DIGANT_KERNEL,)
-# Weight bits per kernel.
-KERNEL_BITS = {
-    "int8_int4": 4,
-    "int8_int2": 2,
-    "fp_int4": 4,
-    **{k: 4 for k in AFFINE_KERNELS},
-    DIGANT_KERNEL: 4,
-}
-# Threadgroup / per-SIMD-group tiles swept for DIGANT_KERNEL: the study's
-# pinned tiles plus our M4 Max large-M winners (32x32, 64x32, 128x32).
-DIGANT_SG_TILES = (
-    "16x64/16x64",
-    "16x128/16x64",
-    "16x256/16x64",
-    "32x32/32x32",
-    "32x64/32x32",
-    "32x128/32x32",
-    "64x32/32x32",
-    "64x64/32x32",
-    "64x128/32x32",
-    "128x32/32x32",
-    "128x64/32x32",
-)
+DEFAULT_KERNELS = ("int8_sym_affine_pc", "fp_affine_pc")
 MATVEC = 0
 
 # (BM, BN, splits): an MPP tile, split over K when splits > 1. BN == MATVEC
 # selects the matvec kernel with BM activation rows per threadgroup; BN < 0
-# (fp_int4 and affine only) the qmv_wide-style kernel with BM rows per
+# the qmv_wide-style kernel with BM rows per
 # threadgroup and -BN lanes per output channel. Affine MPP tiles append
 # (SM, SN, BIAS): the per-SIMD-group sub-tile and the bias mode.
 Tile = Tuple[int, ...]
 # (tile, seconds or None on failure, check error or None)
 Entry = Tuple[Tile, Optional[float], Optional[float]]
 
-_quant_kernel = mx.fast.metal_kernel(
-    name="int8_intx_gemm_quantize",
-    input_names=["x"],
-    output_names=["xq", "x_scale"],
-    source=op._QUANT_SOURCE,
-    header=op._HEADER,
-)
-_split_k_reduce_kernel = mx.fast.metal_kernel(
-    name="int8_intx_gemm_split_k_reduce",
-    input_names=["partial", "x_scale", "w_scale"],
-    output_names=["out"],
-    source=op._SPLIT_K_REDUCE_SOURCE,
-    header=op._HEADER,
-)
-_full_k_kernels = {
-    b: mx.fast.metal_kernel(
-        name=f"int8_int{b}_gemm_full_k",
-        input_names=["xq", "x_scale", "w_packed", "w_scale"],
-        output_names=["out"],
-        source=op._FULL_K_SOURCES[b],
-        header=op._HEADER,
-    )
-    for b in op.BITS
-}
-_split_k_kernels = {
-    b: mx.fast.metal_kernel(
-        name=f"int8_int{b}_gemm_split_k",
-        input_names=["xq", "x_scale", "w_packed"],
-        output_names=["partial"],
-        source=op._SPLIT_K_SOURCES[b],
-        header=op._HEADER,
-    )
-    for b in op.BITS
-}
-_matvec_kernels = {
-    b: mx.fast.metal_kernel(
-        name=f"int8_int{b}_gemm_matvec",
-        input_names=["xq", "x_scale", "w_packed", "w_scale"],
-        output_names=["out"],
-        source=op._MATVEC_SOURCES[b],
-        header=op._HEADER,
-    )
-    for b in op.BITS
-}
-_fp4_full_k_kernel = mx.fast.metal_kernel(
-    name="fp_int4_gemm_full_k",
-    input_names=["x", "w_packed", "w_scale"],
-    output_names=["out"],
-    source=fp4._FULL_K_SOURCE,
-    header=fp4._HEADER,
-)
-_fp4_split_k_kernel = mx.fast.metal_kernel(
-    name="fp_int4_gemm_split_k",
-    input_names=["x", "w_packed"],
-    output_names=["partial"],
-    source=fp4._SPLIT_K_SOURCE,
-    header=fp4._HEADER,
-)
-_fp4_split_k_reduce_kernel = mx.fast.metal_kernel(
-    name="fp_int4_gemm_split_k_reduce",
-    input_names=["partial", "w_scale"],
-    output_names=["out"],
-    source=fp4._SPLIT_K_REDUCE_SOURCE,
-    header=fp4._HEADER,
-)
-_fp4_matvec_kernel = mx.fast.metal_kernel(
-    name="fp_int4_gemm_matvec",
-    input_names=["x", "w_packed", "w_scale"],
-    output_names=["out"],
-    source=fp4._MATVEC_SOURCE,
-    header=fp4._HEADER,
-)
-_fp4_wide_kernel = mx.fast.metal_kernel(
-    name="fp_int4_gemm_wide",
-    input_names=["x", "w_packed", "w_scale"],
-    output_names=["out"],
-    source=fp4._WIDE_SOURCE,
-    header=fp4._HEADER,
-)
-
 
 def _affine_kernel_io(act: str, kind: str) -> Tuple[List[str], List[str]]:
     x_in = ["x"] if act == "fp" else ["xq"]
-    epilogue = {"int8": ["x_scale", "x_zero", "w_sum"], "int8sym": ["x_scale"]}.get(
-        act, []
-    )
+    epilogue = {
+        "int8_asym": ["x_scale", "x_zero", "w_sum"],
+        "int8_sym": ["x_scale"],
+    }.get(act, [])
     w = ["w_packed", "w_scale", "w_bias"]
     quant_out = (
         ["xq", "x_scale", "x_zero", "x_sum"]
-        if act == "int8"
+        if act == "int8_asym"
         else ["xq", "x_scale", "x_sum"]
     )
     return {
@@ -291,6 +171,7 @@ def _affine_kernel_io(act: str, kind: str) -> Tuple[List[str], List[str]]:
         "x_sum": (["x"], ["x_sum"]),
         "matvec": (x_in + w + epilogue, ["out"]),
         "wide": (x_in + w + epilogue, ["out"]),
+        "wide_chunk": (x_in + w + epilogue, ["out"]),
         "full_k": (x_in + ["x_sum"] + w + epilogue, ["out"]),
         "split_k": (x_in + ["x_sum"] + w + epilogue[:1], ["partial"]),
         "full_k_dynw": (x_in + ["x_sum"] + w + epilogue, ["out"]),
@@ -308,8 +189,8 @@ _affine_kernels = {
         source={
             "quantize": (
                 aff._INT8_SYM_QUANT_SOURCE
-                if act == "int8sym"
-                else aff._INT8_QUANT_SOURCE
+                if act == "int8_sym"
+                else aff._INT8_ASYM_QUANT_SOURCE
             ),
             "x_sum": aff._FP_SUM_SOURCE,
         }.get(kind, aff._SOURCES[act].get(kind)),
@@ -325,91 +206,14 @@ _affine_kernels = {
         "split_k_dynw",
         "reduce",
         "reduce_raw",
-        "x_sum" if act == "fp" else "quantize",
+        *(("x_sum", "wide_chunk") if act == "fp" else ("quantize",)),
     )
 }
 
 
-_digant_quant = mx.fast.metal_kernel(
-    name="int8_sym_int4_gs256_quant",
-    input_names=["x"],
-    output_names=["xq", "x_scale", "xs"],
-    source=sym._GROUP_QUANT_VEC_SOURCE,
-    header=sym._HEADER,
-)
-_digant_gemm = mx.fast.metal_kernel(
-    name="int8_sym_int4_gs256_gemm",
-    input_names=["xq", "x_scale", "xs", "w_packed", "w_s", "w_b"],
-    output_names=["out"],
-    source=sym._GROUP_INT8_SG_SOURCE,
-    header=sym._GROUP_SG_HEADER,
-)
-_digant_reduce = mx.fast.metal_kernel(
-    name="int8_sym_int4_gs256_split_reduce",
-    input_names=["partial", "x_scale"],
-    output_names=["out"],
-    source=sym._GROUP_SPLIT_REDUCE_SOURCE,
-    header=sym._HEADER,
-)
-
-
-def digant_gemm(
-    x: mx.array, w_packed: mx.array, w_s: mx.array, w_b: mx.array, tile: Tile
-) -> mx.array:
-    """DIGANT_KERNEL launched as the study's int8_group_sg_gemm does; ``tile``
-    is (BM, BN, splits, SM, SN, bias) with splits already effective (no empty
-    split), as for the affine kernels."""
-    M, K = x.shape
-    N = w_packed.shape[0]
-    bm, bn, splits, sm, sn, bias = tile
-    gs = sym.GROUP_SIZE
-    ng = K // gs
-    rows = math.ceil(M / bm) * bm
-    tpr = sym._QUANT_THREADS
-    xq, x_scale, xs = _digant_quant(
-        inputs=[x],
-        template=[("T", x.dtype), ("K", K), ("TPR", tpr), ("GS", gs)],
-        grid=(tpr, rows, 1),
-        threadgroup=(tpr, 1, 1),
-        output_shapes=[(rows, K), (M if splits > 1 else rows,), (rows, ng)],
-        output_dtypes=[mx.int8, mx.float32, mx.float32],
-    )
-    simdgroups = (bm // sm) * (bn // sn)
-    out = _digant_gemm(
-        inputs=[xq, x_scale, xs, w_packed, w_s, w_b],
-        template=[
-            ("T", x.dtype),
-            ("N", N),
-            ("K", K),
-            ("BM", bm),
-            ("BN", bn),
-            ("SM", sm),
-            ("SN", sn),
-            ("GS", gs),
-            ("NM", sym.sg_rows_per_thread(sm, sn)),
-            ("BIAS", bias),
-            ("SPLITS", splits),
-        ],
-        grid=(math.ceil(N / bn) * 32 * simdgroups, rows // bm, splits),
-        threadgroup=(32 * simdgroups, 1, 1),
-        output_shapes=[(splits, M, N) if splits > 1 else (rows, N)],
-        output_dtypes=[mx.float32 if splits > 1 else x.dtype],
-    )[0]
-    if splits > 1:
-        return _digant_reduce(
-            inputs=[out, x_scale],
-            template=[("T", x.dtype), ("N", N), ("SPLITS", splits)],
-            grid=(math.ceil(M * N // 4 / 256) * 256, 1, 1),
-            threadgroup=(256, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    return out[:M] if rows != M else out
-
-
 def affine_spec(kernel: str) -> Tuple[str, Optional[int]]:
     """``{act}_affine_{gs<N>|pc}`` -> (act, group size or None)."""
-    act, _, gs = kernel.split("_")
+    act, _, gs = kernel.rsplit("_", 2)
     return act, None if gs == "pc" else int(gs[2:])
 
 
@@ -418,7 +222,7 @@ def config_name(tile: Tile) -> str:
     if bn == MATVEC:
         return f"matvec mr{bm}"
     if bn < 0:
-        return f"wide nv{bm} kl{-bn}"
+        return f"wide nv{bm} kl{-bn}" + (f" c{splits}" if splits > 1 else "")
     sub = ""
     if len(tile) > 3:
         sub = (
@@ -433,142 +237,6 @@ def config_name(tile: Tile) -> str:
 
 def lowering(tile: Tile) -> str:
     return config_name(tile).split()[0].rstrip("0123456789")
-
-
-def int8_intx_gemm(
-    x: mx.array,
-    w_packed: mx.array,
-    w_scale: mx.array,
-    tile: Tile,
-    bits: int,
-    quant_threads: int = op._QUANT_THREADS,
-) -> mx.array:
-    M, K = x.shape
-    N = w_packed.shape[0]
-    bm, bn, splits = tile
-    if bn == MATVEC:
-        xq, x_scale = _quant_kernel(
-            inputs=[x],
-            template=[("T", x.dtype), ("K", K), ("TPR", quant_threads)],
-            grid=(quant_threads, M, 1),
-            threadgroup=(quant_threads, 1, 1),
-            output_shapes=[(M, K), (M,)],
-            output_dtypes=[mx.int8, mx.float32],
-        )
-        rows_per_tg = op._MATVEC_SIMDGROUPS * op._MATVEC_ROWS_PER_SIMDGROUP
-        return _matvec_kernels[bits](
-            inputs=[xq, x_scale, w_packed, w_scale],
-            template=[("T", x.dtype), ("N", N), ("K", K), ("MR", bm)],
-            grid=(
-                math.ceil(N / rows_per_tg) * op._MATVEC_SIMDGROUPS * 32,
-                math.ceil(M / bm),
-                1,
-            ),
-            threadgroup=(op._MATVEC_SIMDGROUPS * 32, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    launch = {
-        "grid": (math.ceil(N / bn) * op._THREADS, math.ceil(M / bm), 1),
-        "threadgroup": (op._THREADS, 1, 1),
-        "output_shapes": [(M, N)],
-        "output_dtypes": [x.dtype],
-    }
-    template = [("T", x.dtype), ("N", N), ("K", K), ("BM", bm), ("BN", bn)]
-    # Zero-pad xq to whole BM tiles, as the op always does on the MPP path.
-    rows = math.ceil(M / bm) * bm
-    xq, x_scale = _quant_kernel(
-        inputs=[x],
-        template=[("T", x.dtype), ("K", K), ("TPR", quant_threads)],
-        grid=(quant_threads, rows, 1),
-        threadgroup=(quant_threads, 1, 1),
-        output_shapes=[(rows, K), (M,)],
-        output_dtypes=[mx.int8, mx.float32],
-    )
-    if splits > 1:
-        partial = _split_k_kernels[bits](
-            inputs=[xq, x_scale, w_packed],
-            template=template + [("SPLITS", splits)],
-            grid=(math.ceil(N / bn) * op._THREADS, math.ceil(M / bm), splits),
-            threadgroup=(op._THREADS, 1, 1),
-            output_shapes=[(splits, M, N)],
-            output_dtypes=[mx.int32],
-        )[0]
-        return _split_k_reduce_kernel(
-            inputs=[partial, x_scale, w_scale],
-            template=[("T", x.dtype), ("N", N), ("SPLITS", splits)],
-            grid=(math.ceil(M * N / 256) * 256, 1, 1),
-            threadgroup=(256, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    return _full_k_kernels[bits](
-        inputs=[xq, x_scale, w_packed, w_scale], template=template, **launch
-    )[0]
-
-
-def fp_int4_gemm(
-    x: mx.array, w_packed: mx.array, w_scale: mx.array, tile: Tile
-) -> mx.array:
-    M, K = x.shape
-    N = w_packed.shape[0]
-    bm, bn, splits = tile
-    if bn == MATVEC:
-        rows_per_tg = fp4._MATVEC_SIMDGROUPS * fp4._MATVEC_ROWS_PER_SIMDGROUP
-        return _fp4_matvec_kernel(
-            inputs=[x, w_packed, w_scale],
-            template=[("T", x.dtype), ("N", N), ("K", K), ("MR", bm)],
-            grid=(
-                math.ceil(N / rows_per_tg) * fp4._MATVEC_SIMDGROUPS * 32,
-                math.ceil(M / bm),
-                1,
-            ),
-            threadgroup=(fp4._MATVEC_SIMDGROUPS * 32, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    if bn < 0:
-        kl = -bn
-        channels_per_tg = fp4._MATVEC_SIMDGROUPS * (32 // kl)
-        return _fp4_wide_kernel(
-            inputs=[x, w_packed, w_scale],
-            template=[("T", x.dtype), ("N", N), ("K", K), ("NV", bm), ("KL", kl)],
-            grid=(
-                math.ceil(N / channels_per_tg) * fp4._MATVEC_SIMDGROUPS * 32,
-                math.ceil(M / bm),
-                1,
-            ),
-            threadgroup=(fp4._MATVEC_SIMDGROUPS * 32, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    template = [("T", x.dtype), ("N", N), ("K", K), ("BM", bm), ("BN", bn)]
-    grid = (math.ceil(N / bn) * fp4._THREADS, math.ceil(M / bm), 1)
-    if splits > 1:
-        partial = _fp4_split_k_kernel(
-            inputs=[x, w_packed],
-            template=template + [("SPLITS", splits)],
-            grid=grid[:2] + (splits,),
-            threadgroup=(fp4._THREADS, 1, 1),
-            output_shapes=[(splits, M, N)],
-            output_dtypes=[mx.float32],
-        )[0]
-        return _fp4_split_k_reduce_kernel(
-            inputs=[partial, w_scale],
-            template=[("T", x.dtype), ("N", N), ("SPLITS", splits)],
-            grid=(math.ceil(M * N / 256) * 256, 1, 1),
-            threadgroup=(256, 1, 1),
-            output_shapes=[(M, N)],
-            output_dtypes=[x.dtype],
-        )[0]
-    return _fp4_full_k_kernel(
-        inputs=[x, w_packed, w_scale],
-        template=template,
-        grid=grid,
-        threadgroup=(fp4._THREADS, 1, 1),
-        output_shapes=[(M, N)],
-        output_dtypes=[x.dtype],
-    )[0]
 
 
 def affine_gemm(  # noqa: C901
@@ -607,7 +275,7 @@ def affine_gemm(  # noqa: C901
                 output_dtypes=[mx.float32],
             )
             return [x], [], x_sum
-        zero = [] if act == "int8sym" else [(M,)]
+        zero = [] if act == "int8_sym" else [(M,)]
         outs = _affine_kernels[(act, "quantize")](
             inputs=[x],
             template=tmpl,
@@ -618,7 +286,7 @@ def affine_gemm(  # noqa: C901
             + [mx.float32] * len(zero)
             + [mx.float32],
         )
-        if act == "int8sym":
+        if act == "int8_sym":
             xq, x_scale, x_sum = outs
             return [xq], [x_scale], x_sum
         xq, x_scale, x_zero, x_sum = outs
@@ -645,9 +313,10 @@ def affine_gemm(  # noqa: C901
             )[0]
         kl = -bn
         channels_per_tg = aff._MATVEC_SIMDGROUPS * (32 // kl)
-        return _affine_kernels[(act, "wide")](
+        wide_t = [T, ("N", N), ("K", K), ("NV", bm), ("KL", kl), ("GS", gs)]
+        return _affine_kernels[(act, "wide_chunk" if splits > 1 else "wide")](
             inputs=x_in + w + epilogue,
-            template=[T, ("N", N), ("K", K), ("NV", bm), ("KL", kl), ("GS", gs)],
+            template=wide_t + [("CHUNK", splits)] if splits > 1 else wide_t,
             grid=(
                 math.ceil(N / channels_per_tg) * aff._MATVEC_SIMDGROUPS * 32,
                 math.ceil(M / bm),
@@ -711,47 +380,16 @@ def affine_gemm(  # noqa: C901
     )[0]
 
 
-def _unpack_wq(w_packed: mx.array, cols: int, bits: int) -> mx.array:
+def _unpack_wq(w_packed: mx.array, cols: int) -> mx.array:
+    """Signed int4 values of the first ``cols`` rows, low nibble first."""
     w = w_packed[:cols].astype(mx.int32)
-    mask = (1 << bits) - 1
-    fields = mx.stack([(w >> s) & mask for s in range(0, 8, bits)], axis=-1)
-    fields = fields.reshape(cols, -1)
-    half = 1 << (bits - 1)
-    return mx.where(fields >= half, fields - 2 * half, fields).astype(mx.float32)
+    fields = mx.stack([w & 0xF, (w >> 4) & 0xF], axis=-1).reshape(cols, -1)
+    return mx.where(fields >= 8, fields - 16, fields).astype(mx.float32)
 
 
 def _rel_err(out: mx.array, ref: mx.array) -> float:
     err = mx.max(mx.abs(out.astype(mx.float32) - ref)) / mx.max(mx.abs(ref))
     return err.item()
-
-
-def check_int8_intx(
-    x: mx.array,
-    w_packed: mx.array,
-    w_scale: mx.array,
-    tile: Tile,
-    bits: int,
-    cols: int = 256,
-    **kwargs,
-) -> float:
-    """Max error of the first ``cols`` outputs, relative to max |reference|."""
-    out = int8_intx_gemm(x, w_packed, w_scale, tile, bits, **kwargs)[:, :cols]
-    xf = x.astype(mx.float32)
-    x_scale = mx.maximum(mx.max(mx.abs(xf), axis=-1, keepdims=True) / 127, op._EPS)
-    xq = mx.clip(mx.round(xf * mx.reciprocal(x_scale)), -128, 127)
-    wq = _unpack_wq(w_packed, cols, bits)
-    ref = (xq @ wq.T) * x_scale * w_scale[:cols].astype(mx.float32)
-    return _rel_err(out, ref)
-
-
-def check_fp_int4(
-    x: mx.array, w_packed: mx.array, w_scale: mx.array, tile: Tile, cols: int = 256
-) -> float:
-    """Max error of the first ``cols`` outputs, relative to max |reference|."""
-    out = fp_int4_gemm(x, w_packed, w_scale, tile)[:, :cols]
-    wq = _unpack_wq(w_packed, cols, 4)
-    ref = (x.astype(mx.float32) @ wq.T) * w_scale[:cols].astype(mx.float32)
-    return _rel_err(out, ref)
 
 
 def check_affine(
@@ -766,24 +404,18 @@ def check_affine(
     cols: int = 256,
 ) -> float:
     """Max error of the first ``cols`` outputs against the op's formula,
-    relative to max |reference| (``w_sum`` need not be the true row sums).
-    ``act == "digant"`` checks DIGANT_KERNEL against the int8sym gs256
-    formula."""
-    if act == "digant":
-        out = digant_gemm(x, w_packed, w_scale, w_bias, tile)
-        act, group_size = "int8sym", sym.GROUP_SIZE
-    else:
-        out = affine_gemm(x, w_packed, w_scale, w_bias, w_sum, tile, act, group_size)
+    relative to max |reference| (``w_sum`` need not be the true row sums)."""
+    out = affine_gemm(x, w_packed, w_scale, w_bias, w_sum, tile, act, group_size)
     K = x.shape[1]
     gs = group_size or K
-    wq = _unpack_wq(w_packed, cols, 4).reshape(cols, K // gs, gs)
+    wq = _unpack_wq(w_packed, cols).reshape(cols, K // gs, gs)
     s = w_scale[:, :cols].T.astype(mx.float32)[..., None]
     b = w_bias[:, :cols].T.astype(mx.float32)[..., None]
     w = (wq * s + b).reshape(cols, K)
     xf = x.astype(mx.float32)
     if act == "fp":
         return _rel_err(out[:, :cols], xf @ w.T)
-    if act == "int8sym":
+    if act == "int8_sym":
         x_scale = mx.maximum(mx.max(mx.abs(xf), axis=-1, keepdims=True) / 127, aff._EPS)
         xq = mx.clip(mx.round(xf * mx.reciprocal(x_scale)), -128, 127)
         return _rel_err(out[:, :cols], x_scale * (xq @ w.T))
@@ -839,7 +471,7 @@ def affine_tile_configs(  # noqa: C901
         --affine-bias mode (b1 needs a BM x BN fp32 tile in threadgroup memory,
         so BM * BN <= 8192).
     Grouped weights take the effective split counts of --splits (plus 16 at
-    M <= 16), as the study's kernel does, so the last split may cover fewer
+    M <= 16), so the last split may cover fewer
     groups; per-channel splits divide K. Cooperative grouped tiles add the
     bias after the group loop (b3)."""
     _, group_size = affine_spec(kernel)
@@ -879,74 +511,47 @@ def affine_tile_configs(  # noqa: C901
     return tiles
 
 
-def digant_tile_configs(N: int, K: int, M: int, args: argparse.Namespace) -> List[Tile]:
-    """DIGANT_KERNEL tiles: DIGANT_SG_TILES x bias 1 / 3 (1 needs a BM x BN
-    fp32 tile in 32 KB) x the study's effective splits of --splits (plus 16 at
-    M <= 16, which gives its k13 / k16), BM in [16 or 32 at M >= 128,
-    max(16, M)]. --digant-pinned keeps only the study's pinned config for M."""
-    if args.digant_pinned:
-        config = next(c for max_m, c in sym.plans(N, K) if M <= max_m)
-        bm, bn, sm, sn, bias, k = sym.parse_config(config)
-        return [(bm, bn, sym.effective_splits(K // sym.GROUP_SIZE, k), sm, sn, bias)]
-    ng = K // sym.GROUP_SIZE
-    split_set = sorted(
-        {
-            sym.effective_splits(ng, s)
-            for s in list(args.splits) + ([16] if M <= 16 else [])
-        }
-    )
-    min_bm = 32 if M >= 128 else 16
-    tiles: List[Tile] = []
-    for spec in DIGANT_SG_TILES:
-        (bm, bn), (sm, sn) = (map(int, t.split("x")) for t in spec.split("/"))
-        if not min_bm <= bm <= max(16, M) or bn > N:
-            continue
-        for bias in (1, 3):
-            if bias == 1 and bm * bn * 4 > 32768:
-                continue
-            tiles += [(bm, bn, sp, sm, sn, bias) for sp in split_set]
-    return tiles
+def tuned_tile(kernel: str, N: int, K: int, M: int) -> Tile:
+    """The tile int4_affine_gemm's plans (``affine_plans``) give ``kernel`` at
+    M, in this script's tile format."""
+    act, gs = affine_spec(kernel)
+    p = next(p for p in aff.affine_plans(N, K, gs or K, act) if M <= p.max_m)
+    if p.bn <= 0:
+        return (p.bm, p.bn, p.splits)
+    return (p.bm, p.bn, p.splits, p.sm, p.sn, p.bias)
 
 
 def tile_configs(
     K: int, M: int, args: argparse.Namespace, kernel: str = "", N: int = 0
 ) -> List[Tile]:
     """Matvec for M <= --matvec-max-m (needs K % 512 == 0), plus the
-    qmv_wide-style kernel for fp_int4 and the fp affine kernels (it never won
-    for int8 affine); MPP tiles for
-    M >= --mpp-min-m or when there is no matvec, so M in between sweeps both.
-    MPP needs BM % 8 == 0, BM > max(8, M) only adds padding rows, BM < 32
-    never won at M >= 128, and split-K needs K % (64 * splits) == 0."""
-    if kernel == DIGANT_KERNEL:
-        return digant_tile_configs(N, K, M, args)
+    qmv_wide-style kernel for the fp kernels (it never won for int8); MPP
+    tiles (affine_tile_configs) for M >= --mpp-min-m or when there is no
+    matvec, so M in between sweeps both."""
+    if args.tuned:
+        return [tuned_tile(kernel, N, K, M)]
     tiles: List[Tile] = []
-    if M <= args.matvec_max_m and K % op._MATVEC_BLOCK == 0:
+    if M <= args.matvec_max_m and K % aff._MATVEC_BLOCK == 0:
         # MR < M launches ceil(M / MR) threadgroup rows that share weights
         # through cache, like MLX's qmv (one row per threadgroup). MR = 3 was
         # 2-5x slower than MR = 2 or 4 on every Muse Glimmer shape.
         tiles = [(mr, MATVEC, 1) for mr in (1, 2, 4) if mr <= M]
-        if kernel == "fp_int4" or (
-            kernel in AFFINE_KERNELS and affine_spec(kernel)[0] == "fp"
-        ):
+        if affine_spec(kernel)[0] == "fp":
+            nvs = sorted({M, (M + 1) // 2})
+            gs = affine_spec(kernel)[1] or K
             tiles += [
-                (nv, -kl, 1)
-                for nv in sorted({M, (M + 1) // 2})
+                (nv, -kl, 1) for nv in nvs for kl in args.wide_kl if K % (16 * kl) == 0
+            ]
+            tiles += [
+                (nv, -kl, chunk)
+                for nv in nvs
                 for kl in args.wide_kl
-                if K % (16 * kl) == 0
+                for chunk in args.wide_chunk
+                if gs % chunk == 0 and chunk % 8 == 0
             ]
     if tiles and M < args.mpp_min_m:
         return tiles
-    if kernel in AFFINE_KERNELS:
-        return tiles + affine_tile_configs(K, M, args, kernel)
-    min_bm = 32 if M >= 128 else 8
-    return tiles + [
-        (bm, bn, splits)
-        for bm in args.bm
-        if bm % 8 == 0 and min_bm <= bm <= max(8, M)
-        for bn in args.bn
-        for splits in args.splits
-        if splits == 1 or K % (64 * splits) == 0
-    ]
+    return tiles + affine_tile_configs(K, M, args, kernel)
 
 
 def passed(entries: List[Entry]) -> List[Entry]:
@@ -954,58 +559,73 @@ def passed(entries: List[Entry]) -> List[Entry]:
     return [e for e in entries if e[1] is not None and e[2] is not None and e[2] < 1e-2]
 
 
-def refine_candidates(entries: List[Entry], top: int) -> List[Tile]:
-    """The ``top`` fastest passing tiles of each lowering (full-K, split-K,
-    matvec)."""
-    ok = sorted(passed(entries), key=lambda e: e[1])
-    by_lowering: Dict[str, List[Tile]] = {}
-    for tile, _, _ in ok:
-        group = by_lowering.setdefault(lowering(tile), [])
-        if len(group) < top:
-            group.append(tile)
-    return [tile for group in by_lowering.values() for tile in group]
-
-
 def tile_preference(tile: Tile) -> Tuple[int, ...]:
-    """Order among near-tied tiles (lower first): one launch (decode kernels,
-    then full-K MPP) before split-K, then wider BN (each activation tile
-    serves more columns, and N is fixed), then shorter BM (a tier's winner
-    also serves smaller M, where taller tiles pad more rows), then the bias
-    term as an MPP call (b1)."""
+    """Total order over tiles (lower first) that breaks near ties the same
+    way every run: fewer splits (full-K first); decode kernels before MPP (one
+    launch, no padding rows); matvec before wide, then more rows per
+    threadgroup, then more lanes per channel, then the plain wide layout before
+    smaller chunks (a wide tile's third field is its chunk); for MPP the widest BN (each
+    activation tile serves more columns, and N is fixed), then the shortest
+    BM (a tier's winner also serves smaller M, where taller tiles pad more
+    rows), then the largest per-op sub-tile (a cooperative op is BM x BN),
+    then the bias term as an MPP call (b1) before a pass after the loop."""
     bm, bn, splits = tile[:3]
-    if bn <= 0:
-        return (0, 0, 0, 0, 0)
-    return (int(splits > 1), 1, -bn, bm, int(len(tile) > 5 and tile[5] != 1))
+    if bn <= 0:  # matvec (bn == 0, bm rows) or wide (bm rows, -bn lanes)
+        return (1, 0, int(bn < 0), -bm, bn, splits, 0)
+    sm, sn, bias = tile[3:6] if len(tile) >= 6 else (0, 0, 0)
+    sub = bm * bn if sm == 0 else sm * sn
+    return (splits, 1, -bn, bm, -sub, int(bias == 3), 0)
 
 
-def pick_tile(
-    refined: Dict[Tile, float], tie_pct: float, incumbent: Optional[Tile] = None
-) -> Tile:
-    """Among tiles within ``tie_pct`` percent of the fastest refined time: the
-    incumbent (the current tuned plan) if there, else the first by
-    tile_preference, then time. Keeps near-ties from flipping between runs."""
+def refine_candidates(entries: List[Entry], promote_pct: float, cap: int) -> List[Tile]:
+    """Passing tiles to refine: the sweep's fastest, then tiles within
+    ``promote_pct`` percent of it taking each split count in turn (full-K
+    first), each the next by tile_preference, up to ``cap``. Preference order
+    rather than speed order, and every split count represented, so the same
+    tiles reach refine in every run."""
+    ok = sorted(passed(entries), key=lambda e: e[1])
+    if not ok:
+        return []
+    limit = ok[0][1] * (1 + promote_pct / 100)
+    by_splits: Dict[int, List[Tile]] = {}
+    for tile, t, _ in ok:
+        if t <= limit:
+            by_splits.setdefault(tile[2], []).append(tile)
+    groups = [sorted(by_splits[sp], key=tile_preference) for sp in sorted(by_splits)]
+    chosen = [ok[0][0]]
+    for tile in round_robin(groups):
+        if len(chosen) >= cap:
+            break
+        if tile not in chosen:
+            chosen.append(tile)
+    return chosen
+
+
+def pool_refined(runs: List[Dict[Tile, float]]) -> Dict[Tile, float]:
+    """Refined times from several runs as each tile's mean time relative to
+    its run's fastest (over the runs that refined it). A single checked-only
+    config (time 0) counts as 1."""
+    ratios: Dict[Tile, List[float]] = {}
+    for ref in runs:
+        fastest = min(ref.values())
+        for tile, t in ref.items():
+            ratios.setdefault(tile, []).append(t / fastest if fastest > 0 else 1.0)
+    return {tile: statistics.mean(r) for tile, r in ratios.items()}
+
+
+def pick_tile(refined: Dict[Tile, float], tie_pct: float) -> Tile:
+    """The first tile by tile_preference among those within ``tie_pct``
+    percent of the fastest refined time."""
     fastest = min(refined.values())
     band = [t for t, v in refined.items() if v <= fastest * (1 + tie_pct / 100)]
-    if incumbent in band:
-        return incumbent
     return min(band, key=lambda t: (tile_preference(t), refined[t]))
 
 
-def incumbent_tile(kernel: str, N: int, K: int, M: int) -> Optional[Tile]:
-    """The affine kernel's current ``_TUNED_PLANS`` tile for M (int8sym takes
-    int8's), or None."""
-    if kernel not in AFFINE_KERNELS:
-        return None
-    act, gs = affine_spec(kernel)
-    scheme = "pc" if gs is None else f"gs{gs}"
-    act = "int8" if act == "int8sym" else act
-    tuned = aff._TUNED_PLANS.get((act, scheme), {}).get((N, K))
-    if tuned is None:
-        return None
-    p = next(aff.AffinePlan(*t) for t in tuned if M <= t[0])
-    if p.bn <= 0:
-        return (p.bm, p.bn, 1)
-    return (p.bm, p.bn, p.splits, p.sm, p.sn, p.bias)
+def round_robin(groups: List[list]) -> list:
+    """One item from each group in turn, so consecutive timings come from
+    different groups and GPU warm-up or clock changes spread over all of them."""
+    longest = max((len(g) for g in groups), default=0)
+    return [g[i] for i in range(longest) for g in groups if i < len(g)]
 
 
 def _random_bytes(shape: Tuple[int, ...]) -> mx.array:
@@ -1021,13 +641,7 @@ def bench_shape(  # noqa: C901
     dtype = DTYPES[dtype_name]
     gs = args.group_size
     copies = max(1, math.ceil(args.rotate_mb * 2**20 / (N * K // 2)))
-    bits_used = sorted({KERNEL_BITS[k] for k in args.kernels})
-    # Same copy count for every bit width keeps the rotation simple; int2
-    # copies are half the size, still well past cache.
-    w_packed = {
-        b: [_random_bytes((N, K * b // 8)) for _ in range(copies)] for b in bits_used
-    }
-    w_scale = [mx.random.uniform(0.005, 0.02, (N,)) for _ in range(copies)]
+    w_packed = [_random_bytes((N, K // 2)) for _ in range(copies)]
     mlx_w = [_random_bytes((N, K // 2)).view(mx.uint32) for _ in range(copies)]
     mlx_scales = [
         mx.random.uniform(0.005, 0.02, (N, K // gs)).astype(dtype)
@@ -1041,47 +655,27 @@ def bench_shape(  # noqa: C901
     qdtype = DTYPES[args.affine_qparam_dtype]
     affine_planes: Dict[Optional[int], List[Tuple[mx.array, mx.array]]] = {}
     for kernel in args.kernels:
-        if kernel in AFFINE_KERNELS:
-            g = affine_spec(kernel)[1]
-            groups = K // (g or K)
-            affine_planes.setdefault(
-                g,
-                [
-                    (
-                        mx.random.uniform(0.005, 0.02, (groups, N)).astype(qdtype),
-                        mx.random.uniform(-0.1, 0.0, (groups, N)).astype(qdtype),
-                    )
-                    for _ in range(copies)
-                ],
-            )
-    # The study's kernel reads fp16 gs256 planes.
-    digant_planes = (
-        [
-            (
-                mx.random.uniform(0.005, 0.02, (K // sym.GROUP_SIZE, N)).astype(
-                    mx.float16
-                ),
-                mx.random.uniform(-0.1, 0.0, (K // sym.GROUP_SIZE, N)).astype(
-                    mx.float16
-                ),
-            )
-            for _ in range(copies)
-        ]
-        if DIGANT_KERNEL in args.kernels
-        else []
-    )
+        g = affine_spec(kernel)[1]
+        groups = K // (g or K)
+        affine_planes.setdefault(
+            g,
+            [
+                (
+                    mx.random.uniform(0.005, 0.02, (groups, N)).astype(qdtype),
+                    mx.random.uniform(-0.1, 0.0, (groups, N)).astype(qdtype),
+                )
+                for _ in range(copies)
+            ],
+        )
     w_sum = [mx.random.normal((N,)) for _ in range(copies)]
     mx.eval(
-        digant_planes,
-        list(w_packed.values()),
-        w_scale,
+        w_packed,
         mlx_w,
         mlx_scales,
         mlx_biases,
         list(affine_planes.values()),
         w_sum,
     )
-    quant_opts = {"quant_threads": args.quant_threads}
 
     def timed(
         fn: Callable[[mx.array, int], mx.array], x0: mx.array, iters: int
@@ -1091,32 +685,16 @@ def bench_shape(  # noqa: C901
         )
 
     def call(kernel: str, xi: mx.array, i: int, tile: Tile) -> mx.array:
-        bits = KERNEL_BITS[kernel]
-        wp, ws = w_packed[bits][i % copies], w_scale[i % copies]
-        if kernel in AFFINE_KERNELS:
-            act, g = affine_spec(kernel)
-            s, b = affine_planes[g][i % copies]
-            return affine_gemm(xi, wp, s, b, w_sum[i % copies], tile, act, g)
-        if kernel == DIGANT_KERNEL:
-            return digant_gemm(xi, wp, *digant_planes[i % copies], tile)
-        if kernel == "fp_int4":
-            return fp_int4_gemm(xi, wp, ws, tile)
-        return int8_intx_gemm(xi, wp, ws, tile, bits, **quant_opts)
+        wp = w_packed[i % copies]
+        act, g = affine_spec(kernel)
+        s, b = affine_planes[g][i % copies]
+        return affine_gemm(xi, wp, s, b, w_sum[i % copies], tile, act, g)
 
     def check(kernel: str, x: mx.array, tile: Tile) -> float:
-        bits = KERNEL_BITS[kernel]
-        wp = w_packed[bits][0]
-        if kernel in AFFINE_KERNELS:
-            act, g = affine_spec(kernel)
-            s, b = affine_planes[g][0]
-            return check_affine(x, wp, s, b, w_sum[0], tile, act, g)
-        if kernel == DIGANT_KERNEL:
-            return check_affine(
-                x, wp, *digant_planes[0], w_sum[0], tile, "digant", None
-            )
-        if kernel == "fp_int4":
-            return check_fp_int4(x, wp, w_scale[0], tile)
-        return check_int8_intx(x, wp, w_scale[0], tile, bits, **quant_opts)
+        wp = w_packed[0]
+        act, g = affine_spec(kernel)
+        s, b = affine_planes[g][0]
+        return check_affine(x, wp, s, b, w_sum[0], tile, act, g)
 
     def mlx_call(xi: mx.array, i: int) -> mx.array:
         return mx.quantized_matmul(
@@ -1130,106 +708,136 @@ def bench_shape(  # noqa: C901
             mode="affine",
         )
 
-    def select(
-        kernel: str, x: mx.array, M: int
-    ) -> Optional[Tuple[Tile, Dict[Tile, float]]]:
-        """Sweep + refine; returns (picked tile, {refined tile: median
-        seconds}) or None. A single config (matvec) is only checked; the
-        official re-run times it."""
-        tiles = tile_configs(K, M, args, kernel, N)
-        if len(tiles) == 1:
-            err = check(kernel, x, tiles[0])
-            if err >= 1e-2:
-                print(
-                    f"  [{dtype_name}] {name:<8} M={M:<4} {kernel} "
-                    f"{config_name(tiles[0])} failed check ({err:.1e})",
-                    flush=True,
+    def select(x: mx.array, M: int) -> Dict[str, Tuple[Tile, Dict[Tile, float]]]:
+        """{kernel: (picked tile, {refined tile: median seconds})} for M. The
+        sweep times every config in --sweep-rounds whole passes, interleaved
+        across kernels and tile families (lowering, splits, BM); refine times
+        each kernel's
+        refine_candidates over rounds that visit every kernel's candidates in
+        turn (rotating the start), keeping medians, and pick_tile chooses. A
+        kernel with a single config is only checked; the official re-run
+        times it."""
+        picks: Dict[str, Tuple[Tile, Dict[Tile, float]]] = {}
+        entries: Dict[str, List[Entry]] = {}
+        sweeps = []
+        for kernel in args.kernels:
+            tiles = tile_configs(K, M, args, kernel, N)
+            if len(tiles) == 1:
+                err = check(kernel, x, tiles[0])
+                if err < 1e-2:
+                    picks[kernel] = (tiles[0], {tiles[0]: 0.0})
+                else:
+                    print(
+                        f"  [{dtype_name}] {name:<8} M={M:<4} {kernel} "
+                        f"{config_name(tiles[0])} failed check ({err:.1e})",
+                        flush=True,
+                    )
+                continue
+            entries[kernel] = []
+            families: Dict[tuple, list] = {}
+            for tile in tiles:
+                families.setdefault((lowering(tile), tile[2], tile[0]), []).append(
+                    (kernel, tile)
                 )
-                return None
-            return tiles[0], {tiles[0]: 0.0}
-        entries: List[Entry] = []
-        for tile in tiles:
-            try:
-                err = check(kernel, x, tile)
-                t = timed(
-                    lambda xi, i, tile=tile: call(kernel, xi, i, tile), x, args.iters
-                )
-            except Exception as e:  # compile or launch failure for this tile
-                reason = str(e).strip().splitlines()[0][:100]
-                print(f"    skip {kernel} {config_name(tile)}: {reason}", flush=True)
-                err, t = None, None
-            entries.append((tile, t, err))
+            sweeps.append(round_robin(list(families.values())))
+        # Whole passes over every config, alternating direction, so warm-up
+        # within a pass lands on different configs each time; each config
+        # keeps its median. Configs are checked in the first pass.
+        order = round_robin(sweeps)
+        samples: Dict[Tuple[str, Tile], List[float]] = {job: [] for job in order}
+        errs: Dict[Tuple[str, Tile], Optional[float]] = {}
+        for r in range(args.sweep_rounds):
+            for kernel, tile in order if r % 2 == 0 else order[::-1]:
+                if r > 0 and errs[(kernel, tile)] is None:
+                    continue
+                try:
+                    if r == 0:
+                        errs[(kernel, tile)] = check(kernel, x, tile)
+                    samples[(kernel, tile)].append(
+                        timed(
+                            lambda xi, i, kernel=kernel, tile=tile: call(
+                                kernel, xi, i, tile
+                            ),
+                            x,
+                            args.iters,
+                        )
+                    )
+                except Exception as e:  # compile or launch failure for this tile
+                    reason = str(e).strip().splitlines()[0][:100]
+                    print(
+                        f"    skip {kernel} {config_name(tile)}: {reason}", flush=True
+                    )
+                    errs[(kernel, tile)] = None
+        for kernel, tile in order:
+            err = errs[(kernel, tile)]
+            t = statistics.median(samples[(kernel, tile)]) if err is not None else None
+            entries[kernel].append((tile, t, err))
             if args.verbose and t is not None:
                 print(
                     f"    {kernel:<9} {config_name(tile):<20} {t * 1e6:>10.1f} us  "
                     f"check {err:.1e}",
                     flush=True,
                 )
-        candidates = refine_candidates(entries, args.refine_top)
-        incumbent = incumbent_tile(kernel, N, K, M)
-        if incumbent in {e[0] for e in passed(entries)} and incumbent not in candidates:
-            candidates.append(incumbent)
-        if len(candidates) == 1:
-            tile = candidates[0]
-            return tile, {tile: next(e[1] for e in entries if e[0] == tile)}
-        if not candidates:
-            print(
-                f"  [{dtype_name}] {name:<8} M={M:<4} no {kernel} config passed",
-                flush=True,
-            )
-            return None
-        # Rounds visit every candidate (rotating the order), so candidates are
-        # timed close together under the same GPU conditions; each keeps its
-        # median.
-        runs: Dict[Tile, List[float]] = {tile: [] for tile in candidates}
-        for r in range(args.refine_rounds):
-            for tile in (
-                candidates[r % len(candidates) :] + candidates[: r % len(candidates)]
-            ):
-                runs[tile].append(
-                    timed(
-                        lambda xi, i, tile=tile: call(kernel, xi, i, tile),
-                        x,
-                        args.refine_iters,
-                    )
+        candidates: Dict[str, List[Tile]] = {}
+        for kernel, ents in entries.items():
+            cands = refine_candidates(ents, args.promote_pct, args.refine_max)
+            if cands:
+                candidates[kernel] = cands
+            else:
+                print(
+                    f"  [{dtype_name}] {name:<8} M={M:<4} no {kernel} config passed",
+                    flush=True,
                 )
-        refined = {tile: statistics.median(ts) for tile, ts in runs.items()}
-        tile = pick_tile(refined, args.tie_pct, incumbent)
-        if args.verbose:
-            ranked = ", ".join(
-                f"{config_name(c)} {t * 1e6:.1f}"
-                for c, t in sorted(refined.items(), key=lambda kv: kv[1])
-            )
-            note = " (incumbent)" if tile == incumbent else ""
-            print(
-                f"    {kernel} refine (us): {ranked} -> {config_name(tile)}{note}",
-                flush=True,
-            )
-        return tile, refined
-
-    results: Dict[int, dict] = {}
-    for M in ms:
-        x = mx.random.normal((M, K)).astype(dtype)
-        mx.eval(x)
-        winners = {k: select(k, x, M) for k in args.kernels}
-        live = {k: w[0] for k, w in winners.items() if w is not None}
-        refined = {k: w[1] for k, w in winners.items() if w is not None}
-
-        times: Dict[str, List[float]] = {k: [] for k in live}
-        t_mlxs: List[float] = []
-        for _ in range(args.final_repeats):
-            for kernel, tile in live.items():
-                times[kernel].append(
+        jobs = round_robin([[(k, t) for t in c] for k, c in candidates.items()])
+        runs: Dict[Tuple[str, Tile], List[float]] = {job: [] for job in jobs}
+        for r in range(args.refine_rounds if jobs else 0):
+            for kernel, tile in jobs[r % len(jobs) :] + jobs[: r % len(jobs)]:
+                runs[(kernel, tile)].append(
                     timed(
                         lambda xi, i, kernel=kernel, tile=tile: call(
                             kernel, xi, i, tile
                         ),
                         x,
-                        args.final_iters,
+                        args.refine_iters,
                     )
                 )
-            t_mlxs.append(timed(mlx_call, x, args.final_iters))
-        t_mlx = statistics.median(t_mlxs)
+        for kernel, cands in candidates.items():
+            refined = {t: statistics.median(runs[(kernel, t)]) for t in cands}
+            tile = pick_tile(refined, args.tie_pct)
+            picks[kernel] = (tile, refined)
+            if args.verbose:
+                ranked = ", ".join(
+                    f"{config_name(c)} {t * 1e6:.1f}"
+                    for c, t in sorted(refined.items(), key=lambda kv: kv[1])
+                )
+                print(
+                    f"    {kernel} refine (us): {ranked} -> {config_name(tile)}",
+                    flush=True,
+                )
+        return picks
+
+    results: Dict[int, dict] = {}
+    for M in ms:
+        x = mx.random.normal((M, K)).astype(dtype)
+        mx.eval(x)
+        winners = select(x, M)
+        live = {k: winners[k][0] for k in args.kernels if k in winners}
+        refined = {k: winners[k][1] for k in live}
+
+        # Each repeat times every kernel and MLX, rotating the start.
+        order = list(live) + [None]
+        times: Dict[Optional[str], List[float]] = {k: [] for k in order}
+        for r in range(args.final_repeats):
+            for kernel in order[r % len(order) :] + order[: r % len(order)]:
+                fn = (
+                    mlx_call
+                    if kernel is None
+                    else lambda xi, i, kernel=kernel, tile=live[kernel]: call(
+                        kernel, xi, i, tile
+                    )
+                )
+                times[kernel].append(timed(fn, x, args.final_iters))
+        t_mlx = statistics.median(times[None])
         best = {
             k: (live[k], statistics.median(times[k])) if k in live else None
             for k in args.kernels
@@ -1398,9 +1006,30 @@ def save_results(
     print(f"saved results to {path}")
 
 
+# Kernel names used by results saved before the renames (int8 -> int8_asym,
+# int8sym -> int8_sym). Kernels no longer benchmarked are dropped.
+_OLD_KERNEL_NAMES = {}
+for _gs in ("gs64", "gs128", "gs256", "pc"):
+    _OLD_KERNEL_NAMES[f"int8_affine_{_gs}"] = f"int8_asym_affine_{_gs}"
+    _OLD_KERNEL_NAMES[f"int8sym_affine_{_gs}"] = f"int8_sym_affine_{_gs}"
+
+
 def load_results(path: str) -> Tuple[dict, Dict[str, dict]]:
     with open(path) as f:
         data = json.load(f)
+    data["kernels"] = [
+        k
+        for k in (_OLD_KERNEL_NAMES.get(k, k) for k in data["kernels"])
+        if k in AFFINE_KERNELS
+    ]
+    for res in data["results"].values():
+        for shape_res in res.values():
+            for r in shape_res.values():
+                for field in ("best", "refined"):
+                    if field in r:
+                        r[field] = {
+                            _OLD_KERNEL_NAMES.get(k, k): v for k, v in r[field].items()
+                        }
     all_res = {
         dtype: {
             name: {
@@ -1428,26 +1057,29 @@ def emit_plans(  # noqa: C901
     paths: List[str], tie_pct: float, dtype_name: str = "fp16"
 ) -> str:
     """Python source for ``int4_affine_gemm._TUNED_PLANS`` from --save-json
-    sweeps of the affine kernels. Winners merge by M across files (a later
-    file overrides an M an earlier one measured); then per (act, scheme) and
+    sweeps of the affine kernels. Per kernel, shape and M, files that keep
+    refined times are pooled (pool_refined) and pick_tile chooses with
+    ``tie_pct``; otherwise a later file's winner overrides an earlier one's.
+    Every activation mode shares one MPP tile per (scheme, shape, M), picked
+    the same way from all modes' refined MPP times pooled; a mode whose own
+    pick is a decode kernel (matvec / wide) keeps it, since those differ by
+    mode (fp's wide kernel, int8's matvec). Then per (act, scheme) and
     shape, each M's winner covers M values above the previous measured M up
     to M, and the largest covers every larger M. When the next measured M is
     more than two row tiles away, an MPP winner also covers up to 2 * BM (an
     8-row tile serves M = 9-16 without padding, instead of the large-M tile).
-    Adjacent tiers with the same config merge. int8sym runs int8's GEMM
-    kernels and takes int8's plans, so its own (noisier) winners are skipped.
-    Files that keep refined times re-pick each winner with pick_tile (the
-    ``tie_pct`` band, the current table's tile as incumbent)."""
-    winners: Dict[Tuple[Tuple[str, str], Tuple[int, int]], Dict[int, tuple]] = {}
+    Adjacent tiers with the same config merge. int8_sym runs int8_asym's GEMM
+    kernels and takes int8's plans, so its own (noisier) winners are skipped."""
+    Point = Tuple[str, Tuple[str, str], Tuple[int, int], int]
+    runs: Dict[Point, List[Dict[Tile, float]]] = {}
+    last_best: Dict[Point, Tile] = {}
     devices = set()
     for path in paths:
         data, all_res = load_results(path)
         devices.add(data["device"])
         for kernel in data["kernels"]:
-            if kernel not in AFFINE_KERNELS:
-                continue
             act, gs = affine_spec(kernel)
-            if act == "int8sym":
+            if act == "int8_sym":
                 continue
             key = (act, "pc" if gs is None else f"gs{gs}")
             for name, shape_res in all_res[dtype_name].items():
@@ -1456,13 +1088,27 @@ def emit_plans(  # noqa: C901
                     best = r["best"].get(kernel)
                     if best is None:
                         continue
-                    refined = r["refined"].get(kernel)
-                    tile = (
-                        pick_tile(refined, tie_pct, incumbent_tile(kernel, N, K, M))
-                        if refined
-                        else best[0]
-                    )
-                    winners.setdefault((key, (N, K)), {})[M] = tile
+                    point = (kernel, key, (N, K), M)
+                    last_best[point] = best[0]
+                    if r["refined"].get(kernel):
+                        runs.setdefault(point, []).append(r["refined"][kernel])
+    mpp_runs: Dict[Tuple[str, Tuple[int, int], int], List[Dict[Tile, float]]] = {}
+    for (_, key, shape, M), point_runs in runs.items():
+        for ref in point_runs:
+            mpp = {t: v for t, v in ref.items() if t[1] > 0}
+            if mpp:
+                mpp_runs.setdefault((key[1], shape, M), []).append(mpp)
+    shared_mpp = {
+        point: pick_tile(pool_refined(r), tie_pct) for point, r in mpp_runs.items()
+    }
+    winners: Dict[Tuple[Tuple[str, str], Tuple[int, int]], Dict[int, tuple]] = {}
+    for point, tile in last_best.items():
+        kernel, key, (N, K), M = point
+        if point in runs:
+            tile = pick_tile(pool_refined(runs[point]), tie_pct)
+        if tile[1] > 0:
+            tile = shared_mpp.get((key[1], (N, K), M), tile)
+        winners.setdefault((key, (N, K)), {})[M] = tile
     table: Dict[Tuple[str, str], Dict[Tuple[int, int], List[tuple]]] = {}
     for (key, shape), by_m in sorted(winners.items()):
         ms = sorted(by_m)
@@ -1481,8 +1127,9 @@ def emit_plans(  # noqa: C901
         table.setdefault(key, {})[shape] = plans
     names = {v[:2]: k for k, v in SHAPES.items()}
     lines = [
-        f"# Generated by bench_muse_glimmer_gemm.py --emit-plans from {dtype_name} "
-        f"sweeps on {', '.join(sorted(devices))}.",
+        f"# Generated by bench_muse_glimmer_int4_affine_gemm.py --emit-plans from "
+        f"{dtype_name}",
+        f"# sweeps on {', '.join(sorted(devices))}.",
         "_TUNED_PLANS: dict[tuple[str, str], dict[tuple[int, int], list[tuple]]] = {",
     ]
     for key in sorted(table):
@@ -1525,14 +1172,11 @@ def main() -> None:
     parser.add_argument(
         "--kernels",
         nargs="+",
-        choices=KERNELS,
+        choices=AFFINE_KERNELS,
         default=list(DEFAULT_KERNELS),
-        help="int8_int4 / int8_int2: int8 dynamic activations x int4 / int2; "
-        "fp_int4: fp16/bf16 activations x int4; {int8,int8sym,fp}_affine_{gs64,"
-        "gs128,gs256,pc} (opt-in): affine / symmetric int8 or fp activations x "
-        "int4 with a scale and bias per group (pc = per channel); "
-        f"{DIGANT_KERNEL} (opt-in): the M5 Max study's group-wise kernel. Each is "
-        "swept and compared against MLX 4-bit.",
+        help="{int8_asym,int8_sym,fp}_affine_{gs64,gs128,gs256,pc}: asymmetric / "
+        "symmetric int8 or fp activations x int4 with a scale and bias per group "
+        "(pc = per channel). Each is swept and compared against MLX 4-bit.",
     )
     parser.add_argument(
         "--affine-bn",
@@ -1557,10 +1201,10 @@ def main() -> None:
         help="Affine kernels: dtype of the scale / bias planes.",
     )
     parser.add_argument(
-        "--digant-pinned",
+        "--tuned",
         action="store_true",
-        help=f"{DIGANT_KERNEL}: time only the study's pinned config per shape and M "
-        "(int8_sym_int4_gs256's table; Muse Glimmer shapes) instead of sweeping.",
+        help="Affine kernels: time only the plan int4_affine_gemm picks per shape "
+        "and M (its tuned plans) instead of sweeping.",
     )
     parser.add_argument(
         "--bm",
@@ -1596,8 +1240,10 @@ def main() -> None:
     parser.add_argument(
         "--iters",
         type=int,
-        default=10,
-        help="Max timed runs per tile config in the sweep.",
+        default=200,
+        help="Max timed runs per tile config in the sweep; --time-budget-ms "
+        "usually decides (a low cap leaves short decode kernels timed over "
+        "about a millisecond, where GPU clock changes dominate).",
     )
     parser.add_argument(
         "--time-budget-ms",
@@ -1614,17 +1260,31 @@ def main() -> None:
         help="Minimum timed runs per timing.",
     )
     parser.add_argument(
-        "--refine-top",
+        "--sweep-rounds",
         type=int,
         default=3,
-        help="Fastest sweep configs per lowering (full-K, split-K) re-timed in "
-        "the refine round.",
+        help="Sweep passes over every config (alternating direction); each "
+        "config keeps its median.",
+    )
+    parser.add_argument(
+        "--promote-pct",
+        type=float,
+        default=10.0,
+        help="Sweep configs within this percent of the fastest are refined with "
+        "it, in tie-break preference order, up to --refine-max.",
+    )
+    parser.add_argument(
+        "--refine-max",
+        type=int,
+        default=12,
+        help="Most configs refined per kernel, shape and M.",
     )
     parser.add_argument(
         "--refine-iters",
         type=int,
-        default=20,
-        help="Max timed runs per config per refine round.",
+        default=200,
+        help="Max timed runs per config per refine round (--time-budget-ms "
+        "usually decides).",
     )
     parser.add_argument(
         "--refine-rounds",
@@ -1637,10 +1297,10 @@ def main() -> None:
         "--tie-pct",
         type=float,
         default=2.0,
-        help="Refined tiles within this percent of the fastest count as tied: "
-        "the current tuned plan wins a tie, else one launch over split-K, "
-        "wider BN, shorter BM, b1. Also applied by --emit-plans. 0 keeps the "
-        "fastest.",
+        help="Refined tiles within this percent of the fastest count as tied and "
+        "the first by preference wins (fewer splits, decode before MPP, wider "
+        "BN, shorter BM, larger sub-tile, b1). Also applied by --emit-plans. 0 "
+        "keeps the fastest.",
     )
     parser.add_argument(
         "--final-iters",
@@ -1678,7 +1338,7 @@ def main() -> None:
         type=int,
         default=4,
         help="M up to this value sweeps the matvec kernel (MR in {1, 2, 4} up "
-        "to M) and, for fp_int4 / affine, the qmv_wide-style kernel. 0 "
+        "to M) and, for fp kernels, the qmv_wide-style kernel. 0 "
         "disables them.",
     )
     parser.add_argument(
@@ -1693,15 +1353,16 @@ def main() -> None:
         type=int,
         nargs="+",
         default=[8, 16, 32],
-        help="fp_int4 qmv_wide-style kernel (M <= --matvec-max-m): lanes per "
+        help="fp qmv_wide-style kernel (M <= --matvec-max-m): lanes per "
         "output channel to sweep. Rows per threadgroup sweeps M and ceil(M / 2).",
     )
     parser.add_argument(
-        "--quant-threads",
+        "--wide-chunk",
         type=int,
-        default=256,
-        help="int8_int4: threads per row in the activation quantize kernel "
-        "(multiple of 32, at most 1024).",
+        nargs="+",
+        default=[32, 64],
+        help="fp qmv_wide-style kernel: values per lane chunk of its chunked "
+        "layout (MLX qmv_wide's), swept with every --wide-kl.",
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Print every tile config."
@@ -1752,14 +1413,15 @@ def main() -> None:
         f"M: {ms}  dtypes: {args.dtypes}  kernels: {args.kernels}  "
         f"mlx group_size: {args.group_size}  "
         f"warmup: {args.warmup}  time budget: {args.time_budget_ms:g} ms "
-        f"(min iters {args.min_iters})  sweep iters: {args.iters}  "
-        f"refine: top {args.refine_top}/lowering x {args.refine_rounds} rounds "
+        f"(min iters {args.min_iters})  sweep: {args.sweep_rounds} rounds x "
+        f"{args.iters} iters  "
+        f"refine: fastest + {args.promote_pct:g}% band "
+        f"(max {args.refine_max}) x {args.refine_rounds} rounds "
         f"x {args.refine_iters} iters, tie {args.tie_pct:g}%  "
         f"final iters: {args.final_iters}  final repeats: {args.final_repeats}  "
-        f"quant threads: {args.quant_threads}  "
         f"bm: {args.bm}  bn: {args.bn}  splits: {args.splits}  "
         f"matvec max M: {args.matvec_max_m}  mpp min M: {args.mpp_min_m}  "
-        f"wide kl: {args.wide_kl}  "
+        f"wide kl: {args.wide_kl} chunk: {args.wide_chunk}  "
         f"affine bn: {args.affine_bn}  affine bias: {args.affine_bias}  "
         f"affine qparams: {args.affine_qparam_dtype}",
         flush=True,

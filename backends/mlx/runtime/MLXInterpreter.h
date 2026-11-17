@@ -400,6 +400,30 @@ exec_add_int(const AddIntNode& n, ExecutionState& st, StreamOrDevice) {
   st.set_value(n.out, static_cast<int32_t>(result));
 }
 
+// ChoiceOptionNode / IntOptionNode: the value each key resolved to at init
+// (resolve_options in MLXBackend.cpp).
+inline int32_t resolved_option(
+    const std::string& key,
+    const ExecutionState& st) {
+  auto it = st.options.find(key);
+  if (it == st.options.end()) {
+    throw std::runtime_error("option '" + key + "' was not resolved at init");
+  }
+  return it->second;
+}
+
+inline void exec_choice_option(
+    const ChoiceOptionNode& n,
+    ExecutionState& st,
+    StreamOrDevice) {
+  st.set_value(n.out, resolved_option(n.key, st));
+}
+
+inline void
+exec_int_option(const IntOptionNode& n, ExecutionState& st, StreamOrDevice) {
+  st.set_value(n.out, resolved_option(n.key, st));
+}
+
 inline void exec_subtract_int(
     const SubtractIntNode& n,
     ExecutionState& st,
@@ -2584,6 +2608,12 @@ class Interpreter {
         break;
       case OpCode::CUMMAX:
         ops::exec_cummax(std::get<CummaxNode>(instr.node), st, s);
+        break;
+      case OpCode::CHOICE_OPTION:
+        ops::exec_choice_option(std::get<ChoiceOptionNode>(instr.node), st, s);
+        break;
+      case OpCode::INT_OPTION:
+        ops::exec_int_option(std::get<IntOptionNode>(instr.node), st, s);
         break;
       case OpCode::STACK:
         ops::exec_stack(std::get<StackNode>(instr.node), st, s);

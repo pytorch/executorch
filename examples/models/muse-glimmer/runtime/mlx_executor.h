@@ -10,6 +10,7 @@
 #include <executorch/examples/models/muse-glimmer/runtime/backend_factory.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/backend/options.h>
 
 #include <cstdint>
 #include <memory>
@@ -96,6 +97,8 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
   std::unique_ptr<EngineEmbeddings> embeddings_;
   const int max_sessions_;
+  // MLXBackend options for every method load, with room for the cache key.
+  runtime::BackendOptions<5> load_options_;
   bool initialization_attempted_ = false;
   bool initialized_ = false;
   bool target_taps_ = false;

@@ -57,6 +57,23 @@ def _parse_args(argv=None):
     )
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
+    parser.add_argument(
+        "--int8-activations",
+        choices=("never", "always", "min_m"),
+        help="MLX int4 affine GEMMs (--int4-affine runtime exports): int8 "
+        "activations never, always, or from --int8-activations-min-m tokens "
+        "(default: min_m on M5 and later, never otherwise).",
+    )
+    parser.add_argument(
+        "--int8-activations-min-m",
+        type=int,
+        help="Tokens from which min_m uses int8 activations (default: 5).",
+    )
+    parser.add_argument(
+        "--int8-activations-scheme",
+        choices=("symmetric", "asymmetric"),
+        help="Int8 activation quantization (default: symmetric).",
+    )
     parser.add_argument("--max-sessions", type=int, default=4)
     parser.add_argument("--max-decode-sequences", type=int, default=4)
     parser.add_argument("--max-inflight-requests", type=int, default=4)
@@ -102,6 +119,8 @@ def _parse_args(argv=None):
         parser.error(f"--max-vision-patches must be between 4 and {_INT32_MAX}")
     if args.max_context <= 1:
         parser.error("--max-context must be greater than 1")
+    if args.int8_activations_min_m is not None and args.int8_activations_min_m < 1:
+        parser.error("--int8-activations-min-m must be at least 1")
     for name, maximum in (
         ("max_image_bytes", _MAX_IMAGE_BYTES),
         ("max_request_bytes", _MAX_REQUEST_BYTES),
@@ -176,6 +195,9 @@ def _worker_command(args):
         ("eos_id", args.eos_id),
         ("data_path", args.data_path),
         ("pos_embed_path", args.pos_embed_path),
+        ("int8_activations", args.int8_activations),
+        ("int8_activations_min_m", args.int8_activations_min_m),
+        ("int8_activations_scheme", args.int8_activations_scheme),
     ):
         if value is not None:
             # gflags requires '=' to pass false for boolean flags.

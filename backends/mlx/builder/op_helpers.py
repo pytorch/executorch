@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Callable, Dict, Optional, Sequence, Tuple, TYPE_CHECKING, Union
 
 import torch
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -380,6 +380,41 @@ def emit_floordiv(
 
     _, out_slot = P.make_tmp_value_slot()
     P.emit(FloorDivideIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_choice_option(
+    P: "MLXProgramBuilder",
+    key: str,
+    choices: Sequence[str],
+    default: str,
+) -> "IntOrVid":
+    """Emit a load-time string option: the index in ``choices`` of the
+    delegate's runtime spec ``key``, or of ``default`` when unset (see
+    ``ChoiceOptionNode``)."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import ChoiceOptionNode
+
+    if default not in choices:
+        raise ValueError(f"option {key!r}: default {default!r} not in {choices}")
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(
+        ChoiceOptionNode(
+            out=P.slot_to_vid(out_slot),
+            key=key,
+            choices=list(choices),
+            default_value=default,
+        )
+    )
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_int_option(P: "MLXProgramBuilder", key: str, default: int) -> "IntOrVid":
+    """Emit a load-time int option: the delegate's runtime spec ``key``, or
+    ``default`` when unset (see ``IntOptionNode``)."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IntOptionNode
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(IntOptionNode(out=P.slot_to_vid(out_slot), key=key, default_value=default))
     return P.to_int_or_vid(out_slot)
 
 

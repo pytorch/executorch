@@ -21,7 +21,7 @@ import struct
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import executorch.exir as exir
 import numpy as np
@@ -624,6 +624,7 @@ def run_cpp_test_runner(
     verbose: bool = False,
     timeout: Optional[int] = None,
     kv_cache: Optional[str] = None,
+    extra_args: Sequence[str] = (),
 ) -> bool:
     """
     Run the C++ op_test_runner binary.
@@ -638,6 +639,7 @@ def run_cpp_test_runner(
             "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]". Required by
             models containing kvcache::update_and_attend, which fail at
             execute() with no cache installed.
+        extra_args: More op_test_runner arguments (e.g. MLX backend options).
 
     Returns:
         True if execution succeeded, False otherwise.
@@ -658,6 +660,7 @@ def run_cpp_test_runner(
     ]
     if kv_cache:
         cmd += ["--kv-cache", kv_cache]
+    cmd += list(extra_args)
     if verbose:
         cmd.append("--verbose")
 
@@ -877,6 +880,8 @@ class OpTestCase:
     # Off-graph KV cache spec "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]"
     # installed for the run; required by models using update_and_attend.
     kv_cache: Optional[str] = None
+    # More op_test_runner arguments for the run, e.g. MLX backend options.
+    runner_args: Tuple[str, ...] = ()
 
     def _set_seed(self) -> None:
         """Set random seed for reproducibility."""
@@ -1087,6 +1092,7 @@ class OpTestCase:
             verbose=verbose,
             timeout=timeout,
             kv_cache=self.kv_cache,
+            extra_args=self.runner_args,
         ):
             return False
 

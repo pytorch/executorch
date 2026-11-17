@@ -32,6 +32,7 @@
 
 #include <executorch/backends/mlx/runtime/backend_options.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -216,6 +217,76 @@ struct MLXHandle {
   MLXHandle& operator=(const MLXHandle&) = delete;
 };
 
+// Resolves the key of every ChoiceOptionNode / IntOptionNode, in any chain, to
+// the value those nodes write (ExecutionState::options): the delegate's runtime
+// spec when set, else the node's default. A choice must be one of the node's
+// choices, and nodes sharing a key must agree on its type, choices and default.
+static void resolve_options(
+    const MLXProgram& prog,
+    const BackendInitContext& context,
+    ExecutionState& st) {
+  st.options.clear();
+  std::unordered_map<std::string, const Instruction*> first;
+  for (const auto& chain : prog.instruction_chains) {
+    for (const auto& instr : chain) {
+      if (instr.op != OpCode::CHOICE_OPTION && instr.op != OpCode::INT_OPTION) {
+        continue;
+      }
+      const bool is_choice = instr.op == OpCode::CHOICE_OPTION;
+      const std::string& key = is_choice
+          ? std::get<ChoiceOptionNode>(instr.node).key
+          : std::get<IntOptionNode>(instr.node).key;
+      auto [it, inserted] = first.emplace(key, &instr);
+      if (!inserted) {
+        const Instruction& prev = *it->second;
+        const bool same = prev.op == instr.op &&
+            (is_choice ? std::get<ChoiceOptionNode>(prev.node).choices ==
+                         std::get<ChoiceOptionNode>(instr.node).choices &&
+                     std::get<ChoiceOptionNode>(prev.node).default_value ==
+                         std::get<ChoiceOptionNode>(instr.node).default_value
+                       : std::get<IntOptionNode>(prev.node).default_value ==
+                     std::get<IntOptionNode>(instr.node).default_value);
+        if (!same) {
+          throw std::runtime_error(
+              "option '" + key + "' is declared inconsistently in the program");
+        }
+        continue;
+      }
+      if (is_choice) {
+        const auto& n = std::get<ChoiceOptionNode>(instr.node);
+        std::string value = n.default_value;
+        auto spec = context.get_runtime_spec<const char*>(key.c_str());
+        if (spec.ok() && spec.get() != nullptr) {
+          value = spec.get();
+        } else if (spec.error() == Error::InvalidArgument) {
+          throw std::runtime_error("option '" + key + "' must be a string");
+        }
+        auto pos = std::find(n.choices.begin(), n.choices.end(), value);
+        if (pos == n.choices.end()) {
+          std::string allowed;
+          for (const auto& c : n.choices) {
+            allowed += (allowed.empty() ? "" : ", ") + c;
+          }
+          throw std::runtime_error(
+              "option '" + key + "' is '" + value +
+              "'; expected one of: " + allowed);
+        }
+        st.options[key] = static_cast<int32_t>(pos - n.choices.begin());
+      } else {
+        const auto& n = std::get<IntOptionNode>(instr.node);
+        int32_t value = n.default_value;
+        auto spec = context.get_runtime_spec<int>(key.c_str());
+        if (spec.ok()) {
+          value = spec.get();
+        } else if (spec.error() == Error::InvalidArgument) {
+          throw std::runtime_error("option '" + key + "' must be an int");
+        }
+        st.options[key] = value;
+      }
+    }
+  }
+}
+
 // MLX is not thread-safe: its computation graph is global shared state.
 // A global mutex serializes graph construction and command submission
 // across all handles. GPU execution and output copies can proceed
@@ -391,6 +462,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // Bind execution state (reused across execute() calls)
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
+
+      // Load-time options read by ChoiceOptionNode / IntOptionNode.
+      resolve_options(handle->program, context, handle->state);
 
       // Bind the off-graph KV cache, if the runner installed one under a key it
       // passed as a runtime spec. Bound before the init chain runs so an
