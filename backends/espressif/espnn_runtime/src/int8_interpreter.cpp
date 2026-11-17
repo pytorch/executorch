@@ -390,6 +390,18 @@ bool Int8Interpreter::load(
     inputs_[i] = graph_input_id(graph_, i);
   for (uint32_t i = 0; i < output_count_; ++i)
     outputs_[i] = graph_output_id(graph_, i);
+  // Like graph inputs, outputs that an operation reads keep their arena slots
+  // (see plan_memory()).
+  for (uint32_t op = 0; options_.external_io && op < op_count; ++op) {
+    OperationRecord record{};
+    read_operation(graph_, op, record);
+    for (uint8_t j = 0; j < record.num_inputs; ++j) {
+      for (uint32_t o = 0; o < output_count_; ++o) {
+        if (outputs_[o] == record.inputs[j])
+          options_.conversion_slots |= 1U << (input_count_ + o);
+      }
+    }
+  }
 
   // Operations first: the planner places each operation's ESP-NN scratch.
   if (!prepare_operations() || !plan_memory()) {
@@ -1015,13 +1027,19 @@ void Int8Interpreter::rebase_constants(const uint8_t* old_base, size_t size) {
   }
 }
 
+bool Int8Interpreter::in_arena(const int8_t* data) const {
+  const uintptr_t address = reinterpret_cast<uintptr_t>(data);
+  const uintptr_t arena = reinterpret_cast<uintptr_t>(arena_);
+  return address >= arena && address - arena < arena_size_;
+}
+
 int8_t* Int8Interpreter::activation(uint32_t tensor_id) const {
   return tensor_data_[tensor_id];
 }
 
 bool Int8Interpreter::bind_output(size_t index, int8_t* data) {
   if (!loaded_ || !options_.external_io || index >= output_count_ ||
-      (tensors_[outputs_[index]].flags & TENSOR_FLAG_GRAPH_INPUT) != 0)
+      in_arena(tensor_data_[outputs_[index]]))
     return false;
   tensor_data_[outputs_[index]] = data;
   return true;
@@ -1956,11 +1974,9 @@ bool Int8Interpreter::invoke() {
   InvokeLock lock;
   // A kernel that leaves part of its output unwritten must not leave a
   // caller's previous contents in a bound output.
-  const uintptr_t arena = reinterpret_cast<uintptr_t>(arena_);
   for (size_t o = 0; options_.external_io && o < output_count_; ++o) {
     int8_t* data = tensor_data_[outputs_[o]];
-    const uintptr_t address = reinterpret_cast<uintptr_t>(data);
-    if (address < arena || address - arena >= arena_size_)
+    if (!in_arena(data))
       std::memset(data, 0, tensor_data_size(tensors_[outputs_[o]]));
   }
   if (scratch_ != nullptr) {

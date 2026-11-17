@@ -479,6 +479,18 @@ class EarlyOutput(LateStateRead):
         return output, new_state
 
 
+class ChainedOutputs(StreamingConv):
+    """Returns a tensor and two functions of it, computed one after the other."""
+
+    def forward(self, x, state):
+        a = self.conv(torch.cat([state, x], dim=2)).clone(
+            memory_format=self.memory_format
+        )
+        b = torch.relu(a).clone(memory_format=self.memory_format)
+        c = torch.sigmoid(a).clone(memory_format=self.memory_format)
+        return a, b, c
+
+
 def lower_streaming(channels_last: bool, model_class=StreamingConv, patch=None):
     """
     int8 inputs and outputs, not memory planned, optionally channels-last.
@@ -500,8 +512,9 @@ def lower_streaming(channels_last: bool, model_class=StreamingConv, patch=None):
     for _ in range(16):
         prepared(*sample())
     program = torch.export.export(convert_pt2e(prepared), example, strict=True)
-    for index in range(2):
+    for index in range(len(program.graph_signature.user_inputs)):
         quantize_input(program, index)
+    for index in range(len(program.graph_signature.user_outputs)):
         quantize_output(program, index)
     edge, report = to_espnn_edge(program, allow_cpu_fallback=False)
     assert not report["cpu_ops"]
@@ -591,6 +604,27 @@ def test_misaligned_buffers_are_staged(tmp_path):
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), True)
     assert stats["staging"] > 0
+
+
+@pytest.mark.parametrize("channels_last", [False, True])
+def test_outputs_read_by_operators_keep_their_slots(tmp_path, channels_last):
+    # Output 1 is written over output 0's buffer before an operator reads
+    # output 0 for output 2, so output 0 must stay in its arena slot.
+    exported, program, _ = lower_streaming(channels_last, ChainedOutputs)
+    emulator = ProgramEmulator(exported)
+    steps = int8_steps(2, channels_last)
+    (outputs,), stats = run_host(
+        tmp_path, program, steps, "--share-io", "--share-output", "0:1"
+    )
+    for step, inputs in enumerate(steps):
+        expected = as_list(emulator(*inputs))
+        assert_matches(outputs[step][2:], expected[2:], channels_last)
+    assert stats["staging"] == 0
+    if channels_last:
+        assert stats["arena"] == sum(
+            reference.plan_activation_arena(delegate.graph, external_io=True)[0]
+            for delegate in emulator.delegates.values()
+        )
 
 
 def return_state_input(graph):

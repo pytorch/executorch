@@ -13,8 +13,9 @@
  * backends/espressif/test/test_host_runtime.py.
  *
  *   espnn_host_runner PROGRAM IO_DIR STEPS [--instances N] [--share-io]
- *                     [--alias INPUT:OUTPUT]... [--misalign]
- *                     [--reset-before STEP]...
+ *                     [--alias INPUT:OUTPUT]...
+ *                     [--share-output FIRST:SECOND]...
+ *                     [--misalign] [--reset-before STEP]...
  *
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
  * output o to IO_DIR/out_<k>_<s>_<o>.bin: the raw bytes of the tensor in its
@@ -23,7 +24,8 @@
  * With --share-io, inputs must be unplanned and are bound once through
  * set_input. --alias makes an unplanned input and output share one buffer:
  * that input is read from its file at step 0 only and afterwards holds the
- * output of the previous step.
+ * output of the previous step. --share-output writes unplanned output SECOND
+ * into output FIRST's buffer.
  * --misalign places every runner buffer one byte past a 16-byte boundary.
  * --reset-before asks EspNNBackend, through its reset_states backend option,
  * to restore its delegates' state before that step. At the end, the runner
@@ -146,6 +148,7 @@ int main(int argc, char** argv) {
   bool share_io = false;
   size_t misalign = 0;
   std::vector<std::pair<size_t, size_t>> aliases;
+  std::vector<std::pair<size_t, size_t>> shared_outputs;
   std::vector<int> resets;
   for (int a = 4; a < argc; ++a) {
     const std::string arg = argv[a];
@@ -162,6 +165,11 @@ int main(int argc, char** argv) {
       if (std::sscanf(argv[++a], "%u:%u", &input, &output) != 2)
         fail("--alias takes INPUT:OUTPUT");
       aliases.emplace_back(input, output);
+    } else if (arg == "--share-output" && a + 1 < argc) {
+      unsigned first = 0, second = 0;
+      if (std::sscanf(argv[++a], "%u:%u", &first, &second) != 2)
+        fail("--share-output takes FIRST:SECOND");
+      shared_outputs.emplace_back(first, second);
     } else {
       fail(("unknown argument " + arg).c_str());
     }
@@ -216,6 +224,14 @@ int main(int argc, char** argv) {
           instance.inputs[input]->nbytes != instance.outputs[output]->nbytes)
         fail("invalid --alias");
     }
+    for (const auto& [first, second] : shared_outputs) {
+      if (first >= instance.outputs.size() ||
+          second >= instance.outputs.size() ||
+          meta->output_tensor_meta(first).get().is_memory_planned() ||
+          meta->output_tensor_meta(second).get().is_memory_planned() ||
+          instance.outputs[first]->nbytes != instance.outputs[second]->nbytes)
+        fail("invalid --share-output");
+    }
     if (share_io) {
       for (size_t i = 0; i < instance.inputs.size(); ++i) {
         if (meta->input_tensor_meta(i).get().is_memory_planned())
@@ -233,6 +249,10 @@ int main(int argc, char** argv) {
       for (const auto& [input, output] : aliases) {
         if (output == o)
           buffer = instance.inputs[input]->data;
+      }
+      for (const auto& [first, second] : shared_outputs) {
+        if (second == o)
+          buffer = instance.outputs[first]->data;
       }
       Error error = instance.method->set_output_data_ptr(
           buffer, instance.outputs[o]->nbytes, o);

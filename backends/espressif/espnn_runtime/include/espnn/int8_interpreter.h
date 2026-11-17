@@ -51,7 +51,8 @@ struct Int8RuntimeOptions {
   bool scratch_in_arena = false;
   /// Bind graph outputs to caller-provided device-layout (NHWC) buffers,
   /// outside this interpreter's arena, except the slots selected by
-  /// conversion_slots. Graph inputs always have arena slots.
+  /// conversion_slots. Graph inputs and outputs that an operation reads
+  /// always have arena slots.
   bool external_io = false;
   /// With external_io, include these output slots in the arena for
   /// conversion. Bits select slots in input-then-output order, determined at
@@ -134,11 +135,12 @@ class Int8Interpreter {
   /**
    * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
    * buffer of output_info().bytes, the storage of output @p index until it is
-   * bound again. An output that is also a graph input cannot be bound:
-   * output_data() returns the input's slot.
+   * bound again. An output with an arena slot cannot be bound: output_data()
+   * returns the slot.
    *
    * @retval false external_io is off, @p index is out of range, or the output
-   *     is a graph input.
+   *     has an arena slot (it is a graph input, an operation reads it, or
+   *     conversion_slots selects it).
    */
   bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
@@ -182,6 +184,11 @@ class Int8Interpreter {
   }
   const GraphView& graph() const {
     return graph_;
+  }
+  /// With external_io, the I/O slots given arena slots: conversion_slots plus
+  /// every output that an operation reads, in the same bit order.
+  uint32_t conversion_slots() const {
+    return options_.conversion_slots;
   }
   /// Duration of the last invoke() in microseconds.
   int64_t last_invoke_us() const {
@@ -237,6 +244,7 @@ class Int8Interpreter {
   void rebase_constants(const uint8_t* old_base, size_t size);
   bool tensor_info(uint32_t tensor_id, Int8TensorInfo& info) const;
   int8_t* activation(uint32_t tensor_id) const;
+  bool in_arena(const int8_t* data) const;
   const int8_t* operand(uint32_t tensor_id) const;
   void run_generic_conv(const OpState& s, const int8_t* input, int8_t* output)
       const;

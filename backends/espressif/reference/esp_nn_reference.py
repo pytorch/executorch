@@ -603,8 +603,8 @@ def plan_activation_arena(  # noqa: C901
 ) -> tuple[int, dict[int, int]]:
     """
     Mirror of Int8Interpreter::plan_memory in the firmware. With external_io
-    (as EspNNBackend loads graphs), graph outputs that are not also graph
-    inputs are not planned.
+    (as EspNNBackend loads graphs), graph outputs that are neither graph inputs
+    nor read by an operation are not planned.
     """
     op_count = len(graph.operations)
     big = 1 << 30
@@ -612,9 +612,14 @@ def plan_activation_arena(  # noqa: C901
     last: dict[int, int] = {}
     sizes: dict[int, int] = {}
     io_flags = TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT
+    read = {
+        tensor_id for operation in graph.operations for tensor_id in operation.inputs
+    }
     for tensor in graph.tensors:
         if tensor.is_constant or (
-            external_io and (tensor.flags & io_flags) == TENSOR_FLAG_GRAPH_OUTPUT
+            external_io
+            and (tensor.flags & io_flags) == TENSOR_FLAG_GRAPH_OUTPUT
+            and tensor.tensor_id not in read
         ):
             continue
         first[tensor.tensor_id] = (

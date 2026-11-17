@@ -106,11 +106,12 @@ Calibrate on a few hundred real samples; random data gives useless scales.
 The delegate keeps rank-4 tensors in NHWC order. Inputs are always copied
 into slots in the delegate's activation arena, quantized or transposed if
 needed, because ESP-NN kernels may load whole vectors past the end of a
-tensor they read. The delegate writes an int8 output directly when its
-buffer is 16-byte aligned and already in this layout: the tensor is not
-rank 4, has one channel or one pixel, or has a channels-last dim order. Each
-output is handled independently, whether its buffer is memory-planned by
-ExecuTorch or supplied by the caller.
+tensor they read. For the same reason, an output that an operator reads keeps
+its arena slot and is copied out at the end. The delegate writes any other
+int8 output directly when its buffer is 16-byte aligned and already in this
+layout: the tensor is not rank 4, has one channel or one pixel, or has a
+channels-last dim order. Each output is handled independently, whether its
+buffer is memory-planned by ExecuTorch or supplied by the caller.
 
 Float outputs and NCHW outputs with several channels and pixels need dtype
 or layout conversion. The exporter records which outputs need conversion,

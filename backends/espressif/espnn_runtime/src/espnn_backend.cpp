@@ -272,9 +272,6 @@ class EspNNBackendInterface final : public BackendInterface {
     if (memory == nullptr)
       return Error::MemoryAllocationFailed;
     DelegateState* state = new (memory) DelegateState();
-    // Older exports use the arena for every I/O slot.
-    state->conversion_slots =
-        options.external_io ? options.conversion_slots : UINT32_MAX;
 #if CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
     options.copy_constants_to_psram = true;
 #endif
@@ -294,6 +291,10 @@ class EspNNBackendInterface final : public BackendInterface {
       state->~DelegateState();
       return Error::DelegateInvalidCompatibility;
     }
+    // Older exports use the arena for every I/O slot.
+    state->conversion_slots = options.external_io
+        ? state->interpreter.conversion_slots()
+        : UINT32_MAX;
     if (state->interpreter.constants_copied())
       processed->Free();
     state->state_generation =
