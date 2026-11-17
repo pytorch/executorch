@@ -658,6 +658,35 @@ void add_sdpa_compute_out_node(
       resize_sdpa_out_node));
 }
 
+// Checks that an additive attn_mask can be bound by the SDPA QK shaders, which
+// read it in q's storage type. A buffer mask is read as contiguous rows in q's
+// dtype. A texture mask is sampled as floats, so it may be Float or Half
+// whatever q's dtype is.
+void check_sdpa_attn_mask(
+    ComputeGraph& graph,
+    const ValueRef attn_mask,
+    const ValueRef q) {
+  VK_CHECK_COND(
+      graph.storage_type_of(attn_mask) == graph.storage_type_of(q),
+      "SDPA requires the attn_mask in the query's storage");
+  if (graph.is_buffer_storage(attn_mask)) {
+    VK_CHECK_COND(
+        graph.is_contiguous_buffer_tensor(attn_mask),
+        "SDPA requires a contiguous buffer attn_mask");
+    VK_CHECK_COND(
+        graph.dtype_of(attn_mask) == graph.dtype_of(q),
+        "SDPA requires a buffer attn_mask of the query's dtype");
+  } else {
+    VK_CHECK_COND(
+        graph.is_contiguous_texture_tensor(attn_mask),
+        "SDPA requires a width packed attn_mask texture");
+    VK_CHECK_COND(
+        graph.dtype_of(attn_mask) == vkapi::kFloat ||
+            graph.dtype_of(attn_mask) == vkapi::kHalf,
+        "SDPA requires a Float or Half attn_mask texture");
+  }
+}
+
 void check_attn_mask_sizes(
     ComputeGraph& graph,
     const ValueRef attn_mask,
@@ -773,7 +802,7 @@ void sdpa_impl_with_shader_override(
   // As in the CPU op, an attn_mask replaces the causal mask: it is a 2D
   // [S, C] additive mask over every key in k_cache, and cannot be combined
   // with is_causal. Without one, the attention is assumed to be causal. The
-  // partitioner (op_registry.py) keeps other configurations on CPU.
+  // partitioner keeps other configurations on CPU.
   const bool has_mask = graph.val_is_not_none(attn_mask);
   ValueRef mask = kDummyValueRef;
   if (has_mask) {
@@ -782,7 +811,7 @@ void sdpa_impl_with_shader_override(
         "attn_mask and is_causal cannot both be set");
     VK_CHECK_COND(graph.dim_of(attn_mask) == 2, "attn_mask must be 2D");
     // A constant mask arrives as a TensorRef, since the fused op handles its
-    // own prepacking. Its dtype is compared after prepacking, which applies
+    // own prepacking. Its dtype is checked after prepacking, which applies
     // the same Half -> Float fallback as q on devices without fp16 buffers.
     mask = graph.val_is_tref(attn_mask)
         ? prepack_standard(
@@ -791,20 +820,8 @@ void sdpa_impl_with_shader_override(
               graph.storage_type_of(q_projected),
               utils::kWidthPacked)
         : attn_mask;
-    VK_CHECK_COND(
-        graph.dtype_of(mask) == graph.dtype_of(q_projected),
-        "attn_mask must have the same dtype as q");
+    check_sdpa_attn_mask(graph, mask, q_projected);
     check_attn_mask_sizes(graph, mask, q_projected, k_cache);
-    VK_CHECK_COND(
-        graph.storage_type_of(mask) == graph.storage_type_of(q_projected),
-        "attn_mask must have the same storage type as q");
-    // The shaders index a buffer mask as contiguous [S, C] rows, and a
-    // texture mask with the standard axis map.
-    VK_CHECK_COND(
-        graph.storage_type_of(mask) == utils::kBuffer
-            ? graph.is_contiguous_buffer_tensor(mask)
-            : graph.is_contiguous_texture_tensor(mask),
-        "attn_mask must be contiguous and width packed");
   } else {
     VK_CHECK_COND(
         graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal),
@@ -1059,30 +1076,19 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.packed_dim_of(k) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v) == WHCN::kWidthDim);
   // The buffer shaders index every tensor as contiguous rows.
-  for (const ValueRef t : {q, k, v, attn_mask, out}) {
+  for (const ValueRef t : {q, k, v, out}) {
     VK_CHECK_COND(
-        graph.val_is_none(t) || !graph.val_is_tensor(t) ||
-            !graph.is_buffer_storage(t) || graph.is_contiguous_buffer_tensor(t),
+        !graph.is_buffer_storage(t) || graph.is_contiguous_buffer_tensor(t),
         "fused SDPA requires contiguous buffer tensors");
   }
-  // The QK shader binds the mask and attention weights in the query's storage,
-  // and the attention weights take the output's.
-  for (const ValueRef t : {attn_mask, out}) {
-    VK_CHECK_COND(
-        graph.val_is_none(t) ||
-            graph.storage_type_of(t) == graph.storage_type_of(q),
-        "fused SDPA requires the attn_mask and output in the query's storage");
-  }
-  // Buffer shaders read the mask in the query's dtype; texture shaders sample
-  // it as floats.
+  // The attention weights take the output's storage, and the QK shader binds
+  // them in the query's.
   VK_CHECK_COND(
-      graph.val_is_none(attn_mask) ||
-          (graph.is_buffer_storage(q)
-               ? graph.dtype_of(attn_mask) == graph.dtype_of(q)
-               : graph.dtype_of(attn_mask) == vkapi::kFloat ||
-                   graph.dtype_of(attn_mask) == vkapi::kHalf),
-      "fused SDPA requires an attn_mask of the query's dtype, or a float one "
-      "in textures");
+      graph.storage_type_of(out) == graph.storage_type_of(q),
+      "fused SDPA requires the output in the query's storage");
+  if (graph.val_is_not_none(attn_mask)) {
+    check_sdpa_attn_mask(graph, attn_mask, q);
+  }
 
   // Compute scale
   const int32_t head_dim = graph.size_at<int32_t>(-1, q);

@@ -1162,9 +1162,12 @@ void test_vulkan_llm_sdpa(
     vkcompute::utils::StorageType storage_type,
     at::ScalarType dtype = at::kFloat,
     const bool use_custom_sdpa = false,
-    const bool constant_mask = false) {
+    const bool constant_mask = false,
+    const std::optional<at::ScalarType> mask_dtype_override = std::nullopt) {
   using namespace vkcompute;
 
+  // The CPU op takes an fp32 mask, also for an fp16 query
+  const at::ScalarType mask_dtype = mask_dtype_override.value_or(dtype);
   const bool has_mask = mask_kind != LLMSDPAMask::CAUSAL;
   // A constant mask is a TensorRef that the op prepacks. It cannot be resized,
   // so every step must use the full seq_len.
@@ -1183,7 +1186,9 @@ void test_vulkan_llm_sdpa(
   }
   // Kept alive until prepack, which reads the TensorRef's data
   const at::Tensor constant_mask_data = constant_mask
-      ? (at::randn({max_seq_len, max_context_len}) * 2).to(dtype).contiguous()
+      ? (at::randn({max_seq_len, max_context_len}) * 2)
+            .to(mask_dtype)
+            .contiguous()
       : at::Tensor();
 
   // Reference caches are kept in fp32
@@ -1213,12 +1218,12 @@ void test_vulkan_llm_sdpa(
   if (constant_mask) {
     r_mask.value = graph.add_tensorref(
         constant_mask_data.sizes().vec(),
-        from_at_scalartype(dtype),
+        from_at_scalartype(mask_dtype),
         constant_mask_data.const_data_ptr());
   } else if (has_mask) {
     r_mask = graph.add_input_tensor(
         {max_seq_len, max_context_len},
-        from_at_scalartype(dtype),
+        from_at_scalartype(mask_dtype),
         storage_type);
   }
 
@@ -1332,7 +1337,7 @@ void test_vulkan_llm_sdpa(
         ? at::randn({seq_len, max_context_len}) * 2
         : at::zeros({seq_len, max_context_len})
               .masked_fill(at::logical_not(visible), -INFINITY);
-    mask = mask.to(dtype);
+    mask = mask.to(mask_dtype);
 
     // Reference, in fp32 from the dtype-rounded inputs
     k_cache.slice(1, input_pos, input_pos + seq_len).copy_(k.to(at::kFloat));
@@ -1368,7 +1373,7 @@ void test_vulkan_llm_sdpa(
           r_mask.staging,
           mask.const_data_ptr(),
           mask.numel(),
-          from_at_scalartype(dtype));
+          from_at_scalartype(mask_dtype));
     }
 
     graph.execute();
@@ -1542,6 +1547,41 @@ TEST(VulkanSDPATest, test_sdpa_op_constant_mask) {
             /*constant_mask=*/true);
       }
     }
+  }
+}
+
+// The CPU op takes an fp32 mask, so an fp16 model has an fp32 mask. Texture
+// shaders sample the mask as floats whatever q's dtype is.
+TEST(VulkanSDPATest, test_sdpa_op_fp32_mask_fp16_query) {
+  for (const bool use_custom_sdpa : {false, true}) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({7, 1, 1, 1, 5, 1, 1}),
+        64,
+        8,
+        2,
+        32,
+        LLMSDPAMask::SLIDING_WINDOW,
+        4,
+        1.0,
+        vkcompute::utils::kTexture3D,
+        at::kHalf,
+        use_custom_sdpa,
+        /*constant_mask=*/false,
+        at::kFloat);
+    test_vulkan_llm_sdpa(
+        {{0, 4}, {2, 4}, {4, 4}},
+        8,
+        2,
+        1,
+        8,
+        LLMSDPAMask::RANDOM,
+        0,
+        std::nullopt,
+        vkcompute::utils::kTexture3D,
+        at::kHalf,
+        use_custom_sdpa,
+        /*constant_mask=*/true,
+        at::kFloat);
   }
 }
 
