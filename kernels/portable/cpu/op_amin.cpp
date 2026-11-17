@@ -43,15 +43,7 @@ Tensor& amin_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  // An empty input gives an empty output, unless a reduced dim is empty: max
-  // has no identity, so ATen rejects that case.
   if (in.numel() == 0) {
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        out.numel() == 0,
-        InvalidArgument,
-        out,
-        "amin.out: cannot reduce over an empty dimension");
     return out;
   }
 
@@ -61,7 +53,7 @@ Tensor& amin_out(
   // Fast path: contiguous tensor, single innermost dim reduction.
   // Bypasses the generic ReduceOverDimListPlan (per-element stride/index
   // recomputation via get_init_index) for a tight, directly-indexed loop.
-  if (in.numel() > 0 && dim_list.size() == 1 &&
+  if (dim_list.size() == 1 &&
       !executorch::runtime::isComplexType(in.scalar_type()) &&
       tensor_is_default_dim_order(in)) {
     const int64_t d = dim_list[0] < 0 ? dim_list[0] + in.dim() : dim_list[0];

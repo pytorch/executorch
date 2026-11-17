@@ -328,14 +328,44 @@ TEST_F(OpAmaxOutTest, EmptyInput) {
   int64_t dims[1] = {1};
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
 
-  // Reducing a non-empty dim of an empty input gives an empty output.
   Tensor out = tf.zeros({0});
   op_amax_out(tf.zeros({0, 5}), dim_list, /*keepdim=*/false, out);
-  EXPECT_EQ(out.numel(), 0);
+  EXPECT_TENSOR_EQ(out, tf.zeros({0}));
 
-  // Reducing an empty dim is an error.
-  out = tf.zeros({5});
+  out = tf.zeros({0, 1});
+  op_amax_out(tf.zeros({0, 5}), dim_list, /*keepdim=*/true, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({0, 1}));
+}
+
+TEST_F(OpAmaxOutTest, EmptyInputEmptyReducedDimDies) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  Tensor out = tf.zeros({5});
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_amax_out(tf.zeros({5, 0}), dim_list, /*keepdim=*/false, out));
+}
+
+TEST_F(OpAmaxOutTest, EmptyInputEmptyReducedAndKeptDimsDies) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  // The output is empty too, but ATen still rejects the empty reduced dim.
+  Tensor out = tf.zeros({0});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amax_out(tf.zeros({0, 0}), dim_list, /*keepdim=*/false, out));
+}
+
+TEST_F(OpAmaxOutTest, EmptyInputReduceAllDies) {
+  TensorFactory<ScalarType::Float> tf;
+  ArrayRef<int64_t> empty_dim_list{ArrayRef<int64_t>{}};
+
+  Tensor out = tf.zeros({});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amax_out(tf.zeros({0, 5}), empty_dim_list, /*keepdim=*/false, out));
 }
