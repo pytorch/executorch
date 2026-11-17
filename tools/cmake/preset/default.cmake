@@ -387,7 +387,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_SELECT_OPS_MODEL
-  "Build the executorch_kernels target with only operators from the given model .pte file."
+  "Build the executorch_kernels target with only operators from the given semicolon-separated .pte files."
   STRING
   ""
 )
