@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +10,8 @@ set -ex
 
 install_conda() {
   pushd .ci/docker || return
-  ${CONDA_INSTALL} -c conda-forge -y --file conda-env-ci.txt
+  # -c alone still searches defaults, which can require Anaconda registration.
+  ${CONDA_INSTALL} --override-channels -c conda-forge -y --file conda-env-ci.txt
   popd || return
 }
 
