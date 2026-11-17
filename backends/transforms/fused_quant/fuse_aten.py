@@ -116,10 +116,11 @@ def create_qparams_from_dequant_node(
 ) -> QParamsFlat:
     """Extract QuantParams from a dequantize node."""
     assert is_dequantize_node(dequant_node)
-    # Affine dequant names its result dtype `output_dtype`; the quantized_decomposed
-    # per-tensor/channel ops name it `out_dtype`.
-    dtype_arg = "output_dtype" if is_affine_quant_node(dequant_node) else "out_dtype"
-    out_dtype = get_arg(dequant_node, dtype_arg, Optional[torch.dtype]) or torch.float32
+    out_dtype = (
+        dequant_node.meta["val"].dtype
+        if is_affine_quant_node(dequant_node)
+        else get_arg(dequant_node, "out_dtype", Optional[torch.dtype]) or torch.float32
+    )
     return _create_qparams_from_node(dequant_node, graph, out_dtype)
 
 
