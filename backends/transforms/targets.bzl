@@ -244,6 +244,7 @@ def define_common_targets():
         srcs = ["remove_clone_ops.py"],
         visibility = ["PUBLIC"],
         deps = [
+            ":permute_pass_utils",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",

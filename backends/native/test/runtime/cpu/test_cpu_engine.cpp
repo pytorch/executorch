@@ -125,6 +125,16 @@ class TestGraph {
             fbs::CreateIntListArgDirect(builder, &items).Union()));
   }
 
+  Offset<fbs::NamedArgument> int_arg(const char* parameter, int64_t value) {
+    return fbs::CreateNamedArgumentDirect(
+        builder,
+        parameter,
+        fbs::CreateArgument(
+            builder,
+            fbs::ArgumentValue::IntArg,
+            fbs::CreateIntArg(builder, value).Union()));
+  }
+
   void add(
       const char* name,
       const char* a,
@@ -240,6 +250,20 @@ class TestGraph {
         "torch.ops.aten.view.default",
         &args,
         &out));
+  }
+
+  void view_op(
+      const char* name,
+      const char* input,
+      const char* target,
+      const std::vector<int64_t>& sizes,
+      std::vector<Offset<fbs::NamedArgument>> args) {
+    tensor(name, meta(fbs::ScalarType::FLOAT, sizes));
+    args.insert(args.begin(), tensor_arg("self", input));
+    const std::vector<Offset<fbs::Output>> out{
+        fbs::CreateOutputDirect(builder, name, input)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::CALL_FUNCTION, target, &args, &out));
   }
 
   void to_copy(
@@ -992,6 +1016,41 @@ TEST(CPUEngineTest, MaterializesNativeViewAliases) {
       0, input.data(), input.size(), ScalarType::Float);
   compiled.executable->execute();
   EXPECT_EQ(output(*compiled.executable), (std::vector<float>{2, 4, 6, 8}));
+}
+
+TEST(CPUEngineTest, MaterializesNativeSliceSqueezeAndUnsqueezeAliases) {
+  TestGraph graph;
+  graph.input("x", graph.meta(fbs::ScalarType::FLOAT, {2, 3}));
+  graph.view_op(
+      "tail",
+      "x",
+      "torch.ops.aten.slice.Tensor",
+      {2, 2},
+      {graph.int_arg("dim", 1),
+       graph.int_arg("start", 1),
+       graph.int_arg("end", std::numeric_limits<int64_t>::max()),
+       graph.int_arg("step", 1)});
+  graph.view_op(
+      "column",
+      "tail",
+      "torch.ops.aten.unsqueeze.default",
+      {2, 2, 1},
+      {graph.int_arg("dim", -1)});
+  graph.view_op(
+      "rows",
+      "column",
+      "torch.ops.aten.squeeze.dims",
+      {2, 2},
+      {graph.int_list_arg("dim", {-1})});
+  graph.add(
+      "result", "rows", "rows", graph.meta(fbs::ScalarType::FLOAT, {2, 2}));
+  graph.output("result");
+  auto compiled = compile(graph.program());
+  const std::array<float, 6> input{1, 2, 3, 4, 5, 6};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+  EXPECT_EQ(output(*compiled.executable), (std::vector<float>{4, 6, 10, 12}));
 }
 
 TEST(CPUEngineTest, RedirectsOutputAliasOfNativeMutation) {

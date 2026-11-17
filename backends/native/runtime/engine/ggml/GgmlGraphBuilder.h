@@ -132,6 +132,7 @@ class GraphBuilder {
       const std::vector<InputSlot>& inputs,
       const std::vector<OutputSlot>& outputs,
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+      const std::unordered_map<ValueId, ggml_tensor*>& row_scales,
       const std::unordered_map<ValueId, std::vector<uint8_t>>&
           rope_factor_bytes,
       const FoldedBatchNorms& batch_norms,
@@ -224,6 +225,7 @@ class GraphBuilder {
   void lower_unary(const Node& node, Unary fn);
   void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
+  void lower_elu(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,
       std::string_view name,
@@ -283,6 +285,7 @@ class GraphBuilder {
   const std::vector<InputSlot>& inputs_;
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
+  const std::unordered_map<ValueId, ggml_tensor*>& row_scales_;
   const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
   const FoldedBatchNorms& batch_norms_;
   // Mask values (and their producers) computed over a key prefix only.
