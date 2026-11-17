@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
@@ -1232,10 +1233,26 @@ void test_vulkan_llm_sdpa(
       : kDummyValueRef;
 
   if (use_custom_sdpa) {
-    const ValueRef r_k_cache = graph.add_tensor(
-        k_cache_data.sizes().vec(), from_at_scalartype(dtype), storage_type);
-    const ValueRef r_v_cache = graph.add_tensor(
-        v_cache_data.sizes().vec(), from_at_scalartype(dtype), storage_type);
+    // Prepacked from the zero caches, as in a delegated model, so that cache
+    // rows a mask attends before they are written match the reference.
+    const ValueRef r_k_cache = prepack_standard(
+        graph,
+        graph.add_tensorref(
+            k_cache_data.sizes().vec(),
+            from_at_scalartype(dtype),
+            k_cache_data.const_data_ptr()),
+        storage_type,
+        utils::kWidthPacked,
+        /*passthrough=*/true);
+    const ValueRef r_v_cache = prepack_standard(
+        graph,
+        graph.add_tensorref(
+            v_cache_data.sizes().vec(),
+            from_at_scalartype(dtype),
+            v_cache_data.const_data_ptr()),
+        storage_type,
+        utils::kWidthPacked,
+        /*passthrough=*/true);
     const ValueRef r_dummy_out =
         graph.add_tensor({1}, from_at_scalartype(dtype), utils::kBuffer);
     VK_GET_OP_FN("update_cache.default")
