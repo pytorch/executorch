@@ -87,10 +87,10 @@ class OpQuantizer(QuantizerBase):
         config: The per-instance quantization config.
         activation_names: Schema names of quantized activation inputs (annotated
             with config.input_activation).
-        weight_names: Schema names of quantized weight inputs (annotated with
-            config.weight).
-        other_names: Schema names of tensor passthroughs (e.g. "bias") that
-            occupy the fused op's tensor prefix with a null qparams block.
+        weight_names: Schema names of weight inputs. Existing Q/DQ is preserved;
+            remaining weights are annotated with config.weight.
+        other_names: Schema names of tensor inputs passed without observation
+            (e.g. "bias"). Fusion reuses their existing Q/DQ, if present.
         output_indices: Outputs to quantize with config.output_activation. Defaults
             to just output 0; a multi-output op can pass e.g. (0, 1). All quantized
             outputs share the single config.output_activation.
@@ -173,9 +173,11 @@ class OpQuantizer(QuantizerBase):
                 node, cast(fx.Node, get_arg(node, name)), config.input_activation
             )
         for name in self.weight_names:
-            annotate_input_qspec_map(
-                node, cast(fx.Node, get_arg(node, name)), config.weight
-            )
+            weight = cast(fx.Node, get_arg(node, name))
+            if is_dequantize_node(weight):
+                node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+            else:
+                annotate_input_qspec_map(node, weight, config.weight)
         # output_node is None if a multi-output op's getitem(output_index) is unused.
         if config.output_activation is not None:
             for output_index in self.output_indices:
@@ -184,7 +186,7 @@ class OpQuantizer(QuantizerBase):
                     annotate_output_qspec(out, config.output_activation)
 
     def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fold each owned node annotated with a live qspec into fused_op.
+        """Fold each owned quantized node into fused_op.
 
         A node claimed by a no-op annotation, or one merely sandwiched between its
         neighbors' dq/q, carries no mark and is left alone.

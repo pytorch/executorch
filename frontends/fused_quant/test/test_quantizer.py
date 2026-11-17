@@ -11,6 +11,8 @@ from collections.abc import Callable
 import executorch.exir.dialects.fused_quant.ops  # noqa: F401
 import torch
 from executorch.backends.transforms.fused_quant.graph_utils import (
+    get_qparams_from_node,
+    is_dequantize_node,
     is_per_channel_quant_node,
     is_per_tensor_quant_node,
 )
@@ -19,6 +21,7 @@ from executorch.frontends.fused_quant.quantizer.quantizer import (
     ConvolutionQuantizer,
     FusedQuantQuantizer,
     get_core_aten_quantizers,
+    OpQuantizer,
 )
 from parameterized import parameterized
 from torch import fx, nn
@@ -90,6 +93,162 @@ class _Binary(nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return self.fn(x, y)
+
+
+class _PrequantizedLinear(nn.Module):
+    def __init__(self, granularity: str) -> None:
+        super().__init__()
+        self.granularity = granularity
+        self.weight = nn.Parameter(torch.randn(4, 8))
+        shape = (4, 2) if granularity == "group" else (4,)
+        self.register_buffer("scale", torch.full(shape, 0.125))
+        self.register_buffer("zero_point", torch.zeros(shape, dtype=torch.int64))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.granularity == "per_tensor":
+            weight = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                self.weight, 0.125, 0, -8, 7, torch.int8
+            )
+            weight = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                weight, 0.125, 0, -8, 7, torch.int8
+            )
+        elif self.granularity == "per_channel":
+            weight = torch.ops.quantized_decomposed.quantize_per_channel.default(
+                self.weight, self.scale, self.zero_point, 0, -8, 7, torch.int8
+            )
+            weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                weight, self.scale, self.zero_point, 0, -8, 7, torch.int8
+            )
+        else:
+            weight = torch.ops.torchao.quantize_affine.default(
+                self.weight, [1, 4], self.scale, self.zero_point, torch.int8, -8, 7
+            )
+            weight = torch.ops.torchao.dequantize_affine.default(
+                weight,
+                [1, 4],
+                self.scale,
+                self.zero_point,
+                torch.int8,
+                quant_min=-8,
+                quant_max=7,
+                output_dtype=torch.float32,
+            )
+        return nn.functional.linear(x, weight)
+
+
+class OpQuantizerTest(unittest.TestCase):
+    @parameterized.expand([("per_tensor",), ("per_channel",), ("group",)])
+    def test_qat_preserves_weight_quantization(self, granularity: str) -> None:
+        torch.manual_seed(0)
+        inputs = (torch.randn(2, 8),)
+        quantizer = FusedQuantQuantizer(
+            [
+                OpQuantizer(
+                    torch.ops.aten.linear.default,
+                    torch.ops.fused_quant.linear.default,
+                    _qconfig(weight_per_channel=True),
+                    weight_names=("weight",),
+                    other_names=("bias",),
+                )
+            ]
+        )
+        program = torch.export.export(_PrequantizedLinear(granularity).eval(), inputs)
+        prepared = prepare_pt2e(program.module(), quantizer)
+        (linear,) = prepared.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.linear.default
+        )
+        self.assertTrue(is_dequantize_node(get_arg(linear, "weight", fx.Node)))
+        self.assertEqual(len(prepared.graph.find_nodes(op="call_module")), 2)
+        prepared(*inputs)
+        converted = convert_pt2e(prepared, fold_quantize=False)
+        expected = converted(*inputs)
+
+        quantizer.fuse(converted)
+
+        (fused,) = converted.graph.find_nodes(
+            op="call_function", target=torch.ops.fused_quant.linear.default
+        )
+        qparams = get_qparams_from_node(fused, "weight")
+        assert qparams is not None
+        self.assertEqual((qparams.quant_min, qparams.quant_max), (-8, 7))
+        shape = {"per_tensor": (), "per_channel": (4, 1), "group": (4, 2)}[granularity]
+        scale = (
+            getattr(converted, str(qparams.scale.target))
+            if qparams.scale.op == "get_attr"
+            else qparams.scale.meta["val"]
+        )
+        self.assertEqual(tuple(scale.shape), shape)
+        torch.testing.assert_close(converted(*inputs), expected)
+
+    def test_default_still_observes_weights(self) -> None:
+        inputs = (torch.randn(2, 8),)
+        quantizer = FusedQuantQuantizer(
+            [
+                OpQuantizer(
+                    torch.ops.aten.linear.default,
+                    torch.ops.fused_quant.linear.default,
+                    _qconfig(weight_per_channel=True),
+                    weight_names=("weight",),
+                    other_names=("bias",),
+                )
+            ]
+        )
+        program = torch.export.export(nn.Linear(8, 4).eval(), inputs)
+        prepared = prepare_pt2e(program.module(), quantizer)
+        self.assertEqual(len(prepared.graph.find_nodes(op="call_module")), 3)
+
+    def test_mixed_float_and_prequantized_weights(self) -> None:
+        class MixedWeights(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prequantized_weight = nn.Parameter(torch.randn(4, 8))
+                self.float_weight = nn.Parameter(torch.randn(4, 8))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                weight = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                    self.prequantized_weight, 0.125, 0, -8, 7, torch.int8
+                )
+                weight = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    weight, 0.125, 0, -8, 7, torch.int8
+                )
+                return nn.functional.linear(x, weight) + nn.functional.linear(
+                    x, self.float_weight
+                )
+
+        inputs = (torch.randn(2, 8),)
+        config = _qconfig(weight_per_channel=True)
+        quantizer = FusedQuantQuantizer(
+            [
+                OpQuantizer(
+                    torch.ops.aten.linear.default,
+                    torch.ops.fused_quant.linear.default,
+                    config,
+                    weight_names=("weight",),
+                    other_names=("bias",),
+                )
+            ]
+        )
+        program = torch.export.export(MixedWeights().eval(), inputs)
+        prepared = prepare_pt2e(program.module(), quantizer)
+        linears = prepared.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.linear.default
+        )
+        self.assertTrue(is_dequantize_node(get_arg(linears[0], "weight", fx.Node)))
+        self.assertEqual(get_arg(linears[1], "weight", fx.Node).op, "call_module")
+        prepared(*inputs)
+        converted = convert_pt2e(prepared)
+        expected = converted(*inputs)
+        quantizer.fuse(converted)
+        linears = converted.graph.find_nodes(
+            op="call_function", target=torch.ops.fused_quant.linear.default
+        )
+        ranges = []
+        for linear in linears:
+            qparams = get_qparams_from_node(linear, "weight")
+            assert qparams is not None
+            ranges.append((qparams.quant_min, qparams.quant_max))
+        self.assertEqual(ranges, [(-8, 7), (-127, 127)])
+        torch.testing.assert_close(converted(*inputs), expected)
 
 
 class GetCoreAtenQuantizersTest(unittest.TestCase):
