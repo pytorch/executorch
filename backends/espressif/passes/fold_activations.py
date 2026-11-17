@@ -44,6 +44,7 @@ class FoldActivations(ExportedProgramPassBase):
                     exir_ops.edge.fused_quant.sub.default,
                     exir_ops.edge.fused_quant.mul.default,
                     exir_ops.edge.fused_quant.linear.default,
+                    exir_ops.edge.fused_quant.convolution_channels_last.default,
                 )
                 or len(producer.users) != 1
                 or get_qparams_from_node(producer, "out") is not None
