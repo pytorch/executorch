@@ -7,6 +7,7 @@
 
 # pyre-strict
 import copy
+import inspect
 import logging
 import operator
 from typing import Callable, List, Optional, Type, TypeAlias, Union
@@ -120,6 +121,33 @@ class PassManager(fx.PassManager):
                 )
 
 
+def _run_graph_pass(
+    fn: Callable[[torch.fx.GraphModule], Optional[PassResult]],
+    exported_program: ExportedProgram,
+) -> Optional[PassResult]:
+    """Run a GraphModule pass against the program the manager is transforming.
+
+    A pass built from a program (``XNNPACKPass.exported_program``, for one)
+    keeps the original, while the manager edits a shallow copy whose signature
+    is rebuilt after every modifying pass. Point the pass at the copy for the
+    call so signature and state dict edits land on the program being returned.
+    """
+    # pass_result_wrapper copies the pass's __dict__ onto the wrapper, so the
+    # attribute has to be rebound on the pass itself.
+    target = inspect.unwrap(fn)
+    if not hasattr(target, "exported_program"):
+        return fn(exported_program.graph_module)
+    original = target.exported_program
+    try:
+        target.exported_program = exported_program
+    except AttributeError:
+        return fn(exported_program.graph_module)
+    try:
+        return fn(exported_program.graph_module)
+    finally:
+        target.exported_program = original
+
+
 class ExportedProgramPassManager(fx.PassManager):
     """
     Runs multiple passes on an ExportedProgram.
@@ -210,7 +238,7 @@ class ExportedProgramPassManager(fx.PassManager):
                 pass_modified = False
                 try:
                     if not isinstance(fn, ExportedProgramPassBase):
-                        res = fn(exported_program.graph_module)
+                        res = _run_graph_pass(fn, exported_program)
                         if res is None:
                             raise TypeError(
                                 f"The result of pass {_get_pass_name(fn)} should be type PassResult. "

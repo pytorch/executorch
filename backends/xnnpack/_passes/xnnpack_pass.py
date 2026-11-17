@@ -20,3 +20,7 @@ class XNNPACKPass(ExportPass):
     @property
     def exported_program(self) -> ExportedProgram:
         return self._exported_program
+
+    @exported_program.setter
+    def exported_program(self, exported_program: ExportedProgram) -> None:
+        self._exported_program = exported_program

@@ -397,8 +397,7 @@ def add_constant(
         fqn not in ep.constants and fqn not in ep.state_dict
     ), f"add_constant: fqn {fqn!r} already backed; prefix invariant violated"
 
-    input_specs = list(ep.graph_signature.input_specs)
-    input_specs.insert(
+    ep.graph_signature.input_specs.insert(
         insert_at,
         InputSpec(
             kind=kind,
@@ -406,10 +405,6 @@ def add_constant(
             target=fqn,
             persistent=True,
         ),
-    )
-    ep._graph_signature = ExportGraphSignature(
-        input_specs=input_specs,
-        output_specs=list(ep.graph_signature.output_specs),
     )
 
     match kind:
@@ -456,8 +451,11 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
             f"Cannot delete input node {node.name} since it is not a parameter, a buffer, nor a lifted tensor constant."
         )
 
-    # Edit the spec list in place: ExportedProgramPassManager runs passes on a
-    # shallow copy of the program, which would not see a replaced signature.
+    # Edit the spec list in place, as create_constant_placeholder does: a caller
+    # holding the program ExportedProgramPassManager shallow-copied shares this
+    # list with the copy until a modifying pass makes the manager rebuild the
+    # copy's signature. Passes that expose ``exported_program`` are pointed at
+    # the copy itself by the manager and are not limited this way.
     input_specs = exp_program.graph_signature.input_specs
     input_specs[:] = [spec for spec in input_specs if spec.arg.name != node.name]
 
