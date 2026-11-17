@@ -79,9 +79,7 @@ void reset_delegate_stats();
  *
  * Each loaded method instance has its own state, kept between executions
  * until this is called or the method is destroyed; loading the method again
- * also starts from the initial state. Safe to call from any task, including
- * while a method executes on another one: that execution finishes with the
- * old state and the next one starts from the initial state.
+ * also starts from the initial state. Safe to call from any task.
  */
 void reset_delegate_states();
 
