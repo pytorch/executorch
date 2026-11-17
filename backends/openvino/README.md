@@ -337,12 +337,15 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 #### OpenVINO Runtime Setup (Windows)
 
+For native C++ runners, set `OPENVINO_LIB_PATH` to the full path of `openvino_c.dll` in the PowerShell session used to launch them. Python auto-discovery does not configure that shell. For archive or source installations, dependent DLLs such as `tbb12.dll` must be beside `openvino_c.dll` or in directories registered by the runner with `AddDllDirectory`; adding them to `PATH` is not sufficient.
+
 Choose one setup path:
 
 - Pip package:
 
   ```powershell
   python -m pip install openvino
+  $env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'openvino_c.dll'))"
   ```
 
 - OpenVINO archive package (official 2026 flow):
