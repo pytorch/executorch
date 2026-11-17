@@ -721,7 +721,9 @@ TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
 }
 
 // loaded again would otherwise hit it with a matching seed and run on the
-// other node's packing without repacking.
+// other node's packing without repacking. A second, clean entry proves the
+// index was written at all: with the conflicted name alone the index would be
+// empty and rejected at load, which would look the same as leaving it out.
 TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
   std::string cache_path = std::string("/tmp/xnn_weights_cache_conflict_") +
       std::to_string(::getpid()) + ".packed_cache";
@@ -736,13 +738,12 @@ TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
     ASSERT_NE(packUnder(provider, kernel.get(), 1), SIZE_MAX);
     ASSERT_NE(packUnder(provider, kernel.get(), 2), SIZE_MAX);
     ASSERT_TRUE(cache.finalize_for_runtime().ok());
-    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
   }
   {
     XNNWeightsCache cache;
     cache.set_packed_cache_path(cache_path);
     cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
-    ASSERT_TRUE(cache.get_packed_data_names().empty());
+    ASSERT_EQ(cache.get_packed_data_names(), std::vector<std::string>{"bias"});
     xnn_weights_cache_provider* provider = cache.get();
     Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
     ASSERT_TRUE(kernel.ok());
@@ -754,13 +755,11 @@ TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
 }
 
 TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    ASSERT_NE(packUnder(provider, bias.get(), 4), SIZE_MAX);
   // XNNPACK does not pack every constant it is given: PReLU slopes, for one,
   // stay as the unpacked buffer the subgraph points at. Those buffers are taken
-  // out of the cache while the graph is built, and finalize_for_runtime must
-  // leave them alone while still freeing the ones it packed.
-  XNNWeightsCache cache;
-  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
-
     // A packing that misses on the retired name is booked as a gap in the
     // name, not as an unnamed constant.
     xnn_weights_cache_look_up_key key = keyFor(kernel.get());
@@ -775,6 +774,11 @@ TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
         stats.heap_bytes_by_reason[static_cast<size_t>(
             PackedCacheHeapReason::UnnamedConstant)],
         0);
+  // out of the cache while the graph is built, and finalize_for_runtime must
+  // leave them alone while still freeing the ones it packed.
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+
   Result<const uint8_t*> packed = cache.load_unpacked_data("weight");
   ASSERT_EQ(packed.error(), Error::Ok);
   // The index the caller would take immediately before defining the value it
@@ -783,6 +787,15 @@ TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
   Result<const uint8_t*> retained_load = cache.load_unpacked_data("bias");
   ASSERT_EQ(retained_load.error(), Error::Ok);
   ASSERT_EQ(cache.get_num_unpacked_data(), first_index + 1);
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    xnn_weights_cache_look_up_key bias_key = keyFor(bias.get());
+    const size_t bias_offset = provider->look_up(provider->context, &bias_key);
+    ASSERT_NE(bias_offset, SIZE_MAX);
+    ASSERT_EQ(
+        *static_cast<uint8_t*>(
+            provider->offset_to_addr(provider->context, bias_offset)),
+        4);
 
   std::vector<executorch::runtime::FreeableBuffer> retained;
   cache.take_unpacked_data_from(first_index, retained);
