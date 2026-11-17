@@ -7,6 +7,16 @@ def define_common_targets(is_fbcode = False):
     if not is_fbcode:
         return
 
+    python_unittest(
+        name = "test_cpu_count",
+        srcs = [
+            "test_cpu_count.py",
+        ],
+        deps = [
+            "//executorch/backends/cuda:cpu_count",
+        ],
+    )
+
     python_unittest_remote_gpu(
         name = "test_cuda_export",
         srcs = [
@@ -157,6 +167,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cpu_count",
         ],
     )
 
