@@ -882,6 +882,87 @@ std::optional<SessionId> MuseGlimmerCudaDFlashExecutor::clone(
 #endif
 }
 
+batching::CheckpointResult<batching::Checkpoint>
+MuseGlimmerCudaDFlashExecutor::export_checkpoint_to_cpu(
+    SessionId source,
+    batching::Position upto) {
+  const auto it = sessions_.find(source);
+  auto* target_cache = target_->checkpoint_control();
+  auto* draft_cache = draft_cache_->as<cache::CheckpointControl>();
+  if (failed_ || it == sessions_.end() || it->second.poisoned ||
+      !target_cache || !draft_cache || upto < 0 || upto > it->second.frontier)
+    return batching::CheckpointError{"checkpoint source is unavailable"};
+  auto target = target_cache->export_to_cpu(it->second.target_id, upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&target))
+    return *error;
+  const int draft_upto =
+      std::min<int>(upto, draft_ctl_->pos(it->second.draft_id));
+  auto draft = draft_cache->export_to_cpu(it->second.draft_id, draft_upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&draft))
+    return *error;
+  batching::Checkpoint checkpoint;
+  checkpoint.format = "muse-glimmer-cuda-dflash-v1";
+  checkpoint.position = upto;
+  checkpoint.caches.push_back(
+      std::get<cache::SequenceCheckpoint>(std::move(target)));
+  checkpoint.caches.push_back(
+      std::get<cache::SequenceCheckpoint>(std::move(draft)));
+  checkpoint.hidden_row_bytes = row_bytes_;
+  const size_t bytes = static_cast<size_t>(upto - draft_upto) * row_bytes_;
+  if (bytes > it->second.hidden.size())
+    return batching::CheckpointError{"incomplete draft continuation state"};
+  checkpoint.hidden.assign(
+      it->second.hidden.begin(), it->second.hidden.begin() + bytes);
+  return checkpoint;
+}
+
+batching::CheckpointResult<SessionId>
+MuseGlimmerCudaDFlashExecutor::restore_checkpoint_from_cpu(
+    const batching::Checkpoint& checkpoint,
+    batching::Position upto) {
+  auto* target_cache = target_->checkpoint_control();
+  auto* draft_cache = draft_cache_->as<cache::CheckpointControl>();
+  if (failed_ || !target_cache || !draft_cache ||
+      checkpoint.format != "muse-glimmer-cuda-dflash-v1" ||
+      checkpoint.caches.size() != 2 ||
+      checkpoint.position != checkpoint.caches[0].position || upto < 0 ||
+      upto > checkpoint.position || upto > max_context_ ||
+      checkpoint.hidden_row_bytes != row_bytes_ ||
+      checkpoint.caches[1].position < 0 ||
+      checkpoint.caches[1].position > checkpoint.position ||
+      checkpoint.hidden.size() !=
+          static_cast<size_t>(
+              checkpoint.position - checkpoint.caches[1].position) *
+              row_bytes_) {
+    return batching::CheckpointError{"incompatible checkpoint"};
+  }
+  if (sessions_.size() >= static_cast<size_t>(max_sessions_) ||
+      next_session_ == std::numeric_limits<SessionId>::max()) {
+    return batching::CheckpointError{"checkpoint exceeds session capacity"};
+  }
+  auto target = target_cache->import_from_cpu(checkpoint.caches[0], upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&target))
+    return *error;
+  batching::SequenceGuard target_guard(
+      target_->cache_control(), std::get<int32_t>(target));
+  const int draft_upto = std::min<int>(upto, checkpoint.caches[1].position);
+  auto draft = draft_cache->import_from_cpu(checkpoint.caches[1], draft_upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&draft))
+    return *error;
+  batching::SequenceGuard draft_guard(*draft_ctl_, std::get<int32_t>(draft));
+  State state{std::get<int32_t>(target), std::get<int32_t>(draft)};
+  state.frontier = upto;
+  state.hidden.assign(
+      checkpoint.hidden.begin(),
+      checkpoint.hidden.begin() +
+          static_cast<size_t>(upto - draft_upto) * row_bytes_);
+  const auto id = next_session_++;
+  sessions_.emplace(id, std::move(state));
+  target_guard.release();
+  draft_guard.release();
+  return id;
+}
+
 void MuseGlimmerCudaDFlashExecutor::set_sampling(
     SessionId session,
     const batching::SamplingParams& params,

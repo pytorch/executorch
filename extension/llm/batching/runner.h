@@ -220,6 +220,11 @@ class ET_EXPERIMENTAL Session {
   // Never wait for the returned future in a callback serviced by this runner.
   std::future<std::optional<Session>> clone_async(Position upto) const;
 
+  // Explicit CPU copy of committed state. The source must be idle and healthy.
+  // No pending prediction is included. Unavailable history is an error.
+  std::future<CheckpointResult<Checkpoint>> export_checkpoint_to_cpu_async(
+      Position upto) const;
+
   // `delta` is the caller-resolved suffix to append. The session tracks its
   // committed position and any pending generated token, so consecutive
   // generations continue where prior executor work left them. Retain this
@@ -294,6 +299,12 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
+
+  // Restore a new idle session at an explicitly chosen retained boundary.
+  // The checkpoint remains owned until the operation settles, including errors.
+  std::future<CheckpointResult<Session>> restore_checkpoint_from_cpu_async(
+      std::shared_ptr<const Checkpoint> checkpoint,
+      Position upto);
 
   // Any thread. Checks metadata compatibility on the initialized engine thread
   // without opening or changing sessions. Returns true for accepted input and

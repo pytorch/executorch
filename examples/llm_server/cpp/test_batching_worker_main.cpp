@@ -125,6 +125,47 @@ class TraceExecutor final : public batching::testing::FakeExecutor {
     return session;
   }
 
+  batching::CheckpointResult<batching::Checkpoint> export_checkpoint_to_cpu(
+      batching::SessionId source,
+      batching::Position upto) override {
+    const auto it = history_.find(source);
+    if (it == history_.end() || upto < 0 ||
+        static_cast<size_t>(upto) > it->second.size()) {
+      return batching::CheckpointError{"unavailable history"};
+    }
+    namespace cache = executorch::extension::llm::cache;
+    cache::LayerCheckpoint layer{0, 1, 2, 0, {}, {}};
+    layer.key.resize(static_cast<size_t>(upto) * sizeof(batching::Token));
+    std::memcpy(layer.key.data(), it->second.data(), layer.key.size());
+    layer.value = layer.key;
+    batching::Checkpoint result;
+    result.format = "test-history-v1";
+    result.position = upto;
+    result.caches.push_back({upto, 6, std::nullopt, {std::move(layer)}});
+    return result;
+  }
+  batching::CheckpointResult<batching::SessionId> restore_checkpoint_from_cpu(
+      const batching::Checkpoint& state,
+      batching::Position upto) override {
+    if (state.format != "test-history-v1" || state.caches.size() != 1 ||
+        state.caches[0].layers.size() != 1 || upto < 0 ||
+        upto > state.position ||
+        state.caches[0].layers[0].key.size() !=
+            static_cast<size_t>(state.position) * sizeof(batching::Token)) {
+      return batching::CheckpointError{"incompatible test checkpoint"};
+    }
+    std::vector<batching::Token> tokens(upto);
+    std::memcpy(
+        tokens.data(),
+        state.caches[0].layers[0].key.data(),
+        tokens.size() * sizeof(batching::Token));
+    auto id = open_session();
+    if (!id)
+      return batching::CheckpointError{"capacity"};
+    history_.at(*id) = std::move(tokens);
+    return *id;
+  }
+
   bool execute(const batching::BatchInput& batch, batching::BatchOutput& output)
       override {
     if (trace_) {

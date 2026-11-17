@@ -590,6 +590,18 @@ class SessionRuntime:
         """Destroy a named session and free its state and capacity slot."""
         return await self._session_op("close_session", session_id)
 
+    async def save_session(self, session_id: str) -> None:
+        """Save after earlier same-session work settles, retaining its lease during I/O."""
+        if not self._native:
+            raise WorkerError("session persistence requires a multiplexed worker")
+        await self._session_op("save_session", session_id, cancel_pending=True)
+
+    async def resume_session(self, session_id: str) -> str:
+        """Load saved state into an unused session and return its public key."""
+        if not self._native:
+            raise WorkerError("session persistence requires a multiplexed worker")
+        return await self._session_op("resume_session", session_id, cancel_pending=True)
+
     def _own_task(self, task):
         self._native_tasks.add(task)
 
@@ -656,7 +668,9 @@ class SessionRuntime:
                     await lease.__aexit__(None, None, None)
                 self._release_admission(operation)
 
-    async def _session_op(self, method: str, session_id: str):
+    async def _session_op(
+        self, method: str, session_id: str, *, cancel_pending: bool = False
+    ):
         op = getattr(self._worker, method, None)
         if op is None:
             return
@@ -668,7 +682,14 @@ class SessionRuntime:
                 if self._native
                 else loop.run_in_executor(self._executor, op, session_id)
             )
-            return await asyncio.shield(operation.future)
+            try:
+                return await asyncio.shield(operation.future)
+            except asyncio.CancelledError:
+                if cancel_pending:
+                    # Persistence owns settlement once started, but can still
+                    # cancel while waiting for its client-side transfer lock.
+                    operation.future.cancel()
+                raise
 
     def stop(self) -> bool:
         """Legacy stop helper; multiplexed callers must cancel their Generation."""

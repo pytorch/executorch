@@ -63,6 +63,7 @@ struct MuseGlimmerMLXExecutor::DFlash {
   const aten::ScalarType activation_dtype;
   std::unique_ptr<cache::InstallGuard> guard;
   cache::BatchControl* ctl = nullptr;
+  cache::CheckpointControl* checkpoint_ctl = nullptr;
   int block = 0, mask = 0, hidden = 0, context = 0, max_owners = 0;
   size_t row_bytes() const {
     return static_cast<size_t>(hidden) * runtime::elementSize(activation_dtype);
@@ -78,6 +79,7 @@ MuseGlimmerMLXExecutor::MuseGlimmerMLXExecutor(
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
+      checkpoint_ctl_(cache->as<cache::CheckpointControl>()),
       spec_(std::move(spec)),
       embeddings_(std::make_unique<MuseGlimmerModelEmbeddings>(
           spec_,
@@ -313,6 +315,7 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
       dflash = std::make_unique<DFlash>(dtype);
       dflash->guard = std::make_unique<cache::InstallGuard>(dcache);
       dflash->ctl = dctl;
+      dflash->checkpoint_ctl = dcache->as<cache::CheckpointControl>();
       dflash->block = static_cast<int>(block);
       dflash->mask = static_cast<int>(*mask);
       dflash->hidden = static_cast<int>(h);
@@ -514,6 +517,110 @@ std::optional<batching::SessionId> MuseGlimmerMLXExecutor::clone(
     return std::nullopt;
   }
 #endif
+}
+
+batching::CheckpointResult<batching::Checkpoint>
+MuseGlimmerMLXExecutor::export_checkpoint_to_cpu(
+    batching::SessionId source,
+    batching::Position upto) {
+  const auto it = sessions_.find(source);
+  if (!initialized_ || it == sessions_.end() || !checkpoint_ctl_ || upto < 0 ||
+      upto > ctl_->pos(it->second.seq_id)) {
+    return batching::CheckpointError{"invalid checkpoint source or position"};
+  }
+  auto target = checkpoint_ctl_->export_to_cpu(it->second.seq_id, upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&target)) {
+    return *error;
+  }
+  batching::Checkpoint result;
+  result.format = "muse-glimmer-mlx-v1";
+  result.position = upto;
+  result.caches.push_back(
+      std::get<cache::SequenceCheckpoint>(std::move(target)));
+  if (dflash_) {
+    if (!dflash_->checkpoint_ctl) {
+      return batching::CheckpointError{
+          "draft cache does not support checkpoints"};
+    }
+    const int draft_upto =
+        std::min<int>(upto, dflash_->ctl->pos(it->second.draft_id));
+    auto draft =
+        dflash_->checkpoint_ctl->export_to_cpu(it->second.draft_id, draft_upto);
+    if (auto* error = std::get_if<cache::CheckpointError>(&draft)) {
+      return *error;
+    }
+    result.caches.push_back(
+        std::get<cache::SequenceCheckpoint>(std::move(draft)));
+    result.hidden_row_bytes = dflash_->row_bytes();
+    const size_t bytes =
+        static_cast<size_t>(upto - draft_upto) * result.hidden_row_bytes;
+    if (bytes > it->second.hidden.size()) {
+      return batching::CheckpointError{"incomplete draft continuation state"};
+    }
+    result.hidden.assign(
+        it->second.hidden.begin(), it->second.hidden.begin() + bytes);
+  }
+  return result;
+}
+
+batching::CheckpointResult<batching::SessionId>
+MuseGlimmerMLXExecutor::restore_checkpoint_from_cpu(
+    const batching::Checkpoint& checkpoint,
+    batching::Position upto) {
+  if (!initialized_ || !checkpoint_ctl_ ||
+      checkpoint.format != "muse-glimmer-mlx-v1" ||
+      checkpoint.caches.size() != (dflash_ ? 2u : 1u) ||
+      checkpoint.position != checkpoint.caches.front().position || upto < 0 ||
+      upto > checkpoint.position || upto > spec_->max_context_length ||
+      (!dflash_ &&
+       (!checkpoint.hidden.empty() || checkpoint.hidden_row_bytes))) {
+    return batching::CheckpointError{"incompatible checkpoint"};
+  }
+  if (!next_session_ ||
+      sessions_.size() >= static_cast<size_t>(max_sessions_)) {
+    return batching::CheckpointError{"checkpoint exceeds session capacity"};
+  }
+  const int draft_position = dflash_ ? checkpoint.caches[1].position : 0;
+  if (dflash_ &&
+      (!dflash_->checkpoint_ctl || draft_position < 0 ||
+       draft_position > checkpoint.position ||
+       checkpoint.hidden_row_bytes != dflash_->row_bytes() ||
+       checkpoint.hidden.size() !=
+           static_cast<size_t>(checkpoint.position - draft_position) *
+               dflash_->row_bytes())) {
+    return batching::CheckpointError{"incompatible draft continuation state"};
+  }
+  auto target =
+      checkpoint_ctl_->import_from_cpu(checkpoint.caches.front(), upto);
+  if (auto* error = std::get_if<cache::CheckpointError>(&target)) {
+    return *error;
+  }
+  const auto target_id = std::get<int32_t>(target);
+  batching::SequenceGuard target_guard(*ctl_, target_id);
+  SessionState state{target_id, std::nullopt};
+  if (dflash_) {
+    const int draft_upto = std::min<int>(upto, draft_position);
+    auto draft = dflash_->checkpoint_ctl->import_from_cpu(
+        checkpoint.caches[1], draft_upto);
+    if (auto* error = std::get_if<cache::CheckpointError>(&draft)) {
+      return *error;
+    }
+    state.draft_id = std::get<int32_t>(draft);
+    batching::SequenceGuard draft_guard(*dflash_->ctl, state.draft_id);
+    state.hidden.assign(
+        checkpoint.hidden.begin(),
+        checkpoint.hidden.begin() +
+            static_cast<size_t>(upto - draft_upto) * dflash_->row_bytes());
+    const auto session = next_session_++;
+    sessions_.emplace(session, std::move(state));
+    draft_guard.release();
+    target_guard.release();
+    return session;
+  }
+  const auto session = next_session_++;
+  sessions_.emplace(session, std::move(state));
+  target_guard.release();
+  return session;
 }
 
 void MuseGlimmerMLXExecutor::set_sampling(

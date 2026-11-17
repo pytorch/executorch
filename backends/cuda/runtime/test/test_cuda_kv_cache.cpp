@@ -12,6 +12,7 @@
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/runtime/core/evalue.h>
 #include <gtest/gtest.h>
 #include <array>
@@ -1544,6 +1545,50 @@ class CudaCellCacheTest : public CudaKVCacheTest {
 
 } // namespace
 
+TEST_F(CudaCellCacheTest, CheckpointCopiesLogicalRowsAndRestoresIndependently) {
+  auto owner = make(kCells);
+  auto* control = owner->as<cache::BatchControl>();
+  auto* kv = owner->as<cu::CudaKVCache>();
+  auto* transfer = owner->as<cache::CheckpointControl>();
+  ASSERT_NE(transfer, nullptr);
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = control->seq_new().value();
+  const auto b = control->seq_new().value();
+  ASSERT_EQ(step(*owner, handle, {a, b, a, b, a}), Error::Ok);
+  for (const char* name : {"f_k", "f_v", "r_k", "r_v"}) {
+    const auto& binding = fake.bound.at(name);
+    size_t bytes = 2;
+    for (auto extent : binding.sizes)
+      bytes *= extent;
+    std::vector<uint8_t> data(bytes);
+    for (size_t i = 0; i < bytes; ++i)
+      data[i] = static_cast<uint8_t>(i * 17 + i / (kHeads * kDim * 2) + 3);
+    ASSERT_EQ(
+        cudaMemcpy(binding.data, data.data(), bytes, cudaMemcpyHostToDevice),
+        cudaSuccess);
+  }
+  auto result = transfer->export_to_cpu(a, 3);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(result));
+  auto checkpoint = std::get<cache::SequenceCheckpoint>(std::move(result));
+  auto restored = transfer->import_from_cpu(checkpoint, 3);
+  ASSERT_TRUE(std::holds_alternative<int32_t>(restored));
+  const auto id = std::get<int32_t>(restored);
+  auto again = transfer->export_to_cpu(id, 3);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(again));
+  const auto& copy = std::get<cache::SequenceCheckpoint>(again);
+  ASSERT_EQ(copy.layers.size(), checkpoint.layers.size());
+  for (size_t i = 0; i < copy.layers.size(); ++i) {
+    EXPECT_EQ(copy.layers[i].begin, checkpoint.layers[i].begin);
+    EXPECT_EQ(copy.layers[i].key, checkpoint.layers[i].key);
+    EXPECT_EQ(copy.layers[i].value, checkpoint.layers[i].value);
+  }
+  EXPECT_EQ(control->pos(a), 3);
+  EXPECT_EQ(control->pos(b), 2);
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaCellCacheTest, InterleavedSequencesWritePlacementAndMasks) {
   auto cache_ptr = make();
   ASSERT_NE(cache_ptr, nullptr);
@@ -2277,6 +2322,161 @@ class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
 };
 
 } // namespace
+
+TEST_F(
+    CudaBatchedSequenceCacheTest,
+    CheckpointCopiesLogicalRowsAndRestoresIndependently) {
+  auto owner = make(kCapacity);
+  auto* control = owner->as<cache::BatchControl>();
+  auto* kv = owner->as<cu::CudaKVCache>();
+  auto* transfer = owner->as<cache::CheckpointControl>();
+  ASSERT_NE(transfer, nullptr);
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = control->seq_new().value();
+  const auto b = control->seq_new().value();
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  for (const char* name : {"f_k", "f_v", "r_k", "r_v"}) {
+    const auto& binding = fake.bound.at(name);
+    size_t bytes = 2;
+    for (auto extent : binding.sizes)
+      bytes *= extent;
+    std::vector<uint8_t> data(bytes);
+    for (size_t i = 0; i < bytes; ++i)
+      data[i] = static_cast<uint8_t>(i * 17 + i / (kHeads * kDim * 2) + 3);
+    ASSERT_EQ(
+        cudaMemcpy(binding.data, data.data(), bytes, cudaMemcpyHostToDevice),
+        cudaSuccess);
+  }
+  auto result = transfer->export_to_cpu(a, 15);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(result));
+  auto checkpoint = std::get<cache::SequenceCheckpoint>(std::move(result));
+  auto restored = transfer->import_from_cpu(checkpoint, 15);
+  ASSERT_TRUE(std::holds_alternative<int32_t>(restored));
+  const auto id = std::get<int32_t>(restored);
+  auto again = transfer->export_to_cpu(id, 15);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(again));
+  const auto& copy = std::get<cache::SequenceCheckpoint>(again);
+  ASSERT_EQ(copy.layers.size(), checkpoint.layers.size());
+  for (size_t i = 0; i < copy.layers.size(); ++i) {
+    EXPECT_EQ(copy.layers[i].begin, checkpoint.layers[i].begin);
+    EXPECT_EQ(copy.layers[i].key, checkpoint.layers[i].key);
+    EXPECT_EQ(copy.layers[i].value, checkpoint.layers[i].value);
+  }
+  EXPECT_EQ(control->pos(a), 16);
+  EXPECT_EQ(control->pos(b), 0);
+  EXPECT_FALSE(control->rewind(id, 7));
+  auto rejected = transfer->import_from_cpu(checkpoint, 7);
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(rejected));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, DFlashCheckpointNeedsFullWindowHistory) {
+  auto owner = make(kCapacity, 2);
+  auto* control = owner->as<cache::BatchControl>();
+  auto* kv = owner->as<cu::CudaKVCache>();
+  auto* transfer = owner->as<cache::CheckpointControl>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = control->seq_new().value();
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, a)), Error::Ok);
+  ASSERT_EQ(control->pos(a), 12);
+  for (const char* name : {"f_k", "f_v", "r_k", "r_v"}) {
+    const auto& binding = fake.bound.at(name);
+    size_t bytes = 2;
+    for (auto extent : binding.sizes)
+      bytes *= extent;
+    ASSERT_EQ(cudaMemset(binding.data, 0, bytes), cudaSuccess);
+  }
+  auto result = transfer->export_to_cpu(a, 12);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(result));
+  const auto& checkpoint = std::get<cache::SequenceCheckpoint>(result);
+  ASSERT_EQ(checkpoint.layers[1].begin, 5);
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+      transfer->export_to_cpu(a, 6)));
+  EXPECT_TRUE(std::holds_alternative<cache::CheckpointError>(
+      transfer->import_from_cpu(checkpoint, 6)));
+  auto restored = transfer->import_from_cpu(checkpoint, 7);
+  ASSERT_TRUE(std::holds_alternative<int32_t>(restored));
+  const auto id = std::get<int32_t>(restored);
+  EXPECT_EQ(control->pos(id), 7);
+  EXPECT_FALSE(control->rewind(id, 6));
+  EXPECT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(
+      transfer->export_to_cpu(id, 7)));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, PartialRestoreClearsUnwrittenRingRows) {
+  auto owner = make(kCapacity);
+  auto* control = owner->as<cache::BatchControl>();
+  auto* kv = owner->as<cu::CudaKVCache>();
+  auto* transfer = owner->as<cache::CheckpointControl>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto source = control->seq_new().value();
+  const auto bystander = control->seq_new().value();
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, source)), Error::Ok);
+  ASSERT_EQ(step(*owner, handle, std::vector<int32_t>(8, source)), Error::Ok);
+  for (const char* name : {"f_k", "f_v", "r_k", "r_v"}) {
+    const auto& binding = fake.bound.at(name);
+    size_t bytes = 2;
+    for (auto extent : binding.sizes)
+      bytes *= extent;
+    ASSERT_EQ(cudaMemset(binding.data, 0x3f, bytes), cudaSuccess);
+  }
+  auto result = transfer->export_to_cpu(source, 15);
+  ASSERT_TRUE(std::holds_alternative<cache::SequenceCheckpoint>(result));
+  const auto& checkpoint = std::get<cache::SequenceCheckpoint>(result);
+  ASSERT_EQ(checkpoint.layers[1].begin, 7);
+  constexpr size_t row_bytes = kHeads * kDim * 2;
+  constexpr int destination = 2;
+  for (const int upto : {8, 15}) {
+    for (const char* name : {"r_k", "r_v"}) {
+      auto* base = static_cast<uint8_t*>(fake.bound.at(name).data);
+      ASSERT_EQ(
+          cudaMemset2D(
+              base + destination * row_bytes,
+              row_bytes * kColumns,
+              0xff,
+              row_bytes,
+              kRingRows),
+          cudaSuccess);
+    }
+    auto restored = transfer->import_from_cpu(checkpoint, upto);
+    ASSERT_TRUE(std::holds_alternative<int32_t>(restored));
+    ASSERT_EQ(std::get<int32_t>(restored), destination);
+    for (const char* name : {"r_k", "r_v"}) {
+      std::vector<uint8_t> bytes(kRingRows * kColumns * row_bytes);
+      ASSERT_EQ(
+          cudaMemcpy(
+              bytes.data(),
+              fake.bound.at(name).data,
+              bytes.size(),
+              cudaMemcpyDeviceToHost),
+          cudaSuccess);
+      for (int row = 0; row < kRingRows; ++row) {
+        bool written = false;
+        for (int position = 7; position < upto; ++position)
+          written |= position % kRingRows == row;
+        for (int column = 0; column < kColumns; ++column) {
+          const uint8_t expected = column != destination || written ? 0x3f : 0;
+          const size_t start = (row * kColumns + column) * row_bytes;
+          for (size_t byte = 0; byte < row_bytes; ++byte)
+            EXPECT_EQ(bytes[start + byte], expected);
+        }
+      }
+    }
+    EXPECT_EQ(control->pos(source), 16);
+    EXPECT_EQ(control->pos(bystander), 0);
+    ASSERT_TRUE(control->seq_rm(destination));
+  }
+  kv->forget_handle(&handle);
+}
 
 TEST_F(CudaBatchedSequenceCacheTest, EachSequenceWritesItsOwnColumn) {
   auto cache_ptr = make();

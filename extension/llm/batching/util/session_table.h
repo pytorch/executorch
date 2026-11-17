@@ -21,6 +21,7 @@
 
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
@@ -90,6 +91,14 @@ class ET_EXPERIMENTAL SessionTable {
   void close(SessionId session);
   // A new session holding the source's [0, upto).
   std::optional<SessionId> clone(SessionId source, Position upto);
+  cache::CheckpointResult<cache::SequenceCheckpoint> export_checkpoint(
+      cache::CheckpointControl& cache,
+      SessionId source,
+      Position upto);
+  cache::CheckpointResult<SessionId> restore_checkpoint(
+      cache::CheckpointControl& cache,
+      const cache::SequenceCheckpoint& checkpoint,
+      Position upto);
   void set_sampling(
       SessionId session,
       const SamplingParams& params,

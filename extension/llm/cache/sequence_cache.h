@@ -168,6 +168,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
         max_write_(other.max_write_),
         length_(other.length_),
         written_(other.written_),
+        restored_floor_(other.restored_floor_),
         specs_(other.specs_),
         layer_to_policy_(other.layer_to_policy_) {
     policies_.reserve(specs_.size());
@@ -188,11 +189,24 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   void clear() override {
     length_ = 0;
     written_ = 0;
+    restored_floor_ = 0;
   }
   // Positions are dense from 0, so this is both what the sequence holds and
   // where its next token goes.
   int length() const {
     return length_;
+  }
+  int written_length() const {
+    return written_;
+  }
+  // Called on a new planner after the byte layer restores its retained rows.
+  bool restore_checkpoint_position(int position, int retained_floor) {
+    if (length_ || written_ || position < 0 || position > capacity_ ||
+        retained_floor < 0 || retained_floor > position)
+      return false;
+    length_ = written_ = position;
+    restored_floor_ = retained_floor;
+    return true;
   }
   // Whether rewind(position) would be accepted, without moving the length.
   bool can_rewind(int position) const {
@@ -202,7 +216,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     // An evicting layer physically drops everything older than it retains, so
     // the target must be no older than the most-restrictive layer retains,
     // measured from what was written rather than from the current length.
-    int floor = 0;
+    int floor = restored_floor_;
     for (const auto& p : policies_) {
       floor = std::max(floor, p->retained_from(written_));
     }
@@ -277,6 +291,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   // How far the byte layer has been written; a rewind lowers the length but
   // not this.
   int written_ = 0;
+  int restored_floor_ = 0;
   std::vector<LayerPolicy> specs_; // parallel to policies_, for dedup
   std::vector<std::unique_ptr<LayoutPolicy>> policies_;
   std::vector<int> layer_to_policy_;

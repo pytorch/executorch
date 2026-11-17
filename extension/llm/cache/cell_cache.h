@@ -97,6 +97,12 @@ class ET_EXPERIMENTAL CellCache : public Cache,
       override;
 
  protected:
+  // Byte-layer checkpoint support. New cells are unpublished until their
+  // owner has restored all layers; seq_rm rolls back a failed import.
+  std::optional<std::vector<int32_t>> sequence_cells(int32_t id, int upto)
+      const;
+  std::optional<int32_t> reserve_sequence(int upto);
+
   void* face(FaceId id) override {
     return expose<BatchControl, CellStepper>(this, id);
   }
