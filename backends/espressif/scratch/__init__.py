@@ -24,9 +24,10 @@ def get_scratch_queries(
             EspTarget.ESP32P4: "riscv_pie",
             EspTarget.ESP32S31: "riscv_pie",
         }.get(target, "generic")
+    module_name = f"executorch.backends.espressif._esp_nn_scratch_{profile}"
     try:
-        return importlib.import_module(
-            f"executorch.backends.espressif._esp_nn_scratch_{profile}"
-        )
-    except ImportError:
-        return None
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name == module_name:
+            return None
+        raise

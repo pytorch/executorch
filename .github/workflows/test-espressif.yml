@@ -27,6 +27,10 @@ on:
       - install_requirements.py
       - torch_pin.py
       - install_utils.py
+      # Build and package the optional ESP-NN scratch bindings.
+      - setup.py
+      - CMakeLists.txt
+      - tools/cmake/preset/default.cmake
       # Exported by the consumer test.
       - examples/models/mlperf_tiny/**
       - devtools/bundled_program/**

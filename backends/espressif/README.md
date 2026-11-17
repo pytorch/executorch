@@ -50,7 +50,10 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON" pip install -e . --no-build-is
 
 The host libraries retain only sizing code. CMake fetches the pinned ESP-NN
 sources; `ESP_NN_LOCAL_PATH` can reuse an existing 1.5.0 checkout or ESP-IDF
-managed component.
+managed component. The host build uses GNU-style compiler section flags and
+linker garbage collection (`--gc-sections`, or `-dead_strip` on Apple platforms);
+MSVC-style toolchains fail at configuration. Downloaded sources are checked
+against the pinned SHA-256, and a local source tree must declare version 1.5.0.
 
 Select the device's `EspTarget` and `EspKernelMode` to match its ESP-NN build:
 
@@ -69,15 +72,26 @@ if queries is not None:
     )
 ```
 
-Dimensions use `(width, height, channels)`; stride and padding use
-`(width, height)`. Convolution queries use unit dilation. Sizes are in bytes,
-including zero for kernels that need no scratch. `get_scratch_queries` returns
-`None` when the selected binding is unavailable.
+Convolution queries use `(width, height, channels)` for dimensions,
+`(width, height)` for stride and padding, and unit dilation. Dimensions,
+strides, and depthwise channel multipliers must be in `[1, 65535]`; padding must be in
+`[0, 65535]`. Conservative bounds on padded tensors, aligned filters, staging,
+and coordinates reject shapes that could overflow the vendor's int32 arithmetic
+before calling the sizing query. These bounds also apply to the fully connected
+query's `row_len` and `out_ch`. Softmax and mean dimensions, and fully connected
+`batches`, must be positive int32 values; softmax width must also fit an int32
+byte count for four bytes per element. Invalid bounds raise `ValueError`.
+Sizes are in bytes, including zero for kernels that need no scratch. The vendor
+fully connected query also returns zero for batches above 65535.
+`get_scratch_queries` returns `None` only when the selected module is absent;
+errors loading an installed binding propagate to the caller.
 
 Optimized mode selects S3 queries for ESP32-S3, shared PIE queries for
 ESP32-P4/ESP32-S31, and generic queries for other `EspTarget` values. ANSI mode
 selects ANSI queries for every chip. Query results are checked on the host for
 all configurations; device execution tests currently cover ESP32-S3.
+CI sets `EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1` when running `test_scratch.py`, so
+all four profiles and all seven query families must be available and pass.
 
 ## Contents
 

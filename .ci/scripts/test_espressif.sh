@@ -188,7 +188,8 @@ if [[ "${espnn_kernels}" == optimized ]]; then
         -DESP_NN_LOCAL_PATH="${PWD}/examples/espressif/project/managed_components/espressif__esp-nn" \
         -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${esp_python_dir}"
     logged "scratch-build.log" cmake --build "${build_dir}/scratch-sizing"
-    logged "scratch-tests.log" python -m pytest -q backends/espressif/test/test_scratch.py
+    logged "scratch-tests.log" env EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1 \
+        python -m pytest -q backends/espressif/test/test_scratch.py
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
         -x -v --tb=short backends/espressif/test/ops -k implementation \
