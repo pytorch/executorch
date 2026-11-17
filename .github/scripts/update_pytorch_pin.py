@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 import base64
 import json
@@ -165,15 +169,17 @@ def get_latest_torchao_nightly(max_date):
 def get_torchao_commit_hash(nightly_version):
     date = nightly_version.rsplit(".dev", 1)[-1]
     formatted_date = parse_nightly_version(f"dev{date}")
+    # Nightly selection already checks the required wheels. Other jobs in
+    # the same workflow may fail without invalidating those wheels.
     url = (
         "https://api.github.com/repos/pytorch/ao/actions/workflows/"  # @lint-ignore
-        "build_wheels_linux_x86.yml/runs?event=schedule&status=success&"
+        "build_wheels_linux_x86.yml/runs?event=schedule&"
         f"created={formatted_date}&per_page=100"
     )
     runs = get_json(url).get("workflow_runs", [])
     if not runs:
         raise ValueError(
-            f"Could not find the successful TorchAO wheel build for {nightly_version}"
+            f"Could not find the TorchAO wheel build for {nightly_version}"
         )
     return runs[0]["head_sha"]
 
