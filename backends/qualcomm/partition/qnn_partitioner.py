@@ -6,7 +6,6 @@
 import copy
 import functools
 import logging
-import operator
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -64,6 +63,7 @@ from .common_defs import (
 )
 from .utils import (
     filter_fn,
+    find_nodes_left_on_cpu,
     generate_qnn_executorch_option,
     get_skip_decomp_table,
     has_data_dependent_shape,
@@ -478,67 +478,19 @@ class QnnPartitioner(Partitioner):
         """
 
         # Partitioning here would take time quadratic in the graph size, so
-        # only the ops that _may_run_on_qnn rules out count as CPU ops. A QNN
-        # op that reads no runtime value is left on CPU when:
-        # - it reaches a QNN op through a CPU op before any QNN op that reads
-        #   a runtime value, since the partitioner may split it off to avoid a
-        #   cycle;
-        # - the only QNN ops that read a runtime value are getitems of CPU
-        #   ops, since the partitioner moves those getitems out of their
-        #   partitions;
-        # - such a getitem follows a QNN op, and no chain of QNN ops links the
-        #   op to a QNN op that reads a runtime value.
+        # only the ops that _may_run_on_qnn rules out count as CPU ops.
         # Skips are left out, since a skip that changed what is decomposed
         # would rename later nodes, so a skip_node_id_set entry could name a
         # different node.
-        # Ops that QNN rejects or removes later are not known here either. So
-        # an op cut off only by them still fails as before.
         # An op can also be decomposed although a partition that reads a
         # runtime value takes it.
         nodes = list(ep.graph.nodes)
-        qnn = set(filter(QnnPartitioner._may_run_on_qnn, nodes))
         constant_inputs = QnnPartitioner._constant_inputs(ep)
-        runtime, after_qnn = set(), set()
-        for node in nodes:
-            if node in qnn or not after_qnn.isdisjoint(node.all_input_nodes):
-                after_qnn.add(node)
-            if node in qnn and any(
-                (
-                    arg in runtime
-                    if arg in qnn
-                    else QnnPartitioner._is_runtime_input(arg, constant_inputs)
-                )
-                for arg in node.all_input_nodes
-            ):
-                runtime.add(node)
-        to_qnn, before_cpu = set(), set()
-        for node in reversed(nodes):
-            if node in qnn or not to_qnn.isdisjoint(node.users):
-                to_qnn.add(node)
-            if any(
-                (user in before_cpu and user not in runtime)
-                or (user in to_qnn and user not in qnn)
-                for user in node.users
-            ):
-                before_cpu.add(node)
-        left_on_cpu = (qnn - runtime) & before_cpu
-        cpu_getitems = {
-            node
-            for node in runtime
-            if node.target is operator.getitem and node.args[0] not in qnn
-        }
-        if runtime <= cpu_getitems:
-            return qnn - runtime
-        if not any(node.args[0] in after_qnn for node in cpu_getitems):
-            return left_on_cpu
-        linked, stack = set(runtime), list(runtime)
-        while stack:
-            node = stack.pop()
-            for neighbor in (*node.all_input_nodes, *node.users):
-                if neighbor in qnn and neighbor not in linked:
-                    linked.add(neighbor)
-                    stack.append(neighbor)
-        return left_on_cpu | (qnn - runtime - linked)
+        return find_nodes_left_on_cpu(
+            nodes,
+            set(filter(QnnPartitioner._may_run_on_qnn, nodes)),
+            lambda arg: QnnPartitioner._is_runtime_input(arg, constant_inputs),
+        )
 
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
@@ -582,7 +534,7 @@ class QnnPartitioner(Partitioner):
         if not self.skip_mutable_buffer:
             logger.info(
                 "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
-                "except integer buffers, which stay on CPU, "
+                "except buffers that are not floating point, which stay on CPU, "
                 "so if your model contains mutable buffer, "
                 "then you can get the better performance with skip_mutable_buffer=False. "
                 "If you encounter accuracy issue during the runtime, "

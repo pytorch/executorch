@@ -9,12 +9,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     dq_ops,
     QNN_TENSOR_TYPE_MAP,
 )
-from executorch.backends.qualcomm.builders.node_visitor_manager import (
-    _node_visitor_dict,
-)
 from executorch.backends.qualcomm.partition.utils import (
+    find_nodes_left_on_cpu,
     generate_qnn_executorch_option,
-    must_stay_on_cpu,
+    may_be_delegated,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
@@ -103,19 +101,25 @@ class RecomposeRmsNorm(ExportPass):
         self.edge_program = edge_program
         self.skip_node_id_set = skip_node_id_set or set()
         self.skip_node_op_set = skip_node_op_set or set()
-        self.may_be_htp, self.htp_fp16 = True, False
+        self.may_be_htp, self.htp_fp16, self.op_package_ops = True, False, set()
         if compiler_specs is not None:
             options = flatbuffer_to_option(
                 generate_qnn_executorch_option(compiler_specs)
-            ).backend_options
+            )
+            backend_options = options.backend_options
             self.may_be_htp = (
-                options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+                backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
             )
             self.htp_fp16 = (
                 self.may_be_htp
-                and options.htp_options is not None
-                and options.htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
+                and backend_options.htp_options is not None
+                and backend_options.htp_options.precision
+                == QnnExecuTorchHtpPrecision.kHtpFp16
             )
+            self.op_package_ops = {
+                info.custom_op_name
+                for info in options.op_package_options.op_package_infos
+            }
         self.rms_norm_target = exir_ops.edge.aten.rms_norm.default
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,
@@ -206,11 +210,11 @@ class RecomposeRmsNorm(ExportPass):
         The tensor to rebuild `output_node` on as an rms_norm in `dtype`, or
         None if there is none. rms_norm returns its input's dtype, so the input
         has to be in `dtype`. Unless the norm is about to be quantized, QNN also
-        needs a type for it, and for HTP the norm has to meet a runtime value,
-        in its input or in a delegated op its result feeds: the pass cannot see
-        the partitions, and HTP drops one that reads only constants. And the
-        partitioner must not skip a node the rebuild removes. These last two
-        hold because rms_norm has no CPU kernel to fall back on.
+        needs a type for it, and for HTP the norm must not be in a partition
+        that reads only constants, which HTP drops. The pass cannot see the
+        partitions, so it estimates them. And the partitioner must not skip a
+        node the rebuild removes. These last two hold because rms_norm has no
+        CPU kernel to fall back on.
         """
         if not self._squares_the_scaled_tensor(pattern, dtype):
             return None
@@ -226,11 +230,7 @@ class RecomposeRmsNorm(ExportPass):
                 not self.quantization_capture
                 and (
                     dtype not in QNN_TENSOR_TYPE_MAP
-                    or (
-                        self.may_be_htp
-                        and input_node not in self.runtime_nodes
-                        and output_node not in self.feeds_runtime_nodes
-                    )
+                    or (self.may_be_htp and output_node in self.left_on_cpu)
                 )
             )
             or self._is_skipped(input_node, output_node, gamma_node)
@@ -238,44 +238,32 @@ class RecomposeRmsNorm(ExportPass):
             return None
         return input_node
 
-    def _find_runtime_nodes(self, graph):
+    def _find_nodes_left_on_cpu(self, graph):
         # A captured graph may come without the program, and then every
         # placeholder counts.
         runtime_inputs = (
             None if self.edge_program is None else get_runtime_inputs(self.edge_program)
         )
-        self.runtime_nodes = set()
-        for node in graph.nodes:
-            if (
-                node.op == "placeholder"
-                and (runtime_inputs is None or node.name in runtime_inputs)
-            ) or (
-                node.op == "call_function"
-                and any(arg in self.runtime_nodes for arg in node.all_input_nodes)
-            ):
-                self.runtime_nodes.add(node)
-        # Only a user that joins the norm's partition brings the runtime value
-        # into it.
-        self.feeds_runtime_nodes = set()
-        for node in reversed(graph.nodes):
-            if any(
-                (user in self.runtime_nodes or user in self.feeds_runtime_nodes)
-                and self._may_be_delegated(user)
-                for user in node.users
-            ):
-                self.feeds_runtime_nodes.add(node)
-
-    def _may_be_delegated(self, node):
-        """
-        Whether the partitioner may take the node, as far as the pass can tell
-        without QNN's op validation.
-        """
-        return (
-            node.op == "call_function"
-            and getattr(node.target, "__name__", None) in _node_visitor_dict
-            and node.name not in self.skip_node_id_set
-            and node.target.__name__ not in self.skip_node_op_set
-            and not must_stay_on_cpu(node)
+        self.runtime_placeholders = {
+            node
+            for node in graph.nodes
+            if node.op == "placeholder"
+            and (runtime_inputs is None or node.name in runtime_inputs)
+        }
+        nodes = list(graph.nodes)
+        self.left_on_cpu = find_nodes_left_on_cpu(
+            nodes,
+            {
+                node
+                for node in nodes
+                if may_be_delegated(
+                    node,
+                    self.skip_node_id_set,
+                    self.skip_node_op_set,
+                    self.op_package_ops,
+                )
+            },
+            lambda arg: arg.op == "call_function" or arg in self.runtime_placeholders,
         )
 
     def _get_norm_input(self, pattern, gamma_node):
@@ -304,7 +292,7 @@ class RecomposeRmsNorm(ExportPass):
         graph = graph_module.graph
         # _is_skipped counts users, so dead ones must not be left over.
         graph.eliminate_dead_code()
-        self._find_runtime_nodes(graph)
+        self._find_nodes_left_on_cpu(graph)
 
         # Root Mean Square normalization math equivalent implementation
         patterns = [
@@ -333,7 +321,10 @@ class RecomposeRmsNorm(ExportPass):
                 for arg in last_mul_node.args:
                     if (
                         _is_get_attr(arg)
-                        or (_is_placeholder(arg) and arg not in self.runtime_nodes)
+                        or (
+                            _is_placeholder(arg)
+                            and arg not in self.runtime_placeholders
+                        )
                         or _is_dq(arg)
                     ):
                         gamma_node = arg
@@ -392,9 +383,6 @@ class RecomposeRmsNorm(ExportPass):
                     )
                 output_node.replace_all_uses_with(rms_node)
                 rms_node.meta = output_node.meta
-                # A later norm may take this one as its input.
-                if input_node in self.runtime_nodes:
-                    self.runtime_nodes.add(rms_node)
                 # Erased right away, so a node another norm shares counts its
                 # users right in _is_skipped.
                 graph.eliminate_dead_code()
