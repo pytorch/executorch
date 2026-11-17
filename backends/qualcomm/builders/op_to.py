@@ -109,6 +109,14 @@ class To(NodeVisitor):
         )
         node_input_tensors = [input_tensor_wrapper]
 
+        # Cast into a quantized tensor copies the raw integer, and HTP rejects
+        # Convert from an integer, so cast to fp32, then quantize.
+        int_to_quantized = (
+            node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta["val"].is_floating_point()
+        )
+
         # if the output / input dtype is int64, we should cast it to int32 first
         # since int32 is the only source that can be cast into int64
         # this is mainly for validation purpose, redundant cast ops will be fused
@@ -116,8 +124,8 @@ class To(NodeVisitor):
         # HTP casts uint8 to float32 as if the input were bool, while uint8 to
         # int32 and int32 to float32 are right, so on HTP a plain uint8 to
         # float32 cast goes through int32 too, as does float64, which is built
-        # as float32. Here the step is needed for the values, and nothing fuses
-        # it away.
+        # as float32, and a uint8 cast into a quantized tensor. Here the step is
+        # needed for the values, and nothing fuses it away.
         ops = []
         if (
             (
@@ -130,8 +138,13 @@ class To(NodeVisitor):
             )
             or (
                 input_node.meta["val"].dtype == torch.uint8
-                and node.meta["val"].dtype in (torch.float32, torch.float64)
-                and not node.meta.get(QCOM_QUANT_ATTRS)
+                and (
+                    int_to_quantized
+                    or (
+                        node.meta["val"].dtype in (torch.float32, torch.float64)
+                        and not node.meta.get(QCOM_QUANT_ATTRS)
+                    )
+                )
                 and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
             )
         ):
@@ -168,13 +181,7 @@ class To(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        # Cast copies an integer's raw value into a quantized tensor, and the HTP
-        # rejects Convert there: cast to float, then quantize.
-        if (
-            node.meta.get(QCOM_QUANT_ATTRS)
-            and not input_node.meta.get(QCOM_QUANT_ATTRS)
-            and not input_node.meta["val"].is_floating_point()
-        ):
+        if int_to_quantized:
             float_tensor_wrapper = self.define_custom_tensor_wrapper(
                 node_name=node.name + "_float",
                 tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
