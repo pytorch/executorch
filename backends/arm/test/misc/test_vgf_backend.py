@@ -3,12 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from unittest import mock
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
 
@@ -38,7 +40,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.exported_program import ExportedProgram
-from torch.fx import GraphModule
+from torch.fx import Graph, GraphModule
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -78,6 +80,52 @@ def _set_up_fake_vgf_preprocess(monkeypatch) -> None:
 
 def _fake_exported_program() -> ExportedProgram:
     return cast(ExportedProgram, SimpleNamespace(graph_module=None))
+
+
+def _fake_exported_program_with_tosa_custom(domain_name: str) -> ExportedProgram:
+    graph = Graph()
+    x = graph.placeholder("x")
+    custom = graph.call_function(
+        exir_ops.backend.tosa.CUSTOM.default,
+        args=([x],),
+        kwargs={
+            "operator_name": "llama.custom_sdpa",
+            "domain_name": domain_name,
+            "implementation_attrs": [],
+        },
+    )
+    output = graph.call_function(operator.getitem, args=(custom, 0))
+    graph.output(output)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+    return cast(ExportedProgram, SimpleNamespace(graph_module=graph_module))
+
+
+def _fake_exported_program_with_nested_tosa_custom(
+    domain_name: str,
+) -> ExportedProgram:
+    root_graph = Graph()
+    x = root_graph.placeholder("x")
+    root_graph.output(x)
+    graph_module = GraphModule(torch.nn.Module(), root_graph)
+
+    nested_graph = Graph()
+    nested_x = nested_graph.placeholder("x")
+    custom = nested_graph.call_function(
+        exir_ops.backend.tosa.CUSTOM.default,
+        args=([nested_x],),
+        kwargs={
+            "operator_name": "llama.custom_sdpa",
+            "domain_name": domain_name,
+            "implementation_attrs": [],
+        },
+    )
+    output = nested_graph.call_function(operator.getitem, args=(custom, 0))
+    nested_graph.output(output)
+    graph_module.add_submodule(
+        "cond_true_graph", GraphModule(torch.nn.Module(), nested_graph)
+    )
+
+    return cast(ExportedProgram, SimpleNamespace(graph_module=graph_module))
 
 
 def test_vgf_preprocess_restores_pass_registry(monkeypatch) -> None:
@@ -134,6 +182,60 @@ def test_vgf_preprocess_restores_pass_registry_on_failure(monkeypatch) -> None:
         assert _registry_state() == original_registry
     finally:
         clear_registered_pass_insertions()
+
+
+def test_vgf_preprocess_rejects_unsupported_tosa_custom_domain(monkeypatch) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(
+        return_value=PreprocessResult(processed_bytes=b"should not run")
+    )
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    with pytest.raises(
+        RuntimeError,
+        match="VGF only supports tosa.CUSTOM with domain_name",
+    ):
+        vgf_backend.VgfBackend.preprocess(
+            _fake_exported_program_with_tosa_custom("com.arm.VulkanCustomOp"),
+            VgfCompileSpec()._to_list(),
+        )
+
+    tosa_preprocess.assert_called_once()
+
+
+def test_vgf_preprocess_allows_vulkan_custom_shader_domain(monkeypatch) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(return_value=PreprocessResult(processed_bytes=b"tosa"))
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    result = vgf_backend.VgfBackend.preprocess(
+        _fake_exported_program_with_tosa_custom("com.arm.VulkanCustomShader"),
+        VgfCompileSpec()._to_list(),
+    )
+
+    assert result.processed_bytes == b"vgf"
+    tosa_preprocess.assert_called_once()
+
+
+def test_vgf_preprocess_rejects_unsupported_tosa_custom_domain_in_subgraph(
+    monkeypatch,
+) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(
+        return_value=PreprocessResult(processed_bytes=b"should not run")
+    )
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    with pytest.raises(
+        RuntimeError,
+        match="cond_true_graph",
+    ):
+        vgf_backend.VgfBackend.preprocess(
+            _fake_exported_program_with_nested_tosa_custom("com.arm.VulkanCustomOp"),
+            VgfCompileSpec()._to_list(),
+        )
+
+    tosa_preprocess.assert_called_once()
 
 
 def test_compile_tosa_flatbuffer_does_not_emit_debug_info_by_default(

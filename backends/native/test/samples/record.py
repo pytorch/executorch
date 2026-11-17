@@ -10,11 +10,12 @@ A package holds one method per case and dtype under one quantization scheme,
 and two sample sets over the same inputs: `golden`, the eager outputs, and
 `precise`, the same math in float64 with quantized weights decoded in float32,
 whatever the method's dtype, and activations unquantized, floating outputs
-stored as float32. Weight-only schemes add `golden-int8_act`, the eager outputs
-with the same weights and int8 per-token dynamic activations. A dynamic case
-is exported with its dynamic shapes and recorded as one sample whose calls
-change them. Nothing in it depends on an engine or a device: consumers judge an
-engine by its distance from `precise` relative to eager's.
+stored as float32. Weight-only schemes over a case with an nn.Linear add
+`golden-int8_act`, the eager outputs with the same weights and int8 per-token
+dynamic activations. A dynamic case is exported with its dynamic shapes and
+recorded as one sample whose calls change them. Nothing in it depends on an
+engine or a device: consumers judge an engine by its distance from `precise`
+relative to eager's.
 """
 
 import copy
@@ -61,6 +62,9 @@ def record(
 ) -> None:
     """Writes no package, removing any at `path`, when the scheme fits no case."""
     programs, golden, precise, golden_act = {}, [], [], []
+    act_quant = any(
+        scheme.adds_int8_act(c.model) for c in cases if scheme.fits(c.model)
+    )
     for case in cases:
         if not scheme.fits(case.model):
             logger.info(f"{path.name}: {case.name} does not fit the scheme")
@@ -92,7 +96,7 @@ def record(
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
                     precise_calls.append(Call(name, list(x), ref))
-                    if scheme.weight_only:
+                    if act_quant:
                         with int8_activations(method):
                             act_calls.append(Call(name, list(x), outputs(method(*x))))
             golden += _samples(golden_calls, chained)
@@ -114,7 +118,7 @@ def record(
             source,
         ),
     )
-    if scheme.weight_only:
+    if act_quant:
         write_samples(
             str(path),
             "golden-int8_act",
