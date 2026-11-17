@@ -507,6 +507,7 @@ size_t XNNWeightsCache::look_up(
   const void* unpacked_bias_ptr = cache_key->bias;
   context->last_lookup_seed_mismatch_ = false;
   auto entry = context->unpacked_data_to_name_.find(unpacked_weights_ptr);
+  context->last_lookup_conflicted_ = false;
   if (entry == context->unpacked_data_to_name_.end()) {
     context->last_lookup_unnamed_ = true;
     return SIZE_MAX;
@@ -529,6 +530,7 @@ size_t XNNWeightsCache::look_up(
   if (packed_weight_entry->second.conflicted) {
     context->last_lookup_unnamed_ = true;
     return SIZE_MAX;
+    context->last_lookup_conflicted_ = true;
   }
   // XNNPACK upgrade detection: a ukernel whose implementation changed
   // produces a different seed. Reject the cached entry so look_up_or_insert
@@ -565,10 +567,13 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
   // instead of re-packing into heap (dirty memory) every time.
   if (context->last_lookup_unnamed_ ||
       (context->loaded_from_disk_ && !seed_mismatch_repack)) {
-    context->record_heap_alloc(
-        n,
-        context->last_lookup_unnamed_ ? PackedCacheHeapReason::UnnamedConstant
-                                      : PackedCacheHeapReason::RepackAfterLoad);
+    PackedCacheHeapReason reason = PackedCacheHeapReason::RepackAfterLoad;
+    if (context->last_lookup_conflicted_) {
+      reason = PackedCacheHeapReason::ConflictedName;
+    } else if (context->last_lookup_unnamed_) {
+      reason = PackedCacheHeapReason::UnnamedConstant;
+    }
+    context->record_heap_alloc(n, reason);
     return context->reserve_space_heap(n);
   }
   if (context->packed_file_fd_ >= 0) {
@@ -741,11 +746,6 @@ size_t XNNWeightsCache::look_up_or_insert(
 bool XNNWeightsCache::is_finalized(XNNWeightsCache* context) {
   return context->is_finalized_;
 }
-
-void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
-  return context->packed_data_ptrs_[offset];
-}
-
 // Give a packing without a usable name an owner. The key starts with a byte
 // no named_key carries, so look_up, which keys by unpacked data name, never
 // reaches it; finalize_for_runtime hands it to the runtime like any named
@@ -762,6 +762,11 @@ XNNWeightsCache::insert_unnamed(size_t offset, size_t size, uint32_t seed) {
   name_to_packed_data_metadata_
       [std::string("\x01unnamed:") + std::to_string(offset)] = meta;
   return offset;
+}
+
+
+void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
+  return context->packed_data_ptrs_[offset];
 }
 
 enum xnn_status XNNWeightsCache::delete_cache(XNNWeightsCache* context) {
@@ -850,7 +855,7 @@ Error XNNWeightsCache::save_packed_index() {
   // Promote freshly-packed entries to from_load now that they're durable
   // on disk, so delete_packed_data preserves them across unload/reload.
   for (auto& [name, meta] : name_to_packed_data_metadata_) {
-    if (!meta.from_load &&
+    if (!meta.from_load && !meta.conflicted && !meta.unnamed &&
         ptr_to_file_offset_.find(packed_data_ptrs_[meta.offset]) !=
             ptr_to_file_offset_.end()) {
       meta.from_load = true;

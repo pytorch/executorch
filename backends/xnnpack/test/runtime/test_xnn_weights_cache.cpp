@@ -27,6 +27,7 @@
 #include <mutex>
 #include <thread>
 
+using executorch::backends::xnnpack::delegate::PackedCacheHeapReason;
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
@@ -641,7 +642,6 @@ TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
 }
 
 // The retired name must not come back from the cache file either: a program
-// loaded again would otherwise hit it with a matching seed and run on the
 // A packing stored without a name belongs to the runtime that packed it. Its
 // synthetic name comes back from finalize_for_runtime so the runtime holds a
 // reference: another runtime releasing the last named entry must not unload
@@ -720,6 +720,7 @@ TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
   ::unlink(cache_path.c_str());
 }
 
+// loaded again would otherwise hit it with a matching seed and run on the
 // other node's packing without repacking.
 TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
   std::string cache_path = std::string("/tmp/xnn_weights_cache_conflict_") +
@@ -760,6 +761,20 @@ TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
   XNNWeightsCache cache;
   cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
 
+    // A packing that misses on the retired name is booked as a gap in the
+    // name, not as an unnamed constant.
+    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 3), SIZE_MAX);
+    const auto stats = cache.stats();
+    EXPECT_EQ(
+        stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::ConflictedName)],
+        64);
+    EXPECT_EQ(
+        stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::UnnamedConstant)],
+        0);
   Result<const uint8_t*> packed = cache.load_unpacked_data("weight");
   ASSERT_EQ(packed.error(), Error::Ok);
   // The index the caller would take immediately before defining the value it

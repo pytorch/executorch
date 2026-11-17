@@ -352,6 +352,9 @@ class XNNWeightsCache {
 
   // True after load_packed_cache succeeds. When set, reserve_space routes
   // to heap — all named entries are already in the file, so any new
+  // True when the last look_up missed on a conflicted name, so that the
+  // re-pack is booked as ConflictedName rather than UnnamedConstant.
+  bool last_lookup_conflicted_{false};
   // reserve_space is a re-pack (e.g., XNNPACK internal re-pack for a
   // different runtime context) that doesn't need to persist.
   bool loaded_from_disk_{false};
