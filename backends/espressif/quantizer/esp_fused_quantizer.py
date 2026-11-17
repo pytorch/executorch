@@ -144,6 +144,45 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
             ]
         )
 
+    def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        groups = []
+        for activation in model.graph.nodes:
+            if activation.target not in (
+                torch.ops.aten.relu.default,
+                torch.ops.aten.hardtanh.default,
+            ):
+                continue
+            producer = activation.args[0]
+            if (
+                producer.target
+                not in (
+                    torch.ops.aten.add.Tensor,
+                    torch.ops.aten.sub.Tensor,
+                    torch.ops.aten.mul.Tensor,
+                )
+                or len(producer.users) != 1
+                or not isinstance(get_arg(producer, "other"), torch.fx.Node)
+                or Q_ANNOTATION_KEY in producer.meta
+                or Q_ANNOTATION_KEY in activation.meta
+            ):
+                continue
+            if (
+                producer.target != torch.ops.aten.mul.Tensor
+                and get_arg(producer, "alpha") != 1
+            ):
+                continue
+            groups.append((producer, activation))
+
+        super().annotate(model)
+        for producer, activation in groups:
+            producer_annotation = producer.meta.get(Q_ANNOTATION_KEY)
+            activation_annotation = activation.meta.get(Q_ANNOTATION_KEY)
+            if producer_annotation is not None and activation_annotation is not None:
+                # Observe the pattern's output, without rounding its internal edge.
+                producer_annotation.output_qspec = None
+                activation_annotation.input_qspec_map[producer] = None
+        return model
+
 
 def get_esp_fused_quant_quantizer() -> FusedQuantQuantizer:
     """Create the quantizer for the Espressif Fused Quant operator-library flow."""
