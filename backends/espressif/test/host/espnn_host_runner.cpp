@@ -15,7 +15,8 @@
  *   espnn_host_runner PROGRAM IO_DIR STEPS [--instances N] [--share-io]
  *                     [--alias INPUT:OUTPUT]...
  *                     [--share-output FIRST:SECOND]...
- *                     [--misalign] [--reset-before STEP]...
+ *                     [--misalign] [--reset-before STEP[:GROUP]]...
+ *                     [--reset-groups]
  *                     [--unbound-output OUTPUT]
  *
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
@@ -30,8 +31,9 @@
  * --misalign places every runner buffer one byte past a 16-byte boundary.
  * --unbound-output never gives that unplanned output memory.
  * --reset-before asks EspNNBackend, through its reset_states backend option,
- * to restore its delegates' state before that step. At the end, the runner
- * prints the delegates' memory as a STATS line.
+ * to restore the state of its delegates, or of one reset group, before that
+ * step. --reset-groups loads instance k in reset group k. At the end, the
+ * runner prints the delegates' memory as a STATS line.
  */
 
 #include <cstdint>
@@ -45,6 +47,7 @@
 
 #include <espnn/espnn_backend.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -129,6 +132,8 @@ struct HostTensor {
 };
 
 struct Instance {
+  executorch::runtime::BackendOptions<1> reset_group;
+  executorch::runtime::LoadBackendOptionsMap load_options;
   std::vector<std::vector<uint8_t>> planned;
   std::vector<Span<uint8_t>> spans;
   std::unique_ptr<HierarchicalAllocator> planned_allocator;
@@ -153,13 +158,20 @@ int main(int argc, char** argv) {
   size_t unbound_output = SIZE_MAX;
   std::vector<std::pair<size_t, size_t>> aliases;
   std::vector<std::pair<size_t, size_t>> shared_outputs;
-  std::vector<int> resets;
+  // (step, reset group or -1 for every delegate)
+  std::vector<std::pair<int, int>> resets;
+  bool reset_groups = false;
   for (int a = 4; a < argc; ++a) {
     const std::string arg = argv[a];
     if (arg == "--instances" && a + 1 < argc) {
       instance_count = std::atoi(argv[++a]);
     } else if (arg == "--reset-before" && a + 1 < argc) {
-      resets.push_back(std::atoi(argv[++a]));
+      int step = 0, group = -1;
+      if (std::sscanf(argv[++a], "%d:%d", &step, &group) < 1)
+        fail("--reset-before takes STEP[:GROUP]");
+      resets.emplace_back(step, group);
+    } else if (arg == "--reset-groups") {
+      reset_groups = true;
     } else if (arg == "--share-io") {
       share_io = true;
     } else if (arg == "--misalign") {
@@ -195,7 +207,16 @@ int main(int argc, char** argv) {
     fail("no forward method", static_cast<int>(meta.error()));
 
   std::vector<Instance> instances(instance_count);
-  for (Instance& instance : instances) {
+  for (int k = 0; k < instance_count; ++k) {
+    Instance& instance = instances[k];
+    if (reset_groups &&
+        (instance.reset_group.set_option(
+             executorch::backends::espressif::kResetGroupOption, k) !=
+             Error::Ok ||
+         instance.load_options.set_options(
+             executorch::backends::espressif::kEspNNBackendId,
+             instance.reset_group.view()) != Error::Ok))
+      fail("reset group options");
     for (size_t b = 0; b < meta->num_memory_planned_buffers(); ++b) {
       instance.planned.emplace_back(meta->memory_planned_buffer_size(b).get());
     }
@@ -208,8 +229,12 @@ int main(int argc, char** argv) {
         instance.method_pool.size(), instance.method_pool.data());
     instance.memory = std::make_unique<MemoryManager>(
         instance.method_allocator.get(), instance.planned_allocator.get());
-    Result<Method> method =
-        program->load_method("forward", instance.memory.get());
+    Result<Method> method = program->load_method(
+        "forward",
+        instance.memory.get(),
+        nullptr,
+        nullptr,
+        &instance.load_options);
     if (!method.ok())
       fail("cannot load method", static_cast<int>(method.error()));
     instance.method = std::make_unique<Method>(std::move(method.get()));
@@ -269,13 +294,16 @@ int main(int argc, char** argv) {
   }
 
   for (int step = 0; step < steps; ++step) {
-    for (int reset : resets) {
+    for (const auto& [reset, group] : resets) {
       if (reset != step)
         continue;
       executorch::runtime::BackendOptions<1> options;
-      if (options.set_option(
-              executorch::backends::espressif::kResetStatesOption, true) !=
-          Error::Ok)
+      const Error set = group < 0
+          ? options.set_option(
+                executorch::backends::espressif::kResetStatesOption, true)
+          : options.set_option(
+                executorch::backends::espressif::kResetStatesOption, group);
+      if (set != Error::Ok)
         fail("BackendOptions::set_option");
       Error error = executorch::runtime::set_option(
           executorch::backends::espressif::kEspNNBackendId, options.view());

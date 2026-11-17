@@ -20,9 +20,17 @@ namespace espressif {
 /// Backend ID that `EspNNBackend.preprocess()` writes into lowered programs.
 constexpr const char* kEspNNBackendId = "EspNNBackend";
 
-/// Backend option (bool) that calls reset_delegate_states() when true:
-/// `executorch::runtime::set_option(kEspNNBackendId, options)`.
+/// Backend option that resets delegate-owned state, through
+/// `executorch::runtime::set_option(kEspNNBackendId, options)`: true calls
+/// reset_delegate_states(), and a reset group (int) calls
+/// reset_delegate_states(group).
 constexpr char kResetStatesOption[] = "reset_states";
+
+/// Load-time backend option (int, 0 by default) that puts the delegates of a
+/// method in a reset group from 0 to kResetGroups - 1. Pass it to
+/// `Program::load_method()` in a LoadBackendOptionsMap.
+constexpr char kResetGroupOption[] = "reset_group";
+constexpr int kResetGroups = 8;
 
 /**
  * Counters accumulated by every EspNNBackend delegate since startup or the
@@ -81,9 +89,17 @@ void reset_delegate_stats();
  *
  * Each loaded method instance has its own state, kept between executions
  * until this is called or the method is destroyed; loading the method again
- * also starts from the initial state. Safe to call from any task.
+ * also starts from the initial state. Buffers that stay in the program are
+ * not reset. Safe to call from any task.
  */
 void reset_delegate_states();
+
+/**
+ * Same, for the delegates loaded with kResetGroupOption set to @p group.
+ *
+ * @retval false @p group is not from 0 to kResetGroups - 1.
+ */
+bool reset_delegate_states(int group);
 
 } // namespace espressif
 } // namespace backends

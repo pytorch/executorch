@@ -53,9 +53,9 @@ namespace espressif {
 namespace {
 
 DelegateStats g_stats{};
-// Incremented by each reset request; a delegate whose state is older restores
-// its initial state before its next execute.
-std::atomic<uint32_t> g_state_generation{0};
+// Incremented by each reset of a group; a delegate whose state is older than
+// its group restores its initial state before its next execute.
+std::atomic<uint32_t> g_state_generations[kResetGroups]{};
 
 constexpr float kHalfEvenRoundingBias = 12582912.0f;
 
@@ -202,6 +202,7 @@ struct DelegateState {
   Int8Interpreter interpreter;
   uint32_t conversion_slots = 0;
   bool profiled = false;
+  int reset_group = 0;
   uint32_t state_generation = 0;
   // Copies of outputs outside the arena whose memory is misaligned, in output
   // order.
@@ -287,6 +288,16 @@ class EspNNBackendInterface final : public BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    const Result<int> group = context.get_runtime_spec<int>(kResetGroupOption);
+    const int reset_group = group.ok() ? group.get() : 0;
+    if ((!group.ok() && group.error() != Error::NotFound) || reset_group < 0 ||
+        reset_group >= kResetGroups) {
+      std::printf(
+          "EspNN delegate: %s must be an int from 0 to %d\n",
+          kResetGroupOption,
+          kResetGroups - 1);
+      return Error::InvalidArgument;
+    }
     Int8RuntimeOptions options{};
     for (const auto& spec : compile_specs) {
       if (std::strcmp(spec.key, "espnn_io_conversion_slots") == 0) {
@@ -302,6 +313,7 @@ class EspNNBackendInterface final : public BackendInterface {
     if (memory == nullptr)
       return Error::MemoryAllocationFailed;
     DelegateState* state = new (memory) DelegateState();
+    state->reset_group = reset_group;
 #if CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
     options.copy_constants_to_psram = true;
 #endif
@@ -332,7 +344,7 @@ class EspNNBackendInterface final : public BackendInterface {
     if (state->interpreter.constants_copied())
       processed->Free();
     state->state_generation =
-        g_state_generation.load(std::memory_order_relaxed);
+        g_state_generations[reset_group].load(std::memory_order_relaxed);
     ++g_stats.delegates;
     g_stats.arena_bytes += state->interpreter.arena_bytes();
     g_stats.scratch_bytes += state->interpreter.scratch_bytes();
@@ -361,8 +373,8 @@ class EspNNBackendInterface final : public BackendInterface {
     }
     const int64_t started = esp_timer_get_time();
     if (interpreter.state_count() != 0) {
-      const uint32_t generation =
-          g_state_generation.load(std::memory_order_relaxed);
+      const uint32_t generation = g_state_generations[state->reset_group].load(
+          std::memory_order_relaxed);
       if (generation != state->state_generation) {
         interpreter.reset_states();
         state->state_generation = generation;
@@ -459,14 +471,23 @@ class EspNNBackendInterface final : public BackendInterface {
       BackendOptionContext&,
       const Span<BackendOption>& backend_options) override {
     for (const BackendOption& option : backend_options) {
-      const bool* value = std::get_if<bool>(&option.value);
-      if (std::strcmp(option.key, kResetStatesOption) != 0 ||
-          value == nullptr) {
+      if (std::strcmp(option.key, kResetStatesOption) != 0) {
         std::printf("EspNN delegate: unknown option %s\n", option.key);
         return Error::NotSupported;
       }
-      if (*value)
+      const bool* all = std::get_if<bool>(&option.value);
+      const int* group = std::get_if<int>(&option.value);
+      if (all != nullptr && *all) {
         reset_delegate_states();
+      } else if (
+          all == nullptr &&
+          (group == nullptr || !reset_delegate_states(*group))) {
+        std::printf(
+            "EspNN delegate: %s takes true or a reset group from 0 to %d\n",
+            kResetStatesOption,
+            kResetGroups - 1);
+        return Error::InvalidArgument;
+      }
     }
     return Error::Ok;
   }
@@ -500,7 +521,15 @@ DelegateStats delegate_stats() {
 }
 
 void reset_delegate_states() {
-  g_state_generation.fetch_add(1, std::memory_order_relaxed);
+  for (std::atomic<uint32_t>& generation : g_state_generations)
+    generation.fetch_add(1, std::memory_order_relaxed);
+}
+
+bool reset_delegate_states(int group) {
+  if (group < 0 || group >= kResetGroups)
+    return false;
+  g_state_generations[group].fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 } // namespace espressif
