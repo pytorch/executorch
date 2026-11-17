@@ -530,9 +530,16 @@ ESPNN_HOST_RUNNER=cmake-out-espnn-host/espnn_host_runner \
 ```
 
 `-DESPNN_HOST_SANITIZE=ON` builds with AddressSanitizer and
-UndefinedBehaviorSanitizer; `.ci/scripts/test_espressif_host.sh` runs both
-builds. The host build checks the delegate's logic, not ESP-NN's S3 assembly
-kernels, which only the emulator and the board run.
+UndefinedBehaviorSanitizer, `-DESPNN_HOST_OPTIMIZED=ON` uses ESP-NN's optimized
+C kernels instead of the reference ones, `-DESPNN_HOST_PSRAM=ON` makes the
+heap stand-in serve PSRAM allocations, and `-DESPNN_HOST_SCRATCH=ON` makes
+the convolution and mean kernels request scratch and overwrite all of it, as
+a check on where the delegate puts it. `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM`,
+`ESPNN_DELEGATE_PROFILE` and `ESPNN_DELEGATE_SCRATCH_IN_ARENA` are CMake
+options here, off by default. `.ci/scripts/test_espressif_host.sh`
+runs a plain build and three sanitized ones that cover these options. The host
+build checks the delegate's logic, not ESP-NN's S3 assembly kernels, which only
+the emulator and the board run.
 
 The code follows the ExecuTorch coding style and passes the repository's
 `lintrunner` checks:

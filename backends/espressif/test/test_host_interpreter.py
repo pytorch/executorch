@@ -81,8 +81,8 @@ def run(
     return outputs, dict(field.split("=") for field in stats.split()[1:])
 
 
-@pytest.mark.parametrize("version", [6, 7])
-def test_graph_at_any_alignment(tmp_path, version):
+def se_block(version: int):
+    """An XTS3 graph of the given version, random inputs and its outputs."""
     _, program = op_cases.quantize(lowering_cases.SEBlockModel(), [(1, 3, 16, 16)])
     graph = xts3.build_graph(program)
     graph.version = version
@@ -96,6 +96,12 @@ def test_graph_at_any_alignment(tmp_path, version):
     expected = [
         value.astype(np.int8).reshape(-1) for value in interpreter.run_outputs(inputs)
     ]
+    return graph, inputs, expected
+
+
+@pytest.mark.parametrize("version", [6, 7])
+def test_graph_at_any_alignment(tmp_path, version):
+    graph, inputs, expected = se_block(version)
     for offset in (0, 1, 2, 3, 4, 8):
         outputs, stats = run(tmp_path, graph, offset, inputs)
         for actual, wanted in zip(outputs, expected):
@@ -104,6 +110,17 @@ def test_graph_at_any_alignment(tmp_path, version):
         assert stats["blob_copied"] == ("0" if offset == 0 else "1")
         # Version 7 graphs keep their requantization parameters in place.
         assert (stats["parameters"] == "0") == (version == 7)
+
+
+@pytest.mark.parametrize("version", [6, 7])
+def test_constants_copied_to_psram(tmp_path, version):
+    # In a build with a PSRAM stand-in the graph is copied there and the
+    # runner frees the original, so every table pointer must follow the copy.
+    graph, inputs, expected = se_block(version)
+    outputs, stats = run(tmp_path, graph, 0, inputs, "--constants-to-psram")
+    for actual, wanted in zip(outputs, expected):
+        np.testing.assert_array_equal(actual, wanted)
+    assert stats["blob_copied"] == stats["psram"]
 
 
 def test_partial_copy_does_not_leak_into_a_bound_output(tmp_path):
