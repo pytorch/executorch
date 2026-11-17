@@ -160,13 +160,18 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
                     torch.ops.aten.sub.Tensor,
                     torch.ops.aten.mul.Tensor,
                     torch.ops.aten.linear.default,
+                    torch.ops.aten.convolution.default,
                 )
                 or len(producer.users) != 1
                 or Q_ANNOTATION_KEY in producer.meta
                 or Q_ANNOTATION_KEY in activation.meta
             ):
                 continue
-            if producer.target != torch.ops.aten.linear.default and (
+            if producer.target in (
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.mul.Tensor,
+            ) and (
                 not isinstance(get_arg(producer, "other"), torch.fx.Node)
                 or (
                     producer.target != torch.ops.aten.mul.Tensor

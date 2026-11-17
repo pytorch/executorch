@@ -374,8 +374,12 @@ with open("model_esp_ops.pte", "wb") as f:
 
 Each calibration sample is a tuple matching the model's inputs. Pass
 `allow_cpu_fallback=False` to the recipe to reject remaining portable compute;
-Q/DQ boundary operators are allowed. The report lists portable compute and
-counts accelerated operators across all methods.
+Q/DQ and layout copies are allowed. The report lists portable compute in
+`cpu_ops`, Q/DQ in `quantization_ops`, and permutes, transposes, reshapes,
+squeezes/unsqueezes and identity copies in `layout_ops`. It counts accelerated
+operators in `esp_nn_ops` across all methods. Layout reporting is independent
+of whether copies came from the model or compiler and where graph rewrites
+place them.
 Reports also accept the graph after `to_executorch()`: memory views appear as
 layout operations, allocation nodes are omitted, and operator targets include
 their lowered `.out` overloads.

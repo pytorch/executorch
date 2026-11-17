@@ -35,6 +35,8 @@ Tensor& quantized_depthwise_conv2d_int8_out(
     const Tensor& output_shift,
     int64_t input_offset,
     int64_t output_offset,
+    int64_t activation_min,
+    int64_t activation_max,
     const Tensor& scratch,
     Tensor& out) {
   ET_KERNEL_CHECK(
@@ -120,7 +122,7 @@ Tensor& quantized_depthwise_conv2d_int8_out(
       {int32_t(stride[1]), int32_t(stride[0])},
       {int32_t(padding[1]), int32_t(padding[0])},
       {1, 1},
-      {-128, 127}};
+      {int32_t(activation_min), int32_t(activation_max)}};
   const quant_data_t quant{
       const_cast<int32_t*>(output_shift.const_data_ptr<int32_t>()),
       const_cast<int32_t*>(output_multiplier.const_data_ptr<int32_t>())};
