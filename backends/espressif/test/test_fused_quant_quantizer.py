@@ -36,6 +36,31 @@ def _quantize(model, inputs):
     return interpreter
 
 
+@pytest.mark.parametrize(
+    "owner", [torch.ops.aten.add.Tensor, torch.ops.aten.relu.default]
+)
+def test_activation_group_preserves_existing_annotations(owner):
+    class Model(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.relu(x + y)
+
+    module = torch.export.export(Model(), (torch.ones(3), torch.ones(3))).module()
+    (node,) = module.graph.find_nodes(op="call_function", target=owner)
+    annotation = QuantizationAnnotation()
+    node.meta[Q_ANNOTATION_KEY] = annotation
+    get_esp_fused_quant_quantizer().annotate(module)
+    assert node.meta[Q_ANNOTATION_KEY] is annotation
+    assert annotation.input_qspec_map == {}
+    assert annotation.output_qspec is None
+    other_target = (
+        torch.ops.aten.relu.default
+        if owner == torch.ops.aten.add.Tensor
+        else torch.ops.aten.add.Tensor
+    )
+    (other,) = module.graph.find_nodes(op="call_function", target=other_target)
+    assert other.meta[Q_ANNOTATION_KEY].output_qspec is not None
+
+
 def test_sigmoid_output_qparams_are_calibrated():
     scales = []
     for low, high in [(-16, 16), (-3, -1)]:

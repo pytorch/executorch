@@ -30,6 +30,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 
+from .fold_activations import FoldActivations
 from .lower_to_esp import LowerToEsp
 
 
@@ -51,6 +52,7 @@ class EspPassManager(ExportedProgramPassManager):
                 *get_fused_quant_passes(channels_last=True),
                 # Refresh contiguous tensor metadata after the layout rewrites.
                 ExportPass(),
+                FoldActivations(),
                 LowerToEsp(target=target, kernel_mode=kernel_mode),
                 ToChannelsFirst(),
                 FuseCascadedTransposeOrPermuteOps(),

@@ -26,7 +26,7 @@ from executorch.backends.espressif.utils.quantization import (
 )
 from executorch.backends.test.suite.operators.test_add import Model as Add
 from executorch.backends.test.suite.operators.test_sub import Model as Sub
-from executorch.backends.transforms.permute_pass_utils import set_arg
+from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.backends.transforms.utils import add_constant
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -144,7 +144,7 @@ def test_folding_and_replacement(multiply_program):
     expected = multiply_program.module()(*inputs)
     lowered = EspPassManager()(multiply_program).exported_program
     mul = next(node for node in lowered.graph.nodes if node.target == _ESP_MUL)
-    assert mul.args[2:] == (17, -23, -7, 1 << 30, -3)
+    assert mul.args[2:] == (17, -23, -7, 1 << 30, -3, -128, 127)
     assert all(arg.meta["val"].dtype == torch.int8 for arg in mul.args[:2])
     assert not any(node.target == _FUSED_MUL for node in lowered.graph.nodes)
     torch.testing.assert_close(lowered.module()(*inputs), expected, atol=0.5, rtol=0)
@@ -212,7 +212,7 @@ def test_kernel_shift_and_overflow_limits(
     if expected_shift is None:
         assert mul is None
     else:
-        assert mul.args[-1] == expected_shift
+        assert get_arg(mul, "output_shift") == expected_shift
         assert mul.args[4] == 127
 
 
@@ -342,7 +342,7 @@ def test_unsupported_storage_stays_portable(binary_program, value):
     "prefix, dtype, quant_min, quant_max",
     [
         ("out", torch.uint8, 0, 255),
-        ("out", torch.int8, -127, 127),
+        ("inp", torch.float32, -127, 127),
         ("inp", torch.float16, -128, 127),
     ],
 )
@@ -393,7 +393,20 @@ def test_add_folding_and_replacement(add_program):
     expected = add_program.module()(*inputs)
     lowered = EspPassManager()(add_program).exported_program
     add = next(node for node in lowered.graph.nodes if node.target == _ESP_ADD)
-    assert add.args[2:] == (17, -23, -7, 1 << 30, 0, 1 << 30, -1, 20, 1 << 30, -19)
+    assert add.args[2:] == (
+        17,
+        -23,
+        -7,
+        1 << 30,
+        0,
+        1 << 30,
+        -1,
+        20,
+        1 << 30,
+        -19,
+        -128,
+        127,
+    )
     assert all(arg.meta["val"].dtype == torch.int8 for arg in add.args[:2])
     assert not any(node.target == _FUSED_ADD for node in lowered.graph.nodes)
     torch.testing.assert_close(lowered.module()(*inputs), expected, atol=0.5, rtol=0)
@@ -455,6 +468,17 @@ def test_add_sub_matches_existing_integer_reference(offsets, input2_multiplier):
     expected = multiply_by_quantized_multiplier(total, 1 << 30, -18) + output_offset
     expected = torch.from_numpy(expected.clip(-128, 127)).to(torch.int8)
     actual = torch.ops.esp_nn.quantized_add_int8(
-        input1, input2, *offsets, 1 << 30, 0, input2_multiplier, -2, 20, 1 << 30, -18
+        input1,
+        input2,
+        *offsets,
+        1 << 30,
+        0,
+        input2_multiplier,
+        -2,
+        20,
+        1 << 30,
+        -18,
+        -128,
+        127,
     )
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)
