@@ -224,6 +224,7 @@ class GraphBuilder {
 
   void lower_unary(const Node& node, Unary fn);
   void lower_sqrt(const Node& node);
+  void lower_pow(const Node& node);
   void lower_hardtanh(const Node& node);
   void lower_elu(const Node& node);
   std::array<int, 2> pair_arg(
@@ -261,6 +262,7 @@ class GraphBuilder {
   TensorRef active_cache(const TensorRef& cache, int64_t length);
   TensorRef causal_mask(int64_t tokens, int64_t keys, int64_t start);
   void lower_custom_sdpa(const Node& node);
+  void lower_logical_not(const Node& node);
   void lower_compare(const Node& node, bool strict);
   void lower_arange(const Node& node);
   DynamicQuant dynamic_quant_arg(

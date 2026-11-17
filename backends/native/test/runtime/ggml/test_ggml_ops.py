@@ -507,6 +507,30 @@ class GgmlOpsTest(unittest.TestCase):
     def test_div_broadcast_both(self):
         self._check(Lambda(torch.div), (torch.randn(2, 1, 4), torch.rand(3, 1) + 0.5))
 
+    def test_logical_not_float_and_bool(self):
+        tiny = torch.finfo(torch.float32).tiny
+        x = torch.tensor(
+            [
+                [0.0, -0.0, float("nan"), float("inf"), tiny],
+                [-float("inf"), -1.0, 1.0, 2.0, 1e-30],
+            ]
+        )
+        self._check(
+            Lambda(lambda x: torch.logical_not(x.transpose(0, 1)).float()),
+            (x,),
+            atol=0,
+            rtol=0,
+        )
+        self._check(
+            Lambda(lambda x: torch.logical_not(x.lt(0)).float()), (x,), atol=0, rtol=0
+        )
+
+    def test_logical_not_rejects_integer(self):
+        with self.assertRaisesRegex(AssertionError, "Bool and F32"):
+            self._check(
+                Lambda(lambda x: torch.logical_not(x).float()), (torch.arange(4),)
+            )
+
     def test_add_bool_is_logical_or(self):
         self._check(
             Lambda(lambda x, y, z: (x.le(y) + x.le(z)).to(x.dtype)),
@@ -728,6 +752,32 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sqrt_rejects_half(self):
         with self.assertRaisesRegex(AssertionError, "F32"):
             self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
+
+    def test_pow_by_two_and_half(self):
+        x = torch.tensor(
+            [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
+        )
+        # ATen's x * x is exact, but its MKL sqrt can be an ulp from sqrtf.
+        for fn, rtol in (
+            (lambda x: x.pow(2), 0),
+            (lambda x: x.pow(2.0), 0),
+            (lambda x: x.transpose(0, 1).pow(2), 0),
+            (lambda x: x.pow(0.5), 2**-23),
+            (lambda x: x.transpose(0, 1).pow(0.5), 2**-23),
+        ):
+            for inputs in ((x,), (torch.randn(2, 3, 16, 32),)):
+                self._check(Lambda(fn), inputs, atol=0, rtol=rtol)
+        # assert_close treats -0 as +0, and the sign of a NaN varies by backend.
+        (actual,) = self._run_exported(Lambda(lambda x: x.pow(0.5)), (x,), (x,))
+        expected = x.pow(0.5)
+        numbers = ~expected.isnan()
+        self.assertEqual(
+            actual[numbers].signbit().tolist(), expected[numbers].signbit().tolist()
+        )
+
+    def test_pow_rejects_unsupported_exponent(self):
+        with self.assertRaisesRegex(AssertionError, "exponents 2 and 0.5 only"):
+            self._check(Lambda(lambda x: x.pow(3)), (torch.randn(2, 3),))
 
     def test_conv2d(self):
         self._check(

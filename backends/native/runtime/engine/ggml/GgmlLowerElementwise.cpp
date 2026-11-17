@@ -7,7 +7,10 @@
 #include <executorch/backends/native/runtime/engine/ggml/GgmlGraphBuilder.h>
 
 #include <algorithm>
+#include <array>
+#include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -211,6 +214,35 @@ void GraphBuilder::lower_sqrt(const Node& node) {
           input.sizes});
 }
 
+// ATen computes x ** 2 as x * x and x ** 0.5 as sqrt(x), so sqrt(-0) is -0.
+void GraphBuilder::lower_pow(const Node& node) {
+  const double exponent = float_arg(node, "exponent", 1, 0);
+  if (exponent != 2.0 && exponent != 0.5) {
+    // Not format_double: floating-point to_chars needs macOS 13.3.
+    std::array<char, 32> text{};
+    std::snprintf(text.data(), text.size(), "%.*g", DBL_DIG, exponent);
+    throw std::runtime_error(
+        "ggml: op '" + node.target +
+        "' supports the exponents 2 and 0.5 only, not " + text.data());
+  }
+  const ValueId input_id = tensor_arg_id(node, "self", 0);
+  // Integer and Bool values carried as F32 would pass require_f32.
+  const ScalarType dtype = method_.graph.value(input_id).tensor_meta().dtype;
+  if (dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        "ggml: op '" + node.target + "' supports Float tensors only, not " +
+        scalar_type_name(dtype));
+  }
+  const TensorRef input = tensor(input_id);
+  require_f32(node, input.tensor);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(input.tensor);
+  set_single_output(
+      node,
+      TensorRef{
+          exponent == 2.0 ? ggml_sqr(ctx, x) : ggml_sqrt(ctx, x), input.sizes});
+}
+
 void GraphBuilder::lower_hardtanh(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
   require_float(node, input.tensor);
@@ -319,6 +351,32 @@ void GraphBuilder::lower_amax(const Node& node) {
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
   ggml_tensor* result = reshape(ctx, values, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// logical_not is x == 0. Bools are 0/1 floats, so that is 1 - x. For floats
+// it is false for NaN: 1 - step(|x|) is 1 at zero and at NaN, and
+// step(x + 1) clears NaN.
+void GraphBuilder::lower_logical_not(const Node& node) {
+  const ValueId input_id = tensor_arg_id(node, "self", 0);
+  const ScalarType dtype = method_.graph.value(input_id).tensor_meta().dtype;
+  if (dtype != ScalarType::Bool && dtype != ScalarType::Float) {
+    throw std::runtime_error(
+        "ggml: logical_not supports Bool and F32 tensors only");
+  }
+  const TensorRef input = tensor(input_id);
+  require_f32(node, input.tensor);
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(input.tensor);
+  if (dtype == ScalarType::Bool) {
+    set_single_output(
+        node, TensorRef{ggml_scale_bias(ctx, x, -1.0f, 1.0f), input.sizes});
+    return;
+  }
+  ggml_tensor* zero_or_nan =
+      ggml_scale_bias(ctx, ggml_step(ctx, ggml_abs(ctx, x)), -1.0f, 1.0f);
+  ggml_tensor* not_nan = ggml_step(ctx, ggml_scale_bias(ctx, x, 1.0f, 1.0f));
+  set_single_output(
+      node, TensorRef{ggml_mul(ctx, zero_or_nan, not_nan), input.sizes});
 }
 
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
