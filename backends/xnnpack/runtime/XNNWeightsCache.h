@@ -292,9 +292,8 @@ class XNNWeightsCache {
   // Map of unpacked pointers to the data name
   std::unordered_map<const void*, std::string> unpacked_data_to_name_;
   // Map of unpacked pointers to the suffix qualify_unpacked_name applied in
-  // the current compile; a pointer stays here after a conflict dropped its
-  // name, so a later load_unpacked_data of the same pointer cannot bring the
-  // bare name back
+  // the current compile; a second node reporting a different suffix for a
+  // pointer is a conflict
   std::unordered_map<const void*, std::string> unpacked_data_to_qualifier_;
   // Map of data names to offset into the packed data
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;

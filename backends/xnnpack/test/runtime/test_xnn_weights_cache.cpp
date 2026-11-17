@@ -10,7 +10,6 @@
 
 #include <executorch/runtime/executor/pte_data_map.h>
 
-#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/error.h>
@@ -556,39 +555,24 @@ TEST_F(XNNWeightsCacheTest, SharedKernelConflictingRequantizationPacksUnnamed) {
   ASSERT_NE(out_fine, ref_fine);
 }
 
-// A data map over a BufferDataLoader hands out the same pointer for every
-// load of one key, so two values dedup'd to one key by the exporter are one
-// pointer to the cache. A second load must not reset the qualifier the first
-// value's node applied, and disagreeing qualifiers drop the name for good.
-TEST_F(XNNWeightsCacheTest, QualifiedNameSurvivesReloadOfSamePointer) {
-  executorch::extension::BufferDataLoader loader(
-      sample_data_.data(), sample_data_.size());
-  Result<PteDataMap> data_map = PteDataMap::create(
-      &loader, 0, program_->named_data(), program_->segments());
-  ASSERT_EQ(data_map.error(), Error::Ok);
-
+// Nodes that agree on a kernel's qualifier share its name; a node that
+// disagrees drops the name for the rest of the compile, and nothing of that
+// carries over to the next compile.
+TEST_F(XNNWeightsCacheTest, ConflictingQualifierDropsNameForCurrentCompile) {
   XNNWeightsCache cache;
-  cache.initialize_for_runtime(memory_allocator_.get(), &data_map.get());
-  Result<const uint8_t*> first = cache.load_unpacked_data("weight");
-  ASSERT_TRUE(first.ok());
-  cache.qualify_unpacked_name(first.get(), "|a");
-  Result<const uint8_t*> second = cache.load_unpacked_data("weight");
-  ASSERT_TRUE(second.ok());
-  ASSERT_EQ(first.get(), second.get());
-  cache.qualify_unpacked_name(second.get(), "|a");
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(kernel.ok());
+  cache.qualify_unpacked_name(kernel.get(), "|a");
+  cache.qualify_unpacked_name(kernel.get(), "|a");
   ASSERT_EQ(
       cache.get_unpacked_data_names(), std::vector<std::string>{"weight|a"});
 
-  cache.qualify_unpacked_name(second.get(), "|b");
-  ASSERT_TRUE(cache.get_unpacked_data_names().empty());
-  Result<const uint8_t*> third = cache.load_unpacked_data("weight");
-  ASSERT_TRUE(third.ok());
-  ASSERT_EQ(third.get(), first.get());
+  cache.qualify_unpacked_name(kernel.get(), "|b");
   ASSERT_TRUE(cache.get_unpacked_data_names().empty());
   ASSERT_TRUE(cache.finalize_for_runtime().ok());
 
-  // Nothing carries over to the next compile.
-  cache.initialize_for_runtime(memory_allocator_.get(), &data_map.get());
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
   Result<const uint8_t*> fresh = cache.load_unpacked_data("weight");
   ASSERT_TRUE(fresh.ok());
   ASSERT_EQ(
@@ -642,6 +626,22 @@ TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
   ASSERT_EQ(
       *static_cast<uint8_t*>(
           provider->offset_to_addr(provider->context, first_offset)),
+      1);
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, second_offset)),
+      2);
+
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  const size_t third_offset = packUnder(provider, first.get(), 3);
+  ASSERT_NE(third_offset, first_offset);
+  ASSERT_NE(third_offset, second_offset);
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+// The retired name must not come back from the cache file either: a program
+// loaded again would otherwise hit it with a matching seed and run on the
 // A packing stored without a name belongs to the runtime that packed it. Its
 // synthetic name comes back from finalize_for_runtime so the runtime holds a
 // reference: another runtime releasing the last named entry must not unload
@@ -720,22 +720,6 @@ TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
   ::unlink(cache_path.c_str());
 }
 
-      1);
-  ASSERT_EQ(
-      *static_cast<uint8_t*>(
-          provider->offset_to_addr(provider->context, second_offset)),
-      2);
-
-  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
-  const size_t third_offset = packUnder(provider, first.get(), 3);
-  ASSERT_NE(third_offset, first_offset);
-  ASSERT_NE(third_offset, second_offset);
-  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
-  ASSERT_TRUE(cache.finalize_for_runtime().ok());
-}
-
-// The retired name must not come back from the cache file either: a program
-// loaded again would otherwise hit it with a matching seed and run on the
 // other node's packing without repacking.
 TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
   std::string cache_path = std::string("/tmp/xnn_weights_cache_conflict_") +

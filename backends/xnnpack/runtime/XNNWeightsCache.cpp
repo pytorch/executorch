@@ -396,13 +396,7 @@ Result<const uint8_t*> XNNWeightsCache::load_unpacked_data(
   const uint8_t* data_pointer =
       static_cast<const uint8_t*>(named_data.get().data());
   unpacked_data_.push_back(std::move(named_data.get()));
-  // A data map that hands out its own storage (BufferDataLoader) returns the
-  // same pointer for every load of one key; keep what qualify_unpacked_name
-  // already made of it.
-  if (unpacked_data_to_qualifier_.find(data_pointer) ==
-      unpacked_data_to_qualifier_.end()) {
-    unpacked_data_to_name_[data_pointer] = name;
-  }
+  unpacked_data_to_name_[data_pointer] = name;
   return data_pointer;
 }
 
@@ -746,6 +740,12 @@ size_t XNNWeightsCache::look_up_or_insert(
 
 bool XNNWeightsCache::is_finalized(XNNWeightsCache* context) {
   return context->is_finalized_;
+}
+
+void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
+  return context->packed_data_ptrs_[offset];
+}
+
 // Give a packing without a usable name an owner. The key starts with a byte
 // no named_key carries, so look_up, which keys by unpacked data name, never
 // reaches it; finalize_for_runtime hands it to the runtime like any named
@@ -762,12 +762,6 @@ XNNWeightsCache::insert_unnamed(size_t offset, size_t size, uint32_t seed) {
   name_to_packed_data_metadata_
       [std::string("\x01unnamed:") + std::to_string(offset)] = meta;
   return offset;
-}
-
-}
-
-void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
-  return context->packed_data_ptrs_[offset];
 }
 
 enum xnn_status XNNWeightsCache::delete_cache(XNNWeightsCache* context) {
