@@ -136,6 +136,20 @@ No additional steps are necessary to use the backend beyond linking the target. 
 
 ----
 
+## Sharing State Between Methods
+
+A multi-method program often needs state written by one method to be read by another: a prefill method fills a KV cache that the decode method then reads. How that sharing works depends on where the buffer lives.
+
+**Buffers inside the CUDA delegate are shared by name, with no flag to set.** A buffer that the partitioner moves into the delegate becomes a delegate constant identified by its fully qualified name (FQN). At load time the runtime keeps one GPU storage per FQN for the whole program, so every method that names the same buffer reads and writes the same memory. Prefill and decode sharing a KV cache works this way, and it is the supported way to share state between CUDA-delegated methods.
+
+**Do not set `share_mutable_buffers=True` for a CUDA program.** That option belongs to ExecuTorch memory planning, which assigns the memory of buffers that stay in the graph. Delegate tensors get a non-default `mem_id`, so `to_executorch` rejects the combination with `Cannot share mutable buffers if all other tensors are not on the default mem_id of 1`. The option, and `MemoryPlanningPass(shared_buffer_fqns=...)`, only affect buffers that remain outside the delegate; buffers inside it are already shared as described above, so the flag is not needed and cannot be used.
+
+**Sharing by name is unconditional.** Two methods that use the same FQN share the buffer even if it is mutable, so a write in one method is visible in the other. Give buffers that must not be shared different FQNs.
+
+**Separate state per session is a C++ runtime opt-in.** A serving host that runs several isolated sessions of one loaded program (for example, one KV cache per user) can register the mutable buffers' FQNs with `MutableStateContextOwner` from `backends/cuda/runtime/cuda_mutable_state.h` before loading, and the runtime keeps an independent copy of each registered buffer per session. This is only available to C++ hosts that integrate the runtime directly; there is no Python export option for it, and it does not work with CUDA graphs, which capture the buffer addresses they were recorded with.
+
+----
+
 ## Activation memory: who owns the GPU copies
 
 A CUDA model has to get its input data onto the GPU somehow. There are two ways, and you pick
