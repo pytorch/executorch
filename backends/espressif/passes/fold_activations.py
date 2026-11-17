@@ -16,7 +16,7 @@ from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPa
 
 
 class FoldActivations(ExportedProgramPassBase):
-    """Fold grouped binary/clamp patterns into the producer's output quantization."""
+    """Fold grouped clamps into the producer's output quantization."""
 
     def call(self, exported_program):
         graph = exported_program.graph
@@ -43,6 +43,7 @@ class FoldActivations(ExportedProgramPassBase):
                     exir_ops.edge.fused_quant.add.default,
                     exir_ops.edge.fused_quant.sub.default,
                     exir_ops.edge.fused_quant.mul.default,
+                    exir_ops.edge.fused_quant.linear.default,
                 )
                 or len(producer.users) != 1
                 or get_qparams_from_node(producer, "out") is not None

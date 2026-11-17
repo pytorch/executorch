@@ -101,9 +101,12 @@ def _check_bias(interpreter, node, original_bias):
 
 
 @pytest.mark.parametrize("shape", [(2,), (3, 2), (2, 3, 2)])
-def test_linear_preservation_and_int32_bias(linear, shape):
+@pytest.mark.parametrize(
+    "activation", [torch.nn.Identity, torch.nn.ReLU, torch.nn.Hardtanh]
+)
+def test_linear_preservation_and_int32_bias(linear, shape, activation):
     inputs = (torch.linspace(-2, 3, math.prod(shape)).reshape(shape),)
-    interpreter = _quantize(linear, inputs)
+    interpreter = _quantize(torch.nn.Sequential(linear, activation()), inputs)
     (node,) = interpreter.module.graph.find_nodes(
         op="call_function", target=torch.ops.fused_quant.linear.default
     )
