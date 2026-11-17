@@ -732,6 +732,19 @@ Error defineTensor(
       case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
         xnn_datatype datatype = getDataType(tensor_value->datatype());
         ET_CHECK_OR_RETURN_ERROR(
+        ET_CHECK_OR_RETURN_ERROR(
+            qparams->channel_dim() < dims_data.size(),
+            InvalidProgram,
+            "channel_dim %u out of range for a %zu-dimensional tensor",
+            qparams->channel_dim(),
+            dims_data.size());
+        ET_CHECK_OR_RETURN_ERROR(
+            scale_numel == dims_data[qparams->channel_dim()],
+            InvalidProgram,
+            "scale size %u != %zu channels along dim %u",
+            scale_numel,
+            dims_data[qparams->channel_dim()],
+            qparams->channel_dim());
             datatype == xnn_datatype::xnn_datatype_qbint4,
             Internal,
             "Unsupported datatype for per channel group quantization: %d",
