@@ -246,9 +246,9 @@ pte = edge.to_executorch(config).buffer
 
 The application then binds its buffers once, with `Method::set_input()` and
 `Method::set_output_data_ptr()`, and each step is a call to
-`Method::execute()`. An output may share memory with an input (for example,
-to update a state tensor in place), since the inputs are copied before any
-operator runs.
+`Method::execute()`. Declare them `alignas(16)`. An output may share memory
+with an input, for example to update a state tensor in place, since the
+inputs are copied in before any operator runs.
 
 ### Streaming state
 
@@ -346,11 +346,14 @@ for each frame:
 #include <executorch/runtime/executor/method.h>
 
 // After Program::load() and load_method() with a method allocator sized by
-// method_meta(), and no planned buffers (the program has none):
+// method_meta(), and no planned buffers (the program has none). The buffers
+// are 16-byte aligned so that the delegate writes the score in place.
+alignas(16) int8_t features[40];
+alignas(16) int8_t score;
 method.set_input(EValue(Tensor(&features_impl)), 0);  // int8[1, 40, 1, 1]
 method.set_output_data_ptr(&score, sizeof(score), 0);  // int8[1, 1]
 for (;;) {
-  compute_features(features);  // writes the bound buffer in place
+  compute_features(features);  // writes the bound input buffer
   method.execute();
   if (score > threshold) {
     on_detection();
@@ -562,6 +565,14 @@ The code follows the ExecuTorch coding style and passes the repository's
 ```bash
 lintrunner --paths-cmd "git ls-files backends/espressif examples/espressif"
 ```
+
+## Program compatibility
+
+A program runs on a delegate runtime from the same ExecuTorch version as the
+exporter or a later one. Programs exported now carry XTS3 version 7 graphs,
+or version 8 for delegates that own state, which older runtimes reject at
+`init()` with `DelegateInvalidCompatibility`. The runtime still runs
+programs from older exporters (XTS3 versions 5 and 6).
 
 ## Limitations
 
