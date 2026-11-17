@@ -31,14 +31,21 @@ def export_package(
     max_tokens: int,
     path: Path,
     metadata: dict | None = None,
+    selected: bool = False,
 ) -> None:
-    """A package of `wrapper` whose method takes at most `max_tokens` tokens."""
+    """A package of `wrapper` whose method takes at most `max_tokens` tokens,
+    and with `selected` the token indices whose logits to return."""
     seq = torch.export.Dim("seq", min=1, max=max_tokens)
+    inputs = [torch.zeros((1, 6), dtype=torch.long), torch.arange(6)]
+    dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
+    if selected:
+        # Trace two rows: export specializes a size of 1.
+        inputs.append(torch.tensor([0, 5]))
+        dynamic_shapes["logits_to_keep"] = {
+            0: torch.export.Dim("rows", min=1, max=max_tokens)
+        }
     exported = torch.export.export(
-        wrapper,
-        (torch.zeros((1, 6), dtype=torch.long), torch.arange(6)),
-        dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
-        strict=True,
+        wrapper, tuple(inputs), dynamic_shapes=dynamic_shapes, strict=True
     )
     to_native(exported, metadata=metadata).save(str(path))
 
@@ -142,11 +149,20 @@ def main() -> None:
         offgraph = OffGraphLastTokenLM(offgraph_model, max_seq_length).eval()
         offgraph_chunked = root / "llama_offgraph_chunked.ptn"
         export_package(offgraph, 7, offgraph_chunked, offgraph.metadata())
+        # A batching export; the runner selects the last token's logits.
+        selected = OffGraphLastTokenLM(
+            offgraph_model, max_seq_length, selected=True
+        ).eval()
+        selected_chunked = root / "llama_selected_chunked.ptn"
+        export_package(
+            selected, 7, selected_chunked, selected.metadata(), selected=True
+        )
         long_prompt = "the quick brown fox"
         for package, prompt in (
             (full, "abc"),
             (chunked, long_prompt),
             (offgraph_chunked, long_prompt),
+            (selected_chunked, long_prompt),
         ):
             check_runner(
                 args.runner,
