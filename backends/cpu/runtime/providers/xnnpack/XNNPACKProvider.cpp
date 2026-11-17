@@ -31,6 +31,7 @@ namespace {
 using namespace executorch::runtime;
 using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
 using xnnpack::clamp_bound;
+using xnnpack::literal_scalar;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -1149,6 +1150,33 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
+  // ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x),
+  // and XNNPACK's x > 0 ? x : alpha * expm1(x). XNNPACK's x86 kernels
+  // mishandle an infinite, zero or subnormal alpha.
+  static bool supports_elu(const Kernel& node, const ptn::Graph& graph) {
+    float alpha = 0;
+    float scale = 0;
+    float input_scale = 0;
+    return node.inputs.size() == 4 && elementwise_unary(node, graph) &&
+        literal_scalar(arg(node, 1), alpha) && std::isnormal(alpha) &&
+        alpha > 0 && literal_scalar(arg(node, 2), scale) &&
+        literal_scalar(arg(node, 3), input_scale) && scale == 1 &&
+        input_scale == 1;
+  }
+
+  Error elu(const Kernel& node) {
+    xnn_unary_params params{};
+    literal_scalar(arg(node, 1), params.elu.alpha);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_elu,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
   static bool supports_gelu(const Kernel& node, const ptn::Graph& graph) {
     return fp32(node, graph) && node.inputs.size() == 2 &&
         node.outputs.size() == 1 && arg(node, 1).as_string().value == "none";
@@ -1274,7 +1302,7 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 17> kOps{{
+  static constexpr std::array<XNNOp, 18> kOps{{
       {"torch.ops.aten.add.Tensor",
        &E::supports_binary,
        &E::binary<xnn_binary_add>},
@@ -1290,6 +1318,7 @@ const XNNOp* find_op(std::string_view target) {
       {"torch.ops.aten.div.Tensor",
        &E::supports_binary,
        &E::binary<xnn_binary_divide>},
+      {"torch.ops.aten.elu.default", &E::supports_elu, &E::elu},
       {"torch.ops.aten.gelu.default",
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},

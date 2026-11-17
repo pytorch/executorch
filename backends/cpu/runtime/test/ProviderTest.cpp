@@ -255,6 +255,90 @@ INSTANTIATE_TEST_SUITE_P(
         "torch.ops.aten.relu.default",
         "torch.ops.aten.sigmoid.default"));
 
+TEST_F(ProviderTest, XNNPACKEluMatchesATenAndRequiresLiteralUnitScales) {
+  const float infinity = std::numeric_limits<float>::infinity();
+  const std::array<float, 12> input{
+      -infinity,
+      -20,
+      -2,
+      -0.5f,
+      -1e-6f,
+      -0.0f,
+      0,
+      1e-6f,
+      0.5f,
+      3,
+      infinity,
+      std::numeric_limits<float>::quiet_NaN()};
+  gelu_graph(input.size());
+  auto& node = graph.nodes[0];
+  node.target = "torch.ops.aten.elu.default";
+  GuardedBuffer source(sizeof(input)), output(sizeof(input));
+  std::copy(
+      input.begin(), input.end(), static_cast<float*>(source.buffer.data));
+  bind_value(0, source.buffer);
+  bind_value(1, output.buffer);
+  for (const auto& [alpha, expected_alpha] :
+       {std::pair<ptn::Argument, double>{ptn::IntArg{1}, 1.0},
+        {ptn::FloatArg{0.5}, 0.5}}) {
+    node.inputs = {
+        {"self", ptn::TensorArg{0}},
+        {"alpha", alpha},
+        {"scale", ptn::IntArg{1}},
+        {"input_scale", ptn::FloatArg{1.0}}};
+    auto provider = create_xnnpack_provider();
+    auto* implementation = provider->implementations()[0];
+    ASSERT_TRUE(
+        implementation->supports(node, graph, execution_context).supported);
+    PreparationContext context{
+        graph, buffers, allocator, private_bytes, execution_context};
+    auto executable = implementation->compile({{0}, {0}, {1}}, context);
+    ASSERT_TRUE(executable.ok());
+    ASSERT_EQ(provider->finish(), Error::Ok);
+    ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+    const auto* result = static_cast<const float*>(output.buffer.data);
+    for (size_t index = 0; index < input.size(); ++index) {
+      SCOPED_TRACE(index);
+      const double x = input[index];
+      const double want = x > 0 ? x : expected_alpha * std::expm1(x);
+      if (std::isnan(want)) {
+        EXPECT_TRUE(std::isnan(result[index]));
+      } else if (std::isinf(want)) {
+        EXPECT_EQ(result[index], want);
+      } else {
+        EXPECT_NEAR(result[index], want, 1e-5 * std::abs(want));
+      }
+    }
+  }
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  const auto rejects = [&](size_t position, ptn::Argument argument) {
+    node.inputs[1].arg = ptn::IntArg{1};
+    node.inputs[2].arg = ptn::IntArg{1};
+    node.inputs[3].arg = ptn::IntArg{1};
+    node.inputs[position].arg = std::move(argument);
+    return !implementation->supports(node, graph, execution_context).supported;
+  };
+  for (size_t position : {1, 2, 3}) {
+    SCOPED_TRACE(position);
+    EXPECT_TRUE(rejects(position, ptn::NoneArg{}));
+    EXPECT_TRUE(rejects(position, ptn::IntArg{1, 0}));
+    EXPECT_TRUE(rejects(position, ptn::FloatArg{1.0, 0}));
+  }
+  for (double alpha :
+       {-1.0,
+        0.0,
+        static_cast<double>(std::numeric_limits<float>::denorm_min()),
+        static_cast<double>(infinity)}) {
+    SCOPED_TRACE(alpha);
+    EXPECT_TRUE(rejects(1, ptn::FloatArg{alpha}));
+  }
+  EXPECT_TRUE(rejects(2, ptn::FloatArg{2.0}));
+  EXPECT_TRUE(rejects(3, ptn::FloatArg{2.0}));
+}
+
 TEST_F(ProviderTest, XNNPACKValidatesFinalConstantBeforePacking) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
