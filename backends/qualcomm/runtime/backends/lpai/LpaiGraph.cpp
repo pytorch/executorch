@@ -92,16 +92,27 @@ Error LpaiGraph::AfterRetrieveGraph(const std::string& graph_name) {
   p_custom_config->config = p_core_affinity;
   graph_custom_config.push_back(p_custom_config);
 
+  executorch::runtime::BackendOption priority_option;
+  const bool has_priority =
+      get_runtime_option(QNN_RUNTIME_LPAI_PRIORITY, priority_option) ==
+      Error::Ok;
   std::vector<const QnnGraph_Config_t*> config;
   uint32_t num_custom_configs = graph_custom_config.size();
-  graph_config_.resize(num_custom_configs);
+  graph_config_.resize(num_custom_configs + has_priority);
   // +1 for null terminated
-  config.reserve(num_custom_configs + 1);
+  config.reserve(num_custom_configs + has_priority + 1);
 
   for (std::size_t i = 0; i < num_custom_configs; ++i) {
     graph_config_[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
     graph_config_[i].customConfig = graph_custom_config[i];
     config.push_back(&graph_config_[i]);
+  }
+  if (has_priority) {
+    QnnGraph_Config_t& priority_config = graph_config_[num_custom_configs];
+    priority_config.option = QNN_GRAPH_CONFIG_OPTION_PRIORITY;
+    priority_config.priority =
+        static_cast<Qnn_Priority_t>(std::get<int>(priority_option.value));
+    config.push_back(&priority_config);
   }
   config.push_back(nullptr);
 
