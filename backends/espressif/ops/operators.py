@@ -103,7 +103,7 @@ def quantized_lut_int8_meta(input, table):
 
 @impl(lib, "quantized_lut_int8", "CompositeExplicitAutograd")
 def quantized_lut_int8(input, table):
-    return table[input.to(torch.int64) & 255]
+    return torch.take(table, input.to(torch.int64) & 255)
 
 
 @register_fake("esp_nn::quantized_max_pool2d_int8")

@@ -37,6 +37,7 @@ from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.scalar_type import ScalarType
 from executorch.exir.schema import KernelCall
+from executorch.exir.serde.serialize import deserialize, serialize
 from executorch.export import export
 from executorch.frontends.fused_quant.quantizer.quantizer import (
     FusedQuantQuantizer,
@@ -193,6 +194,17 @@ def test_implementation_lut(case, pytestconfig):
     )
 
 
+def test_scalar_lut_output_does_not_alias_table():
+    table = torch.arange(-128, 128, dtype=torch.int8)
+    expected_table = table.clone()
+    output = torch.ops.esp_nn.quantized_lut_int8.default(
+        torch.tensor(-1, dtype=torch.int8), table
+    )
+    torch.testing.assert_close(output, torch.tensor(127, dtype=torch.int8))
+    output.zero_()
+    torch.testing.assert_close(table, expected_table)
+
+
 def test_implementation_lut_undersized_table(pytestconfig):
     if not os.environ.get("ESPRESSIF_BUILD_DIR"):
         pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory")
@@ -279,6 +291,9 @@ def test_sigmoid_unsupported_qparams_stay_portable(float_edge):
 
 
 def _check_portable_activation(edge, input_cases, expected_outputs):
+    restored = deserialize(serialize(edge.exported_program())).module()
+    for inputs, expected in zip(input_cases, expected_outputs):
+        torch.testing.assert_close(restored(*inputs), expected, atol=1e-6, rtol=1e-6)
     buffer = edge.to_executorch().buffer
     plan = deserialize_pte_binary(buffer).program.execution_plan[0]
     assert not plan.delegates
