@@ -25,6 +25,7 @@ from executorch.backends.espressif.utils.quantization import (
     requantize,
 )
 from executorch.backends.test.suite.operators.test_add import Model as Add
+from executorch.backends.test.suite.operators.test_sub import Model as Sub
 from executorch.backends.transforms.permute_pass_utils import set_arg
 from executorch.backends.transforms.utils import add_constant
 from executorch.exir import to_edge
@@ -32,6 +33,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 
 _FUSED_ADD = exir_ops.edge.fused_quant.add.default
+_FUSED_SUB = exir_ops.edge.fused_quant.sub.default
 _ESP_ADD = exir_ops.edge.esp_nn.quantized_add_int8.default
 _FUSED_MUL = exir_ops.edge.fused_quant.mul.default
 _ESP_MUL = exir_ops.edge.esp_nn.quantized_mul_int8.default
@@ -54,7 +56,11 @@ def exported_programs():
             .get_artifact()
             .exported_program()
         )
-        for target, model in ((_FUSED_MUL, Multiply()), (_FUSED_ADD, Add()))
+        for target, model in (
+            (_FUSED_MUL, Multiply()),
+            (_FUSED_ADD, Add()),
+            (_FUSED_SUB, Sub()),
+        )
     }
 
 
@@ -68,14 +74,16 @@ def add_program(exported_programs):
     return copy.deepcopy(exported_programs[_FUSED_ADD])
 
 
-@pytest.fixture(params=[_FUSED_MUL, _FUSED_ADD], ids=["mul", "add"])
+@pytest.fixture(params=[_FUSED_MUL, _FUSED_ADD, _FUSED_SUB], ids=["mul", "add", "sub"])
 def binary_program(exported_programs, request):
     return copy.deepcopy(exported_programs[request.param])
 
 
 def _binary_node(program):
     return next(
-        node for node in program.graph.nodes if node.target in (_FUSED_MUL, _FUSED_ADD)
+        node
+        for node in program.graph.nodes
+        if node.target in (_FUSED_MUL, _FUSED_ADD, _FUSED_SUB)
     )
 
 
@@ -346,7 +354,7 @@ def test_unsupported_quantization_stays_portable(
     assert not LowerToEsp()(binary_program).modified
 
 
-@pytest.mark.parametrize("model", [Multiply, Add], ids=["mul", "add"])
+@pytest.mark.parametrize("model", [Multiply, Add, Sub], ids=["mul", "add", "sub"])
 def test_dynamic_shapes_stay_portable(model):
     inputs = (torch.ones(2, 3), torch.ones(2, 3))
     fused = EspTester(model(), inputs).export_fused_quant().get_artifact().module()
@@ -355,7 +363,9 @@ def test_dynamic_shapes_stay_portable(model):
         fused, inputs, dynamic_shapes=({0: batch}, {0: batch})
     )
     edge = to_edge(program).exported_program()
-    assert any(node.target in (_FUSED_MUL, _FUSED_ADD) for node in edge.graph.nodes)
+    assert any(
+        node.target in (_FUSED_MUL, _FUSED_ADD, _FUSED_SUB) for node in edge.graph.nodes
+    )
     assert not LowerToEsp()(edge).modified
 
 
@@ -403,9 +413,11 @@ def test_add_folding_and_replacement(add_program):
         ((1e200, 1e200, 1), False),
     ],
 )
-def test_add_rescale_limits(scales, supported):
+@pytest.mark.parametrize("subtract", [False, True], ids=["add", "sub"])
+def test_add_sub_rescale_limits(scales, supported, subtract):
     assert (
-        _add_multipliers(*(_QParams(scale, 0) for scale in scales)) is not None
+        _add_multipliers(*(_QParams(scale, 0) for scale in scales), subtract=subtract)
+        is not None
     ) == supported
 
 
@@ -419,25 +431,30 @@ def test_add_rescale_limits(scales, supported):
     ],
     ids=["dequantization", "sum", "finite", "offset"],
 )
-def test_add_float32_range_limits(add_program, scales, zero_point, supported):
+@pytest.mark.parametrize("target", [_FUSED_ADD, _FUSED_SUB], ids=["add", "sub"])
+def test_add_sub_float32_range_limits(
+    exported_programs, target, scales, zero_point, supported
+):
+    program = copy.deepcopy(exported_programs[target])
     for prefix, scale in zip(("inp", "other", "out"), scales):
-        _set_qparams(add_program, prefix, scale, zero_point)
-    assert LowerToEsp()(add_program).modified == supported
+        _set_qparams(program, prefix, scale, zero_point)
+    assert LowerToEsp()(program).modified == supported
 
 
 @pytest.mark.parametrize("offsets", [(0, 0, 0), (128, -127, -128), (-127, 128, 127)])
-def test_add_matches_existing_integer_reference(offsets):
+@pytest.mark.parametrize("input2_multiplier", [1 << 30, -(1 << 30)], ids=["add", "sub"])
+def test_add_sub_matches_existing_integer_reference(offsets, input2_multiplier):
     values = torch.arange(-128, 128, dtype=torch.int8)
     input1, input2 = torch.meshgrid(values, values, indexing="ij")
     input1_offset, input2_offset, output_offset = offsets
     lhs = (input1.numpy().astype("int64") + input1_offset) << 20
     rhs = (input2.numpy().astype("int64") + input2_offset) << 20
     total = multiply_by_quantized_multiplier(lhs, 1 << 30, 0) + (
-        multiply_by_quantized_multiplier(rhs, 1 << 30, -2)
+        multiply_by_quantized_multiplier(rhs, input2_multiplier, -2)
     )
     expected = multiply_by_quantized_multiplier(total, 1 << 30, -18) + output_offset
     expected = torch.from_numpy(expected.clip(-128, 127)).to(torch.int8)
     actual = torch.ops.esp_nn.quantized_add_int8(
-        input1, input2, *offsets, 1 << 30, 0, 1 << 30, -2, 20, 1 << 30, -18
+        input1, input2, *offsets, 1 << 30, 0, input2_multiplier, -2, 20, 1 << 30, -18
     )
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)

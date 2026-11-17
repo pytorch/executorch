@@ -8,6 +8,7 @@ import math
 import operator
 from ctypes import c_float
 from dataclasses import dataclass
+from functools import partial
 
 import executorch.backends.espressif.ops.operators  # noqa: F401
 
@@ -62,7 +63,11 @@ def _mul_multiplier(
 
 
 def _add_multipliers(
-    input1: _QParams, input2: _QParams, output: _QParams
+    input1: _QParams,
+    input2: _QParams,
+    output: _QParams,
+    *,
+    subtract: bool = False,
 ) -> tuple[int, ...] | None:
     left_shift = 20
     twice_max_scale = 2 * max(input1.scale, input2.scale)
@@ -85,7 +90,14 @@ def _add_multipliers(
     ).value
     if max_float1 + max_float2 > torch.finfo(torch.float32).max:
         return None
-    return *multipliers[0], *multipliers[1], left_shift, *multipliers[2]
+    input2_multiplier, input2_shift = multipliers[1]
+    return (
+        *multipliers[0],
+        -input2_multiplier if subtract else input2_multiplier,
+        input2_shift,
+        left_shift,
+        *multipliers[2],
+    )
 
 
 def _prepare_binary(node, params, target, rescale_fn) -> tuple | None:
@@ -169,6 +181,10 @@ _BINARY_LOWERINGS = {
     exir_ops.edge.fused_quant.add.default: (
         exir_ops.edge.esp_nn.quantized_add_int8.default,
         _add_multipliers,
+    ),
+    exir_ops.edge.fused_quant.sub.default: (
+        exir_ops.edge.esp_nn.quantized_add_int8.default,
+        partial(_add_multipliers, subtract=True),
     ),
 }
 
@@ -720,7 +736,11 @@ class LowerToEsp(ExportedProgramPassBase):
             if lowering is None:
                 continue
             if (
-                node.target == exir_ops.edge.fused_quant.add.default
+                node.target
+                in (
+                    exir_ops.edge.fused_quant.add.default,
+                    exir_ops.edge.fused_quant.sub.default,
+                )
                 and get_arg(node, "alpha") != 1
             ):
                 continue
