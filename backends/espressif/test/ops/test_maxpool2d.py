@@ -186,7 +186,12 @@ def test_dialect_maxpool2d(test_case):
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_implementation_maxpool2d(test_case, pytestconfig):
     EspTester(test_case.model, test_case.example_inputs).test_implementation(
-        pytestconfig.rootpath
+        pytestconfig.rootpath,
+        rtol=(
+            torch.finfo(torch.float32).eps
+            if isinstance(test_case.model, EspPoolWithFloatUsers)
+            else 0
+        ),
     )
 
 

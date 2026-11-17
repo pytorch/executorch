@@ -316,6 +316,9 @@ ESP-IDF runtime and the operator implementation tests.
 When checking supported int8 operators, lowering rejects malformed per-tensor
 qparams, such as non-positive scales or out-of-range zero points. Valid
 unsupported configurations remain portable.
+ESP-NN pooling requires matching input and output qparams. A shared optimization
+that absorbs a following requantization can change the output qparams and leave
+that pool on the portable path.
 
 For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
 `-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime
