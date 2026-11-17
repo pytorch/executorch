@@ -302,7 +302,10 @@ def test_bmm(request, kwargs):
     Bmm.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+# rtol=0: rtol=1 accepts a raw integer copied into a quantized output
+@enumerate_activation_dtype(
+    [Tolerance(rtol=0, atol=0.5), Tolerance(rtol=0, atol=0.5), Tolerance(rtol=1e-1)]
+)
 @with_htp_context
 def test_cast(request, kwargs):
     Cast.test(request, kwargs)  # noqa: F405

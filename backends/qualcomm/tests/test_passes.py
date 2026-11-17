@@ -36,7 +36,11 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
 )
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.qnn_constants import (
+    OpCast,
+    OpContextLoader,
+    OpQuantize,
+)
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     QnnOperatorSupport,
@@ -1052,7 +1056,7 @@ class TestPasses(unittest.TestCase):
                 skip_without_qnn_sdk(self, e)
             raise
 
-    def test_uint8_to_float32_cast_goes_through_int32_only_on_htp(self):
+    def test_cast_to_float_adds_int32_step_and_quantize(self):
         quant_attrs = {
             QCOM_ENCODING: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             QCOM_SCALE: 1 / 255,
@@ -1061,36 +1065,47 @@ class TestPasses(unittest.TestCase):
             QCOM_QUANT_MAX: 255,
             QCOM_DTYPE: torch.uint8,
         }
+        htp = QnnExecuTorchBackendType.kHtpBackend
+        gpu = QnnExecuTorchBackendType.kGpuBackend
+        cast, quant = OpCast.op_name, OpQuantize.op_name
         cases = [
-            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float64, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float32, QnnExecuTorchBackendType.kGpuBackend, None, 1),
-            (torch.float16, QnnExecuTorchBackendType.kHtpBackend, None, 1),
-            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, quant_attrs, 1),
+            (torch.uint8, torch.float32, htp, None, [cast, cast]),
+            (torch.uint8, torch.float64, htp, None, [cast, cast]),
+            (torch.uint8, torch.float32, gpu, None, [cast]),
+            (torch.uint8, torch.float16, htp, None, [cast]),
+            # an integer cast into a quantized tensor is Cast to fp32 + Quantize
+            (torch.uint8, torch.float32, htp, quant_attrs, [cast, cast, quant]),
+            (torch.int32, torch.float32, htp, quant_attrs, [cast, quant]),
+            (torch.int64, torch.float32, htp, quant_attrs, [cast, cast, quant]),
         ]
-        for dtype, backend_type, cast_quant_attrs, expected in cases:
+        for in_dtype, dtype, backend_type, cast_quant_attrs, expected in cases:
             with self.subTest(
-                dtype=dtype, backend_type=backend_type, quantized=bool(cast_quant_attrs)
+                in_dtype=in_dtype,
+                dtype=dtype,
+                backend_type=backend_type,
+                quantized=bool(cast_quant_attrs),
             ):
                 edge_program = to_edge(
                     torch.export.export(
                         CastToFloat(dtype),
-                        (torch.arange(4, dtype=torch.uint8),),
+                        (torch.arange(4, dtype=in_dtype),),
                         strict=True,
                     )
                 ).exported_program()
                 visitors = get_node_visitors(edge_program, backend_type=backend_type)
-                cast = next(
+                cast_node = next(
                     node
                     for node in edge_program.graph.nodes
                     if node.op == "call_function" and node.args[0].op == "placeholder"
                 )
                 if cast_quant_attrs:
-                    cast.meta[QCOM_QUANT_ATTRS] = cast_quant_attrs
-                ops = visitors[cast.target.__name__].define_node(
-                    cast, defaultdict(dict)
+                    cast_node.meta[QCOM_QUANT_ATTRS] = cast_quant_attrs
+                ops = visitors[cast_node.target.__name__].define_node(
+                    cast_node, defaultdict(dict)
                 )
-                self.assertEqual(expected, len(ops))
+                self.assertEqual(
+                    expected, [op.GetOpWrapper().GetOpType() for op in ops]
+                )
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
