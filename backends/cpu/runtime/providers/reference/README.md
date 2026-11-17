@@ -4,7 +4,7 @@
 to registered ExecuTorch out kernels. Its implementation is named
 `Reference/registry`. Tensor dtypes map by name to ATen scalar types; quantized
 tensors are rejected because Reference routes do not interpret quantization metadata. The route table covers the
-linked portable kernel set; factory kernels stack a subset of their inputs
+linked kernel set; factory kernels stack a subset of their inputs
 because the kernels read dtype and shape from the output tensor.
 
 The provider resolves registered kernels when it is created and keeps a sorted

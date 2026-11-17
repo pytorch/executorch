@@ -46,6 +46,7 @@ fbcode_target(
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:portable_lib",
+        "//executorch/runtime:runtime",
     ],
 )
 

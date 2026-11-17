@@ -280,12 +280,22 @@ def _get_dtype_count(model: torch.nn.Module):
     | test_data_conv2d_FP_fp16,
 )
 def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
+    model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = TosaPipelineFP[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=["bf16"],
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

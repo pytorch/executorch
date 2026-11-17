@@ -151,6 +151,7 @@ class EthosUBackend(BackendDetails):
             return PreprocessResult(
                 processed_bytes=compile_result.processed_bytes,
                 scratch_specs=scratch_specs,
+                _delegate_info_meta={"vela_io": compile_result.io_layout},
             )
 
         data_store = NamedDataStore()
@@ -165,4 +166,5 @@ class EthosUBackend(BackendDetails):
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
             scratch_specs=scratch_specs,
+            _delegate_info_meta={"vela_io": compile_result.io_layout},
         )

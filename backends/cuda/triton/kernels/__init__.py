@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.cuda.triton.kernels.conv import convolution
 from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe,
     fused_moe_batched,
@@ -24,6 +25,7 @@ from executorch.backends.cuda.triton.kernels.sdpa import (
 from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
+    "convolution",
     "dequant_w4_to_bf16",
     "fused_moe",
     "fused_moe_batched",

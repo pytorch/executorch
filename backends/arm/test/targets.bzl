@@ -94,6 +94,7 @@ def define_arm_tests():
         "misc/test_diff_pte.py",
         "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
+        "misc/test_generate_ethosu_linux_pmu_events.py",
         "misc/test_vela_persistent_region.py",
         "misc/test_delegated_state_partitioning.py",
         # "misc/test_evaluate_model.py",
@@ -175,7 +176,9 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts:etdump_to_chrome_trace",
                 "//executorch/devtools/etdump:schema_flatcc",
                 "//executorch/devtools/etdump:serialize",
-            ] if test_name == "etdump_to_chrome_trace" else []) + [
+            ] if test_name == "etdump_to_chrome_trace" else []) + ([
+                "//executorch/backends/arm/scripts:generate_ethosu_linux_pmu_events",
+            ] if test_name == "generate_ethosu_linux_pmu_events" else []) + [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test:mxfp_test_common",

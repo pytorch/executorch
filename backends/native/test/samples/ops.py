@@ -9,7 +9,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from executorch.backends.native.test.samples import linear
+from executorch.backends.native.test.samples import elu, embedding, linear
 from executorch.backends.native.test.samples.cases import Case
 from executorch.backends.native.test.samples.record import DTYPES
 
@@ -21,4 +21,8 @@ class Op:
 
 
 def ops() -> dict[str, Op]:
-    return {"linear": Op(linear.cases)}
+    return {
+        "elu": Op(elu.cases),
+        "embedding": Op(embedding.cases),
+        "linear": Op(linear.cases),
+    }
