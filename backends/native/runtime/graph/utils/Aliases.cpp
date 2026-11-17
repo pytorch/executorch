@@ -22,17 +22,28 @@ namespace ptn {
 namespace {
 
 constexpr std::string_view kView = "torch.ops.aten.view.default";
+constexpr std::string_view kSqueezeDim = "torch.ops.aten.squeeze.dim";
+constexpr std::string_view kSqueezeDims = "torch.ops.aten.squeeze.dims";
+constexpr std::string_view kUnsqueeze = "torch.ops.aten.unsqueeze.default";
+constexpr std::array<std::string_view, 4> kReshapes{
+    kView,
+    kSqueezeDim,
+    kSqueezeDims,
+    kUnsqueeze};
 constexpr std::array<std::string_view, 3> kInPlaceActivations{
     "torch.ops.aten.relu_.default",
     "torch.ops.aten.gelu_.default",
     "torch.ops.aten.sigmoid_.default"};
-constexpr std::array<std::pair<std::string_view, std::string_view>, 3>
+constexpr std::array<std::pair<std::string_view, std::string_view>, 7>
     kViewCopies{
         {{kView, "torch.ops.aten.view_copy.default"},
          {"torch.ops.aten.permute.default",
           "torch.ops.aten.permute_copy.default"},
-         {"torch.ops.aten.transpose.int",
-          "torch.ops.aten.transpose_copy.int"}}};
+         {"torch.ops.aten.transpose.int", "torch.ops.aten.transpose_copy.int"},
+         {"torch.ops.aten.slice.Tensor", "torch.ops.aten.slice_copy.Tensor"},
+         {kSqueezeDim, "torch.ops.aten.squeeze_copy.dim"},
+         {kSqueezeDims, "torch.ops.aten.squeeze_copy.dims"},
+         {kUnsqueeze, "torch.ops.aten.unsqueeze_copy.default"}}};
 
 [[noreturn]] void fail(const std::string& reason) {
   throw std::runtime_error("functionalize_aliases: " + reason);
@@ -64,10 +75,10 @@ bool references_alias_group(
 }
 
 // Values with the same key, dtype and sizes read the same elements in the same
-// logical order: a view reshapes its operand in row-major order, and an
-// in-place activation keeps its operand's indexing. Any other alias starts a
-// new key. Keys follow producer operands, not alias_id, which may name a more
-// distant ancestor.
+// logical order: view, squeeze and unsqueeze reshape their operand in row-major
+// order, and an in-place activation keeps its operand's indexing. Any other
+// alias starts a new key. Keys follow producer operands, not alias_id, which
+// may name a more distant ancestor.
 std::vector<ValueId> indexing_keys(const Graph& graph) {
   std::vector<ValueId> keys(graph.values.size());
   for (ValueId id = 0; std::cmp_less(id, graph.values.size()); ++id) {
@@ -75,7 +86,7 @@ std::vector<ValueId> indexing_keys(const Graph& graph) {
     while (valid(graph.value(key).alias_id) &&
            valid(graph.value(key).producer_id)) {
       const auto& producer = graph.node(graph.value(key).producer_id);
-      if ((producer.target != kView &&
+      if ((std::ranges::find(kReshapes, producer.target) == kReshapes.end() &&
            !is_in_place_activation(producer.target)) ||
           producer.inputs.empty() ||
           producer.inputs[0].arg.kind() != ArgKind::Tensor) {
@@ -262,6 +273,7 @@ ValueId alias_root(const Graph& graph, ValueId value_id) {
   return kInvalid;
 }
 
+// cppcheck-suppress unusedFunction
 bool has_mutated_alias_use(const Graph& graph, ValueId value_id) {
   const ValueId root_id = alias_root(graph, value_id);
   return std::ranges::any_of(graph.schedule, [&](NodeId node_id) {
@@ -273,6 +285,7 @@ bool has_mutated_alias_use(const Graph& graph, ValueId value_id) {
   });
 }
 
+// cppcheck-suppress unusedFunction
 void functionalize_aliases(Graph& graph) {
   std::vector<size_t> position(graph.nodes.size());
   for (size_t index = 0; index < graph.schedule.size(); ++index) {

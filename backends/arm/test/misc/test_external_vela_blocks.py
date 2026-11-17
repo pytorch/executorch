@@ -21,6 +21,8 @@ from executorch.backends.arm.arm_vela import (
     _RESERVED_BYTES,
     VelaCompileResult,
     VelaExternalBlock,
+    VelaIO,
+    VelaIOLayout,
 )
 from executorch.backends.arm.ethosu import (
     EthosUCompileSpec,
@@ -45,14 +47,18 @@ def _compile_vela_blocks(
     block_placements,
     scratch_size=32,
     scratch_dtype=np.int64,
+    io_data=None,
+    command_data=_COMMAND_DATA,
 ) -> VelaCompileResult:
     data = {
-        "cmd_data": np.frombuffer(_COMMAND_DATA, dtype=np.uint8),
+        "cmd_data": np.frombuffer(command_data, dtype=np.uint8),
         "weight_data": np.frombuffer(_WEIGHT_DATA, dtype=np.uint8),
         "scratch_shape": np.array([scratch_size], dtype=scratch_dtype),
         "input_shape": np.empty((0, 6), dtype=np.int32),
         "output_shape": np.empty((0, 6), dtype=np.int32),
     }
+    if io_data is not None:
+        data.update(io_data)
     with (
         patch.object(arm_vela, "has_vela", True),
         patch.object(arm_vela, "vela", create=True),
@@ -154,6 +160,57 @@ def test_vela_compile_rejects_unknown_selected_block(tmp_path):
         _compile_vela_blocks(tmp_path, {"cmnd_data": "mem1"})
 
 
+@pytest.mark.parametrize("command", [b"COP1", b"COP2"])
+@pytest.mark.parametrize(
+    "placements",
+    [{}, {name: "mem1" for name in ("cmd_data", "inputs", "outputs", "scratch_size")}],
+)
+def test_vela_compile_exposes_io_layout(tmp_path, command, placements):
+    """Preserve I/O metadata and packed bytes for inline and external blocks."""
+    result = _compile_vela_blocks(
+        tmp_path,
+        placements,
+        scratch_size=160,
+        command_data=command,
+        io_data={
+            "input_shape": np.array([[1, 1, 1, 1, 2, 8]], dtype=np.int32),
+            "input_elem_size": np.array([2], dtype=np.int32),
+            "input_offset": np.array([16], dtype=np.int32),
+            "input_region": np.array([1], dtype=np.int32),
+            "output_shape": np.array([[1, 1, 1, 1, 4, 16]], dtype=np.int32),
+            "output_elem_size": np.array([1], dtype=np.int32),
+            "output_offset": np.array([96], dtype=np.int32),
+            "output_region": np.array([4], dtype=np.int32),
+        },
+    )
+
+    assert result.io_layout == VelaIOLayout(
+        scratch_size=result.scratch_size,
+        inputs=(VelaIO(offset=16, size=32, region=1),),
+        outputs=(VelaIO(offset=96, size=64, region=4),),
+    )
+    external_payloads = {
+        block.key.encode("ascii"): block.payload for block in result.external_blocks
+    }
+    payloads = {
+        name: external_payloads[payload] if header[0] else payload
+        for name, payload, header in _parse_vela_blocks(result.processed_bytes)
+    }
+    assert struct.unpack("<10i", payloads["inputs"]) == (1, 1, 1, 1, 1, 2, 8, 2, 16, 1)
+    assert struct.unpack("<10i", payloads["outputs"]) == (
+        1,
+        1,
+        1,
+        1,
+        1,
+        4,
+        16,
+        1,
+        96,
+        4,
+    )
+
+
 def test_vela_compile_without_external_blocks_matches_existing_format(tmp_path):
     result = _compile_vela_blocks(tmp_path, {})
     expected = b""
@@ -233,6 +290,9 @@ def test_ethosu_preprocess_outputs_external_blocks_as_named_data(
         if plan_delegate_scratch
         else []
     )
+    assert result._delegate_info_meta == {
+        "vela_io": VelaIOLayout(scratch_size=32, inputs=(), outputs=())
+    }
 
 
 @pytest.mark.parametrize("plan_delegate_scratch", [False, True])
@@ -275,6 +335,9 @@ def test_ethosu_preprocess_scratch_declaration(
         else [DelegateScratchSpec(nbytes=scratch_size, label="ethosu_scratch")]
     )
     assert result.scratch_specs == expected
+    assert result._delegate_info_meta == {
+        "vela_io": VelaIOLayout(scratch_size=scratch_size, inputs=(), outputs=())
+    }
     blocks = {
         name: payload for name, payload, _ in _parse_vela_blocks(result.processed_bytes)
     }

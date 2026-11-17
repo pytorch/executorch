@@ -49,6 +49,7 @@ class _Case:
     quantized: frozenset[str]
     extras: dict[str, object] = field(default_factory=dict)
     float_out: bool = True
+    label: str = ""
 
     def overload(self) -> str:
         return self.op.partition(".")[2] or "default"
@@ -114,6 +115,13 @@ _CASES: list[_Case] = [
         {"inp": _int8(1, 6, 6, 2), "weight": _int8(3, 3, 3, 2), "bias": _float(3)},
         frozenset({"inp", "weight"}),
         _CONV_2D,
+    ),
+    _Case(
+        "convolution_channels_last",
+        {"inp": _int8(1, 6, 6, 2), "weight": _int8(2, 3, 3, 4), "bias": _float(4)},
+        frozenset({"inp", "weight"}),
+        {**_CONV_2D, "stride": [2, 2], "transposed": True, "output_padding": [1, 1]},
+        label="convolution_channels_last_transposed",
     ),
     _Case(
         "conv1d",
@@ -187,7 +195,8 @@ _CASES: list[_Case] = [
 
 _VARIANTS: list[tuple[str, _Case, bool]] = [
     (
-        f"{case.op}_{'float_out' if not quantize_out else 'quantized_out'}",
+        f"{case.label or case.op}_"
+        f"{'float_out' if not quantize_out else 'quantized_out'}",
         case,
         quantize_out,
     )
