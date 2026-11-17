@@ -359,7 +359,8 @@ class PyExecuTorchResult final
       throw py::buffer_error(
           move ? "Moving an ExecuTorchResult to another device needs a copy"
                : "A read-only ExecuTorchResult is shared without a copy only "
-                 "through a DLPack 1.0 capsule, which marks it read-only");
+                 "through a versioned DLPack capsule, which marks it "
+                 "read-only");
     }
     // Wait for the device before handing CUDA memory to another library: the
     // result may share memory a call still has work queued on, or an upload

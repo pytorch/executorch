@@ -1907,7 +1907,7 @@ class DLPackTensorView final {
       if (versioned == nullptr) {
         throw py::error_already_set();
       }
-      if (versioned->version.major != 1) {
+      if (versioned->version.major != dlpack::kVersion.major) {
         throw py::value_error(
             "DLPack version " + std::to_string(versioned->version.major) +
             " is not supported");

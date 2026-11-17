@@ -2356,7 +2356,9 @@ import torch
 runtime = importlib.import_module(sys.argv[1])
 native = sys.modules[runtime.ExecuTorchResult.__module__]
 assert native._tensor_output == "executorch"
-for path, dtype in zip(sys.argv[2:], (torch.float8_e4m3fn, torch.float8_e5m2)):
+for path, dtype in zip(
+    sys.argv[2:], (torch.float8_e4m3fn, torch.float8_e5m2), strict=True
+):
     value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
     with open(path, "rb") as source:
         data = source.read()
