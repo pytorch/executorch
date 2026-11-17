@@ -215,8 +215,8 @@ of the node that consumes the kernel, not only on the kernel's bytes. The
 kernel's cache name is qualified with the kernel's own quantization and
 those parameters, in one go per consuming node: the cache keys packed data
 by the kernel pointer alone, so a kernel whose consumers disagree on the
-qualifier has to be packed outside the cache, and the cache can only tell
-them apart when each node reports its full qualifier.
+qualifier gets a separate unnamed packing per node, and the cache can only
+tell them apart when each node reports its full qualifier.
 */
 struct KernelNaming {
   const void* data = nullptr;

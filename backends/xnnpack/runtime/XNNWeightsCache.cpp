@@ -421,7 +421,7 @@ void XNNWeightsCache::qualify_unpacked_name(
     ET_LOG(
         Info,
         "Unpacked data '%s' is packed with conflicting parameters ('%s' vs "
-        "'%s'); packing it outside the weights cache",
+        "'%s'); packing it unnamed",
         entry->second.c_str(),
         qualifier->second.c_str(),
         suffix.c_str());
@@ -694,7 +694,7 @@ size_t XNNWeightsCache::look_up_or_insert(
         Info,
         "Warning: Unpacked weight and bias were not registered with names, "
         "this will add new cache entries for packed data and may affect performance.");
-    return next_offset;
+    return context->insert_unnamed(next_offset, size, cache_key->seed);
   }
   std::string weight_bias_name = entry->second;
   if (cache_key->bias != nullptr) {
@@ -711,21 +711,25 @@ size_t XNNWeightsCache::look_up_or_insert(
     // serve either packing. Operators that pack before they consult the cache
     // (deconvolution) take the returned offset as final, so this packing is
     // stored, but unnamed; the earlier operators keep the packing they hold.
-    // The name is retired: it misses for the rest of this cache's life and
-    // stays out of the file, so a later load cannot hand one node the other's
-    // packing. Unnamed packings live until full_unload, and this one's bytes
-    // stay in the cache file as dead space.
+    // The name is retired: it misses while any runtime holds the entry and
+    // stays out of the index this process writes, so a later load cannot hand
+    // one node the other's packing. A name already in a loaded file remains
+    // there until the file is rewritten; a later load re-detects the conflict
+    // on the first packing under it. The packing that reserved space before
+    // this call keeps the heap reason it was booked under; later packings
+    // under the name are booked as ConflictedName. This packing's bytes stay
+    // in the cache file as dead space once the runtime holding it is gone.
     ET_LOG(
         Info,
         "look_up_or_insert: packed bytes differ for '%s'; storing an unnamed "
         "packing and retiring the name",
         weight_bias_name.c_str());
     existing->second.conflicted = true;
-    return next_offset;
+    return context->insert_unnamed(next_offset, size, cache_key->seed);
   }
   if (existing != context->name_to_packed_data_metadata_.end() &&
       existing->second.conflicted) {
-    return next_offset;
+    return context->insert_unnamed(next_offset, size, cache_key->seed);
   }
 
   PackedDataMeta packed_data_metadata;
@@ -742,6 +746,24 @@ size_t XNNWeightsCache::look_up_or_insert(
 
 bool XNNWeightsCache::is_finalized(XNNWeightsCache* context) {
   return context->is_finalized_;
+// Give a packing without a usable name an owner. The key starts with a byte
+// no named_key carries, so look_up, which keys by unpacked data name, never
+// reaches it; finalize_for_runtime hands it to the runtime like any named
+// entry, so delete_packed_data frees the packing with the runtime's last
+// reference and the slot cannot be dropped by full_unload while in use.
+size_t
+XNNWeightsCache::insert_unnamed(size_t offset, size_t size, uint32_t seed) {
+  PackedDataMeta meta;
+  meta.offset = offset;
+  meta.data_size = size;
+  meta.in_current_runtime = true;
+  meta.seed = seed;
+  meta.unnamed = true;
+  name_to_packed_data_metadata_
+      [std::string("\x01unnamed:") + std::to_string(offset)] = meta;
+  return offset;
+}
+
 }
 
 void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
@@ -779,7 +801,7 @@ Error XNNWeightsCache::save_packed_index() {
 
   // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
   for (const auto& [name, meta] : name_to_packed_data_metadata_) {
-    if (meta.conflicted) {
+    if (meta.conflicted || meta.unnamed) {
       continue;
     }
     void* ptr = packed_data_ptrs_[meta.offset];

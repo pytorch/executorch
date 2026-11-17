@@ -49,9 +49,19 @@ struct PackedDataMeta {
   bool from_load{false};
   // True once a second kernel packed under this name with different bytes:
   // the name does not tell the two apart, so look_up treats it as a miss
-  // from then on and save_packed_index leaves it out of the file. Nodes
-  // under a conflicted name pack unnamed, outside the cache.
+  // while any runtime still holds the entry, and save_packed_index leaves it
+  // out of the file. Nodes under a conflicted name pack unnamed. Once the
+  // last runtime releases the entry it goes like any other, and the next
+  // compile re-detects the conflict the same way.
   bool conflicted{false};
+  // True for a packing XNNPACK stored without a usable name (an inline
+  // constant, a kernel whose consumers disagree on the qualifier, or a
+  // kernel under a conflicted name). It is keyed by a synthetic name that
+  // look_up never produces, so no later node can hit it, and
+  // save_packed_index leaves it out of the file. The synthetic name is
+  // handed to the runtime like any other, so the packing is freed with the
+  // runtime's last reference instead of outliving it.
+  bool unnamed{false};
   // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
   // guarantees this is consistent across runs of the same ukernel; when
   // XNNPACK upgrades and a ukernel implementation changes, the seed
@@ -180,7 +190,7 @@ class XNNWeightsCache {
    * suffix. The same suffix again is a no-op: those nodes share one packing.
    * A different suffix means the nodes need different packings of one
    * pointer, which the cache cannot key apart, so it forgets the buffer's
-   * name and every node that packs it does so outside the cache.
+   * name and every node that packs it gets its own unnamed packing.
    */
   void qualify_unpacked_name(const void* data_ptr, const std::string& suffix);
 
@@ -275,6 +285,7 @@ class XNNWeightsCache {
   // Runtime Allocator used to reserve memory for packed weights
   MemoryAllocator* runtime_allocator_;
 
+  size_t insert_unnamed(size_t offset, size_t size, uint32_t seed);
   // Named Data Map used to load named data
   const NamedDataMap* named_data_map_;
 

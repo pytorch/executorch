@@ -520,10 +520,9 @@ TEST_F(XNNWeightsCacheTest, SameKernelBytesDifferentRequantizationPackApart) {
 // One weight consumed by two nodes is a single value, so both nodes hand
 // XNNPACK the same kernel pointer and look_up cannot tell them apart by name.
 // When their requantization differs the cache drops the name instead, and
-// both nodes pack their own weights outside the cache.
-TEST_F(
-    XNNWeightsCacheTest,
-    SharedKernelConflictingRequantizationPacksUncached) {
+// each node gets its own unnamed packing, owned by the runtime like a named
+// one so that it is freed with the runtime's last reference.
+TEST_F(XNNWeightsCacheTest, SharedKernelConflictingRequantizationPacksUnnamed) {
   Qc8Output ref_coarse, ref_fine, out_coarse, out_fine;
   Qc8References(ref_coarse, ref_fine);
 
@@ -534,7 +533,9 @@ TEST_F(
       {{"|io:coarse", 0.5f, &out_coarse}, {"|io:fine", 0.0625f, &out_fine}});
   ASSERT_EQ(out_coarse, ref_coarse);
   ASSERT_EQ(out_fine, ref_fine);
-  ASSERT_EQ(cache.get_packed_data_names().size(), 0u);
+  ASSERT_EQ(cache.get_packed_data_names().size(), 2u);
+  ASSERT_EQ(cache.delete_packed_data(cache.get_packed_data_names()), Error::Ok);
+  ASSERT_TRUE(cache.get_packed_data_names().empty());
 
   // Consumers that agree on the requantization share one cached packing.
   cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
@@ -641,6 +642,84 @@ TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
   ASSERT_EQ(
       *static_cast<uint8_t*>(
           provider->offset_to_addr(provider->context, first_offset)),
+// A packing stored without a name belongs to the runtime that packed it. Its
+// synthetic name comes back from finalize_for_runtime so the runtime holds a
+// reference: another runtime releasing the last named entry must not unload
+// the slot from under it, and its own release must free it.
+TEST_F(XNNWeightsCacheTest, UnnamedPackingIsOwnedByItsRuntime) {
+  XNNWeightsCache cache;
+  xnn_weights_cache_provider* provider = cache.get();
+
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> first = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(first.ok());
+  const size_t named_offset = packUnder(provider, first.get(), 1);
+  Result<std::vector<std::string>> named_runtime = cache.finalize_for_runtime();
+  ASSERT_TRUE(named_runtime.ok());
+  ASSERT_EQ(named_runtime.get().size(), 1u);
+
+  // Same name, different bytes: this runtime's packing is stored unnamed.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> second = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(second.ok());
+  const size_t unnamed_offset = packUnder(provider, second.get(), 2);
+  ASSERT_NE(unnamed_offset, named_offset);
+  Result<std::vector<std::string>> unnamed_runtime =
+      cache.finalize_for_runtime();
+  ASSERT_TRUE(unnamed_runtime.ok());
+  ASSERT_FALSE(unnamed_runtime.get().empty());
+
+  ASSERT_EQ(cache.delete_packed_data(named_runtime.get()), Error::Ok);
+  ASSERT_FALSE(cache.get_packed_data_names().empty());
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, unnamed_offset)),
+      2);
+
+  ASSERT_EQ(cache.delete_packed_data(unnamed_runtime.get()), Error::Ok);
+  ASSERT_TRUE(cache.get_packed_data_names().empty());
+}
+
+// Unnamed packings never reach the cache file: a later load has no name to
+// hit them by, and the slot they would occupy belongs to a runtime that is
+// gone.
+TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_unnamed_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+  std::vector<std::string> names;
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    ASSERT_NE(packUnder(provider, bias.get(), 1), SIZE_MAX);
+    std::array<uint8_t, 64> inline_kernel{};
+    ASSERT_NE(packUnder(provider, inline_kernel.data(), 2), SIZE_MAX);
+    Result<std::vector<std::string>> finalized = cache.finalize_for_runtime();
+    ASSERT_TRUE(finalized.ok());
+    ASSERT_EQ(finalized.get().size(), 2u);
+    names = finalized.get();
+  }
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    std::vector<std::string> loaded = cache.get_packed_data_names();
+    ASSERT_EQ(loaded.size(), 1u);
+    ASSERT_EQ(loaded[0], "bias");
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    xnn_weights_cache_look_up_key key = keyFor(bias.get());
+    ASSERT_NE(provider->look_up(provider->context, &key), SIZE_MAX);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  ::unlink(cache_path.c_str());
+}
+
       1);
   ASSERT_EQ(
       *static_cast<uint8_t*>(
