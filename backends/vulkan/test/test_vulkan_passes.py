@@ -1,5 +1,6 @@
 import unittest
 from itertools import product
+from operator import getitem
 from typing import List, Optional, Tuple
 
 import executorch.backends.vulkan.patterns as vk_patterns
@@ -1081,7 +1082,9 @@ class TestVulkanPasses(unittest.TestCase):
     def test_fuse_aten_rms_norm(self):
         """F.rms_norm and nn.RMSNorm decompose to pow -> mean(dim=[ndim - 1]) ->
         add.Scalar -> rsqrt -> mul -> mul, which must fuse into et_vk.rms_norm
-        like the hand-written x * rsqrt(mean(x * x, -1) + eps) * w form.
+        like the hand-written x * rsqrt(mean(x * x, -1) + eps) * w form. In
+        fp16 the decomposition casts x and the weight up and the product back
+        down; the fused op takes the fp16 tensors and the constant weight.
         """
         import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
 
@@ -1093,10 +1096,14 @@ class TestVulkanPasses(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.rms_norm(x, (64,), self.weight, 1e-6)
 
-        for model in (FunctionalRmsNorm(), torch.nn.RMSNorm(64, eps=1e-6)):
-            model = model.eval()
-            for shape in ((6, 64), (2, 6, 64)):
-                sample_inputs = (torch.randn(shape),)
+        for dtype, model_cls, shape in product(
+            (torch.float32, torch.float16),
+            (FunctionalRmsNorm, lambda: torch.nn.RMSNorm(64, eps=1e-6)),
+            ((6, 64), (2, 6, 64)),
+        ):
+            model = model_cls().to(dtype).eval()
+            with self.subTest(dtype=dtype, model=type(model).__name__, shape=shape):
+                sample_inputs = (torch.randn(shape, dtype=dtype),)
                 eager_ref = model(*sample_inputs)
 
                 program = torch.export.export(model, sample_inputs, strict=True)
@@ -1114,11 +1121,129 @@ class TestVulkanPasses(unittest.TestCase):
                 self.assertEqual(op_node_count(gm, "rms_norm.default"), 1)
                 self.assertEqual(op_node_count(gm, "mean.dim"), 0)
                 self.assertEqual(op_node_count(gm, "rsqrt.default"), 0)
+                self.assertEqual(cast_count(gm), 0)
+                (rms_norm,) = [
+                    n
+                    for n in gm.graph.nodes
+                    if get_target_canonical_name(n) == "rms_norm.default"
+                ]
+                self.assertEqual(rms_norm.args[0].op, "placeholder")
+                self.assertIn(rms_norm.args[1], get_constant_nodes(ep))
 
                 fused_out = ep.module()(*sample_inputs)
+                self.assertEqual(fused_out.dtype, dtype)
+                tol = 1e-5 if dtype == torch.float32 else 1e-3
                 self.assertTrue(
-                    torch.allclose(fused_out, eager_ref, atol=1e-5, rtol=1e-5)
+                    torch.allclose(fused_out, eager_ref, atol=tol, rtol=tol)
                 )
+
+    def test_lower_aten_rms_norm(self):
+        """nn.RMSNorm lowers to a single delegate running one et_vk.rms_norm
+        whose weight is serialized as a constant, which the runtime requires.
+        """
+        hidden = 64
+
+        class LlamaRmsNorm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.rand(hidden) + 0.5)
+
+            def forward(self, x):
+                xf = x.float()
+                norm = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return norm.type_as(x) * self.weight
+
+        for dtype, model in product(
+            (torch.float32, torch.float16),
+            (torch.nn.RMSNorm(hidden, eps=1e-6), LlamaRmsNorm()),
+        ):
+            with self.subTest(dtype=dtype, model=type(model).__name__):
+                x = torch.randn(2, 6, hidden, dtype=dtype)
+                edge = lower_to_vulkan(model.to(dtype).eval(), (x,))
+                self.assertEqual(
+                    [
+                        get_target_canonical_name(n)
+                        for n in edge.exported_program().graph.nodes
+                        if n.op == "call_function" and n.target is not getitem
+                    ],
+                    ["executorch_call_delegate"],
+                )
+                (graph,) = vulkan_delegate_graphs(edge)
+                self.assertEqual(
+                    [op.name for op in graph.chain], ["et_vk.rms_norm.default"]
+                )
+                weight = graph.values[graph.chain[0].args[1]].value
+                self.assertGreaterEqual(weight.constant_id, 0)
+
+    def test_rms_norm_with_non_constant_weight_is_not_fused(self):
+        """et_vk.rms_norm prepacks its weight, so a weight that is computed or a
+        graph input must stay unfused; fusing it aborted at delegate init in
+        prepack_standard. The partition must not claim add.Scalar either, which
+        has no Vulkan implementation outside the fused op.
+        """
+        hidden = 64
+        rms_norm = torch.nn.functional.rms_norm
+
+        class ComputedWeight(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.rand(hidden) * 0.1)
+
+            def forward(self, x):
+                return rms_norm(x, (hidden,), 1.0 + self.weight, 1e-6)
+
+        class InputWeight(torch.nn.Module):
+            def forward(self, x, weight):
+                return rms_norm(x, (hidden,), weight, 1e-6)
+
+        class ChainedWeightless(torch.nn.Module):
+            def forward(self, x):
+                return rms_norm(rms_norm(x, (hidden,)), (hidden,))
+
+        for dtype, (model, extra_inputs) in product(
+            (torch.float32, torch.float16),
+            (
+                (ComputedWeight(), ()),
+                (InputWeight(), (torch.rand(hidden),)),
+                (ChainedWeightless(), ()),
+            ),
+        ):
+            with self.subTest(dtype=dtype, model=type(model).__name__):
+                inputs = tuple(
+                    t.to(dtype) for t in (torch.randn(2, 6, hidden), *extra_inputs)
+                )
+                edge = lower_to_vulkan(model.to(dtype).eval(), inputs)
+                op_names = [
+                    op.name
+                    for graph in vulkan_delegate_graphs(edge)
+                    for op in graph.chain
+                ]
+                self.assertNotIn("et_vk.rms_norm.default", op_names)
+                self.assertNotIn("aten.add.Scalar", op_names)
+
+    def test_rms_norm_with_scaled_eps_is_not_fused(self):
+        """add computes self + alpha * other, so a non-unit alpha must not be
+        dropped from eps.
+        """
+
+        class ScaledEps(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.rand(64) + 0.5)
+
+            def forward(self, x):
+                ms = torch.add(x.pow(2).mean(-1, keepdim=True), 1e-2, alpha=4)
+                return x * torch.rsqrt(ms) * self.weight
+
+        model = ScaledEps().eval()
+        ep = to_edge(
+            torch.export.export(model, (torch.randn(2, 6, 64),), strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        fuse_pass.call(ep.graph_module)
+        self.assertEqual(op_node_count(ep.graph_module, "rms_norm.default"), 0)
 
     def test_fuse_8da4w_linear_keeps_following_reshape(self):
         """A reshape after a dynamically quantized linear that is not the view
