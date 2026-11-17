@@ -170,21 +170,25 @@ def from_bytes(data: bytes, like: torch.Tensor, channels_last: bool) -> torch.Te
     return tensor.permute(0, 3, 1, 2) if channels_last else tensor
 
 
-def run_host(tmp_path: Path, program: bytes, steps, *args):
-    """
-    Runs one list of input tensors per step. Returns the output files per
-    instance and step, and the delegates' memory statistics.
-    """
+def run_runner(tmp_path: Path, program: bytes, steps, *args):
     (tmp_path / "program.pte").write_bytes(program)
     for step, inputs in enumerate(steps):
         for i, tensor in enumerate(inputs):
             (tmp_path / f"in_{step}_{i}.bin").write_bytes(to_bytes(tensor))
-    result = subprocess.run(
+    return subprocess.run(
         [RUNNER, str(tmp_path / "program.pte"), str(tmp_path), str(len(steps))]
         + [str(arg) for arg in args],
         capture_output=True,
         text=True,
     )
+
+
+def run_host(tmp_path: Path, program: bytes, steps, *args):
+    """
+    Runs one list of input tensors per step. Returns the output files per
+    instance and step, and the delegates' memory statistics.
+    """
+    result = run_runner(tmp_path, program, steps, *args)
     assert result.returncode == 0, result.stdout + result.stderr
     (stats_line,) = [
         line for line in result.stdout.splitlines() if line.startswith("STATS ")
@@ -401,6 +405,17 @@ def test_unplanned_io_shared_with_the_caller(tmp_path):
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
+
+
+def test_output_without_memory_is_rejected(tmp_path):
+    model, shapes = lowering_cases.ConvActModel(), [(1, 3, 16, 16)]
+    _, program = lower(model, shapes, alloc_graph_output=False)
+    result = run_runner(
+        tmp_path, program, random_steps(shapes, 1), "--unbound-output", 0
+    )
+    assert result.returncode != 0
+    assert "output 0 has no data" in result.stdout
+    assert "execute (18)" in result.stderr  # Error::InvalidArgument
 
 
 def test_version_6_graphs_still_run(tmp_path):

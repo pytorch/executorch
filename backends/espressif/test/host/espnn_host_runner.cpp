@@ -16,6 +16,7 @@
  *                     [--alias INPUT:OUTPUT]...
  *                     [--share-output FIRST:SECOND]...
  *                     [--misalign] [--reset-before STEP]...
+ *                     [--unbound-output OUTPUT]
  *
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
  * output o to IO_DIR/out_<k>_<s>_<o>.bin: the raw bytes of the tensor in its
@@ -27,11 +28,13 @@
  * output of the previous step. --share-output writes unplanned output SECOND
  * into output FIRST's buffer.
  * --misalign places every runner buffer one byte past a 16-byte boundary.
+ * --unbound-output never gives that unplanned output memory.
  * --reset-before asks EspNNBackend, through its reset_states backend option,
  * to restore its delegates' state before that step. At the end, the runner
  * prints the delegates' memory as a STATS line.
  */
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -147,6 +150,7 @@ int main(int argc, char** argv) {
   int instance_count = 1;
   bool share_io = false;
   size_t misalign = 0;
+  size_t unbound_output = SIZE_MAX;
   std::vector<std::pair<size_t, size_t>> aliases;
   std::vector<std::pair<size_t, size_t>> shared_outputs;
   std::vector<int> resets;
@@ -160,6 +164,8 @@ int main(int argc, char** argv) {
       share_io = true;
     } else if (arg == "--misalign") {
       misalign = 1;
+    } else if (arg == "--unbound-output" && a + 1 < argc) {
+      unbound_output = std::strtoul(argv[++a], nullptr, 10);
     } else if (arg == "--alias" && a + 1 < argc) {
       unsigned input = 0, output = 0;
       if (std::sscanf(argv[++a], "%u:%u", &input, &output) != 2)
@@ -243,7 +249,8 @@ int main(int argc, char** argv) {
       }
     }
     for (size_t o = 0; o < instance.outputs.size(); ++o) {
-      if (meta->output_tensor_meta(o).get().is_memory_planned())
+      if (meta->output_tensor_meta(o).get().is_memory_planned() ||
+          o == unbound_output)
         continue;
       void* buffer = instance.outputs[o]->data;
       for (const auto& [input, output] : aliases) {

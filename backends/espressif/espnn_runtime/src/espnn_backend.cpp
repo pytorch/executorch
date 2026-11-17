@@ -108,6 +108,14 @@ Layout tensor_layout(const Tensor& tensor, const Int8TensorInfo& info) {
   return Layout::kInvalid;
 }
 
+Error missing_data(const char* kind, size_t index) {
+  std::printf(
+      "EspNN delegate: %s %u has no data\n",
+      kind,
+      static_cast<unsigned>(index));
+  return Error::InvalidArgument;
+}
+
 // The kernels may rely on the activation arena's 16-byte alignment, so only
 // buffers aligned like it are used in place.
 bool arena_aligned(const void* data) {
@@ -376,6 +384,9 @@ class EspNNBackendInterface final : public BackendInterface {
           args[i]->isTensor() && interpreter.input_info(i, info)
           ? tensor_layout(args[i]->toTensor(), info)
           : Layout::kInvalid;
+      if (layout != Layout::kInvalid &&
+          args[i]->toTensor().const_data_ptr() == nullptr)
+        return missing_data("input", i);
       const bool ok =
           layout != Layout::kInvalid &&
           load_input(
@@ -394,6 +405,8 @@ class EspNNBackendInterface final : public BackendInterface {
           ? tensor_layout(args[inputs + o]->toTensor(), info)
           : Layout::kInvalid;
       bool ok = layout != Layout::kInvalid;
+      if (ok && args[inputs + o]->toTensor().const_data_ptr() == nullptr)
+        return missing_data("output", o);
       if (ok && (state->conversion_slots & (1U << (inputs + o))) != 0) {
         staged_outputs |= 1U << o;
         continue;
