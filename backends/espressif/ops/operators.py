@@ -9,6 +9,11 @@ from executorch.backends.espressif.utils.quantization import requantize
 from torch.library import impl, Library, register_fake
 
 lib = Library("esp_nn", "DEF")
+lib.define("quantized_lut_int8(Tensor input, Tensor table) -> Tensor")
+lib.define(
+    "quantized_lut_int8.out(Tensor input, Tensor table, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
 lib.define(
     "quantized_mul_int8(Tensor input1, Tensor input2, int input1_offset, "
     "int input2_offset, int output_offset, int output_multiplier, int output_shift) -> Tensor"
@@ -89,6 +94,16 @@ lib.define(
     "Tensor output_multiplier, Tensor output_shift, "
     "int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
 )
+
+
+@register_fake("esp_nn::quantized_lut_int8")
+def quantized_lut_int8_meta(input, table):
+    return input.new_empty(input.shape)
+
+
+@impl(lib, "quantized_lut_int8", "CompositeExplicitAutograd")
+def quantized_lut_int8(input, table):
+    return table[input.to(torch.int64) & 255]
 
 
 @register_fake("esp_nn::quantized_max_pool2d_int8")
