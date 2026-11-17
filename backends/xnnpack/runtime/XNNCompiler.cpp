@@ -14,6 +14,7 @@
 #include <xnnpack.h>
 #include <cinttypes>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -275,6 +276,38 @@ void qualifyPackedKernel(
 }
 
 /*
+Serialized ids of a node whose filter and bias XNNPACK copies into its own
+packed storage while the runtime is created; nullopt for every other node,
+whose constants are referenced by raw pointer for the lifetime of the runtime.
+*/
+std::optional<PackingNodeIds> getPackingNodeIds(NodePtr node) {
+  // Deliberately an if-chain rather than a switch: XNodeUnion has ~50
+  // enumerators and -Wswitch-enum requires every one of them to be listed.
+  auto type = node->xnode_union_type();
+  if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
+    auto n = node->xnode_union_as_XNNFullyConnected();
+    return PackingNodeIds{
+        n->filter_id(), n->bias_id(), n->input1_id(), n->output_id()};
+  }
+  if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
+    auto n = node->xnode_union_as_XNNConv2d();
+    return PackingNodeIds{
+        n->filter_id(), n->bias_id(), n->input1_id(), n->output_id()};
+  }
+  if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
+    auto n = node->xnode_union_as_XNNDepthwiseConv2d();
+    return PackingNodeIds{
+        n->filter_id(), n->bias_id(), n->input1_id(), n->output_id()};
+  }
+  if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
+    auto n = node->xnode_union_as_XNNConvTranspose2d();
+    return PackingNodeIds{
+        n->filter_id(), n->bias_id(), n->input1_id(), n->output_id()};
+  }
+  return std::nullopt;
+}
+
+/*
 Appends the node's input and output activation quantization to its kernel's
 cache name when the node packs a quantized constant the cache loaded.
 */
@@ -282,26 +315,21 @@ void qualifyPackedNodeKernel(const CacheNamingContext& ctx, NodePtr node) {
   if (!ctx.use_weight_cache || ctx.weights_cache == nullptr) {
     return;
   }
-  // An if-chain for the same reason as in getPackedValueIds.
-  auto type = node->xnode_union_type();
-  if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-    auto n = node->xnode_union_as_XNNFullyConnected();
-    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
-  } else if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
-    auto n = node->xnode_union_as_XNNConv2d();
-    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
-  } else if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
-    auto n = node->xnode_union_as_XNNDepthwiseConv2d();
-    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
-  } else if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
-    auto n = node->xnode_union_as_XNNConvTranspose2d();
-    qualifyPackedKernel(ctx, n->filter_id(), n->input1_id(), n->output_id());
+  if (auto ids = getPackingNodeIds(node)) {
+    qualifyPackedKernel(ctx, ids->filter_id, ids->input_id, ids->output_id);
   }
 }
 
 /**
 Gets the constant data pointer associated with the given tensor value.
 Obtaining the constant data pointer can either be from within the flatbuffer
+struct PackingNodeIds {
+  uint32_t filter_id;
+  uint32_t bias_id;
+  uint32_t input_id;
+  uint32_t output_id;
+};
+
 payload (deprecated) or via offsets to the constant_data_ptr.
 
 Failures are returned as an Error, and the successful value may be nullptr
@@ -2282,34 +2310,18 @@ uint32_t getSerializedValueId(ValuePtr value) noexcept {
 
 /*
 Serialized ids of the values that XNNPACK copies into its own packed storage
-while the runtime is created. Every other constant value is referenced by raw
-pointer for the lifetime of the runtime.
+while the runtime is created.
 */
 std::unordered_set<uint32_t> getPackedValueIds(GraphPtr flatbuffer_graph) {
   std::unordered_set<uint32_t> packed_ids;
-  auto insert_weights = [&packed_ids](uint32_t filter_id, uint32_t bias_id) {
-    packed_ids.insert(filter_id);
-    if (bias_id != XNN_INVALID_VALUE_ID) {
-      packed_ids.insert(bias_id);
-    }
-  };
-
-  // Deliberately an if-chain rather than a switch: XNodeUnion has ~50
-  // enumerators and -Wswitch-enum requires every one of them to be listed.
   for (auto node : *flatbuffer_graph->xnodes()) {
-    auto type = node->xnode_union_type();
-    if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-      auto n = node->xnode_union_as_XNNFullyConnected();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
-      auto n = node->xnode_union_as_XNNConv2d();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
-      auto n = node->xnode_union_as_XNNDepthwiseConv2d();
-      insert_weights(n->filter_id(), n->bias_id());
-    } else if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
-      auto n = node->xnode_union_as_XNNConvTranspose2d();
-      insert_weights(n->filter_id(), n->bias_id());
+    auto ids = getPackingNodeIds(node);
+    if (!ids) {
+      continue;
+    }
+    packed_ids.insert(ids->filter_id);
+    if (ids->bias_id != XNN_INVALID_VALUE_ID) {
+      packed_ids.insert(ids->bias_id);
     }
   }
   return packed_ids;
