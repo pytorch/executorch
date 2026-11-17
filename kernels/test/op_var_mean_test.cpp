@@ -385,6 +385,65 @@ TEST_F(OpVarMeanCorrectionOutTest, SmokeTest) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpVarMeanCorrectionOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // 100, 102, 100, 102, ... has mean 101 and variance 1. A BFloat16 running
+  // sum would stop growing long before the last of the 2058 terms. BFloat16
+  // also rounds 2058 and 2057 to 2064, and dividing by 2064 would give a mean
+  // of about 100.7 and a variance of about 1.09 or 0.997.
+  constexpr int N = 2058;
+  std::vector<executorch::aten::BFloat16> data(N);
+  for (int i = 0; i < N; ++i) {
+    data[i] = i % 2 == 0 ? 100.0f : 102.0f;
+  }
+  optional<Scalar> correction(1);
+  Tensor var_out = tf.zeros({1});
+  Tensor mean_out = tf.zeros({1});
+  Tensor expected_var = tf.full({1}, 1);
+  Tensor expected_mean = tf.full({1}, 101);
+
+  // The last dim of a contiguous tensor takes a fast path, dim 0 does not.
+  op_var_mean_correction_out(
+      tf.make({1, N}, data),
+      ArrayRef<int64_t>{1},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_EQ(var_out, expected_var);
+  EXPECT_TENSOR_EQ(mean_out, expected_mean);
+  op_var_mean_correction_out(
+      tf.make({N, 1}, data),
+      ArrayRef<int64_t>{0},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_EQ(var_out, expected_var);
+  EXPECT_TENSOR_EQ(mean_out, expected_mean);
+}
+
+TEST_F(OpVarMeanCorrectionOutTest, MixedDtypesConvertInputsFirst) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::BFloat16> tf_out;
+  // BFloat16 holds 1000, 1001, 1002, 1003 as 1000, 1000, 1000, 1004, whose
+  // unbiased variance is 4. The variance of the float values is about 1.67.
+  optional<Scalar> correction(1);
+  Tensor var_out = tf_out.zeros({1});
+  Tensor mean_out = tf_out.zeros({1});
+  op_var_mean_correction_out(
+      tf.make({1, 4}, {1000, 1001, 1002, 1003}),
+      ArrayRef<int64_t>{1},
+      correction,
+      /*keepdim=*/false,
+      var_out,
+      mean_out);
+  EXPECT_TENSOR_EQ(var_out, tf_out.full({1}, 4));
+}
+
 TEST_F(OpVarMeanCorrectionOutTest, KeepDim) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,

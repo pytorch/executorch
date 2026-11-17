@@ -511,6 +511,7 @@ def _get_compile_spec(args) -> ArmCompileSpec:
             extra_flags=extra_flags,
             config_ini=args.config,
             max_scratch_size=max_scratch_size,
+            plan_delegate_scratch=args.plan_delegate_scratch,
         )
     elif "vgf" in args.target:
         if args.quantize:
@@ -700,6 +701,13 @@ def _get_args():
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U65 and Ethos-U85 targets",
     )
     parser.add_argument(
+        "--plan-delegate-scratch",
+        action="store_true",
+        help="Declare Ethos-U delegate scratch for ExecuTorch memory planning. "
+        "Use with the bare-metal/RTOS core-driver runtime; Linux Direct Drive "
+        "allocates its own scratch and retains the unused planned reservation.",
+    )
+    parser.add_argument(
         "--max_scratch_size",
         type=int,
         default=None,
@@ -735,6 +743,9 @@ def _get_args():
         help="Flag for enabling direct drive.",
     )
     args = parser.parse_args()
+
+    if args.plan_delegate_scratch and "ethos-u" not in args.target:
+        parser.error("--plan-delegate-scratch requires an Ethos-U target")
 
     LOGGING_FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
     logging_level = logging.DEBUG if args.debug else logging.WARNING

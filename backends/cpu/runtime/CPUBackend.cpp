@@ -93,7 +93,10 @@ class CPUExecution {
       return error;
     }
     plan_ = std::make_unique<CPUPlan>(
-        graph, buffers_, std::move(configuration), current_execution_context());
+        graph,
+        buffers_,
+        std::move(configuration),
+        current_execution_context(context.event_tracer()));
     error = plan_->select();
     if (error != Error::Ok) {
       return error;

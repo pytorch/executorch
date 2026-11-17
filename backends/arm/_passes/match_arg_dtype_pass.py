@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import reduce
 from typing import Set, Type
 
 import torch
@@ -33,6 +34,10 @@ class MatchArgDtypePass(ArmOpTargetedPass):
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.where.self,
+        exir_ops.edge.aten.bitwise_and.Tensor,
+        exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.cat.default,
     }
 
     def call(self, graph_module: torch.fx.GraphModule):
@@ -42,20 +47,27 @@ class MatchArgDtypePass(ArmOpTargetedPass):
         for node in graph.nodes:
             if node.op != "call_function" or node.target not in self.target_ops:
                 continue
-            args_to_cast = (
-                node.args[1:]
-                if node.target == exir_ops.edge.aten.where.self
-                else node.args
-            )
-            input_ = args_to_cast[0]
-            other_ = args_to_cast[1]
-            target_dtype = torch.result_type(input_.meta["val"], other_.meta["val"])
+            if node.target == exir_ops.edge.aten.cat.default:
+                args_to_cast = node.args[0]
+                target_dtype = reduce(
+                    torch.promote_types,
+                    (arg.meta["val"].dtype for arg in args_to_cast),
+                )
+            else:
+                args_to_cast = (
+                    node.args[1:]
+                    if node.target == exir_ops.edge.aten.where.self
+                    else node.args
+                )
+                input_ = args_to_cast[0]
+                other_ = args_to_cast[1]
+                target_dtype = torch.result_type(input_.meta["val"], other_.meta["val"])
 
             for arg in args_to_cast:
                 arg_dtype = arg.meta["val"].dtype
 
                 if arg_dtype != target_dtype:
-                    if arg_dtype == torch.bool:
+                    if arg_dtype == torch.bool and target_dtype != torch.int64:
                         # Bool is an edge case which cannot necessarily be directly
                         # converted to the target data type.
                         with graph.inserting_after(arg):

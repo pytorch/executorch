@@ -21,6 +21,7 @@ from executorch.codegen.gen import (
     ComputeCodegenUnboxedKernels,
     gen_functions_declarations,
     gen_unboxing,
+    generate,
     parse_yaml_files,
     translate_native_yaml,
 )
@@ -230,6 +231,60 @@ class TestParseNativeYaml(unittest.TestCase):
             )
 
         self.assertTrue(len(expected_kernel_entry) == 0)
+
+    def _generate_add_registration(
+        self, tags_path: str | None = None, aten_yaml_path: str | None = None
+    ) -> str:
+        os.mkdir(os.path.join(self.temp_dir, "templates"))
+        with open(
+            os.path.join(
+                self.temp_dir, "templates", "RegisterCodegenUnboxedKernels.cpp"
+            ),
+            "w",
+        ) as f:
+            f.write("${unboxed_kernels}\n")
+        selection_yaml_path = os.path.join(self.temp_dir, "selected_operators.yaml")
+        with open(selection_yaml_path, "w") as f:
+            f.write(
+                """
+et_kernel_metadata:
+  aten::add.out:
+  - default
+operators:
+  aten::add.out:
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+                """
+            )
+        install_dir = os.path.join(self.temp_dir, "out")
+
+        generate(
+            source_path=self.temp_dir,
+            install_dir=install_dir,
+            functions_yaml_path=self.ops_yaml_path,
+            op_selection_yaml_path=selection_yaml_path,
+            outputs=["sources"],
+            tags_path=tags_path,
+            aten_yaml_path=aten_yaml_path,
+        )
+
+        with open(
+            os.path.join(install_dir, "RegisterCodegenUnboxedKernelsEverything.cpp")
+        ) as f:
+            return f.read()
+
+    def test_generate_registers_only_selected_ops(self) -> None:
+        registration = self._generate_add_registration(
+            tags_path=self.tags_yaml_path, aten_yaml_path=self.aten_yaml_path
+        )
+        self.assertIn("add_out_kernel", registration)
+        self.assertNotIn("mul_out_kernel", registration)
+
+    def test_generate_defaults_to_torchgen_packaged_yaml(self) -> None:
+        registration = self._generate_add_registration()
+        self.assertIn("add_out_kernel", registration)
+        self.assertNotIn("mul_out_kernel", registration)
 
     def tearDown(self) -> None:
         import shutil

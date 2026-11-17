@@ -101,10 +101,12 @@ int run_classification(
         executable->num_inputs(),
         executable->num_outputs());
     const ConstantBytes constants = constant_bytes(*context);
-    std::printf(
-        "constants: %zu unique source bytes, %zu materialized\n",
-        constants.unique,
-        constants.materialized);
+    if (constants.unique.has_value()) {
+      std::printf(
+          "constants: %zu unique source bytes, %zu materialized\n",
+          *constants.unique,
+          constants.materialized);
+    }
 
     if (executable->num_inputs() != 1 || executable->num_outputs() != 1) {
       std::fprintf(

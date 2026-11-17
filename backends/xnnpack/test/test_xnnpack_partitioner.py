@@ -13,10 +13,19 @@ import torch.nn.functional as F
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.export.utils import is_fbcode
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from torch.export import export
+
+
+def _ops_outside_delegates(program):
+    return [
+        node.target.__name__
+        for node in program.exported_program().graph.nodes
+        if node.op == "call_function" and hasattr(node.target, "__name__")
+    ]
 
 
 class TestXnnpackPartitioner(unittest.TestCase):
@@ -161,3 +170,130 @@ class TestXnnpackPartitioner(unittest.TestCase):
         fwd2_et = executorch_module.run_method("forward_2", example_inputs)
         self.assertTrue(torch.allclose(fwd1_eager, fwd1_et[0], 1e-3))
         self.assertTrue(torch.allclose(fwd2_eager, fwd2_et[0], 1e-3))
+
+    def test_enable_bf16_leaves_ops_xnnpack_cannot_define_in_bf16(self):
+        """
+        XNNPACK refuses these ops on bf16 tensors when the program loads, so even
+        with enable_bf16 their bf16 nodes must run on the portable kernels. The
+        same modules are delegated in fp32, so bf16 is what keeps them out.
+        """
+
+        def lower(module, x):
+            return to_edge_transform_and_lower(
+                export(module, (x,)),
+                partitioner=[XnnpackPartitioner(enable_bf16=True)],
+            )
+
+        modules = {
+            "avg_pool2d": torch.nn.AvgPool2d(2),
+            "batch_norm": torch.nn.BatchNorm2d(4),
+            "conv_batch_norm": torch.nn.Sequential(
+                torch.nn.Conv2d(4, 4, 3), torch.nn.BatchNorm2d(4)
+            ),
+            "max_pool2d": torch.nn.MaxPool2d(2),
+            "upsample_bilinear2d": torch.nn.Upsample(scale_factor=2, mode="bilinear"),
+        }
+        x = torch.randn(1, 4, 8, 8)
+        for name, module in modules.items():
+            with self.subTest(name):
+                module.eval()
+                self.assertIn(
+                    "executorch_call_delegate", _ops_outside_delegates(lower(module, x))
+                )
+                module, bf16_x = module.to(torch.bfloat16), x.to(torch.bfloat16)
+                program = lower(module, bf16_x)
+                self.assertNotIn(
+                    "executorch_call_delegate", _ops_outside_delegates(program)
+                )
+                output = _load_for_executorch_from_buffer(
+                    program.to_executorch().buffer
+                ).forward((bf16_x,))[0]
+                torch.testing.assert_close(output, module(bf16_x))
+
+    @unittest.skipIf(
+        is_fbcode(),
+        "skipping for fbcode",
+    )
+    def test_enable_bf16_fuses_batch_norm_into_a_linear(self):
+        """
+        XNNPACK cannot define a bf16 BatchNorm on its own, but one that follows a
+        linear folds into it, so the whole bf16 block still runs in XNNPACK. It
+        does not fold when the linear output has another user, so then it stays
+        on the portable kernels.
+        """
+
+        class LinearBatchNorm(torch.nn.Module):
+            def __init__(self, reuse_linear_output):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 4)
+                self.batch_norm = torch.nn.BatchNorm1d(4)
+                self.batch_norm.running_mean.uniform_(-1, 1)
+                self.batch_norm.running_var.uniform_(0.5, 2)
+                self.reuse_linear_output = reuse_linear_output
+
+            def forward(self, x):
+                y = self.linear(x)
+                z = self.batch_norm(y)
+                return z + y if self.reuse_linear_output else z
+
+        x = torch.randn(2, 8, dtype=torch.bfloat16)
+        delegated = {"executorch_call_delegate", "getitem"}
+        for reuse_linear_output, ops_outside in (
+            (False, delegated),
+            (True, delegated | {"aten._native_batch_norm_legit_no_training.default"}),
+        ):
+            with self.subTest(reuse_linear_output=reuse_linear_output):
+                module = LinearBatchNorm(reuse_linear_output).eval().to(torch.bfloat16)
+                program = to_edge_transform_and_lower(
+                    export(module, (x,)),
+                    partitioner=[XnnpackPartitioner(enable_bf16=True)],
+                )
+                self.assertEqual(set(_ops_outside_delegates(program)), ops_outside)
+                output = _load_for_executorch_from_buffer(
+                    program.to_executorch().buffer
+                ).forward((x,))[0]
+                torch.testing.assert_close(output, module(x), atol=1e-2, rtol=1e-2)
+
+    @unittest.skipIf(
+        is_fbcode(),
+        "skipping for fbcode",
+    )
+    def test_enable_bf16_runs_an_attention_block(self):
+        """
+        The linear layers, both batch matrix multiplications and the softmax
+        of a bf16 attention block run in XNNPACK, and the program loads and
+        matches eager bf16.
+        """
+
+        class Attention(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.q = torch.nn.Linear(16, 16)
+                self.k = torch.nn.Linear(16, 16)
+                self.v = torch.nn.Linear(16, 16)
+                self.o = torch.nn.Linear(16, 16, bias=False)
+
+            def forward(self, x):
+                scores = self.q(x) @ self.k(x).transpose(1, 2) * 0.25
+                return self.o(torch.softmax(scores, dim=-1) @ self.v(x))
+
+        module = Attention().eval().to(torch.bfloat16)
+        x = torch.randn(2, 8, 16, dtype=torch.bfloat16)
+        program = to_edge_transform_and_lower(
+            export(module, (x,)), partitioner=[XnnpackPartitioner(enable_bf16=True)]
+        )
+        ops = _ops_outside_delegates(program)
+        # The expand copies that matmul adds split the block into 3 delegates.
+        self.assertEqual(ops.count("executorch_call_delegate"), 3)
+        self.assertNotIn("aten._softmax.default", ops)
+        matmuls = {
+            "aten.addmm.default",
+            "aten.bmm.default",
+            "aten.linear.default",
+            "aten.mm.default",
+        }
+        self.assertEqual(set(ops) & matmuls, set())
+        output = _load_for_executorch_from_buffer(
+            program.to_executorch().buffer
+        ).forward((x,))[0]
+        torch.testing.assert_close(output, module(x), atol=1e-2, rtol=1e-2)

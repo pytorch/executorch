@@ -77,9 +77,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 // Linear: input ivec3(k4, m, b), output ivec3(n4, m, b)  [width-packed]
 // Conv1d: input ivec3(m, k4, b), output ivec3(m, n4, b)  [height-packed]
 //
-// For buffer storage, height-packed tensors have packed_dim_block_size=1 (no
-// vec4 grouping). Data is stored as contiguous scalars with strides based on
-// logical sizes, so scalar indexing is required: (b * M + m) * C + c.
+// Height-packed buffer rows align the channel count to four scalars.
 // For texture storage, 4 channels are packed per texel as usual.
 
 #ifndef SCALAR_BUFFER
@@ -159,7 +157,8 @@ void load_input_tile_scalar(
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
       if (k4_start + k4 < K4 && m_start + m < M) {
-        const int base = (b * M + m_start + m) * K + mul_4(k4_start + k4);
+        const int base =
+            (b * M + m_start + m) * mul_4(K4) + mul_4(k4_start + k4);
         T s0 = t_in[base];
         T s1 = (mul_4(k4_start + k4) + 1 < K) ? t_in[base + 1] : T(0);
         T s2 = (mul_4(k4_start + k4) + 2 < K) ? t_in[base + 2] : T(0);
@@ -183,12 +182,13 @@ void store_output_tile_scalar(
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       if (m_start + m < M && n4_start + n4 < N4) {
-        const int base = (b * M + m_start + m) * N + mul_4(n4_start + n4);
+        const int base =
+            (b * M + m_start + m) * mul_4(N4) + mul_4(n4_start + n4);
         const VEC4_T val = out_tile.data[m][n4];
         t_out[base] = val.x;
-        if (mul_4(n4_start + n4) + 1 < N) t_out[base + 1] = val.y;
-        if (mul_4(n4_start + n4) + 2 < N) t_out[base + 2] = val.z;
-        if (mul_4(n4_start + n4) + 3 < N) t_out[base + 3] = val.w;
+        t_out[base + 1] = mul_4(n4_start + n4) + 1 < N ? val.y : T(0);
+        t_out[base + 2] = mul_4(n4_start + n4) + 2 < N ? val.z : T(0);
+        t_out[base + 3] = mul_4(n4_start + n4) + 3 < N ? val.w : T(0);
       }
     }
   }

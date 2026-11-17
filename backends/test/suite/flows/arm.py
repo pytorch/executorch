@@ -25,6 +25,7 @@ def _create_arm_flow(
     per_channel_quantization: bool = True,
     use_portable_ops: bool = True,
     timeout: int = 1200,
+    xfail_patterns: list[str] | None = None,
 ) -> TestFlow:
 
     def _create_arm_tester(*args, **kwargs) -> ArmTester:
@@ -59,6 +60,7 @@ def _create_arm_flow(
                 "TOSA/Ethos-U/VGF flows."
             }
         },
+        xfail_patterns=xfail_patterns or [],
     )
 
 
@@ -83,6 +85,8 @@ ARM_ETHOS_U85_FLOW = _create_arm_flow(
     "arm_ethos_u85",
     lambda: common.get_u85_compile_spec(),
     quantize=True,
+    # Ethos-U85 takes these 3-D convolutions and its output does not match.
+    xfail_patterns=["test_conv3d_groups", "test_conv3d_stride"],
 )
 ARM_VGF_FP_FLOW = _create_arm_flow(
     "arm_vgf_fp",

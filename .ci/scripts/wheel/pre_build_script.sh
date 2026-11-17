@@ -179,15 +179,18 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
   fi
 fi
 
-# Enable VGF in pybind wheel builds when the platform-specific build input is
-# available from pip.
+# Enable VGF in Linux pybind wheel builds when the platform-specific build input
+# is available from pip. Not on macOS: the VGF library's macOS wheels need macOS 15,
+# newer than the oldest macOS this wheel supports.
 if [[ "$UNAME_S" == "Linux" || "$UNAME_S" == "Darwin" ]]; then
   # The wheel rewrites recorded runtime paths after linking, which needs patchelf. It is declared
   # under build-system requires, but that is honoured only by a frontend with build isolation and
   # this path deliberately installs requirements itself, so without this the rewrite silently
   # does nothing and a CUDA wheel loses its route to the NVIDIA libraries beside it.
   python3 -m pip install patchelf || true
-  if python3 -m pip install -r \
+  if [[ "$UNAME_S" == "Darwin" ]]; then
+    echo "VGF needs a newer macOS than this wheel supports; building without VGF"
+  elif python3 -m pip install -r \
     "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/arm/requirements-arm-vgf-runtime.txt"; then
     export EXECUTORCH_PYBIND_ENABLE_VGF=ON
     echo "EXECUTORCH_PYBIND_ENABLE_VGF=ON" >> "${GITHUB_ENV}"

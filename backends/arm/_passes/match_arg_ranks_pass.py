@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -85,21 +86,25 @@ class MatchArgRanksPass(ArmOpTargetedPass):
         exir_ops.backend.tosa.SUB.default,
     ]
 
-    def _match_op_rank(self, graph_module, node, arg, max_rank):
+    def _match_op_rank(self, graph_module, node, arg_index, max_rank):
         """In graph_module, insert a view between arg and node to make the rank
         of arg match the other args to node.
         """
+        arg = node.args[arg_index]
         shape = get_first_fake_tensor(arg).shape
         rank = len(shape)
         new_shape = list([1] * (max_rank - rank) + list(shape))
         with graph_module.graph.inserting_before(node):
+            materialized_shape = materialize_symints(graph_module.graph, new_shape)
+            # The broadcast view belongs to the consuming operator, not its input.
             view = create_node(
                 graph_module.graph,
                 exir_ops.edge.aten.view_copy.default,
-                args=(arg, new_shape),
+                args=(arg, materialized_shape),
                 kwargs={},
+                from_node=node,
             )
-            node.replace_input_with(arg, view)
+            node.update_arg(arg_index, view)
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -110,14 +115,19 @@ class MatchArgRanksPass(ArmOpTargetedPass):
                 continue
 
             # Calculate max rank of all inputs to node
+            args = (
+                node.args[:2]
+                if node.target == exir_ops.backend.tosa.MUL.default
+                else node.args
+            )
             max_rank = 0
-            for arg in node.args:
+            for arg in args:
                 if isinstance(arg, Node):
                     shape = get_first_fake_tensor(arg).shape
                     max_rank = max(max_rank, len(shape))
 
             # Adjust output shape of args if needed.
-            for arg in node.args:
+            for arg_index, arg in enumerate(args):
                 if not isinstance(arg, Node):
                     continue
                 shape = get_first_fake_tensor(arg).shape
@@ -125,7 +135,7 @@ class MatchArgRanksPass(ArmOpTargetedPass):
                 if rank == max_rank:
                     continue
 
-                self._match_op_rank(graph_module, node, arg, max_rank)
+                self._match_op_rank(graph_module, node, arg_index, max_rank)
                 modified = True
 
         if modified:

@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
 )
 from executorch.backends.arm._passes.insert_rescales_pass import InsertRescaleInt32Pass
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -58,19 +59,24 @@ class DecomposeLinearPass(ArmOpTargetedPass):
             # weights have shape (Co, Ci)
             weights_reshaped_shape = [weights_shape[0], weights_shape[1], 1, 1]
 
-            # Materialize SymInts into FX nodes; one call shares
-            # the symbol subgraph across all three shape lists.
+            # ``Graph.create_node`` rejects raw SymInts in call_function
+            # args; the shared ``materialize_symints`` helper walks each value's sympy
+            # expression and emits the FX subgraph that recomputes it from
+            # existing producers (placeholders / sym ops). One call shares
+            # the symbol→Proxy hash-cons across all three shape lists so
+            # repeated symbols become a single subgraph.
             with graph_module.graph.inserting_before(node):
                 n_in, n_w = (
                     len(input_reshaped_shape),
                     len(weights_reshaped_shape),
                 )
-                all_sizes = graph_module.graph.materialize_symints(
+                all_sizes = materialize_symints(
+                    graph_module.graph,
                     [
                         *input_reshaped_shape,
                         *weights_reshaped_shape,
                         *output_shape,
-                    ]
+                    ],
                 )
                 input_reshaped_shape = all_sizes[:n_in]
                 weights_reshaped_shape = all_sizes[n_in : n_in + n_w]

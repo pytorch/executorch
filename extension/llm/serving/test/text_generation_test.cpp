@@ -446,11 +446,14 @@ TEST_F(TextGenerationTest, DeferredCapturesAreReleasedBeforeExecution) {
   auto capture = std::make_shared<Token>(10);
   std::weak_ptr<Token> owner = capture;
   auto event = output();
+  // Only the first forward is relevant; avoid racing the bounded output queue.
+  GenerationOptions options;
+  options.max_new_tokens = 1;
   auto result = runtime->generate(
       "s",
       [capture = std::move(capture)](const PromptPreparationContext&)
           -> PromptPreparationResult { return ids({*capture, 11}); },
-      {},
+      options,
       [event](GenerationEvent update) { event->accept(std::move(update)); });
   ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
   const auto handle = std::get<RequestHandle>(result);
@@ -956,7 +959,10 @@ TEST_F(TextGenerationTest, OpaqueMetadataAndOptionsPreserveRawHistory) {
     const auto handle = submit(event, std::move(prompt), options);
     handle.wait();
     ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(
+        handle.error()->code,
+        i >= 2 && i <= 4 ? ErrorCode::ContextLengthExceeded
+                         : ErrorCode::InvalidArgument);
     ASSERT_TRUE(event->terminal);
     EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
     EXPECT_EQ(event->terminals, 1u);
@@ -1344,6 +1350,43 @@ TEST_F(TextGenerationTest, ReplayOpenFailureLeavesReservedUnavailableSession) {
   auto fresh = output();
   submit(fresh, ids({20, 21})).wait();
   EXPECT_EQ(fresh->terminal->stats.session_reset_reason, "new");
+}
+
+TEST_F(TextGenerationTest, IgnoreEosIsRequestScopedAndPreservesExplicitStops) {
+  config.default_stop_tokens = {9};
+  tokenizer.pieces[9] = "<eos>";
+  tokenizer.pieces[8] = "<stop>";
+  executor.script = {100, 9, 8, 101};
+  executor.burst = 4;
+  start();
+  GenerationOptions options;
+  options.max_new_tokens = 4;
+  options.ignore_eos = true;
+  auto ignored = output();
+  submit(ignored, ids({10, 11}), options).wait();
+  ASSERT_TRUE(ignored->terminal);
+  EXPECT_EQ(ignored->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(ignored->terminal->stats.completion_tokens, 4u);
+  EXPECT_EQ(
+      ignored->terminal->stats.generated_token_ids,
+      (std::vector<Token>{100, 9, 8, 101}));
+
+  options.stop_tokens = {8};
+  auto explicit_stop = output();
+  submit(explicit_stop, ids({20, 21}), options).wait();
+  ASSERT_TRUE(explicit_stop->terminal);
+  EXPECT_EQ(explicit_stop->terminal->finish_reason, FinishReason::Stop);
+  EXPECT_EQ(
+      explicit_stop->terminal->stats.generated_token_ids,
+      (std::vector<Token>{100, 9}));
+
+  options.ignore_eos = false;
+  auto normal = output();
+  submit(normal, ids({30, 31}), options).wait();
+  ASSERT_TRUE(normal->terminal);
+  EXPECT_EQ(normal->terminal->finish_reason, FinishReason::Stop);
+  EXPECT_EQ(
+      normal->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
 }
 
 TEST_F(TextGenerationTest, EosIsLogicalHistoryButNotVisibleTextOrReplayIds) {
@@ -2103,7 +2146,10 @@ TEST_F(TextGenerationTest, UnsetAndExplicitBudgetsUseRemainingContext) {
   auto full = output();
   submit(full, ids({1, 2, 3, 4, 5})).wait();
   ASSERT_TRUE(full->terminal);
-  EXPECT_EQ(full->terminal->error->code, ErrorCode::InvalidArgument);
+  EXPECT_EQ(full->terminal->error->code, ErrorCode::ContextLengthExceeded);
+  ASSERT_TRUE(full->terminal->error->context_overflow);
+  EXPECT_EQ(full->terminal->error->context_overflow->prompt_tokens, 5u);
+  EXPECT_EQ(full->terminal->error->context_overflow->context_length, 5u);
 }
 
 TEST_F(TextGenerationTest, UnknownContextUsesServiceDefaultOnlyForUnsetLimit) {
@@ -2120,6 +2166,35 @@ TEST_F(TextGenerationTest, UnknownContextUsesServiceDefaultOnlyForUnsetLimit) {
   EXPECT_EQ(event->terminal->stats.completion_tokens, 2u);
   EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 2u);
   EXPECT_GE(event->terminal->stats.total_ms, event->terminal->stats.prefill_ms);
+}
+
+TEST_F(TextGenerationTest, InvalidDefaultBudgetIsNotContextOverflow) {
+  for (const auto default_budget : {0, -1}) {
+    config.max_context_length = 0;
+    config.default_max_new_tokens = default_budget;
+    start();
+    auto invalid = output();
+    auto result = runtime->generate(
+        std::nullopt, ids({10, 11}), {}, [invalid](GenerationEvent update) {
+          invalid->accept(std::move(update));
+        });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    std::get<RequestHandle>(result).wait();
+    ASSERT_TRUE(invalid->terminal);
+    ASSERT_TRUE(invalid->terminal->error);
+    EXPECT_EQ(invalid->terminal->error->code, ErrorCode::InvalidArgument);
+    EXPECT_FALSE(invalid->terminal->error->context_overflow);
+
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto valid = output();
+    submit(valid, ids({10, 11}), options, std::nullopt).wait();
+    ASSERT_TRUE(valid->terminal);
+    EXPECT_FALSE(valid->terminal->error);
+    EXPECT_EQ(valid->terminal->stats.completion_tokens, 1u);
+    EXPECT_EQ(runtime->info().active_sessions, 0u);
+    runtime.reset();
+  }
 }
 
 TEST_F(TextGenerationTest, StreamingStringStopIgnoresLaterRawTokens) {

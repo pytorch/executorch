@@ -114,6 +114,9 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <stdio.h>
+#if defined(__PICOLIBC__)
+#include <sys/stat.h>
+#endif
 #include <unistd.h>
 #include <memory>
 #include <type_traits>
@@ -571,9 +574,23 @@ std::pair<char*, size_t> read_binary_file(
     return std::make_pair(nullptr, 0);
   }
 
+#if defined(__PICOLIBC__)
+  struct stat file_stat {};
+  if (fstat(fileno(fp), &file_stat) != 0 || file_stat.st_size < 0) {
+    ET_LOG(
+        Fatal,
+        "Could not get size of file %s (errno: %d), exiting!",
+        filename,
+        errno);
+    fclose(fp);
+    return std::make_pair(nullptr, 0);
+  }
+  auto file_size = static_cast<size_t>(file_stat.st_size);
+#else
   fseek(fp, 0, SEEK_END);
   auto file_size = ftell(fp);
   fseek(fp, 0, SEEK_SET);
+#endif
 
   char* buffer = static_cast<char*>(allocator.allocate(file_size));
   if (buffer == nullptr) {
@@ -1365,6 +1382,7 @@ bool run_model(
       }
     }
     status = ctx.method.value()->execute();
+    ConsumeMeasurements();
     if (status != Error::Ok) {
       break;
     }
@@ -1433,6 +1451,7 @@ bool run_model_server(
 
     StartMeasurements();
     status = ctx.method.value()->execute();
+    ConsumeMeasurements();
     StopMeasurements(1);
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -1476,8 +1495,8 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i + 1 < argc; i += 2) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[i + 1]);
+  for (int i = 1; i < argc; i++) {
+    ET_LOG(Info, "   %s", argv[i]);
   }
 #else
   (void)argc;
@@ -1506,10 +1525,14 @@ int main(int argc, const char* argv[]) {
       input_file_allocation_pool_size, input_file_allocation_pool);
 
   /* parse input parameters */
-  for (int i = 0; i < argc; i++) {
+  for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-i") == 0) {
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -i");
+        return 1;
+      }
       // input file, read the data into memory
-      const char* input_tensor_filename = argv[++i];
+      const char* input_tensor_filename = argv[i];
       const printf_size_t nbr_inputs = input_buffers.size() + 1;
       ET_LOG(
           Info,
@@ -1529,7 +1552,11 @@ int main(int argc, const char* argv[]) {
       input_buffers.push_back(std::make_pair(buffer, buffer_size));
       ctx.input_filenames.push_back(input_tensor_filename);
     } else if (std::strcmp(argv[i], "-m") == 0) {
-      const char* pte_filename = argv[++i];
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -m");
+        return 1;
+      }
+      const char* pte_filename = argv[i];
       ET_LOG(Info, "Reading pte model from file %s", pte_filename);
       auto [buffer, buffer_size] =
           read_binary_file(pte_filename, ctx.input_file_allocator.value());
@@ -1541,8 +1568,12 @@ int main(int argc, const char* argv[]) {
       model_data = reinterpret_cast<const uint8_t*>(buffer);
       model_size = buffer_size;
     } else if (std::strcmp(argv[i], "-o") == 0) {
+      if (++i >= argc || argv[i] == nullptr) {
+        ET_LOG(Fatal, "Missing value for -o");
+        return 1;
+      }
       // store the base filename to write output to.
-      ctx.output_basename = argv[++i];
+      ctx.output_basename = argv[i];
     } else if (std::strcmp(argv[i], "--server_mode") == 0) {
       if (++i >= argc) {
         ET_LOG(Fatal, "--server_mode requires true or false");

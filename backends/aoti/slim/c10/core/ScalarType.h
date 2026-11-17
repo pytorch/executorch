@@ -13,12 +13,14 @@
 #include <ostream>
 
 #include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim::c10 {
 
-// Import BFloat16 from ExecuTorch's portable_type
+// Import BFloat16 and Half from ExecuTorch's portable_type
 using BFloat16 = ::executorch::runtime::etensor::BFloat16;
+using Half = ::executorch::runtime::etensor::Half;
 
 /// Enum representing the scalar type (dtype) of tensor elements.
 /// Note: Enum values must match PyTorch's c10::ScalarType for compatibility.
@@ -30,7 +32,7 @@ enum class ScalarType : int8_t {
   Long = 4, // int64_t
   Half = 5, // float16
   Float = 6, // float
-  // Double = 7,   // double - not currently needed
+  Double = 7, // double
   // ComplexHalf = 8,
   // ComplexFloat = 9,
   // ComplexDouble = 10,
@@ -50,6 +52,7 @@ constexpr ScalarType kInt = ScalarType::Int;
 constexpr ScalarType kLong = ScalarType::Long;
 constexpr ScalarType kHalf = ScalarType::Half;
 constexpr ScalarType kFloat = ScalarType::Float;
+constexpr ScalarType kDouble = ScalarType::Double;
 constexpr ScalarType kBool = ScalarType::Bool;
 constexpr ScalarType kBFloat16 = ScalarType::BFloat16;
 
@@ -72,6 +75,8 @@ inline size_t elementSize(ScalarType t) {
       return 2; // sizeof(__half) = 2 bytes
     case ScalarType::Float:
       return sizeof(float);
+    case ScalarType::Double:
+      return sizeof(double);
     case ScalarType::Bool:
       return sizeof(bool);
     case ScalarType::BFloat16:
@@ -100,6 +105,8 @@ inline const char* toString(ScalarType t) {
       return "Half";
     case ScalarType::Float:
       return "Float";
+    case ScalarType::Double:
+      return "Double";
     case ScalarType::Bool:
       return "Bool";
     case ScalarType::BFloat16:
@@ -116,7 +123,7 @@ inline const char* toString(ScalarType t) {
 /// @return true if the scalar type is floating point, false otherwise.
 inline bool isFloatingType(ScalarType t) {
   return t == ScalarType::Half || t == ScalarType::Float ||
-      t == ScalarType::BFloat16;
+      t == ScalarType::Double || t == ScalarType::BFloat16;
 }
 
 /// Checks if the scalar type is an integral type (including bool optionally).
@@ -157,6 +164,7 @@ inline bool isValidScalarType(ScalarType t) {
     case ScalarType::Long:
     case ScalarType::Half:
     case ScalarType::Float:
+    case ScalarType::Double:
     case ScalarType::Bool:
     case ScalarType::BFloat16:
       return true;

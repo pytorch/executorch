@@ -43,6 +43,7 @@ class SD15PipelineBehavior(StableDiffusionPipelineBehavior):
         width: int,
         dtype: torch.dtype,
         guidance_scale: float | None,
+        vae_scale_factor: int = 8,
     ) -> tuple[torch.Tensor, ...]:
         inputs = (latents, timestep, *conditioning)
         if guidance_scale is None:

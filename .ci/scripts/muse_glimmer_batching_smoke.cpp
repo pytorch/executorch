@@ -20,6 +20,7 @@ DECLARE_string(pte);
 DECLARE_string(tokenizer);
 DECLARE_string(data_path);
 DECLARE_string(backend);
+DECLARE_bool(dflash);
 DECLARE_int32(max_sessions);
 DECLARE_int32(max_session_tokens);
 DECLARE_uint64(bos_id);
@@ -64,6 +65,7 @@ int main(int argc, char** argv) {
     config.max_sessions = FLAGS_max_sessions;
     config.max_session_tokens = FLAGS_max_session_tokens;
     config.bos_id = FLAGS_bos_id;
+    config.use_dflash = FLAGS_dflash;
     auto backend = llm::create_muse_glimmer_backend(config);
     if (!backend.ok()) {
       throw std::runtime_error(

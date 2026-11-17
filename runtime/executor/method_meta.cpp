@@ -539,7 +539,13 @@ Result<const char*> MethodMeta::get_backend_name(size_t index) const {
       "Index %zu out of range. num_backends: %zu",
       index,
       count);
-  return s_plan_->delegates()->Get(index)->id()->c_str();
+  const auto delegate = s_plan_->delegates()->Get(index);
+  ET_CHECK_OR_RETURN_ERROR(
+      delegate != nullptr && delegate->id() != nullptr,
+      InvalidProgram,
+      "Missing backend id at index %zu",
+      index);
+  return delegate->id()->c_str();
 }
 
 size_t MethodMeta::num_instructions() const {
