@@ -9,6 +9,9 @@
 import unittest
 
 import torch
+from executorch.backends.xnnpack.partition.config.generic_node_configs import (
+    UpsampleBilinear2dConfig,
+)
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import Export
 
@@ -125,23 +128,67 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
-    def test_fp32_static_resize_bilinear2d_fractional_scale_factor(self):
+    class Interpolate(torch.nn.Module):
+        def __init__(self, scale_factor):
+            super().__init__()
+            self.scale_factor = scale_factor
+
+        def forward(self, x):
+            return torch.nn.functional.interpolate(
+                x, scale_factor=self.scale_factor, mode="bilinear", align_corners=False
+            )
+
+    edge_op = "executorch_exir_dialects_edge__ops_aten_upsample_bilinear2d_vec"
+
+    def test_fp32_bilinear2d_inexact_scale_factor_not_partitioned(self):
         # XNNPACK samples with input_size / output_size and ATen with
-        # 1 / scale_factor, which differ when 9 * 0.5 is rounded down to 4.
-        class Downscale(torch.nn.Module):
-            def forward(self, x):
-                return torch.nn.functional.interpolate(
-                    x, scale_factor=0.5, mode="bilinear", align_corners=False
+        # 1 / scale_factor, which differ when input_size * scale_factor is not
+        # an integer.
+        for scale_factor, size in ((0.5, 9), (1.5, 5)):
+            with self.subTest(scale_factor=scale_factor, size=size):
+                (
+                    Tester(
+                        self.Interpolate(scale_factor),
+                        (torch.randn(1, 3, size, size),),
+                    )
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({self.edge_op: 1})
+                    .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs()
                 )
 
-        (
-            Tester(Downscale(), (torch.randn(1, 3, 9, 9),))
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
+    def test_fp32_bilinear2d_exact_fractional_scale_factor_partitioned(self):
+        for scale_factor, size in ((0.5, 8), (1.5, 4)):
+            with self.subTest(scale_factor=scale_factor, size=size):
+                (
+                    Tester(
+                        self.Interpolate(scale_factor),
+                        (torch.randn(1, 3, size, size),),
+                    )
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                    .check_not([self.edge_op])
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs()
+                )
+
+    def test_fp32_bilinear2d_inexact_scale_factor_kwarg_rejected(self):
+        # torch.export passes these args positionally; a graph built by hand or
+        # rewritten by a pass can carry them as kwargs instead.
+        ep = torch.export.export(self.Interpolate(0.5), (torch.randn(1, 3, 9, 9),))
+        node = next(
+            n
+            for n in ep.graph.nodes
+            if n.target == torch.ops.aten.upsample_bilinear2d.vec
         )
+        node.kwargs = {"align_corners": node.args[2], "scale_factors": node.args[3]}
+        node.args = node.args[:2]
+        self.assertFalse(UpsampleBilinear2dConfig().check_constraints(node, ep))
 
     def test_fp32_bilinear2d_dynamic_bilinear2d_not_partitioned(self):
         """

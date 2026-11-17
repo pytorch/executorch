@@ -538,8 +538,13 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         # XNNPACK samples with input_size / output_size. Without align_corners,
         # ATen samples with 1 / scale_factor when one is given, which differs
         # unless input_size * scale_factor is an integer.
-        align_corners = cast(bool, node.args[2])
-        scale_factors = node.args[3] if len(node.args) > 3 else None
+        align_corners = cast(
+            bool,
+            node.args[2] if len(node.args) > 2 else node.kwargs["align_corners"],
+        )
+        scale_factors = (
+            node.args[3] if len(node.args) > 3 else node.kwargs.get("scale_factors")
+        )
         if not align_corners and scale_factors is not None:
             input_sizes = get_input_node(node, 0).meta["val"].shape[-2:]
             output_sizes = node.meta["val"].shape[-2:]
