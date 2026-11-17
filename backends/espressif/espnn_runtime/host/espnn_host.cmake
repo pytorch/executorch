@@ -12,8 +12,9 @@
 
 include(FetchContent)
 
+# The version that ../../idf_component.yml pins for the device build.
 set(ESPNN_GIT_TAG
-    "ace42ac7721119cd543fc40ffe719e601fa8f20f" # v1.5.0
+    "d9be5422a79f4115e4275452dcaba3fe363a697d" # v1.4.1
     CACHE STRING "esp-nn commit fetched when ESPNN_LOCAL_PATH is not set"
 )
 set(ESPNN_LOCAL_PATH
