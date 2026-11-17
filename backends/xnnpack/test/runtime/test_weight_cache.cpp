@@ -17,9 +17,12 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -229,15 +232,8 @@ TEST(PackedCacheStats, GlobalAccessorReachesTheBackendSingleton) {
   }
 }
 
-// NOTE: the warm path — load_packed_cache() succeeding and its mapped bytes
-// being counted — is deliberately NOT covered here. Producing a loadable
-// cache file needs a model with packed weights and a populated index; the
-// models wired into this target (ModuleAddLarge / ModuleSubLarge) are
-// elementwise and pack nothing, so a cold run writes a zero-entry trailer
-// that load_packed_cache correctly rejects. Covering it needs ModuleLinear
-// plus its external .ptd and a NamedDataMap, as test_xnn_data_separation
-// does. Until then the warm path is verified on device by the
-// PackedWeights log line reporting non-zero mapped/cache_file.
+// The warm path, load_packed_cache() succeeding and the second load hitting
+// its entries, is covered by WeightCacheQuantizedNames below.
 
 // Loads the model at `model_path_env` with the weight cache set to
 // `weight_cache`, runs forward on deterministic inputs and returns every
@@ -245,12 +241,14 @@ TEST(PackedCacheStats, GlobalAccessorReachesTheBackendSingleton) {
 // named data map hands out one pointer per constant name instead of a fresh
 // copy per load. A non-empty `packed_cache_path` backs the cache with that
 // file, so a second load of the program hits the entries the first one saved.
+// `while_loaded` runs after forward, while the module and its cache exist.
 static void run_quantized_model(
     const char* model_path_env,
     bool weight_cache,
     bool from_buffer,
     std::vector<std::vector<float>>& outputs,
-    const std::string& packed_cache_path = "") {
+    const std::string& packed_cache_path = "",
+    const std::function<void()>& while_loaded = nullptr) {
   const char* path = std::getenv(model_path_env);
   ASSERT_NE(path, nullptr) << model_path_env;
 
@@ -311,6 +309,25 @@ static void run_quantized_model(
         tensor.const_data_ptr<float>(),
         tensor.const_data_ptr<float>() + tensor.numel());
   }
+  if (while_loaded) {
+    while_loaded();
+  }
+}
+
+// Entry count from the cache file footer:
+// [index_start:u64][entry_count:u32][magic:u32][version:u32].
+static uint32_t packed_cache_entry_count(const std::string& cache_path) {
+  std::ifstream file(cache_path, std::ios::binary | std::ios::ate);
+  const std::streamoff size = file.tellg();
+  if (size < 20) {
+    return 0;
+  }
+  uint8_t footer[20];
+  file.seekg(size - 20);
+  file.read(reinterpret_cast<char*>(footer), sizeof(footer));
+  uint32_t entry_count = 0;
+  std::memcpy(&entry_count, footer + 8, sizeof(entry_count));
+  return entry_count;
 }
 
 // The models (see test/models/export_delegated_program.py) pair quantized
@@ -333,13 +350,30 @@ TEST_P(WeightCacheQuantizedNames, MatchesRunWithoutCache) {
   ASSERT_EQ(in_memory, reference);
 
   // The first file-backed load packs every kernel into the file, the second
-  // one loads the file and hits the cache.
+  // one loads the file and hits the cache. Same outputs alone would not show
+  // that: a cold re-pack computes them too. The footer proves the first run
+  // saved named entries, and the per-cache stats of the second run, read
+  // while its module is still loaded, prove nothing was re-packed after the
+  // load.
   const std::string cache_path = ::testing::TempDir() + GetParam() + "_" +
       std::to_string(::getpid()) + ".packed_cache";
   std::remove(cache_path.c_str());
   run_quantized_model(GetParam(), true, false, packed, cache_path);
   ASSERT_EQ(packed, reference);
-  run_quantized_model(GetParam(), true, false, loaded, cache_path);
+  ASSERT_GT(packed_cache_entry_count(cache_path), 0u);
+  run_quantized_model(GetParam(), true, false, loaded, cache_path, [&] {
+    const auto report = get_packed_cache_report();
+    const auto entry = std::find_if(
+        report.per_cache.begin(), report.per_cache.end(), [&](const auto& e) {
+          return e.path == cache_path;
+        });
+    ASSERT_NE(entry, report.per_cache.end());
+    EXPECT_GT(entry->stats.mapped_bytes, 0);
+    EXPECT_EQ(
+        entry->stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::RepackAfterLoad)],
+        0);
+  });
   ASSERT_EQ(loaded, reference);
   std::remove(cache_path.c_str());
 
