@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -88,7 +89,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
-      VK_API_VERSION_1_1, // apiVersion
+      config.instance_api_version, // Selected by the first runtime user.
   };
 
   std::vector<const char*> enabled_layers;
@@ -306,7 +307,9 @@ uint32_t select_compute_device(
 //
 
 std::unique_ptr<Runtime> init_global_vulkan_runtime(
-    const std::string& cache_data_path) {
+    const std::string& cache_data_path,
+    bool init_default_device,
+    uint32_t instance_api_version) {
   // Load Vulkan drivers
 #if defined(USE_VULKAN_VOLK)
   if (VK_SUCCESS != volkInitialize()) {
@@ -324,7 +327,6 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
 #else
       false;
 #endif /* VULKAN_DEBUG */
-  const bool init_default_device = true;
   const uint32_t num_requested_queues = 1; // TODO: raise this value
 
   const RuntimeConfig default_config{
@@ -333,6 +335,7 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
       AdapterSelector::Auto,
       num_requested_queues,
       cache_data_path,
+      instance_api_version,
   };
 
   try {
@@ -394,6 +397,17 @@ Runtime::~Runtime() {
   instance_ = VK_NULL_HANDLE;
 }
 
+Adapter* Runtime::get_adapter_p() {
+  std::lock_guard<std::mutex> lock(default_adapter_mutex_);
+  if (default_adapter_i_ == UINT32_MAX) {
+    default_adapter_i_ = create_adapter(select_compute_device);
+  }
+  VK_CHECK_COND(
+      default_adapter_i_ < adapters_.size(),
+      "Pytorch Vulkan Runtime: Default device adapter is not set correctly!");
+  return adapters_[default_adapter_i_].get();
+}
+
 uint32_t Runtime::create_adapter(const Selector& selector) {
   VK_CHECK_COND(
       !device_mappings_.empty(),
@@ -440,13 +454,17 @@ std::string& set_and_get_pipeline_cache_data_path(
   return global_cache_data_path;
 }
 
-std::shared_ptr<Runtime> runtime_owner() {
+std::shared_ptr<Runtime> runtime_owner(
+    bool init_default_device,
+    uint32_t instance_api_version) {
   // The global vulkan runtime is declared as a static local variable within a
   // non-static function to ensure it has external linkage. If it were a global
   // static variable there would be one copy per translation unit that includes
   // Runtime.h as it would have internal linkage.
-  static const std::shared_ptr<Runtime> p_runtime =
-      init_global_vulkan_runtime(set_and_get_pipeline_cache_data_path(""));
+  static const std::shared_ptr<Runtime> p_runtime = init_global_vulkan_runtime(
+      set_and_get_pipeline_cache_data_path(""),
+      init_default_device,
+      instance_api_version);
 
   VK_CHECK_COND(
       p_runtime,

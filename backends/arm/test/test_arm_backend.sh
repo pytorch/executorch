@@ -597,6 +597,7 @@ test_runtime_vgf() {
         vgf_zero_copy_test \
         vgf_execution_stats_enabled_test \
         vgf_execution_stats_disabled_test \
+        vgf_shared_device_test \
     --parallel
 
     # --no-tests=error is intentional: discovering zero VGF tests must fail CI.
@@ -605,6 +606,31 @@ test_runtime_vgf() {
         --output-on-failure \
         --no-tests=error \
         -R '^vgf_'
+
+    # Compile the shared-device branch in addition
+    # to the legacy VGF-only configuration above. Never silently skip it.
+    local shared_build_dir="${et_root_dir}/arm_test/vgf_vulkan_shared_tests"
+    rm -rf "${shared_build_dir}"
+    cmake -S "${et_root_dir}" -B "${shared_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_TESTS=ON \
+        -DEXECUTORCH_BUILD_VGF=ON \
+        -DEXECUTORCH_BUILD_VULKAN=ON \
+        -DEXECUTORCH_BUILD_VGF_SHARED_EXAMPLE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_VGF_ZERO_COPY_IO=ON \
+        -DPYTHON_EXECUTABLE="${python_executable}" \
+        -DPython3_EXECUTABLE="${python_executable}"
+    cmake --build "${shared_build_dir}" \
+        --target vgf_shared_device_test shared_vulkan_runtime_test vgf_vulkan_shared_runner \
+        --parallel
+    ctest --test-dir "${shared_build_dir}" \
+        --output-on-failure --no-tests=error \
+        -R '^(vgf_shared_device_test|shared_vulkan_runtime_test)$'
 
     echo "${TEST_SUITE_NAME}: PASS"
 }

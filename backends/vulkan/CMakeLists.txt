@@ -99,6 +99,8 @@ add_library(vulkan_compute_api ${vulkan_api_cpp} ${vulkan_runtime_utils_cpp})
 add_library(executorch::vulkan_compute_api ALIAS vulkan_compute_api)
 target_include_directories(vulkan_compute_api PUBLIC ${COMMON_INCLUDES})
 target_compile_features(vulkan_compute_api PUBLIC cxx_std_17)
+# Instance API version is selected by RuntimeConfig at runtime, not by the
+# presence of an unrelated compiled backend.
 target_compile_definitions(
   vulkan_compute_api PUBLIC USE_VULKAN_WRAPPER USE_VULKAN_VOLK
 )
