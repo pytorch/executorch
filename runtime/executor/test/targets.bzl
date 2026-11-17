@@ -124,6 +124,8 @@ def define_common_targets(is_fbcode = False):
             "ET_MODULE_ADD_HALF_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddHalf.pte])",
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_CHANNELS_LAST_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleChannelsLast.pte])",
+            "ET_MODULE_DYNAMIC_CAT_3D_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCat3D.pte])",
+            "ET_MODULE_DYNAMIC_CAT_3D_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCat3DUnallocatedIO.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
             "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddMul.pte])",

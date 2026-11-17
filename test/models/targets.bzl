@@ -70,6 +70,8 @@ def define_common_targets():
         "ModuleNoKVCache",
         "ModuleIndex",
         "ModuleIntBool",
+        "ModuleDynamicCat3D",
+        "ModuleDynamicCat3DUnallocatedIO",
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",

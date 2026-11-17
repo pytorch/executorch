@@ -150,6 +150,20 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {}
 
 
+class ModuleDynamicCat3DUnallocatedIO(ModuleDynamicCatUnallocatedIO):
+    def __init__(self):
+        super().__init__()
+        self._inputs = (torch.randn(3, 4, 5),)
+
+    def forward(self, k):
+        return torch.cat((k, torch.ones(1, 4, 5)))
+
+
+class ModuleDynamicCat3D(ModuleDynamicCat3DUnallocatedIO):
+    def get_memory_planning_pass(self):
+        return MemoryPlanningPass()
+
+
 class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -1458,12 +1458,12 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         InvalidProgram,
         "Null tensor metadata for input %" ET_PRIsize_t,
         input_idx);
-    // Nothing at load checks this for a dynamic input. Program validation, when
-    // enabled, leaves it to set_input(), since a bound written for a 64-bit
-    // machine may overflow on a 32-bit one. A memory-planned input sized from
-    // such a bound has a buffer too small for the copy below. Not
-    // validate_tensor(), so that builds without program verification do not
-    // link program_validation.cpp.
+    // Load counts these sizes without overflow checks, and program
+    // verification leaves a dynamic input to set_input(). Load's element count
+    // is the size_t limit of the resize below, and its byte count sized the
+    // slot that the copy below fills for a planned input. Other inputs are not
+    // copied. Not validate_tensor(), so that builds without program
+    // verification do not link program_validation.cpp.
     size_t bound_numel = 1;
     for (const int32_t size : *s_tensor->sizes()) {
       ET_CHECK_OR_RETURN_ERROR(
@@ -1474,12 +1474,14 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
           " has serialized sizes whose element count overflows",
           input_idx);
     }
+    const bool memory_planned = deserialization::is_memory_planned(*s_tensor);
     size_t bound_nbytes;
     ET_CHECK_OR_RETURN_ERROR(
-        !c10::mul_overflows(
-            bound_numel,
-            executorch::runtime::elementSize(t_dst.scalar_type()),
-            &bound_nbytes),
+        !memory_planned ||
+            !c10::mul_overflows(
+                bound_numel,
+                executorch::runtime::elementSize(t_dst.scalar_type()),
+                &bound_nbytes),
         InvalidArgument,
         "Input %" ET_PRIsize_t
         " has serialized sizes whose byte count overflows",
@@ -1529,7 +1531,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     t_dst.unsafeGetTensorImpl()->set_sizes_and_strides(
         t_src.sizes(), t_src.strides());
 #endif
-    if (deserialization::is_memory_planned(*s_tensor)) {
+    if (memory_planned) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
           "Error copying tensor data at input %" ET_PRIsize_t,
