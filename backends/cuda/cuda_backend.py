@@ -1131,7 +1131,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         edge_programs: Dict[str, List[Any]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> Dict[str, List[PreprocessResult]]:
-        """Compile every method against one global ``(device, FQN)`` store."""
+        """Compile every method against one global ``(device, FQN)`` store.
+
+        One FQN may hold different data per method; the collector stores
+        each distinct storage under its own content key.
+        """
         # The methods share one weights file, so they must agree on its name.
         data_names = {
             cls.data_name_from_compile_specs(specs)
