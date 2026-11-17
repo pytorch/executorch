@@ -61,10 +61,9 @@ CudaKVPool::CudaKVPool(
       side_specs_(std::move(side_buffers)),
       storage_dtype_(storage_dtype),
       initial_rows_(initial_rows) {
-  max_rows_ = std::numeric_limits<int64_t>::max();
   for (const Layer& layer : layers_) {
     if (layer.growable) {
-      max_rows_ = std::min(max_rows_, layer.declared_rows);
+      max_rows_ = std::max(max_rows_, layer.declared_rows);
     }
   }
 }
@@ -154,7 +153,7 @@ Error CudaKVPool::prepare(
   if (!allocated_) {
     ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(required_rows, stream));
   }
-  if (required_rows > rows_) {
+  if (required_rows > rows_ && rows_ < max_rows_) {
     const int64_t next = std::min<int64_t>(
         max_rows_, std::max<int64_t>(required_rows, rows_ * 2));
     ET_CHECK_OK_OR_RETURN_ERROR(grow(next, live_rows, stream));
@@ -197,6 +196,13 @@ Error CudaKVPool::synchronize(bool all_streams) {
       "offgraph_kv: cannot synchronize the step: %s",
       cudaGetErrorString(error));
   return Error::Ok;
+}
+
+void* CudaKVPool::layer_data(size_t index, bool value) const {
+  if (index >= allocations_.size()) {
+    return nullptr;
+  }
+  return value ? allocations_[index].v : allocations_[index].k;
 }
 
 void* CudaKVPool::side_buffer(size_t index) const {
@@ -259,7 +265,11 @@ void CudaKVPool::discard(
 // and its kernels may still be writing the storage this step reads, or that a
 // growth below copies and frees. Order this stream behind it.
 Error CudaKVPool::follow_previous_step(cudaStream_t stream) {
-  if (last_step_done_ == nullptr || stream == stream_) {
+  // cudaStreamPerThread names a different stream on each host thread. Its
+  // handle equality therefore cannot establish that the previous work is
+  // ordered on this caller's stream.
+  if (last_step_done_ == nullptr ||
+      (stream == stream_ && stream != cudaStreamPerThread)) {
     return Error::Ok;
   }
   const cudaError_t error = cudaStreamWaitEvent(stream, last_step_done_, 0);
@@ -284,7 +294,9 @@ Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
     }
   };
   for (const Layer& layer : layers_) {
-    const int64_t rows = layer.growable ? growable_rows : layer.declared_rows;
+    const int64_t rows = layer.growable
+        ? std::min(growable_rows, layer.declared_rows)
+        : layer.declared_rows;
     Allocation allocation;
     const Error error = allocate_layer(layer, rows, stream, allocation);
     if (error != Error::Ok) {
@@ -365,11 +377,12 @@ Error CudaKVPool::grow(
   };
   for (size_t index = 0; index < layers_.size(); ++index) {
     const Layer& layer = layers_[index];
-    if (!layer.growable) {
+    const int64_t rows = std::min(new_rows, layer.declared_rows);
+    if (!layer.growable || rows <= allocations_.at(index).rows) {
       continue;
     }
     Allocation replacement;
-    const Error error = allocate_layer(layer, new_rows, stream, replacement);
+    const Error error = allocate_layer(layer, rows, stream, replacement);
     if (error != Error::Ok) {
       roll_back();
       return error;
@@ -378,8 +391,8 @@ Error CudaKVPool::grow(
   }
   for (const auto& [index, replacement] : replacements) {
     const Allocation& current = allocations_.at(index);
-    const size_t live_bytes =
-        row_bytes(layers_[index]) * static_cast<size_t>(live_rows);
+    const size_t live_bytes = row_bytes(layers_[index]) *
+        static_cast<size_t>(std::min(live_rows, current.rows));
     if (live_bytes == 0) {
       continue;
     }

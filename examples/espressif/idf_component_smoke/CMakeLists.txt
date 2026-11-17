@@ -7,7 +7,7 @@
 # Minimal ESP-IDF consumer of the generated ExecuTorch component, used by
 # .ci/scripts/test_espressif_idf_component.sh. Pass the generated component
 # directory as ET_COMPONENT_DIR and the .pte files that split_bundled_program.py
-# made as the ET_SMOKE_MODELS list; each runs on its bundled test case. Pass a
+# made as the ET_SMOKE_MODELS list; each runs on its bundled test cases. Pass a
 # kernel bundle from the component's tools/gen_kernels.py as ET_SMOKE_KERNELS,
 # or leave it out to have the build make one. With ET_SMOKE_BACKENDS, the models
 # are embedded but not declared and only those delegates are, as for models

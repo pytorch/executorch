@@ -10,6 +10,12 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "generate_ethosu_linux_pmu_events",
+    srcs = ["generate_ethosu_linux_pmu_events.py"],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "etdump_to_chrome_trace",
     srcs = ["etdump_to_chrome_trace.py"],
     deps = ["//executorch/devtools:lib"],

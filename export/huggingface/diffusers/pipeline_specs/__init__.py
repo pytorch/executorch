@@ -12,10 +12,12 @@ from .base import (
     DiffusionPipelineExportSpec,
     ResolvedDiffusionPipeline,
 )
+from .flux import FluxPipelineExportSpec
 from .sd15 import SD15PipelineExportSpec
 from .sdxl import SDXLPipelineExportSpec
 
 HF_PIPELINE_EXPORT_SPECS: dict[str, type[DiffusionPipelineExportSpec]] = {
+    "FluxPipeline": FluxPipelineExportSpec,
     "StableDiffusionPipeline": SD15PipelineExportSpec,
     "StableDiffusionXLPipeline": SDXLPipelineExportSpec,
 }
@@ -25,6 +27,7 @@ __all__ = [
     "DiffusionModelInfo",
     "DiffusionPipelineExportSpec",
     "HF_PIPELINE_EXPORT_SPECS",
+    "FluxPipelineExportSpec",
     "ResolvedDiffusionPipeline",
     "SD15PipelineExportSpec",
     "SDXLPipelineExportSpec",

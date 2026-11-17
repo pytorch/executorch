@@ -14,10 +14,10 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
+from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import (
     NumericalStatsOutputComparator,
 )
+from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import (
     get_test_name,
     lower_run_compare,
