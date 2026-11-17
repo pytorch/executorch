@@ -144,6 +144,108 @@ Developers who need local source builds can use:
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
+### Planned Ethos-U delegate scratch
+
+In Python, set
+`EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=True)` before creating
+an `EthosUPartitioner`. The `backends/arm/scripts/aot_arm_compiler.py` script
+exposes the same option as `--plan-delegate-scratch` when exporting for an
+Ethos-U target with delegation enabled.
+
+With `plan_delegate_scratch=True`, Vela's scratch requirement is included in AOT
+memory planning. With `False` (the default), the core-driver runtime allocates
+scratch from the temporary allocator for each delegate execution. Planned scratch
+works with ordinary memory planning and does not enable shared scratch IO planning.
+The option is independent of `--direct_drive` and Vela's separate IO regions.
+Use planned scratch with the bare-metal/RTOS core-driver runtime. Linux Direct
+Drive can load the same PTE, but allocates its own scratch, warns that the planned
+scratch reservation is unused, and leaves that reservation allocated in the host
+arena.
+
+#### Direct I/O memory planning
+
+To place compatible delegate inputs and outputs inside planned scratch, enable
+`plan_delegate_scratch` and select `EthosUMemoryPlanning` when converting the
+lowered program to ExecuTorch:
+
+```python
+from executorch.backends.arm import EthosUCompileSpec
+
+compile_spec = EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=True)
+```
+
+Use this compile spec in the quantization and lowering flow described below.
+When converting the resulting `edge_program`, select the memory planner:
+
+```python
+from executorch.backends.arm._passes import EthosUMemoryPlanning
+from executorch.exir import ExecutorchBackendConfig
+
+executorch_program = edge_program.to_executorch(
+    config=ExecutorchBackendConfig(memory_planning_pass=EthosUMemoryPlanning())
+)
+```
+
+The pass compares arena sizes with ordinary planning using the same declared
+scratch. By default, each arena may grow by at most 1%, capped at 1 KiB.
+Configure these limits with `max_arena_growth_percent` and
+`max_arena_growth_bytes` on `EthosUMemoryPlanning`; both limits apply to each arena.
+Set either limit to zero to disallow arena growth. If placement is
+invalid or exceeds that allowance, the pass uses ordinary planning and keeps
+delegate scratch planned. The fallback therefore does not require temporary
+allocation of delegate scratch on the core-driver runtime. The `baseline_algo`
+argument selects the ordinary allocator used for comparison and fallback;
+by default it uses ExecuTorch's ordinary allocator suite. `EthosUMemoryPlanning`
+configures the standard `MemoryPlanningPass` with `EthosUPreferredAlgorithmSuite`
+and verifies storage overlap regardless of the logging level. The suite compares
+largest-owner-first and scratch-first placements, checks both growth limits for
+every arena, then selects the eligible direct I/O plan with the smallest total
+arena size. If supplied, `alignment` must be a positive multiple of 16 bytes.
+
+Enable the planner's INFO logger before calling `to_executorch()` to get an
+optional memory planning report:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger(
+    "executorch.backends.arm._passes.ethosu_direct_io_pass"
+).setLevel(logging.INFO)
+```
+
+The report shows ordinary and candidate arena sizes, the selected strategy, and
+why candidates were rejected. Arena sizes are in bytes, indexed by memory ID.
+Each graph being planned has its own report. For example:
+
+```text
+Memory planning for GraphModule: ordinary arena sizes=[0, 20480] bytes
+direct I/O (largest-first): arena sizes=[0, 20480] bytes
+direct I/O (scratch-first): arena sizes=[0, 20480] bytes
+Selected direct I/O (largest-first): arena sizes=[0, 20480] bytes
+Scratch placement: 2/2 attempted tensors placed; declared delegate scratch remains planned
+```
+
+The denominator counts unique, memory-planned I/O tensors checked for scratch
+compatibility, including those rejected by the compatibility checks. Tensors
+excluded by the allocation policy or input-sharing rules, and delegates without
+a supported scratch layout, are not attempted. A tensor passed between delegates
+is counted once. The numerator counts attempted tensors that retain the proposed
+scratch owner and offset in the final plan, including existing scratch aliases
+preserved on fallback. At DEBUG level, the logger also shows details of invalid
+candidate placements.
+
+This option controls AOT placement. Avoiding runtime copies also requires the
+runtime's direct I/O support. Setting `plan_delegate_scratch=True` alone does
+not select this pass. Selecting `EthosUMemoryPlanning` without declaring planned
+scratch logs a warning for each affected Ethos-U delegate and uses ordinary
+planning for those delegates. The warning identifies `plan_delegate_scratch=True`
+as the required compile option.
+
+The pass supports delegates whose inputs and outputs are inside Vela's scratch
+region. This includes COP1 and COP2 layouts without separate I/O regions.
+Delegates with separate I/O regions use ordinary planning.
+
 ### Compiling models with the Python API
 
 Use the Python API as the primary way to compile your own models. It lets you
@@ -310,7 +412,7 @@ https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
 Setup:
 
 ```
-./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl --fvp corstone1000
 source ./examples/arm/arm-scratch/setup_path.sh
 ```
 
@@ -322,7 +424,8 @@ Build:
   --build_type=Debug
 ```
 
-Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+Note: setup selects the linux-musl toolchain and the Corstone-1000 FVP, which is
+not installed by default; build uses the aarch64-linux-musl GCC toolchain name.
 
 If your Yocto image enables the dropbear SSH server, you can copy the
 `executor_runner` binary into the running FVP via scp:
@@ -467,7 +570,7 @@ cp backends/arm/scripts/pre-push .git/hooks/
 
 The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
 
-- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. Also pass `compile_config=EdgeCompileConfig(_check_ir_validity=False)`, as the Arm tools do: these passes can leave a `cat` or `stack` with both int64 and int32 inputs, which the edge dialect check rejects.
 - For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
 List of model specific and optional passes:

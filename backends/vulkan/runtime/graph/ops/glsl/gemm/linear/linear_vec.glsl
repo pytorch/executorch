@@ -93,9 +93,18 @@ void main() {
 
   const int b = int(gl_GlobalInvocationID.z);
 
-  for (int k4 = 0; k4 < K4; k4++) {
+  const int K4_full = div_4(K);
+  for (int k4 = 0; k4 < K4_full; k4++) {
     load_mat1_tile_with_checks(in_tile, k4, m_start, b, K4, M);
     load_packed_weight_tile_with_checks(w_tile, n4_start, k4, b % weight_B, N4, K4);
+    fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
+  }
+  // Padding lanes of the last mat1 vec4 may be non-finite; mask them.
+  if (K4_full < K4) {
+    load_mat1_tile_with_checks(in_tile, K4_full, m_start, b, K4, M);
+    mask_mat1_tile_k_tail(in_tile, K4_full, K);
+    load_packed_weight_tile_with_checks(
+        w_tile, n4_start, K4_full, b % weight_B, N4, K4);
     fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
   }
 

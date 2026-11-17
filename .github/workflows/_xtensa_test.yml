@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       backend:
-        description: "Cadence backend to test (hifi4 | vision | fusion_g3)"
+        description: "Cadence backend to test (hifi4 | vision | fusion_g3 | hifi1s | hifi5s)"
         required: true
         type: string
       ref:

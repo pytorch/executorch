@@ -28,8 +28,9 @@ namespace executorch::extension::llm {
 
 // The CUDA draft_forward artifact takes a fixed-size hidden-state input, so the
 // hidden backlog carried into a draft call (n_draft + 1 rows after a decode
-// cycle) must fit within this many rows.
-inline constexpr int64_t kCudaDFlashHiddenRows = 4;
+// cycle) must fit within this maximum capacity. The artifact fixes its actual
+// input width to the exported block size.
+inline constexpr int64_t kCudaDFlashHiddenRows = 16;
 
 using DFlashMultimodalSession = MuseGlimmerMultimodalSession;
 

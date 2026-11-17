@@ -20,6 +20,11 @@
  * Required functions, defined before including this file:
  *   SOFTMAX_IN_VEC4_T load_attn_weights_c4(c4, s, q_h, C4, S, Q_H)
  *   void store_attn_weights_softmax_c4(VEC4_T, c4, s, q_h, C4, S, Q_H)
+ *
+ * Optional macros:
+ *   SOFTMAX_ZERO_FULLY_MASKED_ROWS - write zeros for a row whose elements are
+ *                                    all -inf, as ATen's safe softmax does,
+ *                                    instead of NaN
  */
 
 #ifndef SDPA_ATTN_WEIGHTS_SOFTMAX_ROW_GLSLH
@@ -94,6 +99,16 @@ void softmax_attn_weights_row(
   }
 
   const SOFTMAX_ACC_T global_max = shared_max[0];
+
+#ifdef SOFTMAX_ZERO_FULLY_MASKED_ROWS
+  if (global_max == SOFTMAX_ACC_T(-1.0 / 0.0)) {
+    for (int c4 = worker_id; c4 < context_texel_len; c4 += NUM_WORKERS_PER_WG) {
+      store_attn_weights_softmax_c4(
+          VEC4_T(0), c4, s, q_h, context_texel_len, attn_S, Q_H);
+    }
+    return;
+  }
+#endif
 
   // =========================================================================
   // Pass 2: Compute sum(exp(x - max)) using the global max for stability

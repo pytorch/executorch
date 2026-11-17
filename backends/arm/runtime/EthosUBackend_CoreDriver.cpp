@@ -17,6 +17,7 @@
 #include <ethosu_driver.h>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
+#include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
 #include <executorch/runtime/core/error.h>
 
 using executorch::runtime::BackendExecutionContext;
@@ -53,6 +54,7 @@ namespace arm {
 
 struct PlatformState {};
 
+// cppcheck-suppress unusedFunction
 executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
     executorch::runtime::MemoryAllocator* /*allocator*/,
@@ -60,15 +62,19 @@ executorch::runtime::Error platform_init(
   return executorch::runtime::Error::Ok;
 }
 
+// cppcheck-suppress unusedFunction
 void platform_destroy(PlatformState* /*state*/) {}
 
+// cppcheck-suppress unusedFunction
 bool needs_scratch_allocation() {
   return true;
 }
 
+// cppcheck-suppress unusedFunction
 Error platform_execute(
-    BackendExecutionContext& /*context*/,
-    const ExecutionHandle* /*execution_handle*/,
+    // cppcheck-suppress constParameterReference
+    [[maybe_unused]] BackendExecutionContext& context,
+    [[maybe_unused]] const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
     int output_count,
@@ -102,6 +108,28 @@ Error platform_execute(
   // Ethos-U low level driver expected order for Ethos U-55, we have
   // constant weight data, then scratch (which contains input and output)
   // scratch is written above in this function.
+#ifdef ETHOSU_PERSISTENT_REGION
+  // Regions 3 (input) and 4 (output) are unused by this flow (network-wide
+  // addressing keeps I/O in scratch), so they are left null/zero. Region 5 is
+  // the dedicated persistent (delegate-owned streaming state) buffer,
+  // allocated and initialised once at init().
+  char* persistent_region =
+      execution_handle ? execution_handle->persistent_region : nullptr;
+  uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_fast_scratch)),
+      0,
+      0,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(persistent_region))};
+  size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
+      handles.weight_data_size,
+      handles.scratch_data_size,
+      ethosu_fast_scratch_size,
+      0,
+      0,
+      handles.persistent_data_size};
+#else
   uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
@@ -110,6 +138,13 @@ Error platform_execute(
       handles.weight_data_size,
       handles.scratch_data_size,
       ethosu_fast_scratch_size};
+#endif
+  executorch::backends::arm::EthosUInvocationContext invocation_context{};
+  invocation_context.delegate_handle =
+      reinterpret_cast<uintptr_t>(execution_handle);
+#if defined(ET_EVENT_TRACER_ENABLED)
+  invocation_context.event_tracer = context.event_tracer();
+#endif
   int result = ethosu_invoke_v3(
       driver.get(),
       static_cast<const void*>(handles.cmd_data),
@@ -117,7 +152,7 @@ Error platform_execute(
       bases,
       bases_size,
       ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
-      nullptr);
+      &invocation_context);
 
   if (result != 0) {
     ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
@@ -126,9 +161,26 @@ Error platform_execute(
 
   // Write outputs from scratch into EValue pointers.
   for (int i = 0; i < output_count; i++) {
-    const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
+    // Reject offsets that would copy from outside the scratch buffer.
+    const int out_offset = handles.outputs->io[i].offset;
     auto tensor_out = args[input_count + i]->toTensor();
     const size_t tensor_bytes = tensor_out.nbytes();
+    if (out_offset < 0 ||
+        static_cast<size_t>(out_offset) + tensor_bytes >
+            handles.scratch_data_size) {
+      ET_LOG(
+          Error,
+          "Output %d scratch offset %d + size %zu out of range for scratch size %zu",
+          i,
+          out_offset,
+          tensor_bytes,
+          handles.scratch_data_size);
+      return Error::InvalidProgram;
+    }
+    const char* output_addr = ethosu_scratch + out_offset;
+    if (output_addr == tensor_out.mutable_data_ptr<char>()) {
+      continue;
+    }
 
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)

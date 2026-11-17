@@ -33,7 +33,7 @@ import hashlib
 import operator
 import typing
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import executorch.exir.memory as memory
@@ -100,6 +100,20 @@ from torch.utils import _pytree as pytree
 from typing_extensions import TypeAlias
 
 
+def _normalize_constant_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
+    if not (
+        tensor.is_contiguous()
+        or tensor.is_contiguous(memory_format=torch.channels_last)
+    ):
+        tensor = tensor.contiguous()
+
+    # Weights cannot be views during emission or serialization
+    if tensor.nbytes != tensor.untyped_storage().nbytes():
+        tensor = tensor.clone()
+    return tensor
+
+
 @dataclass
 class _ProgramState:
     """State shared between all methods of a program and the graph module it represents.
@@ -133,6 +147,11 @@ class _ProgramState:
     # Each constant_tag groups a set of constants together.
     # {constant_tag: {fqn: index into external_constant_buffer}}
     external_constant_map: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    # {fqn: (first method, (buffer index, dtype, shape, dim order))}
+    external_constant_owners: Dict[str, Tuple[str, Tuple[object, ...]]] = field(
+        default_factory=dict
+    )
+    method_constant_names: Dict[Tuple[str, str], str] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,10 +168,15 @@ class _EmitterState:
     operator_cache: Dict[Tuple[str, str], int]
     emit_stacktrace: bool
     emit_mutable_buffer_names: bool
+    method_name: str = ""
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
     # Only literal arguments with no schema aliasing enter this per-plan pool.
     constant_cache: Dict[Union[int, Tuple[int, ...]], int] = field(default_factory=dict)
+    # pyre-ignore[11]: Annotation `LoweredBackendModule` is not defined as a type.
+    delegate_cache: Dict["LoweredBackendModule", int] = field(  # noqa: F821
+        default_factory=dict
+    )
 
     def spec2id(self, spec: TensorSpec) -> int:
         """Map a TensorSpec to value index in the values array."""
@@ -387,12 +411,26 @@ class _Emitter(torch.fx.Interpreter):
         fqn: str,
         buffer_idx: int,
         constant_tag: str,
+        spec: TensorSpec,
     ) -> None:
         """
         Saves external constant to the map.
         """
         # buffer data should be in the external_constant_buffer already.
         assert buffer_idx < len(self.program_state.external_constant_buffer)
+        method = self.emitter_state.method_name
+        entry = (buffer_idx, spec.dtype, tuple(spec.shape), tuple(spec.dim_order))
+        owner, existing = self.program_state.external_constant_owners.setdefault(
+            fqn, (method, entry)
+        )
+        if existing != entry:
+            raise ExportError(
+                ExportErrorType.VIOLATION_OF_SPEC,
+                f"External constant '{fqn}' differs between methods '{owner}' and '{method}'. "
+                "Parameters and buffers keep their names in the weights file, so give "
+                "differing ones distinct names, e.g. by wrapping each method's model "
+                "under a different attribute name.",
+            )
         if constant_tag not in self.program_state.external_constant_map:
             self.program_state.external_constant_map[constant_tag] = {}
         self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
@@ -429,7 +467,10 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.external_constant_hash[hashed] = buffer_idx
             self.program_state.external_constant_buffer.append(buffer_data)
             self._save_to_external_constant_map(
-                spec.extra_tensor_info.fully_qualified_name, buffer_idx, constant_tag
+                spec.extra_tensor_info.fully_qualified_name,
+                buffer_idx,
+                constant_tag,
+                spec,
             )
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
@@ -467,6 +508,21 @@ class _Emitter(torch.fx.Interpreter):
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
 
+            # data_ptr() is dereferenced from the host below; for non-CPU storage
+            # (e.g. CUDA) that read can segfault instead of raising (#21545).
+            storage_device = typing.cast(torch.UntypedStorage, spec.storage).device
+            if spec.allocated_memory != 0 and storage_device.type != "cpu":
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Constant tensor storage is on device '{storage_device}', "
+                        "but constants serialized into the program must be in CPU "
+                        "memory. Move them to CPU before export (e.g. model.cpu()), "
+                        "or delegate the ops that use them to a backend that "
+                        "accepts device tensors.",
+                    )
+                )
+
             buffer_data = (
                 bytes(
                     ctypes.cast(
@@ -501,6 +557,7 @@ class _Emitter(torch.fx.Interpreter):
                         spec.extra_tensor_info.fully_qualified_name,
                         buffer_idx,
                         constant_tag,
+                        spec,
                     )
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
@@ -1499,14 +1556,26 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
 
-        backend_delegate = BackendDelegate(
-            id=lowered_module.backend_id,
-            processed=BackendDelegateDataReference(
-                location=DataLocation.INLINE, index=delegate_index
-            ),
-            compile_specs=lowered_module.compile_specs,
-        )
-        self.emitter_state.delegates.append(backend_delegate)
+        backend_delegate_index = self.emitter_state.delegate_cache.get(lowered_module)
+        if backend_delegate_index is None:
+            backend_delegate = BackendDelegate(
+                id=lowered_module.backend_id,
+                processed=BackendDelegateDataReference(
+                    location=DataLocation.INLINE, index=delegate_index
+                ),
+                compile_specs=lowered_module.compile_specs,
+            )
+            self.emitter_state.delegates.append(backend_delegate)
+            backend_delegate_index = len(self.emitter_state.delegates) - 1
+            # Scratch is planned per call site but the runtime keeps it on the
+            # delegate, so a delegate with scratch cannot be shared.
+            if (
+                lowered_module.share_handle_across_calls
+                and not lowered_module.scratch_specs
+            ):
+                self.emitter_state.delegate_cache[lowered_module] = (
+                    backend_delegate_index
+                )
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
@@ -1521,7 +1590,7 @@ class _Emitter(torch.fx.Interpreter):
         self.chain.instructions.append(
             Instruction(
                 DelegateCall(
-                    delegate_index=len(self.emitter_state.delegates) - 1,
+                    delegate_index=backend_delegate_index,
                     args=delegate_args,
                     scratch=self._emit_delegate_scratch(scratch_specs) or None,
                 )
@@ -2041,11 +2110,13 @@ class _TopLevelEmitter(_Emitter):
             # overall be considered a mutable buffer if it has already been memory planned. This would
             # suggest that the same abstract buffer is mutable in another entry point so we should
             # compel it to be considered mutable in all entry points at emission just as the user did with
-            # memory planning.
+            # memory planning. A device resident constant is planned too, but
+            # it is not mutable.
             is_mutable_buffer |= (
                 _is_buffer(self.node, self.exported_program.graph_signature)
                 and spec.mem_id is not None
                 and spec.mem_offset is not None
+                and not self.node.meta.get("device_resident_constant", False)
             )
 
             # If the placeholder has a constant_tag, it is external to the PTE file
@@ -2054,13 +2125,25 @@ class _TopLevelEmitter(_Emitter):
                 assert (
                     fqn is not None
                 ), "constant tagged tensors require a fully qualified name"
+                external_fqn = fqn
+                if (
+                    target
+                    in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+                ):
+                    external_fqn = self.program_state.method_constant_names[
+                        (self.name, fqn)
+                    ]
                 if spec.extra_tensor_info is None:
                     spec.extra_tensor_info = ExtraTensorInfo(
-                        fully_qualified_name=fqn, location=TensorDataLocation.EXTERNAL
+                        fully_qualified_name=external_fqn,
+                        location=TensorDataLocation.EXTERNAL,
                     )
                 else:
-                    spec.extra_tensor_info.fully_qualified_name = fqn
-                    spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
+                    spec.extra_tensor_info = replace(
+                        spec.extra_tensor_info,
+                        fully_qualified_name=external_fqn,
+                        location=TensorDataLocation.EXTERNAL,
+                    )
 
             if is_mutable_buffer:
                 # Emit names if we are supposed to.
@@ -2107,17 +2190,7 @@ class _TopLevelEmitter(_Emitter):
 
             # assign the storage of the placeholder spec to the storage of the real tensor if there is one
             if real_tensor is not None:
-                # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
-                if not (
-                    real_tensor.is_contiguous()
-                    or real_tensor.is_contiguous(memory_format=torch.channels_last)
-                ):
-                    real_tensor = real_tensor.contiguous()
-
-                # Weights cannot be views during emission or serialization
-                if real_tensor.nbytes != real_tensor.untyped_storage().nbytes():
-                    real_tensor = real_tensor.clone()
-
+                real_tensor = _normalize_constant_tensor(real_tensor)
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
                 spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))

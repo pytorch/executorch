@@ -139,6 +139,12 @@ inline void vgf_stats_record_import_rejection(
   }
 }
 
+inline void vgf_stats_zero_copy(size_t n, bool input) noexcept {
+  if (auto* stats = current_vgf_execution_stats()) {
+    (input ? stats->in_zero_copy_bytes : stats->out_zero_copy_bytes) += n;
+  }
+}
+
 inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
   auto* stats = current_vgf_execution_stats();
   if (!stats) {
@@ -178,6 +184,10 @@ inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
 #define VGF_STATS_IMPORT_FAILURE(reason_index)                    \
   ::executorch::backends::vgf::vgf_stats_record_import_rejection( \
       (reason_index), true)
+#define VGF_STATS_ZERO_COPY_IN(n) \
+  ::executorch::backends::vgf::vgf_stats_zero_copy((n), true)
+#define VGF_STATS_ZERO_COPY_OUT(n) \
+  ::executorch::backends::vgf::vgf_stats_zero_copy((n), false)
 #define VGF_STATS_MEMCPY_IN(dst, src, n) \
   ::executorch::backends::vgf::vgf_stats_memcpy(dst, src, n, true)
 #define VGF_STATS_MEMCPY_OUT(dst, src, n) \
@@ -200,6 +210,12 @@ inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
   } while (false)
 #define VGF_STATS_IMPORT_FAILURE(reason_index) \
   do {                                         \
+  } while (false)
+#define VGF_STATS_ZERO_COPY_IN(n) \
+  do {                            \
+  } while (false)
+#define VGF_STATS_ZERO_COPY_OUT(n) \
+  do {                             \
   } while (false)
 #define VGF_STATS_MEMCPY_IN(dst, src, n) memcpy(dst, src, n)
 #define VGF_STATS_MEMCPY_OUT(dst, src, n) memcpy(dst, src, n)

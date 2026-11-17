@@ -5,9 +5,10 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes.decompose_softmax_pass import DecomposeSoftmaxPass
-
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -31,9 +32,9 @@ class Softmax(torch.nn.Module):
 class SoftmaxLog(torch.nn.Module):
     """Basic torch.nn.log_softmax layer model."""
 
-    def __init__(self):
+    def __init__(self, dim: int = 1):
         super(SoftmaxLog, self).__init__()
-        self.softmax = torch.nn.LogSoftmax(dim=1)
+        self.softmax = torch.nn.LogSoftmax(dim=dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
@@ -41,6 +42,18 @@ class SoftmaxLog(torch.nn.Module):
 
     def get_inputs(self) -> input_t:
         return (torch.rand(2, 3),)
+
+
+log_softmax_inputs = {
+    "random": lambda: torch.rand(2, 3),
+    "underflow": lambda: torch.tensor(
+        [[0.0, -1000.0, -2000.0], [-1000.0, 0.0, -3000.0]]
+    ),
+    "large_offset": lambda: torch.tensor(
+        [[10000.0, 9000.0, 8000.0], [9000.0, 10000.0, 7000.0]]
+    ),
+    "equal_logits": lambda: torch.full((2, 3), -1000.0),
+}
 
 
 def test_decompose_softmax_tosa_FP_basic():
@@ -70,11 +83,13 @@ def test_decompose_softmax_tosa_FP_basic():
     pipeline.run()
 
 
-def test_decompose_softmax_tosa_FP_log():
-    module = SoftmaxLog()
+@common.parametrize("get_input", log_softmax_inputs)
+@pytest.mark.parametrize("dim", [0, 1, -1, -2])
+def test_decompose_softmax_tosa_FP_log(get_input, dim):
+    module = SoftmaxLog(dim)
     pipeline = PassPipeline[input_t](
         module,
-        module.get_inputs(),
+        (get_input(),),
         quantize=False,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten__log_softmax_default": 1,
@@ -86,17 +101,36 @@ def test_decompose_softmax_tosa_FP_log():
             "executorch_exir_dialects_edge__ops_aten_exp_default",
         ],
         ops_after_pass={
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+            "executorch_exir_dialects_edge__ops_aten_amax_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 2,
             "executorch_exir_dialects_edge__ops_aten_exp_default": 1,
-            "executorch_exir_dialects_edge__ops_aten_reciprocal_default": 1,
             "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+            "executorch_exir_dialects_edge__ops_aten_log_default": 1,
         },
         ops_not_after_pass=[
-            "executorch_exir_dialects_edge__ops_aten__log_softmax_default"
+            "executorch_exir_dialects_edge__ops_aten__log_softmax_default",
+            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+            "executorch_exir_dialects_edge__ops_aten_reciprocal_default",
         ],
         pass_list=[DecomposeSoftmaxPass],
     )
     pipeline.run()
+
+
+@common.parametrize("get_input", log_softmax_inputs)
+@pytest.mark.parametrize("dim", [0, 1, -1, -2])
+def test_decompose_log_softmax_aten(get_input, dim):
+    module = SoftmaxLog(dim)
+    inputs = (get_input(),)
+    graph_module = torch.export.export(module, inputs).graph_module
+
+    result = DecomposeSoftmaxPass(tfa_pass=True)(graph_module)
+
+    assert result is not None
+    assert result.modified
+    output = result.graph_module(*inputs)[0]
+    assert torch.isfinite(output).all()
+    torch.testing.assert_close(output, module(*inputs))
 
 
 class _DecomposeSoftmaxPassSkipSafe(DecomposeSoftmaxPass):

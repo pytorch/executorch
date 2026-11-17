@@ -37,6 +37,8 @@ Error XnnpackBackendOptions::get_option(BackendOption& option) const {
     option.value = static_cast<int>(sharing_mode_.load());
   } else if (strcmp(option.key, weight_cache_option_key) == 0) {
     option.value = weight_cache_enabled_.load();
+  } else if (strcmp(option.key, disable_packed_lhs_option_key) == 0) {
+    option.value = disable_packed_lhs_.load();
   } else if (strcmp(option.key, packed_cache_path_option_key) == 0) {
     std::array<char, runtime::kMaxOptionValueLength> arr{};
     const std::lock_guard<std::mutex> lock(path_mutex_);
@@ -73,6 +75,14 @@ Error XnnpackBackendOptions::set_option(const BackendOption& option) {
     }
     ET_LOG(Debug, "Setting XNNPACK weight cache enabled to %d.", *val);
     weight_cache_enabled_.store(*val);
+  } else if (strcmp(option.key, disable_packed_lhs_option_key) == 0) {
+    auto* val = std::get_if<bool>(&option.value);
+    if (!val) {
+      ET_LOG(Error, "XNNPACK disable packed LHS must be a bool.");
+      return Error::InvalidArgument;
+    }
+    ET_LOG(Debug, "Setting XNNPACK disable packed LHS to %d.", *val);
+    disable_packed_lhs_.store(*val);
   } else if (strcmp(option.key, packed_cache_path_option_key) == 0) {
     auto* val = std::get_if<std::array<char, runtime::kMaxOptionValueLength>>(
         &option.value);
@@ -124,6 +134,12 @@ bool XnnpackBackendOptions::resolve_weight_cache(
     const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const {
   return resolve_option<bool>(
       context, weight_cache_option_key, weight_cache_enabled_.load());
+}
+
+bool XnnpackBackendOptions::resolve_disable_packed_lhs(
+    const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const {
+  return resolve_option<bool>(
+      context, disable_packed_lhs_option_key, disable_packed_lhs_.load());
 }
 
 runtime::Result<WorkspaceSharingMode>

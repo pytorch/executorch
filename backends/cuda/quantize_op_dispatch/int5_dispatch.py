@@ -14,14 +14,14 @@ the packed-int5 path. The code here runs during eager inference and AOTI export
 tracing — it does NOT run at .pte runtime.
 
 At .pte runtime, the captured graph is executed by the AOTI-generated .so:
-  - ``triton::int5_quantized_gemm_m{M}`` is a Triton W5A8 DP4A kernel compiled
+  - ``triton::int5_quantized_gemm_m{M}`` is a Triton W5A8 DP4A (M<=4) or W5A16 (M<=64) kernel compiled
     into it (see triton/kernels/int5_quantized_gemm.py).
   - The inline dequant + F.linear is compiled by inductor into fused Triton
     dequant + matmul kernels.
 
 Dispatch (``_gemm_family_dispatch.quantized_linear``): when a Triton kernel can
 run, the smallest bucket of ``INT5_QUANTIZED_GEMM`` that supports the inputs
-(static M <= 4 takes its own bucket; a dynamic M provably within [1, 4] takes
+(static M <= 64 takes the smallest enclosing bucket; a dynamic M provably within [1, 64] takes
 the smallest bucket that holds it). Everything else (prefill, an unbounded
 dynamic M, other group sizes or dtypes, CPU eager) uses inline dequant +
 F.linear, never an error.
@@ -38,6 +38,7 @@ override (along with the other formats)::
 
 import torch
 import torch.nn.functional as F
+
 from executorch.backends.cuda.dp4a_planar_int5_tensor import (
     CudaDp4aPlanarInt5Tensor,
     unpack_int5,

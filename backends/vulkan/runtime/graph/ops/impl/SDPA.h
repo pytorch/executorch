@@ -25,6 +25,11 @@ namespace vkcompute {
 //
 enum class SDPAMode { LLM, FUSED };
 
+void sdpa_impl_with_shader_override(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    ValueRef shader_override);
+
 // has_fused_qk_softmax: the graph also holds the node added by
 // add_sdpa_compute_attn_weights_with_softmax_node for the same attention. Only
 // then does this node (and the matching softmax node) skip its dispatch on

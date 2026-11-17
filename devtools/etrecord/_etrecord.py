@@ -9,7 +9,9 @@
 import io
 import json
 import os
-from typing import BinaryIO, Dict, IO, List, Optional, Union
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import BinaryIO, Dict, IO, List, Mapping, Optional, Tuple, Union
 from zipfile import BadZipFile, ZipFile
 
 import torch
@@ -55,6 +57,46 @@ class ETRecordReservedFileNames(StrEnum):
     INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = "instruction_id_to_num_outs_map"
     REFERENCE_OUTPUTS = "reference_outputs"
     REPRESENTATIVE_INPUTS = "representative_inputs"
+
+
+@dataclass(frozen=True)
+class DelegatePartitionProvenance:
+    """Backend-agnostic provenance for one emitted delegate partition.
+
+    ``instruction_id`` is local to ``method_name`` and identifies the emitted
+    ``executorch_call_delegate`` instruction. ``source_debug_handles`` contains
+    the debug handles of call_function nodes in the delegate's original lowered
+    graph. Handles are de-duplicated in encounter order, and may be empty; nodes
+    without debug handles are omitted.
+
+    ``delegate_debug_map`` provides backend-operation debug ID -> source debug
+    handles. IDs are canonical strings (including numeric IDs) for consistent
+    results before and after ETRecord JSON serialization. The map is read-only
+    and may be empty when a backend provides no operation-level identifiers.
+
+    The same source debug handle may appear in multiple partitions. Consumers
+    must treat provenance as a many-to-many relationship.
+    """
+
+    method_name: str
+    instruction_id: int
+    backend_id: str
+    source_debug_handles: Tuple[int, ...]
+    delegate_debug_map: Mapping[str, Tuple[int, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def __hash__(self) -> int:
+        # MappingProxyType is immutable but not hashable on its own.
+        return hash(
+            (
+                self.method_name,
+                self.instruction_id,
+                self.backend_id,
+                self.source_debug_handles,
+                tuple(sorted(self.delegate_debug_map.items())),
+            )
+        )
 
 
 class ETRecord:
@@ -516,6 +558,109 @@ class ETRecord:
             self._reference_outputs = {"forward": reference_outputs}
         else:
             self._reference_outputs = reference_outputs
+
+
+def get_delegate_partition_provenance(  # noqa: C901
+    etrecord: ETRecord,
+) -> Dict[str, Tuple[DelegatePartitionProvenance, ...]]:
+    """Return delegate partitions using existing ETRecord metadata.
+
+    This is a public consumer API; it does not alter the ETRecord wire format.
+    Each method's partitions are sorted by emitted delegate instruction ID.
+    A method with no delegates maps to an empty tuple, while a record without
+    delegate-map metadata returns an empty dictionary.
+
+    Delegates in nested ``cond``, ``map`` or ``scan`` subgraphs may be absent:
+    the emitter currently merges subgraph instructions without merging their
+    debug-handle and delegate maps.
+
+    Raises:
+        ValueError: If present delegate metadata is internally inconsistent.
+    """
+    delegate_map = etrecord._delegate_map
+    if delegate_map is None:
+        return {}
+    if not isinstance(delegate_map, dict):
+        raise ValueError("Invalid ETRecord delegate map")
+    if delegate_map and not isinstance(etrecord._debug_handle_map, dict):
+        raise ValueError("ETRecord has delegate metadata but no debug-handle map")
+
+    provenance: Dict[str, Tuple[DelegatePartitionProvenance, ...]] = {}
+    for method_name, method_delegates in delegate_map.items():
+        if not isinstance(method_name, str) or not isinstance(method_delegates, dict):
+            raise ValueError(f"Invalid delegate map for method {method_name!r}")
+        if not method_delegates:
+            provenance[method_name] = ()
+            continue
+
+        method_debug_handles = etrecord._debug_handle_map.get(method_name)
+        if not isinstance(method_debug_handles, dict):
+            raise ValueError(f"No debug-handle map for method {method_name!r}")
+        # In-memory instruction IDs are integers; JSON turns the keys into strings.
+        try:
+            instruction_handles = {
+                int(instruction_id): handles
+                for instruction_id, handles in method_debug_handles.items()
+            }
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid debug-handle IDs for {method_name!r}") from exc
+
+        partitions = []
+        for raw_instruction_id, metadata in method_delegates.items():
+            try:
+                instruction_id = int(raw_instruction_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid delegate instruction ID: {raw_instruction_id!r}"
+                ) from exc
+            if (
+                not isinstance(metadata, dict)
+                or not isinstance(metadata.get("name"), str)
+                or not metadata["name"]
+            ):
+                raise ValueError(
+                    f"Missing backend name for {method_name}/{instruction_id}"
+                )
+            if instruction_id not in instruction_handles:
+                raise ValueError(
+                    "ETRecord delegate metadata has no matching debug-handle entry "
+                    f"for instruction {method_name}/{instruction_id}"
+                )
+            source_handles = instruction_handles[instruction_id]
+            if not isinstance(source_handles, (list, tuple)):
+                raise ValueError(
+                    f"Invalid source debug handles for {method_name}/{instruction_id}"
+                )
+
+            # Backend IDs may be strings (e.g. named Core ML operations), not just ints.
+            # Canonicalize the keys, but never require their content to be numeric.
+            raw_backend_map = metadata.get("delegate_map") or {}
+            if not isinstance(raw_backend_map, dict):
+                raise ValueError(
+                    f"Invalid backend debug map for {method_name}/{instruction_id}"
+                )
+            backend_debug_map = {
+                str(backend_id): tuple(handles)
+                for backend_id, handles in raw_backend_map.items()
+            }
+            if len(backend_debug_map) != len(raw_backend_map):
+                raise ValueError(
+                    f"Ambiguous backend debug IDs for {method_name}/{instruction_id}"
+                )
+
+            partitions.append(
+                DelegatePartitionProvenance(
+                    method_name=method_name,
+                    instruction_id=instruction_id,
+                    backend_id=metadata["name"],
+                    source_debug_handles=tuple(dict.fromkeys(source_handles)),
+                    delegate_debug_map=MappingProxyType(backend_debug_map),
+                )
+            )
+        provenance[method_name] = tuple(
+            sorted(partitions, key=lambda partition: partition.instruction_id)
+        )
+    return provenance
 
 
 def _get_reference_outputs(

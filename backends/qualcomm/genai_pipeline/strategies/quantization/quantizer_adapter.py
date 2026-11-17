@@ -13,118 +13,118 @@ from typing import Any, Iterable, Protocol, runtime_checkable
 class QuantizerAdapter(Protocol):
     """Protocol for quantization operations.
 
-    Wraps external quantization APIs (make_quantizer, prepare_pt2e, convert_pt2e)
+    Wraps external quantization APIs (prepare_pt2e, convert_pt2e)
     behind an injectable interface for testability.
 
     .. note::
-        These methods operate on a **single graph**, mirroring the underlying
-        ``torchao`` PT2E APIs, and adapters stay a thin 1:1 wrapper over them.
+        ``export_model``, ``prepare_pt2e``, ``init_encodings``, and
+        ``convert_pt2e`` each operate on one graph module. Their module arguments
+        are scalar values, never component or graph maps.
 
-        For models exported as several graphs from the same weights -- e.g. a
-        hybrid decoder -- only one graph is actually quantized: a dedicated
-        full-auto-regressive calibration graph, which yields the best activation
-        statistics but is never deployed. Its scales and zero points are then
-        propagated onto the deployed graphs (AR-N prefill, AR-1 decode), which do
-        not run PT2E themselves. That propagation is inherently cross-graph, so
-        it cannot live in a per-graph method here; the **quantization strategy**
-        sequences it via a separate reconciliation hook after this adapter
-        returns.
+        All routing lives in the **quantization strategy**: it fans out over the
+        components and graph variants, decides which single graph is the one to
+        quantize (versus the deployed graphs that are only run once for their
+        observers), collects those graphs, drives their quantization, and then
+        propagates the resulting scales / zero points onto the deployed graphs.
+        ``calibrate`` is the exception:
+        it receives the single-level ``{component: module}`` map so model-family
+        inference can drive cross-component calibration. There is no graph axis
+        because the strategy has already selected one calibration graph per
+        component.
     """
-
-    def make_quantizer(
-        self,
-        quant_dtype: Any = None,
-        backend: Any = None,
-        soc_model: Any = None,
-        quant_recipe: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Create a QNN quantizer with the given configuration.
-
-        Every argument defaults to ``None`` so that callers can omit any of them
-        and let the implementation -- or the API it wraps -- supply the default.
-        In particular an omitted ``quant_dtype`` must not be forwarded, so the
-        underlying ``make_quantizer`` default applies rather than being shadowed.
-
-        Args:
-            quant_dtype: Quantization data type (e.g., QuantDtype.use_8a8w).
-                ``None`` selects the implementation's default.
-            backend: QNN backend type (HTP, GPU, LPAI).
-            soc_model: Target SoC chipset.
-            quant_recipe: Optional quantization recipe. Applied to the
-                constructed quantizer (``QnnQuantizer.set_recipe``) rather than
-                passed to ``make_quantizer``, which takes no such argument.
-            **kwargs: Additional quantizer options (per_channel, observers, etc.).
-
-        Returns:
-            A configured quantizer instance.
-        """
-        ...
 
     def export_model(
         self,
-        model: Any,
-        sample_input: Any,
+        module: Any,
+        example_inputs: Any,
     ) -> Any:
-        """Export the model using torch.export.
+        """Export a single graph module using torch.export.
 
         Args:
-            model: The nn.Module to export.
-            sample_input: Sample input tuple for tracing.
+            module: One graph module, taken from the value of the strategy's
+                ``{component: module}`` map. It is not a mapping.
+            example_inputs: Positional example inputs describing this graph's
+                export signature.
 
         Returns:
-            The exported model (e.g., ExportedProgram.module()).
+            The exported module (e.g., ExportedProgram.module()).
         """
         ...
 
     def prepare_pt2e(
         self,
-        model: Any,
+        module: Any,
         quantizer: Any,
     ) -> Any:
-        """Prepare the model for PT2E quantization (insert observers).
+        """Prepare a single exported module for PT2E quantization.
 
         Args:
-            model: The exported model.
+            module: One exported graph module, not a component or graph map.
             quantizer: The configured quantizer.
 
         Returns:
-            The annotated model with observers inserted.
+            The annotated module with observers inserted.
+        """
+        ...
+
+    def init_encodings(
+        self,
+        module: Any,
+        example_inputs: Any,
+    ) -> Any:
+        """Initialize a graph's observers with a single dummy forward.
+
+        graphs (AR-1 decode / AR-N prefill) are not truly calibrated;
+        they run once on their own example inputs so their observers'
+        placeholders are populated before the encoding-override step copies the
+        real encodings in from the calibration graph.
+
+        Args:
+            module: One annotated deployed graph module, not a map.
+            example_inputs: This graph's positional example-input tuple.
+
+        Returns:
+            The module after the dummy forward.
         """
         ...
 
     def calibrate(
         self,
-        model: Any,
+        modules: Any,
         calibration_data: Iterable[Any],
+        **kwargs: Any,
     ) -> Any:
-        """Run calibration data through the annotated model.
+        """Run true calibration over the quantization graph.
 
-        Implementations needing a non-trivial procedure -- e.g. autoregressive
-        LLM calibration, where each step's input depends on the previous step's
-        output -- should override this method rather than encoding the procedure
-        in ``calibration_data``.
+        Drives ``calibration_data`` through ``module``. Model-specific adapters
+        may use extra kwargs such as ``inference`` (a ``ModelInference`` bound
+        to the calibration graph); generic adapters can directly call the
+        module.
 
         Args:
-            model: The annotated model with observers.
-            calibration_data: Any ``Iterable[Tuple[Tensor, ...]]``, including a
-                plain list or a ``DataLoader``.
+            modules: ``{component: module}`` for the selected calibration graphs.
+                The graph axis has already been removed because each component
+                contributes only its calibration graph.
+            calibration_data: ``{component: DataLoader}`` of corpus-backed
+                calibration batches.
+            **kwargs: Extra adapter-specific options, such as optional
+                ``inference`` for model-specific adapters.
 
         Returns:
-            The calibrated model.
+            The calibrated module.
         """
         ...
 
     def convert_pt2e(
         self,
-        model: Any,
+        module: Any,
     ) -> Any:
-        """Convert the calibrated model to a quantized model.
+        """Convert a single calibrated module to a quantized module.
 
         Args:
-            model: The calibrated model.
+            module: One calibrated graph module, not a component or graph map.
 
         Returns:
-            The quantized model with fake quantize nodes replaced.
+            The quantized module with fake quantize nodes replaced.
         """
         ...

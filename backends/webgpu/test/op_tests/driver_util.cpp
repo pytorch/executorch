@@ -61,6 +61,7 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
     m.rtol = e.value("rtol", 1e-3f);
     m.required = e.value("required", true);
     m.heavy = e.value("heavy", false);
+    m.equal_nan = e.value("equal_nan", false);
     out.push_back(std::move(m));
   }
   return out;
@@ -129,12 +130,23 @@ bool within_tol(
     float atol,
     float rtol,
     float* max_abs,
-    float* max_rel) {
+    float* max_rel,
+    bool equal_nan) {
   float ma = 0.0f, mr = 0.0f;
   bool ok = true;
   for (int i = 0; i < n; i++) {
     if (std::isnan(out[i]) || std::isnan(golden[i])) {
-      ok = false; // NaN never passes a tolerance check
+      // NaN passes no tolerance check; with equal_nan it matches only NaN.
+      if (!(equal_nan && std::isnan(out[i]) && std::isnan(golden[i]))) {
+        ok = false;
+      }
+      continue;
+    }
+    if (out[i] == golden[i]) {
+      continue;
+    }
+    if (std::isinf(out[i]) || std::isinf(golden[i])) {
+      ok = false; // an infinity must match exactly (inf/inf rel_err is NaN)
       continue;
     }
     const float ae = std::abs(out[i] - golden[i]);

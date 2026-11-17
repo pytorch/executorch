@@ -19,6 +19,7 @@ def define_common_targets():
             "executor.h",
             "metrics.h",
             "prefix_cache.h",
+            "prefix_cache_retention.h",
             "runner.h",
             "scheduler.h",
             "types.h",

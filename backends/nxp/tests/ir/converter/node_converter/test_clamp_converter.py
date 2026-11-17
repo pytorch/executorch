@@ -89,7 +89,7 @@ class TestClamp:
 
         lower_run_compare(
             model=model,
-            input_spec=[x_input_spec],
+            model_input_spec=[x_input_spec],
             request=request,
             dlg_model_verifier=graph_verifier,
         )
@@ -132,7 +132,7 @@ class TestClamp:
 
         lower_run_compare(
             model=model,
-            input_spec=[x_input_spec],
+            model_input_spec=[x_input_spec],
             dlg_model_verifier=graph_verifier,
             request=request,
         )

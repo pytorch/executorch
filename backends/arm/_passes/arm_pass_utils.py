@@ -104,6 +104,13 @@ def is_persistent_buffer(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool
     return None
 
 
+def is_mutable_buffer(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    """Is this placeholder a buffer the graph mutates (streaming state)?"""
+    signature = exp_prog.graph_signature
+    target = signature.inputs_to_buffers.get(node.name)
+    return target is not None and target in signature.buffers_to_mutate.values()
+
+
 def get_param_tensor(
     exp_prog: ExportedProgram, node: torch.fx.Node
 ) -> Optional[torch.Tensor]:

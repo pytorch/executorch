@@ -59,6 +59,7 @@ from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
+from executorch.backends.arm.tosa.specification import TosaLoweringContext
 
 from executorch.backends.arm.util._factory import (
     create_partitioner,
@@ -518,7 +519,8 @@ class ArmTester(tester.Tester):
     def run_passes(self, run_passes_stage: Optional[BaseStages.RunPasses] = None):
         if run_passes_stage is None:
             run_passes_stage = RunPasses()
-        return super().run_passes(run_passes_stage)
+        with TosaLoweringContext(self.compile_spec.tosa_spec):
+            return super().run_passes(run_passes_stage)
 
     def _get_input_and_stages(
         self, inputs, stage, reference_stage_type, run_eager_mode: bool

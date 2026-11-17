@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     SymbolicToTosaShapesPass,
 )
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.specification import (
@@ -72,7 +73,11 @@ def _tosa_data_layout_graph(
         )
         for values in shape_values
     ]
-    kwargs = {"value": 0.0} if target == exir_ops.backend.tosa.PAD.default else {}
+    kwargs = (
+        {"value": create_const(graph, 0.0, x.meta["val"].dtype, x)}
+        if target == exir_ops.backend.tosa.PAD.default
+        else {}
+    )
     result = _call(
         graph,
         target,
@@ -119,6 +124,77 @@ def test_keep_multi_input_concat():
     result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
 
     assert _count_target(result, exir_ops.edge.aten.cat.default) == 1
+
+
+def test_lower_broadcast_copy_to_repeat():
+    graph = Graph()
+    destination = graph.placeholder("destination")
+    destination.meta["val"] = torch.zeros(2, 3, 4)
+    source = graph.placeholder("source")
+    source.meta["val"] = torch.tensor(1.0)
+    copy = _call(
+        graph,
+        exir_ops.edge.aten.copy.default,
+        (destination, source),
+        torch.ones(2, 3, 4),
+    )
+    other = graph.placeholder("other")
+    other.meta["val"] = torch.ones(2, 3, 4)
+    concat = _call(
+        graph,
+        exir_ops.edge.aten.cat.default,
+        ([copy, other], 2),
+        torch.ones(2, 3, 8),
+    )
+    graph.output((concat,))
+
+    result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
+
+    assert _count_target(result, exir_ops.edge.aten.copy.default) == 0
+    assert _count_target(result, exir_ops.edge.aten.view_copy.default) == 1
+    assert _count_target(result, exir_ops.edge.aten.repeat.default) == 1
+
+    output = result(
+        torch.zeros(2, 3, 4),
+        torch.tensor(2.0),
+        torch.ones(2, 3, 4),
+    )[0]
+    expected = torch.cat((torch.full((2, 3, 4), 2.0), torch.ones(2, 3, 4)), dim=2)
+    torch.testing.assert_close(output, expected)
+
+    spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+    exported_program = export(torch.nn.Identity(), (torch.ones(1),), strict=True)
+    with TosaLoweringContext(spec):
+        lowered = ExirToTosaPass(exported_program)(result).graph_module
+    assert _count_target(lowered, exir_ops.edge.aten.view_copy.default) == 0
+    assert _count_target(lowered, exir_ops.edge.aten.repeat.default) == 0
+    assert _count_target(lowered, exir_ops.backend.tosa.RESHAPE.default) == 1
+    assert _count_target(lowered, exir_ops.backend.tosa.TILE.default) == 1
+
+
+def test_lower_copy_dtype_conversion():
+    graph = Graph()
+    destination = graph.placeholder("destination")
+    destination.meta["val"] = torch.zeros(2, 3)
+    source = graph.placeholder("source")
+    source.meta["val"] = torch.ones(2, 3, dtype=torch.int32)
+    copy = _call(
+        graph,
+        exir_ops.edge.aten.copy.default,
+        (destination, source),
+        torch.ones(2, 3),
+    )
+    graph.output((copy,))
+
+    result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
+
+    assert _count_target(result, exir_ops.edge.aten.copy.default) == 0
+    assert (
+        _count_target(result, exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
+        == 1
+    )
+    output = result(torch.zeros(2, 3), torch.full((2, 3), 2, dtype=torch.int32))[0]
+    torch.testing.assert_close(output, torch.full((2, 3), 2.0))
 
 
 def test_keep_identity_bilinear_upsample_when_only_partition_op():

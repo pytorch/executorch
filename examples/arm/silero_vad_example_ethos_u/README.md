@@ -1,23 +1,63 @@
 # Silero VAD Ethos-U Example
 
-Voice activity detection (VAD) identifies whether each audio chunk contains
-speech. Silero VAD processes 512 audio samples per step, preserves recurrent
-state between steps, and produces a speech probability for each chunk.
+Run Silero voice activity detection on Corstone-320 / Ethos-U85, then compare
+its speech probabilities with the host reference.
 
-This end-to-end example shows how to:
+## Set Up
 
-- load the Silero VAD JIT model, re-export it through PT2E
-  quantization, and lower it for Ethos-U85.
-- build a bare-metal Corstone-320 application that embeds the exported
-  `.pte` and a 16 kHz mono WAV file.
-- run the app on the Corstone-320 Fixed Virtual Platform (FVP), print
-  speech probabilities over serial, and validate those probabilities on the
-  host.
+Run all commands from the ExecuTorch repository root. Use Python 3.12 with
+development headers and `venv`, plus the
+[host build prerequisites](../../../docs/source/using-executorch-building-from-source.md#software-requirements)
+on Linux or Apple Silicon macOS 14+.
 
-## Layout
+<details>
+<summary>macOS: install the FVP wrappers first</summary>
 
-- `model_export/README.md` — Model loading, quantization, Ethos-U85
-  lowering, `.pte` generation, and reference probability generation.
-- `runtime/README.md` — Building the bare-metal app, generating headers
-  from the `.pte` and WAV file, running on FVP, and comparing serial
-  probability output.
+Start Docker, then install [FVPs-on-Mac](https://github.com/Arm-Examples/FVPs-on-Mac)
+for FVP 11.31.28:
+
+```bash
+mkdir -p examples/arm/arm-scratch "$HOME/.armlm"
+git clone https://github.com/Arm-Examples/FVPs-on-Mac.git \
+  examples/arm/arm-scratch/FVPs-on-Mac
+git -C examples/arm/arm-scratch/FVPs-on-Mac checkout --detach \
+  cc7a4be5456db085619647811fac29e9795f806e
+bash examples/arm/arm-scratch/FVPs-on-Mac/build.sh
+export PATH="$(pwd)/examples/arm/arm-scratch/FVPs-on-Mac/bin:$PATH"
+export FVP_MOUNT_DIR="$(pwd)"
+FVP_Corstone_SSE-320 --version
+```
+
+</details>
+
+Create a Python environment and install the released Python packages and Arm tools:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+git submodule update --init --recursive
+python -m pip install "torch==2.14.0" --index-url https://download.pytorch.org/whl/cpu
+./examples/arm/setup.sh --i-agree-to-the-contained-eula \
+  --disable-ethos-u-deps --enable-baremetal-toolchain --enable-fvps
+python -m pip install "executorch[ethos_u]==1.5.1" "torchao==0.18.0" "cmake<4" pytest
+source examples/arm/arm-scratch/setup_path.sh
+```
+
+The setup command accepts the Arm tool licenses. If reusing an environment
+installed for this checkout, activate it instead of creating `.venv`.
+
+In each new shell, restore the environment and tool paths:
+
+```bash
+source .venv/bin/activate
+source examples/arm/arm-scratch/setup_path.sh
+if [ "$(uname -s)" = Darwin ]; then
+  export PATH="$(pwd)/examples/arm/arm-scratch/FVPs-on-Mac/bin:$PATH"
+  export FVP_MOUNT_DIR="$(pwd)"
+fi
+```
+
+## Run the Example
+
+1. [Prepare inputs and export](model_export/README.md).
+2. [Build, run, and validate](runtime/README.md).

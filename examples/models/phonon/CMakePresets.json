@@ -1,0 +1,142 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "phonon-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/phonon",
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "OFF",
+        "EXECUTORCH_BUILD_MLX": "OFF",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out",
+        "EXECUTORCH_BUILD_VULKAN": "OFF"
+      }
+    },
+    {
+      "name": "phonon-mlx",
+      "displayName": "Phonon runner (MLX)",
+      "inherits": [
+        "phonon-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "phonon-cuda",
+      "displayName": "Phonon runner (CUDA)",
+      "inherits": [
+        "phonon-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
+      "name": "phonon-cpu",
+      "displayName": "Phonon runner (XNNPACK)",
+      "inherits": [
+        "phonon-base"
+      ]
+    },
+    {
+      "name": "phonon-vulkan",
+      "displayName": "Phonon runner (Vulkan)",
+      "inherits": [
+        "phonon-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "phonon-cuda",
+      "configurePreset": "phonon-cuda",
+      "configuration": "Release"
+    },
+    {
+      "name": "phonon-mlx",
+      "configurePreset": "phonon-mlx",
+      "configuration": "Release"
+    },
+    {
+      "name": "phonon-cpu",
+      "configurePreset": "phonon-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "phonon-vulkan",
+      "configurePreset": "phonon-vulkan",
+      "configuration": "Release"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "phonon-cuda",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "phonon-cuda"
+        },
+        {
+          "type": "build",
+          "name": "phonon-cuda"
+        }
+      ]
+    },
+    {
+      "name": "phonon-mlx",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "phonon-mlx"
+        },
+        {
+          "type": "build",
+          "name": "phonon-mlx"
+        }
+      ]
+    },
+    {
+      "name": "phonon-cpu",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "phonon-cpu"
+        },
+        {
+          "type": "build",
+          "name": "phonon-cpu"
+        }
+      ]
+    },
+    {
+      "name": "phonon-vulkan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "phonon-vulkan"
+        },
+        {
+          "type": "build",
+          "name": "phonon-vulkan"
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,18 @@
+import os
+import tempfile
 import unittest
+from typing import Any, Optional, Sequence
 
 import executorch
 import torch
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.preprocess import OpenvinoBackend
-from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
 
@@ -17,25 +25,53 @@ class BaseOpenvinoOpTest(unittest.TestCase):
     atol = 1e-3
     rtol = 1e-3
 
+    @staticmethod
+    def execute_program(
+        exec_prog: ExecutorchProgramManager,
+        all_inputs: Sequence[Sequence[torch.Tensor]],
+    ) -> list[Sequence[Any]]:
+        """Run each set of inputs, in order, on one loaded method, as an app
+        would."""
+        # Load from a file: unlike a buffer, it really frees the delegate data
+        # when the backend frees it.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            pte_path = os.path.join(tmp_dir, "model.pte")
+            with open(pte_path, "wb") as f:
+                exec_prog.write_to_file(f)
+            program = Runtime.get().load_program(pte_path)
+            method = program.load_method("forward")
+            assert method is not None
+            all_outputs = [method.execute(inputs) for inputs in all_inputs]
+            # Windows cannot delete a mapped file, so release it first.
+            del method, program
+        return all_outputs
+
     def execute_layer_test(
         self,
         module: torch.nn.Module,
         sample_inputs: tuple[torch.Tensor],
         expected_partitions: int = 1,
         assert_output_equal: bool = True,
+        compile_specs: tuple[CompileSpec, ...] = (),
+        more_inputs: tuple[tuple[torch.Tensor, ...], ...] = (),
+        compile_config: Optional[EdgeCompileConfig] = None,
+        dynamic_shapes=None,
     ):
 
         module = module.eval()
         # Export to aten dialect using torch.export
-        aten_dialect: ExportedProgram = export(module, sample_inputs)
+        aten_dialect: ExportedProgram = export(
+            module, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
 
         # Convert to edge dialect and lower the module to the backend with a custom partitioner
-        compile_spec = [CompileSpec("device", self.device.encode())]
+        compile_spec = [CompileSpec("device", self.device.encode()), *compile_specs]
         lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
             aten_dialect,
             partitioner=[
                 OpenvinoPartitioner(compile_spec),
             ],
+            compile_config=compile_config,
         )
 
         # Apply backend-specific passes
@@ -57,30 +93,28 @@ class BaseOpenvinoOpTest(unittest.TestCase):
 
         # Execute the model and compare the outputs with the reference outputs
         if assert_output_equal:
-            # Execute the module in eager mode to calculate the reference outputs
-            ref_output = module(*sample_inputs)
-            if isinstance(ref_output, torch.Tensor):
-                ref_output = [
-                    ref_output,
-                ]
+            all_inputs = (sample_inputs, *more_inputs)
+            all_outputs = self.execute_program(exec_prog, all_inputs)
+            for inputs, outputs in zip(all_inputs, all_outputs):
+                # Execute the module in eager mode to calculate the reference outputs
+                ref_output = module(*inputs)
+                if isinstance(ref_output, torch.Tensor):
+                    ref_output = [
+                        ref_output,
+                    ]
 
-            # Load model from buffer and execute
-            runtime = Runtime.get()
-            program = runtime.load_program(exec_prog.buffer)
-            method = program.load_method("forward")
-            assert method is not None
-            outputs = method.execute(sample_inputs)
+                # Compare the outputs with the reference outputs
+                self.assertTrue(len(ref_output) == len(outputs))
+                for i in range(len(ref_output)):
+                    self.assertTrue(
+                        torch.allclose(
+                            outputs[i],
+                            ref_output[i],
+                            atol=self.atol,
+                            rtol=self.rtol,
+                            equal_nan=True,
+                        ),
+                        msg=f"ref_output:\n{ref_output[i]}\n\ntest_output:\n{outputs[i]}",
+                    )
 
-            # Compare the outputs with the reference outputs
-            self.assertTrue(len(ref_output) == len(outputs))
-            for i in range(len(ref_output)):
-                self.assertTrue(
-                    torch.allclose(
-                        outputs[i],
-                        ref_output[i],
-                        atol=self.atol,
-                        rtol=self.rtol,
-                        equal_nan=True,
-                    ),
-                    msg=f"ref_output:\n{ref_output[i]}\n\ntest_output:\n{outputs[i]}",
-                )
+        return exec_prog

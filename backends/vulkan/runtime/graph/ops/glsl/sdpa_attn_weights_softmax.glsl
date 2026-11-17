@@ -71,6 +71,11 @@ void store_attn_weights_softmax_c4(
 #endif
 }
 
+#ifndef HAS_INPUT_POS
+// ATen's safe softmax returns zero for rows masked entirely with -inf.
+#define SOFTMAX_ZERO_FULLY_MASKED_ROWS
+#endif
+
 #include "sdpa_attn_weights_softmax_row.glslh"
 
 /*

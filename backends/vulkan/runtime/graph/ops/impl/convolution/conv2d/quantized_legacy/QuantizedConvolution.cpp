@@ -454,7 +454,7 @@ void add_input_im2col_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       im2col_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{input_im2col, vkapi::kWrite}, {input_image, vkapi::kRead}},
       // Shader params buffers
@@ -572,7 +572,7 @@ void add_quantize_and_pack_im2col_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       im2col_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{input_int_im2col, vkapi::kWrite}, {input_image, vkapi::kRead}},
       // Shader params buffers

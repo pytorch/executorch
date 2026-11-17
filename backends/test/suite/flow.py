@@ -92,6 +92,12 @@ def _register_flow(
         return []
 
 
+def _load_cpu() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.cpu import CPU_FP32_TEST_FLOW
+
+    return [CPU_FP32_TEST_FLOW]
+
+
 def _load_xnnpack() -> list[TestFlow]:
     from executorch.backends.test.suite.flows.xnnpack import (
         XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
@@ -207,6 +213,7 @@ def all_flows() -> dict[str, TestFlow]:
 
     flows = (
         [PORTABLE_TEST_FLOW]
+        + _register_flow(_load_cpu, "CPU")
         + _register_flow(_load_xnnpack, "XNNPACK")
         + _register_flow(_load_coreml, "Core ML")
         + _register_flow(_load_vulkan, "Vulkan")
@@ -217,6 +224,13 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_cortex_m, "Cortex-M")
         + _register_flow(_load_nxp, "NXP")
     )
+
+    try:
+        from executorch.backends.test.suite.flows.coreai import COREAI_TEST_FLOWS
+
+        flows += COREAI_TEST_FLOWS
+    except ImportError as e:
+        logger.info(f"Skipping CoreAI flow registration: {e}")
 
     try:
         from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW

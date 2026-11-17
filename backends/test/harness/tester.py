@@ -463,11 +463,11 @@ class Tester:
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
                     f"\tDifference: max: {torch.max(compare_model-compare_ref)}, abs: {torch.max(torch.abs(compare_model-compare_ref))}, mean abs error: {torch.mean(torch.abs(compare_model-compare_ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
-                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                    f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
-                    f"\t   Max: {model.max()}, {ref.max()}\n"
-                    f"\t   Min: {model.min()}, {ref.min()}\n"
+                    f"\t Numel: {compare_model.numel()}, {compare_ref.numel()}\n"
+                    f"\tMedian: {compare_model.median()}, {compare_ref.median()}\n"
+                    f"\t  Mean: {compare_model.to(torch.double).mean()}, {compare_ref.to(torch.double).mean()}\n"
+                    f"\t   Max: {compare_model.max()}, {compare_ref.max()}\n"
+                    f"\t   Min: {compare_model.min()}, {compare_ref.min()}\n"
                 )
 
     @staticmethod

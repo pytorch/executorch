@@ -66,6 +66,36 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 logger = logging.getLogger(__name__)
 
 
+def _tag_delegate_owned_buffers(exported_program: ExportedProgram) -> None:
+    """Tag each mutable buffer into the partition that reads and updates it.
+
+    The partition takes the buffer only when it holds every reader and the
+    update. A buffer shared with another partition or with ops left outside the
+    delegate is left untagged, so it stays a program buffer passed in and out of
+    the delegate.
+
+    """
+    signature = exported_program.graph_signature
+    writer_names = {
+        target: name for name, target in signature.buffers_to_mutate.items()
+    }
+    nodes = {node.name: node for node in exported_program.graph.nodes}
+    for node in exported_program.graph.find_nodes(op="placeholder"):
+        target = signature.inputs_to_buffers.get(node.name)
+        if target not in writer_names:
+            continue
+        accesses = [*node.users, nodes[writer_names[target]]]
+        tags = {access.meta.get("delegation_tag") for access in accesses}
+        if len(tags) == 1 and None not in tags:
+            node.meta["delegation_tag"] = tags.pop()
+        elif tags != {None}:
+            logger.warning(
+                f"Mutable buffer {target} is accessed outside a single delegate "
+                "partition, so it stays a program buffer instead of being "
+                "owned by the delegate."
+            )
+
+
 def _is_custom_partition_op(
     custom_ops: set[torch._ops.OpOverload], target: object
 ) -> bool:
@@ -243,6 +273,32 @@ def reject_partition(
                 node,
                 reason,
             )
+
+
+def _has_symbolic_scalar_boundary(nodes: Iterable[torch.fx.Node]) -> bool:
+    """Return whether a symbolic scalar crosses the partition boundary.
+
+    Args:
+        nodes (Iterable[torch.fx.Node]): Nodes in the proposed partition.
+
+    Returns:
+        bool: Whether a symbolic scalar is an input or output of the partition.
+
+    """
+    partition_nodes = set(nodes)
+    symbolic_scalars = (torch.SymInt, torch.SymFloat, torch.SymBool)
+    for node in partition_nodes:
+        if isinstance(node.meta.get("val"), symbolic_scalars) and any(
+            user not in partition_nodes for user in node.users
+        ):
+            return True
+        if any(
+            input_node not in partition_nodes
+            and isinstance(input_node.meta.get("val"), symbolic_scalars)
+            for input_node in node.all_input_nodes
+        ):
+            return True
+    return False
 
 
 def _validate_partition(nodes: set[torch.fx.Node]) -> bool:
@@ -453,6 +509,8 @@ class TOSAPartitioner(Partitioner):
     """
 
     compile_spec: ArmCompileSpec
+    # Only backends whose runtime keeps a persistent region can own mutable buffers.
+    delegate_mutable_buffers: bool = False
 
     def __init__(
         self,
@@ -779,6 +837,20 @@ class TOSAPartitioner(Partitioner):
                 tag_iterator,
                 reporter,
             )
+
+        final_partitions: dict[str, list[torch.fx.Node]] = {}
+        for node in module.graph.nodes:
+            node_tag = node.meta.get("delegation_tag")
+            if node_tag in tags:
+                final_partitions.setdefault(node_tag, []).append(node)
+        for tag, nodes in final_partitions.items():
+            if _has_symbolic_scalar_boundary(nodes):
+                reject_partition(
+                    "Partition has unsupported scalar symbolic inputs or outputs.",
+                    Partition(nodes=nodes),
+                    reporter,
+                )
+                tags.remove(tag)
         return tags
 
     def _create_operator_support(
@@ -836,6 +908,8 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if self.delegate_mutable_buffers:
+            _tag_delegate_owned_buffers(exported_program)
         if (
             self.intermediate_path is not None
             and logger.getEffectiveLevel() <= logging.INFO
@@ -879,6 +953,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
+            torch.ops.aten.mish.default,
             torch.ops.aten.softplus.default,
             torch.ops.aten.pad.default,
         }
@@ -935,6 +1010,15 @@ class TOSAPartitioner(Partitioner):
             """
             if _is_custom_partition_op(self._custom_partition_ops, node.target):
                 return True
+            # BF16 pad must decompose when the selected TOSA spec lacks +bf16.
+            # Otherwise it is left on the CPU as aten.pad, which has no
+            # portable out variant. Decomposition produces constant_pad_nd.
+            if (
+                node.target == torch.ops.aten.pad.default
+                and get_first_fake_tensor(node).dtype == torch.bfloat16
+                and not self.tosa_spec.support_extension("bf16")
+            ):
+                return False
             if (
                 node.target in ops_to_not_decompose
                 and get_first_fake_tensor(node).dtype == torch.float64

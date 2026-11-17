@@ -100,7 +100,9 @@ The script validates all required inputs, configures CMake, compiles the source 
 flash_release/executorch_cifarnet.elf
 ```
 
-If the build completes successfully, the ELF file will be available and ready for programming onto the target board.
+If the build completes successfully, the ELF file will be available and ready for programming onto the target board. Here is a diagram of the build flow:
+
+![Build flow](build_flow.svg "Build flow")
 
 ## 5. Flash the Application
 

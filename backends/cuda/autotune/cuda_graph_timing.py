@@ -31,8 +31,11 @@ and captures on that same stream (the legacy default stream cannot be
 captured).
 
 To keep captures succeeding:
-- each capture's graph and its memory pool are released right after timing,
-  and the allocator's cache is emptied once it holds a lot of unused memory;
+- each capture's graph is released and the allocator's cache emptied right
+  after timing. The cache is not checked first: the allocator stats keep an
+  entry for every private pool ever captured, so reading them costs more with
+  each capture, while emptying a cache that holds little more than the
+  released pool is cheap;
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
   the tensors given as ``offload`` (the model's weights moved to the GPU for
   the compile) are parked on the CPU while the candidate is timed and restored
@@ -59,7 +62,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 _TARGET_GRAPH_US = 2000.0
 _MIN_CALLS = 4
 _MAX_CALLS = 32
-_EMPTY_CACHE_THRESHOLD_BYTES = 1 << 30
 
 
 @dataclass
@@ -77,9 +79,31 @@ class _State(threading.local):
 
 
 _STATE = _State()
+
+
+def graph_timing_active() -> bool:
+    """Whether a ``cuda_graph_timing()`` context is active on this thread."""
+    return _STATE.stats is not None
+
+
 _INSTALL_LOCK = threading.Lock()
 _installed_previous: Callable[..., Any] | None = None
 _install_count = 0
+
+
+def time_with_cuda_graph_us_counted(fn: Callable[[], Any]) -> float:
+    """``time_with_cuda_graph_us`` with the out-of-memory retries and the captured
+    and fallback counts of the active ``cuda_graph_timing()``."""
+    stats = _STATE.stats
+    if stats is None:
+        return time_with_cuda_graph_us(fn)
+    try:
+        us = _time_capturing_robustly(fn, stats)
+    except Exception:
+        stats.fallbacks += 1
+        raise
+    stats.captured += 1
+    return us
 
 
 def _default_cuda_bench(
@@ -92,14 +116,6 @@ def _default_cuda_bench(
 ) -> Any:
     kwargs.setdefault("device_type", "cuda")
     return bench.benchmark_gpu(fn, warmup=warmup, rep=rep, **kwargs)
-
-
-def _release_cached_memory_if_large() -> None:
-    if (
-        torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        > _EMPTY_CACHE_THRESHOLD_BYTES
-    ):
-        torch.cuda.empty_cache()
 
 
 _l2_flush_buffers: dict[int, torch.Tensor] = {}
@@ -158,7 +174,7 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
         with contextlib.suppress(RuntimeError):
             graph.reset()
         del graph
-        _release_cached_memory_if_large()
+        torch.cuda.empty_cache()
 
 
 class ParkedTensorsNotRestored(RuntimeError):

@@ -4,10 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import logging
-from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    final,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+)
 
 import executorch.backends.vulkan.patterns as vk_patterns
 import executorch.backends.vulkan.utils as utils
@@ -20,6 +29,7 @@ from executorch.backends.vulkan.op_registry import (
     has_impl,
     OpFeatures,
     OpKey,
+    unwrap_identity_repeat,
     vulkan_supported_ops,
 )
 
@@ -42,7 +52,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
 
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.utils._pytree import tree_leaves
 
@@ -71,13 +81,22 @@ class VulkanSupportedOperators(OperatorSupportBase):
         nn_module_allowlist: Optional[Set[str]] = None,
         downcast_64_bit: bool = True,
         constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
         super().__init__()
+        # Backends that consume the Vulkan serialization but implement less of an
+        # op than the Vulkan registry advertises supply their own features here.
+        self.op_features_overrides: Dict[OpKey, OpFeatures] = (
+            op_features_overrides if op_features_overrides is not None else {}
+        )
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
         self.downcast_64_bit = downcast_64_bit
+        self.constant_nodes: Set[torch.fx.Node] = (
+            constant_nodes if constant_nodes is not None else set()
+        )
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -215,6 +234,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 f"[Vulkan Partitioner] Due to [{reason}], skipping {utils.node_io_str(node)}"
             )
 
+    def reject(self, node: torch.fx.Node, reason: str) -> None:
+        """Mark node as unsupported from now on, overriding its support check."""
+        self.log_skip(node, reason)
+        self._node_support[node] = False
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
@@ -304,17 +328,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        features = None
-        if target not in vulkan_supported_ops:
+        features = self.op_features_overrides.get(target)
+        if features is None:
+            if target in vulkan_supported_ops:
+                features = vulkan_supported_ops[target]
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
+            elif hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")
                 return False
-        else:
-            features = vulkan_supported_ops[target]
 
         assert features is not None
 
@@ -326,6 +350,15 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
+            return False
+
+        if (
+            features.are_node_inputs_supported_with_constants_fn is not None
+            and not features.are_node_inputs_supported_with_constants_fn(
+                node, self.constant_nodes
+            )
+        ):
+            self.log_skip(node, "op args are not constant where required")
             return False
 
         if not features.supports_highdim and utils.op_contains_high_dim_tensor(node):
@@ -362,6 +395,18 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
             compile_specs.append(CompileSpec(key, value.to_bytes(8, "little")))
             continue
 
+        if key == "skip_fusion_patterns":
+            if (
+                isinstance(value, str)
+                or not set(value) <= vk_patterns.fusable_patterns.keys()
+            ):
+                raise ValueError(
+                    "skip_fusion_patterns must be a collection of pattern names "
+                    f"from {sorted(vk_patterns.fusable_patterns)}, got {value!r}"
+                )
+            compile_specs.append(CompileSpec(key, ",".join(sorted(value)).encode()))
+            continue
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
@@ -392,6 +437,35 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     return compile_specs
 
 
+def instance_norms_split_from_affine_repeats(
+    partitions: Iterable[Partition],
+) -> Set[torch.fx.Node]:
+    """
+    The batch norms without stats in ``partitions`` whose affine args are read
+    through an identity ``repeat`` (as F.instance_norm does for a batch of 1)
+    that is not in the same partition.
+
+    Such a norm receives the repeat's output as a runtime input, which
+    ReplaceInstanceNormPass cannot unwrap to a constant. Even a delegated repeat
+    can land in another partition, for instance when it has other users on a path
+    that leaves the norm's partition and re-enters it.
+    """
+    partition_of = {
+        node: partition.id for partition in partitions for node in partition.nodes
+    }
+    split = set()
+    for node, partition_id in partition_of.items():
+        if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
+            continue
+        for affine_arg in (node.args[1], node.args[2]):
+            if (
+                unwrap_identity_repeat(affine_arg) is not affine_arg
+                and partition_of.get(affine_arg) != partition_id
+            ):
+                split.add(node)
+    return split
+
+
 @final
 class VulkanPartitioner(Partitioner):
     def __init__(
@@ -401,7 +475,9 @@ class VulkanPartitioner(Partitioner):
         operator_allowlist: Optional[List[OpKey]] = None,
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
+        self.op_features_overrides = op_features_overrides
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
             self.options = compile_options
@@ -443,16 +519,17 @@ class VulkanPartitioner(Partitioner):
 
         return (ops_not_to_decompose, filter_fn)
 
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        # Run the CapabilityBasedPartitioner to return the largest possible
-        # subgraphs containing the nodes with the tags
-        partition_tags = {}
-
-        # Get all fusable subgraphs from fuse_patterns
-        fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
-            exported_program.graph_module
-        )
-
+    def make_supported_operators(
+        self,
+        fusable_subgraphs: Optional[List[PatternMatch]] = None,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
+        operator_allowlist: Optional[Set[OpKey]] = None,
+        operator_blocklist: Optional[Set[OpKey]] = None,
+    ) -> VulkanSupportedOperators:
+        """The node support checker partition() uses, built from this
+        partitioner's options. The optional arguments replace the
+        corresponding partitioner settings."""
         # small_texture_limits opts into the conservative 3D texture limit that is
         # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
         # 2048). An explicit texture_limits always takes precedence.
@@ -463,29 +540,65 @@ class VulkanPartitioner(Partitioner):
         else:
             texture_limits = utils.DEFAULT_TEXTURE_LIMITS
         buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
+        return VulkanSupportedOperators(
+            texture_limits,
+            buffer_limit,
+            require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+            skip_bool_tensors=self.options.get("skip_bool_tensors", False),
+            operator_blocklist=(
+                self.operator_blocklist
+                if operator_blocklist is None
+                else operator_blocklist
+            ),
+            operator_allowlist=(
+                self.operator_allowlist
+                if operator_allowlist is None
+                else operator_allowlist
+            ),
+            fusable_subgraphs=fusable_subgraphs,
+            nn_module_blocklist=self.nn_module_blocklist,
+            nn_module_allowlist=self.nn_module_allowlist,
+            downcast_64_bit=self.options.get("downcast_64_bit", True),
+            op_features_overrides=(
+                self.op_features_overrides
+                if op_features_overrides is None
+                else op_features_overrides
+            ),
+            constant_nodes=constant_nodes,
+        )
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        # Run the CapabilityBasedPartitioner to return the largest possible
+        # subgraphs containing the nodes with the tags
+        partition_tags = {}
+
+        # Get all fusable subgraphs from fuse_patterns
+        fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
+            exported_program.graph_module,
+            self.options.get("skip_fusion_patterns", ()),
+        )
+
+        operator_support = self.make_supported_operators(
+            fusable_subgraphs=fusable_subgraphs,
+            constant_nodes=utils.get_constant_nodes(exported_program),
+        )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            VulkanSupportedOperators(
-                texture_limits,
-                buffer_limit,
-                require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
-                skip_bool_tensors=self.options.get("skip_bool_tensors", False),
-                operator_blocklist=self.operator_blocklist,
-                operator_allowlist=self.operator_allowlist,
-                fusable_subgraphs=fusable_subgraphs,
-                nn_module_blocklist=self.nn_module_blocklist,
-                nn_module_allowlist=self.nn_module_allowlist,
-                downcast_64_bit=self.options.get("downcast_64_bit", True),
-                constant_nodes={
-                    node
-                    for node in exported_program.graph.nodes
-                    if utils.is_param_node(exported_program, node)
-                    and not utils.is_mutable_buffer_node(node, exported_program)
-                },
-            ),
+            operator_support,
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
+        # Support is checked node by node, but an instance norm is only delegable
+        # if the repeats of its affine args share its partition. Keep the norms
+        # that ended up apart on the CPU and partition again until none do.
+        split_norms = instance_norms_split_from_affine_repeats(partition_list)
+        while split_norms:
+            for node in split_norms:
+                operator_support.reject(
+                    node, "affine arg repeat is not in the same partition"
+                )
+            partition_list = capability_partitioner.propose_partitions()
+            split_norms = instance_norms_split_from_affine_repeats(partition_list)
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"

@@ -163,35 +163,10 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
 endif()
 
-# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
-# links GTest + executorch_core and registers the ctest target.
 et_cxx_test(
-  mlx_sequence_cache_test
+  mlx_batch_control_test
   SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_cache_test.cpp
-  EXTRA_LIBS
-  mlxdelegate
-  mlx_schema
-  mlx
-)
-target_include_directories(
-  mlx_sequence_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
-)
-if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
-  target_compile_options(
-    mlx_sequence_cache_test PRIVATE -fsanitize=address,undefined
-                                    -fno-omit-frame-pointer
-  )
-  target_link_options(
-    mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
-  )
-endif()
-
-et_cxx_test(
-  mlx_batched_sequence_cache_test
-  SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_batched_sequence_cache_test.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_clone_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_batch_control_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema
@@ -199,23 +174,22 @@ et_cxx_test(
   extension_llm_cache
 )
 target_include_directories(
-  mlx_batched_sequence_cache_test
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  mlx_batch_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
-    mlx_batched_sequence_cache_test PRIVATE -fsanitize=address,undefined
-                                            -fno-omit-frame-pointer
+    mlx_batch_control_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
   )
   target_link_options(
-    mlx_batched_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+    mlx_batch_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()
 
 et_cxx_test(
-  mlx_cell_cache_test
+  mlx_sequence_control_test
   SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_cell_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_control_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema
@@ -223,14 +197,14 @@ et_cxx_test(
   extension_llm_cache
 )
 target_include_directories(
-  mlx_cell_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  mlx_sequence_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
-    mlx_cell_cache_test PRIVATE -fsanitize=address,undefined
-                                -fno-omit-frame-pointer
+    mlx_sequence_control_test PRIVATE -fsanitize=address,undefined
+                                      -fno-omit-frame-pointer
   )
   target_link_options(
-    mlx_cell_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+    mlx_sequence_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()

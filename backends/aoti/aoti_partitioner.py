@@ -100,13 +100,18 @@ class AotiPartitioner(Partitioner):
                     node.meta["delegation_tag"] = user.meta["delegation_tag"]
                     break
 
-        tag_constant_data(exported_program)
-        tag_mutated_buffer(exported_program)
-
         # tag_constant_data only tags constants that have users; tag the
-        # genuinely unused ones too so none are left dangling.
+        # genuinely unused ones too so none are left dangling. A mutated buffer
+        # gets the tag of the node that writes its new value, so it stays out
+        # when that value comes from outside the delegates, as in
+        # self.state.copy_(x).
         if partition_tags:
             fallback_tag = next(iter(partition_tags))
+            signature = exported_program.graph_signature
+            writers = {
+                buffer: output for output, buffer in signature.buffers_to_mutate.items()
+            }
+            nodes = {node.name: node for node in exported_program.graph.nodes}
             for node in exported_program.graph.nodes:
                 if (
                     node.op == "placeholder"
@@ -118,7 +123,17 @@ class AotiPartitioner(Partitioner):
                         or is_lifted_tensor_constant(exported_program, node)
                     )
                 ):
-                    node.meta["delegation_tag"] = fallback_tag
+                    writer = writers.get(signature.inputs_to_buffers.get(node.name))
+                    tag = (
+                        fallback_tag
+                        if writer is None
+                        else nodes[writer].meta.get("delegation_tag")
+                    )
+                    if tag is not None:
+                        node.meta["delegation_tag"] = tag
+
+        tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

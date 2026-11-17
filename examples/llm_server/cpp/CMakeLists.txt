@@ -111,6 +111,7 @@ if(EXECUTORCH_LLM_SERVER_PYTHON_TESTS)
       "EXECUTORCH_TEST_MULTIPLEXED_WORKER=${_native_worker}"
       "PYTHONPATH=${EXECUTORCH_ROOT}/.." ${Python3_EXECUTABLE} -m pytest -q
       ${_python_tests}/test_multiplexed_worker_client_native.py
+      ${_python_tests}/test_worker_context_overflow.py
   )
   set_tests_properties(multiplexed_worker_client_native PROPERTIES TIMEOUT 120)
 endif()

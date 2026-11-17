@@ -22,6 +22,7 @@ import executorch.exir.serde.schema as schema
 import torch
 import torch.export.exported_program as ep
 from executorch.exir import delegate
+from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import (
@@ -46,6 +47,14 @@ from torch.fx.experimental import symbolic_shapes
 from torch.fx.traceback import NodeSource
 
 log: logging.Logger = logging.getLogger(__name__)
+
+
+class _NamedDataEncoder(export_serialize.EnumEncoder):
+    # Read each file only when it is encoded, so its raw bytes are freed right after.
+    def default(self, obj):
+        if isinstance(obj, FileBackedData):
+            obj = obj.to_bytes()
+        return super().default(obj)
 
 
 class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
@@ -151,6 +160,11 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             from_node = node.meta["from_node"]
             # Serialize from_node as JSON since it's a complex nested structure
             meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
+
+        # Only serialized call nodes have metadata; placeholders, get_attr and
+        # getitem nodes are not serialized as nodes in the schema.
+        if "custom" in node.meta:
+            meta["custom"] = json.dumps(node.meta["custom"])
 
         return meta
 
@@ -291,7 +305,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
 
         serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
-        named_data_store = json.dumps(export_serialize._dataclass_to_dict(lowered_module.named_data_store_output),cls=export_serialize.EnumEncoder) if lowered_module.named_data_store_output else None
+        named_data_store = json.dumps(export_serialize._dataclass_to_dict(lowered_module.named_data_store_output),cls=_NamedDataEncoder) if lowered_module.named_data_store_output else None
 
         serialized_lowered_module = SerdeLoweredBackendModule(
             original_module=serialized_artifact.exported_program,
@@ -305,6 +319,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
                 SerdeDelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in lowered_module.scratch_specs
             ],
+            share_handle_across_calls=lowered_module.share_handle_across_calls,
         )
 
         json_lowered_module = json.dumps(
@@ -511,6 +526,9 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if from_node_str := metadata.get("from_node"):
             res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
 
+        if "custom" in metadata:
+            res["custom"] = json.loads(metadata["custom"])
+
         return res
 
     def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
@@ -627,6 +645,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                 DelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in (serialized_lowered_module.scratch_specs or [])
             ],
+            serialized_lowered_module.share_handle_across_calls,
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)
@@ -754,6 +773,19 @@ def save(
     extra_files: Optional[Dict[str, Any]] = None,
     opset_version: Optional[Dict[str, int]] = None,
 ) -> None:
+    """Save an exported program, including custom metadata on serialized call nodes.
+
+    ``node.meta["custom"]`` should contain JSON-native values: dictionaries with
+    string keys, lists, strings, numbers, booleans and None. JSON encoding turns
+    tuples into lists, non-string dictionary keys into strings and dictionary
+    subclasses into plain dictionaries. Unsupported values raise SerializeError
+    naming the node; earlier versions silently dropped custom metadata.
+
+    Placeholder, get_attr and independently annotated getitem metadata is not
+    preserved. Generated getitem nodes inherit independent copies of their
+    producer's metadata. Call nodes in lowered modules' original_module are
+    included.
+    """
     if not isinstance(ep_save, ep.ExportedProgram):
         raise TypeError(f"save() expects an ExportedProgram but got {type(ep)}")
 
