@@ -46,6 +46,8 @@ from executorch.backends.espressif.test.test_mutable_buffers import (
     InputAsState,
     lower_input_as_state,
     lower_stateful,
+    ReturnsClonedOldState,
+    ReturnsOldState,
     ShiftRegister,
     split_streams,
     StateReadLate,
@@ -717,6 +719,17 @@ def test_delegate_owned_state_persists(tmp_path, model_class, in_place):
 
 def test_state_updated_from_a_graph_input(tmp_path):
     exported, program, _ = lower_input_as_state()
+    steps = stateful_steps(4)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["states"] == 1
+
+
+@pytest.mark.parametrize("model_class", [ReturnsOldState, ReturnsClonedOldState])
+def test_returned_old_state(tmp_path, model_class):
+    exported, program, _ = lower_input_as_state(model_class)
     steps = stateful_steps(4)
     (outputs,), stats = run_host(tmp_path, program, steps)
     emulator = ProgramEmulator(exported)

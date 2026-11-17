@@ -81,6 +81,28 @@ class InputAsState(torch.nn.Module):
         return y
 
 
+class ReturnsOldState(InputAsState):
+    """InputAsState that also returns the state it read."""
+
+    def forward(self, x):
+        old = self.qdq(self.state, 0.05)
+        frame = self.qdq(x, 0.05)
+        y = self.qdq(old + frame, 0.1)
+        self.state.copy_(frame)
+        return y, old
+
+
+class ReturnsClonedOldState(InputAsState):
+    """ReturnsOldState with the old state returned through a clone."""
+
+    def forward(self, x):
+        old = self.qdq(self.state, 0.05)
+        frame = self.qdq(x, 0.05)
+        y = self.qdq(old + frame, 0.1)
+        self.state.copy_(frame)
+        return y, self.qdq(old.clone(), 0.05)
+
+
 class StateOnlyInput(torch.nn.Module):
     """Explicit int8 Q/DQ recurrence whose only input is its state."""
 
@@ -122,14 +144,16 @@ class StateOnlyOutputWithConstant(StateOnlyOutput):
         return torch.cumsum(x + self.offset, dim=1)
 
 
-def lower_input_as_state():
+def lower_input_as_state(model_class=InputAsState):
     program = torch.export.export(
-        InputAsState().eval(), (torch.zeros(1, 4, 1, 1),), strict=True
+        model_class().eval(), (torch.zeros(1, 4, 1, 1),), strict=True
     )
     edge, report = to_espnn_edge(
         program, allow_cpu_fallback=False, delegate_mutable_buffers=True
     )
-    return edge.exported_program(), edge.to_executorch().buffer, report
+    # to_executorch() rewrites the mutations of buffers left in the program.
+    exported = copy.deepcopy(edge.exported_program())
+    return exported, edge.to_executorch().buffer, report
 
 
 class ScaledState(ShiftRegister):
@@ -321,6 +345,18 @@ def test_int8_state_compatibility(dtype, reader, writer, writer_scale, owned):
         (read, writer_scale, 0, -128, 127, torch.int8),
     )
     assert partitioner._int8_state_compatible(buffer, new_value) == owned
+
+
+@pytest.mark.parametrize("model_class", [ReturnsOldState, ReturnsClonedOldState])
+def test_returned_old_state_is_a_copy(model_class):
+    # A state cannot also be a graph output, so the graph returns a copy of it.
+    exported, _, report = lower_input_as_state(model_class)
+    assert report["delegated_buffers"] == ["state"]
+    (graph,) = delegate_graphs(exported)
+    ((state, _),) = graph.states
+    assert state not in graph.outputs
+    (copy,) = [op for op in graph.operations if op.inputs == [state]]
+    assert copy.opcode == xts3.XTS3OpCode.COPY and copy.outputs[0] in graph.outputs
 
 
 def test_state_updated_from_a_graph_input():

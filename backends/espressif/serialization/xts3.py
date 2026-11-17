@@ -1832,12 +1832,13 @@ def _mark_int8_graph_io(  # noqa: C901
 
 
 def _mark_int8_state(
-    exported_program, registry: TensorRegistry
+    exported_program, registry: TensorRegistry, graph_outputs: list[int]
 ) -> list[tuple[int, int]]:
     """
     Pair each mutable buffer of the partition with the int8 tensor holding its
     new value. The buffer's tensor becomes TENSOR_FLAG_STATE, with its
-    quantized initial value in the constant region.
+    quantized initial value in the constant region. A state cannot be a graph
+    output, so an old value that the partition returns is returned as a copy.
     """
     signature = exported_program.graph_signature
     if not signature.buffers_to_mutate:
@@ -1894,7 +1895,34 @@ def _mark_int8_state(
         registry.constant_data.extend(raw)
         state.flags |= TENSOR_FLAG_STATE
         states.append((state.tensor_id, update.tensor_id))
+        if state.flags & TENSOR_FLAG_GRAPH_OUTPUT:
+            old_value = _copy_of(state, registry)
+            state.flags &= ~TENSOR_FLAG_GRAPH_OUTPUT
+            old_value.flags |= TENSOR_FLAG_GRAPH_OUTPUT
+            graph_outputs[:] = [
+                old_value.tensor_id if output == state.tensor_id else output
+                for output in graph_outputs
+            ]
     return _separate_state_updates(states, registry)
+
+
+def _copy_of(tensor: XTS3Tensor, registry: TensorRegistry) -> XTS3Tensor:
+    """A new int8 tensor that a COPY after every other operation fills."""
+    from .int8_ops import copy_operation, copy_segment
+
+    copy = XTS3Tensor(
+        tensor_id=len(registry.tensors),
+        shape=tuple(tensor.shape),
+        dtype=XTS3DType.INT8,
+        quant_scale=tensor.quant_scale,
+        quant_zero_point=tensor.quant_zero_point,
+    )
+    registry.tensors.append(copy)
+    segment = copy_segment(0, [prod(tensor.shape)], [1], 0, [1], 0, tensor, copy)
+    registry.extra_operations.append(
+        copy_operation([tensor.tensor_id], copy.tensor_id, [segment])
+    )
+    return copy
 
 
 def _separate_state_updates(
@@ -1905,8 +1933,6 @@ def _separate_state_updates(
     state's slot: a graph input or output, a constant, a state, or an update
     shared by several states. The copies run after every other operation.
     """
-    from .int8_ops import copy_operation, copy_segment
-
     shared = (
         TENSOR_FLAG_GRAPH_INPUT
         | TENSOR_FLAG_GRAPH_OUTPUT
@@ -1917,20 +1943,7 @@ def _separate_state_updates(
     for index, (state_id, update_id) in enumerate(states):
         update = registry.tensors[update_id]
         if update.flags & shared or update_id in used:
-            copy = XTS3Tensor(
-                tensor_id=len(registry.tensors),
-                shape=tuple(update.shape),
-                dtype=XTS3DType.INT8,
-                quant_scale=update.quant_scale,
-                quant_zero_point=update.quant_zero_point,
-            )
-            registry.tensors.append(copy)
-            elements = prod(update.shape)
-            segment = copy_segment(0, [elements], [1], 0, [1], 0, update, copy)
-            registry.extra_operations.append(
-                copy_operation([update_id], copy.tensor_id, [segment])
-            )
-            update_id = copy.tensor_id
+            update_id = _copy_of(update, registry).tensor_id
             states[index] = (state_id, update_id)
         used.add(update_id)
     return states
@@ -1958,7 +1971,7 @@ def build_graph(exported_program) -> XTS3Graph:
         lowered.op_id = len(operations)
         operations.append(lowered)
     graph_inputs, graph_outputs = _mark_int8_graph_io(exported_program, registry)
-    states = _mark_int8_state(exported_program, registry)
+    states = _mark_int8_state(exported_program, registry, graph_outputs)
     for extra in registry.extra_operations:
         extra.op_id = len(operations)
         operations.append(extra)
