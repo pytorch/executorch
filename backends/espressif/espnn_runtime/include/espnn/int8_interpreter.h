@@ -42,7 +42,7 @@ struct Int8RuntimeOptions {
   /// Internal RAM left free when deciding whether the arena fits there.
   size_t internal_reserve_bytes = 48 * 1024;
   /// Time every operation for op_time_us() and print_profile(). Otherwise
-  /// invoke() reads the timer only a few times per call.
+  /// invoke() reads the timer only every few milliseconds.
   bool profile_operations = false;
   /// Plan each operation's ESP-NN scratch in the activation arena, live only
   /// while the operation runs, instead of one buffer sized for the largest
