@@ -19,6 +19,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -840,6 +841,98 @@ TEST(GgmlEngineTest, RejectsIntegerTanh) {
   expect_compile_error(
       make_tanh_program(false, fbs::ScalarType::INT),
       "supports floating-point tensors only");
+}
+
+std::vector<uint8_t> make_elu_program(
+    bool transposed,
+    double alpha = 1.0,
+    double scale = 1.0,
+    double input_scale = 1.0) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        fbs::ScalarType::FLOAT,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.elu.default",
+      {{"self", self},
+       {"alpha", alpha},
+       {"scale", scale},
+       {"input_scale", input_scale}},
+      fbs::ScalarType::FLOAT,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of expm1 in double; NaN, -1, infinities and zero
+// exactly.
+TEST(GgmlEngineTest, EluMatchesExpm1IncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      -1e-7f,
+      -120.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      -1e-30f,
+      3e38f,
+      -0.75f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_elu_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const double v = input[transposed ? (i % 4) * 3 + i / 4 : i];
+          const auto expected = static_cast<float>(v > 0 ? v : std::expm1(v));
+          SCOPED_TRACE(v);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (
+              std::isinf(expected) || expected == -1.0f || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsEluWithOtherParameters) {
+  for (const auto& [alpha, scale, input_scale] :
+       {std::tuple{0.5, 1.0, 1.0},
+        std::tuple{1.0, 2.0, 1.0},
+        std::tuple{1.0, 1.0, 0.5}}) {
+    expect_compile_error(
+        make_elu_program(false, alpha, scale, input_scale),
+        "supports only alpha, scale and input_scale 1");
+  }
 }
 
 TEST(GgmlEngineTest, RejectsIntegerGelu) {
