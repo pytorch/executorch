@@ -150,6 +150,11 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {}
 
 
+class ModuleDynamicCat(ModuleDynamicCatUnallocatedIO):
+    def get_memory_planning_pass(self):
+        return MemoryPlanningPass()
+
+
 class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()
