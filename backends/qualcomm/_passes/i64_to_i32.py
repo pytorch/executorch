@@ -34,8 +34,9 @@ class I64toI32(ExportPass):
         exir_ops.edge.aten.scalar_tensor.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     }
-    # Multi-output ops whose int64 outputs (indices) QNN produces as int32
+    # Multi-output ops whose int64 indices (getitem 1) QNN produces as int32
     I64_MULTI_OUTPUT_OPS = {
+        exir_ops.edge.aten.sort.default,
         exir_ops.edge.aten.topk.default,
     }
     # This dict is to ensure that the input of the OPs are int64 due to Pytorch restrictions.
@@ -74,8 +75,10 @@ class I64toI32(ExportPass):
 
     def call_getitem(self, value, key, meta):
         res = super().call_getitem(value, key, meta)
-        if value.node.target in self.I64_MULTI_OUTPUT_OPS and self._is_tensor_of_dtype(
-            meta["val"], torch.int64
+        if (
+            value.node.target in self.I64_MULTI_OUTPUT_OPS
+            and key == 1
+            and self._is_tensor_of_dtype(meta["val"], torch.int64)
         ):
             return super().call_operator(
                 self.copy_op, (res,), {"dtype": torch.int32}, meta
@@ -100,7 +103,7 @@ class I64toI32(ExportPass):
             if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
                 if isinstance(n.meta["val"], (tuple, list)):
                     for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
-                        # TODO: Enable this in future to support OP such as topK
+                        # Multi-output results are cast back at their getitems
                         if n.meta["val"][i] is None or dtype is None:
                             continue
                         if n.meta["val"][i].dtype != dtype:

@@ -2902,6 +2902,11 @@ class Sort(torch.nn.Module):
         return values
 
 
+class SortIndices(torch.nn.Module):
+    def forward(self, x):
+        return torch.sort(x, descending=True)[1]
+
+
 class SortAndIndex(torch.nn.Module):
     def __init__(self, shape, dim=-1, descending=True):
         super().__init__()

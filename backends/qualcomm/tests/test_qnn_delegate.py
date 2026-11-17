@@ -3207,6 +3207,11 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sort_indices(self):
+        module = SortIndices()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_topk_and_index(self):
         module = TopKandIndex()  # noqa: F405
         sample_input = (torch.randn(3, 10),)
@@ -7087,11 +7092,34 @@ class TestQNNQuantizedModel(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sort_indices(self):
+        module = SortIndices()  # noqa: F405
+        # values stay distinct after quantization, so the order is well defined
+        sample_input = (torch.randperm(30, dtype=torch.float).reshape(3, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_topk_and_index(self):
         module = TopKandIndex()  # noqa: F405
         sample_input = (torch.randn(3, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_indices(self):
+        module = TopKIndices()  # noqa: F405
+        # values stay distinct after quantization, so the order is well defined
+        sample_input = (torch.randperm(30, dtype=torch.float).reshape(3, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_on_cpu_and_index(self):
+        # int64 indices from a TopK left on CPU feed the delegated index
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_node_op_set={"aten.topk.default"}
+        )
 
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
@@ -7239,7 +7267,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_compared_events=3,
+            expected_compared_events=4,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
@@ -8099,7 +8127,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_compared_events=3,
+            expected_compared_events=4,
         )
 
     @unittest.skip("Test failing after QNN 2.45")
