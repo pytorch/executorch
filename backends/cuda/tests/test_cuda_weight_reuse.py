@@ -15,6 +15,7 @@ from unittest import mock
 import torch
 from executorch.backends.cuda import cuda_weight_collector
 from executorch.backends.cuda.cuda_weight_collector import (
+    AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
     CudaWeightCollector,
     decode_cuda_aoti_metadata,
@@ -126,14 +127,29 @@ class CudaWeightReuseTest(unittest.TestCase):
 
         self.assertEqual(stored_data(reuse=True), stored_data(reuse=False))
 
-    def test_changed_bytes_are_written_and_rejected_as_before(self) -> None:
+    def test_changed_bytes_are_stored_per_method(self) -> None:
         weight = torch.randn(256, 8, device="cuda")
         changed = weight.clone()
         changed[3, 5] += 1
         collector = CudaWeightCollector()
-        self._method(collector, "so-0", _weights(w=weight))
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._method(collector, "so-1", _weights(w=changed))
+        _, first_result = self._method(collector, "so-0", _weights(w=weight))
+        _, second_result = self._method(collector, "so-1", _weights(w=changed))
+        collector.finish()
+        first_entry = decode_cuda_aoti_metadata(first_result.processed_bytes).entries[0]
+        second_entry = decode_cuda_aoti_metadata(
+            second_result.processed_bytes
+        ).entries[0]
+        self.assertNotEqual(first_entry.storage_key, second_entry.storage_key)
+        stored = {
+            key: _as_bytes(collector._store.buffers[index])
+            for key, index in collector._store.key_to_buffer_idx.items()
+        }
+        self.assertEqual(
+            stored[first_entry.storage_key], weight.cpu().numpy().tobytes()
+        )
+        self.assertEqual(
+            stored[second_entry.storage_key], changed.cpu().numpy().tobytes()
+        )
 
     def test_library_local_constants_are_written_per_library(self) -> None:
         constant = torch.arange(5, dtype=torch.float32, device="cuda")
@@ -151,16 +167,20 @@ class CudaWeightReuseTest(unittest.TestCase):
         second_key = decode_cuda_aoti_metadata(second_result.processed_bytes).entries[0]
         self.assertNotEqual(first_key.storage_key, second_key.storage_key)
 
-    def test_storage_differing_in_two_high_bits_is_rejected(self) -> None:
+    def test_storage_differing_in_two_high_bits_is_stored_per_method(self) -> None:
         weight = torch.arange(3 << 20, dtype=torch.int64, device="cuda")
         changed = weight.clone()
         view = changed.view(torch.uint8)
         view[7] ^= 0x80
         view[-1] ^= 0x80
         collector = CudaWeightCollector()
-        self._method(collector, "so-0", _weights(w=weight))
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._method(collector, "so-1", _weights(w=changed))
+        _, first_result = self._method(collector, "so-0", _weights(w=weight))
+        _, second_result = self._method(collector, "so-1", _weights(w=changed))
+        first_entry = decode_cuda_aoti_metadata(first_result.processed_bytes).entries[0]
+        second_entry = decode_cuda_aoti_metadata(
+            second_result.processed_bytes
+        ).entries[0]
+        self.assertNotEqual(first_entry.storage_key, second_entry.storage_key)
 
     def test_same_cuda_storage_tells_one_flipped_bit_apart(self) -> None:
         base = torch.randint(0, 255, (3 << 20,), dtype=torch.uint8, device="cuda")
@@ -236,11 +256,22 @@ class CudaWeightReuseTest(unittest.TestCase):
                 sources[entry.fqn].contiguous().view(torch.uint8).numpy().tobytes(),
             )
 
-    def test_another_source_with_the_same_key_is_written_and_checked(self) -> None:
+    def _assert_stored_per_method(self, first_result, second_result) -> None:
+        first_entry = decode_cuda_aoti_metadata(first_result.processed_bytes).entries[0]
+        second_entry = decode_cuda_aoti_metadata(
+            second_result.processed_bytes
+        ).entries[0]
+        self.assertNotEqual(first_entry.storage_key, second_entry.storage_key)
+
+    def test_another_source_with_the_same_key_is_stored_per_method(self) -> None:
         collector = CudaWeightCollector()
-        self._moved_method(collector, "so-0", {"w": torch.randn(256, 8)})
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._moved_method(collector, "so-1", {"w": torch.randn(256, 8)})
+        _, first_result = self._moved_method(
+            collector, "so-0", {"w": torch.randn(256, 8)}
+        )
+        _, second_result = self._moved_method(
+            collector, "so-1", {"w": torch.randn(256, 8)}
+        )
+        self._assert_stored_per_method(first_result, second_result)
 
     def test_a_source_view_with_other_metadata_is_written_again(self) -> None:
         base = torch.randn(64, 16)
@@ -252,46 +283,52 @@ class CudaWeightReuseTest(unittest.TestCase):
             with self.subTest(second=(second.shape, second.storage_offset())):
                 collector = CudaWeightCollector()
                 with _counting_writes() as writes:
-                    self._moved_method(collector, "so-0", {"w": first})
-                    with self.assertRaisesRegex(ValueError, "with different data"):
-                        self._moved_method(collector, "so-1", {"w": second})
+                    _, first_result = self._moved_method(
+                        collector, "so-0", {"w": first}
+                    )
+                    _, second_result = self._moved_method(
+                        collector, "so-1", {"w": second}
+                    )
                 self.assertEqual(len(writes), 2)
+                self._assert_stored_per_method(first_result, second_result)
 
-    def test_a_source_updated_in_place_is_written_and_checked(self) -> None:
+    def test_a_source_updated_in_place_is_stored_per_method(self) -> None:
         sources = {"w": torch.nn.Parameter(torch.randn(256, 8))}
         collector = CudaWeightCollector()
-        self._moved_method(collector, "so-0", sources)
+        _, first_result = self._moved_method(collector, "so-0", sources)
         with torch.no_grad():
             sources["w"].add_(1)
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._moved_method(collector, "so-1", sources)
+        _, second_result = self._moved_method(collector, "so-1", sources)
+        self._assert_stored_per_method(first_result, second_result)
 
-    def test_a_moved_copy_written_before_materialize_is_checked(self) -> None:
+    def test_a_moved_copy_written_before_materialize_is_stored_per_method(
+        self,
+    ) -> None:
         sources = {"w": torch.randn(256, 8)}
         collector = CudaWeightCollector()
-        self._moved_method(collector, "so-0", sources)
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._moved_method(
-                collector, "so-1", sources, update=lambda tensor: tensor.add_(1)
-            )
+        _, first_result = self._moved_method(collector, "so-0", sources)
+        _, second_result = self._moved_method(
+            collector, "so-1", sources, update=lambda tensor: tensor.add_(1)
+        )
+        self._assert_stored_per_method(first_result, second_result)
 
     def test_a_storage_freed_before_materialize_is_not_matched(self) -> None:
         sources = {"w": torch.randn(256, 8)}
         collector = CudaWeightCollector()
-        self._moved_method(collector, "so-0", sources)
+        _, first_result = self._moved_method(collector, "so-0", sources)
         # Same source, but the moved copy is freed before AOTI sees it and a
         # storage with other bytes is allocated, possibly at its old address:
-        # it must be read and checked.
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._moved_method(
-                collector,
-                "so-1",
-                sources,
-                replace=lambda shapes: {
-                    name: torch.randn(shape, device="cuda")
-                    for name, shape in shapes.items()
-                },
-            )
+        # it must be read and stored as this method's own data.
+        _, second_result = self._moved_method(
+            collector,
+            "so-1",
+            sources,
+            replace=lambda shapes: {
+                name: torch.randn(shape, device="cuda")
+                for name, shape in shapes.items()
+            },
+        )
+        self._assert_stored_per_method(first_result, second_result)
 
     def test_a_freed_written_source_lets_a_live_source_take_over(self) -> None:
         collector = CudaWeightCollector()
@@ -359,3 +396,47 @@ class CudaWeightReuseExportTest(unittest.TestCase):
     def test_default_mode_writes_each_methods_own_copy(self) -> None:
         writes = self._lower(low_memory=False)
         self.assertEqual([writes.count(size) for size in self._SIZES[:2]], [2, 2])
+
+
+class CudaWeightPerMethodDataTest(unittest.TestCase):
+    """Methods of one program may hold different data under one FQN."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+
+    def _method(self, collector, so_key, tensor):
+        with collector.capture(lambda _: AOTI_DEVICE_TYPE_CPU) as capture:
+            artifact = collector.materialize(
+                _weights(w=tensor), self.directory.name, capture
+            )
+        result = _parent_result(so_key)
+        collector.add_preprocess_result(result, artifact, "cuda")
+        return result
+
+    def test_same_fqn_with_different_data_is_stored_per_method(self) -> None:
+        first = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+        second = first.clone()
+        second[0, 0] += 100
+        collector = CudaWeightCollector()
+        first_result = self._method(collector, "so-0", first)
+        second_result = self._method(collector, "so-1", second)
+        third_result = self._method(collector, "so-2", second.clone())
+        collector.finish()
+
+        entries = [
+            decode_cuda_aoti_metadata(result.processed_bytes).entries[0]
+            for result in (first_result, second_result, third_result)
+        ]
+        self.assertNotEqual(entries[0].storage_key, entries[1].storage_key)
+        self.assertEqual(entries[1].storage_key, entries[2].storage_key)
+        stored = {
+            key: _as_bytes(collector._store.buffers[index])
+            for key, index in collector._store.key_to_buffer_idx.items()
+        }
+        self.assertEqual(
+            stored[entries[0].storage_key], bytes(first.untyped_storage())
+        )
+        self.assertEqual(
+            stored[entries[1].storage_key], bytes(second.untyped_storage())
+        )

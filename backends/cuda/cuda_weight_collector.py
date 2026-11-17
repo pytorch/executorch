@@ -453,6 +453,10 @@ class CudaWeightCollector:
         self._stored_storages: Dict[str, torch.Tensor] = {}
         # The key each storage was written under, which ends in its SHA-256.
         self._content_keys: Dict[str, str] = {}
+        # Storage keys this collector materialized itself. Their methods form
+        # one program, so different data under one key is stored per method
+        # under its own content key instead of being rejected.
+        self._materialized_keys: Set[str] = set()
         # The CPU source view each storage key was written from. When methods
         # share their CPU weights (low_memory_mode), each moves the same source
         # to the GPU and frees the copy afterwards, so a later method's copy of
@@ -591,6 +595,7 @@ class CudaWeightCollector:
         stored: Set[str],
     ) -> None:
         """Write ``tensor``'s storage unless an earlier method wrote the same one."""
+        self._materialized_keys.add(storage_key)
         if storage_key in storages or storage_key in stored:
             raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
         # Library-local constants are keyed per shared library, so only FQN
@@ -707,11 +712,16 @@ class CudaWeightCollector:
             if data is not None:
                 # Programs can write their weights to the same file name, so the
                 # key carries the content: another program's file then fails to
-                # load instead of running this program with its weights.
+                # load instead of running this program with its weights. One
+                # program's methods may hold different data under one FQN (a
+                # buffer resized per method), so data this collector
+                # materialized is stored under its own content key per method;
+                # data from another collector is still rejected.
                 content_key = f"{entry.storage_key}:{data.sha256().hex()}"
                 if (
                     self._content_keys.setdefault(entry.storage_key, content_key)
                     != content_key
+                    and entry.storage_key not in self._materialized_keys
                 ):
                     data.close()
                     raise ValueError(
@@ -742,4 +752,5 @@ class CudaWeightCollector:
             result.data_store_output = shared_output
         self._stored_storages.clear()
         self._content_keys.clear()
+        self._materialized_keys.clear()
         self._written_sources.clear()
