@@ -112,7 +112,30 @@ class EspTester(Tester):
         firmware_dir.mkdir(parents=True, exist_ok=True)
         model_path = firmware_dir / "test.bpte"
         model_path.write_bytes(serialize_from_bundled_program_to_flatbuffer(bundle))
+        program_path = firmware_dir / "test.pte"
+        program_path.write_bytes(self.get_artifact(StageType.SERIALIZE))
+        runtime_dir = firmware_dir / "runtime"
         commands = [
+            (
+                "runtime-configure.log",
+                120,
+                [
+                    "cmake",
+                    "--preset=esp-baremetal",
+                    f"-S{repo}",
+                    "-GNinja",
+                    f"-B{runtime_dir}",
+                    f"-DCMAKE_TOOLCHAIN_FILE={os.environ['IDF_PATH']}/tools/cmake/toolchain-esp32s3.cmake",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DEXECUTORCH_BUILD_DEVTOOLS=ON",
+                    "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
+                    "-DEXECUTORCH_BUILD_PTHREADPOOL=OFF",
+                    "-DEXECUTORCH_BUILD_CPUINFO=OFF",
+                    f"-DEXECUTORCH_SELECT_OPS_MODEL={program_path}",
+                ],
+            ),
+            ("runtime-build.log", 600, ["cmake", "--build", str(runtime_dir)]),
+            ("runtime-install.log", 120, ["cmake", "--install", str(runtime_dir)]),
             (
                 "build.log",
                 600,
@@ -124,7 +147,8 @@ class EspTester(Tester):
                     f"-DSDKCONFIG={firmware_dir / 'sdkconfig'}",
                     "-DET_ESPRESSIF_OPS=ON",
                     "-DET_ESPNN_BACKEND=OFF",
-                    f"-DET_BUILD_DIR_PATH={build_dir / 'runtime'}",
+                    f"-DET_BUILD_DIR_PATH={runtime_dir}",
+                    f"-DEXECUTORCH_SELECT_OPS_MODEL={program_path}",
                     f"-DET_PTE_FILE_PATH={model_path}",
                     "-DET_BUNDLE_IO=ON",
                     "-DET_NUM_INFERENCES=1",

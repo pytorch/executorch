@@ -140,17 +140,17 @@ if(ESP_PLATFORM)
 
   # Link ExecuTorch libraries
   set(esp_runner_libs)
-  list(APPEND esp_runner_libs extension_runner_util executorch
-       executorch_selected_kernels
-  )
+  list(APPEND esp_runner_libs extension_runner_util executorch)
+  if(NOT ET_ESPRESSIF_OPS)
+    list(APPEND esp_runner_libs executorch_selected_kernels)
+    # quantize/dequantize kernels for quantized models with CPU regions
+    if(TARGET quantized_ops_lib)
+      list(APPEND esp_runner_libs quantized_ops_lib)
+    endif()
+  endif()
 
   if(TARGET xnnpack_backend)
     list(APPEND esp_runner_libs xnnpack_backend)
-  endif()
-
-  # quantize/dequantize kernels for quantized models with CPU regions
-  if(TARGET quantized_ops_lib)
-    list(APPEND esp_runner_libs quantized_ops_lib)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
