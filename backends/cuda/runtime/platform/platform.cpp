@@ -168,7 +168,7 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
   std::random_device random;
   char suffix[24];
   snprintf(suffix, sizeof(suffix), "%08x%08x.so", random(), random());
-  const std::filesystem::path path = temp_dir / (prefix + suffix);
+  std::filesystem::path path = temp_dir / (prefix + suffix);
   const auto u8 = path.u8string();
   const std::string utf8(u8.begin(), u8.end());
   HANDLE file = CreateFileW(
@@ -219,21 +219,15 @@ executorch::runtime::Result<std::filesystem::path> write_temp_library(
     return executorch::runtime::Error::AccessFailed;
   }
   ET_LOG(Info, "Wrote %zu bytes to %s", size, utf8.c_str());
-  // The caller only takes over the file once this returns, so remove it here
-  // if copying the path throws.
-  try {
-    return path;
-  } catch (...) {
-    DeleteFileW(path.c_str());
-    throw;
-  }
+  return path;
 #else
   // mkostemps replaces the Xs with random characters and creates the file with
   // O_EXCL and mode 0600, retrying if the name is taken.
   std::string path = (temp_dir / (prefix + "XXXXXX.so")).string();
   const int fd = mkostemps(path.data(), /*suffixlen=*/3, O_CLOEXEC);
   if (fd == -1) {
-    ET_LOG(Error, "Failed to create %s: %s", path.c_str(), strerror(errno));
+    ET_UNUSED const int err = errno;
+    ET_LOG(Error, "Failed to create %s: %s", path.c_str(), strerror(err));
     return executorch::runtime::Error::AccessFailed;
   }
   int err = 0;
