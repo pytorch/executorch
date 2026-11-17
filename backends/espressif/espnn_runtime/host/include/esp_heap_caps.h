@@ -9,7 +9,8 @@
  */
 
 // Host stand-in for the ESP-IDF heap API the ESP-NN delegate uses: one heap,
-// all of it "internal", no PSRAM.
+// all of it "internal". With ESPNN_HOST_PSRAM, PSRAM allocations come from the
+// same heap; otherwise there is no PSRAM.
 
 #pragma once
 
@@ -21,12 +22,19 @@
 #define MALLOC_CAP_SPIRAM (1U << 10)
 #define MALLOC_CAP_INTERNAL (1U << 11)
 
+#ifdef ESPNN_HOST_PSRAM
+constexpr bool kHostPsram = true;
+#else
+constexpr bool kHostPsram = false;
+#endif
+
 inline void*
 heap_caps_aligned_alloc(size_t alignment, size_t size, uint32_t caps) {
-  if ((caps & MALLOC_CAP_SPIRAM) != 0 || size == 0)
+  if (((caps & MALLOC_CAP_SPIRAM) != 0 && !kHostPsram) || size == 0)
     return nullptr;
-  return std::aligned_alloc(
-      alignment, (size + alignment - 1) & ~(alignment - 1));
+  // Exactly size bytes, so that AddressSanitizer sees any overrun.
+  void* memory = nullptr;
+  return posix_memalign(&memory, alignment, size) == 0 ? memory : nullptr;
 }
 
 inline void* heap_caps_calloc(size_t count, size_t size, uint32_t) {
@@ -38,7 +46,7 @@ inline void heap_caps_free(void* memory) {
 }
 
 inline size_t heap_caps_get_largest_free_block(uint32_t caps) {
-  return (caps & MALLOC_CAP_SPIRAM) != 0 ? 0 : SIZE_MAX / 2;
+  return (caps & MALLOC_CAP_SPIRAM) != 0 && !kHostPsram ? 0 : SIZE_MAX / 2;
 }
 
 inline size_t heap_caps_get_total_size(uint32_t caps) {
