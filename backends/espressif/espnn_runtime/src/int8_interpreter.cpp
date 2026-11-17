@@ -222,8 +222,8 @@ bool pointwise_beyond_uint16(
 } // namespace
 
 // Fields that no operation uses together share storage: the input list
-// (CONCAT, COPY) with the pooling parameters, and the convolution,
-// depthwise-convolution and add parameters with each other.
+// (CONCAT, COPY) with the pooling and convolution windows, and the
+// convolution, depthwise-convolution and add parameters with each other.
 struct Int8Interpreter::OpState {
   OpCode opcode;
   uint32_t input0;
