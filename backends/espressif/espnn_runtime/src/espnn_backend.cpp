@@ -204,12 +204,10 @@ bool store_output(
 
 struct DelegateState {
   Int8Interpreter interpreter;
+  uint32_t conversion_slots = 0;
   bool profiled = false;
   uint32_t state_generation = 0;
-  // Device-layout copies of the inputs and outputs whose tensors the
-  // interpreter cannot use directly (float, NCHW, misaligned, an input that is
-  // also an output, or an output that overlaps an input), one slot per input
-  // then per output. Allocated, zeroed, by the first execute() that needs one.
+  // Alignment and aliasing fallbacks for I/O that is not already in the arena.
   int8_t* staging = nullptr;
 
   ~DelegateState() {
@@ -223,6 +221,8 @@ struct DelegateState {
     size_t offset = 0;
     size_t total = 0;
     for (size_t k = 0; k < slots; ++k) {
+      if ((conversion_slots & (1U << k)) != 0)
+        continue;
       Int8TensorInfo info{};
       if (k < inputs ? !interpreter.input_info(k, info)
                      : !interpreter.output_info(k - inputs, info))
@@ -263,14 +263,25 @@ class EspNNBackendInterface final : public BackendInterface {
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec>) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
+    Int8RuntimeOptions options{};
+    for (const auto& spec : compile_specs) {
+      if (std::strcmp(spec.key, "espnn_io_conversion_slots") == 0) {
+        if (spec.value.buffer == nullptr || spec.value.nbytes != 4)
+          return Error::DelegateInvalidCompatibility;
+        options.external_io = true;
+        options.conversion_slots =
+            read_le_u32(static_cast<const uint8_t*>(spec.value.buffer));
+      }
+    }
     void* memory = context.get_runtime_allocator()->allocate(
         sizeof(DelegateState), alignof(DelegateState));
     if (memory == nullptr)
       return Error::MemoryAllocationFailed;
     DelegateState* state = new (memory) DelegateState();
-    Int8RuntimeOptions options{};
-    options.external_io = true;
+    // Older exports use the arena for every I/O slot.
+    state->conversion_slots =
+        options.external_io ? options.conversion_slots : UINT32_MAX;
 #if CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
     options.copy_constants_to_psram = true;
 #endif
@@ -329,8 +340,8 @@ class EspNNBackendInterface final : public BackendInterface {
         state->state_generation = generation;
       }
     }
-    // An aligned int8 tensor already in the device layout is used in place;
-    // any other goes through a staging slot.
+    // Conversion buffers share the activation arena; compatible I/O is bound
+    // directly, independently of ExecuTorch's input/output memory planning.
     Int8TensorInfo info{};
     for (size_t i = 0; i < inputs; ++i) {
       const Layout layout =
@@ -338,7 +349,10 @@ class EspNNBackendInterface final : public BackendInterface {
           ? tensor_layout(args[i]->toTensor(), info)
           : Layout::kInvalid;
       bool ok = layout != Layout::kInvalid;
-      if (ok) {
+      if (ok && (state->conversion_slots & (1U << i)) != 0) {
+        ok = load_input(
+            info, layout, args[i]->toTensor(), interpreter.input_data(i));
+      } else if (ok) {
         const Tensor& tensor = args[i]->toTensor();
         // An input that is also returned as an output is staged, so that
         // outputs written over the caller's input buffers cannot change it.
@@ -374,6 +388,10 @@ class EspNNBackendInterface final : public BackendInterface {
           ? tensor_layout(args[inputs + o]->toTensor(), info)
           : Layout::kInvalid;
       bool ok = layout != Layout::kInvalid;
+      if (ok && (state->conversion_slots & (1U << (inputs + o))) != 0) {
+        staged_outputs |= 1U << o;
+        continue;
+      }
       // A graph tensor returned more than once is written where its first
       // output is bound, and a graph input returned as an output stays where
       // the input is bound; both are copied to their outputs afterwards.

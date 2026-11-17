@@ -103,14 +103,18 @@ Calibrate on a few hundred real samples; random data gives useless scales.
 
 ### Inputs and outputs
 
-The delegate keeps rank-4 tensors in NHWC order. It reads an int8 input and
-writes an int8 output directly in the ExecuTorch tensor's memory when that
-memory is 16-byte aligned and already in this layout: the tensor is not rank
-4, has one channel or one pixel, or has a channels-last dim order. Anything
-else (float, NCHW with several channels and pixels, or a misaligned buffer)
-goes through a delegate-owned staging buffer and is quantized or transposed
-on the way. The staging buffer is allocated by the first `execute()` that
-needs it.
+The delegate keeps rank-4 tensors in NHWC order. It uses an int8 input or
+output directly when its buffer is 16-byte aligned and already in this
+layout: the tensor is not rank 4, has one channel or one pixel, or has a
+channels-last dim order. Each input and output is handled independently,
+whether its buffer is memory-planned by ExecuTorch or supplied by the caller.
+
+Float tensors and NCHW tensors with several channels and pixels need dtype
+or layout conversion. The exporter records which I/O slots need conversion,
+so their int8 buffers can share the delegate's activation arena with
+intermediate tensors. Older exports without this metadata use the arena for
+all I/O. Misalignment or overlapping I/O may require a separate staging
+buffer, allocated on the first `execute()` that needs it.
 
 For the smallest and fastest program, give the delegate int8, channels-last
 inputs and outputs and leave them out of ExecuTorch's memory plan, so that

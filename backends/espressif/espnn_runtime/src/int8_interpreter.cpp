@@ -371,6 +371,12 @@ bool Int8Interpreter::load(
     reset();
     return false;
   }
+  if ((static_cast<uint64_t>(options_.conversion_slots) >>
+       (input_count_ + output_count_)) != 0) {
+    std::printf("ERROR: conversion mask selects a nonexistent I/O slot\n");
+    reset();
+    return false;
+  }
   for (uint32_t i = 0; i < input_count_; ++i)
     inputs_[i] = graph_input_id(graph_, i);
   for (uint32_t i = 0; i < output_count_; ++i)
@@ -461,10 +467,21 @@ bool Int8Interpreter::plan_memory() {
     std::printf("ERROR: unable to allocate memory-planner tables\n");
     return false;
   }
-  // With external_io, graph inputs and outputs live in the caller's buffers.
-  const uint8_t unplanned = TENSOR_FLAG_CONSTANT |
-      (options_.external_io ? TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT
-                            : 0);
+  const auto unplanned = [&](uint32_t id) {
+    if ((tensors_[id].flags & TENSOR_FLAG_CONSTANT) != 0)
+      return true;
+    if (!options_.external_io ||
+        (tensors_[id].flags &
+         (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT)) == 0)
+      return false;
+    for (size_t k = 0; k < input_count_ + output_count_; ++k) {
+      const uint32_t io =
+          k < input_count_ ? inputs_[k] : outputs_[k - input_count_];
+      if (io == id && (options_.conversion_slots & (1U << k)) != 0)
+        return false;
+    }
+    return true;
+  };
   for (uint32_t i = 0; i < tensor_count; ++i) {
     first[i] =
         (tensors_[i].flags & (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_STATE)) != 0
@@ -473,7 +490,7 @@ bool Int8Interpreter::plan_memory() {
     last[i] =
         (tensors_[i].flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0 ? op_count : -1;
     bytes[i] = align_up(tensor_data_size(tensors_[i]), ARENA_ALIGNMENT);
-    planned[i] = (tensors_[i].flags & unplanned) != 0;
+    planned[i] = unplanned(i);
     offsets[i] = SIZE_MAX;
   }
   for (uint32_t e = tensor_count; e < entries; ++e) {
@@ -562,7 +579,7 @@ bool Int8Interpreter::plan_memory() {
       offsets[update] = offsets[state];
   }
   for (uint32_t i = 0; i < tensor_count; ++i) {
-    if ((tensors_[i].flags & unplanned) == 0 && offsets[i] == SIZE_MAX) {
+    if (!unplanned(i) && offsets[i] == SIZE_MAX) {
       std::printf(
           "ERROR: tensor %u is never produced or consumed\n",
           static_cast<unsigned>(i));

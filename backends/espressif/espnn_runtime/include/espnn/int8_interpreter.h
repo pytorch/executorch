@@ -49,11 +49,12 @@ struct Int8RuntimeOptions {
   /// operation. Saves memory, but the scratch then lives wherever the arena
   /// does (PSRAM for a large model).
   bool scratch_in_arena = false;
-  /// Leave graph inputs and outputs out of the activation arena: the caller
-  /// binds a device-layout (NHWC) buffer to each of them with bind_input()
-  /// and bind_output() before invoke(), and the operations read and write
-  /// those buffers directly.
+  /// Bind graph I/O to caller-provided device-layout (NHWC) buffers, outside
+  /// this interpreter's arena, except the slots selected by conversion_slots.
   bool external_io = false;
+  /// With external_io, include these I/O slots in the arena for conversion.
+  /// Bits select slots in input-then-output order, determined at export time.
+  uint32_t conversion_slots = 0;
 };
 
 /**

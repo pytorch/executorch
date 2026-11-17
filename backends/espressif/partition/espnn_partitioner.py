@@ -413,7 +413,11 @@ class EspNNPartitioner(Partitioner):
             tag = f"espnn_{len(tags)}"
             for node in nodes:
                 node.meta["delegation_tag"] = tag
-            tags[tag] = self.delegation_spec
+            # Preprocessing adds conversion metadata specific to this partition.
+            tags[tag] = DelegationSpec(
+                self.delegation_spec.backend_id,
+                list(self.delegation_spec.compile_specs),
+            )
         delegated = {
             node
             for node in graph_module.graph.nodes

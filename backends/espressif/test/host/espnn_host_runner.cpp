@@ -19,11 +19,11 @@
  * Step s of instance k reads input i from IO_DIR/in_<s>_<i>.bin and writes
  * output o to IO_DIR/out_<k>_<s>_<o>.bin: the raw bytes of the tensor in its
  * dim order. With --instances, the method is loaded N times and each step runs
- * on every instance in turn. With --share-io (the program's inputs and
- * outputs must not be memory planned), the tensors are bound once to runner
- * buffers through set_input and set_output_data_ptr, and --alias makes an
- * input and an output share one buffer: that input is then read from its file
- * at step 0 only and afterwards holds the output of the previous step.
+ * on every instance in turn. Unplanned outputs are bound to runner buffers.
+ * With --share-io, inputs must be unplanned and are bound once through
+ * set_input. --alias makes an unplanned input and output share one buffer:
+ * that input is read from its file at step 0 only and afterwards holds the
+ * output of the previous step.
  * --misalign places every runner buffer one byte past a 16-byte boundary.
  * --reset-before asks EspNNBackend, through its reset_states backend option,
  * to restore its delegates' state before that step. At the end, the runner
@@ -201,28 +201,36 @@ int main(int argc, char** argv) {
     instance.method = std::make_unique<Method>(std::move(method.get()));
 
     for (size_t i = 0; i < meta->num_inputs(); ++i) {
-      instance.inputs.push_back(std::make_unique<HostTensor>(
-          meta->input_tensor_meta(i).get(), misalign));
+      instance.inputs.push_back(
+          std::make_unique<HostTensor>(
+              meta->input_tensor_meta(i).get(), misalign));
     }
     for (size_t o = 0; o < meta->num_outputs(); ++o) {
-      instance.outputs.push_back(std::make_unique<HostTensor>(
-          meta->output_tensor_meta(o).get(), misalign));
+      instance.outputs.push_back(
+          std::make_unique<HostTensor>(
+              meta->output_tensor_meta(o).get(), misalign));
     }
     for (const auto& [input, output] : aliases) {
       if (input >= instance.inputs.size() ||
           output >= instance.outputs.size() ||
+          meta->input_tensor_meta(input).get().is_memory_planned() ||
+          meta->output_tensor_meta(output).get().is_memory_planned() ||
           instance.inputs[input]->nbytes != instance.outputs[output]->nbytes)
         fail("invalid --alias");
     }
-    if (!share_io)
-      continue;
-    for (size_t i = 0; i < instance.inputs.size(); ++i) {
-      Error error = instance.method->set_input(
-          EValue(executorch::aten::Tensor(&instance.inputs[i]->impl)), i);
-      if (error != Error::Ok)
-        fail("set_input", static_cast<int>(error));
+    if (share_io) {
+      for (size_t i = 0; i < instance.inputs.size(); ++i) {
+        if (meta->input_tensor_meta(i).get().is_memory_planned())
+          fail("--share-io requires unplanned inputs");
+        Error error = instance.method->set_input(
+            EValue(executorch::aten::Tensor(&instance.inputs[i]->impl)), i);
+        if (error != Error::Ok)
+          fail("set_input", static_cast<int>(error));
+      }
     }
     for (size_t o = 0; o < instance.outputs.size(); ++o) {
+      if (meta->output_tensor_meta(o).get().is_memory_planned())
+        continue;
       void* buffer = instance.outputs[o]->data;
       for (const auto& [input, output] : aliases) {
         if (output == o)

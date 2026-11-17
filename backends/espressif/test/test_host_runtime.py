@@ -43,6 +43,7 @@ from executorch.backends.espressif.test import (
     test_int8_ops as op_cases,
 )
 from executorch.backends.espressif.test.test_mutable_buffers import (
+    InputAsState,
     lower_input_as_state,
     lower_stateful,
     ShiftRegister,
@@ -83,6 +84,26 @@ class LongCat(torch.nn.Module):
         return torch.cat([conv(x) for conv in self.convs], dim=2)
 
 
+class AddChain(torch.nn.Module):
+    def __init__(self, count):
+        super().__init__()
+        self.count = count
+
+    def forward(self, x):
+        x = InputAsState.qdq(x, 0.1)
+        for _ in range(self.count):
+            x = InputAsState.qdq(x + x, 0.1)
+        return x
+
+
+class CpuBetweenAdds(torch.nn.Module):
+    def forward(self, x):
+        x = InputAsState.qdq(x, 0.1)
+        x = InputAsState.qdq(x + x, 0.1)
+        x = InputAsState.qdq(torch.cumsum(x, dim=1), 0.1)
+        return InputAsState.qdq(x + x, 0.1)
+
+
 # Fully delegated programs, checked bit-exactly; transpose-select-stack leaves a
 # cat on the CPU and runs with the CPU-fallback programs below. single-conv has
 # no activation besides its input and output.
@@ -106,7 +127,13 @@ def disable_grad():
         yield
 
 
-def lower(model, shapes, planned_io: bool = True, xts3_version: int | None = None):
+def lower(
+    model,
+    shapes,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    xts3_version: int | None = None,
+):
     _, program = op_cases.quantize(model, shapes)
     edge, report = to_espnn_edge(program, allow_cpu_fallback=False)
     assert not report["cpu_ops"]
@@ -118,7 +145,7 @@ def lower(model, shapes, planned_io: bool = True, xts3_version: int | None = Non
                 module._processed_bytes = xts3.serialize_graph(graph)
     config = ExecutorchBackendConfig(
         memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=planned_io, alloc_graph_output=planned_io
+            alloc_graph_input=alloc_graph_input, alloc_graph_output=alloc_graph_output
         )
     )
     return edge.exported_program(), edge.to_executorch(config).buffer
@@ -206,7 +233,7 @@ def test_host_delegate_matches_reference(tmp_path, name, model, shapes):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
     # With ESP-NN scratch planned in the arena, the arena also holds scratch.
     planned = sum(
-        reference.plan_activation_arena(delegate.graph, external_io=True)[0]
+        reference.plan_activation_arena(delegate.graph)[0]
         for delegate in emulator.delegates.values()
     )
     assert stats["delegates"] == len(emulator.delegates)
@@ -216,6 +243,90 @@ def test_host_delegate_matches_reference(tmp_path, name, model, shapes):
         assert stats["arena"] == planned
     else:
         assert stats["arena"] >= planned
+
+
+@pytest.mark.parametrize("alloc_graph_input", [False, True])
+@pytest.mark.parametrize("alloc_graph_output", [False, True])
+@pytest.mark.parametrize(
+    "input_int8, output_int8, channels_last, legacy, adds, arena_slots",
+    [
+        pytest.param(False, False, False, False, 2, 2, id="float-nchw"),
+        pytest.param(False, False, True, False, 2, 2, id="float-nhwc"),
+        pytest.param(True, True, False, False, 2, 2, id="int8-nchw"),
+        pytest.param(True, True, True, False, 2, 1, id="int8-nhwc"),
+        pytest.param(False, True, True, False, 1, 1, id="float-input-only"),
+        pytest.param(True, False, True, False, 1, 1, id="float-output-only"),
+        pytest.param(False, False, False, True, 2, 2, id="legacy-float"),
+        pytest.param(True, True, True, True, 2, 2, id="legacy-int8"),
+    ],
+)
+def test_conversion_buffers_share_the_arena(
+    tmp_path,
+    input_int8,
+    output_int8,
+    channels_last,
+    legacy,
+    adds,
+    arena_slots,
+    alloc_graph_input,
+    alloc_graph_output,
+):
+    shape = (1, 16, 64, 64)
+    memory_format = torch.channels_last if channels_last else torch.contiguous_format
+    sample = torch.zeros(shape).contiguous(memory_format=memory_format)
+    program = torch.export.export(AddChain(adds), (sample,), strict=True)
+    if input_int8:
+        quantize_input(program, 0)
+    if output_int8:
+        quantize_output(program, 0)
+    edge, _ = to_espnn_edge(program, allow_cpu_fallback=False)
+    if legacy:
+        for module in edge.exported_program().graph_module.children():
+            if isinstance(module, LoweredBackendModule):
+                module.compile_specs[:] = [
+                    spec
+                    for spec in module.compile_specs
+                    if spec.key != "espnn_io_conversion_slots"
+                ]
+    config = ExecutorchBackendConfig(
+        memory_planning_pass=MemoryPlanningPass(
+            alloc_graph_input=alloc_graph_input, alloc_graph_output=alloc_graph_output
+        )
+    )
+    buffer = edge.to_executorch(config).buffer
+    _, loaded = run_host(tmp_path, buffer, [])
+    assert loaded["arena"] == arena_slots * sample.numel()
+    assert loaded["staging"] == 0
+    steps = random_steps([shape], 2)
+    steps = [
+        [
+            ((x * 20).round().to(torch.int8) if input_int8 else x).contiguous(
+                memory_format=memory_format
+            )
+        ]
+        for (x,) in steps
+    ]
+    (outputs,), stats = run_host(tmp_path, buffer, steps)
+    emulator = ProgramEmulator(edge.exported_program())
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
+    assert stats["arena"] == loaded["arena"]
+    assert stats["staging"] == 0
+
+
+def test_partitions_keep_independent_conversion_plans(tmp_path):
+    program = torch.export.export(CpuBetweenAdds(), (torch.zeros(1, 4),))
+    quantize_input(program, 0)
+    edge, _ = to_espnn_edge(program)
+    steps = [[torch.full((1, 4), value, dtype=torch.int8)] for value in (1, 3)]
+    (outputs,), stats = run_host(tmp_path, edge.to_executorch().buffer, steps)
+    emulator = ProgramEmulator(edge.exported_program())
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["delegates"] == 2
+    # First partition: only its output needs conversion. Second: both I/O.
+    assert stats["arena"] == 16 + 32
+    assert stats["staging"] == 0
 
 
 def test_instances_run_independently(tmp_path):
@@ -233,7 +344,9 @@ def test_instances_run_independently(tmp_path):
 
 def test_unplanned_io_shared_with_the_caller(tmp_path):
     model, shapes = op_cases.TwoInputTwoOutput(), [(1, 3, 12, 12), (1, 6)]
-    exported, program = lower(model, shapes, planned_io=False)
+    exported, program = lower(
+        model, shapes, alloc_graph_input=False, alloc_graph_output=False
+    )
     steps = random_steps(shapes, 2)
     (outputs,), _ = run_host(tmp_path, program, steps, "--share-io")
     emulator = ProgramEmulator(exported)
@@ -377,8 +490,13 @@ def test_device_layout_io_is_used_in_place(tmp_path, channels_last):
     (outputs,), stats = run_host(tmp_path, program, steps, "--share-io")
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
-    # Only the NCHW state needs transposing, in and out.
-    assert (stats["staging"] == 0) == channels_last
+    # NCHW I/O uses the arena; channels-last I/O is bound directly.
+    assert stats["staging"] == 0
+    if channels_last:
+        assert stats["arena"] == sum(
+            reference.plan_activation_arena(delegate.graph, external_io=True)[0]
+            for delegate in emulator.delegates.values()
+        )
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
