@@ -59,6 +59,22 @@ class FuseActivationPass(XNNPACKPass):
 
         return OutputMinMax(output_min, output_max)
 
+    @staticmethod
+    def compose_output_min_max(
+        first: OutputMinMax, second: OutputMinMax
+    ) -> OutputMinMax:
+        """
+        Clamp range equivalent to applying ``first`` and then ``second``. The
+        bounds may be floats or the strings "+inf" / "-inf", so compare as floats.
+        """
+
+        def clip(bound):
+            return min(
+                max(bound, second.output_min, key=float), second.output_max, key=float
+            )
+
+        return OutputMinMax(clip(first.output_min), clip(first.output_max))
+
     def call(self, graph_module: torch.fx.GraphModule):
         for activation_node in graph_module.graph.nodes:
             if activation_node.op == "call_function":
@@ -76,6 +92,11 @@ class FuseActivationPass(XNNPACKPass):
                         output_min_max = self.get_output_min_max_from_activation(
                             activation_node
                         )
+                        fused = self.get_fused_activation(preceding_op)
+                        if fused is not None:
+                            output_min_max = self.compose_output_min_max(
+                                fused, output_min_max
+                            )
                         preceding_op.meta[self.FUSED_ACTIVATION_TAG] = output_min_max
                         activation_node.replace_all_uses_with(preceding_op)
                         graph_module.graph.erase_node(activation_node)

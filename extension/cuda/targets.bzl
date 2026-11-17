@@ -1,3 +1,5 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -7,6 +9,13 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+
+    # Outside fbcode the CUDA headers resolve only on CUDA platforms.
+    cuda_kwargs = {} if is_fbcode() or runtime.is_oss else {
+        "platforms": [CXX],
+        "compatible_with": ["ovr_config//cuda:has_cuda"],
+    }
+
     # Keep runtime types independent of the caller-stream implementation.
     runtime.cxx_library(
         name = "runtime_api",
@@ -15,25 +24,27 @@ def define_common_targets():
             "runtime_api.h",
         ],
         visibility = ["PUBLIC"],
-        external_deps = [
+        exported_external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
 
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
-    # share a caller's stream. The caller-stream thread-local must be one
-    # instance per process, so the main target stays shareable: OSS cxx_library
-    # defaults force_static=True, which would duplicate the thread-local into
-    # every dependent shared object (see export.h). The :caller_stream_static
-    # variant stays available for fully-static consumers.
+    # share a caller's stream. The caller-stream and current-stream
+    # thread-locals must each be one instance per process, so the main target
+    # stays shareable: OSS cxx_library defaults force_static=True, which would
+    # duplicate them into every dependent shared object (see export.h).
     runtime.cxx_library(
         name = "caller_stream",
         srcs = [
             "caller_stream.cpp",
+            "current_stream.cpp",
             "device_guard.cpp",
         ],
         exported_headers = [
             "caller_stream.h",
+            "current_stream.h",
             "device_guard.h",
         ],
         exported_deps = [
@@ -53,6 +64,7 @@ def define_common_targets():
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
 
     runtime.cxx_library(
@@ -81,4 +93,5 @@ def define_common_targets():
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )

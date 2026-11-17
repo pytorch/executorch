@@ -25,7 +25,7 @@ class VgfCompileSpec(ArmCompileSpec):
     Args:
         tosa_spec (TosaSpecification | str | None): TOSA specification to
             target. Strings are parsed via ``TosaSpecification.create_from_string``.
-            Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
+            Defaults to ``"TOSA-1.0+FP+INT+int4+int16+bf16"``.
         compiler_flags (list[str] | None): Optional converter-backend flags.
         emit_debug_info (bool): Preserve Model Converter debug information in
             the generated VGF. Defaults to ``False``.
@@ -48,7 +48,7 @@ class VgfCompileSpec(ArmCompileSpec):
     ):
         if tosa_spec is None:
             tosa_spec = TosaSpecification.create_from_string(
-                "TOSA-1.0+FP+INT+int4+int16"
+                "TOSA-1.0+FP+INT+int4+int16+bf16"
             )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)

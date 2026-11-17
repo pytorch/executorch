@@ -108,6 +108,10 @@ class HermesDetector:
     ) -> ToolCallItem:
         if not name or name not in tools:
             raise _UndefinedToolCall(repr(name))
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments or "{}")
+        if arguments is not None and not isinstance(arguments, dict):
+            raise ValueError("tool arguments must be an object")
         item = ToolCallItem(
             tool_index=self._next_index,
             name=name,

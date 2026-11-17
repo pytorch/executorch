@@ -18,13 +18,16 @@ ${define_required_extensions(STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
+#include "indexing.glslh"
+
 ${layout_declare_tensor(B, "rw", "t_param", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "rw", "t_m", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "rw", "t_v", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_grad", DTYPE, STORAGE)}
 
+${layout_declare_ubo(B, "BufferMetadata", "param")}
+
 layout(push_constant) uniform restrict Block {
-  int numel;
   float lr;
   float beta1;
   float beta2;
@@ -40,7 +43,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   const int i = int(linear_idx_from_gid());
-  if (i >= numel) {
+  if (uint(i) >= numel(param)) {
     return;
   }
   T g = t_grad[i];

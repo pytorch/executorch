@@ -20,7 +20,7 @@ pip install \
   sentencepiece \
   tokenizers \
   snakeviz \
-  lm_eval==0.4.5 \
+  "lm_eval[hf]==0.4.13" \
   blobfile \
   safetensors
 

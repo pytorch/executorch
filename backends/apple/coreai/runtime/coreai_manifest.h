@@ -11,12 +11,25 @@
 #import <Foundation/Foundation.h>
 #include <executorch/runtime/core/result.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace executorch::backends::coreai {
+
+// A function the delegate can bind. One without input shapes accepts any input
+// shapes; enumerated-shape exports list one per shape, and each accepts exactly
+// its input_shapes, in input-name order.
+struct ManifestFunction {
+  NSString* name;
+  std::vector<std::vector<int64_t>> input_shapes;
+};
 
 class Manifest final {
  public:
   NSString* const export_hash;
-  NSString* const function;
+  const std::vector<ManifestFunction> functions;
+  // Listed under enumerated_functions; each function has static input shapes.
+  const bool enumerated;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;
@@ -26,6 +39,8 @@ class Manifest final {
   NSString* const platform;
   NSDictionary<NSString*, NSString*>* const architectures;
   const NSOperatingSystemVersion minimum_version;
+  // Exported with other delegates as functions of one Core AI model.
+  const bool multifunction;
 
   Manifest(const Manifest&) = default;
   Manifest(Manifest&&) = default;
@@ -35,7 +50,8 @@ class Manifest final {
  private:
   Manifest(
       NSString* export_hash,
-      NSString* function,
+      std::vector<ManifestFunction> functions,
+      bool enumerated,
       NSArray<NSString*>* inputs,
       NSArray<NSString*>* outputs,
       NSDictionary<NSString*, NSNumber*>* files,
@@ -43,7 +59,8 @@ class Manifest final {
       bool aot_compiled,
       NSString* platform,
       NSDictionary<NSString*, NSString*>* architectures,
-      NSOperatingSystemVersion minimum_version);
+      NSOperatingSystemVersion minimum_version,
+      bool multifunction);
 
   friend runtime::Result<Manifest> parse_manifest(NSData* data);
 };
@@ -54,7 +71,8 @@ class SelectedBundle final {
   NSString* const path;
   NSString* const bundle_name;
   NSString* const digest;
-  NSString* const function;
+  const std::vector<ManifestFunction> functions;
+  const bool enumerated;
   NSArray<NSString*>* const inputs;
   NSArray<NSString*>* const outputs;
   NSDictionary<NSString*, NSNumber*>* const files;

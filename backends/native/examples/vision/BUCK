@@ -1,6 +1,6 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 oncall("executorch")
 
@@ -42,8 +42,7 @@ runtime.cxx_binary(
     **CPU_COMPAT
 )
 
-fbcode_target(
-    _kind = runtime.cxx_binary,
+runtime.cxx_binary(
     name = "run_classification",
     srcs = ["run_classification.cpp"],
     deps = [
@@ -51,11 +50,12 @@ fbcode_target(
         "//executorch/backends/native/runtime/vulkan:vulkan_engine",
     ],
     external_deps = ["gflags"],
+    # Android builds go through xplat.
+    labels = ci.labels(ci.linux(ci.mode("fbsource//arvr/mode/android/linux/opt"))) if is_xplat() else [],
     visibility = ["PUBLIC"],
 )
 
-fbcode_target(
-    _kind = runtime.command_alias,
+runtime.command_alias(
     name = "run_classification_vulkan",
     exe = ":run_classification",
     visibility = ["PUBLIC"],

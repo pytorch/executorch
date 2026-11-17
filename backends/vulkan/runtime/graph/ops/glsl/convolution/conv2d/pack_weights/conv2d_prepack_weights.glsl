@@ -29,7 +29,7 @@ $if OUTPUT_BUFFER:
     f16vec4 buffer_out[];
   };
 $else:
-  layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
+  ${layout_declare_tensor(0, "w", "image_out", DTYPE, "texture2d")}
 layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
   BUF_T buffer_in[];
 };

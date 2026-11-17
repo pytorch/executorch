@@ -3,11 +3,15 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
@@ -82,6 +86,18 @@ class To(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
+        # HTP fails to compile an int64 cast above rank 4, so it stays on CPU.
+        if node.meta["val"].dim() > 4 and torch.int64 in (
+            input_node.meta["val"].dtype,
+            node.meta["val"].dtype,
+        ):
+            warnings.warn(
+                f"[QNN Delegate Op Builder]: {node.name} casts a rank "
+                f"{node.meta['val'].dim()} int64 tensor, fallback op",
+                stacklevel=1,
+            )
+            return None
+
         input_tensor = self.get_tensor(input_node, node)
 
         input_tensor_wrapper = self.define_tensor(
@@ -97,13 +113,27 @@ class To(NodeVisitor):
         # since int32 is the only source that can be cast into int64
         # this is mainly for validation purpose, redundant cast ops will be fused
         # in preprocess stage.
+        # HTP casts uint8 to float32 as if the input were bool, while uint8 to
+        # int32 and int32 to float32 are right, so on HTP a plain uint8 to
+        # float32 cast goes through int32 too, as does float64, which is built
+        # as float32. Here the step is needed for the values, and nothing fuses
+        # it away.
         ops = []
         if (
-            node.meta["val"].dtype == torch.int64
-            and input_node.meta["val"].dtype != torch.int32
-        ) or (
-            input_node.meta["val"].dtype == torch.int64
-            and node.meta["val"].dtype != torch.int32
+            (
+                node.meta["val"].dtype == torch.int64
+                and input_node.meta["val"].dtype != torch.int32
+            )
+            or (
+                input_node.meta["val"].dtype == torch.int64
+                and node.meta["val"].dtype != torch.int32
+            )
+            or (
+                input_node.meta["val"].dtype == torch.uint8
+                and node.meta["val"].dtype in (torch.float32, torch.float64)
+                and not node.meta.get(QCOM_QUANT_ATTRS)
+                and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            )
         ):
             input_quant_encoding, input_quant_configs = self.get_quant_encoding_conf(
                 input_node, node

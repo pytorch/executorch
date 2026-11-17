@@ -43,6 +43,18 @@ test_modules = {
     "output_1x1": lambda: (AdaptiveAvgPool2d((1, 1)), (torch.rand(1, 4, 8, 8),)),
     "output_2x2": lambda: (AdaptiveAvgPool2d((2, 2)), (torch.rand(1, 4, 10, 10),)),
     "output_4x4": lambda: (AdaptiveAvgPool2d((4, 4)), (torch.rand(1, 5, 15, 15),)),
+    "grouped_height_first": lambda: (
+        AdaptiveAvgPool2d((5, 7)),
+        (torch.rand(1, 3, 17, 23),),
+    ),
+    "grouped_width_first": lambda: (
+        AdaptiveAvgPool2d((7, 5)),
+        (torch.rand(1, 3, 23, 17),),
+    ),
+    "padded_4x4_from_7x7": lambda: (
+        AdaptiveAvgPool2d((4, 4)),
+        (torch.rand(1, 3, 7, 7),),
+    ),
     "output_2x3": lambda: (AdaptiveAvgPool2d((2, 3)), (torch.rand(1, 3, 9, 13),)),
     "output_h_keep": lambda: (
         AdaptiveAvgPool2d((2, None)),
@@ -152,7 +164,7 @@ def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
         tosa_extensions=[tosa_extension],
         compare_tosa_ref_model_outputs=False,
     )
-    pipeline.count_tosa_ops({"AVG_POOL2D": 4})
+    pipeline.count_tosa_ops({"AVG_POOL2D": 1})
     pipeline.run()
 
 

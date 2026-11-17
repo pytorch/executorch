@@ -240,6 +240,11 @@ def _annotate_linear_relu(
     return annotated_partitions
 
 
+def _is_1d_or_2d_conv(weight_shape: Optional[torch.Size]) -> bool:
+    # XNNPACK runs no other convs.
+    return weight_shape is None or len(weight_shape) <= 4
+
+
 def _do_annotate_conv(
     gm: torch.fx.GraphModule,
     quantization_config: Optional[QuantizationConfig],
@@ -274,9 +279,11 @@ def _do_annotate_conv(
         assert isinstance(weight, Node)
         weight_qspec = get_weight_qspec(quantization_config)
         num_groups = get_groups_from_conv(conv_node)
+        weight_shape = getattr(weight.meta.get("val", None), "shape", None)
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
+        skip = skip or not _is_1d_or_2d_conv(weight_shape)
 
         if is_conv_transpose:
             # transposed convs per output channel quantization
@@ -291,8 +298,6 @@ def _do_annotate_conv(
 
         # Only annotate dynamically quantized conv if it's 2D and not depthwise
         if is_dynamic:
-            weight_val = weight.meta.get("val", None)
-            weight_shape = getattr(weight_val, "shape", None)
             # Skip if not a 4D weight tensor (i.e. not conv2d)
             skip = skip or (weight_shape is not None and len(weight_shape) != 4)
             # Skip if depthwise (default to groups=1 since it's not an arg)
@@ -356,6 +361,7 @@ def _do_annotate_conv_relu(
         assert isinstance(weight, Node)
         weight_qspec = get_weight_qspec(quantization_config)
         groups = get_groups_from_conv(conv_node)
+        weight_shape = getattr(weight.meta.get("val", None), "shape", None)
         if is_conv_transpose:
             # transposed convs per output channel quantization
             weight_qspec = change_quantization_config(weight_qspec, ch_axis=1)
@@ -371,7 +377,7 @@ def _do_annotate_conv_relu(
         if _is_annotated(partition):
             continue
 
-        if is_conv_transpose and groups != 1:
+        if (is_conv_transpose and groups != 1) or not _is_1d_or_2d_conv(weight_shape):
             continue
 
         if filter_fn and not filter_fn(conv_node):

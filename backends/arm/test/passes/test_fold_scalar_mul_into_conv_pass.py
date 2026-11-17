@@ -13,6 +13,7 @@ from executorch.backends.arm._passes.arm_pass_manager import (
 from executorch.backends.arm._passes.fold_scalar_mul_into_conv_pass import (
     FoldScalarMulIntoConvPass,
 )
+from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -87,6 +88,17 @@ class ConvMulMultipleUsers(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = self.conv(x)
         return y * 0.25 + y
+
+
+class SharedConvTwoScalarMuls(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 4, 3, padding=1)
+
+    def forward(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return 0.25 * self.conv(x), 3.0 * self.conv(y)
 
 
 class ConvMulWidthScale(torch.nn.Module):
@@ -167,6 +179,20 @@ def test_fold_scalar_mul_into_conv() -> None:
     assert counts[exir_ops.edge.aten.mul.Tensor] == 0
     assert counts[exir_ops.edge.aten.mul.Scalar] == 0
     torch.testing.assert_close(module(*inputs), transformed.module()(*inputs))
+
+
+def test_fold_scalar_mul_into_conv_tosa_FP_shared_conv() -> None:
+    """One Conv2d is called twice and each call is multiplied by its own scalar,
+    so the two folds share a weight but each needs its own scaled weight and
+    bias.
+    """
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor, torch.Tensor]](
+        SharedConvTwoScalarMuls().eval(),
+        (torch.randn(1, 3, 8, 8), torch.randn(1, 3, 8, 8)),
+        aten_op=[],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 2, "MUL": 0})
+    pipeline.run()
 
 
 def test_does_not_fold_1d_width_scale_as_channel_scale() -> None:

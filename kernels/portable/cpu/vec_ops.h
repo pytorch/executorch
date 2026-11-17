@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <c10/util/BFloat16-math.h>
 #include <c10/util/irange.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
@@ -30,6 +31,12 @@ namespace torch {
 namespace executor {
 
 namespace internal {
+
+/// The accumulator type for `T`: float for Half and BFloat16, `T` otherwise,
+/// like promote_types<T, T, /*half_to_float=*/true> in the kernels. It needs
+/// only c10 because ATen-mode kernels include this header.
+template <typename T>
+using acc_t = std::conditional_t<c10::is_reduced_floating_point_v<T>, float, T>;
 
 template <bool ComputeMin, bool ComputeMax>
 inline void
@@ -171,13 +178,14 @@ inline void vec_matmul(
     int64_t m,
     int64_t n,
     int64_t p) {
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      ACC sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += x[i * n + k] * y[k * p + j];
+        sum += static_cast<ACC>(x[i * n + k]) * static_cast<ACC>(y[k * p + j]);
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
@@ -191,13 +199,15 @@ inline void vec_quantized_matmul_int8(
     int64_t m,
     int64_t n,
     int64_t p) {
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      ACC sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += x[i * n + k] * static_cast<U>(y[k * p + j]) * s[k];
+        sum += static_cast<ACC>(x[i * n + k]) * static_cast<ACC>(y[k * p + j]) *
+            static_cast<ACC>(s[k]);
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
@@ -218,28 +228,36 @@ inline void vec_quantized_matmul_transb_int8(
     int64_t n,
     int64_t p,
     int64_t g) {
+  using ACC = internal::acc_t<T>;
+  // Products use the input's accumulator type, so a Double output does not
+  // change the products of a Float input.
+  using PRODUCT = internal::acc_t<U>;
   int64_t n_over_g = (n + g - 1) / g;
 
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      ACC sum = 0;
       for (int64_t k = 0; k < n; k += g) {
-        T psum = 0;
+        ACC psum = 0;
         // the last group may have fewer than g elements
         for (const auto k2 : c10::irange(k, bounds_min(k + g, n))) {
-          psum += x[i * n + k2] * static_cast<U>(y[j * n + k2]);
+          psum += static_cast<PRODUCT>(x[i * n + k2]) *
+              static_cast<PRODUCT>(y[j * n + k2]);
         }
-        sum += psum * s[j * n_over_g + k / g];
+        sum += psum * static_cast<ACC>(s[j * n_over_g + k / g]);
       }
-      z[i * p + j] = sum;
+      z[i * p + j] = static_cast<T>(sum);
     }
   }
 }
 
-// mat1 (m x n), mat2 (n x p), out (m, p), self (m x p)
-// z[i][j] = sum(x[i][k] * y[k][j]), for k in range(n)
-// T for tensor dtype, U for scalar type
-template <typename T, typename U = T>
+// mat1 (m x n), mat2 (n x p), out (m, p)
+// out[i][j] = alpha * sum(mat1[i][k] * mat2[k][j]) + beta * self[i][j]
+// self[i][j] is self_data[i * self_row_stride + j * self_col_stride], so a
+// stride of 0 broadcasts self along that dim.
+// alpha, beta and the sums use internal::acc_t<T>, so Half and BFloat16 are
+// summed in float.
+template <typename T>
 inline void vec_addmm(
     T* ET_RESTRICT out_data,
     const T* ET_RESTRICT self_data,
@@ -248,15 +266,26 @@ inline void vec_addmm(
     int64_t m,
     int64_t n,
     int64_t p,
-    U beta,
-    U alpha) {
+    internal::acc_t<T> beta,
+    internal::acc_t<T> alpha,
+    int64_t self_row_stride,
+    int64_t self_col_stride) {
+  using ACC = internal::acc_t<T>;
   for (const auto i : c10::irange(m)) {
     for (const auto j : c10::irange(p)) {
-      T sum = 0;
+      ACC sum = 0;
       for (const auto k : c10::irange(n)) {
-        sum += mat1_data[i * n + k] * mat2_data[k * p + j];
+        sum += static_cast<ACC>(mat1_data[i * n + k]) *
+            static_cast<ACC>(mat2_data[k * p + j]);
       }
-      out_data[i * p + j] = sum * alpha + self_data[i * p + j] * beta;
+      ACC result = sum * alpha;
+      // As in ATen, a zero beta ignores self, so NaN and Inf in it are dropped.
+      if (beta != 0) {
+        result += static_cast<ACC>(
+                      self_data[i * self_row_stride + j * self_col_stride]) *
+            beta;
+      }
+      out_data[i * p + j] = static_cast<T>(result);
     }
   }
 }

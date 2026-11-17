@@ -21,6 +21,7 @@ using executorch::runtime::CompileSpec;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
@@ -53,6 +54,16 @@ typedef struct IO {
   bool owns_memory = true;
   bool owns_image_memory = true;
   bool is_input;
+
+  // Describes the actual host-mapped boundary VkDeviceMemory: a tensor,
+  // storage buffer, or image staging buffer. Alias-backed IOs inherit the
+  // alias group's allocation properties. Independent of external-host-import
+  // metadata; only isolated tensor boundaries can be exposed to the Method.
+  VkDeviceSize memory_allocation_size = 0;
+  uint32_t memory_type_index = UINT32_MAX;
+  VkMemoryPropertyFlags memory_property_flags = 0;
+  bool memory_properties_known = false;
+  bool owned_mapped_boundary_eligible = false;
 } IO;
 
 typedef struct PersistentMappedMemory {
@@ -209,6 +220,20 @@ class VgfRepr {
       const {
     return host_memory_import_capabilities_;
   }
+
+  // Expose only isolated VGF-owned tensor boundary allocations. The caller
+  // never owns the returned mapping. Cache maintenance is explicit because
+  // HOST_VISIBLE memory is not necessarily HOST_COHERENT on mobile GPUs.
+  executorch::runtime::Error get_owned_mapped_boundary_buffer(
+      bool input,
+      size_t argument_index,
+      VgfMappedBoundaryBuffer* buffer) const;
+  bool is_owned_mapped_io_pointer(
+      size_t io_index,
+      const void* pointer,
+      size_t logical_nbytes) const;
+  bool flush_io_host_writes(size_t io_index);
+  bool invalidate_io_host_reads(size_t io_index);
 
   // Resource-management seam for execute().
   VgfZeroCopyImportResult try_import_zero_copy_candidate(

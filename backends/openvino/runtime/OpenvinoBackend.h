@@ -32,6 +32,9 @@ struct ExecutionHandle {
   // first use and reused by every call; null for the others.
   ov_tensor_t** owned_outputs = nullptr;
   size_t num_outputs = 0;
+  // Whether the lowering added a transpose to each input and output in another
+  // dim order, so OpenVINO takes their sizes in memory order.
+  bool sizes_in_memory_order = false;
 };
 
 class OpenvinoBackend final : public ::exr::BackendInterface {
@@ -53,15 +56,19 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
  private:
   bool ensure_loaded() const;
   ov_element_type_e convert_to_openvino_type(exa::ScalarType scalar_type) const;
-  // With own_memory, the OpenVINO tensor gets its own buffer instead of
-  // borrowing the tensor's. That buffer starts empty, with the tensor's rank,
-  // and OpenVINO grows it to the size it writes.
   exr::Result<ov_tensor_t*> create_ov_tensor(
       const exa::Tensor& tensor,
-      bool own_memory = false) const;
+      bool sizes_in_memory_order) const;
+  // Creates a buffer OpenVINO owns and grows for an output whose size can
+  // change. It starts with the shape OpenVINO compiled for that output.
+  exr::Result<ov_tensor_t*> create_owned_output(
+      const ov_compiled_model_t* compiled_model,
+      size_t index,
+      exa::ScalarType scalar_type) const;
   exr::Error copy_output(
       const ov_tensor_t* ov_output,
-      const exa::Tensor& output) const;
+      const exa::Tensor& output,
+      bool sizes_in_memory_order) const;
 
   mutable DlHandle lib_handle_;
   mutable OpenvinoFunctions ov_;

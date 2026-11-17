@@ -200,6 +200,39 @@ class TestCat(unittest.TestCase):
         )
         self._test_cat(self.Cat(), inputs, cat_num=4, quant=True)
 
+    class CatSameInput(torch.nn.Module):
+        def __init__(self, num_copies=2):
+            super().__init__()
+            self.num_copies = num_copies
+
+        def forward(self, x):
+            y = torch.cat([x] * self.num_copies, dim=1)
+            return y + y  # Quantize by propagation.
+
+    def test_fp32_cat_same_input_twice(self):
+        self._test_cat(self.CatSameInput(), (torch.randn(2, 3),))
+
+    def test_qs8_cat_same_input_twice(self):
+        self._test_cat(self.CatSameInput(), (torch.randn(2, 3),), quant=True)
+
+    def test_fp32_cat_same_input_gt_5(self):
+        # Exercises DecomposeConcatenate on a list of identical nodes.
+        self._test_cat(self.CatSameInput(num_copies=6), (torch.randn(2, 3),))
+
+    def test_fp32_cat_single_input_not_delegated(self):
+        # The cat visitor rejects a single tensor, so it must stay on portable.
+        inputs = (torch.randn(2, 3),)
+        (
+            Tester(self.CatSameInput(num_copies=1), inputs)
+            .export()
+            .check_count({"torch.ops.aten.cat": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_cat_default": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     class CatAfterConvAndTranspose(torch.nn.Module):
         def __init__(self):
             super().__init__()

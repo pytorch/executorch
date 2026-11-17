@@ -9,13 +9,16 @@
 #import "coreai_manifest.h"
 #include <cstdint>
 #include <limits>
+#include <set>
+#include <utility>
 #import "coreai_validation.h"
 
 namespace executorch::backends::coreai {
 
 Manifest::Manifest(
     NSString* export_hash,
-    NSString* function,
+    std::vector<ManifestFunction> functions,
+    bool enumerated,
     NSArray<NSString*>* inputs,
     NSArray<NSString*>* outputs,
     NSDictionary<NSString*, NSNumber*>* files,
@@ -23,9 +26,11 @@ Manifest::Manifest(
     bool aot_compiled,
     NSString* platform,
     NSDictionary<NSString*, NSString*>* architectures,
-    NSOperatingSystemVersion minimum_version)
+    NSOperatingSystemVersion minimum_version,
+    bool multifunction)
     : export_hash(export_hash),
-      function(function),
+      functions(std::move(functions)),
+      enumerated(enumerated),
       inputs(inputs),
       outputs(outputs),
       files(files),
@@ -33,7 +38,8 @@ Manifest::Manifest(
       aot_compiled(aot_compiled),
       platform(platform),
       architectures(architectures),
-      minimum_version(minimum_version) {}
+      minimum_version(minimum_version),
+      multifunction(multifunction) {}
 
 SelectedBundle::SelectedBundle(
     const Manifest& manifest,
@@ -43,7 +49,8 @@ SelectedBundle::SelectedBundle(
       path(path),
       bundle_name(path.lastPathComponent),
       digest(manifest.bundle_digests[path.lastPathComponent]),
-      function(manifest.function),
+      functions(manifest.functions),
+      enumerated(manifest.enumerated),
       inputs(manifest.inputs),
       outputs(manifest.outputs),
       files([files copy]),
@@ -67,9 +74,74 @@ bool names_array(id value) {
   return true;
 }
 
+bool is_boolean(id value) {
+  return value != nil &&
+      CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+}
+
+bool is_dimension(id value) {
+  return [value isKindOfClass:NSNumber.class] && !is_boolean(value) &&
+      !CFNumberIsFloatType((__bridge CFNumberRef)value) &&
+      [value longLongValue] > 0 &&
+      [value longLongValue] <= std::numeric_limits<int32_t>::max();
+}
+
+// Each entry names a distinct function and gives every input's shape; no two
+// entries may accept the same shapes, so dispatch is unambiguous.
+Error parse_enumerated_functions(
+    id value,
+    NSUInteger input_count,
+    std::vector<ManifestFunction>& functions) {
+  ET_CHECK_OR_RETURN_ERROR(
+      [value isKindOfClass:NSArray.class] && [value count] > 0,
+      InvalidProgram,
+      "Core AI enumerated functions must be a nonempty array");
+  NSMutableSet<NSString*>* names = [NSMutableSet set];
+  std::set<std::vector<std::vector<int64_t>>> seen_shapes;
+  for (id entry in value) {
+    ET_CHECK_OR_RETURN_ERROR(
+        [entry isKindOfClass:NSDictionary.class],
+        InvalidProgram,
+        "Core AI enumerated function must be an object");
+    id name = entry[@"function"];
+    ET_CHECK_OR_RETURN_ERROR(
+        is_nonempty_string(name) && ![names containsObject:name],
+        InvalidProgram,
+        "Core AI enumerated functions need distinct nonempty names");
+    [names addObject:name];
+    id shapes = entry[@"input_shapes"];
+    ET_CHECK_OR_RETURN_ERROR(
+        [shapes isKindOfClass:NSArray.class] && [shapes count] == input_count,
+        InvalidProgram,
+        "Core AI enumerated function %s needs one shape per input",
+        [name UTF8String]);
+    std::vector<std::vector<int64_t>> input_shapes;
+    for (id shape in shapes) {
+      ET_CHECK_OR_RETURN_ERROR(
+          [shape isKindOfClass:NSArray.class],
+          InvalidProgram,
+          "Core AI enumerated shape must be an array");
+      std::vector<int64_t> dims;
+      for (id dim in shape) {
+        ET_CHECK_OR_RETURN_ERROR(
+            is_dimension(dim),
+            InvalidProgram,
+            "Core AI enumerated shape dims must be positive integers");
+        dims.push_back([dim longLongValue]);
+      }
+      input_shapes.push_back(std::move(dims));
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        seen_shapes.insert(input_shapes).second,
+        InvalidProgram,
+        "Core AI enumerated functions accept the same input shapes");
+    functions.push_back({name, std::move(input_shapes)});
+  }
+  return Error::Ok;
+}
+
 bool file_size(id value) {
-  return [value isKindOfClass:NSNumber.class] &&
-      CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() &&
+  return [value isKindOfClass:NSNumber.class] && !is_boolean(value) &&
       !CFNumberIsFloatType((__bridge CFNumberRef)value) &&
       [value compare:@0] != NSOrderedAscending &&
       [value compare:@(std::numeric_limits<int64_t>::max())] !=
@@ -174,15 +246,21 @@ Result<Manifest> parse_manifest(NSData* data) {
       InvalidProgram,
       "Missing Core AI packaging");
   ET_CHECK_OR_RETURN_ERROR(
-      [packaging isEqualToString:@"inline"] ||
-          [packaging isEqualToString:@"aot_compiled_inline"],
+      [packaging isEqualToString:@"aimodel"] ||
+          [packaging isEqualToString:@"aimodelc"],
       NotSupported,
-      "Unsupported Core AI packaging; expected .aimodel or AOT .aimodelc");
-  const bool aot_compiled = [packaging hasPrefix:@"aot_compiled_"];
+      "Unsupported Core AI packaging; expected aimodel or aimodelc");
+  const bool aot_compiled = [packaging isEqualToString:@"aimodelc"];
   NSString* export_hash = dict[@"export_hash"];
-  NSString* function = dict[@"function"];
+  id function = dict[@"function"];
+  id enumerated_functions = dict[@"enumerated_functions"];
   NSArray<NSString*>* inputs = dict[@"input_names"];
   NSArray<NSString*>* outputs = dict[@"output_names"];
+  id multifunction = dict[@"multifunction"];
+  ET_CHECK_OR_RETURN_ERROR(
+      multifunction == nil || is_boolean(multifunction),
+      InvalidProgram,
+      "Core AI multifunction flag must be a boolean");
   NSString* platform = nil;
   NSDictionary<NSString*, NSString*>* architectures = nil;
   ET_CHECK_OR_RETURN_ERROR(
@@ -232,10 +310,25 @@ Result<Manifest> parse_manifest(NSData* data) {
     [bundles addObject:@"model.aimodel"];
   }
   ET_CHECK_OR_RETURN_ERROR(
-      is_nonempty_string(function) && names_array(inputs) &&
-          names_array(outputs),
+      names_array(inputs) && names_array(outputs),
       InvalidProgram,
       "Core AI manifest requires ordered input/output names");
+  ET_CHECK_OR_RETURN_ERROR(
+      (function == nil) != (enumerated_functions == nil),
+      InvalidProgram,
+      "Core AI manifest requires exactly one of function or "
+      "enumerated_functions");
+  std::vector<ManifestFunction> functions;
+  if (function != nil) {
+    ET_CHECK_OR_RETURN_ERROR(
+        is_nonempty_string(function),
+        InvalidProgram,
+        "Core AI manifest function must be a nonempty string");
+    functions.push_back({function, {}});
+  } else {
+    ET_CHECK_OK_OR_RETURN_ERROR(parse_enumerated_functions(
+        enumerated_functions, inputs.count, functions));
+  }
   NSOperatingSystemVersion minimum_version{};
   ET_CHECK_OR_RETURN_ERROR(
       parse_version(dict[@"min_deployment_version"], minimum_version),
@@ -258,7 +351,8 @@ Result<Manifest> parse_manifest(NSData* data) {
   }
   return Manifest(
       export_hash,
-      function,
+      std::move(functions),
+      enumerated_functions != nil,
       inputs,
       outputs,
       files,
@@ -266,7 +360,8 @@ Result<Manifest> parse_manifest(NSData* data) {
       aot_compiled,
       platform,
       architectures,
-      minimum_version);
+      minimum_version,
+      [multifunction boolValue]);
 }
 
 Result<Manifest> parse_manifest(const void* data, size_t size) {

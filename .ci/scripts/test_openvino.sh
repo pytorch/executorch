@@ -12,5 +12,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 source openvino/setupvars.sh
 cd backends/openvino/tests
-python test_runner.py --test_type ops
-python test_runner.py --test_type models
+# Run the model tests even when an op test fails, and still fail the job.
+status=0
+python test_runner.py --test_type ops || status=1
+python test_runner.py --test_type models || status=1
+exit "${status}"

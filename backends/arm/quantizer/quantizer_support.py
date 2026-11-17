@@ -252,6 +252,9 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        # Integer-valued output: only the input is annotated, the TOSA ARGMAX
+        # output is int32.
+        (torch.ops.aten.argmax.default,),
         # TFA decomposes these recurrent ops after quantization support is
         # selected, so the original operators must be admitted here.
         (torch.ops.aten.lstm.input,),

@@ -28,7 +28,7 @@ import math
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast, Iterable, Sequence
 
@@ -41,11 +41,20 @@ from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
+from torchao.quantization.pt2e.fake_quantize import (
+    disable_fake_quant,
+    disable_observer,
+    enable_fake_quant,
+    FakeQuantize,
+)
+from torchao.quantization.pt2e.observer import HistogramObserver
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
@@ -59,6 +68,9 @@ from executorch.backends.arm.quantizer import (  # noqa: E402
     get_uint8_io_quantization_config,
     get_vgf_snorm_quantization_config,
     VgfQuantizer,
+)
+from executorch.backends.arm.quantizer.quantization_config import (  # noqa: E402
+    QuantizationConfig,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner  # noqa: E402
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower  # noqa: E402
@@ -671,6 +683,25 @@ def quantization_coverage(graph_module: torch.nn.Module) -> dict[str, Any]:
     }
 
 
+def histogram_qat_config(config: QuantizationConfig) -> QuantizationConfig:
+    """Use cumulative activation ranges for tensors sharing QAT observers.
+
+    Args:
+        config (QuantizationConfig): QAT configuration to customize.
+
+    Returns:
+        QuantizationConfig: Configuration retaining weight and bias policies.
+
+    """
+    activation = replace(
+        cast(QuantizationSpec, config.input_activation),
+        observer_or_fake_quant_ctr=FakeQuantize.with_args(
+            observer=HistogramObserver.with_args(eps=2**-16),
+        ),
+    )
+    return replace(config, input_activation=activation, output_activation=activation)
+
+
 def make_quantizer(
     *,
     is_qat: bool,
@@ -680,14 +711,19 @@ def make_quantizer(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
-    global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
+    global_config: QuantizationConfig = get_vgf_snorm_quantization_config(is_qat=is_qat)
+    if is_qat:
+        global_config = histogram_qat_config(global_config)
     quantizer.set_global(global_config)
     configure_rife_vgf_quantizer(quantizer)
 
     if io_quantization == "int8":
         quantizer.set_io(global_config)
     elif io_quantization == "uint8":
-        quantizer.set_io(get_uint8_io_quantization_config(is_qat=is_qat))
+        io_config: QuantizationConfig = get_uint8_io_quantization_config(is_qat=is_qat)
+        if is_qat:
+            io_config = histogram_qat_config(io_config)
+        quantizer.set_io(io_config)
     elif io_quantization == "none":
         quantizer.set_io(None)
     else:
@@ -782,6 +818,13 @@ def build_qat_model(
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
     pruner.apply_(prepared_model)
+    # Shared observers must collect a common range before weight updates.
+    prepared_model.apply(disable_fake_quant)
+    with torch.no_grad():
+        for inputs, _ in training_samples:
+            prepared_model(*inputs)
+    prepared_model.apply(disable_observer)
+    prepared_model.apply(enable_fake_quant)
     optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
 
     for step in range(steps):
