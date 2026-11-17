@@ -241,6 +241,7 @@ class Int8Interpreter {
 
   bool plan_memory();
   bool prepare_operations();
+  bool allocate_operation_buffers();
   void rebase_constants(const uint8_t* old_base, size_t size);
   bool tensor_info(uint32_t tensor_id, Int8TensorInfo& info) const;
   int8_t* activation(uint32_t tensor_id) const;
