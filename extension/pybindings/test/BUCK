@@ -35,10 +35,34 @@ fbcode_target(
     ],
 )
 
+# Kernels for load_method, in a library like the ones users pass them from:
+# self-contained, so that ctypes can load it beside the runtime.
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "method_kernels",
+    srcs = ["method_kernels.cpp"],
+    constraint_overrides = ["ovr_config//build_mode:sanitizer_type[no-san]"],
+    define_static_target = False,
+    dlopen_enabled = True,
+    linker_flags = [
+        "-Bsymbolic",
+        "--exclude-libs=ALL",
+        "--no-undefined",
+    ],
+    overridden_link_style = "static_pic",
+    deps = [
+        "//executorch/runtime/kernel:kernel_runtime_context",
+        "//executorch/runtime/kernel:operator_registry",
+    ],
+)
+
 fbcode_target(
     _kind = runtime.python_test,
     name = "test_pybindings_portable_lib",
     srcs = ["test_pybindings.py"],
+    env = {
+        "METHOD_KERNELS_LIBRARY": "$(location :method_kernels)",
+    },
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",

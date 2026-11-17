@@ -149,6 +149,86 @@ class PybindingsTest(unittest.TestCase):
         ):
             module.run_method("forward")
 
+    def method_kernels(self):
+        """The (kernels, num_kernels) of the test kernels library, whose
+        aten::add.out subtracts, got the way the load_method docs show."""
+        if self.kernel_mode != "portable":
+            self.skipTest("The test kernels are built for the portable runtime")
+        path = os.environ.get("METHOD_KERNELS_LIBRARY")
+        if path is None:
+            self.skipTest("METHOD_KERNELS_LIBRARY names no test kernels library")
+        library = ctypes.CDLL(path)
+        library.et_pybindings_test_kernels.restype = ctypes.c_void_p
+        library.et_pybindings_test_kernels.argtypes = [ctypes.POINTER(ctypes.c_size_t)]
+        num_kernels = ctypes.c_size_t()
+        kernels = library.et_pybindings_test_kernels(ctypes.byref(num_kernels))
+        return kernels, num_kernels.value
+
+    def test_load_method_with_kernels(self):
+        from executorch.devtools.bundled_program.config import (
+            MethodTestCase,
+            MethodTestSuite,
+        )
+        from executorch.devtools.bundled_program.core import BundledProgram
+        from executorch.devtools.bundled_program.serialize import (
+            serialize_from_bundled_program_to_flatbuffer,
+        )
+
+        kernels = self.method_kernels()
+        exported_program, _ = create_program(ModuleAdd())
+        inputs = (torch.full((2, 2), 5.0), torch.full((2, 2), 3.0))
+        difference = inputs[0] - inputs[1]
+
+        module = self.load_fn(exported_program.buffer)
+        module.load_method("forward", *kernels)
+        self.assertTrue(torch.equal(module.forward(inputs)[0], difference))
+        with self.assertRaisesRegex(RuntimeError, "is already loaded"):
+            module.load_method("forward", *kernels)
+
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward", *kernels)
+        self.assertTrue(torch.equal(method(inputs)[0], difference))
+        # The kernels are only the method's: another one uses the registered.
+        self.assertTrue(
+            torch.equal(
+                program.load_method("forward")(inputs)[0], inputs[0] + inputs[1]
+            )
+        )
+
+        bundled_module = self.runtime._load_bundled_program_from_buffer(
+            serialize_from_bundled_program_to_flatbuffer(
+                BundledProgram(
+                    exported_program,
+                    [
+                        MethodTestSuite(
+                            method_name="forward",
+                            test_cases=[
+                                MethodTestCase(
+                                    inputs=inputs, expected_outputs=(difference,)
+                                )
+                            ],
+                        )
+                    ],
+                )
+            )
+        )
+        bundled_module.load_method("forward", *kernels)
+        bundled_module.verify_result_with_bundled_expected_output("forward", 0)
+
+    def test_load_method_without_kernels(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        module = self.load_fn(exported_program.buffer)
+        program = self.load_prog_fn(exported_program.buffer)
+        for load_method in (module.load_method, program.load_method):
+            with self.assertRaisesRegex(
+                ValueError, "kernels is 0, but num_kernels is not"
+            ):
+                load_method("forward", 0, 1)
+        module.load_method("forward")
+        self.assertTrue(
+            torch.equal(module.forward(inputs)[0], inputs[0] + inputs[1])
+        )
+
     def test_numpy_buffer_inputs(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)

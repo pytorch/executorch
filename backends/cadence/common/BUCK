@@ -8,7 +8,10 @@ runtime.cxx_library(
     exported_headers=["xt_macros.h"],
     platforms = CXX,
     visibility = ["PUBLIC"],
-    compatible_with = ["ovr_config//cpu:xtensa"],
+    compatible_with = [
+        "ovr_config//cpu:xtensa",
+        # @oss-disable[end= ]: "fbsource//third-party/nnlib-FusionG3/xa_nnlib:g3_cstub_host",
+    ],
     deps = [
         "//executorch/runtime/core/exec_aten/util:tensor_util",
     ]

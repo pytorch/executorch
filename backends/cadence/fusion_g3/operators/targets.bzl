@@ -13,6 +13,13 @@ COMMON_DEPS = [
     "fbsource//third-party/nnlib-FusionG3/xa_nnlib:libxa_nnlib_common",
 ]
 
+# Kernels build for the Xtensa DSP, and for the host against the core's CStub
+# model, which emulates the same TIE intrinsics.
+COMPATIBLE_WITH = [
+    "ovr_config//cpu:xtensa",
+    # @oss-disable[end= ]: "fbsource//third-party/nnlib-FusionG3/xa_nnlib:g3_cstub_host",
+]
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -53,7 +60,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -65,7 +72,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -77,7 +84,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -89,7 +96,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -101,7 +108,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -113,7 +120,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -125,7 +132,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -137,7 +144,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -149,7 +156,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -161,7 +168,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -173,7 +180,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -185,7 +192,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -197,7 +204,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -209,7 +216,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -221,7 +228,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -233,7 +240,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -245,7 +252,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -257,7 +264,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -269,7 +276,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -281,7 +288,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -293,7 +300,7 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )
 
     runtime.cxx_library(
@@ -305,5 +312,5 @@ def define_common_targets():
             ":xt_utils",
         ],
         visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
+        compatible_with = COMPATIBLE_WITH,
     )

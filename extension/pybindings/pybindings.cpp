@@ -2969,6 +2969,41 @@ inline py::list get_outputs_as_py_list(
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
+// The method-scoped kernels Python passes to load_method: the address of an
+// array of `num_kernels` Kernels, which must outlive the method.
+Span<const Kernel> kernels_at(uintptr_t kernels, size_t num_kernels) {
+  if (kernels == 0 && num_kernels != 0) {
+    throw std::invalid_argument("kernels is 0, but num_kernels is not");
+  }
+  return Span<const Kernel>(
+      reinterpret_cast<const Kernel*>(kernels), num_kernels);
+}
+
+void load_method_with_kernels(
+    Module& module,
+    const std::string& method_name,
+    uintptr_t kernels,
+    size_t num_kernels) {
+  // Module::load_method would ignore them for a method it has loaded.
+  if (num_kernels != 0 && module.is_method_loaded(method_name)) {
+    throw std::runtime_error(
+        "Method '" + method_name +
+        "' is already loaded, and kernels only apply to its first load.");
+  }
+  const auto registry = kernels_at(kernels, num_kernels);
+  const Error status = module.load_method(
+      method_name,
+      nullptr,
+      nullptr,
+      nullptr,
+      std::vector<Kernel>(registry.begin(), registry.end()));
+  THROW_IF_ERROR(
+      status,
+      "Failed to load method %s, error: 0x%" PRIx32,
+      method_name.c_str(),
+      static_cast<uint32_t>(status));
+}
+
 struct PyBundledModule : public BundledModule {
   explicit PyBundledModule(
       const py::bytes& buffer,
@@ -3915,6 +3950,15 @@ struct PyModule final {
         static_cast<uint32_t>(result.error()));
     const auto& method_set = result.get();
     return std::vector<std::string>(method_set.begin(), method_set.end());
+  }
+
+  // Methods otherwise load when they first run, without kernels.
+  void load_method(
+      const std::string& method_name,
+      uintptr_t kernels,
+      size_t num_kernels) {
+    ObjectLock lock(mutex_);
+    load_method_with_kernels(*module_, method_name, kernels, num_kernels);
   }
 
  private:
@@ -5539,7 +5583,11 @@ struct PyProgram final {
     return std::string(res.get());
   }
 
-  std::unique_ptr<PyMethod> load_method(const std::string& method_name) {
+  std::unique_ptr<PyMethod> load_method(
+      const std::string& method_name,
+      uintptr_t kernels,
+      size_t num_kernels) {
+    const auto registry = kernels_at(kernels, num_kernels);
     Result<MethodMeta> meta =
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
@@ -5558,7 +5606,8 @@ struct PyProgram final {
         memory->mem_manager(),
         state_->event_tracer_.get(),
         state_->data_map_.get(),
-        &state_->backend_options_);
+        &state_->backend_options_,
+        registry);
     THROW_IF_ERROR(
         res.error(),
         "Failed to load method %s, error: 0x%" PRIx32,
@@ -6017,6 +6066,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard)
       .def("method_names", &PyModule::method_names, call_guard)
       .def(
+          "load_method",
+          &PyModule::load_method,
+          py::arg("method_name"),
+          py::arg("kernels") = 0,
+          py::arg("num_kernels") = 0,
+          call_guard)
+      .def(
           "run_method",
           &PyModule::run_method,
           py::arg("method_name"),
@@ -6044,6 +6100,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard);
 
   py::class_<PyBundledModule>(m, "BundledModule", py::module_local())
+      .def(
+          "load_method",
+          [](PyBundledModule& self,
+             const std::string& method_name,
+             uintptr_t kernels,
+             size_t num_kernels) {
+            load_method_with_kernels(self, method_name, kernels, num_kernels);
+          },
+          py::arg("method_name"),
+          py::arg("kernels") = 0,
+          py::arg("num_kernels") = 0,
+          call_guard)
       .def(
           "verify_result_with_bundled_expected_output",
           &PyBundledModule::verify_result_with_bundled_expected_output,
@@ -6114,6 +6182,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "load_method",
           &PyProgram::load_method,
           py::arg("method_name"),
+          py::arg("kernels") = 0,
+          py::arg("num_kernels") = 0,
           call_guard)
       .def(
           "method_meta",
