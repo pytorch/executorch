@@ -7,10 +7,12 @@
 import inspect
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial, reduce
 from operator import mul
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
 import torch
@@ -23,6 +25,7 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
 )
 from executorch.backends.qualcomm.export_utils import (
     Device,
+    generate_inputs,
     make_quantizer,
     QcomChipset,
     QnnConfig,
@@ -86,6 +89,126 @@ def get_quantizer(qnn_config: QnnConfig):
         if qnn_config.backend != QnnExecuTorchBackendType.kGpuBackend
         else None
     )
+
+
+def _read_raw_outputs(folder, ref_outputs):
+    outputs = []
+    for i, name in enumerate(
+        sorted(f for f in os.listdir(folder) if f.endswith(".raw"))
+    ):
+        dtype = ref_outputs[i].numpy().dtype
+        raw = np.fromfile(os.path.join(folder, name), dtype=dtype)
+        outputs.append(torch.from_numpy(raw).reshape(ref_outputs[i].shape))
+    return outputs
+
+
+class Concurrency:
+    NUM_SESSIONS = 3
+    HIGH_PRIORITY = 200
+    LOWEST_PRIORITY = 0
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def example_inputs(self):
+            return (torch.randn(1, 3, 32, 32),)
+
+        def forward(self, x):
+            return torch.relu(self.conv(x))
+
+    @staticmethod
+    def _export_model(qnn_config, compile_specs):
+        soc_model = getattr(QcomChipset, qnn_config.soc_model)
+        backend_compile_specs = {
+            QnnExecuTorchBackendType.kHtpBackend: {
+                "soc_model": soc_model,
+                "use_fp16": False,
+            },
+            QnnExecuTorchBackendType.kGpuBackend: {
+                "soc_model": soc_model,
+                "online_prepare": True,
+            },
+            QnnExecuTorchBackendType.kLpaiBackend: {"soc_model": soc_model},
+        }
+
+        module = __class__.Model()
+        inputs = module.example_inputs()
+        with calibrate(module, [inputs], get_quantizer(qnn_config)) as exported_module:
+            executorch_prog = to_edge_transform_and_lower_to_qnn(
+                module=exported_module,
+                inputs=inputs,
+                compiler_specs=compile_specs(
+                    tuple(backend_compile_specs[qnn_config.backend].items())
+                ),
+            ).to_executorch()
+
+        ref_outputs = [module(*inputs).detach()]
+        return executorch_prog, inputs, ref_outputs
+
+    @staticmethod
+    def _run_session(device, pte_fname, is_lpai, index):
+        output_folder = device.bridge.join_path(device.workspace, f"outputs_{index}")
+        etdump_path = device.bridge.join_path(device.workspace, f"etdump_{index}.etdp")
+        device.bridge.mkdir(output_folder)
+        args = [
+            f"--model_path {os.path.basename(pte_fname)}",
+            f"--output_folder_path {output_folder}",
+            f"--input_list_path {device.input_list_filename}",
+            f"--etdump_path {etdump_path}",
+            "--method_index 0",
+        ]
+        if is_lpai and index == 0:
+            args.append(f"--lpai_priority {Concurrency.HIGH_PRIORITY}")
+        elif is_lpai and index == 2:
+            args.append(f"--lpai_priority {Concurrency.LOWEST_PRIORITY}")
+        device.bridge.run_executor(
+            device.workspace,
+            device.runner,
+            " ".join(args),
+        )
+        return output_folder
+
+    @staticmethod
+    @unpack_fixtures
+    def test_concurrent_sessions(qnn_config, compile_specs, expected):
+        executorch_prog, inputs, ref_outputs = __class__._export_model(
+            qnn_config, compile_specs
+        )
+        is_lpai = qnn_config.backend == QnnExecuTorchBackendType.kLpaiBackend
+        device_workspace = (
+            f"{getattr(qnn_config, 'device_workspace', '')}_{qnn_config.backend}"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_fname = os.path.join(tmp_dir, "qnn_executorch_test.pte")
+            with open(pte_fname, "wb") as file:
+                executorch_prog.write_to_file(file)
+            generate_inputs(tmp_dir, "input_list.txt", [inputs])
+
+            device = Device(
+                qnn_config=qnn_config,
+                pte_path=[pte_fname],
+                workspace=f"/data/local/tmp/{device_workspace}",
+            )
+            device.push(inputs=[inputs], init_env=False)
+
+            with ThreadPoolExecutor(max_workers=__class__.NUM_SESSIONS) as pool:
+                run_session = partial(
+                    __class__._run_session, device, pte_fname, is_lpai
+                )
+                sessions = list(pool.map(run_session, range(__class__.NUM_SESSIONS)))
+
+            for index, output_folder in enumerate(sessions):
+                device.bridge.pull_file(output_folder, tmp_dir, recursive=True)
+                device_outputs = _read_raw_outputs(
+                    os.path.join(tmp_dir, f"outputs_{index}"), ref_outputs
+                )
+                assert len(device_outputs) == len(ref_outputs)
+                expected.assert_close(
+                    device_output=device_outputs, ref_output=ref_outputs
+                )
 
 
 class GraphSplit:
