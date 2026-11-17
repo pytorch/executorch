@@ -397,6 +397,7 @@ jobs:
         ./install_executorch.sh
         pip install safetensors tokenizers huggingface_hub
         python -m pytest examples/models/phonon/tests -q
+        python -m pytest examples/models/pocket_tts/tests -q
         python -m executorch.examples.models.phonon.export_phonon \
           --backend xnnpack --output-dir phonon_exports/xnnpack
         make phonon-cpu
