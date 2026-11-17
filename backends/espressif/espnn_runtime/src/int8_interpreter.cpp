@@ -16,6 +16,7 @@
 #include <cstring>
 #include <new>
 
+#include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_nn.h>
 #include <esp_nn_multicore.h>
@@ -31,10 +32,10 @@ namespace {
 
 constexpr size_t ARENA_ALIGNMENT = 16;
 constexpr int64_t YIELD_INTERVAL_US = 1000000;
-// Without profiling, invoke() checks the yield deadline only every this many
-// operations and when it returns: one timer read costs as much as a small
-// operation.
-constexpr uint32_t YIELD_CHECK_OPERATIONS = 16;
+// Without profiling, invoke() reads the cycle counter, which takes a few
+// cycles, after every operation, and the timer, which costs as much as a small
+// operation, only once this many cycles (4 ms at 240 MHz) have passed.
+constexpr uint32_t YIELD_CHECK_CYCLES = 1U << 20;
 
 // Created by a static initializer rather than on first use, so that invoke()
 // needs no thread-safe static guard (and no C++ runtime support for one).
@@ -1976,6 +1977,7 @@ bool Int8Interpreter::invoke() {
   const int64_t invoke_started = esp_timer_get_time();
   int64_t op_started = invoke_started;
   int64_t last_yield = invoke_started;
+  uint32_t last_check = esp_cpu_get_cycle_count();
   for (uint32_t i = 0; i < graph_.header.num_operations; ++i) {
     const OpState& state = op_states_[i];
     if (options_.scratch_in_arena && state.scratch_bytes != 0) {
@@ -1991,8 +1993,12 @@ bool Int8Interpreter::invoke() {
           opcode_name(op_states_[i].opcode));
       return false;
     }
-    if (op_us_ == nullptr && (i + 1) % YIELD_CHECK_OPERATIONS != 0)
-      continue;
+    if (op_us_ == nullptr) {
+      const uint32_t cycles = esp_cpu_get_cycle_count();
+      if (cycles - last_check < YIELD_CHECK_CYCLES)
+        continue;
+      last_check = cycles;
+    }
     int64_t now = esp_timer_get_time();
     if (op_us_ != nullptr)
       op_us_[i] = now - op_started;
