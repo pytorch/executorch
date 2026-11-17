@@ -20,7 +20,8 @@
  * device-layout (NHWC) int8 files. --constants-to-psram sets
  * Int8RuntimeOptions::copy_constants_to_psram. When the interpreter copies the
  * graph, the runner frees its own copy, as EspNNBackend does. With
- * --external-io, outputs are bound to runner buffers prefilled with 0x5a.
+ * --external-io, outputs are bound to 16-byte aligned runner buffers prefilled
+ * with 0x5a, after checking that a misaligned buffer is refused.
  */
 
 #include <cstdint>
@@ -98,10 +99,13 @@ int main(int argc, char** argv) {
   for (size_t o = 0; options.external_io && o < bound.size(); ++o) {
     Int8TensorInfo info{};
     interpreter.output_info(o, info);
-    bound[o].resize(info.bytes / 8 + 2);
+    bound[o].resize(info.bytes / 8 + 3);
     int8_t* buffer = reinterpret_cast<int8_t*>(bound[o].data());
+    buffer += (16 - reinterpret_cast<uintptr_t>(buffer) % 16) % 16;
     std::memset(buffer, 0x5a, info.bytes);
-    interpreter.bind_output(o, buffer);
+    if (interpreter.bind_output(o, buffer + 1) ||
+        !interpreter.bind_output(o, buffer))
+      return fail("bound a misaligned output or refused an aligned one");
   }
   for (size_t i = 0; i < inputs.size(); ++i) {
     Int8TensorInfo info{};

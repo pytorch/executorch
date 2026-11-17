@@ -135,12 +135,13 @@ class Int8Interpreter {
   /**
    * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
    * buffer of output_info().bytes, the storage of output @p index until it is
-   * bound again. An output with an arena slot cannot be bound: output_data()
-   * returns the slot.
+   * bound again. The buffer must be 16-byte aligned like the arena, since the
+   * kernels may rely on that. An output with an arena slot cannot be bound:
+   * output_data() returns the slot.
    *
-   * @retval false external_io is off, @p index is out of range, or the output
-   *     has an arena slot (it is a graph input, an operation reads it, or
-   *     conversion_slots selects it).
+   * @retval false external_io is off, @p index is out of range, @p data is
+   *     null or misaligned, or the output has an arena slot (it is a graph
+   *     input, an operation reads it, or conversion_slots selects it).
    */
   bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
