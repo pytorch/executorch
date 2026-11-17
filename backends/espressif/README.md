@@ -39,6 +39,46 @@ Spatial operators use contiguous NHWC tensors; model inputs and outputs
 retain their original layout. Layout copies remain visible in the
 operator-library report.
 
+## Scratch-size queries
+
+Optional Python bindings expose ESP-NN 1.5.0's convolution, depthwise, softmax,
+mean, hard-swish, batched fully connected, and logistic scratch-size queries:
+
+```bash
+CMAKE_ARGS="-DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON" pip install -e . --no-build-isolation
+```
+
+The host libraries retain only sizing code. CMake fetches the pinned ESP-NN
+sources; `ESP_NN_LOCAL_PATH` can reuse an existing 1.5.0 checkout or ESP-IDF
+managed component.
+
+Select the device's `EspTarget` and `EspKernelMode` to match its ESP-NN build:
+
+```python
+from executorch.backends.espressif import EspKernelMode, EspTarget
+from executorch.backends.espressif.scratch import get_scratch_queries
+
+queries = get_scratch_queries(EspTarget.ESP32P4, EspKernelMode.OPTIMIZED)
+if queries is not None:
+    scratch_bytes = queries.conv2d_scratch_size(
+        input_dims=(8, 8, 16),
+        filter_dims=(3, 3, 16),
+        output_dims=(8, 8, 32),
+        stride=(1, 1),
+        padding=(1, 1),
+    )
+```
+
+Dimensions use `(width, height, channels)`; stride and padding use
+`(width, height)`. Convolution queries use unit dilation. Sizes are in bytes,
+including zero for kernels that need no scratch. `get_scratch_queries` returns
+`None` when the selected binding is unavailable.
+
+Optimized mode selects S3 queries for ESP32-S3, shared PIE queries for
+ESP32-P4/ESP32-S31, and generic queries for other `EspTarget` values. ANSI mode
+selects ANSI queries for every chip. Query results are checked on the host for
+all configurations; device execution tests currently cover ESP32-S3.
+
 ## Contents
 
 ```
