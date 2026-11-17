@@ -39,6 +39,10 @@ ARM_TEST_REGISTRATION = (
     'load(":targets.bzl", "define_arm_tests")\n'
     "fbcode_target(_kind=define_arm_tests)\n"
 )
+ARM_TEST_LOOP = (
+    "    for test_file in test_files:\n"
+    "        python_pytest(name=test_file, srcs=[test_file])\n"
+)
 
 
 def library(name, sources, deps="[]"):
@@ -54,7 +58,8 @@ def fixture():
         )
         + ARM_TEST_REGISTRATION,
         TESTER: "from executorch.exir.schema import Tensor\n",
-        TARGETS: 'def define_arm_tests():\n    test_files = []\n    test_files += native.glob(["passes/test_*.py"])\n',
+        TARGETS: 'def define_arm_tests():\n    test_files = []\n    test_files += native.glob(["passes/test_*.py"])\n'
+        + ARM_TEST_LOOP,
         "exir/BUCK": library("umbrella", "[]", '[":schema"]')
         + library("schema", '["schema.py"]'),
         "exir/schema.py": "class Tensor: pass\n",
@@ -131,7 +136,10 @@ class DeclarationTests(unittest.TestCase):
             )
             + ARM_TEST_REGISTRATION
         )
-        after[TARGETS] += '    test_files += ["misc/test_diff_pte.py"]\n'
+        after[TARGETS] = after[TARGETS].replace(
+            ARM_TEST_LOOP,
+            '    test_files += ["misc/test_diff_pte.py"]\n' + ARM_TEST_LOOP,
+        )
         self.assertEqual(set(), regressions(before, after))
 
     def test_transitive_dependency_and_cycle_are_valid(self):
@@ -731,10 +739,121 @@ class DeclarationTests(unittest.TestCase):
 
     def test_known_pytest_generation_loop_is_handled_by_registration(self):
         files = fixture()
-        files[
-            TARGETS
-        ] += "    for test_file in test_files:\n        python_pytest(name=test_file, srcs=[test_file])\n"
+        files[SCOPE + "/passes/test_emitted.py"] = "def test_operation(): pass\n"
         self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_removing_test_generation_loop_fails_surviving_tests(self):
+        before = generated_test_fixture()
+        after = dict(before)
+        after[TARGETS] = after[TARGETS].split("    for test_file in test_files:\n")[0]
+        issues = regressions(before, after)
+        self.assertEqual(
+            {
+                ("unregistered test", SCOPE + "/misc/test_schema.py", "error"),
+                ("unregistered test", SCOPE + "/misc/test_diff.py", "error"),
+            },
+            {(issue.kind, issue.source, issue.severity) for issue in issues},
+        )
+
+    def test_unused_test_list_does_not_register_a_new_test(self):
+        for keep_loop in (False, True):
+            with self.subTest(keep_loop=keep_loop):
+                before = fixture()
+                after = dict(before)
+                source = SCOPE + "/misc/test_unused.py"
+                after[source] = "def test_operation(): pass\n"
+                if not keep_loop:
+                    after[TARGETS] = after[TARGETS].replace(ARM_TEST_LOOP, "")
+                # A list entry added after the loop emits no target either.
+                after[TARGETS] += '    test_files += ["misc/test_unused.py"]\n'
+                issues = regressions(before, after)
+                self.assertEqual(1, len(issues))
+                issue = next(iter(issues))
+                self.assertEqual(
+                    ("unregistered test", source, "warning"),
+                    (issue.kind, issue.source, issue.severity),
+                )
+
+    def test_inactive_test_rule_does_not_preserve_registration(self):
+        before = fixture()
+        source = SCOPE + "/passes/test_existing.py"
+        before[source] = "def test_operation(): pass\n"
+        after = dict(before)
+        after[TARGETS] = after[TARGETS].replace(
+            "        python_pytest(name=test_file, srcs=[test_file])\n",
+            "        if False:\n            python_pytest(name=test_file, srcs=[test_file])\n",
+        )
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual(
+            ("unregistered test", source, "error"),
+            (issue.kind, issue.source, issue.severity),
+        )
+
+    def test_lost_oss_only_emitted_test_registration_fails(self):
+        before = fixture()
+        source = SCOPE + "/misc/test_oss.py"
+        before[source] = "def test_operation(): pass\n"
+        before[TARGETS] = before[TARGETS].replace(
+            ARM_TEST_LOOP,
+            '    if runtime.is_oss:\n        test_files += ["misc/test_oss.py"]\n'
+            + ARM_TEST_LOOP,
+        )
+        self.assertEqual(set(), analyze(Snapshot(before)))
+        after = dict(before)
+        after[TARGETS] = after[TARGETS].replace(ARM_TEST_LOOP, "")
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual(
+            ("unregistered test", source, "error"),
+            (issue.kind, issue.source, issue.severity),
+        )
+
+    def test_nested_oss_test_registration_does_not_check_oss_dependencies(self):
+        before = fixture()
+        source = SCOPE + "/unit/test_oss.py"
+        build_file = SCOPE + "/unit/BUCK"
+        before[source] = (
+            "from executorch.exir.schema import Tensor\ndef test_operation(): pass\n"
+        )
+        before[build_file] = (
+            "if runtime.is_oss:\n"
+            '    runtime.python_test(name="oss", srcs=["test_oss.py"], deps=choose_deps())\n'
+        )
+        self.assertEqual(set(), analyze(Snapshot(before)))
+        after = dict(before)
+        after[build_file] = ""
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        self.assertEqual("error", next(iter(issues)).severity)
+
+    def test_unsupported_oss_registration_keeps_the_original_cause(self):
+        for declaration, cause in (
+            (
+                'runtime.python_test(name="oss", srcs=choose_sources())',
+                "choose_sources()",
+            ),
+            (
+                'runtime.python_test(name=choose_name(), srcs=["misc/test_oss.py"])',
+                "choose_name()",
+            ),
+            (
+                'if configured():\n        runtime.python_test(name="oss", srcs=["misc/test_oss.py"])',
+                "configured()",
+            ),
+        ):
+            with self.subTest(cause=cause):
+                files = fixture()
+                files[SCOPE + "/misc/test_oss.py"] = "def test_operation(): pass\n"
+                files[BUCK] += "if runtime.is_oss:\n    " + declaration + "\n"
+                issues = analyze(Snapshot(files))
+                errors = [issue for issue in issues if issue.severity == "error"]
+                self.assertEqual(1, len(errors), issues)
+                self.assertEqual("cannot validate", errors[0].kind)
+                self.assertEqual("registration", errors[0].category)
+                self.assertIn(cause, errors[0].detail)
 
     def test_generated_pytest_dependencies_are_checked_per_target(self):
         before = generated_test_fixture()
@@ -814,9 +933,11 @@ class DeclarationTests(unittest.TestCase):
         before = fixture()
         after = dict(before)
         after[SCOPE + "/misc/test_oss.py"] = "def test_oss():\n    pass\n"
-        after[
-            TARGETS
-        ] += '    if runtime.is_oss:\n        test_files += ["misc/test_oss.py"]\n'
+        after[TARGETS] = after[TARGETS].replace(
+            ARM_TEST_LOOP,
+            '    if runtime.is_oss:\n        test_files += ["misc/test_oss.py"]\n'
+            + ARM_TEST_LOOP,
+        )
         self.assertEqual(set(), regressions(before, after))
 
     def test_provider_suggestion_change_is_not_new_violation(self):
@@ -1410,7 +1531,11 @@ class DeclarationTests(unittest.TestCase):
                     )
                     after = dict(before)
                     after[BUCK] = after[BUCK].replace(old_value, new_value)
-                    issues = regressions(before, after)
+                    issues = {
+                        issue
+                        for issue in regressions(before, after)
+                        if "conditional declaration" in issue.detail
+                    }
                     self.assertEqual(1, len(issues))
                     issue = next(iter(issues))
                     self.assertEqual("cannot validate", issue.kind)
@@ -1490,6 +1615,311 @@ class GitSnapshotTests(unittest.TestCase):
             },
             {(issue.kind, issue.source, issue.severity) for issue in issues},
         )
+
+
+class MutationProvenanceTests(unittest.TestCase):
+    def files(self, statements="", dependencies='["//executorch/exir:umbrella"]'):
+        files = fixture()
+        files[BUCK] = (
+            'srcs = ["tester/runner.py"]\n'
+            f"deps = {dependencies}\n"
+            + statements
+            + library("arm_tester_lib", "srcs", "deps")
+            + ARM_TEST_REGISTRATION
+        )
+        return files
+
+    def test_append_and_extend_sources_expose_missing_dependency(self):
+        helper = SCOPE + "/tester/new_helper.py"
+        for statement in (
+            'srcs.append("tester/new_helper.py")\n',
+            'srcs.extend(["tester/new_helper.py"])\n',
+        ):
+            with self.subTest(statement=statement):
+                before = self.files()
+                after = self.files(statement)
+                after[helper] = (
+                    "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+                )
+                issues = regressions(before, after)
+                self.assertTrue(
+                    any(
+                        issue.kind == "missing dependency" and issue.source == helper
+                        for issue in issues
+                    )
+                )
+                after[BUCK] = after[BUCK].replace(
+                    statement,
+                    statement
+                    + 'deps.extend(["//executorch/devtools/pte_tool:diff_pte_lib"])\n',
+                )
+                self.assertEqual(set(), regressions(before, after))
+
+    def test_supported_list_mutations_update_aliases(self):
+        for statement in (
+            'sources_alias.append("tester/new_helper.py")\n',
+            'sources_alias.extend(["tester/new_helper.py"])\n',
+            'sources_alias += ["tester/new_helper.py"]\n',
+        ):
+            with self.subTest(statement=statement):
+                files = self.files(
+                    "sources_alias = srcs\n"
+                    + statement
+                    + "dependencies_alias = deps\n"
+                    + 'dependencies_alias.append("//executorch/devtools/pte_tool:diff_pte_lib")\n'
+                )
+                helper = SCOPE + "/tester/new_helper.py"
+                files[helper] = (
+                    "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+                )
+                declarations = Declarations(Snapshot(files))
+                declarations.load_scope()
+                rule = declarations.rules[
+                    "//executorch/backends/arm/test:arm_tester_lib"
+                ]
+                self.assertIn(helper, rule.sources)
+                self.assertIn("//executorch/devtools/pte_tool:diff_pte_lib", rule.deps)
+                self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_unsupported_mutations_invalidate_list_aliases(self):
+        for statement in (
+            'alias.remove("//executorch/exir:umbrella")',
+            "alias.extend(choose_dependencies())",
+            "removed = alias.pop()",
+        ):
+            with self.subTest(statement=statement):
+                files = self.files("alias = deps\n" + statement + "\n")
+                declarations = Declarations(Snapshot(files))
+                declarations.load_scope()
+                rule = declarations.rules[
+                    "//executorch/backends/arm/test:arm_tester_lib"
+                ]
+                self.assertEqual(set(), rule.deps)
+                self.assertTrue(any("alias." in error for error in rule.errors))
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate" and "alias." in issue.detail
+                        for issue in analyze(Snapshot(files))
+                    )
+                )
+
+    def test_unknown_condition_cannot_hide_list_mutation(self):
+        files = self.files(
+            "alias = srcs\n"
+            'if native.read_config("mode", "value"):\n'
+            '    alias.append("tester/new_helper.py")\n'
+        )
+        declarations = Declarations(Snapshot(files))
+        declarations.load_scope()
+        rule = declarations.rules["//executorch/backends/arm/test:arm_tester_lib"]
+        self.assertEqual(set(), rule.sources)
+        self.assertTrue(any("alias.append" in error for error in rule.errors))
+        self.assertTrue(
+            any(
+                "conditional declaration" in issue.detail
+                and "alias.append" in issue.detail
+                for issue in analyze(Snapshot(files))
+            )
+        )
+
+    def test_outer_call_cannot_hide_nested_list_mutations(self):
+        for statement in (
+            'print(srcs.append("tester/new_helper.py"))',
+            'print(srcs.extend(["tester/new_helper.py"]))',
+        ):
+            with self.subTest(statement=statement):
+                before = self.files()
+                after = self.files(statement + "\n")
+                after[SCOPE + "/tester/new_helper.py"] = (
+                    "from executorch.devtools.pte_tool.diff_pte import PTEDiffResult\n"
+                )
+                issues = regressions(before, after)
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate"
+                        and issue.severity == "error"
+                        and "unsupported nested mutation: print(srcs." in issue.detail
+                        for issue in issues
+                    )
+                )
+
+    def test_nested_mutation_in_list_argument_invalidates_both_lists(self):
+        for statement in (
+            'unused.append(alias.append("//executorch/devtools/pte_tool:diff_pte_lib"))',
+            'unused.extend(alias.extend(["//executorch/devtools/pte_tool:diff_pte_lib"]))',
+        ):
+            with self.subTest(statement=statement):
+                files = self.files("unused = []\nalias = deps\n" + statement + "\n")
+                declarations = Declarations(Snapshot(files))
+                declarations.load_scope()
+                rule = declarations.rules[
+                    "//executorch/backends/arm/test:arm_tester_lib"
+                ]
+                self.assertEqual(set(), rule.deps)
+                self.assertTrue(
+                    any("unsupported nested mutation" in error for error in rule.errors)
+                )
+
+    def test_named_unsupported_assignment_preserves_rhs_in_baseline(self):
+        for alias in (False, True):
+            with self.subTest(alias=alias):
+                before = self.files(
+                    "dependencies_alias = deps\n" if alias else "",
+                    'select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+                )
+                if alias:
+                    before[BUCK] = before[BUCK].replace(
+                        "deps=deps", "deps=dependencies_alias"
+                    )
+                after = dict(before)
+                after[BUCK] = after[BUCK].replace(
+                    '["//executorch/exir:umbrella"]', "[]"
+                )
+                issues = regressions(before, after)
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate"
+                        and issue.severity == "error"
+                        and "select({'DEFAULT': []})" in issue.subject
+                        for issue in issues
+                    )
+                )
+
+    def test_unsupported_assignment_formatting_stays_baselined(self):
+        before = self.files(
+            dependencies='select({"DEFAULT": ["//executorch/exir:umbrella"]})'
+        )
+        after = dict(before)
+        after[BUCK] = "\n# unrelated comment\n" + after[BUCK].replace(
+            'deps = select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+            'deps = select(\n    {"DEFAULT": ["//executorch/exir:umbrella"]}\n)\n',
+        )
+        self.assertEqual(set(), regressions(before, after))
+
+    def test_unknown_conditions_preserve_referenced_assignment_provenance(self):
+        for statement, dependency in (
+            ("alias = deps", "alias"),
+            ("deps += []", "deps"),
+            ("deps.extend([])", "deps"),
+        ):
+            with self.subTest(statement=statement):
+                before = self.files(
+                    "if configured():\n    " + statement + "\n",
+                    'select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+                )
+                before[BUCK] = before[BUCK].replace("deps=deps", "deps=" + dependency)
+                after = dict(before)
+                after[BUCK] = after[BUCK].replace(
+                    '["//executorch/exir:umbrella"]', "[]"
+                )
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate"
+                        and issue.severity == "error"
+                        and "select({'DEFAULT': []})" in issue.subject
+                        for issue in regressions(before, after)
+                    )
+                )
+
+    def test_unsupported_direct_aliases_share_mutation_provenance(self):
+        for statement in (
+            'deps.append("//executorch/devtools/pte_tool:diff_pte_lib")',
+            'deps.extend(["//executorch/devtools/pte_tool:diff_pte_lib"])',
+            "deps.clear()",
+        ):
+            with self.subTest(statement=statement):
+                before = self.files(
+                    "alias = deps\n",
+                    'select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+                )
+                before[BUCK] = before[BUCK].replace("deps=deps", "deps=alias")
+                after = dict(before)
+                after[BUCK] = after[BUCK].replace(
+                    "alias = deps\n", "alias = deps\n" + statement + "\n"
+                )
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate"
+                        and issue.severity == "error"
+                        and statement.split("(")[0] in issue.subject
+                        for issue in regressions(before, after)
+                    )
+                )
+
+        before = self.files(
+            "alias = deps + []\n",
+            'select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+        )
+        before[BUCK] = before[BUCK].replace("deps=deps", "deps=alias")
+        after = dict(before)
+        after[BUCK] = after[BUCK].replace(
+            "alias = deps + []\n", "alias = deps + []\ndeps.clear()\n"
+        )
+        self.assertEqual(set(), regressions(before, after))
+
+    def test_nested_mutation_retains_existing_unsupported_provenance(self):
+        before = self.files(
+            "alias = deps\nprint(deps.append(':empty'))\n",
+            'select({"DEFAULT": ["//executorch/exir:umbrella"]})',
+        )
+        before[BUCK] = before[BUCK].replace("deps=deps", "deps=alias")
+        after = dict(before)
+        after[BUCK] = after[BUCK].replace('["//executorch/exir:umbrella"]', "[]")
+        self.assertTrue(
+            any(
+                issue.kind == "cannot validate"
+                and issue.severity == "error"
+                and "select({'DEFAULT': []})" in issue.subject
+                for issue in regressions(before, after)
+            )
+        )
+
+    def test_dead_mutation_branches_do_not_poison_rule_arguments(self):
+        for expression in (
+            'srcs if True else srcs.append("tester/b.py")',
+            'srcs.append("tester/b.py") if False else srcs',
+            'srcs or srcs.append("tester/b.py")',
+            '(False and srcs.append("tester/b.py")) or srcs',
+        ):
+            with self.subTest(expression=expression):
+                files = self.files()
+                files[BUCK] = files[BUCK].replace("srcs=srcs", "srcs=" + expression)
+                self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_dead_mutation_branches_do_not_poison_other_calls_or_assignments(self):
+        for statement in (
+            'print(False and srcs.append("tester/b.py"))\n',
+            'print(True or srcs.append("tester/b.py"))\n',
+            'unused = select({"DEFAULT": srcs if True else srcs.append("tester/b.py")})\n',
+            'unused = opaque(False and srcs.append("tester/b.py"))\n',
+            "srcs.extend([] if True else deps.clear())\n",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(set(), analyze(Snapshot(self.files(statement))))
+
+    def test_uncertain_expression_branches_keep_mutations_visible(self):
+        for statement in (
+            'print(srcs.append("tester/b.py") if configured() else None)\n',
+            'print(configured() and srcs.append("tester/b.py"))\n',
+        ):
+            with self.subTest(statement=statement):
+                self.assertTrue(
+                    any(
+                        issue.kind == "cannot validate"
+                        and "unsupported nested mutation" in issue.detail
+                        for issue in analyze(Snapshot(self.files(statement)))
+                    )
+                )
+
+    def test_opaque_unused_values_do_not_create_declaration_errors(self):
+        files = self.files(
+            'test_env = {"PYTHONPATH": "some/path"}\n'
+            'test_env.update({"OTHER": "value"})\n'
+            "unused = []\n"
+            "unused.unknown_mutation()\n"
+        )
+        files[BUCK] = files[BUCK].replace("deps=deps)", "deps=deps, env=test_env)")
+        self.assertEqual(set(), analyze(Snapshot(files)))
 
 
 if __name__ == "__main__":

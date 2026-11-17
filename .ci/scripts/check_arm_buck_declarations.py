@@ -6,7 +6,8 @@
 """Check regressions in Arm test-library Buck declarations, without executing Buck.
 
 This is a static declaration lint, not a replacement for Meta's packaged tests.
-It models literal Python library declarations and internal (is_oss=False) branches.
+It models supported Python library and test declarations. Dependencies use internal
+(is_oss=False) branches; registration counts emitted tests in either runtime branch.
 Unsupported declarations under backends/arm fail as 'cannot validate'; limitations
 elsewhere are warnings. Existing findings are compared by identity and severity,
 not line number, against an explicit base.
@@ -24,12 +25,16 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 SCOPE = "backends/arm/test"
-TEST_MACRO = SCOPE + "/targets.bzl"
 PYTHON_TEST_KINDS = {"python_test", "python_pytest", "python_unittest"}
 
 
 class Unsupported(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class UnsupportedValue:
+    expression: str
 
 
 class Snapshot:
@@ -151,15 +156,29 @@ class Rule:
 
 
 class Declarations:
-    def __init__(self, snapshot: Snapshot):
+    def __init__(self, snapshot: Snapshot, is_oss: bool = False):
         self.snapshot = snapshot
+        self.is_oss = is_oss
         self.rules: dict[str, Rule] = {}
         self.loaded: set[str] = set()
-        self.called_helpers: set[tuple[str, str, str]] = set()
         self.package_errors: dict[str, list[tuple[str, str]]] = {}
+        self.registration_errors: set[Issue] = set()
 
     def package_error(self, package: str, filename: str, error: str) -> None:
         self.package_errors.setdefault(package, []).append((filename, error))
+
+    def registration_error(self, filename: str, error: str) -> None:
+        self.registration_errors.add(
+            Issue(
+                "cannot validate",
+                "Arm test registration",
+                filename,
+                error,
+                error,
+                "registration",
+                validation_severity(filename),
+            )
+        )
 
     def load_scope(self) -> None:
         self.load_package(SCOPE)
@@ -196,7 +215,10 @@ class Declarations:
         if isinstance(node, (ast.List, ast.Tuple)):
             return [self.value(x, env, package) for x in node.elts]
         if isinstance(node, ast.Name) and node.id in env:
-            return env[node.id]
+            value = env[node.id]
+            if isinstance(value, UnsupportedValue):
+                raise Unsupported(value.expression)
+            return value
         if dotted(node) == "runtime.is_oss":
             return env.get("__is_oss__", False)
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
@@ -286,6 +308,8 @@ class Declarations:
                 raise Unsupported("non-string target name")
         except (KeyError, Unsupported) as error:
             self.package_error(package, filename, f"target name: {error}")
+            if kind in PYTHON_TEST_KINDS:
+                self.registration_error(filename, f"target name: {error}")
             return
         rule = Rule(label_for(package, name), kind, filename)
         for attribute in ("srcs", "deps", "exported_deps", "fbcode_deps"):
@@ -308,6 +332,8 @@ class Declarations:
                     )
             except Unsupported as error:
                 rule.errors.append(f"{attribute}: {error}")
+                if kind in PYTHON_TEST_KINDS and attribute == "srcs":
+                    self.registration_error(filename, f"{rule.label} srcs: {error}")
         if rule.label in self.rules:
             rule.errors.append("multiple declarations for the same target")
         self.rules[rule.label] = rule
@@ -343,7 +369,7 @@ class Declarations:
         except (KeyError, SyntaxError) as error:
             self.package_error(package, filename, f"cannot read {filename}: {error}")
             return
-        env: dict[str, object] = {}
+        env: dict[str, object] = {"__is_oss__": self.is_oss}
         functions = {
             node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
         }
@@ -408,10 +434,67 @@ class Declarations:
                     package, filename, "recursive declaration helper: " + name
                 )
             else:
-                self.called_helpers.add((package, filename, name))
                 visiting.add(name)
                 visit(function.body, dict(env))
                 visiting.remove(name)
+
+        def mutation_calls(node: ast.AST, local_env: dict[str, object]):
+            if isinstance(node, ast.IfExp):
+                yield from mutation_calls(node.test, local_env)
+                try:
+                    branch = (
+                        node.body
+                        if self.value(node.test, local_env, package)
+                        else node.orelse
+                    )
+                except (Unsupported, TypeError):
+                    yield from mutation_calls(node.body, local_env)
+                    yield from mutation_calls(node.orelse, local_env)
+                else:
+                    yield from mutation_calls(branch, local_env)
+            elif isinstance(node, ast.BoolOp):
+                for operand in node.values:
+                    yield from mutation_calls(operand, local_env)
+                    try:
+                        value = self.value(operand, local_env, package)
+                    except (Unsupported, TypeError):
+                        continue
+                    if bool(value) == isinstance(node.op, ast.Or):
+                        break
+            else:
+                if isinstance(node, ast.Call):
+                    yield node
+                for child in ast.iter_child_nodes(node):
+                    yield from mutation_calls(child, local_env)
+
+        def mutation_target(call: ast.Call, local_env: dict[str, object]):
+            if not isinstance(call.func, ast.Attribute):
+                return None
+            target = call.func.value
+            while isinstance(target, (ast.Attribute, ast.Subscript)):
+                target = target.value
+            if isinstance(target, ast.Name) and isinstance(
+                local_env.get(target.id), (list, UnsupportedValue)
+            ):
+                return target
+            return None
+
+        def invalidate(target: ast.AST, local_env: dict[str, object], reason: str):
+            while isinstance(target, (ast.Attribute, ast.Subscript)):
+                target = target.value
+            if not isinstance(target, ast.Name):
+                return
+            old = local_env.get(target.id)
+            if isinstance(old, UnsupportedValue) and old.expression not in reason:
+                reason += "; previously " + old.expression
+            aliases = [target.id]
+            if isinstance(old, (list, UnsupportedValue)):
+                aliases.extend(
+                    name for name, value in local_env.items() if value is old
+                )
+            unsupported = UnsupportedValue(reason)
+            for name in aliases:
+                local_env[name] = unsupported
 
         def visit(statements: list[ast.stmt], local_env: dict[str, object]) -> None:
             for node in statements:
@@ -421,26 +504,42 @@ class Declarations:
                     and isinstance(node.targets[0], ast.Name)
                 ):
                     try:
-                        local_env[node.targets[0].id] = self.value(
-                            node.value, local_env, package
+                        alias = (
+                            local_env.get(node.value.id)
+                            if isinstance(node.value, ast.Name)
+                            else None
                         )
-                    except Unsupported:
-                        local_env.pop(node.targets[0].id, None)
+                        local_env[node.targets[0].id] = (
+                            alias
+                            if isinstance(alias, UnsupportedValue)
+                            else self.value(node.value, local_env, package)
+                        )
+                    except (Unsupported, TypeError) as error:
+                        expression = ast.unparse(node.value)
+                        if str(error) != expression:
+                            expression += f" ({error})"
+                        for call in mutation_calls(node.value, local_env):
+                            target = mutation_target(call, local_env)
+                            if target is not None:
+                                invalidate(target, local_env, expression)
+                        local_env[node.targets[0].id] = UnsupportedValue(expression)
                 elif isinstance(node, ast.AugAssign):
                     target = node.target
                     try:
                         if not isinstance(target, ast.Name):
                             raise Unsupported("non-name assignment target")
-                        local_env[target.id] = self.value(
+                        value = self.value(
                             ast.BinOp(left=target, op=node.op, right=node.value),
                             local_env,
                             package,
                         )
+                        old = local_env[target.id]
+                        if isinstance(old, list):
+                            old[:] = value
+                        else:
+                            local_env[target.id] = value
                     except (Unsupported, TypeError) as error:
-                        while isinstance(target, (ast.Attribute, ast.Subscript)):
-                            target = target.value
-                        if isinstance(target, ast.Name):
-                            local_env.pop(target.id, None)
+                        invalidate(target, local_env, f"{ast.unparse(node)} ({error})")
                         self.package_error(
                             package,
                             filename,
@@ -455,6 +554,37 @@ class Declarations:
                         )
                         visit(branch, local_env)
                     except Unsupported as error:
+                        reason = f"{ast.unparse(node)}; cannot evaluate {error}"
+                        referenced = {
+                            child.id
+                            for child in ast.walk(node)
+                            if isinstance(child, ast.Name)
+                            and isinstance(child.ctx, ast.Load)
+                        }
+                        referenced.update(
+                            child.target.id
+                            for child in ast.walk(node)
+                            if isinstance(child, ast.AugAssign)
+                            and isinstance(child.target, ast.Name)
+                        )
+                        provenance = [
+                            f"{name} = {local_env[name].expression}"
+                            for name in sorted(referenced)
+                            if isinstance(local_env.get(name), UnsupportedValue)
+                        ]
+                        if provenance:
+                            reason += "; unsupported values: " + "; ".join(provenance)
+                        mutations = [
+                            target
+                            for child in mutation_calls(node, local_env)
+                            if (target := mutation_target(child, local_env)) is not None
+                        ]
+                        list_mutations = any(
+                            isinstance(local_env[target.id], list)
+                            for target in mutations
+                        )
+                        for target in mutations:
+                            invalidate(target, local_env, reason)
                         assignments = [
                             child
                             for child in ast.walk(node)
@@ -469,30 +599,79 @@ class Declarations:
                             while targets:
                                 target = targets.pop()
                                 if isinstance(target, ast.Name):
-                                    local_env.pop(target.id, None)
+                                    if isinstance(assignment, ast.AugAssign):
+                                        invalidate(target, local_env, reason)
+                                    else:
+                                        local_env[target.id] = UnsupportedValue(reason)
                                 elif isinstance(target, (ast.Tuple, ast.List)):
                                     targets.extend(target.elts)
                                 elif isinstance(target, (ast.Attribute, ast.Subscript)):
-                                    targets.append(target.value)
-                        if assignments or any(
-                            isinstance(x, ast.Call)
-                            and dotted(x.func) != "non_fbcode_target"
-                            and (
-                                call_name(x) in functions
-                                or call_name(x) in imports
-                                or call_name(x).split(".")[-1]
-                                in {"python_library", *PYTHON_TEST_KINDS}
+                                    invalidate(target, local_env, reason)
+                        if (
+                            assignments
+                            or list_mutations
+                            or any(
+                                isinstance(x, ast.Call)
+                                and dotted(x.func) != "non_fbcode_target"
+                                and (
+                                    call_name(x) in functions
+                                    or call_name(x) in imports
+                                    or call_name(x).split(".")[-1]
+                                    in {"python_library", *PYTHON_TEST_KINDS}
+                                )
+                                for x in ast.walk(node)
                             )
-                            for x in ast.walk(node)
                         ):
                             self.package_error(
                                 package,
                                 filename,
-                                f"conditional declaration: {ast.unparse(node)}; cannot evaluate {error}",
+                                "conditional declaration: " + reason,
                             )
+                            if any(
+                                isinstance(x, ast.Call)
+                                and call_name(x).split(".")[-1] in PYTHON_TEST_KINDS
+                                for x in ast.walk(node)
+                            ):
+                                self.registration_error(
+                                    filename,
+                                    "conditional declaration: " + reason,
+                                )
                 elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
                     call = node.value
                     if dotted(call.func) == "non_fbcode_target":
+                        continue
+                    for nested in mutation_calls(call, local_env):
+                        if nested is not call:
+                            target = mutation_target(nested, local_env)
+                            if target is not None:
+                                invalidate(
+                                    target,
+                                    local_env,
+                                    "unsupported nested mutation: " + ast.unparse(call),
+                                )
+                    target = mutation_target(call, local_env)
+                    if target is not None:
+                        try:
+                            value = self.value(call.func.value, local_env, package)
+                            if (
+                                not isinstance(value, list)
+                                or call.func.attr not in {"append", "extend"}
+                                or len(call.args) != 1
+                                or call.keywords
+                            ):
+                                raise Unsupported(ast.unparse(call))
+                            argument = self.value(call.args[0], local_env, package)
+                            if call.func.attr == "append":
+                                value.append(argument)
+                            elif isinstance(argument, list):
+                                value.extend(argument)
+                            else:
+                                raise Unsupported("extend requires a static list")
+                        except (Unsupported, TypeError) as error:
+                            expression = ast.unparse(call)
+                            if str(error) != expression:
+                                expression += f" ({error})"
+                            invalidate(target, local_env, expression)
                         continue
                     name = call_name(call)
                     if name in functions or name in imports:
@@ -536,12 +715,21 @@ class Declarations:
                             + " in "
                             + ast.unparse(node.iter),
                         )
+                        if kinds & PYTHON_TEST_KINDS:
+                            self.registration_error(
+                                filename,
+                                "unsupported test declaration loop: "
+                                + ast.unparse(node),
+                            )
                     else:
                         try:
                             test_files = self.strings(node.iter, local_env, package)
                         except Unsupported as error:
                             self.package_error(
                                 package, filename, f"test declaration loop: {error}"
+                            )
+                            self.registration_error(
+                                filename, f"test declaration loop: {error}"
                             )
                             continue
                         for test_file in test_files:
@@ -700,77 +888,18 @@ def is_test_file(source: str, filename: str) -> bool:
     return False
 
 
-def registered_tests(  # noqa: C901
-    declarations: Declarations,
-) -> tuple[set[str], list[str]]:
-    if (SCOPE, TEST_MACRO, "define_arm_tests") not in declarations.called_helpers:
-        return set(), []
-    try:
-        tree = ast.parse(declarations.snapshot.read(TEST_MACRO), filename=TEST_MACRO)
-    except (KeyError, SyntaxError) as error:
-        return set(), [str(error)]
-    errors = []
-    registrations: set[str] = set()
-
-    def visit(statements: list[ast.stmt], env: dict[str, object]) -> None:
-        for node in statements:
-            if isinstance(node, ast.FunctionDef) and node.name == "define_arm_tests":
-                visit(node.body, env)
-            elif (
-                isinstance(node, ast.Assign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-            ):
-                try:
-                    env[node.targets[0].id] = declarations.value(node.value, env, SCOPE)
-                except Unsupported as error:
-                    env.pop(node.targets[0].id, None)
-                    if node.targets[0].id == "test_files":
-                        errors.append(str(error))
-            elif (
-                isinstance(node, ast.AugAssign)
-                and isinstance(node.target, ast.Name)
-                and node.target.id == "test_files"
-            ):
-                try:
-                    if not isinstance(node.op, ast.Add):
-                        raise Unsupported(ast.unparse(node))
-                    env["test_files"] = env.get(
-                        "test_files", []
-                    ) + declarations.strings(node.value, env, SCOPE)
-                except Unsupported as error:
-                    errors.append(str(error))
-            elif isinstance(node, ast.If):
-                try:
-                    visit(
-                        (
-                            node.body
-                            if declarations.value(node.test, env, SCOPE)
-                            else node.orelse
-                        ),
-                        env,
-                    )
-                except Unsupported as error:
-                    if any(
-                        isinstance(x, ast.Name) and x.id == "test_files"
-                        for x in ast.walk(node)
-                    ):
-                        errors.append(str(error))
-            elif isinstance(node, ast.For):
-                if any(
-                    isinstance(x, ast.Name)
-                    and x.id == "test_files"
-                    and isinstance(x.ctx, ast.Store)
-                    for x in ast.walk(node)
-                ):
-                    errors.append("loop-modified test_files")
-
-    # A test may intentionally be registered only for one build environment.
-    for is_oss in (False, True):
-        env = {"__is_oss__": is_oss}
-        visit(tree.body, env)
-        registrations.update(SCOPE + "/" + p for p in env.get("test_files", []))
-    return registrations, errors
+def registered_tests(declarations: Declarations) -> tuple[set[str], set[Issue]]:
+    # Either environment may emit a test; dependency checks use internal rules.
+    oss = Declarations(declarations.snapshot, is_oss=True)
+    oss.load_scope()
+    registrations = {
+        source
+        for environment in (declarations, oss)
+        for rule in environment.rules.values()
+        if rule.kind in PYTHON_TEST_KINDS and is_scoped_label(rule.label)
+        for source in rule.sources
+    }
+    return registrations, oss.registration_errors - declarations.registration_errors
 
 
 # pylint: disable-next=too-many-locals
@@ -852,18 +981,8 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                         severity,
                     )
                 )
-    registrations, errors = registered_tests(declarations)
-    for error in errors:
-        issues.add(
-            Issue(
-                "cannot validate",
-                "Arm test registration",
-                TEST_MACRO,
-                error,
-                error,
-                "registration",
-            )
-        )
+    registrations, registration_errors = registered_tests(declarations)
+    issues.update(registration_errors)
     for filename in sorted(snapshot.paths):
         if filename.startswith(SCOPE + "/") and filename.endswith(".py"):
             try:
@@ -876,25 +995,17 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                 )
                 continue
             if actual_test and filename not in registrations:
-                # A nested package may declare its own ordinary Python test.
-                declarations.owners(filename)  # Load its nearest build package.
-                explicitly_registered = any(
-                    rule.kind in {"python_test", "python_pytest", "python_unittest"}
-                    and filename in rule.sources
-                    for rule in declarations.rules.values()
-                )
-                if not explicitly_registered:
-                    issues.add(
-                        Issue(
-                            "unregistered test",
-                            "Arm test registration",
-                            filename,
-                            "not in define_arm_tests test_files or a supported explicit Python test target",
-                            "",
-                            "registration",
-                            "warning",
-                        )
+                issues.add(
+                    Issue(
+                        "unregistered test",
+                        "Arm test registration",
+                        filename,
+                        "not emitted by a supported Python test target in either internal or OSS mode",
+                        "",
+                        "registration",
+                        "warning",
                     )
+                )
     # Dependency traversal and owner discovery load packages lazily.
     issues.update(
         Issue(
@@ -929,12 +1040,6 @@ def compare(base: Snapshot, head: Snapshot) -> tuple[set[Issue], int]:
     previous = Declarations(base)
     previous.load_scope()
     previous_registrations, _ = registered_tests(previous)
-    previous_registrations.update(
-        source
-        for rule in previous.rules.values()
-        if rule.kind in PYTHON_TEST_KINDS
-        for source in rule.sources
-    )
     for issue in tuple(current):
         if (
             issue.kind != "unregistered test"

@@ -518,7 +518,12 @@ suite because they need a change-specific baseline.
 
 This static check follows supported in-repository Python library and test
 declarations, including per-test conditional dependencies in `define_arm_tests`
-and transitive dependencies. It compares findings against the base revision.
+and transitive dependencies. Dependency checks use the internal runtime branch.
+Registration counts Python test targets actually emitted in either runtime branch;
+an unused `test_files` list does not register tests. Supported list `append` and
+`extend` operations are evaluated, and unsupported assignments or mutations retain
+their original expression in diagnostics. Findings are compared against the base
+revision.
 Existing findings do not fail the job. New confirmed missing dependencies and
 unsupported declarations under `backends/arm/` fail the check, as does removing
 registration from a previously registered test file that is still present.
