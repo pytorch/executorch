@@ -261,6 +261,12 @@ class TransformerBlock(nn.Module):
             getattr(args, "weightless_post_ffn_norm", False) and self.mlp_type != "skip"
         ):
             self.post_ffn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
+        elif args.use_sandwich_norm and self.mlp_type != "skip":
+            self.post_ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+        if args.use_sandwich_norm and not isinstance(self.attention, AttentionSkip):
+            assert not args.use_residual_gate, "sandwich norm with residual gate"
+            self.post_attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
@@ -298,6 +304,8 @@ class TransformerBlock(nn.Module):
         attention_output, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
+        if hasattr(self, "post_attention_norm"):
+            attention_output = self.post_attention_norm(attention_output)
         h = self._apply_attention_residual(x, attention_output)
 
         if self.mlp_type == "skip":
@@ -556,6 +564,8 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
                     dim=model_args.dim,
                     hidden_dim=model_args.hidden_dim,
                     norm_eps=model_args.norm_eps,
+                    L_cache=model_args.conv_L_cache,
+                    post_norms=model_args.use_sandwich_norm,
                 )
             )
         elif (

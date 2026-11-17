@@ -56,6 +56,7 @@ class ModelType(str, Enum):
     lfm2_1_2b = "lfm2_1_2b"
     lfm2_5_350m = "lfm2_5_350m"
     lfm2_5_1_2b = "lfm2_5_1_2b"
+    lfm3_1_7b = "lfm3_1_7b"
     spark_x2_5_1_7b = "spark_x2_5_1_7b"
     spark_x2_5_4b = "spark_x2_5_4b"
     spark_x2_6_1_7b = "spark_x2_6_1_7b"
