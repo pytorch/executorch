@@ -753,6 +753,28 @@ def test_state_reset_and_instances(tmp_path):
         assert_matches(second[step], expected)
 
 
+def test_state_reset_by_group(tmp_path):
+    # Instance k is in reset group k, and only group 1 is reset.
+    exported, program, _ = lower_stateful(ShiftRegister())
+    steps = stateful_steps(6)
+    kept, reset = run_host(
+        tmp_path,
+        program,
+        steps,
+        "--instances",
+        2,
+        "--reset-groups",
+        "--reset-before",
+        "3:1",
+    )[0]
+    continuous, restarted = ProgramEmulator(exported), ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        if step == 3:
+            restarted.reset_states()
+        assert_matches(kept[step], as_list(continuous(*inputs)))
+        assert_matches(reset[step], as_list(restarted(*inputs)))
+
+
 def test_state_in_two_partitions_stays_in_the_program(tmp_path, monkeypatch):
     split_streams(monkeypatch)
     exported, program, report = lower_stateful(

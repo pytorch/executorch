@@ -290,17 +290,29 @@ warning.
 
 On the device, each loaded method has its own state. It starts from the
 buffer's initial value when the method is loaded and persists across
-`execute()` calls. `reset_delegate_states()` (from `espnn/espnn_backend.h`)
-or the `reset_states` backend option restores the initial state of every
-EspNNBackend delegate before its next `execute()`; to reset one method alone,
-load it again. After an `execute()` that fails, the state is undefined until
-it is reset. The reset may be requested from any task.
+`execute()` calls. `reset_delegate_states()` (from `espnn/espnn_backend.h`),
+or the `reset_states` backend option set to `true`, restores the initial
+state of every EspNNBackend delegate before its next `execute()`. To reset
+some methods alone, load them with a `reset_group` from 0 to 7 and pass that
+group to `reset_states`, or load the method again. Buffers that stay in the
+program are not reset this way. After an `execute()` that fails, the state is
+undefined until it is reset. The reset may be requested from any task.
 
 ```cpp
 executorch::backends::espressif::reset_delegate_states();
 // or, through the generic backend-option API:
 executorch::runtime::BackendOptions<1> options;
 options.set_option("reset_states", true);
+executorch::runtime::set_option("EspNNBackend", options.view());
+
+// A method in reset group 1, reset alone:
+executorch::runtime::BackendOptions<1> group;
+group.set_option("reset_group", 1);
+executorch::runtime::LoadBackendOptionsMap load_options;
+load_options.set_options("EspNNBackend", group.view());
+auto method = program->load_method(
+    "forward", &memory_manager, nullptr, nullptr, &load_options);
+options.set_option("reset_states", 1);
 executorch::runtime::set_option("EspNNBackend", options.view());
 ```
 
