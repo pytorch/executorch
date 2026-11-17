@@ -315,7 +315,10 @@ explicit layout operations rather than dim-order operators, matching the
 ESP-IDF runtime and the operator implementation tests.
 When checking supported int8 operators, lowering rejects malformed per-tensor
 qparams, such as non-positive scales or out-of-range zero points. Valid
-unsupported configurations remain portable.
+unsupported configurations use shared portable fallback, including linear calls
+with runtime weights or bias and shapes outside ESP-NN's bounds. Linear calls
+without constant weights stay unquantized because FQ's per-channel fusion
+requires constant weight tensors.
 ESP-NN pooling requires matching input and output qparams. A shared optimization
 that absorbs a following requantization can change the output qparams and leave
 that pool on the portable path.
