@@ -62,6 +62,9 @@ UPSAMPLE_WEIGHT_BITS = 10
 UPSAMPLE_WEIGHT_ONE = 1 << UPSAMPLE_WEIGHT_BITS
 TRANSPOSE_CONV_PARAMS = "<13i"
 UPSAMPLE_MAX_EXTENT = 65535
+# ESP-NN's convolution, pooling and fully connected kernels take dimensions as
+# uint16_t.
+KERNEL_MAX_EXTENT = 65535
 MAX_GRAPH_IO = 16
 MAX_GRAPH_STATES = 16
 MAX_GRAPH_TENSORS = 1024
@@ -2056,6 +2059,24 @@ def check_runtime_limits(graph: XTS3Graph) -> None:  # noqa: C901
                     f"Upsample output {out_h}x{out_w} exceeds "
                     f"{UPSAMPLE_MAX_EXTENT} in one dimension"
                 )
+        if operation.opcode in (
+            XTS3OpCode.CONV2D,
+            XTS3OpCode.DEPTHWISE_CONV2D,
+            XTS3OpCode.MAX_POOL2D,
+            XTS3OpCode.AVG_POOL2D,
+        ):
+            source = graph.tensors[operation.inputs[0]].shape
+            target = graph.tensors[operation.outputs[0]].shape
+            extents = [*source[1:], *target[1:]]
+        elif operation.opcode == XTS3OpCode.LINEAR:
+            extents = list(graph.tensors[operation.inputs[1]].shape)
+        else:
+            extents = []
+        if extents and max(extents) > KERNEL_MAX_EXTENT:
+            raise ValueError(
+                f"{XTS3OpCode(operation.opcode).name} has a dimension above "
+                f"{KERNEL_MAX_EXTENT}, which ESP-NN takes as uint16_t"
+            )
     for tensor in graph.tensors:
         if (
             tensor.flags & TENSOR_FLAG_CONSTANT
