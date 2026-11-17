@@ -381,28 +381,28 @@ class GgmlOpsTest(unittest.TestCase):
         return ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
 
     @staticmethod
-    def _q5_k_weights(rows):
-        # Valid Q5_K blocks: an FP16 super-block scale of 1.0 (0x3c00) and min
-        # of 0, 12 bytes packing eight 6-bit sub-block scales of 1 and mins of
-        # 0, then 32 high-bit and 128 low-bit bytes.
-        raw = torch.zeros(rows, 176, dtype=torch.uint8)
-        raw[:, 1] = 0x3C
-        raw[:, 4:8] = 1
-        raw[:, 12:16] = 1
-        raw[:, 16:48] = torch.arange(32, dtype=torch.uint8)
-        raw[:, 48:] = torch.arange(128, dtype=torch.uint8)
-        return ExportableGGUFTensor.from_raw(raw, "q5_k", torch.float32)
+    def _q5_k_weights(rows, cols):
+        # Random Q5_K blocks under an FP16 super-block scale of 2^-10 and min
+        # of 2^-6, so sub-block scales, mins and fifth bits vary by row and
+        # block.
+        raw = torch.randint(0, 256, (rows, cols // 256, 176), dtype=torch.uint8)
+        raw[..., 0:2] = torch.tensor([2**-10], dtype=torch.float16).view(torch.uint8)
+        raw[..., 2:4] = torch.tensor([2**-6], dtype=torch.float16).view(torch.uint8)
+        return ExportableGGUFTensor.from_raw(
+            raw.reshape(rows, -1), "q5_k", torch.float32
+        )
 
     def test_gguf_q5_k_linear(self):
-        self._check_gguf_linear(self._q5_k_weights(8))
+        self._check_gguf_linear(self._q5_k_weights(8, 512))
 
     def test_gguf_q6_k_linear(self):
         self._check_gguf_linear(self._q6_k_weights(8))
 
     def _check_gguf_linear(self, weight):
-        model = torch.nn.Linear(256, 8, bias=False)
+        rows, cols = weight.shape
+        model = torch.nn.Linear(cols, rows, bias=False)
         model.weight = torch.nn.Parameter(weight, requires_grad=False)
-        representable = torch.full((2, 256), 0.125)
+        representable = torch.full((2, cols), 0.125)
         representable[1, ::2] = -0.125
         # GGML requantizes F32 activations before the dot product: to Q8_K on
         # CPU, which these values survive exactly, and to Q8_1 with an FP16
@@ -418,7 +418,7 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(
             model,
-            (torch.randn(2, 256) / 8,),
+            (torch.randn(2, cols) / 8,),
             atol=0.35,
             rtol=0.02,
             allow_activation_quant_for_weight_only=True,
@@ -686,6 +686,37 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_elu(self):
+        self._check(Lambda(F.elu), (torch.randn(2, 3, 4) * 3.0,))
+        # Eager's expm1 is within rtol of these; exp(x) - 1 is 19% off at -1e-7.
+        special = torch.tensor(
+            [[float("nan"), float("inf"), -float("inf"), 0.0, -1e-7, -1e-30]]
+        )
+        self._check(Lambda(F.elu), (special,), atol=0)
+
+    def test_elu_in_place(self):
+        # Exports as elu, not elu_, unlike ReLU6(inplace=True) in ConvBN.
+        model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.ELU(inplace=True))
+        self._check(model, (torch.randn(2, 3),), **_MATMUL_TOL)
+
+    def test_elu_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(F.elu), (torch.randn(2, 3, 4, dtype=dtype),), rtol=rtol
+                )
+
+    def test_elu_rejects_other_parameters(self):
+        for args in ((0.5, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 0.5)):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(AssertionError, "input_scale 1"):
+                    self._check(
+                        Lambda(
+                            lambda x, args=args: torch.ops.aten.elu.default(x, *args)
+                        ),
+                        (torch.randn(2, 3),),
+                    )
 
     def test_sqrt(self):
         x = torch.tensor(
@@ -1178,10 +1209,7 @@ class GgmlOpsTest(unittest.TestCase):
     def test_embedding_4bit(self):
         model = torch.nn.Embedding(10, 64)
         _quantize_8da4w(model, group_size=64)
-        # Only the Q4_0 fp16 scales round, so this fails on a nibble swap.
-        self._check(
-            model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),), atol=2e-3, rtol=1e-3
-        )
+        self._check(model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
 
     def test_embedding_4bit_rejects_asymmetric(self):
         model = torch.nn.Embedding(10, 64)

@@ -12,7 +12,7 @@
  * The including shader defines:
  * - IN_T and OUT_T: operand and result types
  * - PARAM_T: type of the op parameters A and B (clamp bounds, hardshrink
- *   thresholds, leaky_relu slope)
+ *   thresholds, leaky_relu slope, elu negative and positive scales)
  * - UNARY_OP_IS_FLOAT if the operands are floating point; integer shaders
  *   compile in clamp only
  * - UNARY_OP_IS_BITWISE to compile in bitwise_not only
@@ -43,6 +43,7 @@
 #define UNARY_OP_TAN 18
 #define UNARY_OP_BITWISE_NOT 19
 #define UNARY_OP_RELU 20
+#define UNARY_OP_ELU 21
 
 #ifdef UNARY_OP_IS_FLOAT
 float gelu_erf(float x) {
@@ -104,6 +105,15 @@ vec4 hardsigmoid(vec4 tex) {
 vec4 leaky_relu(vec4 tex, float negative_slope) {
   return mix(tex * negative_slope, tex, greaterThan(tex, vec4(0)));
 }
+
+vec4 elu(vec4 tex, float negative_scale, float positive_scale) {
+  vec4 exp_minus_one = mix(
+      exp(tex) - 1, tex + 0.5 * tex * tex, lessThan(abs(tex), vec4(1e-3)));
+  return mix(
+      positive_scale * tex,
+      negative_scale * exp_minus_one,
+      lessThan(tex, vec4(0)));
+}
 #endif
 
 // Whether the op maps zero to zero for any parameters, so that zero padding
@@ -122,6 +132,7 @@ bool unary_op_preserves_zero(const int op_type) {
     case UNARY_OP_ROUND:
     case UNARY_OP_TAN:
     case UNARY_OP_RELU:
+    case UNARY_OP_ELU:
       return true;
     default:
       return false;
@@ -183,6 +194,8 @@ OUT_T apply_unary_op(
       return OUT_T(tan(X));
     case UNARY_OP_RELU:
       return OUT_T(max(X, IN_T(0)));
+    case UNARY_OP_ELU:
+      return OUT_T(elu(X, A, B));
 #endif
     default: // UNARY_OP_CLAMP
       return OUT_T(clamp(X, A, B));

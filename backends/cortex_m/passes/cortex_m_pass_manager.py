@@ -21,6 +21,9 @@ from executorch.backends.transforms.aten_to_dialect_pass import AtenToDialectPas
 from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+)
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
     RemovePermutesAroundElementwiseOps,
@@ -175,6 +178,8 @@ class CortexMPassManager(ExportedProgramPassManager):
         ConvertConv1dToConv2dPass,
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
+        # Merge layout copies with adjacent user transposes before regions claim them.
+        FuseCascadedTransposeOrPermuteOps,
         # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,

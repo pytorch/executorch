@@ -6,6 +6,7 @@
 
 import base64
 import copy
+import json
 import os
 import subprocess
 import tempfile
@@ -62,7 +63,8 @@ def _forced(wrapper: LastTokenLM, prompt: list[int], forced: list[int]) -> Sampl
 
 class VerifySamplesTest(unittest.TestCase):
     """Writes sample sets with the Python writer and replays them through the
-    C++ runner, which reads them with the C++ reader."""
+    C++ runner, which reads them with the C++ reader; also runs prompts
+    through Hugging Face tokenizers."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -104,6 +106,25 @@ class VerifySamplesTest(unittest.TestCase):
             capture_output=True,
             text=True,
         )
+
+    def _first_logits(self, tokenizer: str, prompt: str, *flags: str) -> bytes:
+        path = os.path.join(tempfile.mkdtemp(dir=self._tmp.name), "logits")
+        result = subprocess.run(
+            [
+                os.environ["RUN_HF_LLM"],
+                f"--package={self.path}",
+                f"--tokenizer={tokenizer}",
+                f"--prompt={prompt}",
+                "--max_new_tokens=1",
+                f"--dump_first_logits={path}",
+                *flags,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with open(path, "rb") as f:
+            return f.read()
 
     def _modified_golden(self, edit) -> SampleSet:
         samples = copy.deepcopy(self.golden)
@@ -187,3 +208,42 @@ class VerifySamplesTest(unittest.TestCase):
                 result = self._verify(f"invalid{i}", samples)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn(message, result.stderr)
+
+    def test_prompts_through_hugging_face_tokenizers(self) -> None:
+        # Every ID is a token: three special ones, then one character each.
+        # The pre-tokenizer splits with a lookahead regex, which RE2 rejects.
+        tokenizer = {
+            "added_tokens": [
+                {"id": i, "content": token, "special": True}
+                for i, token in enumerate(["<unk>", "<s>", "</s>"])
+            ],
+            "pre_tokenizer": {
+                "type": "Split",
+                "pattern": {"Regex": r"\s+(?!\S)|\s+"},
+                "behavior": "Isolated",
+                "invert": False,
+            },
+            "model": {
+                "type": "BPE",
+                "vocab": {chr(i): i for i in range(3, _VOCAB)},
+                "merges": [],
+            },
+        }
+        # By default, the runner prepends the BOS tokenizer_config.json names,
+        # unless it turns BOS off.
+        cases = [
+            ({"bos_token": "<s>", "eos_token": "</s>"}, "<s>Hi there"),
+            ({"bos_token": None, "eos_token": "</s>"}, "Hi there"),
+            ({"bos_token": "<s>", "add_bos_token": False}, "Hi there"),
+        ]
+        for config, prompt in cases:
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, "tokenizer.json")
+                with open(path, "w") as f:
+                    json.dump(tokenizer, f)
+                with open(os.path.join(tmp, "tokenizer_config.json"), "w") as f:
+                    json.dump(config, f)
+                self.assertEqual(
+                    self._first_logits(path, "Hi there"),
+                    self._first_logits(path, prompt, "--num_bos=0"),
+                )
