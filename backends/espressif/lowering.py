@@ -64,10 +64,11 @@ def to_espnn_edge(
 
 
 def get_operator_library_report(edge: EdgeProgramManager) -> dict:
-    """Report ESP-NN compute, portable compute and layout copies by method."""
+    """Report ESP-NN compute, portable compute, layout copies and Q/DQ by method."""
     esp_nn_ops = 0
     cpu_ops = []
     layout_ops = []
+    quantization_ops = []
     for method in sorted(edge.methods):
         for node in edge.exported_program(method).graph.nodes:
             if node.op != "call_function" or node.target in (operator.getitem, alloc):
@@ -97,10 +98,15 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
                     "quantized_decomposed::quantize_per_channel",
                     "quantized_decomposed::dequantize_per_channel",
                 }:
-                    continue
+                    ops = quantization_ops
                 target = target.name()
             ops.append({"method": method, "name": node.name, "target": str(target)})
-    return {"esp_nn_ops": esp_nn_ops, "cpu_ops": cpu_ops, "layout_ops": layout_ops}
+    return {
+        "esp_nn_ops": esp_nn_ops,
+        "cpu_ops": cpu_ops,
+        "layout_ops": layout_ops,
+        "quantization_ops": quantization_ops,
+    }
 
 
 def _require_no_portable_compute(edge: EdgeProgramManager) -> list:
