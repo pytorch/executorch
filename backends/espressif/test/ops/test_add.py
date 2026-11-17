@@ -73,10 +73,12 @@ class EspAlphaAdd(ModelAlpha):
 
 
 class EspAddRelu(EspAdd):
+    ops_before_transforms = {_FUSED_ADD: 1, exir_ops.edge.fused_quant.relu.default: 1}
     ops_after_transforms = {
         _ADD: 0,
         _ESP_ADD: 1,
-        exir_ops.edge.aten.relu.default: 1,
+        exir_ops.edge.esp_nn.quantized_lut_int8.default: 1,
+        exir_ops.edge.aten.relu.default: 0,
     }
 
     def forward(self, x, y):

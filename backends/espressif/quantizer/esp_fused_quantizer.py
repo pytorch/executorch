@@ -115,6 +115,21 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
         weighted_config = get_symmetric_quantization_config(is_per_channel=True)
         super().__init__(
             [
+                OpQuantizer(
+                    torch.ops.aten.hardswish.default,
+                    torch.ops.fused_quant.hardswish.default,
+                    config,
+                ),
+                OpQuantizer(
+                    torch.ops.aten.hardsigmoid.default,
+                    torch.ops.fused_quant.hardsigmoid.default,
+                    config,
+                ),
+                OpQuantizer(
+                    torch.ops.aten.silu.default,
+                    torch.ops.fused_quant.silu.default,
+                    config,
+                ),
                 _LinearQuantizer(weighted_config),
                 _ConvolutionQuantizer(
                     weighted_config=weighted_config, grouped_transposed_config=config
