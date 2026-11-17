@@ -12,12 +12,15 @@ from dataclasses import dataclass
 import executorch.backends.espressif.ops.operators  # noqa: F401
 
 import torch
+from executorch.backends.espressif.scratch import get_scratch_queries
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.backends.espressif.utils.quantization import quantize_multiplier
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import add_constant, get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.exir.passes import make_alloc_node
 from executorch.exir.passes.constant_prop_pass import get_propagated_const_tensor_dict
 from torch.export.graph_signature import InputKind
 
@@ -274,7 +277,7 @@ def _lower_avg_pool2d(program, node) -> bool:
     return True
 
 
-def _linear_multipliers(input_params, output_params, weight, scales, bias):
+def _weighted_multipliers(input_params, output_params, weight, scales, bias):
     rescales = [
         quantize_multiplier(input_params.scale * scale / output_params.scale)
         for scale in scales.flatten().tolist()
@@ -302,7 +305,10 @@ def _linear_multipliers(input_params, output_params, weight, scales, bias):
             (bias.to(torch.float32) * bias_scales).abs().to(torch.float64)
         )
     # Bound float32 accumulation rounding, including the bias addition.
-    max_float_outputs /= 1 - (weight.shape[1] + 1) * torch.finfo(torch.float32).eps
+    rounding_bound = 1 - (weight.shape[1] + 1) * torch.finfo(torch.float32).eps
+    if rounding_bound <= 0:
+        raise ValueError("the float32 reference may overflow")
+    max_float_outputs /= rounding_bound
     if (
         not math.isfinite(c_float(1.0 / output_params.scale).value)
         or not torch.all(torch.isfinite(max_float_outputs))
@@ -354,6 +360,22 @@ def _linear_kernel_args(program, node, constants):
         weight.shape[0],
     ):
         raise ValueError("input, weight and output shapes do not match linear")
+    multiplier_node, shift_node = _weighted_constants(
+        program, node, constants, weight, input_params, output_params
+    )
+    return (
+        inp,
+        weight_node,
+        bias_node,
+        multiplier_node,
+        shift_node,
+        -input_params.zp,
+        output_params.zp,
+    )
+
+
+def _weighted_constants(program, node, constants, weight, input_params, output_params):
+    bias_node = get_arg(node, "bias")
     weight_params = get_qparams_from_node(node, "weight")
     if weight_params is None or weight_params.dtype != torch.float32:
         raise ValueError(
@@ -365,7 +387,7 @@ def _linear_kernel_args(program, node, constants):
     if (
         scales is None
         or scales.dtype != torch.float32
-        or scales.shape != (weight.shape[0], 1)
+        or scales.shape != (weight.shape[0],) + (1,) * (weight.dim() - 1)
         or not torch.all(torch.isfinite(scales) & (scales > 0))
         or zero_points is None
         or zero_points.shape != scales.shape
@@ -402,8 +424,12 @@ def _linear_kernel_args(program, node, constants):
             raise ValueError(
                 "bias scales must equal input scale times weight scales, with zero zero-points"
             )
-    multipliers, shifts = _linear_multipliers(
-        input_params, output_params, weight, scales, bias
+    multipliers, shifts = _weighted_multipliers(
+        input_params,
+        output_params,
+        weight.flatten(1),
+        scales.flatten().reshape(-1, 1),
+        bias,
     )
     multiplier_node, shift_node = (
         add_constant(
@@ -411,47 +437,189 @@ def _linear_kernel_args(program, node, constants):
         )
         for name, tensor in (("multiplier", multipliers), ("shift", shifts))
     )
+    return multiplier_node, shift_node
+
+
+def _conv2d_kernel_args(program, node, constants, size_query):
+    if (
+        get_arg(node, "transposed")
+        or get_arg(node, "groups") != 1
+        or get_arg(node, "dilation") != [1, 1]
+        or get_arg(node, "output_padding") != [0, 0]
+    ):
+        return None
+    inp, weight_node, bias_node = (
+        get_arg(node, name) for name in ("inp", "weight", "bias")
+    )
+    input_value, output_value = inp.meta.get("val"), node.meta.get("val")
+    weight = constants.get(weight_node)
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dtype == torch.int8
+        and value.dim() == 4
+        and all(type(dim) is int and 0 < dim <= 65535 for dim in value.shape)
+        and value.is_contiguous()
+        for value in (input_value, output_value, weight)
+    ):
+        return None
+    batch, height, width, channels = input_value.shape
+    outputs, kernel_h, kernel_w, weight_channels = weight.shape
+    stride, padding = (get_arg(node, name) for name in ("stride", "padding"))
+    if (
+        len(stride) != 2
+        or len(padding) != 2
+        or any(type(v) is not int or not 0 < v <= 65535 for v in stride)
+        or any(type(v) is not int or not 0 <= v <= 65535 for v in padding)
+        or weight_channels != channels
+        or output_value.shape
+        != (
+            batch,
+            (height + 2 * padding[0] - kernel_h) // stride[0] + 1,
+            (width + 2 * padding[1] - kernel_w) // stride[1] + 1,
+            outputs,
+        )
+    ):
+        return None
+    # Bound aligned copies, padded input and SIMD staging before the int32 vendor query.
+    aligned_window = (kernel_h * kernel_w * channels + 15) & ~15
+    aligned_channels = (channels + 15) & ~15
+    scratch_bound = (
+        (height + 2 * padding[0] + kernel_h)
+        * (width + 2 * padding[1] + kernel_w)
+        * aligned_channels
+        + (kernel_w * aligned_channels + 15) * kernel_h * outputs
+        + 40 * aligned_window
+        + 8 * outputs
+        + 16 * 1024
+        + 256
+    )
+    if (
+        max(scratch_bound, input_value.numel(), output_value.numel(), weight.numel())
+        > torch.iinfo(torch.int32).max
+    ):
+        return None
+    input_params, output_params = (
+        _qparams(program, node, name) for name in ("inp", "out")
+    )
+    if input_params is None or output_params is None:
+        return None
+    try:
+        multiplier_node, shift_node = _weighted_constants(
+            program, node, constants, weight, input_params, output_params
+        )
+    except ValueError:
+        return None
+    scratch_bytes = size_query(
+        input_dims=(width, height, channels),
+        filter_dims=(kernel_w, kernel_h, channels),
+        output_dims=(output_value.shape[2], output_value.shape[1], outputs),
+        stride=tuple(reversed(stride)),
+        padding=tuple(reversed(padding)),
+    )
+    if not 0 <= scratch_bytes <= scratch_bound:
+        raise RuntimeError("ESP-NN returned an invalid convolution scratch size")
+    weight_node = add_constant(
+        program, f"{node.name}_weight", weight, node, InputKind.CONSTANT_TENSOR
+    )
+    with node.graph.inserting_before(node):
+        scratch = make_alloc_node(
+            program.graph_module,
+            input_value.new_empty((scratch_bytes,), dtype=torch.uint8),
+            None,
+        )
     return (
         inp,
         weight_node,
         bias_node,
+        stride,
+        padding,
         multiplier_node,
         shift_node,
         -input_params.zp,
         output_params.zp,
+        scratch,
     )
+
+
+def _lower_linear(program, node, constants):
+    try:
+        args = _linear_kernel_args(program, node, constants)
+    except ValueError:
+        return False
+    with node.graph.inserting_before(node):
+        replacement = node.graph.call_function(
+            exir_ops.edge.esp_nn.quantized_linear_int8.default, args
+        )
+    replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    node.graph.erase_node(node)
+    return True
+
+
+def _lower_conv2d(program, node, constants, target, kernel_mode):
+    queries = get_scratch_queries(target, kernel_mode)
+    if queries is None:
+        return False
+    try:
+        size_query = queries.conv2d_scratch_size
+    except AttributeError:
+        return False
+    args = _conv2d_kernel_args(program, node, constants, size_query)
+    if args is None:
+        return False
+    with node.graph.inserting_before(node):
+        replacement = node.graph.call_function(
+            exir_ops.edge.esp_nn.quantized_conv2d_int8.default, args
+        )
+    replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    node.graph.erase_node(node)
+    return True
 
 
 class LowerToEsp(ExportedProgramPassBase):
     """Lower supported fused-quant operators to ESP-NN."""
 
+    def __init__(
+        self,
+        *,
+        target: EspTarget = EspTarget.ESP32S3,
+        kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
+    ):
+        super().__init__()
+        self.target = EspTarget(target)
+        self.kernel_mode = EspKernelMode(kernel_mode)
+
     def call(self, exported_program):
         module = exported_program.graph_module
         graph = module.graph
-        linear_nodes = graph.find_nodes(
-            op="call_function", target=exir_ops.edge.fused_quant.linear.default
-        )
+        weighted_nodes = [
+            *graph.find_nodes(
+                op="call_function", target=exir_ops.edge.fused_quant.linear.default
+            ),
+            *graph.find_nodes(
+                op="call_function",
+                target=exir_ops.edge.fused_quant.convolution_channels_last.default,
+            ),
+        ]
         constants = (
             get_propagated_const_tensor_dict(exported_program, None)
-            if linear_nodes
+            if weighted_nodes
             else {}
         )
 
         modified = False
         for node in list(graph.nodes):
             if node.target == exir_ops.edge.fused_quant.linear.default:
-                try:
-                    args = _linear_kernel_args(exported_program, node, constants)
-                except ValueError:
-                    continue
-                with graph.inserting_before(node):
-                    replacement = graph.call_function(
-                        exir_ops.edge.esp_nn.quantized_linear_int8.default, args
-                    )
-                replacement.meta = node.meta.copy()
-                node.replace_all_uses_with(replacement)
-                graph.erase_node(node)
-                modified = True
+                modified |= _lower_linear(exported_program, node, constants)
+                continue
+            if (
+                node.target
+                == exir_ops.edge.fused_quant.convolution_channels_last.default
+            ):
+                modified |= _lower_conv2d(
+                    exported_program, node, constants, self.target, self.kernel_mode
+                )
                 continue
             if (
                 node.target

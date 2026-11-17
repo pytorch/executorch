@@ -252,10 +252,10 @@ def test_bias_annotation_preserves_other_quantizers(linear):
     )
 
 
-def test_convolution_bias_remains_float():
-    interpreter = _quantize(torch.nn.Conv2d(2, 3, 1), (torch.ones(1, 2, 2, 2),))
+def test_convolution_int32_bias():
+    model = torch.nn.Conv2d(2, 3, 1)
+    interpreter = _quantize(model, (torch.ones(1, 2, 2, 2),))
     (node,) = interpreter.module.graph.find_nodes(
         op="call_function", target=torch.ops.fused_quant.convolution.default
     )
-    assert interpreter.env[get_arg(node, "bias")].dtype == torch.float32
-    assert get_qparams_from_node(node, "bias") is None
+    _check_bias(interpreter, node, model.bias)
