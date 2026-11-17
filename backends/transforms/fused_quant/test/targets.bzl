@@ -103,6 +103,8 @@ def define_common_targets():
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
             "//executorch/frontends/fused_quant:colorer",
+            "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
+            "//executorch/backends/transforms/fused_quant:to_channels_first",
             "//executorch/backends/transforms/fused_quant:to_channels_last",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
