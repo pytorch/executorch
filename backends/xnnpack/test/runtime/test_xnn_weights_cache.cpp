@@ -592,11 +592,12 @@ xnn_weights_cache_look_up_key keyFor(const uint8_t* kernel) {
 size_t packUnder(
     xnn_weights_cache_provider* provider,
     const uint8_t* kernel,
-    uint8_t fill) {
+    uint8_t fill,
+    size_t size = 64) {
   xnn_weights_cache_look_up_key key = keyFor(kernel);
-  void* space = provider->reserve_space(provider->context, 64);
-  memset(space, fill, 64);
-  return provider->look_up_or_insert(provider->context, &key, space, 64);
+  void* space = provider->reserve_space(provider->context, size);
+  memset(space, fill, size);
+  return provider->look_up_or_insert(provider->context, &key, space, size);
 }
 } // namespace
 
@@ -641,7 +642,6 @@ TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
   ASSERT_TRUE(cache.finalize_for_runtime().ok());
 }
 
-// The retired name must not come back from the cache file either: a program
 // A packing stored without a name belongs to the runtime that packed it. Its
 // synthetic name comes back from finalize_for_runtime so the runtime holds a
 // reference: another runtime releasing the last named entry must not unload
@@ -720,6 +720,27 @@ TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
   ::unlink(cache_path.c_str());
 }
 
+// A packing of another length under a hit name is a mismatch too, decided
+// without reading past the shorter one. Both are stored and the name retired.
+TEST_F(XNNWeightsCacheTest, LookUpOrInsertTreatsSizeDifferenceAsMismatch) {
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  xnn_weights_cache_provider* provider = cache.get();
+  Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(kernel.ok());
+
+  const size_t short_offset = packUnder(provider, kernel.get(), 1, 32);
+  xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+  ASSERT_EQ(provider->look_up(provider->context, &key), short_offset);
+
+  const size_t long_offset = packUnder(provider, kernel.get(), 1, 64);
+  ASSERT_NE(long_offset, SIZE_MAX);
+  ASSERT_NE(long_offset, short_offset);
+  ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+// The retired name must not come back from the cache file either: a program
 // loaded again would otherwise hit it with a matching seed and run on the
 // other node's packing without repacking. A second, clean entry proves the
 // index was written at all: with the conflicted name alone the index would be
@@ -735,31 +756,11 @@ TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
     xnn_weights_cache_provider* provider = cache.get();
     Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
     ASSERT_TRUE(kernel.ok());
-    ASSERT_NE(packUnder(provider, kernel.get(), 1), SIZE_MAX);
-    ASSERT_NE(packUnder(provider, kernel.get(), 2), SIZE_MAX);
-    ASSERT_TRUE(cache.finalize_for_runtime().ok());
-  }
-  {
-    XNNWeightsCache cache;
-    cache.set_packed_cache_path(cache_path);
-    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
-    ASSERT_EQ(cache.get_packed_data_names(), std::vector<std::string>{"bias"});
-    xnn_weights_cache_provider* provider = cache.get();
-    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
-    ASSERT_TRUE(kernel.ok());
-    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
-    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
-    ASSERT_TRUE(cache.finalize_for_runtime().ok());
-  }
-  ::unlink(cache_path.c_str());
-}
-
-TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
     Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
     ASSERT_TRUE(bias.ok());
     ASSERT_NE(packUnder(provider, bias.get(), 4), SIZE_MAX);
-  // XNNPACK does not pack every constant it is given: PReLU slopes, for one,
-  // stay as the unpacked buffer the subgraph points at. Those buffers are taken
+    ASSERT_NE(packUnder(provider, kernel.get(), 1), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 2), SIZE_MAX);
     // A packing that misses on the retired name is booked as a gap in the
     // name, not as an unnamed constant.
     xnn_weights_cache_look_up_key key = keyFor(kernel.get());
@@ -774,6 +775,35 @@ TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
         stats.heap_bytes_by_reason[static_cast<size_t>(
             PackedCacheHeapReason::UnnamedConstant)],
         0);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    ASSERT_EQ(cache.get_packed_data_names(), std::vector<std::string>{"bias"});
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+    ASSERT_TRUE(kernel.ok());
+    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    xnn_weights_cache_look_up_key bias_key = keyFor(bias.get());
+    const size_t bias_offset = provider->look_up(provider->context, &bias_key);
+    ASSERT_NE(bias_offset, SIZE_MAX);
+    ASSERT_EQ(
+        *static_cast<uint8_t*>(
+            provider->offset_to_addr(provider->context, bias_offset)),
+        4);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  ::unlink(cache_path.c_str());
+}
+
+TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
+  // XNNPACK does not pack every constant it is given: PReLU slopes, for one,
+  // stay as the unpacked buffer the subgraph points at. Those buffers are taken
   // out of the cache while the graph is built, and finalize_for_runtime must
   // leave them alone while still freeing the ones it packed.
   XNNWeightsCache cache;
@@ -787,15 +817,6 @@ TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
   Result<const uint8_t*> retained_load = cache.load_unpacked_data("bias");
   ASSERT_EQ(retained_load.error(), Error::Ok);
   ASSERT_EQ(cache.get_num_unpacked_data(), first_index + 1);
-    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
-    ASSERT_TRUE(bias.ok());
-    xnn_weights_cache_look_up_key bias_key = keyFor(bias.get());
-    const size_t bias_offset = provider->look_up(provider->context, &bias_key);
-    ASSERT_NE(bias_offset, SIZE_MAX);
-    ASSERT_EQ(
-        *static_cast<uint8_t*>(
-            provider->offset_to_addr(provider->context, bias_offset)),
-        4);
 
   std::vector<executorch::runtime::FreeableBuffer> retained;
   cache.take_unpacked_data_from(first_index, retained);

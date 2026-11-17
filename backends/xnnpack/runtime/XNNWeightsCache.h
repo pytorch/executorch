@@ -302,6 +302,9 @@ class XNNWeightsCache {
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
+  // Size of the packing in each slot of packed_data_ptrs_, so a hit can
+  // reject a packing of another length without reading past the buffer
+  std::vector<size_t> packed_data_sizes_;
   // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
   // allocation before packing, so these buffers do not need value
   // initialization.
@@ -349,12 +352,12 @@ class XNNWeightsCache {
   // file-backed mmap — unnamed entries can never be found by name on reload,
   // so persisting them to disk wastes space and triggers spurious saves.
   bool last_lookup_unnamed_{false};
-
-  // True after load_packed_cache succeeds. When set, reserve_space routes
-  // to heap — all named entries are already in the file, so any new
   // True when the last look_up missed on a conflicted name, so that the
   // re-pack is booked as ConflictedName rather than UnnamedConstant.
   bool last_lookup_conflicted_{false};
+
+  // True after load_packed_cache succeeds. When set, reserve_space routes
+  // to heap — all named entries are already in the file, so any new
   // reserve_space is a re-pack (e.g., XNNPACK internal re-pack for a
   // different runtime context) that doesn't need to persist.
   bool loaded_from_disk_{false};

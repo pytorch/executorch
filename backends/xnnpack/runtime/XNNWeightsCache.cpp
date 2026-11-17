@@ -454,6 +454,7 @@ void XNNWeightsCache::full_unload() {
   mmap_regions_.clear();
   mmap_regions_synced_ = 0;
   packed_data_ptrs_.clear();
+  packed_data_sizes_.clear();
   ptr_to_file_offset_.clear();
   file_ptr_to_region_index_.clear();
   if (packed_file_fd_ >= 0) {
@@ -506,8 +507,8 @@ size_t XNNWeightsCache::look_up(
   const void* unpacked_weights_ptr = cache_key->kernel;
   const void* unpacked_bias_ptr = cache_key->bias;
   context->last_lookup_seed_mismatch_ = false;
-  auto entry = context->unpacked_data_to_name_.find(unpacked_weights_ptr);
   context->last_lookup_conflicted_ = false;
+  auto entry = context->unpacked_data_to_name_.find(unpacked_weights_ptr);
   if (entry == context->unpacked_data_to_name_.end()) {
     context->last_lookup_unnamed_ = true;
     return SIZE_MAX;
@@ -529,8 +530,8 @@ size_t XNNWeightsCache::look_up(
   }
   if (packed_weight_entry->second.conflicted) {
     context->last_lookup_unnamed_ = true;
-    return SIZE_MAX;
     context->last_lookup_conflicted_ = true;
+    return SIZE_MAX;
   }
   // XNNPACK upgrade detection: a ukernel whose implementation changed
   // produces a different seed. Reject the cached entry so look_up_or_insert
@@ -679,13 +680,15 @@ size_t XNNWeightsCache::look_up_or_insert(
 
   if (offset != SIZE_MAX) {
     void* saved_ptr = context->offset_to_addr(context, offset);
-    if (saved_ptr != nullptr && 0 == memcmp(ptr, saved_ptr, size)) {
+    if (saved_ptr != nullptr && context->packed_data_sizes_[offset] == size &&
+        0 == memcmp(ptr, saved_ptr, size)) {
       return offset;
     }
   }
 
   size_t next_offset = context->packed_data_ptrs_.size();
   context->packed_data_ptrs_.push_back(ptr);
+  context->packed_data_sizes_.push_back(size);
 
   auto entry = context->unpacked_data_to_name_.find(cache_key->kernel);
   if (entry == context->unpacked_data_to_name_.end()) {
@@ -743,9 +746,6 @@ size_t XNNWeightsCache::look_up_or_insert(
   return next_offset;
 }
 
-bool XNNWeightsCache::is_finalized(XNNWeightsCache* context) {
-  return context->is_finalized_;
-}
 // Give a packing without a usable name an owner. The key starts with a byte
 // no named_key carries, so look_up, which keys by unpacked data name, never
 // reaches it; finalize_for_runtime hands it to the runtime like any named
@@ -764,6 +764,9 @@ XNNWeightsCache::insert_unnamed(size_t offset, size_t size, uint32_t seed) {
   return offset;
 }
 
+bool XNNWeightsCache::is_finalized(XNNWeightsCache* context) {
+  return context->is_finalized_;
+}
 
 void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
   return context->packed_data_ptrs_[offset];
@@ -961,6 +964,7 @@ bool XNNWeightsCache::load_packed_cache() {
       mmap_regions_.pop_back();
       name_to_packed_data_metadata_.clear();
       packed_data_ptrs_.clear();
+      packed_data_sizes_.clear();
       ptr_to_file_offset_.clear();
       return false;
     }
@@ -988,6 +992,7 @@ bool XNNWeightsCache::load_packed_cache() {
       mmap_regions_.pop_back();
       name_to_packed_data_metadata_.clear();
       packed_data_ptrs_.clear();
+      packed_data_sizes_.clear();
       ptr_to_file_offset_.clear();
       return false;
     }
@@ -995,6 +1000,7 @@ bool XNNWeightsCache::load_packed_cache() {
     size_t ptr_index = packed_data_ptrs_.size();
     void* entry_ptr = static_cast<char*>(map) + file_offset;
     packed_data_ptrs_.push_back(entry_ptr);
+    packed_data_sizes_.push_back(static_cast<size_t>(data_size));
     // Tracked so a subsequent save_packed_index can rewrite the trailer
     // covering both loaded and newly-packed entries.
     ptr_to_file_offset_[entry_ptr] = file_offset;
