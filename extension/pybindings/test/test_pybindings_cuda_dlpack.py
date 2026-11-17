@@ -1188,6 +1188,23 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def test_bfloat16_host_bits_move_to_the_device(self):
+        # Host data without torch has no bfloat16 buffer format, so it comes as
+        # 16-bit unsigned integers and from_host is told the dtype.
+        value = torch.arange(6, dtype=torch.bfloat16).reshape(2, 3)
+        words = array.array("H", value.view(torch.int16).flatten().tolist())
+        host = memoryview(words).cast("B").cast("H", value.shape)
+        uploaded = self.bindings.ExecuTorchResult.from_host(
+            host, self.device.index, dtype="bfloat16"
+        )
+        self.assertEqual(uploaded.dtype, "bfloat16")
+        self.assertEqual(uploaded.shape, (2, 3))
+        data = self._device_identity(self.device.index, value)
+        method = self.bindings._load_program_from_buffer(data).load_method("forward")
+        torch.testing.assert_close(
+            self._tensor(method(uploaded)[0]), value.to(self.device)
+        )
+
     def _device_waits(self, body):
         from torch.profiler import profile, ProfilerActivity
 

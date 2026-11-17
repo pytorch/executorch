@@ -27,7 +27,9 @@ speculative drafting/verification remain inside the runner and executor.
   logical `--max-sessions`. Set it to zero to disable shared prefix caching
   when a cold prefill is required after reset or opening a new key.
   Reuse requires a clone-capable executor and complete model state at the
-  requested boundary; missing state falls back to prefill.
+  requested boundary; missing state falls back to prefill. Retained snapshots
+  are shared by all clients, and `cached_tokens` reports matches, so enable
+  prefix caching only when clients trust each other.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
@@ -39,13 +41,39 @@ speculative drafting/verification remain inside the runner and executor.
 
 `--prefix-checkpoint-interval N` captures prompt snapshots at absolute multiples
 of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
-Zero (the default) captures only the initial prompt. Capture is best effort.
-Retention uses global LRU; early checkpoints are not protected.
+Zero (the default) disables periodic capture.
+`--prefix-checkpoint-prompt-end initial` (the default) captures the prompt end of
+each request that creates a session, which includes every anonymous request.
+`every` captures the prompt end of every request, such as tool-result turns and
+retries. It requires `--prefix-cache-entries > 0` and cannot be combined with a
+nonzero interval, whose serialized capture lane would drop prompt ends while
+another checkpoint is pending. Capture is best effort. Without an interval, a prompt end already in the cache is
+refreshed instead of cloned again, and a snapshot becomes reusable and frees its
+capture slot at the source request's first output after the clone completes, or
+when the request finishes. Retention uses global LRU; early checkpoints are not
+protected, and with `every` each captured turn takes an entry.
+
+A snapshot only helps a request whose prompt starts with the same tokens. The
+Python adapters splice a named session's own generated tokens into its earlier
+assistant turns, so `every` mainly helps that session after a turn that was
+cancelled, cut short by a stop string, or failed. The retry or next turn then
+reuses that turn's prompt if the interruption came after its first output token,
+and otherwise the previous turn's prompt, instead of only the opening prompt that
+`initial` keeps. Other sessions, anonymous requests, and sessions whose transcript
+was dropped render those turns as text; with reasoning templates they usually
+match that session's snapshots only up to the first assistant turn, which
+`initial` already keeps. On MLX, snapshots share no KV storage: each keeps the
+source's whole KV buffers, including growth slack and full sliding-window buffers,
+and the source's next decode step copies them. Memory therefore grows with the
+number and length of retained snapshots, so use fewer entries with `every` at long
+contexts.
 
 C++ applications can customize two independent policies in
 [`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
 
-- `prefix_checkpoint_policy` chooses capture positions and optional application metadata.
+- `prefix_checkpoint_policy` chooses capture positions and optional application metadata,
+  overriding `prefix_checkpoint_interval` and prompt-end capture. It cannot be
+  combined with `PromptEndCapture::Every`. This C++ callback is not a launcher option.
 - `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
 
 The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)

@@ -15,6 +15,9 @@ from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass impor
     ChannelsLastTaggedReshapePass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.fold_computed_params import (
+    FoldComputedParamsPass,
+)
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
@@ -223,7 +226,8 @@ class XnnpackBackend(BackendDetails):
             if spec.key == "dqlinear_partitioner":
                 passes.append(ConvertToLinearPass)
 
-        passes = passes if len(passes) > 0 else None
+        # The partitioner accepts computed GEMM weights only because this pass folds them.
+        passes = [FoldComputedParamsPass, *passes] if len(passes) > 0 else None
         external_dim_orders = get_external_dim_orders(ep)
         # XNNPACK Delegate Specific Passes
         ep = XNNPACKPassManager(ep, passes=passes).transform()

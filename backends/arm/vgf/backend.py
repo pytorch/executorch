@@ -41,6 +41,7 @@ from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
     GroupIndependentCustomShadersPass,
     InsertGridSamplerGridDequantPass,
+    RewriteCustomSDPAToTosaCustomPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
@@ -167,6 +168,7 @@ def _register_vgf_rewrite_passes() -> None:
         InsertRescaleInt32Pass,
         FuseGridSamplerFlowOffsetPass(),
     )
+    _register_pass_before(RewriteConvPass, RewriteCustomSDPAToTosaCustomPass())
     _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
     _register_pass_before(
         EnsureUniqueOutputNodesPass, GroupIndependentCustomShadersPass()

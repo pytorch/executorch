@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import unittest
 from typing import List, Tuple
 
@@ -19,6 +17,19 @@ from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.partitioner.partitioner import (
     _WEBGPU_SKIP_FUSION_PATTERNS,
 )
+from executorch.backends.webgpu.test.ops.test_conv_transpose1d import (
+    CLAMP_CONFIGS as CONV_TRANSPOSE1D_CLAMP_CONFIGS,
+    CONFIGS as CONV_TRANSPOSE1D_CONFIGS,
+    ConvTranspose1dModule,
+)
+from executorch.backends.webgpu.test.ops.test_elu_silu import (
+    EluModule,
+    SiluCondModule,
+    SiluModule,
+    SiluMulModule,
+)
+from executorch.backends.webgpu.test.ops.test_erf import ErfGeluModule, ErfModule
+from executorch.backends.webgpu.test.ops.test_mul import MulScalarModule
 from executorch.backends.webgpu.test.tester import Partition, ToEdgeTransformAndLower
 from executorch.exir import (
     ExecutorchProgramManager,
@@ -202,7 +213,7 @@ class TestWebGPUPartitioner(unittest.TestCase):
             exported_program
         )
 
-        self.assertEqual(webgpu_ops, vulkan_ops)
+        self.assertEqual(webgpu_ops, vulkan_ops + [torch.ops.aten.silu.default])
         self.assertIsNotNone(webgpu_filter)
         self.assertIsNotNone(vulkan_filter)
         assert webgpu_filter is not None
@@ -319,6 +330,179 @@ class TestWebGPUPartitioner(unittest.TestCase):
                 self.assertEqual(layer_norm in in_delegate, delegated)
                 self.assertEqual(
                     layer_norm in self._targets(non_lowered), not delegated
+                )
+
+    def test_elu_and_silu_are_delegated(self) -> None:
+        cases = {
+            "elu_alpha": (EluModule(alpha=0.5), exir_ops.edge.aten.elu.default),
+            "elu_scaled": (
+                EluModule(alpha=1.5, scale=2.0, input_scale=0.5),
+                exir_ops.edge.aten.elu.default,
+            ),
+            "elu_param_input": (
+                EluModule(param_shape=(4, 16)),
+                exir_ops.edge.aten.elu.default,
+            ),
+            "silu": (SiluModule(), exir_ops.edge.aten.silu.default),
+            "silu_param_input": (
+                SiluModule(param_shape=(4, 16)),
+                exir_ops.edge.aten.silu.default,
+            ),
+        }
+        x = torch.linspace(-4.0, 4.0, 64).reshape(4, 16)
+        for name, (module, target) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(target, delegated)
+
+    def test_erf_is_delegated(self) -> None:
+        cases = {
+            "erf": ErfModule(),
+            "erf_param_input": ErfModule(param_shape=(4, 16)),
+            "hand_written_gelu": ErfGeluModule(),
+        }
+        x = torch.linspace(-4.0, 4.0, 64).reshape(4, 16)
+        for name, module in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(exir_ops.edge.aten.erf.default, delegated)
+
+    def test_mul_scalar_is_delegated_in_fp32_only(self) -> None:
+        mul_scalar = exir_ops.edge.aten.mul.Scalar
+        x = torch.linspace(-4.0, 4.0, 64).reshape(4, 16)
+        for name, (inputs, delegated) in {
+            "fp32": ((x,), True),
+            "fp16": ((x.half(),), False),
+        }.items():
+            with self.subTest(case=name):
+                non_lowered, in_delegate = self._lower_split(
+                    WebGPUPartitioner(), MulScalarModule(0.5), inputs
+                )
+                self.assertEqual(mul_scalar in in_delegate, delegated)
+                self.assertEqual(
+                    mul_scalar in self._targets(non_lowered), not delegated
+                )
+
+    def test_dynamic_erf_is_delegated(self) -> None:
+        non_lowered, delegated = self._lower_split(
+            WebGPUPartitioner({"require_dynamic_shapes": True}),
+            ErfGeluModule(),
+            (torch.randn(1, 8, 16),),
+            {"x": {1: torch.export.Dim("s", min=1, max=8)}},
+        )
+        self.assertEqual(non_lowered, [])
+        self.assertIn(exir_ops.edge.aten.erf.default, delegated)
+
+    def test_dynamic_silu_is_delegated(self) -> None:
+        non_lowered, delegated = self._lower_split(
+            WebGPUPartitioner({"require_dynamic_shapes": True}),
+            SiluModule(),
+            (torch.randn(1, 8, 16),),
+            {"x": {1: torch.export.Dim("s", min=1, max=8)}},
+        )
+        self.assertEqual(non_lowered, [])
+        self.assertIn(exir_ops.edge.aten.silu.default, delegated)
+
+    def test_silu_decomposes_where_it_would_not_be_delegated(self) -> None:
+        # Kept silu that stays on CPU fails lowering, so each of these must
+        # decompose to x * sigmoid(x) instead.
+        x = torch.randn(4, 16)
+        allowlist_without_silu = WebGPUPartitioner(
+            operator_allowlist=[
+                exir_ops.edge.aten.sigmoid.default,
+                exir_ops.edge.aten.mul.Tensor,
+            ]
+        )
+        cases = {
+            # The SwiGLU fusion matches x * sigmoid(x) * up.
+            "feeds_mul": (WebGPUPartitioner(), SiluMulModule(), (x, x)),
+            "not_allowlisted": (allowlist_without_silu, SiluModule(), (x,)),
+            "rank5": (WebGPUPartitioner(), SiluModule(), (torch.randn(1, 2, 3, 4, 5),)),
+        }
+        for name, (partitioner, module, inputs) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, delegated = self._lower_split(partitioner, module, inputs)
+                self.assertNotIn(exir_ops.edge.aten.silu.default, delegated)
+                self.assertNotIn(
+                    exir_ops.edge.aten.silu.default, self._targets(non_lowered)
+                )
+
+    def test_silu_in_cond_branch_stays_decomposed(self) -> None:
+        # Control-flow submodules are not partitioned, so a silu in a torch.cond
+        # branch must decompose (a kept one would make lowering raise).
+        exported_program = torch.export.export(SiluCondModule(), (torch.randn(4, 16),))
+        edge = to_edge_transform_and_lower(
+            exported_program, partitioner=[WebGPUPartitioner()]
+        )
+        targets = [
+            node.target
+            for module in edge.exported_program().graph_module.modules()
+            if isinstance(module, torch.fx.GraphModule)
+            for node in module.graph.nodes
+        ]
+        self.assertNotIn(exir_ops.edge.aten.silu.default, targets)
+        self.assertIn(exir_ops.edge.aten.sigmoid.default, targets)
+
+    def test_conv_transpose1d_is_delegated(self) -> None:
+        convolution = exir_ops.edge.aten.convolution.default
+        for name in (
+            "stride2_padding",
+            "output_padding",
+            "output_padding_dilation",
+            "groups_no_bias",
+            "dilation",
+            "batch2_gather",
+        ):
+            kwargs, shape = CONV_TRANSPOSE1D_CONFIGS[name]
+            with self.subTest(config=name):
+                module = ConvTranspose1dModule(**kwargs)
+                x = torch.randn(*shape)
+                non_lowered, delegated = self._lower_split(
+                    WebGPUPartitioner(), module, (x,)
+                )
+                self.assertEqual(non_lowered, [])
+                self.assertIn(convolution, delegated)
+
+    def test_transposed_conv_stays_on_cpu(self) -> None:
+        # Dynamic inputs (the transposed kernels have no resize hook) and a
+        # following relu/hardtanh (conv_with_clamp has no transposed path).
+        conv2d = torch.nn.ConvTranspose2d(4, 6, kernel_size=2, stride=2)
+        cases = {
+            "relu_2d": (
+                torch.nn.Sequential(
+                    torch.nn.ConvTranspose2d(4, 6, kernel_size=2, stride=2),
+                    torch.nn.ReLU(),
+                ),
+                torch.randn(1, 4, 6, 6),
+                None,
+            ),
+            "dynamic_1d": (
+                ConvTranspose1dModule(4, 6, 3, stride=2),
+                torch.randn(1, 4, 9),
+                {"x": {2: torch.export.Dim("length", min=2, max=9)}},
+            ),
+            "dynamic_2d": (
+                conv2d,
+                torch.randn(1, 4, 6, 6),
+                {"input": {2: torch.export.Dim("height", min=2, max=6)}},
+            ),
+        }
+        for name, (kwargs, shape) in CONV_TRANSPOSE1D_CLAMP_CONFIGS.items():
+            cases[name] = (ConvTranspose1dModule(**kwargs), torch.randn(*shape), None)
+        for name, (module, x, dynamic_shapes) in cases.items():
+            with self.subTest(case=name):
+                non_lowered, _ = self._lower_split(
+                    WebGPUPartitioner(), module, (x,), dynamic_shapes
+                )
+                self.assertIn(
+                    exir_ops.edge.aten.convolution.default,
+                    self._targets(non_lowered),
                 )
 
 

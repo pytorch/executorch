@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/winograd/Conv2dWinograd.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
@@ -53,9 +54,19 @@ void check_conv2d_residual_on_resize(
 }
 
 Conv2dEpilogueParams create_conv2d_epilogue_params(
-    const Conv2dEpilogue& epilogue) {
+    const Conv2dEpilogue& epilogue,
+    const bool f16_epilogue) {
+  if (!f16_epilogue) {
+    return {
+        epilogue.activation_a, epilogue.activation_b, epilogue.residual_alpha};
+  }
+  const auto round_to_half = [](const float f) {
+    return api::half_to_float(api::float_to_half(f));
+  };
   return {
-      epilogue.activation_a, epilogue.activation_b, epilogue.residual_alpha};
+      round_to_half(epilogue.activation_a),
+      round_to_half(epilogue.activation_b),
+      round_to_half(epilogue.residual_alpha)};
 }
 
 void append_conv2d_epilogue_spec_vars(
@@ -338,6 +349,19 @@ void conv2d_with_epilogue_impl(
       stride,
       padding,
       dilation);
+
+  if (const std::optional<Conv2dWinogradConfig> winograd =
+          pick_conv2d_winograd_config(
+              graph,
+              in,
+              weight_data,
+              out,
+              kernel_params,
+              transposed_val,
+              groups_val)) {
+    return conv2d_winograd_impl(
+        graph, *winograd, in, weight_data, bias, out, epilogue);
+  }
 
   const bool fast_tiled = can_use_fast_tiled_conv2d(
       graph, in, out, kernel_params, transposed_val, groups_val);

@@ -107,6 +107,20 @@ case "${IMAGE_NAME}" in
 esac
 
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+TORCHVISION_VERSION=""
+TORCHAUDIO_VERSION=""
+TORCHCI_REPORTS=""
+if [[ "${IMAGE_NAME}" == "executorch-ubuntu-22.04-clang12" ]]; then
+  for pin in TORCH_VERSION:pytorch TORCHVISION_VERSION:torchvision TORCHAUDIO_VERSION:torchaudio; do
+    override=$(cat "ci_commit_pins/${pin#*:}-linux-clang12.txt")
+    if [[ ! "${override}" =~ ^[0-9a-f]{40}$ ]]; then
+      echo "Expected a 40-character source commit in ${pin#*:}-linux-clang12.txt" >&2
+      exit 1
+    fi
+    printf -v "${pin%:*}" '%s' "${override}"
+  done
+  TORCHCI_REPORTS=1
+fi
 BUILD_DOCS=1
 
 if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
@@ -138,6 +152,9 @@ fi
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
+  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}" \
+  --build-arg "TORCHCI_REPORTS=${TORCHCI_REPORTS}" \
   --build-arg "PYTORCH_BUILD_MAX_JOBS=${PYTORCH_BUILD_MAX_JOBS:-}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \

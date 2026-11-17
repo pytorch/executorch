@@ -308,8 +308,12 @@ def linear_q4gsw(
     # Unpack the packed weights
     weights = unpack_4bit_weight_tensor(weights, x)
 
-    # Un-transpose the weight scales
-    weight_scales = weight_scales.transpose(0, 1)
+    # Un-transpose the weight scales. The scales and the bias are padded to a
+    # multiple of 4 output channels; the packed weights are not.
+    out_channels = weights.shape[0]
+    weight_scales = weight_scales.transpose(0, 1)[:out_channels]
+    if bias is not None:
+        bias = bias[:out_channels]
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
 
     weights = torch.ops.torchao.dequantize_affine(
@@ -1196,7 +1200,9 @@ def sdpa_impl(
     attn = torch.matmul(q, k.transpose(-2, -1)) * scale
     if attn_mask is not None:
         attn = attn + attn_mask
-    attn = torch.softmax(attn, dim=-1)
+    # Like ATen's SDPA, rows masked entirely with -inf attend to nothing.
+    fully_masked = (attn == float("-inf")).all(dim=-1, keepdim=True)
+    attn = torch.softmax(attn, dim=-1).masked_fill(fully_masked, 0.0)
     return torch.matmul(attn, v)
 
 

@@ -20,8 +20,11 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
+from executorch.backends.webgpu.test.ops.test_erf import ErfGeluModule
 from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
+from executorch.backends.webgpu.test.ops.test_mul import MulScalarModule
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
@@ -116,6 +119,22 @@ class LayerNormStatsModule(torch.nn.Module):
             x, [self.hidden], self.weight, self.bias, 1e-5
         )
         return (out + x if self.residual else out), mean, rstd
+
+
+class MeanKeepdimModule(torch.nn.Module):
+    """mean.dim with keepdim=True over the hidden dim and the dynamic S dim, a
+    broadcast consumer of the kept dim, and a keepdim=False mean."""
+
+    def forward(self, x: torch.Tensor):
+        m = x.mean(dim=-1, keepdim=True)
+        return m, x.mean(dim=2, keepdim=True), x - m, x.mean(dim=-1)
+
+
+class EluSiluModule(torch.nn.Module):
+    """elu(x, alpha=0.5) + silu(x) — both unary resize hooks on a dynamic S."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.elu(x, alpha=0.5) + torch.nn.functional.silu(x)
 
 
 class SwiGluModule(torch.nn.Module):
@@ -229,10 +248,11 @@ def _lower_fully_delegated(
     compile_options=None,
     *,
     expect_q4_decode_route: bool = False,
+    partitioner_cls=VulkanPartitioner,
 ):
     edge = to_edge_transform_and_lower(
         ep,
-        partitioner=[VulkanPartitioner(compile_options=compile_options)],
+        partitioner=[partitioner_cls(compile_options=compile_options)],
     )
     graph = edge.exported_program().graph_module.graph
     delegates = get_delegates(graph)
@@ -265,9 +285,13 @@ def _lower_fully_delegated(
     return et
 
 
-def _export(model, example_inputs, dynamic_shapes, path: str) -> None:
+def _export(
+    model, example_inputs, dynamic_shapes, path: str, partitioner_cls=None
+) -> None:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    et = _lower_fully_delegated(ep, path)
+    et = _lower_fully_delegated(
+        ep, path, partitioner_cls=partitioner_cls or VulkanPartitioner
+    )
     with open(path, "wb") as f:
         f.write(et.buffer)
     print(f"Exported {path}")
@@ -374,6 +398,18 @@ def export_dynamic_layer_norm_cases(out_dir: str, s_dim) -> None:
     )
 
 
+def export_dynamic_mean_keepdim_cases(out_dir: str, s_dim) -> None:
+    _export_multi_output_case(
+        MeanKeepdimModule(),
+        "dyn_mean_keepdim",
+        out_dir,
+        lambda s: (1, 1, s, HIDDEN),
+        2,
+        s_dim,
+        (MAXS, 125, 7, 1),
+    )
+
+
 def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
     """Write a dynamic GELU fixture crossing the old 1D dispatch cap."""
     os.makedirs(out_dir, exist_ok=True)
@@ -404,6 +440,30 @@ def export_dynamic_expand_copy_rejection_case(out_dir: str) -> None:
         {"x": {1: elements_dim}},
         os.path.join(out_dir, "dyn_expand_copy_inferred.pte"),
     )
+
+
+def export_dynamic_erf_gelu_cases(out_dir: str, s_dim) -> None:
+    erf_gelu = ErfGeluModule()
+    _export(
+        erf_gelu,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_erf_gelu.pte"),
+        partitioner_cls=WebGPUPartitioner,
+    )
+    _write_goldens(erf_gelu, "dyn_erf_gelu", out_dir, [MAXS, 125, 7, 1])
+
+
+def export_dynamic_mul_scalar_cases(out_dir: str, s_dim) -> None:
+    mul_scalar = MulScalarModule(0.125)
+    _export(
+        mul_scalar,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_mul_scalar.pte"),
+        partitioner_cls=WebGPUPartitioner,
+    )
+    _write_goldens(mul_scalar, "dyn_mul_scalar", out_dir, [MAXS, 125, 7, 1])
 
 
 def export_dynamic_shape_cases(out_dir: str) -> None:
@@ -506,6 +566,26 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     # 2h.1) native_layer_norm (out + x, mean, rstd) with a DYNAMIC seq-len S,
     # and with a dynamic row count past the 1D grid limit.
     export_dynamic_layer_norm_cases(out_dir, s_dim)
+
+    # 2h.2) mean.dim(keepdim=True/False) over the hidden dim and the DYNAMIC S.
+    export_dynamic_mean_keepdim_cases(out_dir, s_dim)
+
+    # 2h.3) elu + silu with a DYNAMIC seq-len S.
+    elu_silu = EluSiluModule()
+    _export(
+        elu_silu,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_elu_silu.pte"),
+        partitioner_cls=WebGPUPartitioner,
+    )
+    _write_goldens(elu_silu, "dyn_elu_silu", out_dir, [MAXS, 32, 1])
+
+    # 2h.4) The hand-written exact GELU of ESM-2 / BERT (erf) with a DYNAMIC S.
+    export_dynamic_erf_gelu_cases(out_dir, s_dim)
+
+    # 2h.5) aten.mul.Scalar (from SDPA's math decomposition) with a DYNAMIC S.
+    export_dynamic_mul_scalar_cases(out_dir, s_dim)
 
     # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
     # fused dispatch at M=512; compact variants isolate commutative matching and
@@ -1713,6 +1793,20 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_layer_norm_rows.pte",
                 "dyn_layer_norm_rows.S70000.input.bin",
                 "dyn_layer_norm_rows.S1000.golden2.bin",
+                "dyn_mean_keepdim.pte",
+                "dyn_mean_keepdim.S125.input.bin",
+                "dyn_mean_keepdim.S125.golden0.bin",
+                "dyn_mean_keepdim.S125.golden3.bin",
+                "dyn_mean_keepdim.S7.golden2.bin",
+                "dyn_elu_silu.pte",
+                "dyn_elu_silu.S32.input.bin",
+                "dyn_elu_silu.S32.golden.bin",
+                "dyn_erf_gelu.pte",
+                "dyn_erf_gelu.S125.input.bin",
+                "dyn_erf_gelu.S7.golden.bin",
+                "dyn_mul_scalar.pte",
+                "dyn_mul_scalar.S125.input.bin",
+                "dyn_mul_scalar.S7.golden.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",

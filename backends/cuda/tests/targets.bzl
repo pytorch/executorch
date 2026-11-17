@@ -19,10 +19,125 @@ def define_common_targets(is_fbcode = False):
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_replacement_pass",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/examples/models/toy_model:toy_model",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_triton_replacement",
+        srcs = [
+            "test_triton_replacement.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/backends/cuda:triton_routing",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_binding",
+        srcs = [
+            "test_conv_binding.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir/dialects:lib",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_routing",
+        srcs = [
+            "test_conv_routing.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_depthwise",
+        srcs = [
+            "test_conv_depthwise.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_implicit_gemm",
+        env = {"EXECUTORCH_CUDA_EXHAUSTIVE_TESTS": "1"},
+        srcs = [
+            "test_conv_implicit_gemm.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
@@ -131,6 +246,26 @@ def define_common_targets(is_fbcode = False):
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
             subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_sdpa_varlen",
+        srcs = [
+            "test_sdpa_varlen.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/examples/models/muse-glimmer/model:dflash_model",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
         ),
     )
 
@@ -281,6 +416,32 @@ def define_common_targets(is_fbcode = False):
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
             subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_offgraph_kv_batched_sequence",
+        srcs = [
+            "test_offgraph_kv_batched_sequence.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:cuda_passes",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/exir/dialects:lib",
+            # The oracle is the neutral op itself, not a reference rebuilt here.
+            "//executorch/extension/llm/cache:cache",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
         ),
     )
 
