@@ -128,7 +128,11 @@ class ExecutorchBackendConfig:
     # then store a second copy. Nothing is folded when external_constants is
     # set. The fold runs first, so every pass in to_executorch, including
     # `passes`, and the lowered program see a folded weight as a new constant,
-    # with no transpose.
+    # with no transpose. During export each folded weight is held twice, so
+    # peak memory grows by about the size of the folded weights. Once a
+    # to_executorch call has folded a transpose, calling to_executorch again on
+    # the same EdgeProgramManager with this set to false, or with
+    # external_constants, raises a RuntimeError. Copy the manager first.
     fold_constant_transposes: bool = True
 
     # Experimental: If set to true, we run a pass to reinplace ops in the graph.

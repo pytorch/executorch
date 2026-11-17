@@ -595,18 +595,13 @@ def _fold_into_copy(
     own graph, signature, state_dict and constants, so the program passed in
     and every program that shares its dictionaries stay unchanged.
     """
-    graph_module = copy.deepcopy(program.graph_module)
-    program = ExportedProgram(
-        root=graph_module,
-        graph=graph_module.graph,
-        graph_signature=copy.deepcopy(program.graph_signature),
-        state_dict=dict(program.state_dict),
-        range_constraints=program.range_constraints,
-        module_call_graph=copy.deepcopy(program.module_call_graph),
-        example_inputs=program.example_inputs,
-        constants=dict(program.constants),
-        verifiers=[program.verifier],
-    )
+    # A deepcopy skips the verifier, which needs meta["val"] on every node.
+    # In-place edits such as strip_taps_ leave it out until to_executorch
+    # re-traces the graph. The memo shares the weights and the example inputs
+    # instead of copying them. A non-leaf example input cannot be deep-copied.
+    shared = [*program.state_dict.values(), *program.constants.values()]
+    shared.append(program.example_inputs)
+    program = copy.deepcopy(program, {id(value): value for value in shared})
     nodes = {node.name: node for node in program.graph.nodes}
     first_user_input = get_first_user_input(program)
     fake_mode = get_fake_mode(program)
@@ -638,7 +633,7 @@ def _split_constants(
     programs: Mapping[str, ExportedProgram],
 ) -> tuple[list[torch.Tensor], list[tuple[str, torch.fx.Node, torch.Tensor]]]:
     """
-    Returns the constants that stay in the programs, and the (program name,
+    Returns the constants that are not fold candidates, and the (program name,
     transpose, weight) triples whose transpose may be folded.
     """
     kept: list[torch.Tensor] = []

@@ -1771,6 +1771,12 @@ class EdgeProgramManager:
             exported_program() of this EdgeProgramManager also returns the
             lowered programs. An ExportedProgram taken from this manager before
             the call is lowered in place only for methods that fold nothing.
+
+        Raises:
+            RuntimeError: If an earlier call on this manager folded a weight
+                transpose and this call sets fold_constant_transposes to False
+                or uses external_constants. Copy the manager before the first
+                call to lower it more than once with different settings.
         """
         config = config if config else ExecutorchBackendConfig()
         # External constants are matched by name, which a fold would change.

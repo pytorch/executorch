@@ -3462,6 +3462,7 @@ class TestPasses(unittest.TestCase):
             }
         )
         original = edge.exported_program("project")
+        state_dict = set(original.state_dict)
         # The transformed manager shares the constants dict with edge.
         constants = set(
             edge.transform([ExportPass()]).exported_program("project").constants
@@ -3474,10 +3475,25 @@ class TestPasses(unittest.TestCase):
             self.assertIs(edge.exported_program(method), et.exported_program(method))
         # The fold changes a copy, so what original shares is left consistent.
         self.assertEqual(set(original.constants), constants)
+        self.assertEqual(set(original.state_dict), state_dict)
+        # The copy shares the weights it keeps instead of copying them.
+        self.assertIs(
+            et.exported_program("project").state_dict["linear.bias"],
+            original.state_dict["linear.bias"],
+        )
         self.assertLessEqual(
             {spec.arg.name for spec in original.graph_signature.input_specs},
             {node.name for node in original.graph.find_nodes(op="placeholder")},
         )
+
+    def test_fold_constant_transposes_with_non_leaf_example_input(self) -> None:
+        # A tensor that requires grad and is not a leaf cannot be deep-copied.
+        x = torch.randn(2, 3, requires_grad=True) * 2
+        edge = to_edge(export(torch.nn.Linear(3, 4).eval(), (x,), strict=True))
+
+        et = edge.to_executorch()
+
+        self.assertNotIn("aten::permute_copy", self._operator_names(et))
 
     def test_fold_constant_transposes_keeps_weight_a_constant_method_returns(
         self,

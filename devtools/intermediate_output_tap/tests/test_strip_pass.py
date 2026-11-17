@@ -120,6 +120,12 @@ class StripPassTest(unittest.TestCase):
                     f"strip_taps_ inserted an unexpected clone op: {n.target}",
                 )
 
+    def test_strip_stats_then_to_executorch(self):
+        # The reducer nodes have no meta["val"] until to_executorch adds it.
+        edge, _ = _tapped_edge(STATS)
+        strip_taps_(edge)
+        edge.to_executorch()
+
     def test_strip_idempotent(self):
         edge, _ = _tapped_edge(FULL_TENSOR)
         strip_taps_(edge)
