@@ -658,6 +658,7 @@ class VgfConfig:
     compile_spec: Optional[str] = "TOSA-1.0+INT"
     compiler_flags: List[str] = field(default_factory=list)
     quantize_scope: VgfQuantizeScope = VgfQuantizeScope.full
+    alias_buffer_mutations: bool = False
 
 
 @dataclass

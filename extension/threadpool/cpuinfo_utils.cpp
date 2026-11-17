@@ -20,6 +20,15 @@
 #include <sys/sysctl.h>
 #endif
 
+#if defined(__linux__)
+#include <sched.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <cstdlib>
+#include <memory>
+#endif
+
 namespace executorch::extension::cpuinfo {
 
 // Ignore revisions (last digit (4 LSBs))
@@ -60,6 +69,7 @@ bool is_non_performant_core(const struct cpuinfo_uarch_info* uarch_info) {
   return false;
 }
 
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
 std::vector<uint32_t>* get_static_cpu_midr_vector() {
   static std::vector<uint32_t> cpu_midrs;
   return &cpu_midrs;
@@ -103,7 +113,14 @@ bool populate_available_cpu_mids() {
     if (midr_file.is_open()) {
       std::string x;
       std::getline(midr_file, x);
-      tmp = std::stoi(x, nullptr, 16);
+      char* end = nullptr;
+      const unsigned long midr = std::strtoul(x.c_str(), &end, 16);
+      if (end == x.c_str()) {
+        ET_LOG(Info, "Failed to parse midr file %s", midr_file_path.c_str());
+        cpu_midrs->clear();
+        return false;
+      }
+      tmp = static_cast<uint32_t>(midr);
       (*cpu_midrs)[i] = tmp;
     } else {
       ET_LOG(Info, "Failed to open midr file %s", midr_file_path.c_str());
@@ -140,17 +157,18 @@ uint32_t _get_num_performant_cores() {
   }
   return num_possible_cores;
 }
+#endif
 
-} // namespace
-
-uint32_t get_num_performant_cores() {
+uint32_t count_performant_cores() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo cannot be initialized.");
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
   // First try and see if we have number of cores profiled for this specific
   // device
   uint32_t model_specific_num_cores = _get_model_specific_num_cores();
   if (model_specific_num_cores > 0) {
     return model_specific_num_cores;
   }
+#endif
 
   // Else looks at either the # of litte cores if found
   // Or parse the midr in "Something seems wrong" section.
@@ -193,8 +211,48 @@ uint32_t get_num_performant_cores() {
       }
     }
 #endif
+#if defined(__linux__) && (CPUINFO_ARCH_ARM || CPUINFO_ARCH_ARM64)
     return _get_num_performant_cores();
+#else
+    // The MIDR files exist only on ARM Linux. Elsewhere the count is unknown.
+    return 0;
+#endif
   }
+}
+
+} // namespace
+
+uint32_t get_num_allowed_cpus() {
+#if defined(__linux__)
+  // The kernel rejects a mask smaller than its possible CPU count, which can
+  // exceed the CPU_SETSIZE CPUs a cpu_set_t holds, so grow it until it fits.
+  for (int num_cpus = CPU_SETSIZE; num_cpus <= (1 << 20); num_cpus *= 2) {
+    std::unique_ptr<cpu_set_t, void (*)(cpu_set_t*)> cpus(
+        CPU_ALLOC(num_cpus), [](cpu_set_t* set) { CPU_FREE(set); });
+    if (!cpus) {
+      break;
+    }
+    const size_t size = CPU_ALLOC_SIZE(num_cpus);
+    if (sched_getaffinity(0, size, cpus.get()) == 0) {
+      return static_cast<uint32_t>(CPU_COUNT_S(size, cpus.get()));
+    }
+    if (errno != EINVAL) {
+      break;
+    }
+  }
+#endif
+  return 0;
+}
+
+uint32_t get_num_performant_cores() {
+  const uint32_t count = count_performant_cores();
+#if defined(__linux__) && !defined(__ANDROID__)
+  const uint32_t allowed = get_num_allowed_cpus();
+  if (count > 0 && allowed > 0) {
+    return std::min(count, allowed);
+  }
+#endif
+  return count;
 }
 
 } // namespace executorch::extension::cpuinfo

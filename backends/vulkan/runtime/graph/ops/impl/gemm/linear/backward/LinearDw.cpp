@@ -64,9 +64,9 @@ void linear_dW(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.dtype_of(d_out) == vkapi::kFloat);
   VK_CHECK_COND(graph.dtype_of(x) == vkapi::kFloat);
   VK_CHECK_COND(graph.dtype_of(dW) == vkapi::kFloat);
-  VK_CHECK_COND(graph.is_buffer_storage(d_out));
-  VK_CHECK_COND(graph.is_buffer_storage(x));
-  VK_CHECK_COND(graph.is_buffer_storage(dW));
+  VK_CHECK_COND(graph.is_contiguous_buffer_tensor(d_out));
+  VK_CHECK_COND(graph.is_contiguous_buffer_tensor(x));
+  VK_CHECK_COND(graph.is_contiguous_buffer_tensor(dW));
 
   const int64_t N = graph.size_at<int64_t>(-1, d_out);
   const int64_t K = graph.size_at<int64_t>(-1, x);

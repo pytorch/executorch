@@ -41,3 +41,57 @@ class TestConvertToLinear(unittest.TestCase):
                 )
                 .run_method_and_compare_outputs()
             )
+
+    def test_fp32_view_after_two_linears_with_dynamic_shapes(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc1 = torch.nn.Linear(16, 16)
+                self.fc2 = torch.nn.Linear(16, 8)
+
+            def forward(self, x):
+                return self.fc2(self.fc1(x)).view(-1, 8)
+
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=1, max=32)},)
+        (
+            Tester(Model(), (torch.randn(4, 16),), dynamic_shapes=dynamic_shapes)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count({"executorch_exir_dialects_edge__ops_aten_linear_default": 2})
+            # The view does not change the shape, so it goes.
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_view_to_another_shape_with_equal_bounds_is_kept(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(16, 8)
+
+            def forward(self, x):
+                return self.linear(x).view(x.shape[1], x.shape[0], 8)
+
+        x = torch.randn(2, 5, 16)
+        dynamic_shapes = (
+            {
+                0: torch.export.Dim("a", min=2, max=8),
+                1: torch.export.Dim("b", min=2, max=8),
+            },
+        )
+        (
+            Tester(Model(), (x,), dynamic_shapes=dynamic_shapes)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+                    # [b, a, 8] has the bounds of the linear output [a, b, 8], but
+                    # not its shape, so the view stays.
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+                }
+            )
+            .run_method_and_compare_outputs(inputs=(x,))
+        )

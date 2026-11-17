@@ -168,9 +168,8 @@ class CustomT5Stack(T5Stack):
         if self.config.is_decoder:
             attention_mask = create_causal_mask(
                 config=self.config,
-                input_embeds=inputs_embeds,
+                inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
-                cache_position=cache_position,
                 past_key_values=(
                     past_key_values.self_attention_cache
                     if isinstance(past_key_values, EncoderDecoderCache)
@@ -180,7 +179,7 @@ class CustomT5Stack(T5Stack):
         else:
             attention_mask = create_bidirectional_mask(
                 config=self.config,
-                input_embeds=inputs_embeds,
+                inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
             )
 
@@ -188,7 +187,7 @@ class CustomT5Stack(T5Stack):
         if self.is_decoder and encoder_hidden_states is not None:
             encoder_extended_attention_mask = create_bidirectional_mask(
                 config=self.config,
-                input_embeds=inputs_embeds,
+                inputs_embeds=inputs_embeds,
                 attention_mask=encoder_attention_mask,
                 encoder_hidden_states=encoder_hidden_states,
             )
@@ -373,6 +372,11 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
                 self.static_cache.layers[i].values,
                 persistent=False,
             )
+            self.register_buffer(
+                f"cumulative_length_{i}",
+                self.static_cache.layers[i].cumulative_length,
+                persistent=False,
+            )
 
     def get_example_inputs(self):
         max_hidden_seq_length = self.max_hidden_seq_length
@@ -403,6 +407,9 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
         encoder_attention_mask,
         cache_position,
     ):
+        # StaticLayer writes at cumulative_length and ignores cache_position.
+        for layer in self.static_cache.layers:
+            layer.cumulative_length.copy_(cache_position[0:1])
         # Get outputs from decoder
         outputs = self.decoder(
             input_ids=decoder_input_ids,

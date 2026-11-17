@@ -38,7 +38,7 @@ _NEUTRON_XFAILS = [
     # Model failures:
     "dynamic_shapes",  # EIEX-1136
     "test_convnext_small",  # AIR-15298
-    "test_inception_v3",  # EIEX-1103
+    "test_inception_v3",  # Accuracy error.
     "test_maxvit_t",  # EIEX-1104
     "test_resnet50",  # EIEX-1105
     "test_resnext50_32x4d",  # EIEX-1106

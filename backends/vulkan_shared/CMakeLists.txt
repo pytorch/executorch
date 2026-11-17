@@ -31,8 +31,8 @@ endif()
 # independent registries and defeat context sharing.
 add_library(
   executorch_vulkan_shared_runtime SHARED
-  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanContext.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanContextRegistry.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanDevice.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanDeviceRegistry.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanRuntimeConfig.cpp
 )
 add_library(
@@ -84,7 +84,7 @@ install(
   PATTERN "test" EXCLUDE
 )
 
-# SharedVulkanContext.h is a public installed header and includes
+# SharedVulkanDevice.h is a public installed header and includes
 # <vulkan/vulkan.h>. Install the same vendored headers used by the build so an
 # installed ExecuTorch package does not depend on an unrelated system Vulkan
 # SDK.

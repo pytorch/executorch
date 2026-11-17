@@ -42,7 +42,8 @@ The full user-facing API is documented below.
 
 For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
 Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
-are contained in one delegated partition. The backend aliases each buffer's
+are contained in one delegated partition, and whose new value is not returned or
+read outside that partition. The backend aliases each buffer's
 input and mutation output to persistent VGF storage across invocations.
 
 ```python
@@ -53,7 +54,7 @@ Normalise inputs and populate the underlying Arm compile spec.
 Args:
 - **tosa_spec (TosaSpecification | str | None)**: TOSA specification to
         target. Strings are parsed via ``TosaSpecification.create_from_string``.
-        Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
+        Defaults to ``"TOSA-1.0+FP+INT+int4+int16+bf16"``.
 - **compiler_flags (list[str] | None)**: Optional converter-backend flags.
 - **emit_debug_info (bool)**: Preserve Model Converter debug information in
         the generated VGF. Defaults to ``False``.

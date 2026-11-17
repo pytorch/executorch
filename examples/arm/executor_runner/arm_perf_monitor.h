@@ -9,4 +9,5 @@
 #include <stddef.h>
 
 void StartMeasurements();
+void ConsumeMeasurements();
 void StopMeasurements(size_t num_inferences);

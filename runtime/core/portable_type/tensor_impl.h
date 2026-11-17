@@ -16,6 +16,8 @@
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#include <cinttypes>
+
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
 // executorch/runtime/core/exec_aten/tensor_util.h.
@@ -334,7 +336,7 @@ ssize_t compute_numel(
 // Appropriate format specifier for elements of sizes() and
 // strides(). Must be used instead of using d directly to support ATen
 // mode.
-#define ET_PRI_SIZES_AND_STRIDES "d"
+#define ET_PRI_SIZES_AND_STRIDES PRId32
 
 } // namespace etensor
 } // namespace runtime

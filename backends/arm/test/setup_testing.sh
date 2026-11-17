@@ -44,6 +44,7 @@ ${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_confi
 # Ethos-U55/U65
 # aten::avg_pool2d.out                         - test_adaptive_avgpool2d_batch_sizes[arm_ethos_u55]
 # aten::gt.Tensor_out                          - test_divide_f32_trunc[arm_ethos_u55]
+# quantized_decomposed::dequantize_per_channel.out - test_conv3d_padding_reflect[arm_ethos_u55]
 #
 # Ethos-U85:
 # aten::_native_batch_norm_legit_no_training.out - test_swin_v2_t[arm_ethos_u85-static_shapes-float32]
@@ -75,6 +76,7 @@ ops_list_u55=(
     aten::bmm.out
     dim_order_ops::_clone_dim_order.out
     dim_order_ops::_to_dim_order_copy.out
+    quantized_decomposed::dequantize_per_channel.out
     "${ops_list_quantized_decomposed[@]}"
 )
 ops_list_u65=("${ops_list_u55[@]}")

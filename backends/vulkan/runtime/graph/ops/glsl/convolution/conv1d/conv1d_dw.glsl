@@ -67,6 +67,7 @@ void main() {
   const int L_in = in_sizes.x;
   const int C = in_sizes.y;
   const int C4 = div_up_4(C);
+  const int C_stride = mul_4(C4);
   const int L_out = out_sizes.x;
 
   if (c4 >= C4 || l_out >= L_out) {
@@ -79,14 +80,14 @@ void main() {
     const int l_in = l_out * stride - padding + k * dilation;
     if (l_in >= 0 && l_in < L_in) {
 #ifdef BUFFER
-      const int in_base = (n * L_in + l_in) * C + c4 * 4;
+      const int in_base = (n * L_in + l_in) * C_stride + c4 * 4;
       T in_s0 = t_in[in_base];
       T in_s1 = (c4 * 4 + 1 < C) ? t_in[in_base + 1] : T(0);
       T in_s2 = (c4 * 4 + 2 < C) ? t_in[in_base + 2] : T(0);
       T in_s3 = (c4 * 4 + 3 < C) ? t_in[in_base + 3] : T(0);
       const VEC4_T in_val = VEC4_T(in_s0, in_s1, in_s2, in_s3);
 
-      const int w_base = k * C + c4 * 4;
+      const int w_base = k * C_stride + c4 * 4;
       T w_s0 = t_weight[w_base];
       T w_s1 = (c4 * 4 + 1 < C) ? t_weight[w_base + 1] : T(0);
       T w_s2 = (c4 * 4 + 2 < C) ? t_weight[w_base + 2] : T(0);
@@ -116,11 +117,11 @@ void main() {
   sum = clamp(sum, VEC4_T(output_min), VEC4_T(output_max));
 
 #ifdef BUFFER
-  const int out_base = (n * L_out + l_out) * C + c4 * 4;
+  const int out_base = (n * L_out + l_out) * C_stride + c4 * 4;
   t_out[out_base] = sum.x;
-  if (c4 * 4 + 1 < C) t_out[out_base + 1] = sum.y;
-  if (c4 * 4 + 2 < C) t_out[out_base + 2] = sum.z;
-  if (c4 * 4 + 3 < C) t_out[out_base + 3] = sum.w;
+  t_out[out_base + 1] = c4 * 4 + 1 < C ? sum.y : T(0);
+  t_out[out_base + 2] = c4 * 4 + 2 < C ? sum.z : T(0);
+  t_out[out_base + 3] = c4 * 4 + 3 < C ? sum.w : T(0);
 #else
   imageStore(t_out, ivec3(l_out, c4, n), sum);
 #endif

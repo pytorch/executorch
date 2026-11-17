@@ -134,6 +134,7 @@ from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .detect_dynamic_w8a8_linear_pass import DetectDynamicW8A8LinearPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
+from .ethosu_direct_io_pass import EthosUMemoryPlanning  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
 from .fold_dyt_affine_into_conv_pass import FoldDyTAffineIntoConvPass  # noqa
 from .fold_dyt_alpha_into_lut_pass import FoldDyTAlphaIntoLUTPass  # noqa
@@ -169,6 +170,9 @@ from .insert_rescales_pass import (  # noqa
     InsertControlFlowRescalesPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
+)
+from .insert_sym_size_int_for_input_dims_pass import (  # noqa
+    InsertSymSizeIntForInputDimsPass,
 )
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa

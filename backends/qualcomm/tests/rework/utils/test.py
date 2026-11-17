@@ -61,5 +61,17 @@ def test_qat(subtests):
     QAT.test(subtests)  # noqa: F405
 
 
+def test_concat_observer_deepcopy(subtests):
+    ConcatObserverDeepcopy.test(subtests)  # noqa: F405
+
+
+def test_qat_concat(subtests):
+    QATConcat.test(subtests)  # noqa: F405
+
+
+def test_qat_concat_with_fixed_qparams_inputs(subtests):
+    QATConcatWithFixedQParamsInputs.test(subtests)  # noqa: F405
+
+
 def test_lowering_with_exported_program(compile_spec):
     LoweringWithExportedProgram.test(compile_spec)  # noqa: F405

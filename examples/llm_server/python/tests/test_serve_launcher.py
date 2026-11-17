@@ -101,7 +101,7 @@ def native_launch(launch):
     launch.loops = []
     launch.max_inflight_requests = 4
 
-    async def spawn(command):
+    async def spawn(command, *, stderr=None):
         launch.loops.append(("spawn", asyncio.get_running_loop()))
         launch.proc = _AsyncProc()
         worker = MultiplexedWorkerClient(
@@ -157,19 +157,66 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
+def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch, capsys):
+    assert serve._parse_args(argv).prefix_checkpoint_prompt_end == "initial"
+    for value, error in (
+        ("every", "requires --prefix-cache-entries > 0"),
+        ("always", "invalid choice"),
+    ):
+        with pytest.raises(SystemExit):
+            serve._parse_args(argv + ["--prefix-checkpoint-prompt-end", value])
+        assert error in capsys.readouterr().err
+    serve.main(
+        argv
+        + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end", "every"]
+    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_checkpoint_prompt_end") + 1] == "every"
+
+
+def test_every_prompt_end_rejects_periodic_capture(argv, capsys):
+    with pytest.raises(SystemExit):
+        serve._parse_args(
+            argv
+            + [
+                "--prefix-cache-entries",
+                "3",
+                "--prefix-checkpoint-prompt-end",
+                "every",
+                "--prefix-checkpoint-interval",
+                "64",
+            ]
+        )
+    assert "cannot be combined" in capsys.readouterr().err
+    serve._parse_args(
+        argv
+        + [
+            "--prefix-cache-entries",
+            "3",
+            "--prefix-checkpoint-prompt-end",
+            "initial",
+            "--prefix-checkpoint-interval",
+            "64",
+        ]
+    )
+
+
 @pytest.mark.parametrize(
-    "sessions,requests,interval,override,expected",
+    "sessions,requests,interval,override,expected,prompt_end",
     [
-        (16, 8, 0, 0, 8),
-        (4, 8, 0, 0, 4),
-        (16, 8, 64, 0, 2),
-        (1, 8, 64, 0, 1),
-        (16, 8, 0, 1, 1),
-        (16, 8, 64, 3, 3),
+        (16, 8, 0, 0, 8, False),
+        (16, 8, 0, 0, 8, True),
+        (4, 8, 0, 0, 4, False),
+        (4, 8, 0, 0, 4, True),
+        (16, 8, 64, 0, 2, False),
+        (1, 8, 64, 0, 1, False),
+        (16, 8, 0, 1, 1, False),
+        (16, 8, 0, 1, 1, True),
+        (16, 8, 64, 3, 3, False),
     ],
 )
 def test_capture_capacity_validation_and_worker_override(
-    argv, launch, sessions, requests, interval, override, expected
+    argv, launch, sessions, requests, interval, override, expected, prompt_end
 ):
     serve.main(
         argv
@@ -185,9 +232,11 @@ def test_capture_capacity_validation_and_worker_override(
             "--prefix-capture-slots",
             str(override),
         ]
+        + (["--prefix-checkpoint-prompt-end", "every"] if prompt_end else [])
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
+    assert ("--prefix_checkpoint_prompt_end" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,
@@ -198,7 +247,13 @@ def test_capture_capacity_validation_and_worker_override(
         port=8000,
     )
     assert (
-        serve._validate_limits(Mock(), args, prefix_capture_slots=override) == expected
+        serve._validate_limits(
+            Mock(),
+            args,
+            prefix_capture_slots=override,
+            prefix_checkpoint_prompt_end="every" if prompt_end else "initial",
+        )
+        == expected
     )
 
 
@@ -228,7 +283,8 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
-        ]
+        ],
+        stderr=None,
     )
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path=args.tokenizer_path,
@@ -240,12 +296,21 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
         "executorch",
         max_context=1024,
         tool_detector_cls=HermesDetector,
+        api_dialect="openai",
+        streaming_preflight_timeout=None,
     )
     app = launch.stages["uvicorn"].call_args.args[0]
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
     factory = launch.stages["app"].call_args.kwargs["serving_factory"]
     launch.stages["app"].assert_called_once_with(
-        None, "executorch", serving_factory=factory
+        None,
+        "executorch",
+        serving_factory=factory,
+        model_path=args.model_path,
+        max_context=1024,
+        max_concurrent_requests=64,
+        hud=True,
+        listen_address="http://127.0.0.1:8000",
     )
     launch.runtime.aclose_worker.assert_awaited_once_with()
     launch.worker.close.assert_not_called()
@@ -810,3 +875,18 @@ def test_launcher_rejects_legacy_readiness_and_reaps_real_child(
 
     launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
     serve.main(argv)
+
+
+@pytest.mark.parametrize("value,expected", [("none", None), ("0", 0.0), ("0.25", 0.25)])
+def test_api_dialect_and_preflight_options(argv, value, expected):
+    args = serve._parse_args(
+        argv + ["--api-dialect", "openrouter", "--streaming-preflight-timeout", value]
+    )
+    assert args.api_dialect == "openrouter"
+    assert args.streaming_preflight_timeout == expected
+
+
+@pytest.mark.parametrize("value", ["-1", "inf", "nan", "invalid"])
+def test_invalid_preflight_option(argv, value):
+    with pytest.raises(SystemExit):
+        serve._parse_args(argv + ["--streaming-preflight-timeout", value])

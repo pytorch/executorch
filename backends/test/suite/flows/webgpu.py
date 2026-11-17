@@ -20,6 +20,9 @@ def _create_webgpu_flow() -> TestFlow:
             "lstm_batch_sizes",
             "upsample_nearest2d",
         ],
+        # WebGPU fails to build the graph for replicate padding ("clamp: int
+        # dtype unsupported").
+        xfail_patterns=["test_conv3d_padding_replicate"],
     )
 
 

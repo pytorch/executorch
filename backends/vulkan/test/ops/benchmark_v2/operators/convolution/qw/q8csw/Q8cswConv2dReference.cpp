@@ -35,7 +35,7 @@ static Tensor q8csw_conv2d_reference(
         return oc * weight.sizes[1] +
             (ky * p.kernel[1] + kx) * g.in_channels_per_group + ci;
       };
-  if (quantized) {
+  if (quantized && int8_dot_product(spec)) {
     const float scale = q8ta::scale(spec, 1);
     const int64_t zp = q8ta::integer(spec, 2);
     input = q8ta::quantized_input(input, scale, zp);

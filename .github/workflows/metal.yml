@@ -283,14 +283,17 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         echo "::endgroup::"
 
-        echo "::group::Setup Optimum-ExecuTorch"
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
-        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        echo "::endgroup::"
-
         echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        # After install_executorch.sh, whose requirements-examples.txt installs a
+        # newer transformers than optimum-executorch supports.
+        echo "::group::Setup Optimum-ExecuTorch"
+        ${CONDA_RUN} pip install "optimum~=2.0.0" "transformers==5.0.0rc1"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
+        ${CONDA_RUN} pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
         echo "::group::Pip List"

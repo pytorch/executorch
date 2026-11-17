@@ -46,6 +46,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
+#include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
 #include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -200,7 +201,7 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 12> kOps{
+  constexpr std::array<std::string_view, 13> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
@@ -210,6 +211,7 @@ bool is_width_packed_op(std::string_view key) {
       "et_vk.linear_dq8ca_q4gsw.default",
       "et_vk.linear_q4gsw.default",
       "et_vk.rms_norm.default",
+      "et_vk.sdpa.default",
       "llama.custom_sdpa.default",
       "update_cache.default",
       "torchao.choose_qparams_affine.default"};
@@ -236,6 +238,60 @@ bool is_activation_input(std::string_view key, std::string_view input) {
     return input == "query";
   }
   return input == "input";
+}
+
+// Ops whose ET-VK kernels bind every tensor input, constants and state
+// included, in the output's storage, so dispatch converts any input whose
+// storage differs. The binary ops all run through add_binary_op_node, which
+// also prepacks tensor references like its output.
+bool binds_output_storage(std::string_view key) {
+  constexpr std::array<std::string_view, 20> kOps{
+      "aten.add.Tensor",         "aten.bitwise_and.Tensor",
+      "aten.bitwise_or.Tensor",  "aten.div.Tensor",
+      "aten.div.Tensor_mode",    "aten.eq.Tensor",
+      "aten.ge.Tensor",          "aten.gt.Tensor",
+      "aten.le.Tensor",          "aten.logical_and.default",
+      "aten.logical_or.default", "aten.lt.Tensor",
+      "aten.minimum.default",    "aten.mul.Tensor",
+      "aten.pow.Tensor_Tensor",  "aten.sub.Tensor",
+      "aten.view_copy.default",  "aten.where.self",
+      "et_vk.sdpa.default",      "et_vk.swiglu.default"};
+  return std::ranges::find(kOps, key) != kOps.end();
+}
+
+// Ops whose ET-VK kernels read `self` in the output's layout and storage, which
+// later layout steps can leave unlike the input's.
+bool reads_self_as_output(std::string_view key) {
+  return key == "aten.constant_pad_nd.default" ||
+      key == "aten.permute_copy.default" || key == "aten.repeat.default";
+}
+
+// Texture texels address [C * N, H, W] with W or H packed, and
+// [ceil(C / 4) * N, H, W] with C packed. A reshape that keeps W, H and C * N,
+// and also C when C is packed, reads the same texels as its source.
+bool remaps_texels(
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& source_sizes,
+    utils::GPUMemoryLayout layout) {
+  const auto extents = [layout](const std::vector<int64_t>& s) {
+    std::array<int64_t, 4> whcn{1, 1, 1, 1};
+    for (size_t i = 0; i < s.size(); ++i) {
+      whcn[std::min<size_t>(i, 3)] *= s[s.size() - 1 - i];
+    }
+    if (layout != utils::kChannelsPacked) {
+      whcn[2] *= std::exchange(whcn[3], 1);
+    }
+    return whcn;
+  };
+  return extents(sizes) != extents(source_sizes);
+}
+
+size_t dynamic_dims(const TensorMeta& meta) {
+  size_t count = 0;
+  for (size_t i = 0; i < meta.lower_bounds.size(); ++i) {
+    count += meta.lower_bounds[i] != meta.sizes[i];
+  }
+  return count;
 }
 
 bool preserves_packed_layout(std::string_view key) {
@@ -368,9 +424,8 @@ bool is_metadata_only_view(std::string_view key) {
       std::ranges::find(kOps, key) != kOps.end();
 }
 
-// ET-VK tensor views keep the sizes they were created with, so a view of a
-// dynamically sized source must be resized whenever that source is.
-void resize_view_alias(
+// View shapes must be validated and updated whenever their source resizes.
+void resize_view(
     ComputeGraph* graph,
     const std::vector<vkcompute::ArgGroup>& /*args*/,
     const std::vector<VkRef>& resize_args) {
@@ -643,6 +698,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     method_.graph.rebuild_def_use();
     warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
     vulkan::lower_hf_attention(method_.graph);
+    vulkan::lower_sdpa(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
@@ -948,6 +1004,27 @@ class VulkanEngineExecutable final : public EngineExecutable {
         storage_at(id) = utils::kBuffer;
       }
     }
+    for (const NodeId node_id : nodes_) {
+      const Node& node = g().node(node_id);
+      const std::string key = registry_key(node.target);
+      if (!node.is_call() || !binds_output_storage(key)) {
+        continue;
+      }
+      const bool needs_buffer =
+          std::ranges::any_of(node.input_value_ids(), [&](ValueId input_id) {
+            const Value& input = g().value(input_id);
+            const auto layout = is_width_packed_op(key) ? utils::kWidthPacked
+                                                        : layout_at(input_id);
+            return input.is_tensor() &&
+                exceeds_texture_limit(
+                       input.tensor_meta(), layout, texture_limit);
+          });
+      if (needs_buffer) {
+        for_each_output_value(node, [&](ValueId output_id) {
+          storage_at(output_id) = utils::kBuffer;
+        });
+      }
+    }
     // Sibling views and alias chains need repeated passes before every alias
     // agrees with the storage of its root.
     do {
@@ -979,27 +1056,133 @@ class VulkanEngineExecutable final : public EngineExecutable {
         }
       }
     } while (changed);
+
+    // A constant whose readers all convert it to one representation at
+    // dispatch is prepacked in it once instead of converted on every execute.
+    using Representation =
+        std::pair<utils::StorageType, utils::GPUMemoryLayout>;
+    const auto wanted =
+        [&](ValueId constant_id,
+            NodeId consumer_id) -> std::optional<Representation> {
+      const Node& consumer = g().node(consumer_id);
+      const std::string key = registry_key(consumer.target);
+      ValueId out_id = kInvalid;
+      for_each_output_value(consumer, [&](ValueId id) { out_id = id; });
+      if (!valid(out_id)) {
+        return std::nullopt;
+      }
+      if (binds_output_storage(key)) {
+        return Representation{storage_at(out_id), layout_at(constant_id)};
+      }
+      const Argument* self = find_input(consumer, "self");
+      if (reads_self_as_output(key) && self != nullptr &&
+          tensor_id(self) == constant_id) {
+        return Representation{storage_at(out_id), layout_at(out_id)};
+      }
+      return std::nullopt;
+    };
+    for (const NodeId node_id : nodes_) {
+      const Node& node = g().node(node_id);
+      if (!node.is_call() ||
+          registry_key(node.target) != "et_vk.prepack.default") {
+        continue;
+      }
+      for_each_output_value(node, [&](ValueId constant_id) {
+        const std::vector<NodeId>& consumers =
+            g().value(constant_id).consumer_ids;
+        if (consumers.empty()) {
+          return;
+        }
+        const std::optional<Representation> representation =
+            wanted(constant_id, consumers.front());
+        if (!representation ||
+            !std::ranges::all_of(
+                consumers,
+                [&](NodeId consumer_id) {
+                  return wanted(constant_id, consumer_id) == representation;
+                }) ||
+            (representation->first == utils::kTexture3D &&
+             exceeds_texture_limit(
+                 meta_of(constant_id),
+                 representation->second,
+                 texture_limit))) {
+          return;
+        }
+        storage_at(constant_id) = representation->first;
+        layout_at(constant_id) = representation->second;
+      });
+    }
+  }
+
+  bool buffer_padding_possible(ValueId id) {
+    const TensorMeta& meta = meta_of(id);
+    const int64_t axis =
+        static_cast<int64_t>(meta.sizes.size()) - 1 - packed_dim(layout_at(id));
+    return axis < 0 || meta.sizes.at(axis) % 4 != 0 ||
+        (!meta.lower_bounds.empty() &&
+         meta.lower_bounds.at(axis) != meta.sizes.at(axis));
+  }
+
+  bool view_needs_copy(ValueId id, ValueId source_id) {
+    if (layout_at(id) != layout_at(source_id)) {
+      return true;
+    }
+    if (storage_at(id) == utils::kBuffer) {
+      return buffer_padding_possible(source_id) || buffer_padding_possible(id);
+    }
+    // Texture views ignore dim order, so they cannot permute their source.
+    const TensorMeta& meta = meta_of(id);
+    const TensorMeta& source = meta_of(source_id);
+    if (!meta.is_contiguous() ||
+        remaps_texels(meta.sizes, source.sizes, layout_at(id))) {
+      return true;
+    }
+    if (meta.lower_bounds.empty() && source.lower_bounds.empty()) {
+      return false;
+    }
+    // Texel extents are products of sizes. With at most one dynamic dim per
+    // tensor, the view's is proportional to its source's, so each extent is
+    // linear in one size and extents that match at both bounds always match.
+    const auto lower = [](const TensorMeta& m) {
+      return m.lower_bounds.empty() ? m.sizes : m.lower_bounds;
+    };
+    return dynamic_dims(meta) > 1 || dynamic_dims(source) > 1 ||
+        remaps_texels(lower(meta), lower(source), layout_at(id));
   }
 
   void materialize_packed_views() {
     std::vector<ValueId> value_ids;
     for (const NodeId node_id : nodes_) {
       const Node& node = g().node(node_id);
-      if (!node.is_call() || registry_key(node.target) != "aten.view.default") {
+      const std::string target = registry_key(node.target);
+      // A view pads its own sizes along its source's packed dim, which can
+      // disagree with the source's physical layout. An alias keeps its
+      // source's sizes and dim order, so it always agrees.
+      if (!node.is_call() || !is_metadata_only_view(target) ||
+          target == "aten.alias.default") {
         continue;
       }
       for_each_output_value(node, [&](ValueId output_id) {
         const ValueId source_id = g().value(output_id).alias_id;
-        if (valid(source_id) &&
-            ((!g().value(output_id).tensor_meta().lower_bounds.empty() &&
-              layout_at(output_id) == utils::kWidthPacked) ||
-             layout_at(output_id) != layout_at(source_id)) &&
-            storage_at(output_id) != utils::kBuffer) {
+        if (valid(source_id) && view_needs_copy(output_id, source_id)) {
           value_ids.push_back(output_id);
         }
       });
     }
     vulkan::materialize_view_copies(method_.graph, value_ids);
+    // Views in mutated alias groups stay aliases, so one that needs a copy
+    // fails the load.
+    for (const ValueId id : value_ids) {
+      const Value& view = g().value(id);
+      if (valid(view.alias_id)) {
+        throw std::runtime_error(
+            storage_at(id) == utils::kBuffer
+                ? "vulkan: buffer view '" + view.name +
+                    "' of a mutated tensor cannot alias its padded source"
+                : "vulkan: texture view '" + view.name +
+                    "' of a mutated tensor would read the wrong texels");
+      }
+    }
     validate_graph(method_.graph);
   }
 
@@ -1607,6 +1790,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Value& v,
       utils::StorageType storage,
       utils::GPUMemoryLayout layout) {
+    if (storage == utils::kTexture3D &&
+        exceeds_texture_limit(
+            v.tensor_meta(),
+            layout,
+            graph_->context()->adapter_ptr()->max_texture3d_dim())) {
+      throw std::runtime_error(
+          "vulkan: repack exceeds the device's 3D texture limit");
+    }
     const std::vector<int64_t>& sizes = v.tensor_meta().sizes;
     const VkRef dst = graph_->add_tensor(
         sizes,
@@ -1737,15 +1928,16 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     }
     const bool width = is_width_packed_op(key);
-    std::optional<utils::StorageType> activation_storage;
-    if (converts_activation_storage(key)) {
+    const bool binds_output = binds_output_storage(key);
+    std::optional<utils::StorageType> output_storage;
+    if (converts_activation_storage(key) || binds_output) {
       const auto output =
           std::ranges::find_if(n.outputs, [this](const Output& candidate) {
             return valid(candidate.value_id) &&
                 g().value(candidate.value_id).is_tensor();
           });
       if (output != n.outputs.end()) {
-        activation_storage = storage_at(output->value_id);
+        output_storage = storage_at(output->value_id);
       }
     }
 
@@ -1764,14 +1956,18 @@ class VulkanEngineExecutable final : public EngineExecutable {
           const Value& v = g().value(value_id);
           const bool activation = v.role == ValueRole::Intermediate ||
               v.role == ValueRole::UserInput;
-          const bool storage_mismatch = activation_storage.has_value() &&
-              is_activation_input(key, na.name) &&
-              storage_at(value_id) != *activation_storage;
-          if (activation &&
-              (layout_at(value_id) != utils::kWidthPacked ||
-               storage_mismatch)) {
+          const bool storage_mismatch = output_storage.has_value() &&
+              (binds_output || is_activation_input(key, na.name)) &&
+              storage_at(value_id) != *output_storage;
+          // The fused SDPA shaders index buffers as contiguous rows.
+          const bool strided_buffer = key == "et_vk.sdpa.default" &&
+              graph_->val_is_tensor(a) && graph_->is_buffer_storage(a) &&
+              !graph_->is_contiguous(a);
+          if ((activation || binds_output) &&
+              (layout_at(value_id) != utils::kWidthPacked || storage_mismatch ||
+               strided_buffer)) {
             a = repack_to_width(
-                a, v, activation_storage.value_or(storage_at(value_id)));
+                a, v, output_storage.value_or(storage_at(value_id)));
           }
         }
       }
@@ -1786,9 +1982,24 @@ class VulkanEngineExecutable final : public EngineExecutable {
             storage_at(value_id),
             utils::kChannelsPacked);
       }
-      // ET-VK's pad picks its shader by the output's layout and storage
-      // alone, which later layout steps can leave unlike its input's.
-      if (key == "aten.constant_pad_nd.default" && na.name == "self" &&
+      // ET-VK's softmax reads its input in the output's storage type and, for
+      // textures, its layout.
+      if ((key == "aten._softmax.default" ||
+           key == "aten._log_softmax.default") &&
+          na.name == "self" && na.arg.kind() == ArgKind::Tensor &&
+          valid(na.arg.as_tensor().id) && !graph_->val_is_tref(a)) {
+        const ValueId out_id = n.outputs.at(0).value_id;
+        const VkRef out = vref_at(out_id);
+        if (graph_->storage_type_of(a) != graph_->storage_type_of(out) ||
+            graph_->hashed_layout_of(a) != graph_->hashed_layout_of(out)) {
+          a = repack(
+              a,
+              g().value(na.arg.as_tensor().id),
+              storage_at(out_id),
+              layout_at(out_id));
+        }
+      }
+      if (reads_self_as_output(key) && na.name == "self" &&
           na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id)) {
         const ValueId in_id = na.arg.as_tensor().id;
         ValueId out_id = kInvalid;
@@ -1800,23 +2011,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
               a, g().value(in_id), storage_at(out_id), layout_at(out_id));
         }
       }
-      // ET-VK's view_copy shaders read and write one storage type.
-      if (key == "aten.view_copy.default" && na.name == "self" &&
-          na.arg.kind() == ArgKind::Tensor) {
+      if (!width && output_storage.has_value() && binds_output &&
+          na.arg.kind() == ArgKind::Tensor && !graph_->val_is_tref(a)) {
         const ValueId in_id = na.arg.as_tensor().id;
-        ValueId out_id = kInvalid;
-        for_each_output_value(n, [&](ValueId id) { out_id = id; });
-        if (valid(in_id) && valid(out_id) &&
-            storage_at(in_id) != storage_at(out_id)) {
-          const Value& v = g().value(in_id);
-          const VkRef dst = graph_->add_tensor(
-              v.tensor_meta().sizes,
-              to_vk_dtype(device_dtype(v.tensor_meta().dtype)),
-              storage_at(out_id),
-              layout_at(in_id));
-          std::vector<VkRef> clone_args = {a, none_ref_, dst};
-          VK_GET_OP_FN("aten.clone.default")(*graph_, clone_args);
-          a = dst;
+        if (valid(in_id) && storage_at(in_id) != *output_storage) {
+          a = repack(a, g().value(in_id), *output_storage, layout_at(in_id));
         }
       }
       args.push_back(a);
@@ -1863,7 +2062,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
   void add_view_resize(const Node& n) {
     graph_->execute_nodes().emplace_back(new vkcompute::ExecuteNode(
-        resize_view_alias,
+        resize_view,
         {vref_at(n.outputs.at(0).value_id),
          resolve_arg(n.inputs.at(0).arg),
          resolve_arg(n.inputs.at(1).arg)}));
@@ -2143,6 +2342,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
               "): only aten.view can alias a dynamically shaped source");
         }
         continue;
+      }
+      if (key == "aten.view_copy.default") {
+        add_view_resize(n);
       }
       try {
         dispatch(n);

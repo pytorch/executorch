@@ -5,6 +5,7 @@
 
 from typing import Any, cast, Final
 
+import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 exir_ops = cast(Any, exir_ops)
@@ -29,6 +30,15 @@ PER_TENSOR_QDQ_OPS: Final = (
     DEQUANT_PER_TENSOR_OP_T,
 )
 PER_CHANNEL_QDQ_OPS: Final = (QUANT_PER_CHANNEL_OP, DEQUANT_PER_CHANNEL_OP)
+
+INT_DTYPES: Final = (torch.bool, torch.int8, torch.int16, torch.int32)
+FP_DTYPES: Final = (
+    torch.float16,
+    torch.float32,
+    torch.bfloat16,
+    torch.float8_e4m3fn,
+    torch.float8_e5m2,
+)
 
 NHWC_ORDER: Final = (0, 2, 3, 1)
 NHWC_INVERSE_ORDER: Final = (0, 3, 1, 2)

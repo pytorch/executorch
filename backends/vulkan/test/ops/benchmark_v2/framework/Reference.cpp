@@ -57,6 +57,14 @@ tensor_arg(const Json& spec, size_t index, const TensorMap& tensors) {
   return tensors.at(spec.at("args").at(index).at("tensor").get<std::string>());
 }
 
+bool int8_dot_product(const Json& spec) {
+  const Json context = spec.value("reference_context", Json::object());
+  require(context.is_object(), "Reference context must be an object");
+  const Json dot = context.value("int8_dot_product", Json(true));
+  require(dot.is_boolean(), "Reference int8_dot_product must be boolean");
+  return dot.get<bool>();
+}
+
 } // namespace reference
 
 namespace {
@@ -194,7 +202,8 @@ Report compare_outputs(
     const Json& spec,
     const ReferenceOutputs& expected,
     const ReferenceOutputs& actual,
-    const Json& actual_dtypes) {
+    const Json& actual_dtypes,
+    double fault_rel) {
   const Json method = spec.value("validation_method", Json::object());
   reference::require(
       method.value("function", "is_close") == "is_close",
@@ -204,6 +213,9 @@ Report compare_outputs(
       {"reference", reference_name(spec)},
       {"method", "is_close"},
       {"outputs", Report::object()}};
+  if (fault_rel != 0) {
+    result["fault_rel"] = fault_rel;
+  }
   const auto selected = validation_output_names(spec);
   if (!selected.empty()) {
     result["output_selection"] = selected;
@@ -254,15 +266,21 @@ Report compare_outputs(
     size_t nonfinite = 0;
     double max_abs_error = 0;
     double max_rel_error = 0;
+    double sum_abs_error = 0;
+    double sum_sq_error = 0;
+    double sum_sq_reference = 0;
     Report mismatch_indices = Report::array();
     for (size_t i = 0; i < item.second.size(); ++i) {
       const double reference_value = item.second[i];
-      const double actual_value = computed->second[i];
+      const double actual_value = computed->second[i] * (1 + fault_rel);
       const bool finite =
           std::isfinite(reference_value) && std::isfinite(actual_value);
       const double error = std::abs(actual_value - reference_value);
       if (finite) {
         max_abs_error = std::max(max_abs_error, error);
+        sum_abs_error += error;
+        sum_sq_error += error * error;
+        sum_sq_reference += reference_value * reference_value;
         const double relative = reference_value != 0
             ? error / std::abs(reference_value)
             : error == 0 ? 0
@@ -282,6 +300,16 @@ Report compare_outputs(
     output["mismatch_count"] = mismatches;
     output["nonfinite_count"] = nonfinite;
     output["max_abs_error"] = max_abs_error;
+    const double finite_count =
+        static_cast<double>(item.second.size() - nonfinite);
+    output["mean_abs_error"] =
+        finite_count > 0 ? Report(sum_abs_error / finite_count) : Report();
+    output["rms_error"] = finite_count > 0
+        ? Report(std::sqrt(sum_sq_error / finite_count))
+        : Report();
+    output["reference_rms"] = finite_count > 0
+        ? Report(std::sqrt(sum_sq_reference / finite_count))
+        : Report();
     output["max_rel_error"] =
         std::isfinite(max_rel_error) ? Report(max_rel_error) : Report();
     output["first_mismatch_indices"] = std::move(mismatch_indices);

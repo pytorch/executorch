@@ -17,6 +17,8 @@ struct CoreAIScalarInfo: Sendable {
   static let supported: [Self] = [
     Self(sdkType: .float16, bridgeType: .float16, byteWidth: 2),
     Self(sdkType: .float32, bridgeType: .float32, byteWidth: 4),
+    Self(sdkType: .int32, bridgeType: .int32, byteWidth: 4),
+    Self(sdkType: .bool, bridgeType: .bool, byteWidth: 1),
   ]
 
   static func from(sdkType: NDArray.ScalarType) throws -> Self {

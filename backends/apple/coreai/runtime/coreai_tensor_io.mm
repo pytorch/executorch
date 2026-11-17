@@ -47,17 +47,26 @@ Result<ETCoreAIScalarType> scalar_type(ScalarType type) {
       return ETCoreAIScalarTypeFloat16;
     case ScalarType::Float:
       return ETCoreAIScalarTypeFloat32;
+    case ScalarType::Int:
+      return ETCoreAIScalarTypeInt32;
+    case ScalarType::Bool:
+      return ETCoreAIScalarTypeBool;
     default:
-      ET_LOG(Error, "Core AI runtime supports FP16 and FP32 tensors only");
+      ET_LOG(
+          Error,
+          "Core AI runtime supports FP16, FP32, INT32 and BOOL tensors only");
       return Error::NotSupported;
   }
 }
 
 Result<size_t> bridge_scalar_width(ETCoreAIScalarType type) {
   switch (type) {
+    case ETCoreAIScalarTypeBool:
+      return size_t(1);
     case ETCoreAIScalarTypeFloat16:
       return size_t(2);
     case ETCoreAIScalarTypeFloat32:
+    case ETCoreAIScalarTypeInt32:
       return size_t(4);
     default:
       return Error::Internal;
@@ -368,16 +377,21 @@ Error copy_staged(
 } // namespace
 
 Error execute_session(
-    id<ETCoreAISession> session,
     Span<EValue*> args,
     size_t input_count,
-    size_t output_count) {
-  ET_CHECK_OR_RETURN_ERROR(
-      session != nil, DelegateInvalidHandle, "Missing Core AI session");
+    size_t output_count,
+    const std::function<Result<id<ETCoreAISession>>()>& select_session) {
   auto validated = validate_arguments(args, input_count, output_count);
   if (!validated.ok()) {
     return validated.error();
   }
+  auto selected = select_session();
+  if (!selected.ok()) {
+    return selected.error();
+  }
+  id<ETCoreAISession> session = selected.get();
+  ET_CHECK_OR_RETURN_ERROR(
+      session != nil, DelegateInvalidHandle, "Missing Core AI session");
   auto inputs = borrow_inputs(args, validated.get(), input_count);
   if (!inputs.ok()) {
     return inputs.error();

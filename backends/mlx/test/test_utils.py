@@ -1182,3 +1182,28 @@ def run_op_test_main(
     elif args.action == "run":
         passed = test.run_test(verbose=args.verbose)
         sys.exit(0 if passed else 1)
+
+
+if __name__ == "__main__":
+    # run_all_tests --isolate runs each config through this entry point. Tests
+    # register in the imported module, not in this __main__ copy of it.
+    import argparse
+    import sys
+
+    from executorch.backends.mlx.test import test_utils
+    from executorch.backends.mlx.test.run_all_tests import discover_and_import_tests
+
+    parser = argparse.ArgumentParser(description="Run one MLX op test config")
+    parser.add_argument("config_name")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TEST_TIMEOUT)
+    args = parser.parse_args()
+
+    discover_and_import_tests()
+    # First match, like the -j path, since a few config names repeat.
+    tests = [
+        t for name, t in test_utils.get_all_test_configs() if name == args.config_name
+    ]
+    if not tests:
+        sys.exit(f"Could not find test config: {args.config_name}")
+    sys.exit(0 if tests[0].run_test(verbose=args.verbose, timeout=args.timeout) else 1)

@@ -193,8 +193,13 @@ void ComputeGraph::print_readable() {
     std::cout << std::setw(15);
     if (val.isTensor()) {
       const api::vTensor& v_tensor = val.toTensor();
-      auto memory_reqs = v_tensor.get_memory_requirements();
-      std::cout << memory_reqs.size;
+      // External memory is sized by its owner, and a buffer aliasing a VkBuffer
+      // has no allocator to query its requirements through.
+      if (v_tensor.has_external_storage()) {
+        std::cout << "external";
+      } else {
+        std::cout << v_tensor.get_memory_requirements().size;
+      }
     } else {
       std::cout << "";
     }

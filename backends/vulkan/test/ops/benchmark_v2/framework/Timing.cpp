@@ -13,6 +13,8 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
 #include <algorithm>
 #include <chrono>
+#include <iostream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -25,6 +27,12 @@ using Clock = std::chrono::steady_clock;
 Report read_gpu_clock(GpuClock* clock) {
   const auto frequency = clock ? clock->read_mhz() : std::nullopt;
   return frequency ? Report(*frequency) : Report();
+}
+
+int64_t monotonic_ns(Clock::time_point time) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             time.time_since_epoch())
+      .count();
 }
 
 Report profile_operator_shaders(
@@ -208,16 +216,35 @@ Report measure(
   }
   const uint32_t warmup = spec.value("warmup_runs", 3u);
   const uint32_t runs = spec.value("benchmark_runs", 10u);
+  const double sustain_s = spec.value("sustain_s", 0.0);
   encode(count, false);
   std::vector<double> wall_samples;
   std::vector<double> gpu_samples;
   for (uint32_t i = 0; i < warmup; ++i) {
     replay();
   }
-  for (uint32_t i = 0; i < runs; ++i) {
-    wall_samples.push_back(measured_replay(wall_clock_samples));
+  Report sustain_window;
+  if (sustain_s > 0) {
+    // External hardware counter samplers align their captures to these lines.
+    const std::string name =
+        spec.value("name", spec.value("operator", spec.value("shader", "")));
+    const auto begin = Clock::now();
+    std::cerr << "sustain_begin monotonic_ns=" << monotonic_ns(begin)
+              << " case=" << name << std::endl;
+    do {
+      wall_samples.push_back(measured_replay(wall_clock_samples));
+    } while (Clock::now() - begin < std::chrono::duration<double>(sustain_s));
+    const auto end = Clock::now();
+    std::cerr << "sustain_end monotonic_ns=" << monotonic_ns(end)
+              << " case=" << name << std::endl;
+    sustain_window = {
+        {"begin", monotonic_ns(begin)}, {"end", monotonic_ns(end)}};
+  } else {
+    for (uint32_t i = 0; i < runs; ++i) {
+      wall_samples.push_back(measured_replay(wall_clock_samples));
+    }
   }
-  if (timestamps.available()) {
+  if (timestamps.available() && sustain_s == 0) {
     encode(count, true);
     for (uint32_t i = 0; i < warmup; ++i) {
       replay();
@@ -235,10 +262,14 @@ Report measure(
                                  : "dispatches_per_batch",
        count},
       {"warmup_runs", warmup},
-      {"benchmark_runs", runs},
-      {"gpu_timestamps_available", timestamps.available()},
-      {"timestamp_period_ns", timestamps.period_ns()},
-      {"timestamp_valid_bits", timestamps.valid_bits()}};
+      {"benchmark_runs", wall_samples.size()}};
+  if (sustain_s > 0) {
+    result["sustain_s"] = sustain_s;
+    result["sustain_monotonic_ns"] = std::move(sustain_window);
+  }
+  result["gpu_timestamps_available"] = timestamps.available();
+  result["timestamp_period_ns"] = timestamps.period_ns();
+  result["timestamp_valid_bits"] = timestamps.valid_bits();
   const Report measurements = measurement_report(
       count, spec.contains("operator"), gpu_samples, wall_samples);
   for (const auto& measurement : measurements.items()) {
@@ -257,7 +288,7 @@ Report measure(
   if (!throughput.empty()) {
     result["throughput"] = std::move(throughput);
   }
-  if (spec.contains("operator") && timestamps.available()) {
+  if (spec.contains("operator") && timestamps.available() && sustain_s == 0) {
     result.update(profile_operator_shaders(
         spec,
         graph,

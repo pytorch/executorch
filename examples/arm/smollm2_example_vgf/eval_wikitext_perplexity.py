@@ -8,12 +8,15 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import math
+import multiprocessing
 import sys
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
+from numpy.typing import DTypeLike
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_sampled import (  # type: ignore[import-not-found]
@@ -200,6 +203,69 @@ def eval_prompt_nll_kv(
     return total_nll, len(token_ids) - 1
 
 
+def _split_prompt_shards(prompts: List[str], workers: int) -> List[List[str]]:
+    worker_count = min(workers, len(prompts))
+    shards: List[List[str]] = [[] for _ in range(worker_count)]
+    for index, prompt in enumerate(prompts):
+        shards[index % worker_count].append(prompt)
+    return shards
+
+
+def _eval_prompt_shard(
+    *,
+    runner: str,
+    pte: str,
+    tokenizer_path: str,
+    prompts: List[str],
+    window: int,
+    pad_id: int,
+    max_tokens_per_prompt: int,
+    use_kv_cache: bool,
+    input_dtype: np.dtype,
+) -> Tuple[float, int]:
+    tokenizer = get_tokenizer(tokenizer_path)
+    total_nll = 0.0
+    total_tokens = 0
+
+    if use_kv_cache:
+        for prompt in prompts:
+            with KvRunnerSession(
+                runner=runner,
+                pte=pte,
+                extra_args=[],
+                persistent=True,
+                input_dtype=input_dtype,
+            ) as session:
+                prompt_nll, prompt_tokens = eval_prompt_nll_kv(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+            total_nll += prompt_nll
+            total_tokens += prompt_tokens
+    else:
+        with RunnerSession(
+            runner=runner,
+            pte=pte,
+            extra_args=[],
+            persistent=True,
+        ) as session:
+            for prompt in prompts:
+                prompt_nll, prompt_tokens = eval_prompt_nll(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    window=window,
+                    pad_id=pad_id,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+                total_nll += prompt_nll
+                total_tokens += prompt_tokens
+
+    return total_nll, total_tokens
+
+
 def eval_model_ppl(
     *,
     runner: Path,
@@ -210,35 +276,105 @@ def eval_model_ppl(
     pad_id: int,
     max_tokens_per_prompt: int,
     use_kv_cache: bool,
+    workers: int = 1,
+    tokenizer_path: Optional[Path] = None,
+    input_dtype: DTypeLike | None = None,
 ) -> float:
+    """Evaluate corpus perplexity for one exported model.
+
+    Args:
+        runner (Path): Path to the executor runner.
+        pte (Path): Path to the exported model.
+        tokenizer: Loaded tokenizer used for single-process evaluation.
+        prompts (List[str]): Prompt strings to score.
+        window (int): Fixed input length for a non-KV export.
+        pad_id (int): Token used to pad a non-KV input window.
+        max_tokens_per_prompt (int): Maximum tokens scored per prompt, or zero
+            for no limit.
+        use_kv_cache (bool): Whether the export uses token-by-token KV inputs.
+        workers (int): Number of independent runner processes. Defaults to 1.
+        tokenizer_path (Optional[Path]): Tokenizer loaded by spawned workers.
+        input_dtype (DTypeLike): Token and position dtype for KV
+            inputs. Defaults to int64.
+
+    Returns:
+        float: Token-weighted perplexity across all prompts.
+
+    """
+    if workers <= 0:
+        raise ValueError("workers must be > 0")
+    if not prompts:
+        raise RuntimeError("No prompts were provided.")
+
+    input_dtype = np.dtype(input_dtype or np.int64)
+
     total_nll = 0.0
     total_tokens = 0
 
+    if workers > 1:
+        if tokenizer_path is None:
+            raise ValueError("tokenizer_path is required when workers > 1")
+
+        shards = _split_prompt_shards(prompts, workers)
+        process_context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=len(shards), mp_context=process_context
+        ) as executor:
+            futures = [
+                executor.submit(
+                    _eval_prompt_shard,
+                    runner=str(runner),
+                    pte=str(pte),
+                    tokenizer_path=str(tokenizer_path),
+                    prompts=shard,
+                    window=window,
+                    pad_id=pad_id,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                    use_kv_cache=use_kv_cache,
+                    input_dtype=input_dtype,
+                )
+                for shard in shards
+            ]
+            for completed, future in enumerate(
+                concurrent.futures.as_completed(futures), start=1
+            ):
+                shard_nll, shard_tokens = future.result()
+                total_nll += shard_nll
+                total_tokens += shard_tokens
+                print(
+                    f"[eval] {pte.name} worker {completed}/{len(shards)} "
+                    f"complete: tokens={shard_tokens}"
+                )
+        if total_tokens == 0:
+            raise RuntimeError("No prompt tokens were scored.")
+        return math.exp(total_nll / total_tokens)
+
     if use_kv_cache:
-        with KvRunnerSession(
-            runner=str(runner),
-            pte=str(pte),
-            extra_args=[],
-            persistent=True,
-        ) as session:
-            for idx, prompt in enumerate(prompts, start=1):
-                print(f"[eval-kv] {pte.name} prompt {idx}/{len(prompts)}")
+        for idx, prompt in enumerate(prompts, start=1):
+            print(f"[eval-kv] {pte.name} prompt {idx}/{len(prompts)}")
+            with KvRunnerSession(
+                runner=str(runner),
+                pte=str(pte),
+                extra_args=[],
+                persistent=True,
+                input_dtype=input_dtype,
+            ) as session:
                 prompt_nll, prompt_tokens = eval_prompt_nll_kv(
                     runner=session,
                     tokenizer=tokenizer,
                     prompt=prompt,
                     max_tokens_per_prompt=max_tokens_per_prompt,
                 )
-                total_nll += prompt_nll
-                total_tokens += prompt_tokens
-                if total_tokens > 0:
-                    cumulative_ppl = f"{math.exp(total_nll / total_tokens):.4f}"
-                else:
-                    cumulative_ppl = "n/a"
-                print(
-                    f"[eval-kv] {pte.name} prompt {idx}: "
-                    f"tokens={prompt_tokens} cumulative_ppl={cumulative_ppl}"
-                )
+            total_nll += prompt_nll
+            total_tokens += prompt_tokens
+            if total_tokens > 0:
+                cumulative_ppl = f"{math.exp(total_nll / total_tokens):.4f}"
+            else:
+                cumulative_ppl = "n/a"
+            print(
+                f"[eval-kv] {pte.name} prompt {idx}: "
+                f"tokens={prompt_tokens} cumulative_ppl={cumulative_ppl}"
+            )
     else:
         with RunnerSession(
             runner=str(runner),
@@ -278,8 +414,8 @@ def main() -> None:
     parser.add_argument(
         "--pte-fp32",
         type=Path,
-        required=True,
-        help="Path to the FP32 full-logits SmolLM2 VGF PTE.",
+        default=None,
+        help="Path to the FP32 SmolLM2 VGF PTE.",
     )
     parser.add_argument(
         "--pte-linear8a8w",
@@ -292,6 +428,12 @@ def main() -> None:
         type=Path,
         default=None,
         help="Path to the linear-only 16a8w full-logits SmolLM2 VGF PTE.",
+    )
+    parser.add_argument(
+        "--pte-static-kvq-linear16a8w",
+        type=Path,
+        default=None,
+        help="Path to the linear16a8w SmolLM2 VGF PTE with an INT8 KV cache.",
     )
     parser.add_argument(
         "--tokenizer",
@@ -330,11 +472,38 @@ def main() -> None:
         help="Evaluate KV-cache exports that take token and input_pos inputs.",
     )
     parser.add_argument(
+        "--input-dtype",
+        choices=("int32", "int64"),
+        default="int64",
+        help=(
+            "KV token and position dtype; must match the exported PTE inputs "
+            "(default: int64)."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of independent executor_runner processes (default: 1).",
+    )
+    parser.add_argument(
         "--refresh-prompts",
         action="store_true",
         help="Rebuild prompts even if --prompts-file already exists.",
     )
     args = parser.parse_args()
+    if not any(
+        (
+            args.pte_fp32,
+            args.pte_linear8a8w,
+            args.pte_linear16a8w,
+            args.pte_static_kvq_linear16a8w,
+        )
+    ):
+        parser.error(
+            "at least one of --pte-fp32, --pte-linear8a8w, "
+            "--pte-linear16a8w, or --pte-static-kvq-linear16a8w is required"
+        )
 
     tokenizer = get_tokenizer(str(args.tokenizer))
     pad_id = getattr(tokenizer, "pad_id", tokenizer.eos_id)
@@ -357,6 +526,7 @@ def main() -> None:
         "fp32": args.pte_fp32,
         "linear8a8w": args.pte_linear8a8w,
         "linear16a8w": args.pte_linear16a8w,
+        "static-kvq-linear16a8w": args.pte_static_kvq_linear16a8w,
     }
     results = {}
     for name, pte in ptes.items():
@@ -371,6 +541,9 @@ def main() -> None:
             pad_id=pad_id,
             max_tokens_per_prompt=args.max_tokens_per_prompt,
             use_kv_cache=args.use_kv_cache,
+            workers=args.workers,
+            tokenizer_path=args.tokenizer,
+            input_dtype=np.dtype(args.input_dtype),
         )
 
     print("\n=== Perplexity summary ===")

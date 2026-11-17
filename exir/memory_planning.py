@@ -122,11 +122,13 @@ class Verifier:
         rhs_lifetime = rhs_spec.lifetime
         internal_assert(
             lhs_lifetime[0] is not None and lhs_lifetime[1] is not None,
-            f"{lhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            lhs_spec,
         )
         internal_assert(
             rhs_lifetime[0] is not None and rhs_lifetime[1] is not None,
-            f"{rhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            rhs_spec,
         )
         return cls.has_overlap(lhs_lifetime, rhs_lifetime)
 
@@ -138,11 +140,13 @@ class Verifier:
         for spec in [lhs_spec, rhs_spec]:
             internal_assert(
                 spec.allocated_memory >= 0,
-                f"{spec} should have non-zero allocated memory",
+                "%s should have non-zero allocated memory",
+                spec,
             )
             internal_assert(
                 isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                f"{spec} should have specified memory offset",
+                "%s should have specified memory offset",
+                spec,
             )
             intervals.append(
                 [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
@@ -524,7 +528,9 @@ def collect_specs_from_nodes(  # noqa: C901
                     torch.ops.higher_order.map_impl,
                     executorch_call_delegate,
                 ],
-                f"Unexpected op {node.op}, target {node.target}",
+                "Unexpected op %s, target %s",
+                node.op,
+                node.target,
             )
         for spec in specs:
             if spec is None:
@@ -916,7 +922,11 @@ def _resolve_storage_base_specs(
             )
             internal_assert(
                 (base_alloc_offset + storage_base_offset) % spec.alignment == 0,
-                f"Storage-backed TensorSpec allocation must respect alignment, got offset {storage_base_offset} inside parent with offset {base_alloc_offset} for alignment {spec.alignment}.",
+                "Storage-backed TensorSpec allocation must respect alignment, got offset %s "
+                "inside parent with offset %s for alignment %s.",
+                storage_base_offset,
+                base_alloc_offset,
+                spec.alignment,
             )
             internal_assert(
                 storage_base_offset + allocated_memory <= base_allocated_memory,
@@ -1431,6 +1441,26 @@ def _build_non_const_buffer_device(
     ]
 
 
+def _reserve_memory_for_views(graph_module: torch.fx.GraphModule) -> None:
+    """
+    A memory.view shares its base's memory, but each of its dims is bounded on its
+    own, so the view can be planned larger than its base. The runtime refuses to
+    load a tensor whose planned size runs past the end of its buffer, so plan each
+    base large enough for its views.
+    """
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function" or node.target != memory.view:
+            continue
+        spec = node.meta["spec"]
+        # A view's spec writes this field through to its base. A base backed by
+        # another tensor's storage must still fit in that storage.
+        needed = spec.nbytes()
+        while spec is not None:
+            spec.min_allocated_memory = max(spec.min_allocated_memory, needed)
+            needed += spec.storage_base_offset
+            spec = spec.storage_base
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1467,6 +1497,7 @@ def apply_algo(
     """
     # Extract the nodes and their lifespans from the graph_module
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
+    _reserve_memory_for_views(graph_module)
 
     # Collect specs into an ordered list so we can iterate multiple times and
     # partition by device.  Order matters: order-sensitive algorithms (e.g.

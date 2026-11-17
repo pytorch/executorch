@@ -144,6 +144,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
+    InsertSymSizeIntForInputDimsPass,
     InsertTableOpsPass,
     LowerDynamicW8A8LinearPass,
     LowerInt16RsqrtPass,
@@ -546,6 +547,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 NormalizeDelegateIOLayoutPass(exported_program),
+                InsertSymSizeIntForInputDimsPass(),
                 FuseQuantizedActivationPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 DecomposeTopKPass(self.tosa_spec),
