@@ -67,6 +67,17 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_conv2d_int8(Tensor input, Tensor weight, Tensor? bias, "
+    "int[2] stride, int[2] padding, Tensor output_multiplier, Tensor output_shift, "
+    "int input_offset, int output_offset, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_conv2d_int8.out(Tensor input, Tensor weight, Tensor? bias, "
+    "int[2] stride, int[2] padding, Tensor output_multiplier, Tensor output_shift, "
+    "int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 @register_fake("esp_nn::quantized_max_pool2d_int8")
 @register_fake("esp_nn::quantized_avg_pool2d_int8")
@@ -217,3 +228,60 @@ def quantized_linear_int8(
         dim=-1,
     )
     return (result + output_offset).clamp(-128, 127).to(torch.int8)
+
+
+@register_fake("esp_nn::quantized_conv2d_int8")
+def quantized_conv2d_int8_meta(
+    input,
+    weight,
+    bias,
+    stride,
+    padding,
+    output_multiplier,
+    output_shift,
+    input_offset,
+    output_offset,
+    scratch,
+):
+    batch, height, width, _ = input.shape
+    outputs, kernel_h, kernel_w, _ = weight.shape
+    return input.new_empty(
+        (
+            batch,
+            (height + 2 * padding[0] - kernel_h) // stride[0] + 1,
+            (width + 2 * padding[1] - kernel_w) // stride[1] + 1,
+            outputs,
+        )
+    )
+
+
+@impl(lib, "quantized_conv2d_int8", "CompositeExplicitAutograd")
+def quantized_conv2d_int8(
+    input,
+    weight,
+    bias,
+    stride,
+    padding,
+    output_multiplier,
+    output_shift,
+    input_offset,
+    output_offset,
+    scratch,
+):
+    centered = input.to(torch.int64).permute(0, 3, 1, 2) + input_offset
+    padded = torch.nn.functional.pad(
+        centered, (padding[1], padding[1], padding[0], padding[0])
+    )
+    windows = padded.unfold(2, weight.shape[1], stride[0]).unfold(
+        3, weight.shape[2], stride[1]
+    )
+    windows = windows.permute(0, 2, 3, 4, 5, 1).flatten(3)
+    return quantized_linear_int8(
+        windows,
+        weight.flatten(1),
+        bias,
+        output_multiplier,
+        output_shift,
+        0,
+        output_offset,
+    )
