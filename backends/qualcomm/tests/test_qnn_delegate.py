@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from argparse import Namespace
 from dataclasses import dataclass
 from functools import partial
 from multiprocessing.connection import Listener
@@ -9220,6 +9221,95 @@ class TestQNNQuantizedUtils(TestQNN):
                 self.lower_module_and_test_output(converted, sample_input)
 
 
+class StaticLLMTest(unittest.TestCase):
+    def test_lfm3_rejects_unsupported_modes_before_export(self):
+        from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+            LFM3_DECODER_MODELS,
+            validate_lfm3_mode,
+        )
+
+        for model in LFM3_DECODER_MODELS:
+            with self.subTest(model=model):
+                for mode in ("kv", "hybrid"):
+                    self.assertIsNone(validate_lfm3_mode(model, mode, None))
+                with self.assertRaisesRegex(ValueError, "lookahead"):
+                    validate_lfm3_mode(model, "lookahead", None)
+                with self.assertRaisesRegex(ValueError, "attention sink"):
+                    validate_lfm3_mode(model, "kv", "4,32")
+        self.assertIsNone(
+            validate_lfm3_mode("llama3_2-1b_instruct", "lookahead", "4,32")
+        )
+
+    def test_conv_state_tagging_uses_io_position(self):
+        from executorch.examples.qualcomm.oss_scripts.llama.wrappers.llm_wrappers import (
+            TextDecoder,
+        )
+
+        graph = torch.fx.Graph()
+        graph.placeholder("p_lifted_weight")
+        inputs = [
+            graph.placeholder(name)
+            for name in (
+                "tokens",
+                "mask",
+                "window_mask",
+                "input_pos",
+                "args_0",
+                "args_1",
+                "args_2",
+                "args_3",
+                "args_4",
+            )
+        ]
+        outputs = [
+            graph.call_function(torch.ops.aten.neg.default, (inputs[0],))
+            for _ in range(8)
+        ]
+        # Same-shaped hidden/extra outputs and a same-shaped non-state input
+        # must not acquire the recurrent-state encoding.
+        for node in inputs + outputs:
+            node.meta["val"] = torch.zeros(1, 4, 32)
+        graph.output(tuple(outputs))
+        decoder = TextDecoder.__new__(TextDecoder)
+        decoder.meta = {
+            "get_n_self_layers": 2,
+            "get_n_conv_layers": 1,
+            "get_max_batch_size": 1,
+            "get_ar_len": 4,
+            "get_max_context_len": 20,
+            "get_head_dim": 8,
+        }
+        decoder.control_args = Namespace(decoder_model="lfm3-1_7b")
+        decoder.io_shape = {(1, 4, 50)}
+        decoder.kv_cache_shape = {(8, 20), (20, 8), (8, 4), (4, 8)}
+        types = {"io_type": torch.uint16, "kv_type": torch.uint8}
+        self.assertEqual(decoder._tag_conv_state_ios(inputs[8], types), torch.uint16)
+        self.assertIsNone(decoder._tag_conv_state_ios(inputs[4], types))
+        self.assertEqual(decoder._tag_conv_state_ios(outputs[5], types), torch.uint16)
+        self.assertIsNone(decoder._tag_conv_state_ios(outputs[6], types))
+        self.assertEqual(decoder._tag_ios(outputs[5], types), torch.uint16)
+        self.assertIsNone(decoder._tag_ios(outputs[6], types))
+        self.assertIsNone(decoder._tag_ios(inputs[4], types))
+        decoder.meta["get_output_hidden"] = 1
+        self.assertIsNone(decoder._tag_conv_state_ios(outputs[1], types))
+        self.assertEqual(decoder._tag_conv_state_ios(outputs[6], types), torch.uint16)
+        self.assertIsNone(decoder._tag_conv_state_ios(outputs[7], types))
+        output = next(n for n in graph.nodes if n.op == "output")
+        with graph.inserting_before(output):
+            selected = graph.call_function(operator.getitem, (outputs[6], 0))
+        output.args = (tuple(outputs[:6]) + (selected, outputs[7]),)
+        self.assertEqual(decoder._tag_conv_state_ios(outputs[6], types), torch.uint16)
+
+    def test_static_llm_conv_state(self):
+        TestExampleLLMScript.test_static_llm_conv_state(self)
+
+    def test_static_llm_lfm3_checkpoint(self):
+        TestExampleLLMScript.test_static_llm_lfm3_checkpoint(self)
+
+    def test_static_llm_hf_lfm3_parity(self):
+        TestExampleLLMScript.test_static_llm_hf_lfm3_parity(self)
+
+
 class TestExampleLLMScript(TestQNN):
 
     @dataclass(frozen=True)
@@ -9290,6 +9380,14 @@ class TestExampleLLMScript(TestQNN):
                 wikitext_ppl=14,
                 hellaswag_acc_norm=None,
                 sqnr=20,
+            ),
+            "lfm3-1_7b": TestExampleLLMScript.LlmSpecs(
+                SM8650=33,
+                SM8750=38,
+                pte_size=1_700_000_000,  # 1.7 GB
+                wikitext_ppl=15,
+                hellaswag_acc_norm=None,
+                sqnr=10,
             ),
             "llama3_2-1b_instruct": TestExampleLLMScript.LlmSpecs(
                 SM8650=37,
@@ -9518,6 +9616,495 @@ class TestExampleLLMScript(TestQNN):
                         self.assertGreaterEqual(
                             device_inference_speed, expected_inference_speed
                         )
+
+    def test_static_llm_conv_state(self):  # noqa: C901
+        # Chunked prefill + decode, with the conv state shifted the way the runner's
+        # ConvStateManager does it, must match one forward over the whole sequence.
+        # The initial state is garbage: rows before position 0 are masked in-graph.
+        from executorch.backends.qualcomm.quantizer.custom_annotation import (
+            annotate_conv_state,
+        )
+        from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
+        from executorch.examples.models.llama.model_args import ModelArgs
+        from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+            ShortConvHybridLlamaModel,
+        )
+        from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
+            Lfm3QuantRecipe,
+        )
+
+        ctx, window, kv_heads, head_dim, dim = 32, 8, 2, 16, 64
+        layer_types = ["conv", "full_attention", "conv", "sliding_attention"]
+
+        def model(ar_len, use_kv_cache=True):
+            args = ModelArgs(
+                dim=dim,
+                hidden_dim=128,
+                n_heads=4,
+                n_kv_heads=kv_heads,
+                head_dim=head_dim,
+                n_layers=len(layer_types),
+                vocab_size=97,
+                use_hf_rope=True,
+                use_qk_norm=True,
+                qk_norm_before_rope=True,
+                headwise_attn_output_gate=True,
+                post_attention_norm=True,
+                post_ffn_norm=True,
+                conv_L_cache=7,
+                sliding_window=window,
+                layer_types=layer_types,
+                rope_parameters={
+                    "full_attention": {
+                        "rope_theta": 1000.0,
+                        "partial_rotary_factor": 0.5,
+                    },
+                    "sliding_attention": {"rope_theta": 10000.0},
+                },
+                max_seq_len=ctx,
+                max_context_len=ctx,
+                use_kv_cache=use_kv_cache,
+            )
+            args.ar_len = ar_len
+            torch.manual_seed(0)
+            return ShortConvHybridLlamaModel(args, ar_len=ar_len).eval()
+
+        def run(model, tokens, n_past, k, v, conv):
+            ar, n_valid = model.ar_len, len(tokens)
+            cache_len = ctx - ar
+            q_pos = n_past + torch.arange(ar)
+            k_pos = torch.cat([torch.arange(cache_len), q_pos])
+            valid = torch.cat(
+                [torch.arange(cache_len) < n_past, torch.ones(ar, dtype=torch.bool)]
+            )
+            causal = valid[None] & (k_pos[None] <= q_pos[:, None])
+            sliding = causal & (q_pos[:, None] - k_pos[None] < window)
+            toks = torch.zeros(1, ar, dtype=torch.int32)
+            toks[0, :n_valid] = torch.tensor(tokens)
+            with torch.no_grad():
+                logits, k_out, v_conv = model(
+                    toks,
+                    torch.where(causal, 0.0, -255.0)[None, None],
+                    torch.where(sliding, 0.0, -255.0)[None, None],
+                    q_pos[None].int(),
+                    *[c[..., :cache_len] for c in k],
+                    *[c[:, :, :cache_len] for c in v],
+                    *conv,
+                )
+            for i in range(len(k_out) if cache_len else 0):
+                k[i][..., n_past : n_past + n_valid] = k_out[i][..., :n_valid]
+                v[i][:, :, n_past : n_past + n_valid] = v_conv[i][:, :, :n_valid]
+            for i, rows in enumerate(v_conv[len(k_out) :]):
+                conv[i] = torch.cat([conv[i], rows[:, :n_valid]], dim=1)[
+                    :, -model.conv_state_len :
+                ]
+            return logits[0, :n_valid]
+
+        def state(model):
+            k = [torch.zeros(1, kv_heads, head_dim, ctx - 1) for _ in range(2)]
+            v = [torch.zeros(1, kv_heads, ctx - 1, head_dim) for _ in range(2)]
+            conv = [torch.randn(1, model.conv_state_len, dim) * 100 for _ in range(2)]
+            return k, v, conv
+
+        with self.assertRaisesRegex(ValueError, "LFM3 requires KV caching"):
+            model(8, use_kv_cache=False)
+
+        tokens = torch.randint(3, 97, (20,)).tolist()
+        one_shot = model(ctx)
+        k, v, conv = state(one_shot)
+        ref = run(one_shot, tokens, 0, k, v, conv)
+
+        prefill, decode = model(8), model(1)
+        k, v, conv = state(decode)
+        out, n_past = [], 0
+        for chunk in (tokens[:8], tokens[8:13]):
+            out.append(run(prefill, chunk, n_past, k, v, conv))
+            n_past += len(chunk)
+        for t in tokens[13:]:
+            out.append(run(decode, [t], n_past, k, v, conv))
+            n_past += 1
+        self.assertLess((torch.cat(out) - ref).abs().max().item(), 1e-3)
+
+        # Only the conv-state concats share an encoding; KV concats keep theirs.
+        k, v, conv = state(prefill)
+        mask = torch.zeros(1, 1, 8, ctx)
+        inputs = (
+            torch.zeros(1, 8, dtype=torch.int32),
+            mask,
+            mask,
+            torch.arange(8, dtype=torch.int32)[None],
+            *[c[..., : ctx - 8] for c in k],
+            *[c[:, :, : ctx - 8] for c in v],
+            *conv,
+        )
+        gm = torch.export.export(prefill, inputs, strict=False).module()
+        annotate_conv_state(gm)
+        annotated = [
+            n
+            for n in gm.graph.nodes
+            if n.target == torch.ops.aten.cat.default and Q_ANNOTATION_KEY in n.meta
+        ]
+        self.assertEqual(len(annotated), len(prefill.conv_layers))
+
+        for node in annotated:
+            node.args = (node.args[0],)
+            node.kwargs = {"dim": -2}
+        annotate_conv_state(gm)
+
+        output = next(n for n in gm.graph.nodes if n.op == "output")
+        for i, node in enumerate(annotated):
+            rows = node.args[0][1]
+            with gm.graph.inserting_before(output):
+                cloned = gm.graph.call_function(torch.ops.aten.clone.default, (rows,))
+            output.args = torch.fx.map_arg(
+                output.args,
+                lambda n, rows=rows, cloned=cloned: cloned if n is rows else n,
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                f"matched {len(annotated) - i - 1} of {len(annotated)}",
+            ):
+                annotate_conv_state(gm)
+
+        for index in prefill.attention_layers:
+            prefill.layers[index].attention.prepare_attention_conv()
+        for layer in prefill.layers:
+            layer.feed_forward.prepare_feedforward_conv()
+        prefill = convert_linear_to_conv2d(prefill)
+        gm = torch.export.export(prefill, inputs, strict=False).module()
+        quantizer = make_quantizer()
+        quantizer.set_recipe(Lfm3QuantRecipe().recipe)
+        prepared = prepare_pt2e(gm, quantizer)
+        prepared(*inputs)
+        quantized = convert_pt2e(prepared)
+        output = next(n for n in quantized.graph.nodes if n.op == "output")
+        rows = torch.utils._pytree.tree_leaves(output.args[0])[
+            -len(prefill.conv_layers) :
+        ]
+        states = [
+            n
+            for n in quantized.graph.nodes
+            if n.op == "placeholder" and n.meta["val"].ndim == 3
+        ]
+        self.assertEqual(len(states), len(prefill.conv_layers))
+        for state, row in zip(states, rows):
+            state_quant = next(
+                n
+                for n in state.users
+                if n.target
+                == torch.ops.quantized_decomposed.quantize_per_tensor.default
+            )
+            self.assertEqual(
+                row.target, torch.ops.quantized_decomposed.dequantize_per_tensor.default
+            )
+            self.assertEqual(state_quant.args[1:], row.args[1:])
+
+    def test_static_llm_lfm3_checkpoint(self):
+        from executorch.examples.models.lfm3.convert_weights import load_checkpoint
+        from safetensors.torch import save_file
+
+        tensors = {
+            "model.embed_tokens.weight": torch.arange(12).float().reshape(3, 4),
+            "model.layers.0.conv.in_proj.weight": torch.randn(12, 4),
+            "model.embedding_norm.weight": torch.arange(4).float(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            save_file(tensors, str(root / "model.safetensors"))
+            loaded = load_checkpoint(directory)
+            self.assertEqual(loaded.keys(), tensors.keys())
+            for key, value in tensors.items():
+                torch.testing.assert_close(loaded[key], value, rtol=0, atol=0)
+
+            filenames = [
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+            ]
+            first, *rest = tensors
+            save_file({first: tensors[first]}, str(root / filenames[0]))
+            save_file({key: tensors[key] for key in rest}, str(root / filenames[1]))
+            weight_map = {first: filenames[0], **{key: filenames[1] for key in rest}}
+            index = root / "model.safetensors.index.json"
+            index.write_text(json.dumps({"metadata": {}, "weight_map": weight_map}))
+            # A valid index takes precedence even when a single-file checkpoint exists.
+            save_file({"wrong": torch.ones(1)}, str(root / "model.safetensors"))
+            loaded = load_checkpoint(directory)
+            self.assertEqual(loaded.keys(), tensors.keys())
+            for key, value in tensors.items():
+                torch.testing.assert_close(loaded[key], value, rtol=0, atol=0)
+
+            invalid_indices = [
+                "{",
+                "[]",
+                "{}",
+                '{"weight_map": {}}',
+                '{"weight_map": []}',
+                '{"weight_map": {"": "a.safetensors"}}',
+                '{"weight_map": {"x": null}}',
+                '{"weight_map": {"x": 1}}',
+                '{"weight_map": {"x": "a.safetensors", "x": "b.safetensors"}}',
+            ]
+            for contents in invalid_indices:
+                with self.subTest(index=contents):
+                    index.write_text(contents)
+                    with self.assertRaises(ValueError):
+                        load_checkpoint(directory)
+            for filename in (
+                "../a.safetensors",
+                "/tmp/a.safetensors",
+                "a/b.safetensors",
+                "a\\b.safetensors",
+                "C:\\a.safetensors",
+                "a.bin",
+                "",
+            ):
+                with self.subTest(filename=filename):
+                    index.write_text(json.dumps({"weight_map": {first: filename}}))
+                    with self.assertRaisesRegex(ValueError, "Invalid checkpoint shard"):
+                        load_checkpoint(directory)
+
+            index.write_text(json.dumps({"weight_map": {first: "missing.safetensors"}}))
+            with self.assertRaises(FileNotFoundError):
+                load_checkpoint(directory)
+            for incorrect_map in (
+                {**weight_map, "missing_tensor": filenames[0]},
+                {first: filenames[1], **{key: filenames[0] for key in rest}},
+                {first: filenames[0], rest[0]: filenames[1]},
+            ):
+                with self.subTest(weight_map=incorrect_map):
+                    index.write_text(json.dumps({"weight_map": incorrect_map}))
+                    with self.assertRaisesRegex(
+                        ValueError, "disagrees with weight_map"
+                    ):
+                        load_checkpoint(directory)
+
+            # A duplicate tensor in another real shard must not be silently overwritten.
+            index.write_text(json.dumps({"weight_map": weight_map}))
+            save_file(tensors, str(root / filenames[1]))
+            with self.assertRaisesRegex(ValueError, "disagrees with weight_map"):
+                load_checkpoint(directory)
+            with tempfile.TemporaryDirectory() as outside:
+                save_file({first: tensors[first]}, str(Path(outside) / "a.safetensors"))
+                (root / "link.safetensors").symlink_to(Path(outside) / "a.safetensors")
+                index.write_text(
+                    json.dumps({"weight_map": {first: "link.safetensors"}})
+                )
+                with self.assertRaisesRegex(ValueError, "escapes input directory"):
+                    load_checkpoint(directory)
+
+            cache_repo = root / "models--test--tiny"
+            snapshot = cache_repo / "snapshots" / ("a" * 40)
+            blobs = cache_repo / "blobs"
+            snapshot.mkdir(parents=True)
+            blobs.mkdir()
+            for number, filename in enumerate(filenames):
+                blob = blobs / (str(number) * 64)
+                shard = {
+                    key: tensors[key] for key in tensors if weight_map[key] == filename
+                }
+                save_file(shard, str(blob))
+                (snapshot / filename).symlink_to(Path("../../blobs") / blob.name)
+            (snapshot / "model.safetensors.index.json").write_text(
+                json.dumps({"weight_map": weight_map})
+            )
+            loaded = load_checkpoint(str(snapshot))
+            self.assertEqual(loaded.keys(), tensors.keys())
+            for key, value in tensors.items():
+                torch.testing.assert_close(loaded[key], value, rtol=0, atol=0)
+
+    def test_static_llm_hf_lfm3_parity(self):  # noqa: C901
+        from executorch.examples.models.lfm3.convert_weights import (
+            lfm_3_to_meta,
+            load_checkpoint,
+        )
+        from executorch.examples.models.llama.model_args import ModelArgs
+        from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+            ShortConvHybridLlamaModel,
+        )
+
+        try:
+            from transformers import Lfm3Config, Lfm3ForCausalLM
+        except ImportError:
+            reference_dir = os.environ.get("LFM3_HF_REFERENCE_DIR")
+            if not reference_dir:
+                self.skipTest(
+                    "transformers LFM3 unavailable; set LFM3_HF_REFERENCE_DIR to a local pinned HF snapshot"
+                )
+            try:
+                from transformers.dynamic_module_utils import (
+                    get_class_from_dynamic_module,
+                )
+
+                Lfm3Config = get_class_from_dynamic_module(
+                    "configuration_lfm3.Lfm3Config",
+                    reference_dir,
+                    local_files_only=True,
+                )
+                Lfm3ForCausalLM = get_class_from_dynamic_module(
+                    "modeling_lfm3.Lfm3ForCausalLM",
+                    reference_dir,
+                    local_files_only=True,
+                )
+            except ImportError as error:
+                self.skipTest(f"transformers LFM3 unavailable: {error}")
+
+        ctx, window, dim, head_dim, kv_heads = 32, 8, 32, 8, 2
+        layer_types = ["conv", "full_attention", "conv", "sliding_attention"]
+        hf_config = Lfm3Config(
+            hidden_size=dim,
+            intermediate_size=64,
+            num_hidden_layers=len(layer_types),
+            num_attention_heads=4,
+            num_key_value_heads=kv_heads,
+            head_dim=head_dim,
+            vocab_size=97,
+            max_position_embeddings=ctx,
+            pad_token_id=0,
+            bos_token_id=1,
+            eos_token_id=2,
+            conv_L_cache=7,
+            conv_bias=False,
+            sliding_window=window,
+            use_sandwich_norm=True,
+            tie_word_embeddings=True,
+            layer_types=layer_types,
+            rope_parameters={
+                "full_attention": {
+                    "rope_type": "default",
+                    "rope_theta": 1000000.0,
+                    "partial_rotary_factor": 0.5,
+                },
+                "sliding_attention": {"rope_type": "default", "rope_theta": 10000.0},
+            },
+        )
+        hf_config._attn_implementation = "eager"
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(17)
+            hf = Lfm3ForCausalLM(hf_config).float().eval()
+            with torch.no_grad():
+                # Non-uniform Q/K norm weights expose a missing RoPE permutation.
+                for parameter in hf.parameters():
+                    if parameter.ndim == 1:
+                        parameter.uniform_(0.5, 1.5)
+                    else:
+                        parameter.normal_(mean=0.0, std=0.1)
+            tokens = torch.randint(3, hf_config.vocab_size, (1, 20))
+
+        shared_rope = {
+            name: dict(rope) for name, rope in hf_config.rope_parameters.items()
+        }
+        full_rope = shared_rope["full_attention"]
+        full_rope["rope_theta"] **= full_rope["partial_rotary_factor"]
+        args = ModelArgs(
+            dim=dim,
+            hidden_dim=hf_config.intermediate_size,
+            n_heads=hf_config.num_attention_heads,
+            n_kv_heads=kv_heads,
+            head_dim=head_dim,
+            n_layers=len(layer_types),
+            vocab_size=hf_config.vocab_size,
+            norm_eps=hf_config.norm_eps,
+            use_hf_rope=True,
+            use_qk_norm=True,
+            qk_norm_before_rope=True,
+            headwise_attn_output_gate=True,
+            post_attention_norm=True,
+            post_ffn_norm=True,
+            conv_L_cache=hf_config.conv_L_cache,
+            sliding_window=window,
+            layer_types=layer_types,
+            rope_parameters=shared_rope,
+            max_seq_len=ctx,
+            max_context_len=ctx,
+            use_kv_cache=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            hf.save_pretrained(
+                directory, safe_serialization=True, max_shard_size="10KB"
+            )
+            index = json.loads(
+                (Path(directory) / "model.safetensors.index.json").read_text()
+            )
+            self.assertGreater(len(set(index["weight_map"].values())), 1)
+            hf_weights = load_checkpoint(directory)
+        self.assertNotIn("lm_head.weight", hf_weights)
+        converted = lfm_3_to_meta(
+            hf_weights,
+            {
+                "head_dim": head_dim,
+                "layer_types": layer_types,
+                "rope_parameters": hf_config.rope_parameters,
+            },
+        )
+        prefill = ShortConvHybridLlamaModel(args, ar_len=8).float().eval()
+        decode = ShortConvHybridLlamaModel(args, ar_len=1).float().eval()
+        prefill.load_state_dict(converted, strict=True)
+        decode.load_state_dict(converted, strict=True)
+        with torch.no_grad():
+            reference_logits = hf(input_ids=tokens, use_cache=False).logits
+
+        def run_chunks(prefill_model, decode_model):
+            k = [
+                torch.zeros(1, kv_heads, head_dim, ctx - 1)
+                for _ in prefill_model.attention_layers
+            ]
+            v = [
+                torch.zeros(1, kv_heads, ctx - 1, head_dim)
+                for _ in prefill_model.attention_layers
+            ]
+            conv = [
+                torch.full((1, prefill_model.conv_state_len, dim), 123.0)
+                for _ in prefill_model.conv_layers
+            ]
+            outputs, n_past = [], 0
+            for length in (8, 5, *([1] * 7)):
+                model = decode_model if length == 1 else prefill_model
+                ar, cache_len = model.ar_len, ctx - model.ar_len
+                positions = n_past + torch.arange(ar)
+                key_positions = torch.cat([torch.arange(cache_len), positions])
+                valid = torch.cat(
+                    [torch.arange(cache_len) < n_past, torch.ones(ar, dtype=torch.bool)]
+                )
+                causal = valid[None] & (key_positions[None] <= positions[:, None])
+                sliding = causal & (positions[:, None] - key_positions[None] < window)
+                chunk = torch.zeros(1, ar, dtype=torch.int32)
+                chunk[:, :length] = tokens[:, n_past : n_past + length]
+                with torch.no_grad():
+                    logits, new_k, new_v_conv = model(
+                        chunk,
+                        torch.where(causal, 0.0, -255.0)[None, None],
+                        torch.where(sliding, 0.0, -255.0)[None, None],
+                        positions[None].int(),
+                        *[c[..., :cache_len] for c in k],
+                        *[c[:, :, :cache_len] for c in v],
+                        *conv,
+                    )
+                outputs.append(logits[:, :length])
+                for index, rows in enumerate(new_k):
+                    k[index][..., n_past : n_past + length] = rows[..., :length]
+                    v[index][:, :, n_past : n_past + length] = new_v_conv[index][
+                        :, :, :length
+                    ]
+                for index, rows in enumerate(new_v_conv[len(new_k) :]):
+                    conv[index] = torch.cat([conv[index], rows[:, :length]], dim=1)[
+                        :, -model.conv_state_len :
+                    ]
+                n_past += length
+            return torch.cat(outputs, dim=1)
+
+        actual = run_chunks(prefill, decode)
+        torch.testing.assert_close(actual, reference_logits, rtol=1e-4, atol=1e-4)
+
+        # The same weights must still match after the attention/FFN export rewrites.
+        for model in (prefill, decode):
+            for index in model.attention_layers:
+                model.layers[index].attention.prepare_attention_conv()
+            for layer in model.layers:
+                layer.feed_forward.prepare_feedforward_conv()
+            model.prepare_output_conv()
+        torch.testing.assert_close(
+            run_chunks(prefill, decode), reference_logits, rtol=1e-4, atol=1e-4
+        )
 
     def test_static_llm_eval_limit(self):
         # Verify calib and eval are truly separate: compile once with a fixed
@@ -12442,8 +13029,9 @@ class TestQNNFcb(TestQNN):
             ),
         ]
         for kwargs, message in cases:
-            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(
-                ValueError, message
+            with (
+                self.subTest(kwargs=kwargs),
+                self.assertRaisesRegex(ValueError, message),
             ):
                 generate_qnn_executorch_compiler_spec(**kwargs)
 
@@ -12616,9 +13204,14 @@ class TestQNNFcb(TestQNN):
         current_registry = Mock()
         current_registry.destroy_all.side_effect = RuntimeError("cleanup failed")
 
-        with patch.object(
-            qnn_manager_lifecycle, "QnnManagerRegistry", return_value=current_registry
-        ), self.assertRaisesRegex(RuntimeError, "cleanup failed"):
+        with (
+            patch.object(
+                qnn_manager_lifecycle,
+                "QnnManagerRegistry",
+                return_value=current_registry,
+            ),
+            self.assertRaisesRegex(RuntimeError, "cleanup failed"),
+        ):
             with qnn_manager_lifecycle.QnnManagerContext({}):
                 self.assertIs(
                     qnn_manager_lifecycle._current_qnn_managers.active_registry,
@@ -12642,9 +13235,10 @@ class TestQNNFcb(TestQNN):
             "third": managers[2],
         }
 
-        with self.assertLogs(level="ERROR") as logs, self.assertRaises(
-            RuntimeError
-        ) as raised:
+        with (
+            self.assertLogs(level="ERROR") as logs,
+            self.assertRaises(RuntimeError) as raised,
+        ):
             registry.destroy_all()
 
         self.assertIs(raised.exception, first_error)
@@ -12706,10 +13300,13 @@ class TestQNNFcb(TestQNN):
     def _preprocess_fcb_with_managers(self, managers):
         op_wrapper = Mock()
         op_wrapper.GetOpWrapper.return_value = Mock()
-        with patch(
-            "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
-            side_effect=managers,
-        ), patch.object(QnnBackend, "_build_op_wrappers", return_value=[op_wrapper]):
+        with (
+            patch(
+                "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
+                side_effect=managers,
+            ),
+            patch.object(QnnBackend, "_build_op_wrappers", return_value=[op_wrapper]),
+        ):
             return QnnBackend.preprocess_multimethod(
                 {DEFAULT_GRAPH_NAME: [Mock()]},
                 {DEFAULT_GRAPH_NAME: [self._fcb_specs()]},
@@ -12719,10 +13316,13 @@ class TestQNNFcb(TestQNN):
         op_wrapper = Mock()
         op_wrapper.GetOpWrapper.return_value = Mock()
         manager.GetGraphNames.return_value = [DEFAULT_GRAPH_NAME]
-        with patch(
-            "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
-            return_value=manager,
-        ), patch.object(QnnBackend, "_build_op_wrappers", return_value=[op_wrapper]):
+        with (
+            patch(
+                "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
+                return_value=manager,
+            ),
+            patch.object(QnnBackend, "_build_op_wrappers", return_value=[op_wrapper]),
+        ):
             return QnnBackend.preprocess(Mock(), self._scalar_specs())
 
     def test_fcb_scalar_preprocess_releases_context_after_init_failure(self):
@@ -12803,11 +13403,14 @@ class TestQNNFcb(TestQNN):
             node.meta[QCOM_TENSOR_NAME] = ["tensor_0"]
             return b"ctx"
 
-        with patch(
-            "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
-            return_value=Mock(),
-        ), patch.object(
-            QnnBackend, "_build_op_wrappers", side_effect=build_op_wrappers
+        with (
+            patch(
+                "executorch.backends.qualcomm.qnn_preprocess.get_current_qnn_manager",
+                return_value=Mock(),
+            ),
+            patch.object(
+                QnnBackend, "_build_op_wrappers", side_effect=build_op_wrappers
+            ),
         ):
             result = QnnBackend.preprocess_multimethod(
                 {DEFAULT_GRAPH_NAME: [program]},

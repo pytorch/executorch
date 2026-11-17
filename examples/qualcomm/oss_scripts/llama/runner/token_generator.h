@@ -9,6 +9,7 @@
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/conv_state_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -63,6 +64,10 @@ class TokenGenerator {
    */
   virtual const std::vector<std::byte>& get_all_logits();
 
+  void set_conv_state_manager(ConvStateManager* conv_state_manager) {
+    conv_state_manager_ = conv_state_manager;
+  }
+
   /**
      * @brief Generate tokens.
      * @param tokens Vector of input tokens.
@@ -87,6 +92,9 @@ class TokenGenerator {
   tokenizers::Tokenizer* tokenizer_;
   DecoderRunner* decoder_runner_;
   KVManager* kv_manager_;
+  // Optional, for models with short-convolution layers.
+  ConvStateManager* conv_state_manager_ = nullptr;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> conv_tensors_;
   std::string method_name_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
 

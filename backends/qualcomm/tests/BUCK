@@ -39,6 +39,14 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/qualcomm/utils:utils",
         "//executorch/devtools:lib",
         "//executorch/examples/qualcomm:utils",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models/lfm3:lfm3",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/transformers:transformers",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llm_quant_recipe",
+        "//executorch/examples/qualcomm/oss_scripts/llama:wrappers",
+        "//executorch/examples/qualcomm/oss_scripts/llama:llama_lib",
         "//executorch/backends/qualcomm:export_utils",
         "//executorch/backends/qualcomm/debugger:utils",
         "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
@@ -49,6 +57,14 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/examples/models:models",
     ]),
+)
+
+None if runtime.is_oss else fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_static_llm_conv_state",
+    srcs = ["fb/test_qnn_delegate_host.py"],
+    supports_static_listing = False,
+    deps = [":test_qnn_delegate"],
 )
 
 fbcode_target(_kind = runtime.python_library,

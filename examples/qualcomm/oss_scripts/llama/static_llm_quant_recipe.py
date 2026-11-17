@@ -7,7 +7,10 @@
 from typing import List, Optional
 
 import torch
-from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit
+from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_conv_state,
+    annotate_kv_8bit,
+)
 from executorch.backends.qualcomm.quantizer.quant_recipe import (
     QuantGranularity,
     QuantRecipe,
@@ -671,6 +674,44 @@ class Qwen3_1_7BQuantRecipe(StaticLLMQuantRecipe):
             )
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
+class Lfm3QuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 16, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"output\.conv",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+        self.recipe.custom_quant_annotations.append(annotate_conv_state)
 
 
 class Smollm2QuantRecipe(StaticLLMQuantRecipe):
