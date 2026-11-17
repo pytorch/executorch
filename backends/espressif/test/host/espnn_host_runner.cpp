@@ -313,13 +313,14 @@ int main(int argc, char** argv) {
   const auto stats = executorch::backends::espressif::delegate_stats();
   std::printf(
       "STATS delegates=%u arena=%zu scratch=%zu parameters=%zu tables=%zu "
-      "staging=%zu states=%u states_in_place=%u\n",
+      "staging=%zu staged=%u states=%u states_in_place=%u\n",
       static_cast<unsigned>(stats.delegates),
       stats.arena_bytes,
       stats.scratch_bytes,
       stats.parameter_bytes,
       stats.table_bytes,
       stats.staging_bytes,
+      static_cast<unsigned>(stats.staged_outputs),
       static_cast<unsigned>(stats.states),
       static_cast<unsigned>(stats.states_updated_in_place));
 

@@ -213,9 +213,10 @@ buffer is memory-planned by ExecuTorch or supplied by the caller.
 Float outputs and NCHW outputs with several channels and pixels need dtype
 or layout conversion. The exporter records which outputs need conversion,
 so their int8 buffers can share the arena with intermediate tensors. Older
-exports without this metadata use the arena for all outputs. A misaligned
-output goes through a separate staging buffer, allocated on the first
-`execute()` that needs it.
+exports without this metadata use the arena for all outputs. An output
+outside the arena whose buffer turns out misaligned is written to a staging
+buffer and copied out. The delegate allocates that buffer at `init()`, sized
+for every such output, in PSRAM when there is any.
 
 For the smallest and fastest program, give the delegate int8, channels-last
 inputs and outputs and leave them out of ExecuTorch's memory plan, so that
@@ -558,11 +559,12 @@ lintrunner --paths-cmd "git ls-files backends/espressif examples/espressif"
   norm fall back to the CPU.
 - Dual-core execution only helps large convolutions, and it is off by default.
 - The delegate handle comes from ExecuTorch's runtime allocator, but each
-  delegate allocates its activation arena, scratch buffers and optional PSRAM
-  weight copy with ESP-IDF's `heap_caps` allocator at `init()`, so it can
-  choose between internal RAM and PSRAM. After that, only the first
-  `execute()` that needs a staging buffer (see "Inputs and outputs")
-  allocates.
+  delegate allocates its activation arena, scratch and staging buffers and
+  optional PSRAM weight copy with ESP-IDF's `heap_caps` allocator at
+  `init()`, so it can choose between internal RAM and PSRAM. Nothing is
+  allocated during `execute()`, except that with `ESPNN_DELEGATE_DUAL_CORE`
+  ESP-NN's worker task grows its own scratch buffer the first time a large
+  convolution needs it.
 
 ## License
 
