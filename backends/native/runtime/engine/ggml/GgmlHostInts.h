@@ -32,6 +32,9 @@ struct HostInts {
   std::vector<int64_t> data;
 };
 
+// The most elements a host-evaluated tensor, or a constant it reads, holds.
+inline constexpr size_t kHostEvalMaxElements = size_t{1} << 16;
+
 // Evaluates small integer subgraphs of graph inputs and constants on the
 // host, e.g. cache positions and key indices, with the current input values.
 // Returns nullopt for anything outside its op set or element budget.
