@@ -54,9 +54,9 @@ class DecomposeMinMaxDim(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        # Match on the op rather than on source partitions: those need the
-        # `torch.min` / `torch.max` source_fn, which `Tensor.max` and graphs
-        # re-traced from a non-strict export do not carry.
+        # Match on the min.dim / max.dim op itself, so the rewrite does not
+        # depend on how the source model spelled it (`torch.max(x, dim)`,
+        # `x.max(dim)`, or a graph re-traced from another export).
         for node in list(graph.nodes):
             if node.target not in self.replace_table:
                 continue
