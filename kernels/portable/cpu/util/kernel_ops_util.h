@@ -459,9 +459,40 @@ void apply_kernel_1d_reduce_then_map_fn(
   }
 }
 
-// Applies a reduction and mapping function over contiguous 3D kernel windows.
-// ACC_TYPE may be wider than CTYPE for low-precision accumulation.
-template <typename CTYPE, typename ACC_TYPE, typename ReduceOp, typename MapOp>
+/**
+ * 3-D counterpart of apply_kernel_1d_reduce_then_map_fn for inputs of shape
+ * (C, D, H, W) or (N, C, D, H, W). Values are accumulated in ACC so that
+ * reduced precision types can accumulate in a wider type. Inputs are indexed
+ * as contiguous, so callers must check that `in` and `out` use the default dim
+ * order.
+ *
+ * reduce_fn should have the following signature:
+ *
+ * ```
+ * ACC reduce_fn(const CTYPE in_val, const ACC accum);
+ * ```
+ *
+ * map_fn should have the following signature:
+ *
+ * ```
+ * CTYPE map_fn(const int64_t count, const ACC accum);
+ * ```
+ *
+ * @param[in] reduce_fn The reduction function used to update the accumulator
+ * value.
+ * @param[in] map_fn The map function used to post-process the accumulated
+ * value before writing to out.
+ * @param[in] include_pad Indicates if padded elements should be included in
+ * the count passed to map_fn.
+ * @param[in] in The input tensor.
+ * @param[in] kernel_size 3D array describing the depth, height and width of
+ * the kernel region.
+ * @param[in] stride 3D array describing how the kernel region "traverses" over
+ * the input tensor. Defaults to kernel_size when empty.
+ * @param[in] padding 3D array describing padding to apply to the input tensor.
+ * @param[in] out The output tensor.
+ */
+template <typename CTYPE, typename ACC, typename ReduceOp, typename MapOp>
 void apply_kernel_3d_reduce_then_map_fn(
     const ReduceOp& reduce_fn,
     const MapOp& map_fn,
@@ -487,48 +518,47 @@ void apply_kernel_3d_reduce_then_map_fn(
   const int64_t p_D = val_at(padding, 0, 0);
   const int64_t p_H = val_at(padding, 1, 0);
   const int64_t p_W = val_at(padding, 2, 0);
+  const int64_t in_plane = in_D * in_H * in_W;
+  const int64_t out_plane = out_D * out_H * out_W;
+
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
-  const int64_t batch_size = ndim == 5 ? in.size(0) : 1;
-  for (const auto batch : c10::irange(batch_size)) {
-    for (const auto channel : c10::irange(in.size(ndim - 4))) {
-      const int64_t plane = batch * in.size(ndim - 4) + channel;
-      for (const auto out_z : c10::irange(out_D)) {
-        for (const auto out_y : c10::irange(out_H)) {
-          for (const auto out_x : c10::irange(out_W)) {
-            int64_t id0 = out_z * s_D - p_D;
-            int64_t ih0 = out_y * s_H - p_H;
-            int64_t iw0 = out_x * s_W - p_W;
-            int64_t id1 = std::min(id0 + k_D, in_D + p_D);
-            int64_t ih1 = std::min(ih0 + k_H, in_H + p_H);
-            int64_t iw1 = std::min(iw0 + k_W, in_W + p_W);
-            const int64_t pool_size = (id1 - id0) * (ih1 - ih0) * (iw1 - iw0);
-            id0 = std::max<int64_t>(id0, 0);
-            ih0 = std::max<int64_t>(ih0, 0);
-            iw0 = std::max<int64_t>(iw0, 0);
-            id1 = std::min(id1, in_D);
-            ih1 = std::min(ih1, in_H);
-            iw1 = std::min(iw1, in_W);
-            const int64_t count = include_pad
-                ? pool_size
-                : (id1 - id0) * (ih1 - ih0) * (iw1 - iw0);
-            ACC_TYPE accum = 0;
-            for (const auto in_z : c10::irange(id0, id1)) {
-              for (const auto in_y : c10::irange(ih0, ih1)) {
-                for (const auto in_x : c10::irange(iw0, iw1)) {
-                  const int64_t in_idx = (in_z * in_H + in_y) * in_W + in_x;
-                  accum = std::get<0>(reduce_fn(
-                      in_ptr[plane * in_D * in_H * in_W + in_idx],
-                      in_idx,
-                      accum,
-                      0));
-                }
+
+  for (const auto plane : c10::irange(in.numel() / in_plane)) {
+    const CTYPE* const in_vol = in_ptr + plane * in_plane;
+    CTYPE* const out_vol = out_ptr + plane * out_plane;
+    for (const auto out_z : c10::irange(out_D)) {
+      for (const auto out_y : c10::irange(out_H)) {
+        for (const auto out_x : c10::irange(out_W)) {
+          int64_t id0 = out_z * s_D - p_D;
+          int64_t ih0 = out_y * s_H - p_H;
+          int64_t iw0 = out_x * s_W - p_W;
+          int64_t id1 = std::min(id0 + k_D, in_D + p_D);
+          int64_t ih1 = std::min(ih0 + k_H, in_H + p_H);
+          int64_t iw1 = std::min(iw0 + k_W, in_W + p_W);
+          const int64_t pool_size = (id1 - id0) * (ih1 - ih0) * (iw1 - iw0);
+          id0 = std::max<int64_t>(id0, 0);
+          ih0 = std::max<int64_t>(ih0, 0);
+          iw0 = std::max<int64_t>(iw0, 0);
+          id1 = std::min(id1, in_D);
+          ih1 = std::min(ih1, in_H);
+          iw1 = std::min(iw1, in_W);
+          ET_DCHECK_MSG(
+              id0 < id1 && ih0 < ih1 && iw0 < iw1,
+              "Pooling window must overlap the input");
+
+          ACC accum = 0;
+          for (const auto in_z : c10::irange(id0, id1)) {
+            for (const auto in_y : c10::irange(ih0, ih1)) {
+              for (const auto in_x : c10::irange(iw0, iw1)) {
+                accum = reduce_fn(
+                    in_vol[(in_z * in_H + in_y) * in_W + in_x], accum);
               }
             }
-            const int64_t out_idx =
-                ((plane * out_D + out_z) * out_H + out_y) * out_W + out_x;
-            out_ptr[out_idx] = static_cast<CTYPE>(map_fn(count, accum));
           }
+          out_vol[(out_z * out_H + out_y) * out_W + out_x] = map_fn(
+              include_pad ? pool_size : (id1 - id0) * (ih1 - ih0) * (iw1 - iw0),
+              accum);
         }
       }
     }

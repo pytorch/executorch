@@ -6,9 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tuple>
-#include <type_traits>
-
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -72,21 +69,15 @@ Tensor& avg_pool3d_out(
   static constexpr const char op_name[] = "avg_pool3d.out";
 
   ET_SWITCH_FLOATHBF16_TYPES_AND(Long, in_type, ctx, op_name, CTYPE, [&]() {
-    using AccType = std::conditional_t<
-        std::is_same_v<CTYPE, executorch::aten::Half> ||
-            std::is_same_v<CTYPE, executorch::aten::BFloat16>,
-        float,
-        CTYPE>;
-    apply_kernel_3d_reduce_then_map_fn<CTYPE, AccType>(
-        [](const CTYPE in_val,
-           int64_t in_idx,
-           AccType accum,
-           int64_t accum_idx) {
-          return std::tuple<AccType, int64_t>(
-              static_cast<AccType>(in_val) + accum, 0);
+    using ACC = typename executorch::runtime::
+        promote_types<CTYPE, CTYPE, /*half_to_float=*/true>::type;
+    apply_kernel_3d_reduce_then_map_fn<CTYPE, ACC>(
+        [](const CTYPE in_val, const ACC accum) {
+          return accum + static_cast<ACC>(in_val);
         },
-        [divisor_override](const int64_t count, const AccType accum) {
-          return accum / static_cast<AccType>(divisor_override.value_or(count));
+        [divisor_override](const int64_t count, const ACC accum) {
+          return static_cast<CTYPE>(
+              accum / static_cast<ACC>(divisor_override.value_or(count)));
         },
         count_include_pad,
         in,

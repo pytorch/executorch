@@ -91,14 +91,14 @@ bool padding_is_valid(
 
   if (enforce_half_kernel) {
     // Padding must be at most half of kernel size.
-    for (const auto i : c10::irange(padding.size())) {
-      if (padding[i] > val_at(kernel_size, i) / 2) {
+    for (const auto i : c10::irange(kernel_ndim)) {
+      if (val_at(padding, i) > val_at(kernel_size, i) / 2) {
         ET_LOG(
             Error,
             "Padding should be at most half of kernel size, "
             "but got padding[%zu] = %" PRId64 " > kernel_size[%zu] = %" PRId64,
             i,
-            padding[i],
+            val_at(padding, i),
             i,
             val_at(kernel_size, i));
         return false;
