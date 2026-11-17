@@ -43,7 +43,7 @@ ${layout_declare_tensor(B, "w", "t_attn_weights", DTYPE, IO_STORAGE, is_scalar_a
 ${layout_declare_tensor(B, "r", "t_q", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_k", DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
 $if HAS_MASK:
-  ${layout_declare_tensor(B, "r", "t_mask", DTYPE, IO_STORAGE, is_scalar_array=True)}
+  ${layout_declare_tensor(B, "r", "t_mask", DTYPE, IO_STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
@@ -121,21 +121,20 @@ void main() {
   FPInputTile q_tile;
   FPWeightTile w_tile;
 
+#ifndef HAS_MASK
   // If the tile is completely inside the mask region, then there is no need to
   // compute the output tile. All the elements in the output tile can be set to
-  // negative infinity.
-#ifdef HAS_MASK
-  // The additive attn_mask replaces the causal mask, so no tile can be skipped.
-  const bool tile_in_mask_region = false;
-#else
-  bool tile_in_mask_region = c > (input_pos + s + (TILE_M - 1));
-#endif
+  // negative infinity. An additive attn_mask replaces the causal mask, so with
+  // HAS_MASK no tile can be skipped.
+  const bool tile_in_mask_region = c > (input_pos + s + (TILE_M - 1));
   if (tile_in_mask_region) {
     const VEC4_T negative_infinity_vec = VEC4_T(negative_infinity_val);
     set_out_tile_to_vec(out_tile, negative_infinity_vec);
   }
   // Otherwise, need to actually compute output tile
-  else {
+  else
+#endif
+  {
     for (int d4 = worker_id; d4 < D4; d4 += NUM_WORKERS_PER_OUT) {
       load_q_projected_tile_with_checks(
         q_tile,
@@ -185,12 +184,12 @@ void main() {
   // Only the first thread will write out the result
   if (worker_id == 0) {
     out_tile = partial_sums[0];
+#ifdef HAS_MASK
+    apply_scale(out_tile, inv_scale);
+    apply_attn_mask(out_tile, c, s);
+#else
     // Apply scale and mask if the tile was not entirely in the mask region
     if (!tile_in_mask_region) {
-#ifdef HAS_MASK
-      apply_scale(out_tile, inv_scale);
-      apply_attn_mask(out_tile, c, s);
-#else
       VEC4_T inv_scale_vec = VEC4_T(inv_scale);
       apply_scale_and_mask(
         out_tile,
@@ -198,8 +197,8 @@ void main() {
         input_pos,
         c,
         s);
-#endif
     }
+#endif
 
     store_attn_weight_tile_with_checks(
       out_tile,

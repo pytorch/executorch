@@ -58,7 +58,7 @@ ${layout_declare_tensor(B, "r", "t_k", IN_DTYPE, K_CACHE_STORAGE, is_scalar_arra
 $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "t_bias", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
 $if HAS_MASK:
-  ${layout_declare_tensor(B, "r", "t_mask", IN_DTYPE, IO_STORAGE, is_scalar_array=True)}
+  ${layout_declare_tensor(B, "r", "t_mask", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
