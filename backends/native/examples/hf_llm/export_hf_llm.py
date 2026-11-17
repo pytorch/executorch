@@ -70,6 +70,28 @@ from transformers.masking_utils import (
 _OFFGRAPH_ATTENTION = "offgraph"
 
 
+@contextlib.contextmanager
+def _parameters_on_meta() -> Iterator[None]:
+    """Create parameters on the meta device and buffers as usual, so computed
+    buffers such as RoPE frequencies keep their values. Weights are assigned
+    later. What accelerate's ``init_empty_weights`` did, which transformers no
+    longer re-exports."""
+    register = nn.Module.register_parameter
+
+    def register_on_meta(module, name, param):
+        register(module, name, param)
+        if param is not None:
+            module._parameters[name] = nn.Parameter(
+                param.to("meta"), requires_grad=param.requires_grad
+            )
+
+    nn.Module.register_parameter = register_on_meta
+    try:
+        yield
+    finally:
+        nn.Module.register_parameter = register
+
+
 def _load(
     path: str,
     layers: int,
@@ -86,12 +108,9 @@ def _load(
     if offgraph_cache:
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
-    kwargs = {"torch_dtype": torch.float32, "attn_implementation": attn}
+    kwargs = {"dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
-        # transformers 5.11 no longer ships init_empty_weights; only --gguf needs it.
-        from accelerate import init_empty_weights
-
-        with init_empty_weights():
+        with _parameters_on_meta():
             model = AutoModelForCausalLM.from_config(config, **kwargs)
     elif random_weights:
         model = AutoModelForCausalLM.from_config(config, **kwargs)
