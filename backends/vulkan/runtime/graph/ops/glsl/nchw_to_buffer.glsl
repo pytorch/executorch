@@ -32,18 +32,23 @@ void main() {
   }
 
   TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
-  uint nchwi;
+  if (out_of_bounds(outp_tidx, outp)) {
+    t_outp[outp_bufi] = T(0);
+    return;
+  }
+
+  uint src_nchwi;
 
   if (transpose_hw == 1) {
     BufferMetadata transposed_meta = outp;
     transposed_meta.sizes[0].xy = transposed_meta.sizes[0].yx;
     outp_tidx.data[0].xy = outp_tidx.data[0].yx;
-    nchwi = tensor_idx_to_contiguous_idx(transposed_meta, outp_tidx);
+    src_nchwi = tensor_idx_to_contiguous_idx(transposed_meta, outp_tidx);
   }
   // Normal case
   else {
-    nchwi = tensor_idx_to_contiguous_idx(outp, outp_tidx);
+    src_nchwi = tensor_idx_to_contiguous_idx(outp, outp_tidx);
   }
 
-  t_outp[outp_bufi] = T(nchw_in[nchwi]);
+  t_outp[outp_bufi] = T(nchw_in[src_nchwi]);
 }

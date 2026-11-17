@@ -2825,26 +2825,6 @@ def quantized_embedding_byte(
     return weight[indices]
 
 
-@impl_tracked(m, "idma_copy")
-def idma_copy(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
-    return src.clone()
-
-
-@impl_tracked(m, "idma_store")
-def idma_store(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
-    return src.clone()
-
-
-@impl_tracked(m, "idma_load")
-def idma_load(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
-    return src.clone()
-
-
-@impl_tracked(m, "idma_wait")
-def idma_wait(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
-    return src.clone()
-
-
 @impl_tracked(m, "linalg_svd")
 def linalg_svd(
     A: torch.Tensor,
@@ -3087,6 +3067,30 @@ def sdpa_bitwise_causal_mask_gen(
         torch.bitwise_left_shift(torch.full_like(visible_bits, 0xFF), visible_bits),
         0xFF,
     ).to(torch.uint8)
+
+
+@impl_tracked(m, "sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    """Generate an LSB-first ring mask; set bits represent masked cache slots."""
+    assert positions.dtype in (torch.int32, torch.int64)
+    assert positions.dim() == 1
+    assert cache_length > 0 and cache_length % 8 == 0
+    assert 0 < sliding_window <= cache_length
+    assert bool(torch.all(positions >= 0))
+    absolute = positions.to(torch.int64).unsqueeze(1)
+    slots = torch.arange(
+        0, cache_length, 8, dtype=torch.int64, device=positions.device
+    ).unsqueeze(0)
+    packed = positions.new_zeros(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
+    for bit in range(8):
+        distance = (absolute - (slots + bit)) % cache_length
+        masked = (distance >= sliding_window) | (distance > absolute)
+        packed |= masked.to(torch.uint8) << bit
+    return packed
 
 
 @impl_tracked(m, "slice_scatter_")

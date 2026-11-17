@@ -32,8 +32,11 @@ namespace cache {
 struct ET_EXPERIMENTAL CellStep {
   int length;
   int read_len; // the window is cells [0, read_len)
-  std::vector<int32_t> cells; // cell per query token
+  std::vector<int32_t> cells; // cell per written K/V token
   std::vector<uint8_t> mask_bits; // [length, read_len], 1 = attend
+  // Full-mask rows to use as queries, in first-owner-appearance block order.
+  // Empty for ordinary attention, which uses every row.
+  std::vector<int32_t> query_rows;
 };
 
 // Backend face of the cell layout. The step's first layer places its tokens and
@@ -150,6 +153,7 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   std::vector<uint8_t> build_mask(int window) const;
 
   int capacity_;
+  const std::optional<int> dflash_block_size_;
   std::vector<int32_t> pos_; // per cell; -1 = free
   std::vector<uint64_t> owners_; // per cell; owning-sequence bitset
   int used_count_ = 0; // occupied cells, so admission stays O(1)

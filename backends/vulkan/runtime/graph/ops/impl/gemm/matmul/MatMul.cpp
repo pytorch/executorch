@@ -17,7 +17,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatmulCoopmat.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -66,16 +65,10 @@ vkapi::ShaderInfo pick_matmul_tiled_shader(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef mat1 = args.at(1).refs.at(0);
   bool has_bias = graph->get_bool(resize_args.at(0));
   uint32_t tile_m = pick_matmul_tile_m(graph, out);
 
-  bool is_buffer = graph->storage_type_of(out) == utils::kBuffer;
-  // Use vec4 shader when all tensor widths are aligned to 4, even for buffers
-  uint32_t K = graph->size_at<uint32_t>(-1, mat1);
-  uint32_t N = graph->size_at<uint32_t>(-1, out);
-  bool use_scalar = is_buffer && (K % 4 != 0 || N % 4 != 0);
-  std::string base = use_scalar ? "matmul" : "matmul_vec";
+  const std::string base = "matmul_vec";
 
   std::string kernel_name;
   if (has_bias) {
@@ -188,6 +181,7 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // Coopmat path requires M%TILE_M==0, N%TILE_N==0, K%TILE_K==0 — the shader
   // has no partial-tile or K-tail handling.
   auto mat1_sizes = graph.sizes_of(mat1);
+  VK_CHECK_COND(mat1_sizes.size() >= 2);
   int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
   int64_t K = mat1_sizes.back();
   int64_t N = graph.sizes_of(out).back();

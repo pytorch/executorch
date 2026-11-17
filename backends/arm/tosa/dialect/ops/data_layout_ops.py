@@ -125,11 +125,17 @@ def CONCAT(inputs: list[torch.Tensor], *, axis: int) -> torch.Tensor:
 
 
 @register_fake_tosa_op(
-    "PAD(Tensor input1, SymInt[] padding, *, Scalar value) -> Tensor",
+    "PAD(Tensor input1, SymInt[] padding, Tensor value) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
-def PAD(x: torch.Tensor, padding: list[int | torch.SymInt], *, value) -> torch.Tensor:
+def PAD(
+    x: torch.Tensor, padding: list[int | torch.SymInt], value: torch.Tensor
+) -> torch.Tensor:
     _validate_data_layout_dtype(x.dtype, "PAD")
+    if value.dtype != x.dtype or value.numel() != 1:
+        raise TosaValueError(
+            "PAD value must be a scalar tensor with the input dtype", op="PAD"
+        )
 
     if len(padding) != 2 * len(x.shape):
         raise TosaValueError(

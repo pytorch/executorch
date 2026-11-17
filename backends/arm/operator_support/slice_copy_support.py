@@ -17,6 +17,9 @@ Check:
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm.operator_support.dtype_support import (
+    is_indexing_dtype_supported,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -81,68 +84,14 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
 
         values_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
 
-        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32)
-        SUPPORTED_FLOAT_DTYPES = (
-            torch.float16,
-            torch.float32,
-            torch.bfloat16,
-            torch.float8_e4m3fn,
-            torch.float8_e5m2,
-        )
-        SUPPORTED_DTYPES = (torch.bool,) + SUPPORTED_INT_DTYPES + SUPPORTED_FLOAT_DTYPES
-
         # bool is supported in both INT and FP profiles
         if values_dtype == torch.bool:
             return True
-        # ints require INT profile
-        elif values_dtype in SUPPORTED_INT_DTYPES:
-            if not tosa_spec.support_integer():
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires INT profile.",
-                )
-                return False
+        if (
+            values_dtype == torch.int64
+            and tosa_spec.support_integer()
+            and tosa_spec.support_extension("int64")
+        ):
+            return True
 
-        # fp16/fp32/bf16/fp8: either FP profile, or INT profile (via quantization)
-        elif values_dtype in SUPPORTED_FLOAT_DTYPES:
-            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
-                "bf16"
-            ):
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
-                )
-                return False
-            if values_dtype == torch.float8_e4m3fn and not tosa_spec.support_extension(
-                "fp8e4m3"
-            ):
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires fp8e4m3 extension.",
-                )
-                return False
-            if values_dtype == torch.float8_e5m2 and not tosa_spec.support_extension(
-                "fp8e5m2"
-            ):
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires fp8e5m2 extension.",
-                )
-                return False
-            if not (tosa_spec.support_float() or tosa_spec.support_integer()):
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires FP profile or "
-                    "INT profile (with quantization).",
-                )
-                return False
-
-        else:
-            self.reporter.report_reject(
-                node,
-                f"{node.target}: unsupported values dtype {values_dtype}; "
-                f"expected one of {SUPPORTED_DTYPES}.",
-            )
-            return False
-
-        return True
+        return is_indexing_dtype_supported(node, values_dtype, tosa_spec, self.reporter)

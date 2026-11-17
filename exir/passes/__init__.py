@@ -46,7 +46,10 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.legalize_portable_dim_order_pass import (
     LegalizePortableDimOrderPass,
 )
-from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
+from executorch.exir.passes.memory_format_ops_pass import (
+    MemoryFormatOpsPass,
+    ReplaceEmptyLikePass,
+)
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
@@ -85,6 +88,7 @@ __all__ = [
     "LegalizePortableDimOrderPass",
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",
+    "ReplaceEmptyLikePass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
     "remove_unused_parameters_pass",

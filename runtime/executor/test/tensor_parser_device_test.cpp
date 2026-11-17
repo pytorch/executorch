@@ -8,15 +8,18 @@
 
 /**
  * Tests that device info (device_type) is correctly parsed from serialized
- * tensors in .pte files into TensorImpl at runtime.
+ * tensors in .pte files into TensorImpl at runtime, and that the initial data
+ * of a tensor planned in device memory is copied there.
  *
- * Uses a .pte exported with DeviceAwarePartitioner (CUDA device annotation)
- * so that delegate output tensors carry device_type=CUDA in ExtraTensorInfo.
+ * Uses .pte files exported with DeviceAwarePartitioner (CUDA device
+ * annotation) so that delegate tensors carry device_type=CUDA in
+ * ExtraTensorInfo.
  */
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -28,12 +31,14 @@
 #include <gtest/gtest.h>
 
 using executorch::aten::Tensor;
+using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
 using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
 using executorch::runtime::MethodMeta;
+using executorch::runtime::NamedDataMap;
 using executorch::runtime::Program;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
@@ -282,4 +287,119 @@ TEST_F(TensorParserDeviceTest, CudaTensorDataPtrPointsToDeviceMemory) {
   // their data_ptr pointing to the mock device memory buffer.
   EXPECT_EQ(cuda_with_device_memory, 3)
       << "All 3 CUDA tensors should have data_ptr in device memory";
+}
+
+namespace {
+
+/// Parses the constant of ModuleAddConstantWithDevice, which is planned in
+/// cuda:1 memory with its data as the initial state, into planned memory that
+/// records which buffer is on which device, as Module and the Python bindings
+/// set it up.
+void expectConstantCopiedToDevice(
+    const char* program_env,
+    const char* data_env) {
+  const char* program_path = std::getenv(program_env);
+  ASSERT_NE(program_path, nullptr) << program_env << " env var not set";
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path);
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program =
+      Program::load(&loader.get(), Program::Verification::Minimal);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  std::unique_ptr<FileDataLoader> data_loader;
+  std::unique_ptr<FlatTensorDataMap> data_map;
+  if (data_env != nullptr) {
+    const char* data_path = std::getenv(data_env);
+    ASSERT_NE(data_path, nullptr) << data_env << " env var not set";
+    Result<FileDataLoader> loaded = FileDataLoader::from(data_path);
+    ASSERT_EQ(loaded.error(), Error::Ok);
+    data_loader = std::make_unique<FileDataLoader>(std::move(loaded.get()));
+    Result<FlatTensorDataMap> map = FlatTensorDataMap::load(data_loader.get());
+    ASSERT_EQ(map.error(), Error::Ok);
+    data_map = std::make_unique<FlatTensorDataMap>(std::move(map.get()));
+  }
+
+  Result<MethodMeta> method_meta = program->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+  std::vector<Span<uint8_t>> planned_spans;
+  std::vector<executorch::runtime::etensor::Device> planned_devices;
+  std::vector<std::vector<uint8_t>> cpu_buffers;
+  std::vector<DeviceMemoryBuffer> device_buffers;
+  for (size_t i = 0; i < method_meta->num_memory_planned_buffers(); ++i) {
+    auto size = method_meta->memory_planned_buffer_size(i);
+    ASSERT_TRUE(size.ok());
+    auto device = method_meta->memory_planned_buffer_device(i);
+    ASSERT_TRUE(device.ok());
+    planned_devices.push_back(device.get());
+    if (device->is_cpu()) {
+      cpu_buffers.emplace_back(size.get());
+      planned_spans.emplace_back(
+          cpu_buffers.back().data(), cpu_buffers.back().size());
+    } else {
+      auto dmb = DeviceMemoryBuffer::create(
+          size.get(), device->type(), device->index());
+      ASSERT_TRUE(dmb.ok());
+      planned_spans.emplace_back(dmb->as_span());
+      device_buffers.push_back(std::move(dmb.get()));
+    }
+  }
+  ASSERT_EQ(device_buffers.size(), 1);
+  HierarchicalAllocator planned_memory(
+      {planned_spans.data(), planned_spans.size()},
+      {planned_devices.data(), planned_devices.size()});
+  constexpr size_t kMethodAllocBytes = 32 * 1024U;
+  auto method_alloc_pool = std::make_unique<uint8_t[]>(kMethodAllocBytes);
+  MemoryAllocator method_allocator(kMethodAllocBytes, method_alloc_pool.get());
+  MemoryManager memory_manager(&method_allocator, &planned_memory);
+
+  // The constant is the only tensor with both initial data and planned memory.
+  auto* values = ProgramTestFriend::GetInternalProgram(&program.get())
+                     ->execution_plan()
+                     ->Get(0)
+                     ->values();
+  const executorch_flatbuffer::Tensor* constant = nullptr;
+  for (size_t i = 0; i < values->size(); ++i) {
+    auto* s_tensor = values->Get(i)->val_as_Tensor();
+    bool has_data = s_tensor != nullptr &&
+        (s_tensor->data_buffer_idx() > 0 ||
+         (s_tensor->extra_tensor_info() != nullptr &&
+          s_tensor->extra_tensor_info()->location() ==
+              executorch_flatbuffer::TensorDataLocation::EXTERNAL));
+    if (has_data && s_tensor->allocation_info() != nullptr) {
+      ASSERT_EQ(constant, nullptr) << "more than one such tensor";
+      constant = s_tensor;
+    }
+  }
+  ASSERT_NE(constant, nullptr);
+
+  const int h2d_count = g_mock_cuda.h2d_count_;
+  Result<Tensor> tensor = parseTensor(
+      &program.get(),
+      &memory_manager,
+      constant,
+      static_cast<const NamedDataMap*>(data_map.get()));
+  ASSERT_EQ(tensor.error(), Error::Ok);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, h2d_count + 1);
+  EXPECT_EQ(g_mock_cuda.last_h2d_index_, 1);
+  EXPECT_EQ(g_mock_cuda.synced_h2d_count_, h2d_count + 1)
+      << "the copy was not waited for before parsing returned";
+  EXPECT_EQ(g_mock_cuda.last_sync_index_, g_mock_cuda.last_h2d_index_);
+  EXPECT_TRUE(g_mock_cuda.is_device_ptr(tensor->const_data_ptr()));
+  const float* data = tensor->const_data_ptr<float>();
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(data[i], static_cast<float>(i));
+  }
+}
+
+} // namespace
+
+TEST_F(TensorParserDeviceTest, ConstantInProgramCopiedToDeviceMemory) {
+  expectConstantCopiedToDevice(
+      "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PATH", /*data_env=*/nullptr);
+}
+
+TEST_F(TensorParserDeviceTest, ConstantInDataFileCopiedToDeviceMemory) {
+  expectConstantCopiedToDevice(
+      "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_PROGRAM_PATH",
+      "ET_MODULE_ADD_CONSTANT_WITH_DEVICE_DATA_PATH");
 }

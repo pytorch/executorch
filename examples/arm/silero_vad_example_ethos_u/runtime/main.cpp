@@ -15,10 +15,12 @@
 #include <array>
 #include <cinttypes>
 #include <cstdint>
+#include <cstdio>
 #include <string_view>
 #include <vector>
 
 #include "arm_memory_allocator.h"
+#include "arm_perf_monitor.h"
 
 #include "audio.h"
 #include "model_pte.h"
@@ -42,6 +44,46 @@ constexpr size_t kContextSize = 64;
 constexpr size_t kInputSize = kWindowSize + kContextSize;
 constexpr float kFrameDuration =
     static_cast<float>(kWindowSize) / static_cast<float>(kSampleRate);
+
+[[maybe_unused]] void et_pal_init(void) {
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
+  ARM_PMU_Enable();
+  DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
+  ARM_PMU_CYCCNT_Reset();
+  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+#endif
+}
+
+[[maybe_unused]] et_timestamp_t et_pal_current_ticks(void) {
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
+  return ARM_PMU_Get_CCNTR();
+#else
+  return 0;
+#endif
+}
+
+[[maybe_unused]] et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+  // Report cycles directly because the target CPU frequency is unknown.
+  return {1, 1};
+}
+
+[[maybe_unused]] void et_pal_emit_log_message(
+    ET_UNUSED et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    ET_UNUSED size_t length) {
+  fprintf(
+      stderr,
+      "%c [executorch:%s:%lu %s()] %s\n",
+      level,
+      filename,
+      static_cast<unsigned long>(line),
+      function,
+      message);
+}
 
 #if defined(ENABLE_SEMIHOSTING_OUTPUT)
 int semihosting_call(int operation, void* arguments) {
@@ -201,17 +243,11 @@ int main() {
 
   std::array<float, kContextSize> context{};
   size_t num_frames = (audio_data_len + kWindowSize - 1) / kWindowSize;
-#if defined(ENABLE_SEMIHOSTING_OUTPUT)
+  ET_CHECK_MSG(num_frames > 0, "Audio must contain at least one frame");
   std::vector<float> probabilities(num_frames, 0.0f);
-#endif
   size_t num_outputs = method->outputs_size();
   ET_CHECK_MSG(num_outputs == 1, "Silero VAD expects one probability output");
   std::vector<EValue> outputs(num_outputs);
-
-  bool speech_active = false;
-  size_t speech_start_frame = 0;
-  size_t speech_frames = 0;
-  size_t num_segments = 0;
 
   ET_LOG(
       Info,
@@ -220,6 +256,7 @@ int main() {
       num_frames,
       static_cast<double>(VAD_THRESHOLD));
 
+  StartMeasurements();
   for (size_t frame_index = 0; frame_index < num_frames; ++frame_index) {
     copy_input_frame(audio_input, context, frame_index);
 
@@ -236,10 +273,17 @@ int main() {
         outputs_status);
 
     Tensor probability_output = outputs[0].toTensor();
-    float probability = probability_output.const_data_ptr<float>()[0];
-#if defined(ENABLE_SEMIHOSTING_OUTPUT)
-    probabilities[frame_index] = probability;
-#endif
+    probabilities[frame_index] = probability_output.const_data_ptr<float>()[0];
+  }
+  StopMeasurements(static_cast<int>(num_frames));
+
+  bool speech_active = false;
+  size_t speech_start_frame = 0;
+  size_t speech_frames = 0;
+  size_t num_segments = 0;
+
+  for (size_t frame_index = 0; frame_index < num_frames; ++frame_index) {
+    float probability = probabilities[frame_index];
 
     bool is_speech = probability > VAD_THRESHOLD;
     if (is_speech) {

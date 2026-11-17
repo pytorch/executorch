@@ -45,3 +45,7 @@ class TestQNNFloatingPointOperator(_ops.TestQNNFloatingPointOperator):
 
 class TestQNNQuantizedOperator(_ops.TestQNNQuantizedOperator):
     pass
+
+
+class TestQNNFcb(_ops.TestQNNFcb):
+    pass

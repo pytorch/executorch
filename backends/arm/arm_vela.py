@@ -7,12 +7,16 @@
 
 
 import hashlib
+import io
+import logging
 import os
 import struct
 import tempfile
 
 from collections.abc import Mapping
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from math import prod
 from typing import List
 
 import numpy as np
@@ -24,6 +28,8 @@ try:
 except ImportError:
     has_vela = False
 
+logger = logging.getLogger(__name__)
+
 
 _BLOCK_NAME_LENGTH = 16
 _BLOCK_HEADER = struct.Struct(f"<{_BLOCK_NAME_LENGTH}sIB11s")
@@ -32,6 +38,83 @@ _STREAM_HEADER = "vela_bin_stream"
 _STREAM_FOOTER = "vela_end_stream"
 _EXTERNAL_REFERENCE = 1
 _RESERVED_BYTES = b"\x00" * 11
+# Vela region of persistent state with --separate-persistent-region. Must match
+# PERSISTENT_REGION in regor/compiler/raw_writer.cpp.
+_PERSISTENT_REGION = 5
+
+
+def _persistent_region_size(data: Mapping) -> int:
+    """Size in bytes of the persistent region (base address 5).
+
+    The highest (offset + byte size) over the region-5 variables, rounded up to
+    the 16-byte block alignment. 0 when the model has no persistent state, in
+    which case Vela omits the variable_* keys entirely.
+
+    """
+    keys = (
+        "variable_offset",
+        "variable_shape",
+        "variable_elem_size",
+        "variable_region",
+    )
+    if any(k not in data for k in keys):
+        return 0
+    size = 0
+    for offset, shape, elem_size, region in zip(
+        data["variable_offset"],
+        data["variable_shape"],
+        data["variable_elem_size"],
+        data["variable_region"],
+    ):
+        if int(region) != _PERSISTENT_REGION:
+            continue
+        nbytes = int(np.prod(np.asarray(shape))) * int(elem_size)
+        size = max(size, int(offset) + nbytes)
+    return (size + _BLOCK_ALIGNMENT - 1) & ~(_BLOCK_ALIGNMENT - 1)
+
+
+def _persistent_init_image(data: Mapping, persistent_size: int) -> bytes | None:
+    """Initial contents of the persistent region, or None when it is all zero.
+
+    Vela gives each variable its own initial data: variable_data[i], to be
+    copied to variable_offset[i], empty for variables without initial data.
+    Empty entries are skipped rather than zero-filled, as a variable's read and
+    write tensors share an address and only one of them carries the data.
+    np.savez stores the entries as fixed-width byte strings, which drop
+    trailing zero bytes on load, so each is padded back to
+    variable_data_size[i]. None when there is no initial data or it is all
+    zero, in which case the runtime's own zeroing is equivalent and the block
+    is left out.
+
+    """
+    if "variable_data" not in data or "variable_data_size" not in data:
+        return None
+    image = bytearray(persistent_size)
+    for offset, region, entry, nbytes in zip(
+        data["variable_offset"],
+        data["variable_region"],
+        data["variable_data"],
+        data["variable_data_size"],
+    ):
+        nbytes = int(nbytes)
+        if nbytes == 0:
+            continue
+        if int(region) != _PERSISTENT_REGION:
+            raise ValueError(
+                f"Variable at offset {int(offset)} has initial data in region "
+                f"{int(region)}; only the persistent region (region "
+                f"{_PERSISTENT_REGION}) is initialised"
+            )
+        start = int(offset)
+        if start + nbytes > persistent_size:
+            raise ValueError(
+                f"Variable initial data at {start}+{nbytes} exceeds the "
+                f"{persistent_size} byte persistent region"
+            )
+        image[start : start + nbytes] = bytes(entry).ljust(nbytes, b"\x00")
+    if not any(image):
+        return None
+    return bytes(image)
 
 
 @dataclass(frozen=True)
@@ -45,11 +128,31 @@ class VelaExternalBlock:
 
 
 @dataclass(frozen=True)
+class VelaIO:
+    """Location and byte size of a tensor in a Vela memory region."""
+
+    offset: int
+    size: int
+    region: int
+
+
+@dataclass(frozen=True)
+class VelaIOLayout:
+    """Vela I/O layout for AOT memory planning."""
+
+    scratch_size: int
+    inputs: tuple[VelaIO, ...]
+    outputs: tuple[VelaIO, ...]
+
+
+@dataclass(frozen=True)
 class VelaCompileResult:
     """Binary stream and external payloads produced by Vela."""
 
     processed_bytes: bytes
+    scratch_size: int
     external_blocks: tuple[VelaExternalBlock, ...] = ()
+    io_layout: VelaIOLayout | None = None
 
 
 def _as_int32(value, name: str) -> int:
@@ -89,6 +192,39 @@ def vela_bin_pack_io(prefix, data):
     return ios
 
 
+def _vela_io_layout(prefix: str, data: Mapping) -> tuple[VelaIO, ...]:
+    return tuple(
+        VelaIO(
+            offset=int(data[prefix + "_offset"][index]),
+            size=prod(int(dim) or 1 for dim in shape)
+            * int(data[prefix + "_elem_size"][index]),
+            region=int(data[prefix + "_region"][index]),
+        )
+        for index, shape in enumerate(data[prefix + "_shape"])
+    )
+
+
+def _get_scratch_size(scratch_value: np.generic, max_scratch_size: int | None) -> int:
+    """Validate Vela scratch size and the optional platform capacity."""
+    if not isinstance(scratch_value, np.int64):
+        raise RuntimeError("Expected scratch to be int64")
+    scratch_size = int(scratch_value)
+    if scratch_size < 0 or scratch_size > 2**32 - 1:
+        raise ValueError(f"scratch size out of uint32 range: {scratch_size}")
+    if max_scratch_size is not None and scratch_size > max_scratch_size:
+        raise RuntimeError(
+            f"Ethos-U delegate scratch arena requires {scratch_size} bytes, "
+            f"exceeding the configured capacity of {max_scratch_size} bytes "
+            f"by {scratch_size - max_scratch_size} bytes. "
+            "Reduce the model's memory requirements or target a platform "
+            "with sufficient scratch memory. See Vela's documentation "
+            "for memory-mode and arena-cache-size options: "
+            "https://gitlab.arm.com/artificial-intelligence/ethos-u/"
+            "ethos-u-vela/-/blob/main/OPTIONS.md"
+        )
+    return scratch_size
+
+
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
@@ -120,8 +256,17 @@ def vela_compile(
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
         if verbose:
-            args.append("--verbose-all")
-        vela.main(" ".join(args).split(" "))
+            args.append("--verbose-weights")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                vela.main(" ".join(args).split(" "))
+        finally:
+            if output := stdout.getvalue().rstrip():
+                logger.info("%s", output)
+            if output := stderr.getvalue().rstrip():
+                logger.warning("%s", output)
 
         np_path = os.path.join(dir, "output", "out_vela.npz")
 
@@ -136,24 +281,45 @@ def vela_compile(
             # copy weight data through unmodified
             bin_blocks["weight_data"] = data["weight_data"].tobytes()
 
-            # Add a block for scratch, inputs and outputs;  scratch shape is a 1 element
-            # array giving us size in bytes so extract this and add a block of 0's.
-            # Currently we preallocated this on the host to provide SRAM for computation.
-            if not isinstance(data["scratch_shape"][0], np.int64):
-                raise RuntimeError("Expected scratch to be int64")
-            block_length = int(data["scratch_shape"][0])
-            if max_scratch_size is not None and block_length > max_scratch_size:
-                raise RuntimeError(
-                    f"Ethos-U delegate scratch arena requires {block_length} bytes, "
-                    f"exceeding the configured capacity of {max_scratch_size} bytes "
-                    f"by {block_length - max_scratch_size} bytes. "
-                    "Reduce the model's memory requirements or target a platform "
-                    "with sufficient scratch memory. See Vela's documentation "
-                    "for memory-mode and arena-cache-size options: "
-                    "https://gitlab.arm.com/artificial-intelligence/ethos-u/"
-                    "ethos-u-vela/-/blob/main/OPTIONS.md"
-                )
-            bin_blocks["scratch_size"] = struct.pack("<I", block_length)
+            # Vela's scratch_shape contains the required scratch size in bytes.
+            # Store the size; scratch storage is supplied at runtime.
+            scratch_size = _get_scratch_size(data["scratch_shape"][0], max_scratch_size)
+            bin_blocks["scratch_size"] = struct.pack("<I", scratch_size)
+
+            # Delegate-owned streaming (persistent/variable) state lives in its
+            # own region (region 5), with 0-based offsets independent of scratch
+            # and weights. The runtime allocates a buffer of this size for base
+            # address 5. Assumes a single model owns the persistent region.
+            #
+            # Only emitted when the model actually has persistent state. The
+            # block name is unknown to older runtimes, and VelaBinStream rejects
+            # unrecognised names outright rather than skipping them, so emitting
+            # it unconditionally would break every model on any runtime that
+            # predates it. A model without streaming state must keep producing
+            # the byte-identical blob it produced before.
+            persistent_size = _persistent_region_size(data)
+            if persistent_size:
+                bin_blocks["persistent_size"] = struct.pack("<I", persistent_size)
+
+                # Initial contents of the region, when the state does not start
+                # from the all-zero bit pattern. Vela gives each variable its own
+                # initial data; it is laid out here at the variables' offsets as
+                # one image, so the runtime installs it with a single copy and
+                # never needs to know the layout.
+                #
+                # Zeroing is only the right initial value when every state's
+                # quantized zero point is 0. Under asymmetric quantization a
+                # real-valued zero encodes as the zero point, not as 0, and a
+                # state may legitimately start from a non-zero value in any
+                # case. Both are just "the buffer's contents", which is what
+                # this carries.
+                #
+                # Skipped when the image is all zeroes: the runtime already
+                # zeroes the region, so the block would cost blob size to say
+                # nothing.
+                persistent_init = _persistent_init_image(data, persistent_size)
+                if persistent_init is not None:
+                    bin_blocks["persistent_init"] = persistent_init
 
             # Capture inputs and outputs
             bin_blocks["inputs"] = vela_bin_pack_io("input", data)
@@ -210,7 +376,16 @@ def vela_compile(
                 block = block_header + block_data
                 blocks = blocks + block
 
-            return VelaCompileResult(blocks, tuple(external_blocks))
+            return VelaCompileResult(
+                processed_bytes=blocks,
+                scratch_size=scratch_size,
+                external_blocks=tuple(external_blocks),
+                io_layout=VelaIOLayout(
+                    scratch_size=scratch_size,
+                    inputs=_vela_io_layout("input", data),
+                    outputs=_vela_io_layout("output", data),
+                ),
+            )
 
     if intermediate_path is not None:
         return run(intermediate_path)

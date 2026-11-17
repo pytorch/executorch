@@ -40,6 +40,7 @@ import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
+    _compile_every_candidate_at_once,
     launch_split_k_gemm,
     QuantizedGemmFamily,
 )
@@ -47,6 +48,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
     _dp4a_u8_s8,
     _warp_sum_f32,
     autotune_configs,
+    autotune_do_bench,
     check_contiguous,
     check_device,
     check_dtypes,
@@ -1664,6 +1666,7 @@ _BUCKET_KERNELS = {
         configs=int4_autotune_configs(bucket),
         key=["N", "K", "SPLIT_K", "DYNAMIC_M"],
         prune_configs_by={"early_config_prune": _prune},
+        do_bench=autotune_do_bench,
     )(_int4_w4a8_bucket_kernel)
     for bucket in _SMALL_BUCKETS
 }
@@ -1672,6 +1675,7 @@ _W4A16_DIRECT_KERNELS = {
         configs=int4_autotune_configs(bucket),
         key=["M", "N", "K", "SPLIT_K"],
         prune_configs_by={"early_config_prune": _prune_tiles},
+        do_bench=autotune_do_bench,
     )(_int4_w4a16_direct_kernel)
     for bucket in _LARGE_BUCKETS
 }
@@ -1680,6 +1684,7 @@ _W4A16_SPLIT_KERNELS = {
         configs=int4_autotune_configs(bucket),
         key=["M", "N", "K", "SPLIT_K"],
         prune_configs_by={"early_config_prune": _prune_tiles},
+        do_bench=autotune_do_bench,
     )(_int4_w4a16_splitk_kernel)
     for bucket in _LARGE_BUCKETS
 }
@@ -1768,7 +1773,11 @@ def _launch_w4a8(
     )
 
 
-@autotune_launch_param("split_k", SPLIT_K_CANDIDATES)
+@autotune_launch_param(
+    "split_k",
+    SPLIT_K_CANDIDATES,
+    candidate_prepass=_compile_every_candidate_at_once,
+)
 def _launch_rows(
     bucket: int,
     x: torch.Tensor,
@@ -1827,7 +1836,11 @@ def _launch_rows(
     )
 
 
-@autotune_launch_param("split_k", TILE_SPLIT_K_CANDIDATES)
+@autotune_launch_param(
+    "split_k",
+    TILE_SPLIT_K_CANDIDATES,
+    candidate_prepass=_compile_every_candidate_at_once,
+)
 def _launch_w4a16(
     bucket: int,
     x: torch.Tensor,

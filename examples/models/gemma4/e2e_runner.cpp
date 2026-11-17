@@ -11,7 +11,6 @@
 #include <gflags/gflags.h>
 
 #include <iostream>
-#include <thread>
 
 #include <executorch/examples/models/gemma4/image_utils.h>
 #include <executorch/examples/models/gemma4/runner/gemma4_runner.h>
@@ -57,7 +56,12 @@ int32_t main(int32_t argc, char** argv) {
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
       : static_cast<uint32_t>(FLAGS_cpu_threads);
   if (num_threads == 0) {
-    num_threads = std::min(std::thread::hardware_concurrency(), 8u);
+    // On Linux other than Android, the default pool size follows the CPUs
+    // this process may run on.
+    num_threads = static_cast<uint32_t>(std::min<size_t>(
+        ::executorch::extension::threadpool::get_threadpool()
+            ->get_thread_count(),
+        8));
   }
   ET_LOG(Info, "Setting threadpool to %d threads", (int)num_threads);
   ::executorch::extension::threadpool::get_threadpool()

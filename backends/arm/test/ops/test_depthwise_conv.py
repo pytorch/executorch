@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
+    VgfPipelineFP8,
 )
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -195,7 +196,7 @@ test_data_conv2d_FP_fp16 = {
         dtype=torch.float16,
     ),
 }
-test_data_conv2d_FP_fp8 = {
+test_data_conv2d_FP_fp8_no_comparing = {
     "fp8e4m3_3x3_gp3": lambda: (
         Conv2d(
             in_channels=3,
@@ -279,17 +280,27 @@ def _get_dtype_count(model: torch.nn.Module):
     | test_data_conv2d_FP_fp16,
 )
 def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
+    model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = TosaPipelineFP[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=["bf16"],
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_conv2d_FP_fp8)
+@common.parametrize("test_data", test_data_conv2d_FP_fp8_no_comparing)
 def test_convolution_2d_tosa_FP_fp8_depthwise(test_data):
     model, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -336,6 +347,20 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
         "to_edge_transform_and_lower",
         pipeline.tester.check_dtype_count,
         _get_dtype_count(model),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv2d_FP_fp8_no_comparing)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_no_quant_fp8_depthwise(test_data):
+    model, _ = test_data()
+    pipeline = VgfPipelineFP8[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        expect_missing_reference=True,
     )
     pipeline.run()
 

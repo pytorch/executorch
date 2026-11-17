@@ -87,6 +87,14 @@ except Exception as e:
     exit(1)
 "
 
+    # Require the CUDA backend and hardware instead of silently skipping these
+    # tests. Separate processes also exercise the output policy fixed at import.
+    for tensor_output in torch executorch; do
+        EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1 \
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="$tensor_output" \
+            python extension/pybindings/test/test_pybindings_cuda_dlpack.py -v
+    done
+
     echo "SUCCESS: ExecuTorch CUDA ${cuda_version} build and verification completed successfully"
 }
 

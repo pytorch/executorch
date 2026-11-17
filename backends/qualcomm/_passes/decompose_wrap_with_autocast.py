@@ -10,6 +10,7 @@ from typing import Dict, Tuple
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+from torch.fx.experimental.proxy_tensor import make_fx
 
 from .utils import merge_decomposed_graph
 
@@ -55,13 +56,28 @@ class DecomposeWrapWithAutocast(ExportPass):
             if isinstance(node.target, torch._higher_order_ops.wrap.WrapWithAutocast):
                 submod, _ = self._get_submod(gm, node)
                 n_args = node.args
+                device_type, dtype, enabled, cache_enabled = n_args[:4]
+                if enabled:
+                    # Retrace the region under its autocast, as torch.export does,
+                    # so the casts autocast applies become ops. Nested regions are
+                    # traced through with their own autocast.
+                    with torch.autocast(device_type, dtype, enabled, cache_enabled):
+                        submod = make_fx(submod, tracing_mode="fake")(
+                            *[arg.meta["val"] for arg in n_args[5:]]
+                        )
+                else:
+                    # Inline nested regions first. Their submodule names only make
+                    # sense inside this submodule.
+                    self._replace(submod)
                 input_submod = n_args[4]
                 decomposed_module = submod
                 with graph.inserting_before(node):
-                    # remap is used to map original node values to new node values,
-                    # which ensures that reference to nodes are correctly updated in the new graph
-                    # remap = {"expand_1": node.args[5], "to_4": node.args[6]}
-                    remap = {n_args[i].name: n_args[i] for i in range(5, len(n_args))}
+                    # remap maps each placeholder of the submodule to the operand
+                    # passed in its position. Their names need not match.
+                    placeholders = [
+                        n for n in submod.graph.nodes if n.op == "placeholder"
+                    ]
+                    remap = {p.name: arg for p, arg in zip(placeholders, n_args[5:])}
                     merge_decomposed_graph(
                         remap=remap,
                         target_node=node,

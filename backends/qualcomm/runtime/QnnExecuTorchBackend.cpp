@@ -14,6 +14,9 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
+
+#include <memory>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -65,36 +68,58 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       QNN_EXECUTORCH_LOG_WARN("unknown argument: %s", compile_spec.key);
   }
 
-  // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
+  // TODO: this is a temporary solution for multi-graph support, will be
+  //       removed once framework starts to accept runtime configuration
+  // ---
+  // check if current context binary has already been initialized
+  // return cached one for reducing memory footprint
+  const DelegateKey key{signature, runtime_allocator};
+  if (auto cached_handle = get_cached_delegate(key)) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Use cached delegate handle for current method: %s",
+        context.get_method_name());
+    return *cached_handle;
+  }
+
+  std::shared_ptr<SpillFillGroup> group;
+  std::unique_lock<std::mutex> group_lock;
+  auto* backend_options = qnn_executorch_options->backend_options();
+  if (backend_options->backend_type() ==
+      QnnExecuTorchBackendType::kHtpBackend) {
+    auto* htp_options = backend_options->htp_options();
+    if (htp_options->use_multi_contexts() &&
+        htp_options->max_sf_buf_size() != 0) {
+      group = get_spill_fill_group(
+          {runtime_allocator, htp_options->max_sf_buf_size()});
+      group_lock = std::unique_lock<std::mutex>(group->mutex);
+      if (auto cached_handle = get_cached_delegate(key)) {
+        return *cached_handle;
+      }
+    }
+  }
+
+  // Create QnnManager
   QnnManager* qnn_manager = runtime_allocator->allocateInstance<QnnManager>();
   if (qnn_manager == nullptr) {
     return Error::MemoryAllocationFailed;
   }
 
-  // NOTE: Since we use placement new and since this type is not trivially
-  // destructible, we must call the destructor manually in destroy().
+  // The runtime allocator owns the storage, so only invoke the destructor.
   new (qnn_manager) QnnManager(qnn_executorch_options, qnn_context_blob);
-  // TODO: this is a temporal solution for multi-graph support, will be
-  //       removed once framework starts to accept runtime configuration
-  // ---
-  // check if current context binary has already been initialized
-  // return cached one for reducing memory footprint
-
-  auto iter = delegate_map_.find(signature);
-  if (iter != delegate_map_.end()) {
-    QNN_EXECUTORCH_LOG_INFO(
-        "Use cached delegate handle for current method: %s",
-        context.get_method_name());
-    return iter->second;
-  }
+  auto destroy_manager = [](QnnManager* manager) { manager->~QnnManager(); };
+  std::shared_ptr<QnnManager> manager_guard(qnn_manager, destroy_manager);
 
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->InitBackend() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
   ET_CHECK_OR_RETURN_ERROR(
-      qnn_manager->InitContext() == Error::Ok,
+      qnn_manager->InitContext(
+          std::nullopt,
+          group && group->owner
+              ? static_cast<QnnManager*>(group->owner.get())->GetContextHandle()
+              : nullptr) == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
 
@@ -111,14 +136,18 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
           "Fail to allocate tensor");
     }
   }
-  add_cached_delegate(signature, qnn_manager);
+  DelegateHandle* cached_handle =
+      add_cached_delegate(key, qnn_manager, manager_guard, group);
+  if (group && !group->owner && cached_handle == qnn_manager) {
+    group->owner = manager_guard;
+  }
 
 #ifndef __hexagon__
   // This backend does not need its processed data after Init.
   processed->Free();
 #endif
 
-  return qnn_manager;
+  return cached_handle;
 }
 
 Error QnnExecuTorchBackend::execute(
@@ -126,9 +155,7 @@ Error QnnExecuTorchBackend::execute(
     DelegateHandle* handle,
     Span<EValue*> args) const {
   ET_CHECK_OR_RETURN_ERROR(
-      delegate_map_rev_.count(handle) != 0,
-      Internal,
-      "DelegateHandle has been deleted");
+      is_cached_delegate(handle), Internal, "DelegateHandle has been deleted");
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
 
   std::string method_name = context.get_method_name();
@@ -225,11 +252,9 @@ Error QnnExecuTorchBackend::execute(
 }
 
 void QnnExecuTorchBackend::destroy(DelegateHandle* handle) const {
-  if (handle != nullptr && delegate_map_rev_.count(handle)) {
-    QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
-    qnn_manager->Destroy();
-    erase_cached_delegate(handle);
-  }
+  // Releasing the final shared owner invokes ~QnnManager(), which calls
+  // Destroy(). The returned entry releases owners after mutex_ is unlocked.
+  (void)erase_cached_delegate(handle);
 }
 
 executorch::runtime::Error QnnExecuTorchBackend::set_option(
@@ -365,40 +390,97 @@ bool QnnExecuTorchBackend::is_available() const {
   return true;
 }
 
-void QnnExecuTorchBackend::add_cached_delegate(
-    const std::int64_t& signature,
-    executorch::runtime::DelegateHandle* handle) const {
+std::optional<executorch::runtime::DelegateHandle*>
+QnnExecuTorchBackend::get_cached_delegate(const DelegateKey& key) const {
   std::lock_guard<std::mutex> guard(mutex_);
-  delegate_map_[signature] = handle;
-  delegate_map_rev_[handle] = signature;
+  auto iter = delegate_map_.find(key);
+  if (iter == delegate_map_.end()) {
+    return std::nullopt;
+  }
+  ++iter->second.users;
+  return iter->second.handle;
 }
 
-void QnnExecuTorchBackend::erase_cached_delegate(
+std::shared_ptr<QnnExecuTorchBackend::SpillFillGroup>
+QnnExecuTorchBackend::get_spill_fill_group(const SpillFillKey& key) const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  for (auto iter = spill_fill_groups_.begin();
+       iter != spill_fill_groups_.end();) {
+    if (iter->second.expired()) {
+      iter = spill_fill_groups_.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+  auto& weak_group = spill_fill_groups_[key];
+  auto group = weak_group.lock();
+  if (!group) {
+    group = std::make_shared<SpillFillGroup>();
+    weak_group = group;
+  }
+  return group;
+}
+
+executorch::runtime::DelegateHandle* QnnExecuTorchBackend::add_cached_delegate(
+    const DelegateKey& key,
+    executorch::runtime::DelegateHandle* handle,
+    std::shared_ptr<executorch::runtime::DelegateHandle> manager,
+    std::shared_ptr<SpillFillGroup> group) const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  auto [iter, inserted] = delegate_map_.try_emplace(
+      key, DelegateEntry{handle, 1, std::move(group), std::move(manager)});
+  if (inserted) {
+    delegate_map_rev_.emplace(handle, key);
+  } else {
+    ++iter->second.users;
+  }
+  return iter->second.handle;
+}
+
+bool QnnExecuTorchBackend::is_cached_delegate(
+    executorch::runtime::DelegateHandle* handle) const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  return delegate_map_rev_.count(handle) != 0;
+}
+
+std::optional<QnnExecuTorchBackend::DelegateEntry>
+QnnExecuTorchBackend::erase_cached_delegate(
     executorch::runtime::DelegateHandle* handle) const {
   std::lock_guard<std::mutex> guard(mutex_);
   auto iter = delegate_map_rev_.find(handle);
   if (iter == delegate_map_rev_.end()) {
-    return;
+    return std::nullopt;
   }
-  delegate_map_.erase(iter->second);
-  delegate_map_rev_.erase(handle);
+  auto delegate_iter = delegate_map_.find(iter->second);
+  if (delegate_iter == delegate_map_.end()) {
+    QNN_EXECUTORCH_LOG_ERROR("Cached delegate has no matching entry.");
+    delegate_map_rev_.erase(iter);
+    return std::nullopt;
+  }
+  if (--delegate_iter->second.users != 0) {
+    return std::nullopt;
+  }
+  DelegateEntry entry = std::move(delegate_iter->second);
+  delegate_map_.erase(delegate_iter);
+  delegate_map_rev_.erase(iter);
+  return entry;
 }
 
 namespace {
+// Loaded modules may outlive static teardown. Their managers must be released
+// by destroy(), while their allocators and QNN libraries are still alive.
+const executorch::runtime::Backend& qnn_backend() {
+  static const executorch::runtime::Backend backend{
+      QNN_BACKEND, new QnnExecuTorchBackend()};
+  return backend;
+}
 #if !defined(_MSC_VER)
-auto cls = QnnExecuTorchBackend();
-executorch::runtime::Backend backend{QNN_BACKEND, &cls};
 // On non-Windows platforms a single copy of executorch_core is shared between
 // the DLL and the exe, so the static initializer writes into the correct
 // registered_backends[] array.
-static auto success_with_compiler = register_backend(backend);
+const auto success_with_compiler = register_backend(qnn_backend());
 #endif
 } // namespace
-
-#if defined(_MSC_VER)
-static QnnExecuTorchBackend cls_msvc;
-static executorch::runtime::Backend backend_msvc{QNN_BACKEND, &cls_msvc};
-#endif
 
 } // namespace qnn
 } // namespace backends
@@ -417,7 +499,7 @@ void QnnExecuTorchBackendRegister(void* register_fn) {
     return;
   }
   executorch::runtime::Error err = reinterpret_cast<RegisterFn>(register_fn)(
-      executorch::backends::qnn::backend_msvc);
+      executorch::backends::qnn::qnn_backend());
   if (err != executorch::runtime::Error::Ok) {
     ET_LOG(
         Error,

@@ -83,7 +83,6 @@ class CortexMConv3D(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.conv = torch.nn.Conv3d(*args, **kwargs, bias=False)
-        self.conv.weight.data.fill_(2.0)
 
     def forward(self, x):
         return self.conv(x)
@@ -223,13 +222,12 @@ test_cases = {
         model=CortexMConv1D(1, 1, 1),
         example_inputs=(ramp_tensor(0, 10, (1, 3, 2)),),
     ),
+    # Contiguous on purpose: the Arm test runner only reorders NHWC inputs and its
+    # own 5-D order, so a channels_last_3d input would reach the simulator in the
+    # wrong byte order.
     "conv3d": McuTestCase(
-        model=CortexMConv3D(1, 1, 1),
-        example_inputs=(
-            ramp_tensor(-1000, 1000, (2, 1, 3, 3, 3)).to(
-                memory_format=torch.channels_last_3d
-            ),
-        ),
+        model=CortexMConv3D(2, 4, (2, 3, 3), stride=(1, 2, 2), padding=1),
+        example_inputs=(ramp_tensor(-10, 10, (2, 2, 4, 6, 6)),),
     ),
     "conv2d_x3": McuTestCase(
         model=CortexMConv2Dx3(),
@@ -329,7 +327,6 @@ test_cases = {
 
 
 xfails_dialect: dict[str, xfail_type] = {
-    "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
 }
@@ -342,14 +339,23 @@ def test_dialect_conv2d(test_case, cortex_m_target):
     )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
-        test_case.model.ops_after_transforms,
+        {
+            (
+                name.replace(
+                    "quantized_conv2d_default", "quantized_conv2d_packed_default"
+                )
+                if cortex_m_target.backend == cmsis_nn.Backend.MVE
+                and cmsis_nn.is_aot_enabled()
+                else name
+            ): count
+            for name, count in test_case.model.ops_after_transforms.items()
+        },
         qtol=1,
     )
 
 
 xfails_implementation: dict[str, xfail_type] = {
     "conv1d": "Currently not supported.",
-    "conv3d": "Currently not supported.",
 }
 
 
@@ -384,6 +390,7 @@ def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     grouped_convs = (
         exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
         exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
     )
     [conv_node] = [
@@ -408,7 +415,7 @@ def test_dialect_single_channel_dispatch(backend, out_channels):
     graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
     regular = backend == cmsis_nn.Backend.MVE and out_channels > 8
     expected = (
-        exir_ops.edge.cortex_m.quantized_conv2d.default
+        exir_ops.edge.cortex_m.quantized_conv2d_packed.default
         if regular
         else exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default
     )

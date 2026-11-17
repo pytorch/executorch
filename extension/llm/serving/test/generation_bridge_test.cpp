@@ -1608,7 +1608,7 @@ TEST_P(GenerationFenceTest, MissingKeyFenceRetainsPermitsThroughCleanup) {
     (void)capture;
     EXPECT_EQ(update.finish_reason, batching::FinishReason::Failed);
     ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::CapacityExceeded);
+    EXPECT_EQ(handle.error()->code, ErrorCode::SessionCapacityExceeded);
     sink_gate.arrive();
   };
   auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
@@ -1986,7 +1986,7 @@ TEST_F(
     events->record(update);
     EXPECT_EQ(update.finish_reason, batching::FinishReason::Failed);
     ASSERT_TRUE(handle.error());
-    EXPECT_EQ(handle.error()->code, ErrorCode::CapacityExceeded);
+    EXPECT_EQ(handle.error()->code, ErrorCode::SessionCapacityExceeded);
     sink_gate.arrive();
     throw 1;
   };
@@ -1994,7 +1994,7 @@ TEST_F(
   ASSERT_TRUE(sink_gate.wait_for());
   const auto error = handle.error();
   ASSERT_TRUE(error);
-  EXPECT_EQ(error->code, ErrorCode::CapacityExceeded);
+  EXPECT_EQ(error->code, ErrorCode::SessionCapacityExceeded);
   handle.cancel();
   auto stopped = std::make_shared<std::atomic<bool>>(false);
   callback_callers.emplace_back([this, stopped] {

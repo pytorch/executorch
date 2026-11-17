@@ -88,6 +88,24 @@ class CortexMMatmulBroadcast(torch.nn.Module):
         return torch.matmul(lhs, rhs)
 
 
+class CortexMMatmulConstantRhs(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_batch_matmul_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 0,
+    }
+
+    def __init__(self, rhs_shape):
+        super().__init__()
+        self.rhs = torch.randn(rhs_shape)
+
+    def forward(self, lhs):
+        return torch.matmul(lhs, self.rhs)
+
+
 test_cases = {
     "bmm_small": McuTestCase(
         CortexMBmm(),
@@ -136,6 +154,10 @@ matmul_test_cases = {
     "matmul_broadcast_rank3": McuTestCase(
         CortexMMatmulBroadcast(),
         (torch.randn(1, 4, 8), torch.randn(2, 8, 4)),
+    ),
+    "matmul_const_rhs_rank3": McuTestCase(
+        CortexMMatmulConstantRhs((2, 8, 4)),
+        (torch.randn(2, 4, 8),),
     ),
 }
 

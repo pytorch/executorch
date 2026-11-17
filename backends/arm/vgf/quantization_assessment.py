@@ -32,6 +32,8 @@ from executorch.backends.arm.vgf.quantization_quality import (
 from torch.export import ExportedProgram
 from torch.fx import GraphModule, Interpreter, Node
 
+from torch.utils._pytree import tree_map
+
 
 GraphInput = ExportedProgram | GraphModule
 
@@ -187,8 +189,13 @@ class _TensorCaptureInterpreter(Interpreter):
 
     def run_node(self, node: Node) -> Any:
         value = super().run_node(node)
+
         if node.name in self._capture_node_names:
-            self.captured[node.name] = value
+            self.captured[node.name] = tree_map(
+                lambda x: (x.detach().clone() if isinstance(x, torch.Tensor) else x),
+                value,
+            )
+
         return value
 
 

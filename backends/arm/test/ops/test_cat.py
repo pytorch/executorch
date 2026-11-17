@@ -201,6 +201,23 @@ def test_cat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", Cat.test_parameters_fp8)
+@common.SkipIfNoModelConverter
+def test_cat_vgf_no_quant_fp8(test_data: Tuple):
+    tensors, dim, _ = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cat(),
+        (tensors, dim),
+        aten_op,
+        exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data",
     Cat.test_parameters | Cat.test_parameters_bf16 | Cat.test_parameters_fp16,
