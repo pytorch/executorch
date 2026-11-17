@@ -26,6 +26,8 @@ The backend automatically discovers the OpenVINO C library from the pip-installe
 
 If auto-discovery fails (e.g. non-standard install), set `OPENVINO_LIB_PATH` to the full path of the OpenVINO C library: a `libopenvino_c.so` file on Linux, or `openvino_c.dll` on Windows. For the pip package on Linux:
 
+
+
 ```bash
 export OPENVINO_LIB_PATH="$(python3 -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
 ```
@@ -308,7 +310,7 @@ This flow is equivalent to `openvino_build.sh` and does not require Bash shell s
 #### Windows Prerequisites
 
 1. Windows 10 or 11 (x64)
-2. Visual Studio 2022 with Desktop development with C++ and the optional C++ Clang tools for Windows
+2. Visual Studio 2022 with Desktop development with C++; install the C++ Clang tools for Windows component for the Python-package builds in Options A and D.
 3. CMake (3.27+) and Ninja in `PATH`
 4. Python 3.11–3.14 in `PATH`
 5. Git in `PATH`
@@ -364,7 +366,7 @@ Choose one setup path:
 
     ```powershell
     cd $HOME\Downloads
-    curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.2.1/windows/openvino_toolkit_windows_2026.2.1.21919.ede283a88e3_x86_64.zip --output openvino_2026.2.1.zip
+    curl.exe -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.2.1/windows/openvino_toolkit_windows_2026.2.1.21919.ede283a88e3_x86_64.zip --output openvino_2026.2.1.zip
     ```
 
   3. Extract, rename, and move it under `C:\Program Files (x86)\Intel`:

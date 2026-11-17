@@ -12,7 +12,7 @@ Windows note:
 - Activate your Python virtual environment in the same terminal session before export/build.
 - If using OpenVINO archive installation, initialize environment variables in the same terminal:
 ```powershell
-& "C:\Program Files (x86)\Intel\openvino_2026.2.0\setupvars.ps1"
+& "C:\Program Files (x86)\Intel\openvino\setupvars.ps1"
 ```
 
 ## Export the model:
@@ -114,6 +114,9 @@ Update the model tokenizer file path to match the location where your model is d
 ```
 
 #### Windows (PowerShell):
+
+Before running the native runner, set `OPENVINO_LIB_PATH` as described in the [Windows OpenVINO Runtime Setup](../../../backends/openvino/README.md#openvino-runtime-setup-windows).
+
 ```powershell
-<executorch_root>\cmake-out\examples\models\llama\Release\llama_main.exe --model_path="llama3_2_ov.pte" --tokenizer_path="C:\path\to\model\tokenizer.json" --prompt="Your custom prompt" --max_new_tokens=128
+.\cmake-out\examples\models\llama\Release\llama_main.exe --model_path=".\examples\openvino\llama\llama3_2_ov.pte" --tokenizer_path="C:\path\to\model\tokenizer.json" --prompt="Your custom prompt" --max_new_tokens=128
 ```

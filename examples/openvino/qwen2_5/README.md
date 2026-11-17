@@ -126,9 +126,11 @@ On Linux/macOS:
 
 On Windows PowerShell:
 
+Before running the native runner, set `OPENVINO_LIB_PATH` as described in the [Windows OpenVINO Runtime Setup](../../../backends/openvino/README.md#openvino-runtime-setup-windows).
+
 ```powershell
 .\cmake-out\examples\models\llama\Release\llama_main.exe `
-  --model_path=<executorch_root>\examples\openvino\qwen2_5\qwen2_5_1_5b_ov.pte `
-  --tokenizer_path=<path\to\model\folder>\tokenizer.json `
+  --model_path=.\qwen2_5_1_5b_ov.pte `
+  --tokenizer_path="C:\path\to\model\folder\tokenizer.json" `
   --prompt="Your custom prompt"
 ```
