@@ -33,6 +33,7 @@ from executorch.backends.espressif.serialization.xts3 import (
     INT8_PASSTHROUGH_MARKERS,
     lower_int8_node,
     LUT_KINDS,
+    MAX_GRAPH_STATES,
     TensorRegistry,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -303,11 +304,59 @@ def _int8_state_compatible(buffer: torch.fx.Node, writer: torch.fx.Node) -> bool
     return len(reads) == 1 and None not in reads and _qparams(writer, producer) in reads
 
 
+def _keeps_runtime_io(
+    exported_program: ExportedProgram, kept, released, writers
+) -> bool:
+    """
+    Whether the partition that would own the kept buffers still has a runtime
+    input and a runtime output, which its XTS3 graph needs. Constants do not
+    count, since a shared one is duplicated into the partition, and the
+    released buffers become runtime inputs.
+    """
+    signature = exported_program.graph_signature
+    constants = {
+        *signature.inputs_to_parameters,
+        *signature.inputs_to_lifted_tensor_constants,
+        *(
+            name
+            for name, buffer in signature.inputs_to_buffers.items()
+            if buffer not in writers
+        ),
+    }
+    tag = kept[0][0].meta["delegation_tag"]
+    released_nodes = {node for node, _ in released}
+    nodes = {
+        node
+        for node in exported_program.graph.nodes
+        if node.meta.get("delegation_tag") == tag and node not in released_nodes
+    }
+    updates = {writers[buffer] for _, buffer in kept}
+
+    def runtime(node):
+        return node.op != "get_attr" and node.name not in constants
+
+    has_input = any(
+        source not in nodes and runtime(source)
+        for node in nodes
+        for source in node.all_input_nodes
+    )
+    has_output = any(
+        runtime(node)
+        and user not in nodes
+        and not (user.op == "output" and node in updates)
+        for node in nodes
+        for user in node.users
+    )
+    return has_input and has_output
+
+
 def _tag_quantized_mutable_buffers(exported_program: ExportedProgram) -> list[str]:
     """
-    Give each mutable buffer to the partition that holds all its accesses,
-    unless the delegate could not keep it as int8. Returns the delegated
-    buffers' names.
+    Give the mutable buffers to the partition that holds all their accesses,
+    unless the delegate could not keep one as int8, they would end up in
+    several partitions or leave it without a runtime input or output, or there
+    are more than MAX_GRAPH_STATES of them. Returns the delegated buffers'
+    names.
     """
     tag_mutated_buffer(exported_program)
     signature = exported_program.graph_signature
@@ -321,7 +370,7 @@ def _tag_quantized_mutable_buffers(exported_program: ExportedProgram) -> list[st
         if buffer not in writers or "delegation_tag" not in node.meta:
             continue
         if _int8_state_compatible(node, writers[buffer]):
-            delegated.append(buffer)
+            delegated.append((node, buffer))
             continue
         del node.meta["delegation_tag"]
         logging.warning(
@@ -329,7 +378,35 @@ def _tag_quantized_mutable_buffers(exported_program: ExportedProgram) -> list[st
             "owns a buffer only when it is read and written with the same "
             "int8 quantization."
         )
-    return delegated
+    # A reset reaches each delegate at the start of its own execute(), so
+    # state split across partitions could be reset between them.
+    if len({node.meta["delegation_tag"] for node, _ in delegated}) > 1:
+        logging.warning(
+            "Mutable buffers stay in the program: the ESP-NN delegate owns a "
+            "method's buffers only when one partition holds all of them."
+        )
+        left = delegated
+    elif delegated and not _keeps_runtime_io(
+        exported_program,
+        delegated[:MAX_GRAPH_STATES],
+        delegated[MAX_GRAPH_STATES:],
+        writers,
+    ):
+        logging.warning(
+            "Mutable buffers stay in the program: owning them would leave the "
+            "ESP-NN partition without a runtime input or output."
+        )
+        left = delegated
+    else:
+        left = delegated[MAX_GRAPH_STATES:]
+        for _, buffer in left:
+            logging.warning(
+                f"Mutable buffer {buffer} stays in the program: an ESP-NN "
+                f"delegate owns at most {MAX_GRAPH_STATES} buffers."
+            )
+    for node, _ in left:
+        del node.meta["delegation_tag"]
+    return [buffer for _, buffer in delegated[: len(delegated) - len(left)]]
 
 
 class EspNNPartitioner(Partitioner):
@@ -343,13 +420,14 @@ class EspNNPartitioner(Partitioner):
     error, whether it is unsupported or its region could not be delegated;
     the standalone XTS3 firmware path requires this.
 
-    With delegate_mutable_buffers, a quantized mutable buffer (streaming state)
-    whose readers and writer all fall in one partition is owned by that
-    delegate: it leaves the program's inputs and outputs, and the delegate
-    keeps it as int8 between executions. The buffer must be float32 and read
-    only through quantize ops, or int8 and read only through dequantize ops,
-    with the same quantization as its new value. Any other buffer stays in the
-    program.
+    With delegate_mutable_buffers, the quantized mutable buffers (streaming
+    state) whose readers and writers all fall in one partition are owned by
+    that delegate: they leave the program's inputs and outputs, and the
+    delegate keeps them as int8 between executions. Each buffer must be
+    float32 and read only through quantize ops, or int8 and read only through
+    dequantize ops, with the same quantization as its new value. The delegate
+    takes a method's buffers only when they all fall in one partition, and at
+    most MAX_GRAPH_STATES of them. Any other buffer stays in the program.
     """
 
     def __init__(

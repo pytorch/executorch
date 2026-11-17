@@ -186,8 +186,10 @@ print(report["delegated_buffers"])  # ['frames']
 
 The delegate takes a buffer only when one partition holds every access to it
 and the buffer is read and written with the same int8 quantization, as a
-`cat` and slice shift register is with `EspNNQuantizer`. Other buffers stay
-in the program, with a warning.
+`cat` and slice shift register is with `EspNNQuantizer`. It takes a method's
+buffers only when they all end up in one partition that keeps another input
+and output, and at most 16 of them. Other buffers stay in the program, with a
+warning.
 
 On the device, each loaded method has its own state. It starts from the
 buffer's initial value when the method is loaded and persists across
