@@ -166,6 +166,10 @@ def export_toy_model(
         os.path.join(output_folder, "init_weights.safetensors"),
     )
 
+    stale_trained_weights = os.path.join(output_folder, "trained_model.safetensors")
+    if os.path.exists(stale_trained_weights):
+        os.remove(stale_trained_weights)
+
     grad_names = [f"grad_{name}" for name in param_names]
     manifest = {
         "param_names": param_names,
@@ -196,7 +200,10 @@ def main():
         "--soc_model", type=str, default=config.get("soc_model", "SM8850")
     )
     parser.add_argument(
-        "-f", "--output_folder", type=str, default=config.get("output_dir", "")
+        "-f",
+        "--output_folder",
+        type=str,
+        default=config.get("output_dir", "outputs/artifacts"),
     )
     parser.add_argument("--seed", type=int, default=config.get("seed"))
     parser.add_argument("--batch_size", type=int, default=config.get("batch_size", 4))

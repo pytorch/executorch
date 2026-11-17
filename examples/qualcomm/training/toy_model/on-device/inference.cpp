@@ -49,7 +49,7 @@ float mse_loss(
 }
 } // namespace
 
-static void run_inference(
+static bool run_inference(
     Module& module,
     const nlohmann::json& config,
     const nlohmann::json& manifest,
@@ -59,7 +59,8 @@ static void run_inference(
   ET_CHECK_MSG(
       log_every > 0, "config.json's log_every must be > 0, got %d.", log_every);
 
-  std::vector<TensorPtr> init_weights = load_weights(manifest, init_weights_path);
+  std::vector<TensorPtr> init_weights =
+      load_weights(manifest, init_weights_path);
   std::vector<TensorPtr> weights = load_weights(manifest, trained_weights_path);
 
   const auto x_shape = shape_from_json(manifest.at("x_shape"));
@@ -92,6 +93,14 @@ static void run_inference(
       "loss on training batch: before training %.6f, after training %.6f",
       loss_before,
       loss_after);
+  if (loss_after >= loss_before) {
+    ET_LOG(
+        Error,
+        "Training did not reduce loss: before %.6f, after %.6f.",
+        loss_before,
+        loss_after);
+    return false;
+  }
 
   const int num_batches = config.value("steps", kDefaultSteps);
 
@@ -114,6 +123,7 @@ static void run_inference(
           Info, "batch %5d  pred[0] %.6f", i, pred.const_data_ptr<float>()[0]);
     }
   }
+  return true;
 }
 
 } // namespace qnn_toy_model_training
@@ -141,7 +151,7 @@ int main(int argc, char** argv) {
   const std::string trained_weights_path = dir + "/trained_model.safetensors";
 
   executorch::extension::Module module(pte_path);
-  qnn_toy_model_training::run_inference(
+  const bool ok = qnn_toy_model_training::run_inference(
       module, config, manifest, init_weights_path, trained_weights_path);
-  return 0;
+  return ok ? 0 : 1;
 }

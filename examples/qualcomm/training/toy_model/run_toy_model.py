@@ -36,9 +36,7 @@ from executorch.backends.qualcomm.export_utils import (
     SimpleADB,
 )
 
-from executorch.examples.qualcomm.training.toy_model.export.config import (
-    load_config,
-)
+from executorch.examples.qualcomm.training.toy_model.export.config import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -73,20 +71,23 @@ class TrainADB(SimpleADB):
         for binary in ("qnn_toy_model_trainer", "qnn_toy_model_inference"):
             self._adb(["shell", f"chmod +x '{bin_dir}/{binary}'"])
 
-    def push_artifacts(self, artifact_files, pte_files):
+    def push_artifacts(self, config_path, artifact_files, pte_files):
         """Push config/manifest/weights/pte files to the artifacts/ subdir."""
         if self.skip_push:
             return
         art_dir = f"{self.workspace_root}/{_ARTIFACTS_SUBDIR}"
         self._adb(["shell", f"rm -rf '{art_dir}'"])
         self._adb(["shell", f"mkdir -p '{art_dir}'"])
+        self._adb(["push", config_path, f"{art_dir}/config.json"])
         for f in artifact_files + pte_files:
             self._adb(["push", f, f"{art_dir}/"])
 
     def pull_trained_weights(self, host_output_path):
         """Pull trained_model.safetensors back from the device artifacts/ dir."""
         art_dir = f"{self.workspace_root}/{_ARTIFACTS_SUBDIR}"
-        self.pull(host_output_path, device_output_path=f"{art_dir}/trained_model.safetensors")
+        self.pull(
+            host_output_path, device_output_path=f"{art_dir}/trained_model.safetensors"
+        )
 
     def train(self):
         """Run qnn_toy_model_trainer on-device."""
@@ -155,13 +156,12 @@ def main(args):
     adb = TrainADB(qnn_config=qnn_config, workspace=device_root)
 
     inference_bin = os.path.join(
-        args.build_folder,
+        qnn_config.build_folder,
         "examples/qualcomm/training/toy_model/on-device/qnn_toy_model_inference",
     )
     # Binaries + QNN libs go to bin/ (handled by SimpleADB.push via workspace=bin/).
     # Artifacts (ptes already in pte_path, plus config/manifest/weights) go to artifacts/.
     artifact_files = [
-        config_path,
         os.path.join(artifact_subdir, "manifest.json"),
         os.path.join(artifact_subdir, "init_weights.safetensors"),
     ]
@@ -171,7 +171,7 @@ def main(args):
 
     adb.push(files=[inference_bin])
     adb.chmod_binaries()
-    adb.push_artifacts(artifact_files, pte_files)
+    adb.push_artifacts(config_path, artifact_files, pte_files)
 
     if not args.push_only:
         if not args.skip_train:

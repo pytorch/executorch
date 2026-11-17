@@ -11683,6 +11683,8 @@ class TestExampleScript(TestQNN):
                 "qualcomm/training/toy_model/export/export_toy_model.py",
                 "--output_folder",
                 tmp_dir,
+                "--soc_model",
+                self.soc_model,
             ]
 
             p = subprocess.Popen(
