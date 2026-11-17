@@ -201,14 +201,12 @@ int main(int argc, char** argv) {
     instance.method = std::make_unique<Method>(std::move(method.get()));
 
     for (size_t i = 0; i < meta->num_inputs(); ++i) {
-      instance.inputs.push_back(
-          std::make_unique<HostTensor>(
-              meta->input_tensor_meta(i).get(), misalign));
+      instance.inputs.push_back(std::make_unique<HostTensor>(
+          meta->input_tensor_meta(i).get(), misalign));
     }
     for (size_t o = 0; o < meta->num_outputs(); ++o) {
-      instance.outputs.push_back(
-          std::make_unique<HostTensor>(
-              meta->output_tensor_meta(o).get(), misalign));
+      instance.outputs.push_back(std::make_unique<HostTensor>(
+          meta->output_tensor_meta(o).get(), misalign));
     }
     for (const auto& [input, output] : aliases) {
       if (input >= instance.inputs.size() ||
