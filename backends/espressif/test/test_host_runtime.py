@@ -47,7 +47,9 @@ from executorch.backends.espressif.test.test_mutable_buffers import (
     lower_input_as_state,
     lower_stateful,
     ShiftRegister,
+    split_streams,
     StateReadLate,
+    TwoStreams,
 )
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -736,6 +738,20 @@ def test_state_reset_and_instances(tmp_path):
         expected = as_list(emulator(*inputs))
         assert_matches(first[step], expected)
         assert_matches(second[step], expected)
+
+
+def test_state_in_two_partitions_stays_in_the_program(tmp_path, monkeypatch):
+    split_streams(monkeypatch)
+    exported, program, report = lower_stateful(
+        TwoStreams(), inputs=2, allow_cpu_fallback=True
+    )
+    assert report["partitions"] == 2 and not report["delegated_buffers"]
+    steps = random_steps([(1, 4, 1, 1)] * 2, 5)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["delegates"] == 2 and stats["states"] == 0
 
 
 def test_streaming_example_runs_without_copies(tmp_path):
