@@ -1,4 +1,5 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def define_common_targets():
     runtime.cxx_test(
@@ -16,3 +17,31 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
         ],
     )
+
+    if is_xplat():
+        return
+
+    runtime.cxx_library(
+        name = "cpu_engine_host",
+        srcs = ["cpu_ptn_runner.cpp"],
+        link_whole = True,
+        visibility = ["//executorch/backends/native/test/..."],
+        exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
+        deps = ["//executorch/backends/native/runtime/cpu:cpu_engine"],
+    )
+
+    # cpu_sample_test_static_float judges the methods the CPU engine runs:
+    # unquantized ones with static shapes.
+    # TODO: run cpu_sample_test in CI once the engine runs quantized and
+    # dynamic-shape methods.
+    for name, flags, labels in [
+        ("", [], ci.labels(ci.map(ci.skip_test()))),
+        ("_static_float", ["--gtest_filter=*_float.*:-*.dynamic_*"], []),
+    ]:
+        runtime.cxx_test(
+            name = "cpu_sample_test" + name,
+            args = ["--packages=$(location //executorch/backends/native/test/samples:op_samples)"] + flags,
+            labels = labels,
+            test_main = "//executorch/backends/native/test/samples:sample_test_main",
+            deps = [":cpu_engine_host"],
+        )

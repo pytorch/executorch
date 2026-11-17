@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -91,7 +92,7 @@ class MaxPool2d(OperatorTest):
             flow,
         )
         self._test_op(
-            Model(padding=(1, 2)),
+            Model(kernel_size=5, padding=(1, 2)),
             (torch.randn(1, 8, 20, 20),),
             flow,
         )

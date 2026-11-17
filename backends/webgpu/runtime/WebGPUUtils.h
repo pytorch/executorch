@@ -301,6 +301,19 @@ inline float scalar_or(WebGPUGraph& graph, int id, float fallback) {
   throw std::runtime_error("scalar_or: expected Double, Int, or None");
 }
 
+// Reads a `bool` arg, serialized as Bool; Int is also accepted. Any other
+// type, None included, throws instead of defaulting.
+inline bool get_bool_or_int(WebGPUGraph& graph, int id, const char* what) {
+  const auto vt = graph.get_value_type(id);
+  if (vt == WebGPUGraph::ValueType::Bool) {
+    return graph.get_bool(id);
+  }
+  if (vt == WebGPUGraph::ValueType::Int) {
+    return graph.get_int(id) != 0;
+  }
+  throw std::runtime_error(std::string(what) + " must be a Bool or Int");
+}
+
 // Resolves an optional tensor arg (bias/mask/affine) to the binding to use:
 // the real tensor's buffer+size if present, else a zero-filled dummy. Caller
 // releases `.owned_dummy` (if non-null) after the dispatch is recorded.

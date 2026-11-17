@@ -65,6 +65,121 @@ class CLIPLastHiddenStateTextEncoder(torch.nn.Module):
         return self.model(input_ids).last_hidden_state
 
 
+class CLIPPooledTextEncoder(torch.nn.Module):
+    """Return the pooled CLIP representation used by FLUX."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        output = self.model(input_ids)
+        pooled = getattr(output, "pooler_output", None)
+        return output[1] if pooled is None else pooled
+
+
+class T5TextEncoder(torch.nn.Module):
+    """Return T5's final hidden state."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.model(input_ids).last_hidden_state
+
+
+class BoundedFluxPosEmbed(torch.nn.Module):
+    """Select precomputed FLUX RoPE values for static or bounded dynamic IDs."""
+
+    def __init__(
+        self,
+        position_embedding: torch.nn.Module,
+        max_positions: int,
+    ) -> None:
+        super().__init__()
+        self.position_embedding = position_embedding
+        # FLUX.1 axes are (type, row, column); type is always 0 for text-to-image.
+        axes_dims = tuple(position_embedding.axes_dim)
+        ids = (
+            torch.arange(max_positions)
+            .reshape(max_positions, 1)
+            .expand(max_positions, len(axes_dims))
+        )
+        with torch.no_grad():
+            cos, sin = position_embedding(ids)
+        for index, (axis_cos, axis_sin) in enumerate(
+            zip(cos.split(axes_dims, dim=-1), sin.split(axes_dims, dim=-1))
+        ):
+            self.register_buffer(f"cos_{index}", axis_cos, persistent=True)
+            self.register_buffer(f"sin_{index}", axis_sin, persistent=True)
+        self.axes = len(axes_dims)
+
+    def forward(self, ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        indices = ids.to(torch.int64)
+        cos = torch.cat(
+            [
+                getattr(self, f"cos_{axis}")[indices[:, axis]]
+                for axis in range(self.axes)
+            ],
+            dim=-1,
+        )
+        sin = torch.cat(
+            [
+                getattr(self, f"sin_{axis}")[indices[:, axis]]
+                for axis in range(self.axes)
+            ],
+            dim=-1,
+        )
+        return cos, sin
+
+
+def freeze_flux_pos_embed(
+    model: torch.nn.Module,
+    *,
+    max_positions: int,
+) -> None:
+    """Freeze Diffusers' float64 FLUX RoPE construction for export."""
+    position_embedding = getattr(model, "pos_embed", None)
+    if position_embedding is None:
+        return
+    if isinstance(position_embedding, BoundedFluxPosEmbed):
+        if position_embedding.cos_0.shape[0] >= max_positions:
+            return
+        position_embedding = position_embedding.position_embedding
+    model.pos_embed = BoundedFluxPosEmbed(position_embedding, max_positions)
+
+
+class FluxDenoiser(torch.nn.Module):
+    """Flatten the keyword-heavy Diffusers FLUX transformer interface."""
+
+    def __init__(self, model: torch.nn.Module, guidance_embeds: bool) -> None:
+        super().__init__()
+        self.model = model
+        self.guidance_embeds = guidance_embeds
+
+    def forward(
+        self,
+        latents: torch.Tensor,
+        timestep: torch.Tensor,
+        prompt_embeddings: torch.Tensor,
+        pooled_embedding: torch.Tensor,
+        text_ids: torch.Tensor,
+        image_ids: torch.Tensor,
+        guidance: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        return self.model(
+            hidden_states=latents,
+            timestep=timestep,
+            guidance=guidance if self.guidance_embeds else None,
+            pooled_projections=pooled_embedding,
+            encoder_hidden_states=prompt_embeddings,
+            txt_ids=text_ids,
+            img_ids=image_ids,
+            return_dict=False,
+        )[0]
+
+
 class SD15Denoiser(torch.nn.Module):
     def __init__(self, model: torch.nn.Module) -> None:
         super().__init__()

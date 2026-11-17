@@ -37,6 +37,10 @@ fbcode_target(
     _kind = python_unittest,
     name = "test_webgpu_partitioner",
     srcs = [
+        "ops/test_conv_transpose1d.py",
+        "ops/test_elu_silu.py",
+        "ops/test_erf.py",
+        "ops/test_mul.py",
         "test_webgpu_partitioner.py",
     ],
     deps = [
@@ -48,6 +52,8 @@ fbcode_target(
         "//executorch/backends/webgpu/test:tester",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir:lowered_backend_module",
     ],
 )
 

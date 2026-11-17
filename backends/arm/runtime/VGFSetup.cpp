@@ -10,6 +10,7 @@
  * appropriate vulkan structures.
  */
 
+#include <executorch/backends/arm/runtime/VGFCommandStream.h>
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFMutableAlias.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
@@ -5241,6 +5242,30 @@ bool VgfRepr::record_execute_command_buffer(VkCommandBuffer command_buffer) {
   return true;
 }
 
+// VGF_FUSED_MAIN_BEGIN (opt-in real producer/consumer commands)
+namespace {
+thread_local VgfFusedCommandStreamRequest* active_vgf_fused_stream = nullptr;
+} // namespace
+
+// cppcheck-suppress unusedFunction
+bool vgf_try_register_fused_command_stream(
+    VgfFusedCommandStreamRequest* request) noexcept {
+  if (request == nullptr || active_vgf_fused_stream != nullptr ||
+      request->attempted || request->submitted || request->completed) {
+    return false;
+  }
+  active_vgf_fused_stream = request;
+  return true;
+}
+
+// cppcheck-suppress unusedFunction
+void vgf_unregister_fused_command_stream(
+    const VgfFusedCommandStreamRequest* request) noexcept {
+  if (active_vgf_fused_stream == request) {
+    active_vgf_fused_stream = nullptr;
+  }
+}
+
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   if (!execution_valid_) {
     ET_LOG(
@@ -5256,14 +5281,84 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
     return false;
   }
 
+  // Optional application command stream. The callback sees this VGF
+  // representation's actual VkDevice and family so it can record its own
+  // commands even when the generic shared-Vulkan-context bridge is absent.
+  // It is called under VGFBackend's mutex, and MUST NOT re-enter ExecuTorch.
+  VgfFusedCommandStreamRequest* fused = active_vgf_fused_stream;
+  std::array<VkCommandBuffer, 3> fused_commands{};
+  if (fused != nullptr) {
+    if (fused->attempted || fused->submitted || fused->completed ||
+        (fused->expected_device != VK_NULL_HANDLE &&
+         fused->expected_device != vk_device) ||
+        (fused->expected_queue_family_index != UINT32_MAX &&
+         fused->expected_queue_family_index != vk_queue_family_index) ||
+        (fused->prepare == nullptr &&
+         (fused->expected_device == VK_NULL_HANDLE ||
+          fused->expected_queue_family_index == UINT32_MAX))) {
+      ET_LOG(Error, "Invalid or reused VGF fused command-stream request");
+      return false;
+    }
+    // Fail closed even if the main-branch queue picker has moved into another
+    // translation unit and could not be changed by the installer.
+    // This check is active only when the strict graphics queue mode is set.
+    const char* graphics_required =
+        std::getenv("EXECUTORCH_VGF_FUSED_REQUIRE_GRAPHICS_QUEUE");
+    if (graphics_required != nullptr && graphics_required[0] == '1' &&
+        graphics_required[1] == '\0') {
+      uint32_t family_count = 0;
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, nullptr);
+      if (vk_queue_family_index >= family_count) {
+        ET_LOG(Error, "Invalid VGF fused graphics queue family index");
+        return false;
+      }
+      std::vector<VkQueueFamilyProperties> families(family_count);
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, families.data());
+      constexpr VkQueueFlags required = VK_QUEUE_GRAPHICS_BIT |
+          VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+      if ((families[vk_queue_family_index].queueFlags & required) != required) {
+        ET_LOG(
+            Error,
+            "VGF fused stream needs graphics+compute+data graph queue; "
+            "selected family %u cannot run the requested commands",
+            vk_queue_family_index);
+        return false;
+      }
+    }
+    fused->attempted = true;
+    if (fused->prepare != nullptr) {
+      const VgfFusedDeviceContext context{
+          vk_physical, vk_device, vk_queue_family_index};
+      if (!fused->prepare(
+              fused->user_data, context, &fused->producer, &fused->consumer)) {
+        ET_LOG(Error, "VGF fused command recording callback failed");
+        return false;
+      }
+    }
+    if (fused->producer == VK_NULL_HANDLE ||
+        fused->consumer == VK_NULL_HANDLE ||
+        fused->producer == fused->consumer ||
+        fused->producer == vk_execute_cmd ||
+        fused->consumer == vk_execute_cmd) {
+      ET_LOG(Error, "VGF fused stream requires two distinct primary commands");
+      return false;
+    }
+    // The caller guarantees both commands were recorded on vk_device for
+    // vk_queue_family_index, and supplies Vulkan memory/layout barriers.
+    fused_commands = {fused->producer, vk_execute_cmd, fused->consumer};
+  }
+
   VkSubmitInfo submit{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
       .pNext = nullptr,
       .waitSemaphoreCount = 0,
       .pWaitSemaphores = nullptr,
       .pWaitDstStageMask = nullptr,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &vk_execute_cmd,
+      .commandBufferCount = fused != nullptr ? 3u : 1u,
+      .pCommandBuffers =
+          fused != nullptr ? fused_commands.data() : &vk_execute_cmd,
       .signalSemaphoreCount = 0,
       .pSignalSemaphores = nullptr,
   };
@@ -5287,6 +5382,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
     // Submit + fence wait only; reset is above.
     VGF_STATS_TIME(submit_wait_ns);
     result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    if (fused != nullptr) {
+      fused->submit_result = result;
+      fused->submitted = result == VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
       return false;
@@ -5299,6 +5398,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
         &vk_execute_fence,
         VK_TRUE,
         std::numeric_limits<uint64_t>::max());
+    if (fused != nullptr) {
+      fused->wait_result = result;
+      fused->completed = result == VK_SUCCESS;
+    }
     if (result == VK_SUCCESS) {
       execute_submission_pending_ = false;
     }

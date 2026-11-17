@@ -302,6 +302,66 @@ class TestPasses(unittest.TestCase):
             if node.op == "call_function":
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
 
+    def test_redundant_copy_removal(self) -> None:
+        class IndexUpdate(torch.nn.Module):
+            def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+                x.index_copy_(0, index, torch.ones(1, x.shape[1]))
+                return x + 1
+
+        class CopyOfAnotherUpdate(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                y.copy_(x.index_put((torch.tensor([1]),), torch.ones(x.shape[1])))
+                return y + 1
+
+        class PlainCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                x.copy_(y)
+                return x + 1
+
+        class CastingCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.empty(x.shape, dtype=torch.float64)
+                y.copy_(x)
+                return y + 1
+
+        def count(
+            module: torch.nn.Module, inputs: tuple, op: str, dynamic_shapes=None
+        ) -> int:
+            # Functionalization turns copy_ into copy, which RemoveNoopPass sees
+            # while to_edge_transform_and_lower decomposes.
+            gm = (
+                to_edge_transform_and_lower(
+                    export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+                )
+                .exported_program()
+                .graph_module
+            )
+            return sum(
+                n.op == "call_function" and n.name.startswith(op)
+                for n in gm.graph.nodes
+            )
+
+        x = torch.randn(3, 4)
+        index = torch.tensor([1])
+        self.assertEqual(count(IndexUpdate(), (x, index), "aten_copy_default"), 0)
+        rows = torch.export.Dim("rows", min=2)
+        self.assertEqual(
+            count(
+                IndexUpdate(),
+                (x, index),
+                "aten_copy_default",
+                dynamic_shapes={"x": {0: rows}, "index": None},
+            ),
+            0,
+        )
+        # Only the copy of an index update back into its own input is known to be
+        # a no-op: the copy into y and its write-back both stay.
+        self.assertEqual(
+            count(CopyOfAnotherUpdate(), (x, x.clone()), "aten_copy_default"), 2
+        )
+        self.assertEqual(count(PlainCopy(), (x, x.clone()), "aten_copy_default"), 2)
+        self.assertEqual(count(CastingCopy(), (x,), "aten_copy_default"), 1)
+
     def test_redundant_slice_copy_removal(self) -> None:
         class FooWithNoSlice(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
