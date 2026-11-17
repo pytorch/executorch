@@ -201,6 +201,7 @@ GraphBuilder::GraphBuilder(
     const std::vector<InputSlot>& inputs,
     const std::vector<OutputSlot>& outputs,
     const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+    const std::unordered_map<ValueId, ggml_tensor*>& row_scales,
     const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes,
     const FoldedBatchNorms& batch_norms,
     std::unordered_map<ValueId, int64_t> key_extents,
@@ -209,6 +210,7 @@ GraphBuilder::GraphBuilder(
       inputs_(inputs),
       outputs_(outputs),
       persistent_(persistent),
+      row_scales_(row_scales),
       rope_factor_bytes_(rope_factor_bytes),
       batch_norms_(batch_norms),
       key_extents_(std::move(key_extents)),
@@ -709,6 +711,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_mean(node);
   } else if (key == "aten.sum.dim_IntList") {
     lower_sum(node);
+  } else if (key == "aten.amax.default") {
+    lower_amax(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

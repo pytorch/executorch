@@ -104,6 +104,21 @@ GlobalWorkGrid default_pick_gwg(
   return graph->create_gwg(out);
 }
 
+GlobalWorkGrid default_pick_vec4_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  if (graph->is_buffer_storage(out)) {
+    return graph->create_linear_gwg(
+        utils::safe_downcast<uint64_t>(graph->padded_numel_of(out) / 4));
+  }
+  return graph->create_gwg(out);
+}
+
 LocalWorkGroup default_pick_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,

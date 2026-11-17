@@ -22,6 +22,7 @@ from executorch.backends.transforms.fused_quant.test.helpers import (
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.frontends.fused_quant.colorer import CLAIM_KEY
 from parameterized import parameterized
 from torch.export import ExportedProgram
 
@@ -596,4 +597,58 @@ class ToChannelsLastTest(unittest.TestCase):
         self.assertEqual(
             tuple(get_arg(pool, "out_scale", torch.fx.Node).meta["val"].shape),
             (1, 1, 1, 4),
+        )
+
+    def test_leaves_claimed_node_alone(self) -> None:
+        """Of two identical pools, only the unclaimed one is relaid out."""
+        inp = torch.randn(1, 4, 8, 8).to(torch.int8)
+        builder = ProgramBuilder()
+        inp_node = builder.placeholder("inp", inp)
+        pools = [
+            builder.call_operator(
+                op=exir_ops.edge.fused_quant.avg_pool2d.default,
+                args=(
+                    inp_node,
+                    *create_per_tensor_qparams(builder, dtype=torch.float32),
+                    *create_per_tensor_qparams(builder),
+                    [3, 3],
+                    [2, 2],
+                    [1, 1],
+                    False,
+                    True,
+                    None,
+                ),
+            )
+            for _ in range(2)
+        ]
+        builder.output(pools)
+        program = builder.get_program()
+        claimed, _ = program.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.fused_quant.avg_pool2d.default
+        )
+        claimed.meta[CLAIM_KEY] = "test_backend"
+        before = program.module()(inp)
+
+        result = ToChannelsLast().call(program.graph_module)
+
+        self.assertTrue(result.modified)
+        self.assert_bit_exact(before, program.module()(inp))
+        graph = result.graph_module.graph
+        self.assertEqual(
+            graph.find_nodes(
+                op="call_function",
+                target=exir_ops.edge.fused_quant.avg_pool2d.default,
+            ),
+            [claimed],
+        )
+        self.assertEqual(get_arg(claimed, "inp", torch.fx.Node).op, "placeholder")
+        self.assertEqual(tuple(claimed.meta["val"].shape), (1, 4, 4, 4))
+        self.assertEqual(
+            len(
+                graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
+                )
+            ),
+            1,
         )

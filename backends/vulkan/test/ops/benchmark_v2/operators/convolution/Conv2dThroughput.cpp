@@ -40,6 +40,9 @@ REGISTER_THROUGHPUT_FUNCTIONS {
   REGISTER_OPERATOR_MEMORY_TRAFFIC(
       et_vk.conv_with_clamp.default, throughput::tensor_traffic);
   REGISTER_OPERATOR_COMPUTE_FLOPS(et_vk.conv_with_clamp.default, conv2d_flops);
+  REGISTER_OPERATOR_MEMORY_TRAFFIC(
+      et_vk.conv2d.with_epilogue, throughput::tensor_traffic);
+  REGISTER_OPERATOR_COMPUTE_FLOPS(et_vk.conv2d.with_epilogue, conv2d_flops);
   REGISTER_SHADER_MEMORY_TRAFFIC(conv2d, throughput::tensor_traffic);
 }
 

@@ -1,6 +1,6 @@
 ---
 name: arm
-description: Develop, debug, or explain the Arm backend in backends/arm/ and its community-facing examples in examples/arm/. Covers partitioning, TOSA lowering, VGF, Ethos-U, quantization, graph passes, memory layout, and node visitors. Not for development of other backends.
+description: Develop, debug, or explain the Arm backend in backends/arm/ and its community-facing examples in examples/arm/. Covers partitioning, TOSA lowering, VGF, Ethos-U, quantization, graph passes, memory layout, node visitors, performance optimizations. Not for development of other backends.
 ---
 
 # Arm Backend Development
@@ -200,3 +200,49 @@ change. If execution requires approval or is blocked, report that rather than
 claiming it passed.
 For documentation-only changes, use focused documentation or skill validation
 and whitespace checks instead; explanations without file changes need no hook.
+
+
+# Optimising for Performance for the Arm backends.
+
+## Arm VGF backend
+The Arm VGF backend targets Arm Mali GPU with Neural Engine technology(NX). The
+Arm Neural Engine technology provides silicon acceleration for the most intense
+mathematical computations in a neural network. Here are a few principles how to
+optimise for performance for Arm Mali GPUs with NX.
+
+1. **Check that the model is quantized.**
+   Inspect the TOSA graph for unintended float32 computation. For performance, prefer full
+   static quantization of the model to 8x8 (8-bit activations and weights), or 16x8 (16-bit
+   activations and 8-bit weights).
+   Quantized inputs and outputs alone do not mean the internal model is
+   quantized.
+
+2. **Treat every NX/shader boundary as a memory cost.**
+   When execution switches from NX to a shader and back, intermediate tensors
+   must be materialized in shared memory. Budget for NX writing its output to external memory,
+   the shader reading it and writing its result, and the following NX graph reading
+   that result. These transfers will generate substantial DRAM traffic, especially
+   if the tensor sizes are significant. Do enough useful work in the shader to
+   justify the transfers and dispatches.
+
+   For example, if a bilinear RESIZE upsamples a tensor immediately before a
+   shader, consider moving the RESIZE into that shader. The shader can often
+   perform bilinear sampling efficiently. NX then writes the smaller tensor and
+   the shader reads it, avoiding the expanded intermediate's write and read.
+   Doubling both spatial dimensions makes that intermediate four times larger.
+   Preserve the original resize coordinates and quantized rounding behavior.
+
+3. **Avoid small NX graphs between shaders.**
+   Model Converter can split NX work according to the source order around
+   CUSTOM shader operations. A SLICE or a few elementwise operations between
+   independent shaders can therefore create a separate DataGraph. Group
+   independent shaders together and put their TOSA postprocessing afterwards
+   when dependencies allow. Consecutive shaders do not need a DataGraph between
+   them. Check the compiled VGF to confirm the small graphs disappeared.
+
+4. **Fuse work to avoid intermediate tensors.**
+   Consider combining related shaders and nearby operations such as
+   PixelShuffle, resizing or blending. For example, a shader that warps two
+   images can also blend them and write only the final image, avoiding two
+   temporary images and a separate NX blend. Check the serializer's supported
+   number of CUSTOM outputs before designing the fusion.

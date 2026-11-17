@@ -355,6 +355,10 @@ void add_reduce_per_row_node(
     const ValueRef keepdim_ref,
     const ValueRef output,
     const std::string& op_name) {
+  // Each row is read as one run of the input's padded width.
+  VK_CHECK_COND(
+      graph.is_contiguous(input) &&
+      graph.packed_dim_of(input) == WHCN::kWidthDim);
   std::string kernel_name = op_name + "_per_row";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));

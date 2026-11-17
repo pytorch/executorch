@@ -211,6 +211,19 @@ class XNNDepthToSpace2d:
 
 
 @dataclass
+class XNNStaticReduce:
+    reduction_axes: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
+@dataclass
+class XNNStaticMean(XNNStaticReduce):
+    pass
+
+
+@dataclass
 class XNNStaticSlice:
     num_dims: int
     offsets: List[int]
@@ -436,6 +449,7 @@ XNodeUnion = Union[
     XNNCos,
     XNNApproxGelu,
     XNNDepthToSpace2d,
+    XNNStaticMean,
 ]
 
 

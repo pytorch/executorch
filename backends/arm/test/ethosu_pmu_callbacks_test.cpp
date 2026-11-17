@@ -193,10 +193,10 @@ int main() {
   unknown.dev.config = &unknown_config;
   unknown.dev.caps = {99, 8, 0};
   EthosUInvocationContext reused_context{};
-  reused_context.counter_count = 32;
+  reused_context.pmu_enabled = true;
   ethosu_inference_begin(&unknown, &reused_context);
   CHECK(reused_context.buffer == &buffer);
-  CHECK(reused_context.counter_count == 0);
+  CHECK(!reused_context.pmu_enabled);
   CHECK(!unknown_pmu.enabled);
   ethosu_inference_end(&unknown, &reused_context);
   CHECK(buffer.size == 2);

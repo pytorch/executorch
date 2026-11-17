@@ -23,10 +23,6 @@ from executorch.exir._serialize._named_data_store import (
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_api import (
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
@@ -1725,6 +1721,13 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             specified subgraphs lowered.
         """
+        # backend_api imports executorch.exir.program (via program._fake_program),
+        # so importing it at module scope is circular.
+        from executorch.exir.backend.backend_api import (
+            MethodProgramsPartitionerSpec,
+            to_backend,
+        )
+
         new_edge_programs: Dict[str, ExportedProgram] = {}
         method_to_partitioner: Dict[str, Partitioner] = {}
         if not isinstance(partitioner, dict):
@@ -1917,11 +1920,17 @@ class ExecutorchProgramManager:
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
+        reserved_external_names = set()
+        if named_data is not None:
+            reserved_external_names.update(named_data.pte_data)
+            for entries in named_data.external_data.values():
+                reserved_external_names.update(entries)
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
+            reserved_external_names=reserved_external_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

@@ -128,13 +128,14 @@ class ReshapeWithSymSize(torch.nn.Module):
         return x.reshape(x.shape[0], 6)
 
 
-class ReturnSymSizeArithmetic(torch.nn.Module):
+class FullWithSymSizeArithmetic(torch.nn.Module):
     def __init__(self, operation) -> None:
         super().__init__()
         self.operation = operation
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
-        return x, self.operation(x.shape[0], 2)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        size = self.operation(x.shape[0], 2) + 3
+        return torch.full((size,), 1.0)
 
 
 class Index(torch.nn.Module):
@@ -583,10 +584,10 @@ def test_shape_extension_rejects_sym_size_from_int64_without_int64_extension():
 
 
 def test_shape_extension_partitions_sym_size_int():
-    inputs = (torch.randn(2, 3),)
+    inputs = (torch.randn(2, 2, 3),)
     batch = Dim("batch", min=1, max=4)
     exported_program = _exported_program(
-        ReturnSymSize(),
+        ReshapeWithSymSize(),
         inputs,
         dynamic_shapes=({0: batch},),
     )
@@ -609,7 +610,7 @@ def test_shape_extension_partitions_symint_arithmetic(operation):
     inputs = (torch.randn(2, 3),)
     batch = Dim("batch", min=1, max=4)
     exported_program = _exported_program(
-        ReturnSymSizeArithmetic(operation),
+        FullWithSymSizeArithmetic(operation),
         inputs,
         dynamic_shapes=({0: batch},),
     )

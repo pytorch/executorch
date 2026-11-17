@@ -580,7 +580,7 @@ std::string CPUPlan::describe(double preparation_ms) const {
     }
     report += "{\"provider\":" + json_string(step.provider->name()) +
         ",\"implementation\":" + json_string(step.implementation->name()) +
-        ",\"nodes\":[";
+        ",\"trace_name\":" + json_string(step.trace_name) + ",\"nodes\":[";
     for (size_t node = 0; node < step.region.nodes.size(); ++node) {
       if (node) {
         report += ',';

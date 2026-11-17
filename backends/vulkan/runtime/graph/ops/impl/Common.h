@@ -92,6 +92,17 @@ GlobalWorkGrid default_pick_gwg(
     const std::vector<ValueRef>& resize_args);
 
 /**
+ * Like default_pick_gwg, but for shaders in which each thread processes one
+ * vec4 of the output. Buffer outputs dispatch one thread per vec4 of the padded
+ * buffer; texture outputs dispatch one thread per texel.
+ */
+GlobalWorkGrid default_pick_vec4_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+/**
  * Constructs a local work group that fills X first (up to 64 invocations), then
  * Y, and Z only with what X and Y cannot hold, so a work group stays within one
  * depth slice of a texture3d tensor whenever the tensor is wide enough. This

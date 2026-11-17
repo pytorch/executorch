@@ -41,9 +41,13 @@ execution can share the caller's device allocation.
 input `i`, as `"cpu"` or `"cuda:N"`, and `output_tensor_meta(i).device()` does
 the same for its outputs.
 
-When PyTorch is available, importing `portable_lib` imports it and portable
-bindings return `torch.Tensor` outputs. When it cannot be imported, the default
-output type is `ExecuTorchResult`. Output conversion uses Python APIs and
+Unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is `torch`, importing
+`portable_lib` does not import PyTorch. When PyTorch is installed, portable
+bindings return `torch.Tensor` outputs, and the first call that returns one
+imports `torch`. When PyTorch is not installed, or importing it raises an
+`ImportError`, outputs are `ExecuTorchResult` values. Any other error from
+importing it is raised by every call that returns a tensor; set the variable
+to `executorch` to run without PyTorch. Output conversion uses Python APIs and
 DLPack; the extension does not link against PyTorch.
 `clone_outputs=True` returns storage that later executions do not overwrite,
 on the output's original device. With `clone_outputs=False`, results share
@@ -91,9 +95,17 @@ with `clone_outputs=False` lives in the method's output memory, so passing it
 back in as an input means each run reads what the run before it wrote there;
 pass a copied result instead.
 
-To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
-environment variable before importing the bindings. The setting is fixed when
-the extension loads, so importing PyTorch later does not change the output type.
+A future release will make tensor outputs follow the tensor inputs of each
+call, including inputs kept from an earlier call. A call with any torch tensor
+input will return torch tensors. A call whose tensor inputs are all NumPy
+arrays, other buffers, DLPack objects, or `ExecuTorchResult` values will return
+`ExecuTorchResult` values, even when PyTorch is installed. A call with no tensor
+inputs keeps returning torch tensors whenever `torch` can be imported. Each call
+whose outputs will change warns with a `FutureWarning`. To choose the output
+type now, set `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` to `executorch` or `torch`
+before importing the bindings. The setting is fixed when the extension loads.
+`executorch` never imports PyTorch, and `torch` requires it to import
+successfully.
 
 ```python
 import os
@@ -103,11 +115,10 @@ from executorch.extension.pybindings import portable_lib
 ```
 
 `ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
-the Python buffer protocol so NumPy can read them without another copy. Without
-the environment setting, the bindings fall back to `ExecuTorchResult` if
-PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
-successfully. ATen-mode bindings continue to return native PyTorch tensors
-directly.
+the Python buffer protocol so NumPy can read them without another copy. A result
+is not a number or a truth value: `bool()`, `int()`, and `float()` raise
+`TypeError`, so convert it first, for example with `np.asarray(output)`.
+ATen-mode bindings continue to return native PyTorch tensors directly.
 
 ```python
 output = module.forward([numpy_input])[0]
@@ -133,11 +144,22 @@ output = method([device_input])[0]
 result = np.asarray(output.to_host())
 ```
 
+The buffer protocol cannot describe dtypes such as bfloat16, so pass their data
+as unsigned integers of the same width and name the dtype. For example, with an
+`ml_dtypes.bfloat16` array:
+
+```python
+device_input = ExecuTorchResult.from_host(
+    bfloat16_input.view(np.uint16), device_index=0, dtype="bfloat16"
+)
+```
+
 Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
 of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
 Bindings built without CUDA support synchronize through Python Torch instead,
-so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
-and return borrowed CUDA results.
+and import torch to do so unless `EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT` is
+`executorch`. So with torch installed, or imported by you, they still read
+CUDA inputs, torch tensors or DLPack, and return borrowed CUDA results.
 
 Execution is synchronous at the Python boundary: a call returns after its device
 work has finished, so its outputs are ready on any stream. How long a call with

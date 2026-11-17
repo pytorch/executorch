@@ -94,7 +94,7 @@ void main() {
 
     // Sum the quantized values in the block
     [[unroll]] for (int m = 0; m < TILE_M; m++) {
-      local_sum[m] += dotPacked4x8AccSatEXT(
+      local_sum[m] = dotPacked4x8AccSatEXT(
           packed_block.data[m], packed_ones, local_sum[m]);
     }
     write_block(packed_block, k4, m4, K4);

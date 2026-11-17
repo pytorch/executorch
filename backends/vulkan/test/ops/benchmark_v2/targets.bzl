@@ -130,6 +130,7 @@ def define_common_targets(is_fbcode = False):
             "operators/gemm/GemmReference.cpp",
             "operators/gemm/linear/LinearReference.cpp",
             "operators/gemm/linear/qw/q4gsw/Q4gswLinearReference.cpp",
+            "operators/warp/WarpReference.cpp",
         ],
         exported_headers = [
             "framework/Reference.h",

@@ -19,10 +19,14 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 )
 from executorch.backends.arm.operator_support.where_support import WhereSupported
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.exir import to_edge
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.fx.passes.operator_support import OpSupports
 
 
 def _fake_tensor(shape: tuple[int, ...], dtype: torch.dtype = torch.float32):
@@ -337,13 +341,55 @@ def test_int64_operand_check_skips_symbolic_inputs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("dtype", "agree"),
-    ((torch.int64, True), (torch.int32, True), (torch.bool, True), (torch.int8, False)),
+    ("dtypes", "agree"),
+    (
+        ((torch.int64, torch.int64), True),
+        ((torch.int64, torch.int32), True),
+        ((torch.int64, torch.bool), True),
+        ((torch.int64, torch.int16), False),
+        ((torch.int64, torch.int8), False),
+        ((torch.int64, torch.uint8), False),
+        ((torch.int8, torch.int32), True),
+    ),
 )
-def test_int64_operand_check_widths(dtype, agree) -> None:
+def test_int64_operand_check_widths(dtypes, agree) -> None:
     graph = torch.fx.Graph()
-    x = _placeholder(graph, "x", (4,), torch.int64)
-    y = _placeholder(graph, "y", (4,), dtype)
+    x = _placeholder(graph, "x", (4,), dtypes[0])
+    y = _placeholder(graph, "y", (4,), dtypes[1])
     node = graph.call_function(exir_ops.edge.aten.bitwise_or.Tensor, (x, y))
+    node.meta["val"] = _fake_tensor((4,), torch.promote_types(*dtypes))
 
     assert _int64_operands_agree(node) == agree
+
+
+@pytest.mark.parametrize("boundary", ["input", "output", "internal"])
+def test_tosa_symbolic_scalar_boundaries(boundary, caplog) -> None:
+    class Reshape(torch.nn.Module):
+        def forward(self, x):
+            result = x.reshape(x.shape[0], -1).relu()
+            return (result, x.shape[0]) if boundary == "output" else result
+
+    program = to_edge(
+        torch.export.export(
+            Reshape(),
+            (torch.randn(2, 2, 3),),
+            dynamic_shapes=({0: torch.export.Dim("batch", min=1, max=4)},),
+        )
+    ).exported_program()
+    sym_size = program.graph.find_nodes(
+        op="call_function", target=torch.ops.aten.sym_size.int
+    )[0]
+    checks = (
+        [OpSupports.decline_if_node_in_names({sym_size.name})]
+        if boundary == "input"
+        else []
+    )
+    partitioner = TOSAPartitioner(
+        TosaCompileSpec("TOSA-1.1+FP+shape"), additional_checks=checks
+    )
+    with caplog.at_level("INFO"):
+        result = partitioner.partition(program)
+
+    assert bool(result.partition_tags) is (boundary == "internal")
+    if boundary != "internal":
+        assert "Partition has unsupported scalar" in caplog.text

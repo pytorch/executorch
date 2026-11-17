@@ -44,6 +44,7 @@ class SDXLPipelineBehavior(StableDiffusionPipelineBehavior):
         width: int,
         dtype: torch.dtype,
         guidance_scale: float | None,
+        vae_scale_factor: int = 8,
     ) -> tuple[torch.Tensor, ...]:
         # SDXL time_ids: original size, crop coordinates, and target size.
         inputs = (

@@ -404,9 +404,7 @@ ConvGraph build_graph(const Conv2dTestConfig& cfg) {
       r_padding,
       r_dilation,
       r_out,
-      /*clamp_out=*/false,
-      /*out_min_val=*/0.0f,
-      /*out_max_val=*/0.0f,
+      Conv2dEpilogue{},
       cfg.im2col_storage);
 
   cg.staging_out = graph.set_output_tensor(r_out);
