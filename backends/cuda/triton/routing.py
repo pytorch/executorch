@@ -14,7 +14,8 @@ it, each with the reason it cannot (None if it can): the regular lowering
 
 - fails the export, with every reason, if none can;
 - uses the only one that can;
-- otherwise takes the family's ``static_choice``.
+- otherwise lets measured routing pick (see ``measured_routing.py``) for a
+  family that opts in with ``measure``, or takes its ``static_choice``.
 
 A failed rewrite to a replacement is rolled back and keeps the node if the
 regular lowering can run it, and raises ``ReplacementError`` otherwise.
@@ -63,6 +64,9 @@ class ReplacementPlan:
     static_reason: str = ""
     # The normalized call, for errors.
     signature: str = ""
+    # Whether measured routing may pick for this family; otherwise its static
+    # choice is taken.
+    measure: bool = False
 
     def __post_init__(self) -> None:
         names = [c.name for c in self.candidates]
