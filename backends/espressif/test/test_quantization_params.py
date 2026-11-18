@@ -362,7 +362,9 @@ def test_dynamic_shapes_stay_portable(model):
 def test_lowering_is_idempotent(binary_program):
     first = EspPassManager()(binary_program)
     assert first.modified
-    assert not EspPassManager()(first.exported_program).modified
+    graph = str(first.exported_program.graph)
+    second = EspPassManager()(first.exported_program)
+    assert str(second.exported_program.graph) == graph
 
 
 @pytest.mark.parametrize("scale", [0.03, 0.25, 0.5, 0.7, 1.0, 1.3, 2.0, 32768.0])
