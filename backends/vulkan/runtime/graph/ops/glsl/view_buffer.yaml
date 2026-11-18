@@ -11,6 +11,7 @@ view_buffer:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
+      - VALUE: bfloat16
       - VALUE: float
       - VALUE: double
       - VALUE: int8

@@ -62,6 +62,7 @@ struct SharedVulkanDeviceFeatures final {
   bool storage_push_constant_8 = false;
   bool shader_float16 = false;
   bool shader_int8 = false;
+  bool shader_bfloat16_type = false;
   bool shader_integer_dot_product = false;
   bool cooperative_matrix = false;
   bool cooperative_matrix2_workgroup_scope = false;

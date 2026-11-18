@@ -129,6 +129,20 @@ uint16_t float_to_half(float f) {
       (shl1_w > UINT32_C(0xFF000000) ? UINT16_C(0x7E00) : nonsign));
 }
 
+float bfloat16_to_float(uint16_t b) {
+  return fp32_from_bits(static_cast<uint32_t>(b) << 16);
+}
+
+uint16_t float_to_bfloat16(float f) {
+  const uint32_t bits = fp32_to_bits(f);
+  // Keep NaNs quiet; rounding could carry a NaN payload into infinity.
+  if ((bits & UINT32_C(0x7FFFFFFF)) > UINT32_C(0x7F800000)) {
+    return static_cast<uint16_t>((bits >> 16) | UINT32_C(0x0040));
+  }
+  const uint32_t rounding_bias = UINT32_C(0x7FFF) + ((bits >> 16) & 1u);
+  return static_cast<uint16_t>((bits + rounding_bias) >> 16);
+}
+
 StagingBuffer::StagingBuffer(
     Context* context_p,
     const vkapi::ScalarType dtype,
@@ -166,6 +180,10 @@ vkapi::ScalarType get_staging_dtype(
     vkapi::ScalarType dtype) {
   if (dtype == vkapi::kHalf &&
       !context_p->adapter_ptr()->has_full_float16_buffers_support()) {
+    return vkapi::kFloat;
+  }
+  if (dtype == vkapi::kBFloat16 &&
+      !context_p->adapter_ptr()->has_full_bfloat16_buffers_support()) {
     return vkapi::kFloat;
   }
   return dtype;
@@ -206,6 +224,36 @@ void StagingBuffer::cast_float_to_half_and_copy_to(
   const float* src = reinterpret_cast<const float*>(data());
   for (size_t i = 0; i < numel; ++i) {
     dst[i] = float_to_half(src[i]);
+  }
+}
+
+void StagingBuffer::cast_bfloat16_to_float_and_copy_from(
+    const uint16_t* src,
+    const size_t numel) {
+  VK_CHECK_COND(numel <= this->numel());
+  float* dst = reinterpret_cast<float*>(data());
+  for (size_t i = 0; i < numel; ++i) {
+    dst[i] = bfloat16_to_float(src[i]);
+  }
+  vmaFlushAllocation(
+      vulkan_buffer_.vma_allocator(),
+      vulkan_buffer_.allocation(),
+      0u,
+      VK_WHOLE_SIZE);
+}
+
+void StagingBuffer::cast_float_to_bfloat16_and_copy_to(
+    uint16_t* dst,
+    const size_t numel) {
+  VK_CHECK_COND(numel <= this->numel());
+  vmaInvalidateAllocation(
+      vulkan_buffer_.vma_allocator(),
+      vulkan_buffer_.allocation(),
+      0u,
+      numel * sizeof(float));
+  const float* src = reinterpret_cast<const float*>(data());
+  for (size_t i = 0; i < numel; ++i) {
+    dst[i] = float_to_bfloat16(src[i]);
   }
 }
 

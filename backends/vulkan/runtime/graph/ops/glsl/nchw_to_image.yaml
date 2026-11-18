@@ -16,6 +16,7 @@ nchw_to_image:
         - parameter_values: [half, half]
         - parameter_values: [half, float]
         - parameter_values: [float, float]
+        - parameter_values: [float, bfloat16]
         - parameter_values: [double, double]
         - parameter_values: [int8, int8]
         - parameter_values: [uint8, uint8]
