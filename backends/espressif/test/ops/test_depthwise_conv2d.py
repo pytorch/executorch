@@ -23,11 +23,15 @@ from executorch.backends.espressif.test.tester import (
     ramp_tensor,
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.exir import memory
-from executorch.exir._serialize._program import deserialize_pte_binary
+from executorch.exir._serialize._program import (
+    deserialize_pte_binary,
+    serialize_pte_binary,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.scalar_type import ScalarType
-from executorch.exir.schema import KernelCall
+from executorch.exir.schema import EValue, Int, IntList, KernelCall
 from executorch.export import export
 
 _FQ_CONV = exir_ops.edge.fused_quant.convolution.default
@@ -210,6 +214,8 @@ def test_dialect_depthwise_conv2d(case):
         atol=0,
         rtol=torch.finfo(torch.float32).eps,
     )
+    if type(case.model) is EspDepthwiseChain:
+        tester.check_node_count({exir_ops.edge.aten.permute_copy.default: 2})
     graph = tester.get_artifact().exported_program().graph
     for node in graph.find_nodes(op="call_function", target=_ESP_DW):
         scratch = get_arg(node, "scratch")
@@ -423,6 +429,54 @@ def test_depthwise_padding_bound(s3_queries, monkeypatch):
     EspTester(model, (ramp_tensor(-3, 5, (1, 2, 1, 1)),)).test_dialect(
         model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
     ).to_executorch().serialize()
+
+
+@pytest.mark.parametrize("axis", [0, 1], ids=["height", "width"])
+def test_implementation_depthwise_rejects_out_of_bounds_windows(
+    pytestconfig, s3_queries, monkeypatch, axis
+):
+    if not os.environ.get("ESPRESSIF_BUILD_DIR"):
+        pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory")
+    serialize_to_schema = BundledProgram.serialize_to_schema
+
+    def invalid_stride(bundle):
+        schema = serialize_to_schema(bundle)
+        pte = deserialize_pte_binary(schema.program)
+        plan = pte.program.execution_plan[0]
+        (call,) = (
+            instruction.instr_args
+            for chain in plan.chains
+            for instruction in chain.instructions
+            if isinstance(instruction.instr_args, KernelCall)
+            and plan.operators[instruction.instr_args.op_index].name
+            == "esp_nn::quantized_depthwise_conv2d_int8"
+        )
+        stride_index = next(
+            i for i, arg in enumerate(_ESP_DW._schema.arguments) if arg.name == "stride"
+        )
+        stride = list(plan.values[call.args[stride_index]].val.items)
+        stride[axis] = len(plan.values)
+        plan.values.append(EValue(Int(2)))
+        call.args[stride_index] = len(plan.values)
+        plan.values.append(EValue(IntList(stride)))
+        schema.program = bytes(serialize_pte_binary(pte))
+        return schema
+
+    monkeypatch.setattr(BundledProgram, "serialize_to_schema", invalid_stride)
+    case = test_cases["s8_padded"]
+    with pytest.raises(AssertionError):
+        EspTester(case.model, case.example_inputs).test_implementation(
+            pytestconfig.rootpath
+        )
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    log = (
+        Path(os.environ["ESPRESSIF_BUILD_DIR"])
+        / f"operator-library-{worker}-esp32s3-optimized"
+        / "emulator.log"
+    )
+    text = log.read_text()
+    assert "op_quantized_depthwise_conv2d.cpp" in text
+    assert "weight.size(axis + 1)" in text
 
 
 def test_implementation_depthwise_zero_scratch(pytestconfig):
