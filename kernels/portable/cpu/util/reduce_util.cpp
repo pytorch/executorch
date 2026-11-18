@@ -397,6 +397,17 @@ bool check_amin_amax_args(
       check_reduction_args(in, dim_list, keepdim, {}, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() == out.scalar_type());
 
+  // Matches ATen's zero_numel_check_dims: max and min have no identity, so an
+  // empty input can only be reduced over explicit, non-empty dims.
+  if (in.numel() == 0) {
+    ET_CHECK_OR_RETURN_FALSE(
+        dim_list.size() > 0,
+        "Expected reduction dim to be specified for input.numel() == 0");
+    for (const auto d : dim_list) {
+      ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, d));
+    }
+  }
+
   return true;
 }
 
