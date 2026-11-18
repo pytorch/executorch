@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 import executorch.backends.vulkan.utils as utils
 import torch
@@ -24,6 +24,7 @@ from executorch.backends.vulkan.patterns.weight_packing_utils import (
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export.graph_signature import InputKind
 
 
@@ -259,9 +260,14 @@ class QuantizedLinearMatch(PatternMatch):
             weight_shape[-1] % scales_shape[-1] == 0
         )
 
-    def is_weight_perchannel_quantized(self) -> bool:
+    def is_weight_perchannel_quantized(self, allow_keepdim: bool = False) -> bool:
+        """`allow_keepdim` also accepts torchao's [N, 1] scales. It is off by
+        default because the static input routes would pad those along the wrong
+        dim."""
         weight_shape = self.weight_node.meta["val"].shape
         scales_shape = self.weight_scales_node.meta["val"].shape
+        if allow_keepdim and len(scales_shape) == 2 and scales_shape[-1] == 1:
+            scales_shape = scales_shape[:1]
         if len(scales_shape) != 1:
             return False
 
@@ -300,6 +306,21 @@ class QuantizedLinearMatch(PatternMatch):
             # linear_q4gsw packs the weights in blocks of 4 output channels.
             return self.weight_node.meta["val"].shape[-2] % 4 == 0
         return self.is_input_dynamic_perchannel_quantized()
+
+    def is_linear_q8csw(self) -> bool:
+        """Whether this is a torchao 8-bit per-channel weight-only linear, which
+        the quantized_linear_q8csw pattern fuses into linear_q8csw. Disjoint
+        from has_fused_op(): PT2E dequantize_per_channel weight-only linears are
+        left to FuseQuantizedOpsTransform, and torchao 4-bit ones to linear_q4gsw.
+        """
+        return (
+            self.is_weight_only_quantized()
+            and self.dequantize_weight_node.target
+            == exir_ops.edge.torchao.dequantize_affine.default
+            and self.weight_node.meta["val"].dtype == torch.int8
+            and not self.is_weight_4bit_quantized()
+            and self.is_weight_perchannel_quantized(allow_keepdim=True)
+        )
 
     def is_input_static_per_tensor_quantized(self) -> bool:
         if self.dequantize_input_node is None:
@@ -353,6 +374,22 @@ def find_quantized_linear_patterns(
     return None
 
 
+# A separate pattern so that backends without a linear_q8csw kernel (WebGPU) can
+# skip it while keeping the other quantized linear routes.
+@register_pattern_detector("quantized_linear_q8csw")
+def find_linear_q8csw_patterns(
+    node: torch.fx.Node,
+) -> Optional[QuantizedLinearMatch]:
+    if node.target not in linear_anchor_nodes:
+        return None
+
+    matched_pattern = QuantizedLinearMatch(node)
+    if matched_pattern.match_found and matched_pattern.is_linear_q8csw():
+        return matched_pattern
+
+    return None
+
+
 ##
 ## Constant tensor manipulation
 ##
@@ -391,6 +428,96 @@ def compute_per_group_sums(weight_tensor: torch.Tensor, group_size: int):
 ##
 
 
+def insert_weight_only_linear_op(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+    target: EdgeOpOverload,
+    args: Tuple[Any, ...],
+):
+    """Pads the bias to a multiple of 4, then replaces the match's output with
+    a call to `target`."""
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
+    with graph_module.graph.inserting_before(match.output_node):
+        linear_node = graph_module.graph.create_node("call_function", target, args=args)
+
+    linear_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(linear_node)
+
+
+def dequantize_weight_to_constant(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+):
+    """Replaces the weight's dequantize node with its result as a float
+    constant, leaving a float linear."""
+    dq_node = match.dequantize_weight_node
+    args, kwargs = torch.fx.map_arg(
+        (dq_node.args, dq_node.kwargs),
+        lambda n: get_param_tensor(ep, n),
+    )
+    data = dq_node.target(*args, **kwargs)
+
+    first_graph_node = list(graph_module.graph.nodes)[0]
+    with graph_module.graph.inserting_before(first_graph_node):
+        name = utils.get_tensor_name(ep, match.weight_node) + "_dequantized"
+        weight_node = create_constant_placeholder(
+            exp_program=ep,
+            graph=graph_module.graph,
+            kind=InputKind.PARAMETER,
+            name=name.replace(".", "_"),
+            data=data,
+        )
+    dq_node.replace_all_uses_with(weight_node)
+
+
+@register_pattern_replacement("quantized_linear_q8csw")
+def replace_linear_q8csw_patterns(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+):
+    weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
+    assert weight_zeros_tensor is not None
+    # The detector cannot read the zero points. linear_q8csw is symmetric, so a
+    # linear with non-zero ones runs as a float linear instead.
+    if not bool(torch.all(weight_zeros_tensor == 0)):
+        dequantize_weight_to_constant(ep, graph_module, match)
+        return
+
+    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
+    assert weight_scales_tensor is not None
+    # The kernel takes [N] scales; torchao stores them as [N, 1]. Pad to a
+    # multiple of 4 so GPU shader reads don't go OOB.
+    if utils.register_param_mutation(
+        ep, match.weight_scales_node, "8 bit per-channel linear scales"
+    ):
+        utils.align_width_and_update_state_dict(
+            ep,
+            match.weight_scales_node,
+            weight_scales_tensor.reshape(-1).contiguous(),
+            force_update=True,
+        )
+
+    insert_weight_only_linear_op(
+        ep,
+        graph_module,
+        match,
+        exir_ops.edge.et_vk.linear_q8csw.default,
+        (
+            match.pattern_input_node,
+            match.weight_node,
+            match.weight_scales_node,
+            match.bias_node,
+        ),
+    )
+
+
 def make_linear_q4gsw_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
@@ -422,27 +549,19 @@ def make_linear_q4gsw_op(
             force_update=True,
         )
 
-    # Pad bias to multiple of 4 if present
-    if match.bias_node is not None:
-        bias_tensor = get_param_tensor(ep, match.bias_node)
-        if bias_tensor is not None:
-            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
-
-    with graph_module.graph.inserting_before(match.output_node):
-        linear_q4gsw_node = graph_module.graph.create_node(
-            "call_function",
-            exir_ops.edge.et_vk.linear_q4gsw.default,
-            args=(
-                match.pattern_input_node,
-                match.weight_node,
-                match.weight_scales_node,
-                group_size,
-                match.bias_node,
-            ),
-        )
-
-    linear_q4gsw_node.meta["val"] = match.output_node.meta["val"]
-    match.output_node.replace_all_uses_with(linear_q4gsw_node)
+    insert_weight_only_linear_op(
+        ep,
+        graph_module,
+        match,
+        exir_ops.edge.et_vk.linear_q4gsw.default,
+        (
+            match.pattern_input_node,
+            match.weight_node,
+            match.weight_scales_node,
+            group_size,
+            match.bias_node,
+        ),
+    )
 
 
 def make_linear_dq8ca_q4gsw_op(

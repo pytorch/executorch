@@ -32,6 +32,7 @@ from executorch.backends.webgpu.test.ops.test_erf import ErfGeluModule, ErfModul
 from executorch.backends.webgpu.test.ops.test_mul import MulScalarModule
 from executorch.backends.webgpu.test.tester import Partition, ToEdgeTransformAndLower
 from executorch.exir import (
+    EdgeCompileConfig,
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
@@ -113,6 +114,37 @@ class TestWebGPUPartitioner(unittest.TestCase):
 
         self.assertEqual(webgpu_program.buffer, vulkan_program.buffer)
         self.assertEqual(self._delegate_ids(webgpu_program), ["VulkanBackend"])
+
+    def test_keeps_torchao_int8_weight_only_linear_on_cpu(self) -> None:
+        # The WebGPU runtime has no linear_q8csw kernel.
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        model = torch.nn.Sequential(torch.nn.Linear(64, 64))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+        )
+        unwrap_tensor_subclass(model)
+        edge = to_edge_transform_and_lower(
+            torch.export.export(model, (torch.randn(2, 64),), strict=True),
+            partitioner=[WebGPUPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        graph_module = edge.exported_program().graph_module
+        self.assertIn(
+            exir_ops.edge.torchao.dequantize_affine.default,
+            [node.target for node in graph_module.graph.nodes],
+        )
+        ops = [
+            op.name
+            for _, module, _ in get_lowered_submodules(graph_module)
+            for op in flatbuffer_to_vk_graph(
+                extract_vk_flatbuffer(module.processed_bytes)
+            ).chain
+        ]
+        self.assertNotIn("et_vk.linear_q8csw.default", ops)
 
     def test_fuses_conv_activation_into_conv_with_clamp(self) -> None:
         # The WebGPU runtime implements conv_with_clamp, not conv2d.with_epilogue.
