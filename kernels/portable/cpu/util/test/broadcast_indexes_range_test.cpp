@@ -343,24 +343,35 @@ TEST(BroadcastIndexesRangeTest, OutputSizesExpectedIndexes) {
       expected_one);
 }
 
-// Checks that the range visits out in logical order and yields each
-// tensor's memory offset for the corresponding element.
-template <size_t kNumInputs>
+// Checks that the range visits out in memory order and yields each input's
+// memory offset for the same logical element.
+template <size_t kNumInputs, bool support_noncontiguous_input_tensors = false>
 void test_strided_range(
     const Tensor& out,
     const std::array<Tensor, kNumInputs>& inputs) {
+  size_t out_indexes[executorch::runtime::kTensorDimensionLimit];
+  std::vector<ssize_t> logical_index(out.numel());
+  for (const auto ii : c10::irange(out.numel())) {
+    delinearize_index(
+        ii, out, out_indexes, executorch::runtime::kTensorDimensionLimit);
+    logical_index[linearize_access_indexes(out_indexes, out.dim(), out)] = ii;
+  }
+
   const auto range = std::apply(
       [&out](const auto&... in) {
-        return BroadcastIndexesRange<kNumInputs>(out, in...);
+        return BroadcastIndexesRange<
+            kNumInputs,
+            support_noncontiguous_input_tensors>(out, in...);
       },
       inputs);
   ssize_t idx = 0;
   for (const auto& indexes : range) {
-    size_t out_indexes[executorch::runtime::kTensorDimensionLimit];
+    EXPECT_EQ(indexes[0], idx++);
     delinearize_index(
-        idx++, out, out_indexes, executorch::runtime::kTensorDimensionLimit);
-    EXPECT_EQ(
-        indexes[0], linearize_access_indexes(out_indexes, out.dim(), out));
+        logical_index[indexes[0]],
+        out,
+        out_indexes,
+        executorch::runtime::kTensorDimensionLimit);
     for (const auto ii : c10::irange(kNumInputs)) {
       EXPECT_EQ(
           indexes[ii + 1],
@@ -384,6 +395,15 @@ TEST(BroadcastIndexesRangeTest, ChannelsLastAndContiguousLayouts) {
   test_strided_range<2>(out_channels_last, {in_contiguous, in_broadcast_w});
   test_strided_range<2>(out_channels_last, {in_channels_last, in_contiguous});
   test_strided_range<2>(out_contiguous, {in_channels_last, in_contiguous});
+  test_strided_range<2>(
+      tf.zeros_channels_last({2, 1, 2, 4}),
+      {tf.zeros({2, 1, 2, 4}), tf.zeros({1, 1, 2, 1})});
+
+  test_strided_range<2, true>(
+      out_channels_last, {in_channels_last, in_broadcast});
+  test_strided_range<2, true>(
+      out_channels_last, {in_channels_last, in_channels_last});
+  test_strided_range<1, true>(out_channels_last, {in_contiguous});
 }
 
 TEST(BroadcastIndexesRangeTest, SharedChannelsLastLayoutIsIndexedLinearly) {
@@ -399,6 +419,19 @@ TEST(BroadcastIndexesRangeTest, SharedChannelsLastLayoutIsIndexedLinearly) {
     EXPECT_EQ(in_b_idx, out_idx);
   }
   EXPECT_EQ(idx, out.numel());
+}
+
+TEST(BroadcastIndexesRangeTest, LayoutsMatchIgnoresStridesOfSize1Dims) {
+  TensorFactory<ScalarType::Int> tf;
+  const auto layouts_match = [](const Tensor& a, const Tensor& b) {
+    return torch::executor::internal::layouts_match_ignoring_leading_1s(
+        a.sizes(), a.strides(), b.sizes(), b.strides());
+  };
+  EXPECT_TRUE(layouts_match(
+      tf.zeros_channels_last({2, 1, 2, 4}), tf.zeros({2, 1, 2, 4})));
+  EXPECT_FALSE(layouts_match(
+      tf.zeros_channels_last({2, 3, 2, 4}), tf.zeros({2, 3, 2, 4})));
+  EXPECT_TRUE(layouts_match(tf.zeros({1, 2, 4}), tf.zeros({2, 4})));
 }
 
 TEST(BroadcastIndexesRangeTest, OutputSizesAreTreatedAsContiguous) {

@@ -31,9 +31,9 @@ namespace native {
 namespace utils {
 namespace internal {
 /**
- * Causes these utility functions to make sure to respect Tensor
- * strides; normally, this is not strictly necessary because ExecuTorch
- * Tensors are contiguous.
+ * Causes these utility functions to respect the strides of a single input
+ * whose layout may differ from the output's. Strides are respected either
+ * way when there are two or more inputs.
  */
 struct SupportNoncontiguousInputTensors {
   explicit SupportNoncontiguousInputTensors() = default;
@@ -185,7 +185,7 @@ inline void dtype_specialized_elementwise_fn_impl(
                 out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
-        for (auto i = begin; i < end; ++i, ++begin_it) {
+        for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
           std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {
@@ -262,7 +262,7 @@ inline void apply_elementwise_fn_generic_impl(
                 out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
-        for (auto i = begin; i < end; ++i, ++begin_it) {
+        for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
           std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {

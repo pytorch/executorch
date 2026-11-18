@@ -1095,3 +1095,29 @@ TEST_F(OpMulOutTest, ChannelsLastBroadcastMixedDtype) {
       tf_float.make({1, 2, 1, 2}, {10, 20, 60, 80}));
   EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
 }
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastLastDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 2, 1}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 20, 60, 80, 150, 180, 280, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastMiddleDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 40, 30, 80, 150, 240, 210, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}

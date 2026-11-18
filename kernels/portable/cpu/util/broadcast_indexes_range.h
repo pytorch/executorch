@@ -46,8 +46,10 @@ inline bool sizes_match_ignoring_leading_1s(
 
 // Whether the same memory offset addresses the same logical element in
 // both tensors, which requires matching sizes and matching strides for
-// every dim whose size is not 1.
-inline bool layouts_match_ignoring_leading_1s(
+// every dim whose size is not 1. Not inlined so that
+// BroadcastIndexesIterator's constructor stays small enough to inline,
+// which lets callers keep the iterator's indexes in registers.
+ET_NOINLINE inline bool layouts_match_ignoring_leading_1s(
     ArrayRef<Tensor::SizesType> lhs_sizes,
     ArrayRef<Tensor::StridesType> lhs_strides,
     ArrayRef<Tensor::SizesType> rhs_sizes,
@@ -90,37 +92,36 @@ class BroadcastIndexesIterator {
                          output.strides()) &&
                      ...)
                 ? 0
-                : output.dim()),
-        output_shape_(output.sizes()) {
+                : output.dim()) {
     static_assert(
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
     if (support_noncontiguous_input_tensors ||
         output_dim_or_zero_if_no_broadcasting_ != 0) {
-      const auto output_strides = output.strides();
-      std::copy(
-          output_strides.begin(),
-          output_strides.end(),
-          output_strides_.begin());
+      const auto output_dims = output_dims_in_memory_order(output.strides());
+      for (const auto ii : c10::irange(output.dim())) {
+        output_shape_[ii] = output.size(output_dims[ii]);
+      }
       effective_input_broadcast_strides_ = {
-          effective_input_broadcast_stride(output, args)...};
+          effective_input_broadcast_stride(output, args, output_dims)...};
     }
   }
 
   template <typename... Args>
   explicit BroadcastIndexesIterator(
       ArrayRef<Tensor::SizesType> output_sizes,
-      const Args&... args)
-      : output_shape_(output_sizes) {
+      const Args&... args) {
     static_assert(
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
+    std::array<Tensor::StridesType, executorch::runtime::kTensorDimensionLimit>
+        output_strides;
     Tensor::StridesType stride = 1;
     for (auto ii = static_cast<ssize_t>(output_sizes.size()) - 1; ii >= 0;
          --ii) {
-      output_strides_[ii] = stride;
+      output_strides[ii] = stride;
       stride *= output_sizes[ii];
     }
     output_dim_or_zero_if_no_broadcasting_ =
@@ -129,7 +130,7 @@ class BroadcastIndexesIterator {
                  args.sizes(),
                  args.strides(),
                  output_sizes,
-                 {output_strides_.data(), output_sizes.size()}) &&
+                 {output_strides.data(), output_sizes.size()}) &&
              ...)
         ? 0
         : output_sizes.size();
@@ -137,6 +138,8 @@ class BroadcastIndexesIterator {
         output_dim_or_zero_if_no_broadcasting_ != 0) {
       effective_input_broadcast_strides_ = {
           effective_input_broadcast_stride(output_sizes.size(), args)...};
+      std::copy(
+          output_sizes.begin(), output_sizes.end(), output_shape_.begin());
     }
   }
 
@@ -149,14 +152,20 @@ class BroadcastIndexesIterator {
       make_end_t,
       ssize_t output_numel,
       const Args&... args)
-      : iteration_index_(output_numel) {}
+      : current_indexes_{
+            output_numel,
+            0,
+        } {}
 
   template <typename... Args>
   BroadcastIndexesIterator(make_end_t, const Tensor& t, const Args&... args)
-      : iteration_index_(t.numel()) {}
+      : current_indexes_{
+            t.numel(),
+            0,
+        } {}
 
   bool operator==(const BroadcastIndexesIterator& rhs) const {
-    return iteration_index_ == rhs.iteration_index_;
+    return output_index() == rhs.output_index();
   }
 
   bool operator!=(const BroadcastIndexesIterator& rhs) const {
@@ -172,10 +181,10 @@ class BroadcastIndexesIterator {
   }
 
   BroadcastIndexesIterator& operator++() {
-    iteration_index_++;
+    output_index()++;
     if (output_dim_or_zero_if_no_broadcasting_ == 0) {
       std::fill(
-          current_indexes_.begin(), current_indexes_.end(), iteration_index_);
+          current_indexes_.begin() + 1, current_indexes_.end(), output_index());
       return *this;
     }
     // TODO: add optimization for particular input tensors not being
@@ -190,15 +199,12 @@ class BroadcastIndexesIterator {
         const auto old_delinearized_output_index_item =
             delinearized_output_index_[ii];
         delinearized_output_index_[ii] = 0;
-        current_indexes_[0] -=
-            old_delinearized_output_index_item * output_strides_[ii];
         for (const auto jj : c10::irange(1, kNumInputs + 1)) {
           current_indexes_[jj] -= old_delinearized_output_index_item *
               effective_input_broadcast_strides_[jj - 1][ii];
         }
       } else {
         delinearized_output_index_[ii]++;
-        current_indexes_[0] += output_strides_[ii];
         for (const auto jj : c10::irange(1, kNumInputs + 1)) {
           current_indexes_.at(jj) +=
               effective_input_broadcast_strides_[jj - 1][ii];
@@ -221,22 +227,18 @@ class BroadcastIndexesIterator {
       return *this;
     }
 
-    iteration_index_ += n;
+    output_index() += n;
     if (output_dim_or_zero_if_no_broadcasting_ == 0) {
       std::fill(
-          current_indexes_.begin(), current_indexes_.end(), iteration_index_);
+          current_indexes_.begin() + 1, current_indexes_.end(), output_index());
       return *this;
     }
     delinearize_index(
-        iteration_index_,
-        output_shape_,
+        output_index(),
+        {output_shape_.data(),
+         static_cast<size_t>(output_dim_or_zero_if_no_broadcasting_)},
         delinearized_output_index_.data(),
         delinearized_output_index_.size());
-    current_indexes_[0] = 0;
-    for (const auto jj : c10::irange(output_dim_or_zero_if_no_broadcasting_)) {
-      current_indexes_[0] +=
-          delinearized_output_index_[jj] * output_strides_[jj];
-    }
     for (const auto ii : c10::irange(1, kNumInputs + 1)) {
       current_indexes_[ii] = 0;
       for (const auto jj :
@@ -255,16 +257,41 @@ class BroadcastIndexesIterator {
   }
 
   difference_type operator-(const BroadcastIndexesIterator& rhs) const {
-    return difference_type(iteration_index_ - rhs.iteration_index_);
+    return difference_type(output_index() - rhs.output_index());
   }
 
  private:
   using ShapeType =
       std::array<std::size_t, executorch::runtime::kTensorDimensionLimit>;
 
+  ssize_t output_index() const {
+    return current_indexes_[0];
+  }
+
+  ssize_t& output_index() {
+    return current_indexes_[0];
+  }
+
+  // The output's dims from outermost to innermost in memory. Iterating over
+  // the dims in this order visits the output's elements in memory order.
+  static ShapeType output_dims_in_memory_order(
+      ArrayRef<Tensor::StridesType> output_strides) {
+    ShapeType dims = {0};
+    for (const auto ii : c10::irange(output_strides.size())) {
+      dims[ii] = ii;
+      for (auto jj = ii;
+           jj > 0 && output_strides[dims[jj - 1]] < output_strides[dims[jj]];
+           --jj) {
+        std::swap(dims[jj - 1], dims[jj]);
+      }
+    }
+    return dims;
+  }
+
   ShapeType effective_input_broadcast_stride(
       const Tensor& output,
-      const Tensor& t) const {
+      const Tensor& t,
+      const ShapeType& output_dims) const {
     ShapeType result = {0};
     ET_CHECK_MSG(
         t.dim() <= output.dim(),
@@ -284,12 +311,17 @@ class BroadcastIndexesIterator {
           ? 0
           : t_strides[idx - num_leading_ones];
     }
-    return result;
+    ShapeType result_in_output_dims_order = {0};
+    for (const auto idx : c10::irange(output.dim())) {
+      result_in_output_dims_order[idx] = result[output_dims[idx]];
+    }
+    return result_in_output_dims_order;
   }
 
-  // Same as the overload above, for an output given by its sizes. The body is
-  // repeated rather than shared so the tensor overload generates the same code
-  // whether or not this one is used.
+  // Same as the overload above, for a contiguous output given by its sizes,
+  // whose dims need no reordering. The body is repeated rather than shared so
+  // the tensor overload generates the same code whether or not this one is
+  // used.
   ShapeType effective_input_broadcast_stride(
       ssize_t output_dim,
       const Tensor& t) const {
@@ -315,16 +347,13 @@ class BroadcastIndexesIterator {
     return result;
   }
 
-  // The 0th entry is the current memory offset into the output,
-  // followed by kNumInputs input offsets.
+  // The 0th entry is the current linear index into the output,
+  // followed by kNumInputs input indexes.
   std::array<ssize_t, kNumInputs + 1> current_indexes_ = {0};
-  // Number of elements visited so far.
-  ssize_t iteration_index_ = 0;
   ShapeType delinearized_output_index_ = {0};
-  ssize_t output_dim_or_zero_if_no_broadcasting_ = 0;
-  ArrayRef<exec_aten::SizesType> output_shape_;
-  std::array<Tensor::StridesType, executorch::runtime::kTensorDimensionLimit>
-      output_strides_ = {0};
+  ssize_t output_dim_or_zero_if_no_broadcasting_;
+  std::array<Tensor::SizesType, executorch::runtime::kTensorDimensionLimit>
+      output_shape_;
   // The linear index for a broadcast tensor is
   // sum(delinearized_output_index_[i] * input_stride_[i] if
   // padded_input_shape_[i] != 1 else 0), where padded_input_shape is
@@ -445,14 +474,16 @@ class BroadcastIndexesIterator<1, false> {
  * linearize_access_indexes(), BroadcastIndexesRange avoids expensive
  * division and modulo operations on each iteration.
  *
- * All indexes are memory offsets that respect strides, so they are valid
- * for noncontiguous (e.g. channels last) outputs as well as inputs.
+ * The iterators visit the output's elements in memory order, so the output
+ * may have any dense layout (e.g. channels last) and its index is the number
+ * of elements visited so far. Input indexes are memory offsets that respect
+ * strides.
  *
- * By default, when every input has the output's sizes and strides, the
- * iterators skip index computation and visit elements in memory order
- * rather than logical order. The support_noncontiguous_input_tensors
- * argument disables this optimization so that elements are always
- * visited in the output's logical order.
+ * By default, the iterators skip index computation when every input has the
+ * output's sizes and strides. The support_noncontiguous_input_tensors
+ * argument disables this optimization. With one input and
+ * support_noncontiguous_input_tensors=false, the input is assumed to have
+ * the output's shape and strides and is not broadcast.
  */
 template <
     std::size_t kNumInputs,
@@ -488,7 +519,7 @@ class BroadcastIndexesRange {
  * output tensor and treats the output as contiguous. The sizes' storage must
  * stay alive and unchanged while the range or its iterators are in use. With
  * one input and support_noncontiguous_input_tensors=false, the input is
- * assumed to have the output's shape and strides and is not broadcast.
+ * assumed to be contiguous with the output's shape and is not broadcast.
  */
 template <
     std::size_t kNumInputs,
