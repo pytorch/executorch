@@ -26,13 +26,12 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
 )
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.memory import alloc, view
-from executorch.export import (
-    ExportRecipe,
-    LoweringRecipe,
-    QuantizationRecipe,
-    StageType,
-)
+from executorch.export import ExportRecipe, LoweringRecipe, StageType
 from executorch.frontends.fused_quant.quantizer.quantizer import FusedQuantQuantizer
+from executorch.frontends.fused_quant.recipe import (
+    get_fused_quant_edge_compile_config,
+    get_fused_quant_quantization_recipe,
+)
 from torch._ops import OpOverload
 
 
@@ -109,26 +108,17 @@ def get_esp_fused_quant_recipe(
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()
-
-    def fuse(graph_module):
-        quantizer.fuse(graph_module)
-        return graph_module
+    quantization_recipe = get_fused_quant_quantization_recipe(quantizer)
+    quantization_recipe.calibration_inputs_fn = calibration_inputs_fn
 
     transforms = [lambda _: EspPassManager()]
     if not allow_cpu_fallback:
         transforms.append(_require_no_portable_compute)
     return ExportRecipe(
-        quantization_recipe=QuantizationRecipe(
-            quantizers=[quantizer],
-            preserve_ops=quantizer.preserved_ops(),
-            calibration_inputs_fn=calibration_inputs_fn,
-            post_convert_passes=[fuse],
-        ),
+        strict=False,
+        quantization_recipe=quantization_recipe,
         lowering_recipe=LoweringRecipe(
-            edge_compile_config=EdgeCompileConfig(
-                _skip_dim_order=True,
-                _core_aten_ops_exception_list=quantizer.preserved_ops(),
-            ),
+            edge_compile_config=get_fused_quant_edge_compile_config(()),
             edge_manager_transform_passes=transforms,
         ),
         pipeline_stages=[

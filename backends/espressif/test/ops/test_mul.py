@@ -47,6 +47,23 @@ class EspSelfMul(EspMul):
         return x * x
 
 
+class EspScalarMul(EspMul):
+    ops_before_transforms = {exir_ops.edge.fused_quant.mul.Scalar: 1}
+
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+        self.ops_after_transforms = {
+            _MUL: 0,
+            _ESP_MUL: 0,
+            _ESP_MUL_BROADCAST: 0,
+            exir_ops.edge.aten.mul.Scalar: int(scalar <= 0),
+        }
+
+    def forward(self, x):
+        return x * self.scalar
+
+
 class EspConstantMul(EspMul):
     def __init__(self, *, broadcast=False):
         super().__init__(broadcast=broadcast)
@@ -114,6 +131,15 @@ test_cases = {
         (ramp_tensor(-1.5, 2.5, (1, 2, 3, 4)), ramp_tensor(3, -4, (1, 2, 3, 4))),
     ),
     "self": EspTestCase(EspSelfMul(), (ramp_tensor(-1, 2, (17,)),)),
+    "scalar_literal_positive": EspTestCase(
+        EspScalarMul(2.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
+    "scalar_literal_zero": EspTestCase(
+        EspScalarMul(0.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
+    "scalar_literal_negative": EspTestCase(
+        EspScalarMul(-2.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
     "constant": EspTestCase(EspConstantMul(), (ramp_tensor(-1, 2, (17,)),)),
     "chain": EspTestCase(
         EspMulChain(),
@@ -263,33 +289,6 @@ def test_implementation_mul(test_case, pytestconfig):
         test_case.example_inputs,
         calibration_samples=test_case.calibration_samples,
     ).test_implementation(pytestconfig.rootpath, rtol=torch.finfo(torch.float32).eps)
-
-
-def test_dialect_scalar_literal_mul_stays_portable():
-    class ScalarMul(torch.nn.Module):
-        def forward(self, x):
-            return x * 2.0
-
-    inputs = (ramp_tensor(-1.5, 2.5, (2, 3)),)
-    tester = EspTester(ScalarMul(), inputs).export_fused_quant().to_edge()
-    scalar_target = exir_ops.edge.fused_quant.mul.Scalar
-    tester.check_node_count({scalar_target: 1})
-    expected = tester.get_artifact().exported_program().module()(*inputs)
-    tester.run_passes().check_node_count(
-        {
-            scalar_target: 0,
-            _ESP_MUL: 0,
-            _ESP_MUL_BROADCAST: 0,
-            exir_ops.edge.aten.mul.Scalar: 1,
-        }
-    )
-    torch.testing.assert_close(
-        tester.get_artifact().exported_program().module()(*inputs),
-        expected,
-        atol=0,
-        rtol=0,
-    )
-    tester.to_executorch().serialize()
 
 
 @pytest.mark.parametrize("float_edge", ["input_activation", "output_activation"])
