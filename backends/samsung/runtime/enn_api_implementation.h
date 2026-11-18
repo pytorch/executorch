@@ -30,15 +30,29 @@ class EnnApi {
   static EnnApi* getEnnApiInstance();
   bool isInitialized() const;
 
+  // Detects the SoC and applies its known-good ENN perf mode/config id.
+  // Must be called on the same thread that is about to open a model, and
+  // as the last preference-mutating call before that open, since
+  // EnnInitialize() resets the calling thread's preference on every call.
+  void applyPerfConfigFromSoc() const;
+
   EnnReturn (*EnnInitialize)(void);
   EnnReturn (*EnnSetPreferencePerfMode)(const uint32_t val);
   EnnReturn (*EnnGetPreferencePerfMode)(uint32_t* val_ptr);
+  EnnReturn (*EnnSetPreferencePerfConfigId)(uint32_t val);
   EnnReturn (*EnnOpenModel)(const char* model_file, EnnModelId* model_id);
   EnnReturn (*EnnOpenModelFromMemory)(
       const char* va,
       const uint32_t size,
       EnnModelId* model_id);
   EnnReturn (*EnnOpenModelFromFd)(int _fd, EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelFromFdWithWeight)(
+      const int fd,
+      const uint32_t size,
+      const uint32_t offset,
+      EnnBufferPtr* weights,
+      uint32_t n_weights,
+      EnnModelId* model_id);
   EnnReturn (*EnnSetFastIpc)(void);
   EnnReturn (*EnnUnsetFastIpc)(void);
   EnnReturn (*EnnExecuteModelFastIpc)(
@@ -92,6 +106,7 @@ class EnnApi {
 typedef EnnReturn (*EnnInitialize_fn)(void);
 typedef EnnReturn (*EnnSetPreferencePerfMode_fn)(const uint32_t val);
 typedef EnnReturn (*EnnGetPreferencePerfMode_fn)(uint32_t* val_ptr);
+typedef EnnReturn (*EnnSetPreferencePerfConfigId_fn)(uint32_t val);
 typedef EnnReturn (
     *EnnOpenModel_fn)(const char* model_file, EnnModelId* model_id);
 typedef EnnReturn (*EnnOpenModelFromMemory_fn)(
@@ -136,6 +151,13 @@ typedef EnnReturn (*EnnReleaseBuffer_fn)(EnnBufferPtr buf);
 typedef EnnReturn (
     *EnnGetFileDescriptorFromEnnBuffer_fn)(EnnBufferPtr buffer, int32_t* fd);
 typedef EnnReturn (*EnnOpenModelFromFd_fn)(int _fd, EnnModelId* model_id);
+typedef EnnReturn (*EnnOpenModelFromFdWithWeight_fn)(
+    const int fd,
+    const uint32_t size,
+    const uint32_t offset,
+    EnnBufferPtr* weights,
+    uint32_t n_weights,
+    EnnModelId* model_id);
 
 } // namespace enn
 } // namespace executor
