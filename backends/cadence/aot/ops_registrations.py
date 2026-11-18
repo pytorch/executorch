@@ -738,6 +738,14 @@ lib.define(
 )
 
 lib.define(
+    "quantized_w8a32_transpose_conv2d(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_transpose_conv2d.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "slice_scatter_(Tensor(a!) self, Tensor src, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor(a!)"
 )
 
@@ -3450,6 +3458,37 @@ def quantized_w8a32_gru_meta(
     return hidden.new_empty(
         (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
     )
+
+
+@register_fake("cadence::quantized_w8a32_transpose_conv2d")
+def quantized_w8a32_transpose_conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    # input: [N, H=1, W, IC] (NHWC format)
+    # weight: [OC, kH=1, kW, IC] (OHWI format)
+    # output: [N, H=1, W_out, OC] (NHWC format)
+    assert len(input.shape) == 4
+    assert len(weight.shape) == 4
+    assert input.dtype == torch.float32
+    assert weight.dtype == torch.int8
+
+    batch_size = input.shape[0]
+    H = input.shape[1]
+    W = input.shape[2]
+
+    out_channels = weight.shape[0]
+    kW = weight.shape[2]
+
+    # conv_transpose output: W_out = (W - 1) * stride + kW
+    W_out = (W - 1) * stride_w + kW
+
+    output_shape = (batch_size, H, W_out, out_channels)
+    return input.new_empty(output_shape, dtype=input.dtype)
 
 
 @register_fake("cadence::slice_scatter_")
