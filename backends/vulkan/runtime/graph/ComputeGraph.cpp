@@ -1119,6 +1119,10 @@ void ComputeGraph::maybe_cast_and_copy_into_staging(
         src_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
       const uint16_t* casted_data = reinterpret_cast<const uint16_t*>(data);
       staging->cast_half_to_float_and_copy_from(casted_data, numel);
+    } else if (
+        src_data_dtype == vkapi::kBFloat16 && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data = reinterpret_cast<const uint16_t*>(data);
+      staging->cast_bfloat16_to_float_and_copy_from(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from ",
@@ -1162,6 +1166,10 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
         dst_data_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
       uint16_t* casted_data = reinterpret_cast<uint16_t*>(data);
       staging->cast_float_to_half_and_copy_to(casted_data, numel);
+    } else if (
+        dst_data_dtype == vkapi::kBFloat16 && staging_dtype == vkapi::kFloat) {
+      uint16_t* casted_data = reinterpret_cast<uint16_t*>(data);
+      staging->cast_float_to_bfloat16_and_copy_to(casted_data, numel);
     } else {
       VK_THROW(
           "Unsupported type conversion from staging dtype ",

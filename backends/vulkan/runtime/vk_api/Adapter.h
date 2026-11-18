@@ -268,6 +268,18 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
+  inline bool supports_bfloat16_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_bfloat16
+    return physical_device_.shader_bfloat16_features.shaderBFloat16Type ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_bfloat16 */
+  }
+
   inline bool supports_int8_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
@@ -390,6 +402,12 @@ class Adapter final {
 
   inline bool has_full_float16_buffers_support() {
     return supports_16bit_storage_buffers() && supports_float16_shader_types();
+  }
+
+  // glslang declares the Float16 capability alongside BFloat16TypeKHR.
+  inline bool has_full_bfloat16_buffers_support() {
+    return has_full_float16_buffers_support() &&
+        supports_bfloat16_shader_types();
   }
 
   inline bool has_full_int8_buffers_support() {

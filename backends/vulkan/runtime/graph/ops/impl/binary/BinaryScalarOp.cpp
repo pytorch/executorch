@@ -32,7 +32,8 @@ vkapi::ScalarType resolve_scalar_extract_dtype(
   // For float tensors, ensure that the scalar argument is extracted as a float
   // to avoid having to generate additional shader variants for float/half
   // tensor + int scalar.
-  if (tensor_dtype == vkapi::kFloat || tensor_dtype == vkapi::kHalf) {
+  if (tensor_dtype == vkapi::kFloat || tensor_dtype == vkapi::kHalf ||
+      tensor_dtype == vkapi::kBFloat16) {
     return vkapi::kFloat;
   }
   if (graph.val_is_bool(scalar) || graph.val_is_symint(scalar)) {
@@ -92,7 +93,12 @@ void add_binary_scalar_op_node(
     const int32_t scalar_val = extract_int32_scalar(graph, scalar);
     push_constants.emplace_back(&scalar_val, sizeof(scalar_val));
   } else if (scalar_dtype == vkapi::kFloat) {
-    const float scalar_val = graph.extract_scalar<float>(scalar);
+    float scalar_val = graph.extract_scalar<float>(scalar);
+    // Like eager, round the scalar to bfloat16 for every op except mul.
+    if (op_type != BinaryOpType::kMul &&
+        graph.original_dtype_of(in) == vkapi::kBFloat16) {
+      scalar_val = api::bfloat16_to_float(api::float_to_bfloat16(scalar_val));
+    }
     push_constants.emplace_back(&scalar_val, sizeof(scalar_val));
   } else {
     VK_THROW("Unsupported tensor-scalar op scalar dtype: ", scalar_dtype);

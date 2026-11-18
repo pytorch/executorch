@@ -37,6 +37,9 @@ void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
     case vkapi::kHalf:
       kernel_name += "_half";
       break;
+    case vkapi::kBFloat16:
+      kernel_name += "_bfloat16";
+      break;
     case vkapi::kChar:
     case vkapi::kQInt8:
       kernel_name += "_int8";

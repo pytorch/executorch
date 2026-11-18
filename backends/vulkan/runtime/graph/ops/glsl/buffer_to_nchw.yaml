@@ -16,6 +16,8 @@ buffer_to_nchw:
       combos:
         - parameter_values: [half, half]
         - parameter_values: [half, float]
+        - parameter_values: [bfloat16, bfloat16]
+        - parameter_values: [bfloat16, float]
         - parameter_values: [float, float]
         - parameter_values: [double, double]
         - parameter_values: [int8, int8]
