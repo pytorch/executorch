@@ -162,6 +162,9 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         if output_strides is not None:
             self.assertEqual(layout[1], tuple(output_strides))
         schedules = ["igemm_ffma"] + (["igemm_tc"] if self.tensor_cores else [])
+        # Split-K runs where the output tiles alone do not fill the GPU.
+        if implicit_gemm.schedule_supports("igemm_ffma_splitk", call) is None:
+            schedules.append("igemm_ffma_splitk")
         for (schedule, _), configs in implicit_gemm.CONFIGS.items():
             if schedule not in schedules:
                 continue
@@ -371,6 +374,48 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 (1,),
                 output_strides=(256, 1, 16),
                 output_padding=(0,),
+            )
+
+    def test_split_k(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        # Few output tiles over a deep reduction: 3x3 convolutions at low
+        # resolution, a strided one, and an odd-sized one with few channels.
+        geometries = (
+            ((5, 512, 3, 3), 512, (3, 3), (1, 1), (1, 1)),
+            ((2, 256, 6, 6), 512, (3, 3), (2, 2), (1, 1)),
+            ((1, 24, 9, 7), 40, (3, 5), (1, 2), (2, 1)),
+        )
+        cases = itertools.product(
+            enumerate(geometries),
+            (torch.float32, torch.float16, torch.bfloat16),
+            ("contiguous", "channels_last"),
+        )
+        for (i, (shape, c_out, kernel, stride, padding)), dtype, layout in cases:
+            if not _swept(i, dtype == torch.float32 and layout == "contiguous"):
+                continue
+            x, w, b = self.tensors(shape, c_out, kernel, dtype=dtype)
+            if layout == "channels_last":
+                x = _channels_last(x)
+            call = ConvCall(
+                x,
+                w,
+                b,
+                ConvParams(stride, padding, padding, (1, 1), False, (0, 0), 1),
+            )
+            self.assertGreater(implicit_gemm._split_k(call), 1)
+            with self.subTest(shape=shape, dtype=dtype, layout=layout):
+                self.check(x, w, b, stride, padding, padding)
+        x, w, b = self.tensors((5, 512, 3, 3), 512, (3, 3))
+        with self.subTest(every_config=True):
+            self.check(x, w, b, (1, 1), (1, 1), (1, 1), True)
+        with self.subTest(output_strides=True):
+            self.check(
+                x, w, b, (1, 1), (1, 1), (1, 1), output_strides=(4608, 1, 1536, 512)
             )
 
     def test_sliced_inputs_with_storage_offset(self):
