@@ -567,7 +567,7 @@ class ConstantFolding:
             return x + (self.a > self.b).to(torch.float32)
 
     class _ConstGraphOutput(torch.nn.Module):
-        """A folded const that *is* a graph output must stay materialized."""
+        """A const chain that *is* a graph output folds up to its last op, which stays."""
 
         def __init__(self):
             super().__init__()
@@ -575,7 +575,7 @@ class ConstantFolding:
             self.register_buffer("b", torch.randn(4, 4))
 
         def forward(self, x):
-            return self.a * self.b, x + x
+            return torch.relu(self.a * self.b), x + x
 
     # --- Group 2: chains that must NOT fold ---
     class _MutableBuffer(torch.nn.Module):
@@ -748,9 +748,13 @@ class ConstantFolding:
             out_args = gm.graph.output_node().args[0]
             assert len(out_args) == 2, f"expected 2 graph outputs, got {len(out_args)}"
             const_out = out_args[0]
-            assert const_out.op in ("placeholder", "get_attr"), (
-                f"folded const output should be a materialized constant, "
+            assert const_out.target == exir_ops.edge.aten.relu.default, (
+                f"a graph output should stay computed, "
                 f"got {const_out.op} ({const_out.target})"
+            )
+            assert const_out.args[0].op in ("placeholder", "get_attr"), (
+                f"the relu should read the folded mul, "
+                f"got {const_out.args[0].op} ({const_out.args[0].target})"
             )
             ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
 

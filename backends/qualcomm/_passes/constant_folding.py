@@ -213,6 +213,8 @@ class ConstantFolding(ExportPass):
         1) When creating buffer, start with reverse order, so just create the buffer before boundary.
         2) Only the boundary buffer will be created, won't recursive trace args and create unused buffer.
         3) For nodes like conv2d with quantizer, preserve dq node right after weight and bias.
+        4) A graph output is not replaced by a constant, since its output spec would not
+           follow the constant once it is lifted. Its args become the boundary instead.
         """
 
         # Reverse order: process later (more-derived) constants first, so a
@@ -220,6 +222,11 @@ class ConstantFolding(ExportPass):
         # Align with rule 1.
         for node, tensor in reversed(list(node_to_tensor.items())):
             if node.op == "placeholder":
+                continue
+
+            # Aligns with rule 4
+            if any(user.op == "output" for user in node.users):
+                del node_to_tensor[node]
                 continue
 
             # A folded value can be a scalar, SymInt or tuple (`_local_scalar_dense`,
