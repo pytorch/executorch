@@ -504,7 +504,7 @@ class DepthwiseLoweringTest(unittest.TestCase):
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
         output = "\n".join(logs.output)
-        self.assertEqual(output.count("(optional, direct template)"), 2)
+        self.assertEqual(output.count("(direct template)"), 2)
         self.assertIn("Skipping conv replacement", output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
 
@@ -560,7 +560,7 @@ class DepthwiseLoweringTest(unittest.TestCase):
                             partitioner
                         )
                 output = "\n".join(logs.output)
-                self.assertEqual(output.count("(optional, direct template)"), 3)
+                self.assertEqual(output.count("(direct template)"), 3)
                 self.assertIn("Replaced 3 nodes with Triton kernels", output)
                 if is_fbcode():
                     # Running the program is skipped in fbcode.
