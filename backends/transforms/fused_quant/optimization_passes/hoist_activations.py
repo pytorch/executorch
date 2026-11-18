@@ -35,6 +35,7 @@ _ACTIVATION_OPS: frozenset[OpOverload] = frozenset(
         exir_ops.edge.fused_quant.silu.default,
         exir_ops.edge.fused_quant.hardsigmoid.default,
         exir_ops.edge.fused_quant.gelu.default,
+        exir_ops.edge.fused_quant.leaky_relu.default,
     }
 )
 
