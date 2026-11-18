@@ -276,7 +276,9 @@ def test_public_recipe_conv2d(target, kernel_mode, expected_bytes):
     session = export(
         case.model,
         example_inputs=[case.example_inputs],
-        export_recipe=get_esp_fused_quant_recipe(target=target, kernel_mode=kernel_mode),
+        export_recipe=get_esp_fused_quant_recipe(
+            target=target, kernel_mode=kernel_mode
+        ),
     )
     plan = deserialize_pte_binary(
         session.get_executorch_program_manager().buffer
@@ -360,6 +362,28 @@ def test_convolution_falls_back_without_sizing(monkeypatch, missing):
         export(
             case.model,
             example_inputs=[case.example_inputs],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+def test_convolution_falls_back_when_sizing_rejects_bounds(s3_queries):
+    with pytest.raises(ValueError, match="scratch query intermediates"):
+        s3_queries.conv2d_scratch_size(
+            input_dims=(1, 1, 32768),
+            filter_dims=(1, 1, 32768),
+            output_dims=(1, 1, 2),
+            stride=(1, 1),
+            padding=(0, 0),
+        )
+    model = EspConv2d(32768, 2, 1, supported=False)
+    inputs = (ramp_tensor(-3, 5, (1, 32768, 1, 1)),)
+    EspTester(model, inputs).test_dialect(
+        model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
+    ).to_executorch().serialize()
+    with pytest.raises(RuntimeError, match="aten::convolution"):
+        export(
+            model,
+            example_inputs=[inputs],
             export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
         )
 

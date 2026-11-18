@@ -504,20 +504,20 @@ def _conv2d_kernel_args(program, node, constants, size_query):
     if input_params is None or output_params is None:
         return None
     try:
+        scratch_bytes = size_query(
+            input_dims=(width, height, channels),
+            filter_dims=(kernel_w, kernel_h, channels),
+            output_dims=(output_value.shape[2], output_value.shape[1], outputs),
+            stride=tuple(reversed(stride)),
+            padding=tuple(reversed(padding)),
+        )
+        if not 0 <= scratch_bytes <= scratch_bound:
+            raise RuntimeError("ESP-NN returned an invalid convolution scratch size")
         multiplier_node, shift_node = _weighted_constants(
             program, node, constants, weight, input_params, output_params
         )
     except ValueError:
         return None
-    scratch_bytes = size_query(
-        input_dims=(width, height, channels),
-        filter_dims=(kernel_w, kernel_h, channels),
-        output_dims=(output_value.shape[2], output_value.shape[1], outputs),
-        stride=tuple(reversed(stride)),
-        padding=tuple(reversed(padding)),
-    )
-    if not 0 <= scratch_bytes <= scratch_bound:
-        raise RuntimeError("ESP-NN returned an invalid convolution scratch size")
     weight_node = add_constant(
         program, f"{node.name}_weight", weight, node, InputKind.CONSTANT_TENSOR
     )
