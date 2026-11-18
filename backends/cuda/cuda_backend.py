@@ -1083,15 +1083,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         compile_specs: List[CompileSpec],
         collector: CudaWeightCollector,
     ) -> PreprocessResult:
-        signature = getattr(edge_program, "graph_signature", None)
-        mutated_fqns = (
-            set(signature.buffers_to_mutate.values())
-            if signature is not None
-            else set()
-        )
-        with collector.capture(
-            _aoti_device_type_for_weight, mutated_fqns
-        ) as capture:
+        with collector.capture(_aoti_device_type_for_weight) as capture:
             result = super().preprocess(edge_program, compile_specs)
         if capture.artifact is None:
             raise RuntimeError("CUDA AOTI did not return a structured Weights output")
@@ -1126,7 +1118,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         cls, edge_program: Any, compile_specs: List[CompileSpec]
     ) -> PreprocessResult:
         """Compile one CUDA method with its own weight collector."""
-        collector = CudaWeightCollector()
+        collector = CudaWeightCollector(
+            set(edge_program.graph_signature.buffers_to_mutate.values())
+        )
         result = cls._preprocess_with_weight_collector(
             edge_program, compile_specs, collector
         )
@@ -1142,7 +1136,8 @@ class CudaBackend(AotiBackend, BackendDetails):
         """Compile every method against one global ``(device, FQN)`` store.
 
         One FQN may hold different data per method; the collector stores
-        each distinct storage under its own content key.
+        each distinct storage under its own content key. FQNs any method
+        mutates must start from the same data in every method.
         """
         # The methods share one weights file, so they must agree on its name.
         data_names = {
@@ -1155,7 +1150,13 @@ class CudaBackend(AotiBackend, BackendDetails):
                 "Every method of a program must use the same data name, got "
                 f"{sorted(data_names)}"
             )
-        collector = CudaWeightCollector()
+        mutated_fqns = set()
+        for programs in edge_programs.values():
+            for program in programs:
+                mutated_fqns.update(
+                    program.graph_signature.buffers_to_mutate.values()
+                )
+        collector = CudaWeightCollector(mutated_fqns)
         results: Dict[str, List[PreprocessResult]] = {}
         for method_name, programs in edge_programs.items():
             if method_name not in compile_specs:

@@ -456,11 +456,42 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         writes = self._lower(low_memory=False)
         self.assertEqual([writes.count(size) for size in self._SIZES[:2]], [2, 2])
 
-    def test_buffer_resized_per_method_writes_its_own_storage(self) -> None:
+    def _lower_programs(self, programs):
+        """Lower ``programs``; return (write sizes, per-method manifests)."""
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
+        manifests = []
+        add_result = CudaWeightCollector.add_preprocess_result
+
+        def recording(collector, result, artifact, *args, **kwargs):
+            out = add_result(collector, result, artifact, *args, **kwargs)
+            manifests.append(decode_cuda_aoti_metadata(result.processed_bytes))
+            return out
+
+        def partitioner(name):
+            return [
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec(name)]
+                )
+            ]
+
+        with _counting_writes() as writes, mock.patch.object(
+            CudaWeightCollector, "add_preprocess_result", recording
+        ):
+            to_edge_transform_and_lower(
+                programs,
+                partitioner={name: partitioner(name) for name in programs},
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        return writes, manifests
+
+    @staticmethod
+    def _entry(manifest, suffix):
+        return next(e for e in manifest.entries if e.fqn.endswith(suffix))
+
+    def test_buffer_resized_per_method_writes_its_own_storage(self) -> None:
         class _AddBuffer(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -474,21 +505,66 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         module.register_buffer("pos", torch.randn(8))
         large = torch.export.export(module, (torch.randn(8),), strict=True)
 
-        def partitioner(name):
-            return [
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec(name)]
-                )
-            ]
-
-        with _counting_writes() as writes:
-            to_edge_transform_and_lower(
-                {"small": small, "large": large},
-                partitioner={name: partitioner(name) for name in ("small", "large")},
-                compile_config=EdgeCompileConfig(_check_ir_validity=False),
-            )
-        # Each method's own pos storage: 4 and 8 float32 elements.
+        writes, manifests = self._lower_programs({"small": small, "large": large})
         self.assertEqual(sorted(writes), [4 * 4, 8 * 4])
+        small_entry = self._entry(manifests[0], "pos")
+        large_entry = self._entry(manifests[1], "pos")
+        self.assertEqual(
+            (small_entry.storage_nbytes, large_entry.storage_nbytes), (16, 32)
+        )
+        self.assertNotEqual(small_entry.storage_key, large_entry.storage_key)
+
+    def test_mutated_buffer_must_agree_on_initial_data(self) -> None:
+        class _StateWriter(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.add_(1)
+                return x + self.state
+
+        class _StateReader(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.state
+
+        def export(module):
+            return torch.export.export(module.eval(), (torch.randn(4),), strict=True)
+
+        # Same initial data: both manifests name one content key.
+        writer = _StateWriter()
+        _, manifests = self._lower_programs(
+            {"a": export(writer), "b": export(writer)}
+        )
+        self.assertEqual(
+            self._entry(manifests[0], "state").storage_key,
+            self._entry(manifests[1], "state").storage_key,
+        )
+
+        # Different initial data between two mutating methods: rejected.
+        writer = _StateWriter()
+        first = export(writer)
+        writer.register_buffer("state", torch.ones(4))
+        with self.assertRaisesRegex(Exception, "same initial data"):
+            self._lower_programs({"a": first, "b": export(writer)})
+
+        # A reader paired with a writer is checked too, in either order.
+        for names in (("writer", "reader"), ("reader", "writer")):
+            with self.subTest(order=names):
+                writer = _StateWriter()
+                reader = _StateReader()
+                reader.register_buffer("state", torch.ones(4))
+                programs = {
+                    "writer": export(writer),
+                    "reader": export(reader),
+                }
+                ordered = {name: programs[name] for name in names}
+                with self.assertRaisesRegex(Exception, "same initial data"):
+                    self._lower_programs(ordered)
 
 
 class CudaWeightPerMethodDataTest(unittest.TestCase):
@@ -498,10 +574,8 @@ class CudaWeightPerMethodDataTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
 
-    def _method(self, collector, so_key, tensor, mutated_fqns=()):
-        with collector.capture(
-            lambda _: AOTI_DEVICE_TYPE_CPU, mutated_fqns=set(mutated_fqns)
-        ) as capture:
+    def _method(self, collector, so_key, tensor):
+        with collector.capture(lambda _: AOTI_DEVICE_TYPE_CPU) as capture:
             artifact = collector.materialize(
                 _weights(w=tensor), self.directory.name, capture
             )
@@ -512,10 +586,10 @@ class CudaWeightPerMethodDataTest(unittest.TestCase):
     def test_mutated_buffer_with_different_data_is_rejected(self) -> None:
         first = torch.arange(6, dtype=torch.float32)
         second = first + 100
-        collector = CudaWeightCollector()
-        self._method(collector, "so-0", first, mutated_fqns={"w"})
-        with self.assertRaisesRegex(ValueError, "with different data"):
-            self._method(collector, "so-1", second, mutated_fqns={"w"})
+        collector = CudaWeightCollector(mutated_fqns={"w"})
+        self._method(collector, "so-0", first)
+        with self.assertRaisesRegex(ValueError, "must have the same initial data"):
+            self._method(collector, "so-1", second)
 
     def test_same_fqn_with_different_data_is_stored_per_method(self) -> None:
         first = torch.arange(6, dtype=torch.float32).reshape(2, 3)
