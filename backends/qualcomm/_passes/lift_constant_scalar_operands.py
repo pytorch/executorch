@@ -50,12 +50,16 @@ SCALAR_OPS = {
     aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
     aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
     aten.div.Scalar_mode: TensorOpInfo(aten.div.Tensor_mode, False, False),
+    aten.floor_divide.default: TensorOpInfo(aten.floor_divide.default, False, False),
     aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
     aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
     aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.sub.Tensor: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     aten.pow.Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
+    aten.remainder.Scalar: TensorOpInfo(aten.remainder.Tensor, False, False),
+    aten.remainder.Scalar_Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
+    aten.remainder.Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
@@ -184,6 +188,11 @@ class LiftConstantScalarOperands(ExportPass):
             if (
                 n.op != "call_function"
                 or isinstance(n.target, (BuiltinMethodType, BuiltinFunctionType))
+                # Higher-order ops (e.g. wrap_with_set_grad_enabled, emitted for a
+                # torch.no_grad block) carry no schema, and lifting reads
+                # node.target._schema. Test for the schema rather than the
+                # OpOverload type so EdgeOpOverload targets keep lifting.
+                or not hasattr(n.target, "_schema")
                 or n.target in SKIP_LIFT_OPS
             ):
                 continue

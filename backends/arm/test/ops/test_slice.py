@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
+import sys
 from typing import Tuple
 
 import torch
@@ -139,6 +141,23 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
         test_data(),
         aten_ops=[],
         exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_no_quant_fp8(test_data):
+    input_data, slices, _ = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Slice(),
+        (input_data, slices),
+        aten_op,
+        exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
     )
     pipeline.run()
 
@@ -386,15 +405,22 @@ def test_slice_tensor_u85_INT_step(test_data: Tuple):
 @common.parametrize(
     "test_data",
     test_data_step_int | test_data_step_fp,
-    xfails={
-        "arange_fp32_2d_step4": common.xfail_if_model_converter_version(
-            ">=0.10.0",
-            reason=(
-                "MLCE-1969: Emlayer 0.10 Interval memory planner corrupts "
-                "multi-input CONCAT output"
+    xfails=(
+        {
+            "arange_fp32_2d_step4": common.xfail_if_dependency_version(
+                "ai-ml-emulation-layer-for-vulkan",
+                "==0.10.0",
+                reason=(
+                    "MLCE-1969: Emlayer 0.10.0 Interval memory planner corrupts "
+                    "multi-input CONCAT output"
+                ),
+                raises=AssertionError,
             ),
-        ),
-    },
+        }
+        if sys.platform == "linux"
+        and os.environ.get("VMEL_MEMORY_PLANNER") not in ("BestFit", "Linear")
+        else {}
+    ),
 )
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):

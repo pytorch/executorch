@@ -1,0 +1,12 @@
+menu "ExecuTorch component consumer"
+
+    config ET_CONSUMER_MODEL
+        string "Models to run from ET_CONSUMER_MODELS_DIR"
+        default "smoke"
+        help
+            With ET_CONSUMER_MODELS_DIR, the app runs each model of this
+            semicolon-separated list from it: <name>.pte, checked against
+            <name>.io. Their kernel bundle is the list's names joined by
+            underscores, then _kernels, such as smoke_mul_kernels.
+
+endmenu

@@ -212,6 +212,15 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_embedding_bag",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:op_embedding_bag",
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
         name = "op_exp",
         deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
@@ -244,6 +253,7 @@ OPTIMIZED_ATEN_OPS = (
         name = "op_grid_sampler_2d",
         deps = [
             "//executorch/kernels/portable/cpu:op_grid_sampler_2d",
+            "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
             # Hardware fp16 path lives in a separate translation unit so the
             # ARMv8.2-a+fp16 compile flag can be scoped locally. A runtime
             # cpuinfo_has_arm_neon_fp16() check in op_grid_sampler_2d.cpp

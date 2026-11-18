@@ -45,10 +45,8 @@ jobs:
     with:
       backend: nxp
       flows: '["nxp_neutron_imxrt700_int8_ptq"]'
-      # The models suite (torchvision/torchaudio) is excluded until a curated
-      # list of models known to pass on the Neutron backend is established.
-      exclude: '[{"flow": "nxp_neutron_imxrt700_int8_ptq", "suite": "models"}]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 150
       run-linux: true
+      upload-test-run-reports: true
       docker-image: ci-image:executorch-ubuntu-22.04-clang12

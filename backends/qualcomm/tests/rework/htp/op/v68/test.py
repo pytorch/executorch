@@ -306,7 +306,10 @@ def test_bmm(request, kwargs):
     Bmm.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+# rtol=0: rtol=1 accepts a raw integer copied into a quantized output
+@enumerate_activation_dtype(
+    [Tolerance(rtol=0, atol=0.5), Tolerance(rtol=0, atol=0.5), Tolerance(rtol=1e-1)]
+)
 @with_htp_context
 def test_cast(request, kwargs):
     Cast.test(request, kwargs)  # noqa: F405
@@ -415,6 +418,14 @@ def test_conv1d_transpose(request, kwargs):
             (8, 8, True, Tolerance(), "8a8w_pcq"),
             (16, 4, True, CosineSimilarity(0.95), "16a4w_pcq"),
             (None, None, False, Tolerance(rtol=1e-1), "fp"),
+            # the HTP only takes fp16a8w for 1x1 kernels, the rest fall back to CPU
+            (
+                "fp16",
+                8,
+                True,
+                pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+                "fp16a8w_pcq",
+            ),
         ]
     ],
 )
@@ -440,6 +451,25 @@ def test_conv2d(request, kwargs):
 @with_htp_context
 def test_conv2d_transpose(request, kwargs):
     Conv.test_2d_transpose(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
+                "act": None,
+                "expected": pytest.raises(
+                    AssertionError, match=EXPECT_NOT_FULLY_DELEGATED
+                ),
+            },
+            id="fp_fallback",
+        )
+    ],
+)
+@with_htp_context
+def test_conv_backward(request, kwargs):
+    ConvBackward.test(request, kwargs)  # noqa: F405
 
 
 @pytest.mark.parametrize(
@@ -566,6 +596,27 @@ def test_elu(request, kwargs):
 @with_htp_context
 def test_embedding(request, kwargs):
     Embedding.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_empty(request, kwargs):
+    Empty.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_empty_strided(request, kwargs):
+    EmptyStrided.test(request, kwargs)  # noqa: F405
+
+
+# empty_strided() returns uninitialized memory, so the requested stride is
+# unobservable and DecomposeEmpty rewrites even a non-contiguous one into
+# full.default, keeping the graph fully delegated.
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_empty_strided_non_contiguous(request, kwargs):
+    EmptyStrided.test_non_contiguous(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])

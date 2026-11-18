@@ -53,9 +53,16 @@ if(EXECUTORCH_BUILD_SHARED)
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(extension_threadpool)
   # cpuinfo and pthreadpool are forced static, so bundle them inside this
-  # library instead of making every consumer supply them.
+  # library instead of making every consumer supply them. pthreadpool is
+  # EXPORTED, because the other components run their work on this one pool.
+  # cpuinfo is not: on Windows its feature checks (cpuinfo_has_x86_avx2 and the
+  # rest) are inline reads of cpuinfo_isa, and cpuinfo.h does not declare that
+  # data dllimport, so another DLL can only ever read its own copy. Exporting
+  # the functions let XNNPACK initialize this library's copy and read its own,
+  # all zeros, and run baseline kernels. Kept private, each DLL that uses
+  # cpuinfo carries all of it. Elsewhere the whole archive is exported anyway.
   executorch_target_whole_archive(extension_threadpool cpuinfo)
-  executorch_target_whole_archive(extension_threadpool pthreadpool)
+  executorch_target_whole_archive(extension_threadpool pthreadpool EXPORTED)
   target_link_libraries(extension_threadpool PUBLIC executorch_shared)
 else()
   target_link_libraries(

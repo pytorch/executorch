@@ -120,6 +120,7 @@ class NativeBackend(BackendDetails):
             edge_program.graph_signature,
             edge_program.state_dict,
             edge_program.constants,
+            edge_program.range_constraints,
         )
 
         external_tag, serialize_as_ptn = _parse_compile_specs(module_compile_spec)

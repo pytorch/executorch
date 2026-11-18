@@ -12,6 +12,8 @@ it once into complete OpenAI tool_calls; parse failures degrade to visible text.
 
 import json
 
+import pytest
+
 WEATHER_TOOLS = [
     {
         "type": "function",
@@ -22,6 +24,40 @@ WEATHER_TOOLS = [
 
 def _call_text(name, args):
     return f'<tool_call>\n{{"name": "{name}", "arguments": {json.dumps(args)}}}\n</tool_call>'
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "pieces", [["Keep STSTOPignored"], ["Keep ST", "ST", "OPignored"]]
+)
+def test_tool_enabled_stop_preserves_literal_prefix(make_client, stream, pieces):
+    client, _ = make_client(tokens=pieces)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": WEATHER_TOOLS,
+            "stream": stream,
+            "ignore_eos": True,
+            "stop": ["STOP"],
+        },
+    )
+    assert response.status_code == 200
+    if stream:
+        chunks = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        text = "".join(
+            choice["delta"].get("content", "")
+            for chunk in chunks
+            for choice in chunk.get("choices", [])
+        )
+        assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    else:
+        text = response.json()["choices"][0]["message"]["content"]
+    assert text == "Keep ST"
 
 
 # --- HTTP contract: non-streaming ---------------------------------------
@@ -219,50 +255,3 @@ def test_parallel_calls_in_one_message(make_client):
     ).json()
     calls = body["choices"][0]["message"]["tool_calls"]
     assert [json.loads(c["function"]["arguments"])["city"] for c in calls] == ["A", "B"]
-
-
-# --- reasoning_content default -------------------------------------------
-
-
-def _reasoning_serving():
-    from executorch.examples.llm_server.python.serving_chat import ServingChat
-
-    def _split(text):
-        head, _, tail = text.partition("ANSWER:")
-        return head.strip() or None, tail.strip()
-
-    class _FakeTemplate:
-        def turn_stop_sequences(self):
-            return []
-
-        def special_tokens(self):
-            return []
-
-    return ServingChat(None, _FakeTemplate(), "m", reasoning_extractor=_split)
-
-
-def _reasoning_req(**kw):
-    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
-
-    return ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], **kw)
-
-
-def test_reasoning_returned_by_default():
-    serving = _reasoning_serving()
-    calls, reasoning, content = serving._extract_response(
-        _reasoning_req(), "my plan ANSWER: visible text"
-    )
-    assert calls is None
-    assert reasoning == "my plan"
-    assert content == "visible text"
-
-
-def test_reasoning_explicit_opt_out():
-    serving = _reasoning_serving()
-    calls, reasoning, content = serving._extract_response(
-        _reasoning_req(chat_template_kwargs={"return_reasoning": False}),
-        "my plan ANSWER: visible text",
-    )
-    assert calls is None
-    assert reasoning is None
-    assert content == "visible text"

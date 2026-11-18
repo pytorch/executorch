@@ -367,6 +367,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         if node.target not in {
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
         }:
             return
         if len(node.meta["output_qparams"]) == 0:
@@ -436,6 +437,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             users_copy = copy.copy(n.users)
             for i, user in enumerate(users_copy):
                 if user.target not in Q_OPS:
+                    continue
+                # A Q node may consume ``n`` as scale or zero point. It is an
+                # output quantizer only when ``n`` is its data input.
+                if not user.args or user.args[0] is not n:
                     continue
 
                 # quantization node found here, store the quantization parameters in meta value

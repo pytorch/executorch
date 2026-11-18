@@ -82,6 +82,19 @@ if(EXECUTORCH_NNLIB_OPT)
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
   )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+elseif(
+  EXECUTORCH_HIFI_CORE STREQUAL "hifi1"
+  OR EXECUTORCH_HIFI_CORE STREQUAL "hifi4"
+  OR EXECUTORCH_HIFI_CORE STREQUAL "hifi5"
+)
+  if(EXECUTORCH_HIFI_CORE STREQUAL "hifi5")
+    add_compile_definitions(CORE_HIFI5=1)
+  else()
+    add_compile_definitions(CORE_HIFI5=0)
+  endif()
+  set(TARGET_DIR hifi)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 elseif(EXECUTORCH_FUSION_G3_OPT)
   set(TARGET_DIR fusion_g3)
   add_subdirectory(
@@ -133,9 +146,10 @@ if(EXECUTORCH_BUILD_CADENCE_RUNNER)
   target_link_options(cadence_executor_runner PRIVATE -static -lm)
 endif()
 
-# Cadence op-level gtest tests, cross-compiled for the Xtensa ISS (run via
-# xt-run). Built only when EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the
-# selected backend ships a tests dir. See .ci/scripts/test-cadence-xtensa.sh.
+# Cadence op-level gtest tests. Built only when
+# EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the selected backend ships a tests
+# dir. See .ci/scripts/test-cadence-generic.sh (generic, on the host) and
+# .ci/scripts/test-cadence-xtensa.sh (Xtensa backends, on the ISS via xt-run).
 if(EXECUTORCH_BUILD_CADENCE_OP_TESTS
    AND EXISTS
        "${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests/CMakeLists.txt"

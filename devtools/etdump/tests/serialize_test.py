@@ -8,6 +8,7 @@
 
 import difflib
 import json
+import math
 import unittest
 from pprint import pformat
 from typing import List
@@ -139,4 +140,24 @@ class TestSerializeFlatCC(unittest.TestCase):
                     json.dumps(deserialized_obj, cls=_DataclassEncoder, indent=4),
                 )
             ),
+        )
+
+    def test_serialize_non_finite_floats(self) -> None:
+        program = get_sample_etdump_flatcc()
+        debug_entry = program.run_data[0].events[3].debug_event.debug_entry
+        debug_entry.float_value = flatcc.Float(float("inf"))
+        debug_entry.double_value = flatcc.Double(float("-inf"))
+
+        deserialized_obj = deserialize_from_etdump_flatcc(
+            serialize_to_etdump_flatcc(program), size_prefixed=False
+        )
+        self.assertEqual(program, deserialized_obj)
+
+        debug_entry.double_value = flatcc.Double(float("nan"))
+        deserialized_obj = deserialize_from_etdump_flatcc(
+            serialize_to_etdump_flatcc(program), size_prefixed=False
+        )
+        deserialized_entry = deserialized_obj.run_data[0].events[3].debug_event
+        self.assertTrue(
+            math.isnan(deserialized_entry.debug_entry.double_value.double_val)
         )

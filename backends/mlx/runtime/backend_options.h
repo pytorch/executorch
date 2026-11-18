@@ -42,6 +42,36 @@ inline constexpr char kClearCacheIntervalKey[] = "clear_cache_interval";
 // errors otherwise). Saves one full mutable-buffer (KV-cache) copy per handle.
 inline constexpr char kSkipMutableBufferInitKey[] = "skip_mutable_buffer_init";
 
+// Per-model runtime-spec key. Value N means: while running a method, evaluate
+// the live per-execution tensors once the intermediates produced since the last
+// evaluation exceed N bytes. 0/unset disables the mechanism entirely and is the
+// default.
+//
+// WHY: MLX is lazy. Interpreter::dispatch only builds graph nodes, and nothing
+// is materialized until MLXBackend::execute calls async_eval on the method
+// outputs, so for a long instruction chain every intermediate in the method is
+// live at the same instant. Whisper-small's 495-instruction encode peaks at
+// 1105 MB of MLX allocation against 95 MB of steady-state active memory, which
+// is what makes the model unusable on an iPhone (pytorch/executorch#22513).
+// Each evaluation costs a GPU sync, so the cost tracks the NUMBER of
+// evaluations; budgeting bytes rather than counting instructions puts them only
+// in the methods that actually allocate.
+//
+// NOTE that this is a THRESHOLD, not a hard memory limit. It is best-effort
+// evaluation scheduling, and peak footprint can exceed it:
+//   - A long SCAN or IF branch accumulates across its whole body and is only
+//     checked once control returns to the enclosing chain, so it can overshoot
+//     by the size of that body.
+//   - The per-instruction estimate is the largest tensor the instruction
+//     touches, which can overcount (an op that only reads a large tensor is
+//     charged for it) and so can trigger evaluation earlier than the true
+//     pending bytes warrant.
+//   - Ops that evaluate internally reduce the real pending work without
+//     reducing the running estimate.
+// Treat it as a knob to trade GPU syncs against peak memory, and tune it
+// against measurements rather than expecting the value to bound RSS.
+inline constexpr char kEvalThresholdBytesKey[] = "eval_threshold_bytes";
+
 } // namespace mlx
 } // namespace backends
 } // namespace executorch

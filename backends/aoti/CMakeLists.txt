@@ -148,6 +148,19 @@ if(MSVC)
   )
 endif()
 
+# These two files had a Buck target and no CMake one, so the CMake build never
+# compiled them. Declared beside the library that carries their subject.
+if(BUILD_TESTING AND (EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM))
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+  et_cxx_test(
+    test_cuda_guard SOURCES slim/cuda/test/test_cuda_guard.cpp EXTRA_LIBS
+    aoti_common_shims_slim extension_cuda
+  )
+  et_cxx_test(
+    test_cuda_stream_guard SOURCES slim/cuda/test/test_cuda_stream_guard.cpp
+    EXTRA_LIBS aoti_common_shims_slim extension_cuda
+  )
+endif()
 install(
   TARGETS aoti_common_shims_slim
   EXPORT ExecuTorchTargets

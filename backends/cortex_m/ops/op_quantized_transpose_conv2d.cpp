@@ -81,7 +81,8 @@ bool validate_transpose_conv2d_arguments(
       requantize_shifts.size(0) != out_channels) {
     ET_LOG(
         Error,
-        "quantized_transpose_conv2d_out: per-channel params must match output channels (%zd)",
+        "quantized_transpose_conv2d_out: per-channel params must match "
+        "output channels (%" PRId64 ")",
         out_channels);
     context.fail(Error::InvalidArgument);
     return false;
@@ -213,10 +214,7 @@ static Tensor& quantized_transpose_conv2d_out_impl(
 #ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
       &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
-  // AOT reserves max(API size, corrected kernel size), so it may be larger.
-  // TODO: Restore equality once our CMSIS-NN pin includes
-  // https://github.com/ARM-software/CMSIS-NN/pull/243.
-  if (scratch.nbytes() < static_cast<size_t>(buffer_bytes)) {
+  if (scratch.nbytes() != static_cast<size_t>(buffer_bytes)) {
     ET_LOG(
         Error,
         "quantized_transpose_conv2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",

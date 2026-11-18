@@ -13,8 +13,10 @@ heads (for GQA/MQA) in float32 for numerical stability.
 Test parametrization adapted from FlashAttention (tests/cute/test_flash_attn.py).
 """
 
+import importlib
 import itertools
 import unittest
+from unittest import mock
 
 import torch
 import torch.nn.functional as F
@@ -81,10 +83,8 @@ HEAD_DIMS_POW2 = [64, 128, 256]
 HEAD_DIMS_NON_POW2 = [80, 96]
 
 # Sequence length pairs (seqlen_q, seqlen_kv) adapted from FlashAttention
-# Note: Lk must be >= BLOCK_N (32) to avoid unmasked zero-padding in K
-# that dilutes softmax. This is a pre-existing kernel limitation for very
-# short KV sequences.
 SEQLEN_PAIRS_BASIC = [
+    (1, 1),
     (1, 64),
     (1, 128),
     (1, 512),
@@ -297,6 +297,106 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
+    def test_every_tile_packed_or_not_matches(self):
+        """Each standard-kernel tile over a masked GQA step bounded by kv_len:
+        packing changes which rows share a tile, not any row's arithmetic, so
+        packed and unpacked agree exactly, and both match the reference."""
+        import triton
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        kernel = sdpa_module._sdpa_fwd_kernel
+        B, H_q, H_kv, D, Lk, kv_len = 1, 32, 2, 128, 512, 300
+        torch.manual_seed(0)
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int64, device="cuda")
+        configs = sdpa_module._sdpa_fwd_prune(
+            kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=H_q // H_kv
+        )
+        self.assertEqual({c.kwargs["PACK_GQA"] for c in configs}, {False, True})
+        for Lq in (5, 32, 64):
+            q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+            # Query i sees an interleaved subset of the live cells, as a cell
+            # step's mask does.
+            mask = torch.zeros(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+            cells = torch.arange(kv_len, device="cuda")
+            mask[0, 0, cells % Lq, cells] = True
+            ref = _reference_sdpa(
+                q, k[:, :, :kv_len], v[:, :, :kv_len], attn_mask=mask[..., :kv_len]
+            )
+            # Few cells per row leave outputs near V's magnitude, where bf16
+            # rounding of the output alone approaches MAX_ABS_TOL.
+            tol = max(MAX_ABS_TOL, 2 * _max_abs_error(ref.to(torch.bfloat16), ref))
+            outs = {}
+            for config in configs:
+                single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+                with self.subTest(Lq=Lq, config=str(config)), mock.patch.object(
+                    sdpa_module, "_sdpa_fwd_kernel", single
+                ):
+                    out = self.sdpa(
+                        q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len_t
+                    )
+                    self.assertLess(_max_abs_error(out, ref), tol)
+                    tile = (
+                        tuple(
+                            sorted(
+                                (key, value)
+                                for key, value in config.kwargs.items()
+                                if key != "PACK_GQA"
+                            )
+                        ),
+                        config.num_warps,
+                        config.num_stages,
+                    )
+                    outs.setdefault(tile, []).append(out)
+            for tile, (unpacked, packed) in outs.items():
+                with self.subTest(Lq=Lq, tile=tile):
+                    self.assertTrue(torch.equal(unpacked, packed))
+
+    def test_every_tile_drops_keys_past_the_end(self):
+        """Each standard-kernel tile without a mask: keys at or past the key
+        count, or past kv_len, stay out of the softmax."""
+        import triton
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        kernel = sdpa_module._sdpa_fwd_kernel
+        B, H, Lq, D = 1, 4, 16, 64
+        configs = sdpa_module._sdpa_fwd_prune(
+            kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=1
+        )
+        # No tile size divides 80 keys, only the 32-key tiles divide 96, and
+        # kv_len is only known on the device.
+        for Lk, kv_len in ((80, None), (96, None), (128, 80)):
+            torch.manual_seed(Lk)
+            q = torch.randn(B, H, Lq, D, dtype=torch.bfloat16, device="cuda")
+            k = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            v = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+            valid = Lk if kv_len is None else kv_len
+            ref = _reference_sdpa(q, k[:, :, :valid], v[:, :, :valid])
+            kwargs = {}
+            if kv_len is not None:
+                kwargs["kv_len"] = torch.tensor([kv_len], device="cuda")
+            for config in configs:
+                single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
+                with self.subTest(Lk=Lk, kv_len=kv_len, config=str(config)):
+                    with mock.patch.object(sdpa_module, "_sdpa_fwd_kernel", single):
+                        out = self.sdpa(q, k, v, **kwargs)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_mha_never_packs(self):
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+        configs = sdpa_module._sdpa_fwd_prune(
+            sdpa_module._sdpa_fwd_kernel.configs, None, HEAD_DIM=128, NUM_GROUPS=1
+        )
+        self.assertTrue(configs)
+        self.assertFalse(any(c.kwargs["PACK_GQA"] for c in configs))
+
     def test_gqa_non_pow2_head_dim(self):
         """GQA with non-power-of-2 head dimensions."""
         for D in HEAD_DIMS_NON_POW2:
@@ -503,6 +603,12 @@ class TestTritonSdpa(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.sdpa(q, k, v, is_causal=True)
 
+    def test_wide_non_pow2_head_rejected(self):
+        """A non-pow2 head wider than one tile should raise, not be cut short."""
+        q = torch.randn(1, 2, 64, 640, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, q, q)
+
     def test_non_pow2_no_mask(self):
         """Non-pow2 head dim without mask should work (mask_ptr=0 path)."""
         B, H, Lq, Lk, D = 1, 4, 4, 64, 40  # D=40 is not pow2
@@ -642,6 +748,136 @@ class TestTritonSdpa(unittest.TestCase):
             is_causal=True,
         )
         ref = _reference_sdpa(q, k, v, attn_mask=extra & causal)
+
+        self.assertFalse(torch.isnan(out).any())
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    @unittest.skipIf(
+        not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 9,
+        "TMA requires SM90+",
+    )
+    def test_tma_causal_prefill_common_head_dims(self):
+        """TMA causal prefill supports common power-of-two head dimensions."""
+        import triton
+        from triton.runtime._allocation import _allocator
+
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
+
+        # Tensor descriptors require a small runtime descriptor workspace in
+        # eager mode. Inductor supplies this allocator in the production path.
+        self.addCleanup(triton.set_allocator, _allocator.get())
+        triton.set_allocator(
+            lambda size, alignment, stream: torch.empty(
+                size, dtype=torch.int8, device="cuda"
+            )
+        )
+        B, H_q, H_kv = 1, 4, 2
+        Lq, kv_len, Lk = 512, 4096, 16384
+
+        for D in (64, 128):
+            with self.subTest(D=D):
+                self.assertIsNotNone(sdpa_module._tma_prefill_config(D, Lq))
+                torch.manual_seed(D)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+                dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
+
+                with mock.patch.object(
+                    sdpa_module,
+                    "_cuda_compile_target_is_sm90_or_newer",
+                    return_value=True,
+                ):
+                    out_tma = self.sdpa(
+                        q,
+                        k,
+                        v,
+                        attn_mask=None,
+                        enable_gqa=True,
+                        kv_len=kv_len_t,
+                        is_causal=True,
+                    )
+                with mock.patch.object(
+                    sdpa_module,
+                    "_cuda_compile_target_is_sm90_or_newer",
+                    return_value=False,
+                ):
+                    out_existing = self.sdpa(
+                        q,
+                        k,
+                        v,
+                        attn_mask=None,
+                        enable_gqa=True,
+                        kv_len=kv_len_t,
+                        is_causal=True,
+                    )
+                out_dense = self.sdpa(
+                    q,
+                    k,
+                    v,
+                    attn_mask=dense,
+                    enable_gqa=True,
+                    kv_len=kv_len_t,
+                )
+
+                self.assertFalse(torch.isnan(out_tma).any())
+                self.assertLess(_max_abs_error(out_tma, out_dense), MAX_ABS_TOL)
+                self.assertLess(_max_abs_error(out_tma, out_existing), MAX_ABS_TOL)
+
+    @unittest.skipIf(
+        not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 9,
+        "TMA requires SM90+",
+    )
+    def test_tma_falls_back_for_noncontiguous_head_dim(self):
+        """TMA descriptors are used only when Q/K/V have unit inner stride."""
+        B, H_q, H_kv, Lq, kv_len, Lk, D = 1, 4, 2, 512, 4096, 16384, 128
+        torch.manual_seed(6)
+        q = torch.randn(B, H_q, Lq, D * 2, dtype=torch.bfloat16, device="cuda")[
+            ..., ::2
+        ]
+        k = torch.randn(B, H_kv, Lk, D * 2, dtype=torch.bfloat16, device="cuda")[
+            ..., ::2
+        ]
+        v = torch.randn(B, H_kv, Lk, D * 2, dtype=torch.bfloat16, device="cuda")[
+            ..., ::2
+        ]
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+        dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
+
+        out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
+        ref = _reference_sdpa(q, k, v, attn_mask=dense)
+
+        self.assertFalse(torch.isnan(out).any())
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    @unittest.skipIf(
+        not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 9,
+        "TMA requires SM90+",
+    )
+    def test_tma_fully_masked_rows_are_finite(self):
+        """Rows before the beginning of a short KV prefix return zero, not NaN."""
+        import triton
+        from triton.runtime._allocation import _allocator
+
+        self.addCleanup(triton.set_allocator, _allocator.get())
+        triton.set_allocator(
+            lambda size, alignment, stream: torch.empty(
+                size, dtype=torch.int8, device="cuda"
+            )
+        )
+        B, H_q, H_kv, Lq, kv_len, Lk, D = 1, 4, 2, 512, 128, 16384, 128
+        torch.manual_seed(7)
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+        dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
+
+        out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
+        ref = _reference_sdpa(q, k, v, attn_mask=dense)
 
         self.assertFalse(torch.isnan(out).any())
         self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)

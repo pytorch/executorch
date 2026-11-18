@@ -59,7 +59,11 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     Tid,
     Vid,
 )
-from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir._serialize._named_data_store import (
+    _tensor_to_bytes,
+    NamedDataStore,
+)
+from executorch.exir.tensor_layout import TensorLayout
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
@@ -95,12 +99,13 @@ def _check_input_dtypes(node: Node) -> Optional[str]:
         None if all input dtypes are supported, otherwise an error message string
         describing which input (arg position or kwarg name) has an unsupported dtype
     """
-    # Check positional args
+    # Check positional args, including tensor lists such as aten.cat's
     for i, arg in enumerate(node.args):
-        if isinstance(arg, Node):
-            dtype_error = _check_dtype(arg)
-            if dtype_error is not None:
-                return f"arg[{i}] ({arg.name}) {dtype_error}"
+        for a in pytree.tree_leaves(arg):
+            if isinstance(a, Node):
+                dtype_error = _check_dtype(a)
+                if dtype_error is not None:
+                    return f"arg[{i}] ({a.name}) {dtype_error}"
 
     # Check kwargs
     for kwarg_name, kwarg_val in node.kwargs.items():
@@ -139,6 +144,7 @@ class MLXProgramBuilder:
         self.slot_manager = SlotManager()
         self.node_info: DefaultDict[Node, NodeInfo] = defaultdict(NodeInfo)
         self._mlx_graph: Optional[MLXGraph] = None
+        self._mutated_input_slots: Set[Slot] = set()
         # Map from SymInt symbol names (e.g., "s77") to the FX Node that produces them.
         # This is used to resolve symbolic tensor dimensions to Vid references.
         self._symint_to_node: Dict[str, Node] = {}
@@ -315,8 +321,10 @@ class MLXProgramBuilder:
         A repacking handler replaces a raw weight with new constants, leaving
         the original dead. It would otherwise stay in the ExportedProgram until
         get_named_data_store() sweeps unused constants -- which only runs after
-        the whole graph is built, so every raw weight and every repacked weight
-        are live simultaneously (+16 GB on a 16 GB Q4_K model).
+        the whole graph is built. Dropping it frees the raw weight only when
+        nothing else holds it: during lowering, the delegate's program shares
+        its tensors with the owning program (see
+        MLXBackend.copy_exported_program_for_preprocess).
 
         Only call this when the raw data is fully consumed: the lowering must
         not reference the placeholder's slot in any emitted instruction, or it
@@ -453,6 +461,7 @@ class MLXProgramBuilder:
 
     def _make_io_slots(self):  # noqa: C901
         from torch.export.graph_signature import (
+            ConstantArgument,
             InputKind,
             OutputKind,
             SymIntArgument,
@@ -460,10 +469,15 @@ class MLXProgramBuilder:
         )
 
         output_kind_targets = defaultdict(set)
-        constant_tensors = []
+        constant_tensors = {}
         user_inputs = []
         user_outputs = []
         mutable_buffers = []
+        unused_placeholders = {
+            node.name
+            for node in self.ep.graph.nodes
+            if node.op == "placeholder" and not node.users
+        }
 
         for ospec in self.ep.graph_signature.output_specs:
             kind = ospec.kind
@@ -472,7 +486,7 @@ class MLXProgramBuilder:
             target = ospec.target
             if target is not None:
                 output_kind_targets[kind].add(target)
-            if kind in (OutputKind.USER_OUTPUT, OutputKind.USER_INPUT_MUTATION):
+            if kind == OutputKind.USER_OUTPUT:
                 user_outputs.append(name)
 
         for ispec in self.ep.graph_signature.input_specs:
@@ -484,17 +498,17 @@ class MLXProgramBuilder:
             if isinstance(arg, TensorArgument):
                 if kind == InputKind.PARAMETER:
                     # Parameters are treated as constants (not mutated)
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 elif kind == InputKind.BUFFER:
                     if target in output_kind_targets[OutputKind.BUFFER_MUTATION]:
                         mutable_buffers.append(name)
                     else:
                         # Non-mutated buffers (like lifted tensor constants) are constants
-                        constant_tensors.append(name)
+                        constant_tensors[name] = target
                 elif kind == InputKind.USER_INPUT:
                     user_inputs.append(name)
                 elif kind == InputKind.CONSTANT_TENSOR:
-                    constant_tensors.append(name)
+                    constant_tensors[name] = target
                 else:
                     raise NotImplementedError(
                         f"Support for input {arg} is not implemented"
@@ -506,14 +520,27 @@ class MLXProgramBuilder:
                     raise NotImplementedError(
                         f"Support for input {arg} is not implemented"
                     )
+            elif isinstance(arg, ConstantArgument) and name in unused_placeholders:
+                # Export can retain specialized arguments (including None) in the
+                # signature even though the graph does not consume them.
+                continue
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 
+        constant_targets = set()
         for node in self.ep.graph.nodes:
             if node.op == "placeholder":
                 if node.users == {}:
                     continue
                 if node.name in constant_tensors:
+                    # Constant data is named by target, so a second slot would get none.
+                    target = constant_tensors[node.name]
+                    if target in constant_targets:
+                        raise ValueError(
+                            f"constant '{target}' has more than one placeholder, "
+                            f"'{node.name}' is a second one"
+                        )
+                    constant_targets.add(target)
                     self.make_or_get_slot(node, id_space=IdSpace.Constant)
                 elif node.name in user_inputs:
                     val = node.meta.get("val", None)
@@ -739,12 +766,37 @@ class MLXProgramBuilder:
                 )
             )
 
+    def _emit_user_input_mutation_writebacks(self):
+        """Copy each USER_INPUT_MUTATION result into its input's slot.
+
+        The delegate returns no output for such a mutation; after a run the
+        runtime writes the input slot back into the caller's input tensor.
+        """
+        from torch.export.graph_signature import OutputKind
+
+        for ospec in self.ep.graph_signature.output_specs:
+            if ospec.kind != OutputKind.USER_INPUT_MUTATION:
+                continue
+            result_slot = self.slot_manager.get_slot(ospec.arg.name)
+            input_slot = self.slot_manager.get_slot(ospec.target)
+            assert result_slot is not None
+            assert input_slot is not None and input_slot.id_space == IdSpace.Input
+            if result_slot != input_slot:
+                self.emit(
+                    IdCopyNode(
+                        x=self.slot_to_tid(result_slot),
+                        out=self.slot_to_tid(input_slot),
+                    )
+                )
+            self._mutated_input_slots.add(input_slot)
+
     def build(self) -> MLXGraph:
         if self._mlx_graph is not None:
             return self._mlx_graph
 
         self._process_nodes()
         self._emit_buffer_mutation_writebacks()
+        self._emit_user_input_mutation_writebacks()
         self._verify_build()
         self._mlx_graph = self._build_mlx_graph()
         return self._mlx_graph
@@ -913,15 +965,20 @@ class MLXProgramBuilder:
         slot_to_tid: Dict[Slot, int],
         slot_to_vid: Dict[Slot, int],
     ) -> Tuple[
-        List[SlotVariant], List[SlotVariant], List[SlotVariant], List[NamedSlot]
+        List[SlotVariant],
+        List[SlotVariant],
+        List[SlotVariant],
+        List[NamedSlot],
+        List[int],
     ]:
         """
         Build input/output/mutable_buffer maps and named slots.
 
         Returns:
-            (input_map, output_map, mutable_buffer_map, named_slots)
+            (input_map, output_map, mutable_buffer_map, named_slots,
+            mutated_inputs)
         """
-        input_map: List[SlotVariant] = []
+        input_slots: List[Slot] = []
         output_map: List[SlotVariant] = []
         mutable_buffer_map: List[SlotVariant] = []
         # Canonical (unprefixed) name → Slot.  The prefix is applied only at
@@ -935,7 +992,7 @@ class MLXProgramBuilder:
             assert isinstance(slot, Slot)
             name = ispec.target if ispec.target is not None else ispec.arg.name
             if slot.id_space == IdSpace.Input:
-                input_map.append(self._to_slot_variant(slot, slot_to_tid, slot_to_vid))
+                input_slots.append(slot)
                 name_to_slot[name] = slot
             elif slot.id_space == IdSpace.MutableBuffer:
                 mutable_buffer_map.append(
@@ -980,7 +1037,13 @@ class MLXProgramBuilder:
             for n, s in name_to_slot.items()
         ]
 
-        return input_map, output_map, mutable_buffer_map, named_slots
+        input_map = [
+            self._to_slot_variant(s, slot_to_tid, slot_to_vid) for s in input_slots
+        ]
+        mutated_inputs = [
+            i for i, s in enumerate(input_slots) if s in self._mutated_input_slots
+        ]
+        return input_map, output_map, mutable_buffer_map, named_slots, mutated_inputs
 
     def _build_tensor_meta(  # noqa: C901
         self,
@@ -1064,6 +1127,20 @@ class MLXProgramBuilder:
         num_non_temp_tensors = sum(num_tensors.values()) - num_tensors[IdSpace.Temp]
         return [tensor_meta.get(i) for i in range(num_non_temp_tensors)]
 
+    @staticmethod
+    def _min_runtime_version(mutated_inputs: List[int]) -> int:
+        """The oldest MLX runtime that can run this program correctly.
+
+        The runtime rejects a program whose version exceeds the one it
+        supports, so a program only requires a newer runtime when it uses a
+        feature an older one would silently ignore.
+        """
+        # Version 2: a runtime that predates mutated_inputs would skip the
+        # write-back into those inputs.
+        if mutated_inputs:
+            return 2
+        return 1
+
     def _build_mlx_graph(self) -> MLXGraph:
         # Check support
         for node, info in self.node_info.items():
@@ -1080,9 +1157,13 @@ class MLXProgramBuilder:
         self._slot_to_final_tid = slot_to_tid
 
         # Build I/O maps and metadata
-        input_map, output_map, mutable_buffer_map, named_slots = self._build_io_maps(
-            used_slots, slot_to_tid, slot_to_vid
-        )
+        (
+            input_map,
+            output_map,
+            mutable_buffer_map,
+            named_slots,
+            mutated_inputs,
+        ) = self._build_io_maps(used_slots, slot_to_tid, slot_to_vid)
         tensor_meta_list = self._build_tensor_meta(
             used_slots, slot_to_tid, slot_to_vid, num_tensors
         )
@@ -1093,7 +1174,7 @@ class MLXProgramBuilder:
         num_values_count = sum(num_values.values())
 
         return MLXGraph(
-            version="1",
+            version=str(self._min_runtime_version(mutated_inputs)),
             num_constant_tensors=num_constant_tensors,
             num_input_tensors=num_tensors[IdSpace.Input],
             num_output_tensors=num_tensors[IdSpace.Output],
@@ -1110,11 +1191,21 @@ class MLXProgramBuilder:
             mutable_buffer_map=mutable_buffer_map,
             named_slots=named_slots,
             tensor_meta=tensor_meta_list,
+            mutated_inputs=mutated_inputs,
         )
 
-    def get_named_data_store(self) -> NamedDataStore:
+    def get_named_data_store(
+        self, constant_bytes: Dict[int, Tuple[torch.Tensor, bytes]]
+    ) -> NamedDataStore:
         """
         Get a NamedDataStore containing all constant tensors.
+
+        ``constant_bytes`` maps the id of a tensor of the program to the tensor
+        and its bytes. Delegates that share a constant read the same tensor, so
+        passing one map to all of them stores its bytes once rather than once
+        per delegate. The map holds the tensor so that its id stays unique, and
+        takes only the program's tensors, which outlive the lowering anyway,
+        not the constants a handler creates.
 
         Uses the unprefixed canonical-name → Slot mapping built by
         ``_build_io_maps()`` so that tensor lookups hit ``ep.state_dict`` /
@@ -1122,10 +1213,10 @@ class MLXProgramBuilder:
         keys).  The prefix is applied at the exit boundary — the
         ``NamedDataStore`` key — so it matches the FlatBuffer ``named_slots``.
 
-        To reduce peak memory, each constant is deleted from the EP
-        immediately after its bytes are added to the NamedDataStore.
-        This avoids holding two full copies of all constants simultaneously
-        (important for large models where constants can be 20+ GB).
+        Each constant is deleted from the EP immediately after its bytes are
+        added to the NamedDataStore. This frees constants a handler created. A
+        tensor of the program stays alive, held by ``constant_bytes`` (and,
+        during lowering, by the owning program).
         """
         named_data_store = NamedDataStore()
 
@@ -1135,7 +1226,8 @@ class MLXProgramBuilder:
             key=lambda x: self._slot_to_final_tid.get(x[1], 0),
         )
 
-        # Free EP constants not used by the MLX graph to reduce peak memory.
+        # Drop EP constants not used by the MLX graph; this frees only those
+        # that nothing else holds.
         used = set(self._constant_name_to_slot.keys())
         for ispec in self.ep.graph_signature.input_specs:
             if ispec.arg.name in used and ispec.target is not None:
@@ -1145,6 +1237,12 @@ class MLXProgramBuilder:
             for name in list(d.keys()):
                 if name not in used and isinstance(d[name], torch.Tensor):
                     del d[name]
+
+        program_tensors = {
+            id(tensor)
+            for d in (self.ep._state_dict, self.ep._constants)
+            for tensor in d.values()
+        }
 
         logger.debug(f"Adding {len(entries)} constants to NamedDataStore...")
         for canonical_name, _slot in entries:
@@ -1161,17 +1259,21 @@ class MLXProgramBuilder:
                 )
 
             t = tensor.detach().cpu().contiguous()
+            data, layout = t, None
+            if id(tensor) in program_tensors:
+                if id(tensor) not in constant_bytes:
+                    constant_bytes[id(tensor)] = (tensor, _tensor_to_bytes(t))
+                data = constant_bytes[id(tensor)][1]
+                layout = TensorLayout.from_tensor(t)
             named_data_store.add_named_data(
                 key=self._prefix_key(canonical_name),
-                data=t,
+                data=data,
                 alignment=16,
+                tensor_layout=layout,
             )
 
-            # Free the original tensor from the EP immediately.
-            # The contiguous copy is now serialized as bytes in the
-            # NamedDataStore — the EP reference is no longer needed.
-            # (It would be deleted by lowered_backend_module.py after
-            # preprocess() returns anyway.)
+            # The bytes are in the NamedDataStore, so the EP reference is no
+            # longer needed. This frees the tensor only if nothing else holds it.
             self._delete_constant_tensor(canonical_name)
             del tensor, t
 
@@ -1211,7 +1313,7 @@ class MLXProgramBuilder:
         return d[k]
 
     def _delete_constant_tensor(self, name: str) -> None:
-        """Delete a constant from the EP to free memory during serialization."""
+        """Delete a constant from the EP; this frees it only if nothing else does."""
 
         result = self._resolve_constant(name)
         if result:

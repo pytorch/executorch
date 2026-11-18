@@ -45,9 +45,9 @@ can reuse the INT4 even/odd extraction verbatim:
                  whole-weight dequant SNR at ~5.625 bpw.
 
 The pack/unpack helpers (:func:`pack_int5`, :func:`unpack_int5`) must stay in
-lockstep with ``int5_plain_mm.cuh`` (the decode kernel) — the per-32-weight
-even/odd high-bit byte order is the single most error-prone detail and is
-covered by the pack round-trip and the C++ gtest.
+lockstep with ``triton/kernels/int5_quantized_gemm.py`` (the decode kernels) —
+the per-32-weight even/odd high-bit byte order is the single most error-prone
+detail and is covered by the pack round-trip and the kernel tests.
 """
 
 from typing import List, Optional, Tuple

@@ -17,7 +17,6 @@
  *
  * Optional macros:
  *   INPUT_BUFFER  — use buffer path; otherwise texture
- *   SDPA_PAD_D    — zero-pad last d4 texel when D % 4 != 0
  */
 
 #ifndef SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH
@@ -28,14 +27,13 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
 
 LINEAR_FP_INPUT_TILE_VEC4_T load_q_projected_d4(
     const int d4,
     const int s,
     const int q_h,
     const int D4,
-    const int D,
     const int S,
     const int Q_H) {
   LINEAR_FP_INPUT_TILE_VEC4_T val;
@@ -54,17 +52,6 @@ LINEAR_FP_INPUT_TILE_VEC4_T load_q_projected_d4(
   #endif
 #endif
 
-#ifdef SDPA_PAD_D
-  if (d4 == D4 - 1) {
-    const int valid = D - mul_4(d4);
-    [[unroll]] for (int i = 0; i < 4; ++i) {
-      if (i >= valid) {
-        val[i] = T(0);
-      }
-    }
-  }
-#endif
-
   return val;
 }
 
@@ -74,13 +61,12 @@ void load_q_projected_tile_no_checks(
     const int s_start,
     const int q_h,
     const int D4,
-    const int D,
     const int S,
     const int Q_H) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       tile.data[s][d4] =
-          load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, D, S, Q_H);
+          load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, S, Q_H);
     }
   }
 }
@@ -91,17 +77,34 @@ void load_q_projected_tile_with_checks(
     const int s_start,
     const int q_h,
     const int D4,
-    const int D,
     const int S,
     const int Q_H) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       if (d4_start + d4 < D4 && s_start + s < S) {
         tile.data[s][d4] =
-            load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, D, S, Q_H);
+            load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, S, Q_H);
       } else {
         tile.data[s][d4] = LINEAR_FP_INPUT_TILE_VEC4_T(0.0);
       }
+    }
+  }
+}
+
+// Padding lanes at or beyond D may hold non-finite values.
+void mask_q_projected_tile_d_tail(
+    inout FPInputTile tile,
+    const int d4_start,
+    const int D) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      const int d = mul_4(d4_start + d4);
+      const LINEAR_FP_INPUT_TILE_VEC4_T values = tile.data[s][d4];
+      tile.data[s][d4] = LINEAR_FP_INPUT_TILE_VEC4_T(
+          d < D ? values.x : T(0),
+          d + 1 < D ? values.y : T(0),
+          d + 2 < D ? values.z : T(0),
+          d + 3 < D ? values.w : T(0));
     }
   }
 }

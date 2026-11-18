@@ -38,7 +38,7 @@ etvk_program = to_edge_transform_and_lower(
 ### `require_dynamic_shapes`
 
 If a model is expected to use dynamic shapes, then it is recommended to set the
-`"required_dynamic_shapes"` key in `compile_options`.
+`"require_dynamic_shapes"` key in `compile_options`.
 
 Not all operators in Vulkan support dynamic shapes at the moment, although the
 majority do. This flag will prevent operators that don't support dynamic shapes

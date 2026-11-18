@@ -10,6 +10,7 @@
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+#define T ${texel_load_component_type(DTYPE, STORAGE)}
 
 ${define_active_storage_type(STORAGE)}
 
@@ -45,10 +46,11 @@ layout(constant_id = 6) const int NWORKERS = 4;
 #define MAX_NTHREADS 256
 
 
-shared vec4 shared_vecs[MAX_NTHREADS];
+shared VEC4_T shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
 #include "indexing.glslh"
+#include "convert.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -84,7 +86,26 @@ int tid_to_smi(const ivec2 tid) {
 #define UPDATE_ACCUM(accum, new_val) ${UPDATE_ACCUM}
 // Useful for operators such as mean which want to perform a final calculation
 // with the accumulator.
-#define POSTPROCESS(accum) ${POSTPROCESS}
+$if DTYPE == "half":
+  #define POSTPROCESS(accum) round_to_half_rte(${POSTPROCESS})
+$else:
+  #define POSTPROCESS(accum) ${POSTPROCESS}
+
+float max_propagate_nan(float a, float b) {
+  return isnan(a) ? a : (isnan(b) ? b : max(a, b));
+}
+
+vec4 max_propagate_nan(vec4 a, vec4 b) {
+  return mix(mix(max(a, b), b, isnan(b)), a, isnan(a));
+}
+
+float min_propagate_nan(float a, float b) {
+  return isnan(a) ? a : (isnan(b) ? b : min(a, b));
+}
+
+vec4 min_propagate_nan(vec4 a, vec4 b) {
+  return mix(mix(min(a, b), b, isnan(b)), a, isnan(a));
+}
 
 /*
  * Computes reduction where the reduction dim is orthogonal to the packed dim.
@@ -103,7 +124,7 @@ void reduce_nonpacked_dim(
   // behaviour that hangs some GPUs. They still take a shared memory slot, but
   // it is one that no in-bounds group aggregates over, so what they leave in it
   // is never read.
-  vec4 accum = vec4(0);
+  VEC4_T accum = VEC4_T(0);
   if (in_bounds) {
     scan_pos[reduce_dim] = 0;
     accum = INIT_ACCUM(load_texel(tin, scan_pos));
@@ -175,10 +196,10 @@ void reduce_packed_dim(
   // behaviour that hangs some GPUs. They still take a shared memory slot, but
   // it is one that no in-bounds group aggregates over, so what they leave in it
   // is never read.
-  vec4 accum = vec4(0);
+  VEC4_T accum = VEC4_T(0);
   if (in_bounds) {
     scan_pos[reduce_dim] = 0;
-    accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
+    accum = INIT_ACCUM(VEC4_T(load_texel(tin, scan_pos).x));
 
     // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ...
     // of the reduction row
@@ -192,7 +213,7 @@ void reduce_packed_dim(
     // padding elements are ignored
     if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 &&
         nspill > 0) {
-      const vec4 intex = load_texel(tin, scan_pos);
+      const VEC4_T intex = load_texel(tin, scan_pos);
       for (int i = 0; i < nspill; i++) {
         accum.x = UPDATE_ACCUM(accum.x, intex[i]);
       }
@@ -213,13 +234,13 @@ void reduce_packed_dim(
     }
     // Each element of the texel is itself a partial maximum; iterate over the
     // texel to find the actual maximum
-    float accum_final = accum.x;
+    T accum_final = accum.x;
     [[unroll]] for (int i = 1; i < 4; i++) {
       accum_final = UPDATE_ACCUM(accum[i], accum_final);
     }
 
     scan_pos[reduce_dim] = tid.x;
-    write_texel(tout, scan_pos, POSTPROCESS(vec4(accum_final, 0, 0, 0)));
+    write_texel(tout, scan_pos, POSTPROCESS(VEC4_T(accum_final, 0, 0, 0)));
   }
 }
 
@@ -231,7 +252,10 @@ void main() {
       gl_LocalInvocationID[reduce_dim],
       gl_LocalInvocationID[group_dim]);
 
-  const bool in_bounds = all(lessThan(scan_pos, tin_limits));
+  // Reducing an empty dimension still produces one output element.
+  ivec3 out_limits = tin_limits;
+  out_limits[reduce_dim] = 1;
+  const bool in_bounds = all(lessThan(scan_pos, out_limits));
 
   // reduce_dim and packed_dim are specialization constants, so this branch is
   // uniform across the work group and safe to take around a barrier.

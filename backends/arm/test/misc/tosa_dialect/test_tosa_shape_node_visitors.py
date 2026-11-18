@@ -21,7 +21,7 @@ from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstan
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
-from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
 
 SHAPE_VISITOR_TARGETS = {

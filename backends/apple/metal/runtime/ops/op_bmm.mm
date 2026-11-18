@@ -110,8 +110,9 @@ AOTITorchError aoti_torch_mps_bmm_out(
       auto mat2_strides = mat2_tensor->strides();
       auto out_strides = out_tensor->strides();
 
-      // Check self tensor is contiguous [B, M, K] with strides [M*K, K, 1]
-      if (self_strides[2] != 1 || self_strides[1] != K || self_strides[0] != M * K) {
+      // Check self tensor is contiguous [B, M, K] with strides [M*K, K, 1]. As
+      // in PyTorch, the stride of a dimension of size 1 is not looked at.
+      if (!is_row_major_dense(*self_tensor)) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: self tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
                "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",
@@ -121,7 +122,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
       }
 
       // Check mat2 tensor is contiguous [B, K, N] with strides [K*N, N, 1]
-      if (mat2_strides[2] != 1 || mat2_strides[1] != N || mat2_strides[0] != K * N) {
+      if (!is_row_major_dense(*mat2_tensor)) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: mat2 tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
                "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",
@@ -131,7 +132,7 @@ AOTITorchError aoti_torch_mps_bmm_out(
       }
 
       // Check out tensor is contiguous [B, M, N] with strides [M*N, N, 1]
-      if (out_strides[2] != 1 || out_strides[1] != N || out_strides[0] != M * N) {
+      if (!is_row_major_dense(*out_tensor)) {
         ET_LOG(Error, "aoti_torch_mps_bmm_out: out tensor must be contiguous. "
                "Only dense row-major layout supported; transposed/view tensors are unsupported. "
                "Expected strides=[%lld,%lld,1] for shape=[%lld,%lld,%lld], got strides=[%lld,%lld,%lld].",

@@ -4,11 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 import torch
 from executorch.backends.arm.test import runner_utils
 
@@ -249,3 +251,114 @@ def test_user_inputs_need_shape_inference_ignores_non_user_inputs(monkeypatch) -
     monkeypatch.setattr(runner_utils, "get_first_fake_tensor", fake_tensor)
 
     assert not runner_utils.user_inputs_need_shape_inference(cast(Any, program))
+
+
+def test_enable_vulkan_validation_puts_validation_first_and_deduplicates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(runner_utils.VULKAN_VALIDATION_ENV, "1")
+
+    vulkan_sdk = tmp_path / "vulkan-sdk"
+    validation_layer_dir = vulkan_sdk / "share/vulkan/explicit_layer.d"
+    validation_layer_dir.mkdir(parents=True)
+    (validation_layer_dir / "VkLayer_khronos_validation.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    emulation_layer_dir = tmp_path / "emulation-layers"
+    emulation_layer_dir.mkdir()
+    emulation_layers = ["VK_LAYER_ARM_tensor", "VK_LAYER_ARM_graph"]
+    env = {
+        # Include a trailing path separator to cover setup_path.sh's CI form.
+        "VULKAN_SDK": f"{vulkan_sdk}{os.path.pathsep}",
+        "VK_LAYER_PATH": str(emulation_layer_dir),
+        "VK_ADD_LAYER_PATH": str(emulation_layer_dir),
+        "VK_INSTANCE_LAYERS": os.path.pathsep.join(
+            [
+                emulation_layers[0],
+                runner_utils.VULKAN_VALIDATION_LAYER,
+                emulation_layers[1],
+                runner_utils.VULKAN_VALIDATION_LAYER,
+            ]
+        ),
+    }
+
+    result = runner_utils._enable_vulkan_validation(env)
+    layers = result["VK_INSTANCE_LAYERS"].split(os.path.pathsep)
+
+    assert layers == [
+        runner_utils.VULKAN_VALIDATION_LAYER,
+        *emulation_layers,
+    ]
+    assert result["VK_LAYER_PATH"].split(os.path.pathsep) == [
+        str(validation_layer_dir),
+        str(emulation_layer_dir),
+    ]
+    assert result["VK_ADD_LAYER_PATH"].split(os.path.pathsep) == [
+        str(validation_layer_dir),
+        str(emulation_layer_dir),
+    ]
+    assert result["VK_KHRONOS_VALIDATION_REPORT_FLAGS"] == "error"
+
+
+def test_add_known_vkml_validation_filters_uses_platform_separator() -> None:
+    custom_vuid = "VUID-Test-existing-filter-00001"
+    first_known_vuid = runner_utils.KNOWN_VKML_VALIDATION_VUIDS[0]
+    env = {
+        runner_utils.VULKAN_VALIDATION_MESSAGE_FILTER_ENV: os.path.pathsep.join(
+            [custom_vuid, first_known_vuid]
+        )
+    }
+
+    runner_utils._add_known_vkml_validation_filters(env)
+
+    filters = env[runner_utils.VULKAN_VALIDATION_MESSAGE_FILTER_ENV].split(
+        os.path.pathsep
+    )
+
+    assert filters == [
+        custom_vuid,
+        *runner_utils.KNOWN_VKML_VALIDATION_VUIDS,
+    ]
+    assert filters.count(first_known_vuid) == 1
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float8_e4m3fn, torch.float8_e5m2, torch.bfloat16]
+)
+@pytest.mark.parametrize(
+    "shape, order",
+    [
+        ((3, 4), (0, 1)),
+        ((1, 3, 4, 5), runner_utils.NHWC_ORDER),
+        ((1, 2, 3, 4, 5), runner_utils.NNHWC_ORDER),
+    ],
+)
+@pytest.mark.parametrize("symbolic", [False, True])
+@pytest.mark.parametrize("opaque", [False, True])
+def test_raw_output_preserves_dtype_bytes_and_shape(
+    monkeypatch, dtype, shape, order, symbolic, opaque
+):
+    storage_dtype = np.uint16 if dtype == torch.bfloat16 else np.uint8
+    array = np.arange(np.prod(shape), dtype=storage_dtype).reshape(
+        tuple(shape[index] for index in order)
+    )
+    inverse_order = tuple(order.index(index) for index in range(len(shape)))
+    expected = torch.from_numpy(array).view(dtype).permute(inverse_order).contiguous()
+    metadata_shape = (object(), *shape[1:]) if symbolic else shape
+    output_tensor = SimpleNamespace(
+        shape=metadata_shape, dtype=dtype, dim_order=lambda: order
+    )
+    monkeypatch.setattr(
+        runner_utils, "get_first_fake_tensor", lambda node: output_tensor
+    )
+    if opaque:
+        array = array.view(np.dtype(f"V{array.itemsize}"))
+
+    result = runner_utils.numpy_to_torch_tensor(array, None)
+
+    assert result.dtype == dtype
+    assert tuple(result.shape) == shape
+    assert result.is_contiguous()
+    torch.testing.assert_close(result.view(torch.uint8), expected.view(torch.uint8))

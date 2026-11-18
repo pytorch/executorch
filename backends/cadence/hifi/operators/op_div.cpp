@@ -210,6 +210,10 @@ Tensor& div_out_mode(
     Tensor& out) {
   ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
 
+  if (!mode.has_value()) {
+    return div_out(ctx, a, b, out);
+  }
+
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -321,7 +325,9 @@ Tensor& div_out_mode(
               }
               CTYPE_COMPUTE value = val_a / val_b;
               if (mode_is_trunc) {
-                value = std::trunc(value);
+                if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
+                  value = std::trunc(value);
+                }
               } else {
                 // We established above that the mode is either trunc or floor,
                 // so it must be floor.

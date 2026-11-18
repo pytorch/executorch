@@ -74,6 +74,10 @@ struct Node {
   // elements, and symbolic scalar ids (kInvalid entries skipped). Used to
   // (re)build def-use wiring.
   std::vector<ValueId> input_value_ids() const;
+
+  // Every ValueId this node produces. Invalid sparse TensorList entries are
+  // omitted.
+  std::vector<ValueId> output_value_ids() const;
 };
 
 } // namespace ptn

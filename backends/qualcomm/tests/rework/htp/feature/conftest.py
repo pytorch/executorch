@@ -35,3 +35,22 @@ def compile_specs():
         )
 
     return lambda kwargs_config: _build(kwargs_config)
+
+
+@pytest.fixture(scope="session")
+def fcb_compile_specs():
+    @lru_cache()
+    def _build(soc_models, fcb_reference_weight_sharing=True):
+        return generate_qnn_executorch_compiler_spec(
+            soc_model=list(soc_models),
+            backend_options=[
+                generate_htp_compiler_spec(
+                    use_fp16=False,
+                    use_weight_sharing=False,
+                )
+                for _ in soc_models
+            ],
+            fcb_reference_weight_sharing=fcb_reference_weight_sharing,
+        )
+
+    return _build

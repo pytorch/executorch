@@ -51,6 +51,9 @@ The concrete quick-demo commands below use the pinned revision currently cached
 for `caidas/swin2SR-classical-sr-x2-64`:
 `cee1c923c6a37361c6e5650b65dcf4be821e5d52`.
 
+If you choose another checkpoint, use a source you trust and weights saved in
+safetensors format. Pickle-based weights are not supported.
+
 ### FP export
 
 ```bash

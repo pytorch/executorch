@@ -14,6 +14,7 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import re
 import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
@@ -23,6 +24,7 @@ from typing import Any, final, List
 
 from executorch.backends.arm._passes import (
     DecomposeQuantNodesPass,
+    EnsureUniqueOutputNodesPass,
     InsertRescaleInt32Pass,
     RewriteConvPass,
 )
@@ -31,32 +33,29 @@ from executorch.backends.arm._passes.arm_pass_manager import (
     PassInsertions,
     register_pass_insertions_before,
 )
-from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
+from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
+    GroupIndependentCustomShadersPass,
     InsertGridSamplerGridDequantPass,
+    RewriteCustomSDPAToTosaCustomPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
-from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
-    VgfCompileSpec,
-)
-from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import (
     model_converter_env,
     require_model_converter_executable,
 )
-from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
-    BackendDetails,
-    PreprocessResult,
-)
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
-from torch.export.exported_program import ExportedProgram
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind, InputSpec, OutputKind, OutputSpec
 
 # debug functionality
 logger = logging.getLogger(__name__)
@@ -64,6 +63,9 @@ logger = logging.getLogger(__name__)
 STATUS_OK = "PASS"
 STATUS_FAIL = "FAIL"
 VGF_BACKEND_NAME = "VgfBackend"
+MUTABLE_BUFFER_PAIRS_KEY = "mutable_buffer_pairs"
+MUTABLE_BUFFER_OWNERSHIP_KEY = "vgf_partitioned_mutable_buffer"
+_SUPPORTED_TOSA_CUSTOM_DOMAINS = frozenset({"com.arm.VulkanCustomShader"})
 
 
 @dataclass(frozen=True)
@@ -168,7 +170,11 @@ def _register_vgf_rewrite_passes() -> None:
         InsertRescaleInt32Pass,
         FuseGridSamplerFlowOffsetPass(),
     )
+    _register_pass_before(RewriteConvPass, RewriteCustomSDPAToTosaCustomPass())
     _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
+    _register_pass_before(
+        EnsureUniqueOutputNodesPass, GroupIndependentCustomShadersPass()
+    )
 
 
 def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
@@ -186,6 +192,57 @@ def _restore_registered_pass_insertions(
 ) -> None:
     _registered_pass_insertions.clear()
     _registered_pass_insertions.update(snapshot)
+
+
+def _iter_export_graph_modules(
+    edge_program: ExportedProgram,
+) -> list[tuple[str, Any]]:
+    graph_module = edge_program.graph_module
+    if graph_module is None or not hasattr(graph_module, "named_modules"):
+        return []
+
+    result: list[tuple[str, Any]] = []
+    seen: set[int] = set()
+    for module_name, module in graph_module.named_modules():
+        if not hasattr(module, "graph"):
+            continue
+        module_id = id(module)
+        if module_id in seen:
+            continue
+        seen.add(module_id)
+        result.append((module_name or "<root>", module))
+    return result
+
+
+def _unsupported_tosa_custom_domains(edge_program: ExportedProgram) -> list[str]:
+    unsupported: list[str] = []
+    for module_name, graph_module in _iter_export_graph_modules(edge_program):
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target != exir_ops.backend.tosa.CUSTOM.default:
+                continue
+            domain_name = node.kwargs.get("domain_name")
+            if domain_name in _SUPPORTED_TOSA_CUSTOM_DOMAINS:
+                continue
+            operator_name = node.kwargs.get("operator_name", "<unknown>")
+            unsupported.append(
+                f"{operator_name} [{domain_name}] in graph module {module_name}"
+            )
+    return unsupported
+
+
+def _validate_vgf_custom_domains(edge_program: ExportedProgram) -> None:
+    unsupported = _unsupported_tosa_custom_domains(edge_program)
+    if not unsupported:
+        return
+    rendered = ", ".join(unsupported)
+    raise RuntimeError(
+        "VGF only supports tosa.CUSTOM with domain_name "
+        "'com.arm.VulkanCustomShader'. Unsupported custom op domains: "
+        f"{rendered}. The current model-converter rejects generic tosa.CUSTOM "
+        "domains before VGF codegen."
+    )
 
 
 @final
@@ -216,11 +273,93 @@ class VgfBackend(BackendDetails):
             bytes: Target-specific VGF binary stream.
 
         """
-        compile_flags = compile_spec.compiler_flags
+        compile_flags = list(compile_spec.compiler_flags)
+        if compile_spec.emit_debug_info and "--emit-debug-info" not in compile_flags:
+            compile_flags.append("--emit-debug-info")
         artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
+
+    @staticmethod
+    def _validate_mutable_buffer_contents(edge_program: ExportedProgram) -> None:
+        signature = edge_program.graph_signature
+        mutated_buffers = set(signature.buffers_to_mutate.values())
+        for buffer_name in mutated_buffers:
+            buffer = (
+                edge_program.constants.get(buffer_name)
+                if buffer_name in signature.non_persistent_buffers
+                else edge_program.state_dict.get(buffer_name)
+            )
+            if buffer is None:
+                raise ValueError(f"VGF mutable buffer {buffer_name!r} must be present.")
+            if buffer.count_nonzero().item() != 0:
+                raise ValueError(
+                    f"VGF mutable buffer {buffer_name!r} must be zero-initialized."
+                )
+
+    @staticmethod
+    def _internalize_mutable_buffers(edge_program: ExportedProgram) -> None:
+        mutated_buffers = set(edge_program.graph_signature.buffers_to_mutate.values())
+        input_specs = [
+            (
+                InputSpec(InputKind.USER_INPUT, spec.arg, None)
+                if spec.kind == InputKind.BUFFER and spec.target in mutated_buffers
+                else spec
+            )
+            for spec in edge_program.graph_signature.input_specs
+        ]
+        input_specs.sort(key=lambda spec: spec.kind == InputKind.USER_INPUT)
+        edge_program.graph_signature.input_specs = input_specs
+
+        nodes_by_name = {
+            node.name: node
+            for node in edge_program.graph.nodes
+            if node.op == "placeholder"
+        }
+        first_operation = next(
+            node for node in edge_program.graph.nodes if node.op != "placeholder"
+        )
+        for spec in input_specs:
+            first_operation.prepend(nodes_by_name[spec.arg.name])
+
+        edge_program.graph_signature.output_specs = [
+            (
+                OutputSpec(OutputKind.USER_OUTPUT, spec.arg, None)
+                if spec.kind == OutputKind.BUFFER_MUTATION
+                else spec
+            )
+            for spec in edge_program.graph_signature.output_specs
+        ]
+        edge_program.graph_module.recompile()
+
+    @staticmethod
+    def _serialize_mutable_buffer_pairs(
+        edge_program: ExportedProgram, mutable_buffer_ids: dict[str, int]
+    ) -> bytes:
+        input_positions: dict[str, int] = {}
+        sequence_input = 0
+        for spec in edge_program.graph_signature.input_specs:
+            if spec.kind == InputKind.USER_INPUT or (
+                spec.kind == InputKind.BUFFER and spec.target in mutable_buffer_ids
+            ):
+                if spec.target in mutable_buffer_ids:
+                    input_positions[spec.target] = sequence_input
+                sequence_input += 1
+
+        output_positions = {
+            spec.target: position
+            for position, spec in enumerate(edge_program.graph_signature.output_specs)
+            if spec.kind == OutputKind.BUFFER_MUTATION
+            and spec.target in mutable_buffer_ids
+        }
+        pairs = [
+            f"{buffer_id}:{input_positions[name]}:{output_positions[name]}"
+            for name, buffer_id in sorted(
+                mutable_buffer_ids.items(), key=lambda item: item[1]
+            )
+        ]
+        return ",".join(pairs).encode()
 
     @staticmethod
     def preprocess(
@@ -238,22 +377,58 @@ class VgfBackend(BackendDetails):
             PreprocessResult: Result containing the compiled VGF binary.
 
         """
-        logger.info(f"{VgfBackend.__name__} preprocess")
+        logger.debug(f"{VgfBackend.__name__} preprocess")
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
             _register_vgf_rewrite_passes()
             compile_spec = VgfCompileSpec._from_list(compile_specs)
+            owns_mutable_buffers = any(
+                spec.key == MUTABLE_BUFFER_OWNERSHIP_KEY and spec.value == b"1"
+                for spec in compile_specs
+            )
+            compile_specs[:] = [
+                spec
+                for spec in compile_specs
+                if spec.key
+                not in (MUTABLE_BUFFER_PAIRS_KEY, MUTABLE_BUFFER_OWNERSHIP_KEY)
+            ]
+            mutable_buffer_ids: dict[str, int] = {}
+            if compile_spec.alias_buffer_mutations:
+                mutable_buffer_ids = {
+                    name: index
+                    for index, name in enumerate(
+                        sorted(
+                            set(edge_program.graph_signature.buffers_to_mutate.values())
+                        )
+                    )
+                }
+                if mutable_buffer_ids:
+                    if not owns_mutable_buffers:
+                        raise ValueError(
+                            "VGF mutable buffer aliasing requires VgfPartitioner "
+                            "to transfer buffer ownership."
+                        )
+                    compile_specs.append(
+                        CompileSpec(
+                            MUTABLE_BUFFER_PAIRS_KEY,
+                            VgfBackend._serialize_mutable_buffer_pairs(
+                                edge_program, mutable_buffer_ids
+                            ),
+                        )
+                    )
+                    VgfBackend._validate_mutable_buffer_contents(edge_program)
+                    VgfBackend._internalize_mutable_buffers(edge_program)
             # deduce TOSA compile_spec from VGF compile spec. We get a new
             # compile spec list, containing only elements relevant for the
             # TOSABackend.
             tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
-
             # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
             # ('All backend implementation are final...'), so use composition instead.
             # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
             # which can be passed on to next compilation step.
             tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+            _validate_vgf_custom_domains(edge_program)
 
             tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
 
@@ -264,6 +439,79 @@ class VgfBackend(BackendDetails):
             _restore_registered_pass_insertions(insertions_snapshot)
 
         return PreprocessResult(processed_bytes=binary)
+
+
+_SAFE_VGF_TAG_NAME_RE = re.compile(r"[A-Za-z0-9_.-]*")
+
+
+def _validate_tag_name(tag_name: str) -> str:
+    """Validate a delegation tag before it is used in an artifact filename.
+
+    Delegation tags originate from graph metadata and must therefore be
+    treated as untrusted when they cross into filesystem operations.
+
+    Args:
+        tag_name: Delegation tag associated with the compiled partition.
+
+    Returns:
+        The unchanged tag when it is safe for use as a filename component.
+
+    Raises:
+        ValueError: If the tag contains path traversal, path separators, or
+            characters outside the filename allowlist.
+
+    """
+    if (
+        "/" in tag_name
+        or "\\" in tag_name
+        or ".." in tag_name
+        or _SAFE_VGF_TAG_NAME_RE.fullmatch(tag_name) is None
+    ):
+        raise ValueError(
+            "Invalid VGF delegation tag: only ASCII letters, digits, '_', "
+            "'.', and '-' are allowed, and path separators or '..' are "
+            "forbidden."
+        )
+
+    return tag_name
+
+
+def _safe_output_path(directory: str, filename: str) -> str:
+    """Construct an output path that is confined to ``directory``.
+
+    Both paths are resolved before comparison so traversal components and
+    existing symlinks cannot move the resulting path outside the requested
+    directory.
+
+    Args:
+        directory: Directory that must contain the resulting file.
+        filename: Filename to place inside ``directory``.
+
+    Returns:
+        Absolute normalized path to the requested output.
+
+    Raises:
+        ValueError: If the resulting path escapes ``directory``.
+
+    """
+    directory_path = os.path.realpath(directory)
+    output_path = os.path.realpath(os.path.join(directory_path, filename))
+
+    try:
+        is_contained = (
+            os.path.commonpath([directory_path, output_path]) == directory_path
+        )
+    except ValueError:
+        # On Windows, commonpath() also raises when paths reside on different
+        # drives. Such a path cannot be contained in the requested directory.
+        is_contained = False
+
+    if not is_contained:
+        raise ValueError(
+            f"VGF output path escapes the intended directory: {filename!r}"
+        )
+
+    return output_path
 
 
 def _format_repro_command(command: List[str]) -> str:
@@ -290,10 +538,12 @@ def _copy_failure_artifacts(
     if not artifact_path:
         return None
 
+    safe_tag_name = _validate_tag_name(tag_name)
+
     os.makedirs(artifact_path, exist_ok=True)
 
-    suffix = f"_{tag_name}" if tag_name else ""
-    failure_tosa_path = os.path.join(
+    suffix = f"_{safe_tag_name}" if safe_tag_name else ""
+    failure_tosa_path = _safe_output_path(
         artifact_path,
         f"failed_model_converter_input{suffix}.tosa",
     )
@@ -332,10 +582,15 @@ def vgf_compile(
         bytes: Compiled VGF binary emitted by ``model-converter``.
 
     """
+    # tag_name comes from delegation metadata. Validate it before performing
+    # any filesystem operations, including failure-artifact handling.
+    safe_tag_name = _validate_tag_name(tag_name)
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        # We currently write out a flatbuffer as input to the converter
-        tosaname = f"output_{tag_name}.tosa"
-        tosa_path = os.path.join(tmpdir, tosaname)
+        # The TemporaryDirectory already provides uniqueness, so there is no
+        # reason to put untrusted delegation metadata in this filename.
+        tosaname = "output.tosa"
+        tosa_path = _safe_output_path(tmpdir, tosaname)
         with open(tosa_path, "wb") as f:
             f.write(tosa_flatbuffer)
 
@@ -351,7 +606,7 @@ def vgf_compile(
             vgf_path,
         ]
         try:
-            subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
+            result = subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
                 conversion_command,
                 shell=False,
                 check=True,
@@ -366,7 +621,7 @@ def vgf_compile(
                 failure_tosa_path = _copy_failure_artifacts(
                     tosa_path,
                     artifact_path,
-                    tag_name,
+                    safe_tag_name,
                 )
             except Exception as artifact_error:
                 failure_artifact_error = artifact_error
@@ -391,11 +646,31 @@ def vgf_compile(
                 f"Stderr:\n{process_error.stderr.decode()}\n"
                 f"Stdout:\n{process_error.stdout.decode()}"
             )
+        else:
+            if len(result.stdout) > 0:
+                logger.debug(
+                    "model_converter stdout:\n%s",
+                    result.stdout.decode(errors="replace"),
+                )
+            if len(result.stderr) > 0:
+                logger.debug(
+                    "model_converter stderr:\n%s",
+                    result.stderr.decode(errors="replace"),
+                )
 
         if artifact_path:
-            logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
-            shutil.copy2(vgf_path, artifact_path)
+
+            # Keep delegation metadata out of the temporary converter paths,
+            # but preserve it in the persistent debug artifact name. The tag
+            # has already been validated above.
+            suffix = f"_{safe_tag_name}" if safe_tag_name else ""
+            artifact_vgf_path = _safe_output_path(
+                artifact_path,
+                f"output{suffix}.tosa.vgf",
+            )
+            logger.info(f"Emitting debug output to: {artifact_vgf_path}")
+            shutil.copy2(vgf_path, artifact_vgf_path)
 
         vgf_bytes = open(vgf_path, "rb").read()
         return vgf_bytes

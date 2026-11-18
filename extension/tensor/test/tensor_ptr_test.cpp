@@ -23,6 +23,101 @@ class TensorPtrTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrTest, TypedPointerDeducesItsOwnScalarType) {
+  // A typed pointer used to convert to void* and pick up the Float default, so
+  // a buffer of one type became a tensor claiming another. Every check
+  // downstream then agreed with the claim, and the byte count was computed from
+  // it too, so a narrow buffer was read past its end.
+  std::vector<int32_t> ints = {1, 2, 3, 4};
+  auto from_pointer = make_tensor_ptr({2, 2}, ints.data());
+  EXPECT_EQ(from_pointer->scalar_type(), executorch::aten::ScalarType::Int);
+  EXPECT_EQ(from_pointer->nbytes(), ints.size() * sizeof(int32_t));
+
+  // The same buffer passed as a container has always deduced correctly. The two
+  // must now agree.
+  auto from_container = make_tensor_ptr({2, 2}, ints);
+  EXPECT_EQ(from_pointer->scalar_type(), from_container->scalar_type());
+
+  // A narrower type is where the old default also overstated the size.
+  std::vector<int8_t> bytes = {1, 2, 3, 4};
+  auto narrow = make_tensor_ptr({2, 2}, bytes.data());
+  EXPECT_EQ(narrow->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(narrow->nbytes(), bytes.size() * sizeof(int8_t));
+
+  // An explicit type still wins, so code that names one is unaffected.
+  auto explicit_type =
+      make_tensor_ptr({2, 2}, ints.data(), executorch::aten::ScalarType::Int);
+  EXPECT_EQ(explicit_type->scalar_type(), executorch::aten::ScalarType::Int);
+
+  // An untyped pointer has nothing to deduce from and keeps the documented
+  // default.
+  void* untyped = ints.data();
+  auto from_void = make_tensor_ptr({2, 2}, untyped);
+  EXPECT_EQ(from_void->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(
+    TensorPtrTest,
+    TypedPointerDeducesItsOwnScalarTypeWithDimOrderAndStrides) {
+  // The overload that also takes a dim order and strides is a separate entry
+  // point, so deduction has to be checked on it too.
+  std::vector<int8_t> bytes = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, bytes.data(), {0, 1}, {2, 1});
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(tensor->nbytes(), bytes.size() * sizeof(int8_t));
+
+  // Empty dim order and strides take the same path and must deduce the same.
+  auto defaulted = make_tensor_ptr(
+      {2, 2},
+      bytes.data(),
+      std::vector<executorch::aten::DimOrderType>{},
+      std::vector<executorch::aten::StridesType>{});
+  EXPECT_EQ(defaulted->scalar_type(), executorch::aten::ScalarType::Char);
+
+  // An explicit type still reinterprets the same buffer, so callers that name
+  // one keep the old behaviour, including the old byte count.
+  auto reinterpreted = make_tensor_ptr(
+      {2, 2},
+      bytes.data(),
+      std::vector<executorch::aten::DimOrderType>{},
+      std::vector<executorch::aten::StridesType>{},
+      executorch::aten::ScalarType::Float);
+  EXPECT_EQ(reinterpreted->scalar_type(), executorch::aten::ScalarType::Float);
+  EXPECT_EQ(reinterpreted->nbytes(), 4 * sizeof(float));
+}
+
+TEST_F(TensorPtrTest, TypedPointerDeducedSizeMatchesTheAllocation) {
+  // A deleter that has to be told how many bytes it is giving back, the way a
+  // pool allocator does, frees what the tensor says it owns. An overstated byte
+  // count therefore frees the wrong amount, not just reads the wrong amount.
+  constexpr size_t kCount = 4;
+  auto* data = new uint8_t[kCount]();
+  size_t freed_bytes = 0;
+  auto deleter_calls = 0;
+
+  {
+    auto tensor = make_tensor_ptr({2, 2}, data);
+    EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Byte);
+    EXPECT_EQ(tensor->nbytes(), kCount * sizeof(uint8_t));
+
+    const auto claimed = tensor->nbytes();
+    auto managed = make_tensor_ptr(
+        {2, 2},
+        data,
+        tensor->scalar_type(),
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+        [claimed, &freed_bytes, &deleter_calls](void* ptr) {
+          freed_bytes = claimed;
+          ++deleter_calls;
+          delete[] static_cast<uint8_t*>(ptr);
+        });
+  }
+
+  EXPECT_EQ(deleter_calls, 1);
+  EXPECT_EQ(freed_bytes, kCount * sizeof(uint8_t));
+}
+
 TEST_F(TensorPtrTest, ScalarTensorCreation) {
   float scalar_data = 3.14f;
   auto tensor = make_tensor_ptr({}, &scalar_data);
@@ -235,6 +330,14 @@ TEST_F(TensorPtrTest, TensorOwningEmptyData) {
   EXPECT_EQ(tensor->strides()[1], 1);
   EXPECT_EQ(tensor->data_ptr<float>(), nullptr);
   EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrTest, TensorWithInnerZeroSize) {
+  // A size-0 dim counts as size 1 for the strides outside it, as in PyTorch.
+  auto tensor = make_tensor_ptr({2, 0, 3}, std::vector<float>{});
+  EXPECT_EQ(tensor->strides()[0], 3);
+  EXPECT_EQ(tensor->strides()[1], 3);
+  EXPECT_EQ(tensor->strides()[2], 1);
 }
 
 TEST_F(TensorPtrTest, TensorDataOnly) {
@@ -996,6 +1099,59 @@ TEST_F(TensorPtrTest, TensorInvalidDimOrder) {
         auto _ = make_tensor_ptr({4, 5}, data, {2, 1}, {1, 4});
       },
       "");
+}
+
+TEST_F(TensorPtrTest, ValidateTensorLayoutRejectsInvalidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({2, 2}, {}, {8, 2}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {1, 0}, {1, 4}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({4, 5}, {2, 1}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {}, {4, 1, 1}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({3, 4}, {0, 1, 2}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {1, 1}, {}), Error::InvalidArgument);
+  EXPECT_EQ(validate_tensor_layout({-1, 4}, {}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout(
+          std::vector<executorch::aten::SizesType>(17, 1), {}, {}),
+      Error::InvalidArgument);
+  const executorch::aten::SizesType large = 1 << 30;
+  EXPECT_EQ(
+      validate_tensor_layout({large, large, large}, {}, {}),
+      Error::InvalidArgument);
+  // The square of this size overflows StridesType.
+  const auto huge = executorch::aten::SizesType(1)
+      << (4 * sizeof(executorch::aten::StridesType));
+  EXPECT_EQ(
+      validate_tensor_layout({0, huge, huge}, {}, {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      validate_tensor_layout({2, huge, huge}, {}, {}), Error::InvalidArgument);
+}
+
+TEST_F(TensorPtrTest, ValidateTensorLayoutAcceptsValidLayouts) {
+  EXPECT_EQ(validate_tensor_layout({}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({2, 3}, {}, {}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {1, 0}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({3, 4}, {}, {1, 3}), Error::Ok);
+  EXPECT_EQ(validate_tensor_layout({1, 4}, {}, {100, 1}), Error::Ok);
+}
+
+TEST_F(TensorPtrTest, TensorWithMaxDims) {
+  const std::vector<executorch::aten::SizesType> sizes(16, 1);
+  EXPECT_EQ(validate_tensor_layout(sizes, {}, {}), Error::Ok);
+  EXPECT_EQ(make_tensor_ptr(sizes, {1.f})->dim(), 16);
+}
+
+TEST_F(TensorPtrTest, TensorOverflowingStrides) {
+  // The square of this size overflows StridesType, but make_tensor_ptr has
+  // always accepted such a layout.
+  const auto huge = executorch::aten::SizesType(1)
+      << (4 * sizeof(executorch::aten::StridesType));
+  auto tensor = make_tensor_ptr({0, huge, huge}, std::vector<float>{});
+  EXPECT_EQ(tensor->numel(), 0);
+  EXPECT_EQ(tensor->strides()[1], huge);
+  EXPECT_EQ(tensor->strides()[2], 1);
 }
 
 TEST_F(TensorPtrTest, TensorCustomDeleter) {

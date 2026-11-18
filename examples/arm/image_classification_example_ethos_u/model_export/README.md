@@ -30,6 +30,9 @@ Running this script achieves a test set accuracy of 86.10% in FP32.
 
 ## Export and quantize
 
+The exporter requires a safetensors checkpoint. The training script saves
+this format by default. Legacy PyTorch `.bin` checkpoints are not accepted.
+
 The `export_deit.py` script can be run as follows:
 
 ```bash

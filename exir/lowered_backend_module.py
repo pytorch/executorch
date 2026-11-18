@@ -7,6 +7,7 @@
 # pyre-strict
 
 import copy
+import heapq
 import operator
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -15,12 +16,14 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
 
 from executorch.exir.graph_module import _get_submodule
 
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
@@ -45,10 +48,13 @@ from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
     fuse_as_graphmodule,
     insert_subgm,
-    legalize_graph,
     NodeList,
     topo_sort,
 )
+
+# Set by tag_in_place_input_mutations on a mutated user input's placeholder,
+# naming the partition that writes the input in place.
+DELEGATE_WRITES_IN_PLACE = "delegate_writes_in_place"
 
 
 class LoweredBackendModule(torch.nn.Module):
@@ -66,6 +72,10 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    _scratch_specs: List[
+        DelegateScratchSpec
+    ]  # Scratch buffers the backend needs at execute() time
+    _share_handle_across_calls: bool  # Whether all calls may share one handle
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -75,6 +85,8 @@ class LoweredBackendModule(torch.nn.Module):
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
+        scratch_specs: Optional[List[DelegateScratchSpec]] = None,
+        share_handle_across_calls: bool = False,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -82,6 +94,8 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self._scratch_specs = scratch_specs or []
+        self._share_handle_across_calls = share_handle_across_calls
         self.meta = None
 
     # pyre-ignore
@@ -110,6 +124,8 @@ class LoweredBackendModule(torch.nn.Module):
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
+            scratch_specs=copy.deepcopy(self._scratch_specs, memo),
+            share_handle_across_calls=self._share_handle_across_calls,
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -148,6 +164,20 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the Named Data Store Output
         """
         return self._named_data_store_output
+
+    @property
+    def scratch_specs(self) -> List[DelegateScratchSpec]:
+        """
+        Returns the scratch buffers the backend asked for in preprocess
+        """
+        return self._scratch_specs
+
+    @property
+    def share_handle_across_calls(self) -> bool:
+        """
+        Returns whether every call of this module in a method may share one delegate handle
+        """
+        return self._share_handle_across_calls
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
@@ -342,7 +372,12 @@ class LoweredBackendModule(torch.nn.Module):
         )
         if memory_planning is None:
             memory_planning = MemoryPlanningPass()
-        exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
+        exported_program = _transform(
+            exported_program,
+            SpecPropPass(),
+            DelegateScratchSpecPass(),
+            memory_planning,
+        )
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
         ).program
@@ -577,7 +612,9 @@ def _get_new_signature(  # noqa: C901
             be removed from the toplevel ExportedProgram.
         output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
             been consumed by the delegate (buffer mutation nodes) and should be
-            removed from the toplevel ExportedProgram.
+            removed from the toplevel ExportedProgram, or user input mutations
+            the delegate writes in place, which the toplevel ExportedProgram
+            returns as the input instead.
     """
     old_signature = original_program.graph_signature
 
@@ -600,6 +637,16 @@ def _get_new_signature(  # noqa: C901
     if not is_submodule:
         for output_spec in old_signature.output_specs:
             toplevel_output_node_to_sig[output_spec.arg.name].append(output_spec)
+
+    # User inputs whose mutation the partitioner left to this delegate.
+    inputs_mutated_in_delegate = {
+        node.name
+        for node in original_program.graph.nodes
+        if node.op == "placeholder" and node.meta.get(DELEGATE_WRITES_IN_PLACE) == tag
+    }
+    submodule_inputs = {
+        node.name for node in gm.graph.nodes if node.op == "placeholder"
+    }
 
     for node in gm.graph.nodes:
         if node.op == "placeholder":
@@ -681,6 +728,21 @@ def _get_new_signature(  # noqa: C901
                 if i in buffer_mutation_idxs:
                     assert isinstance(output_node, torch.fx.Node)
                     orig_output_specs = buffer_mutation_idxs[i]
+                    mutation_specs = [
+                        spec
+                        for spec in orig_output_specs
+                        if spec.kind == OutputKind.USER_INPUT_MUTATION
+                    ]
+                    written_by_delegate = (
+                        len(mutation_specs) == 1
+                        and mutation_specs[0].target in inputs_mutated_in_delegate
+                        and mutation_specs[0].target in submodule_inputs
+                        and all(
+                            spec.kind
+                            in (OutputKind.USER_INPUT_MUTATION, OutputKind.USER_OUTPUT)
+                            for spec in orig_output_specs
+                        )
+                    )
 
                     if any(
                         orig_output_spec.kind == OutputKind.BUFFER_MUTATION
@@ -718,6 +780,20 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.BUFFER_MUTATION,
+                                arg=TensorArgument(name=output_node.name),
+                                target=orig_output_spec.target,
+                            )
+                        )
+                        output_specs_to_delete[orig_output_spec.arg.name] = (
+                            orig_output_spec
+                        )
+                    elif written_by_delegate:
+                        # The delegate writes the input itself, so the method
+                        # returns the input wherever it returned this output.
+                        orig_output_spec = mutation_specs[0]
+                        output_specs.append(
+                            OutputSpec(
+                                kind=OutputKind.USER_INPUT_MUTATION,
                                 arg=TensorArgument(name=output_node.name),
                                 target=orig_output_spec.target,
                             )
@@ -788,7 +864,9 @@ def create_exported_program_from_submodule(
             be removed from the toplevel ExportedProgram.
         output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
             been consumed by the delegate (buffer mutation nodes) and should be
-            removed from the toplevel ExportedProgram.
+            removed from the toplevel ExportedProgram, or user input mutations
+            the delegate writes in place, which the toplevel ExportedProgram
+            returns as the input instead.
     """
     # Arrange the submodule's placeholders in order
     submodule = arrange_graph_placeholders(submodule, owning_program, tag)
@@ -835,6 +913,35 @@ def create_exported_program_from_submodule(
     )
 
 
+def _stable_topological_sort_in_place(graph: torch.fx.Graph) -> None:
+    """
+    Orders the nodes like torch's stable_topological_sort, by moving them. That
+    function installs a new graph, and a GraphModule then recompiles itself and
+    every submodule, so sorting once per partition took time quadratic in the
+    number of partitions.
+    """
+    position = {node: i for i, node in enumerate(graph.nodes)}
+    unsorted_inputs = {node: len(node.all_input_nodes) for node in graph.nodes}
+    ready = [(i, node) for node, i in position.items() if unsorted_inputs[node] == 0]
+    previous = None
+    while ready:
+        _, node = heapq.heappop(ready)
+        if previous is None:
+            first = next(iter(graph.nodes))
+            if first is not node:
+                first.prepend(node)
+        elif previous.next is not node:
+            previous.append(node)
+        previous = node
+        del position[node]
+        for user in node.users:
+            unsorted_inputs[user] -= 1
+            if unsorted_inputs[user] == 0:
+                heapq.heappush(ready, (position[user], user))
+    if position:
+        raise AssertionError(f"Input graph has cycles, unable to add {list(position)}")
+
+
 def create_submodule_from_nodes(
     gm: torch.fx.GraphModule,
     node_list: NodeList,
@@ -844,7 +951,8 @@ def create_submodule_from_nodes(
     """
     Modifies the given graph module in-place to separate out the given nodes
     into a submodule. The given node_list should form a fully connected
-    subgraph.
+    subgraph. Unless skip_legalize_graph is set, the nodes of gm are sorted
+    in place. gm is not recompiled, so call gm.recompile() before running it.
 
     Args:
         gm: The graph module that we want to partition
@@ -862,6 +970,7 @@ def create_submodule_from_nodes(
     )
 
     _fixup_output_node(sub_gm)
+    sub_gm.recompile()
 
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     submodule_node = None
@@ -900,10 +1009,10 @@ def create_submodule_from_nodes(
     erase_nodes(gm, sorted_nodes)
 
     # Topological sort original gm with newly created sub_gm
-    # TODO : T153794167 Get rid of support for skipping legalize graph in create_submodule_from_nodes
+    # TODO : T153794167 Get rid of support for skipping the sort in create_submodule_from_nodes
     # once we transition to using fuse_by_partitions.
     if not skip_legalize_graph:
-        legalize_graph(gm)
+        _stable_topological_sort_in_place(gm.graph)
 
     # Get the call_module node
     submodule_node = None
@@ -995,10 +1104,28 @@ def _unsafe_adjust_original_program(  # noqa: C901
         if input_spec.target is not None
     }
 
+    # A user input mutation the delegate took over is returned as the input
+    # itself, which the delegate has written by the time it returns.
+    inputs_written_by_delegate = {
+        name: spec.target
+        for name, spec in output_specs_to_delete.items()
+        if spec.kind == OutputKind.USER_INPUT_MUTATION
+    }
     original_program._graph_signature.output_specs = [
-        output_spec
+        (
+            OutputSpec(
+                kind=output_spec.kind,
+                arg=TensorArgument(
+                    name=inputs_written_by_delegate[output_spec.arg.name]
+                ),
+                target=output_spec.target,
+            )
+            if output_spec.arg.name in inputs_written_by_delegate
+            else output_spec
+        )
         for output_spec in original_program.graph_signature.output_specs
         if output_spec.arg.name not in output_specs_to_delete
+        or output_spec.arg.name in inputs_written_by_delegate
     ]
 
     # Delete all parameters/buffers consumed by the created exported program
@@ -1038,10 +1165,21 @@ def _unsafe_adjust_original_program(  # noqa: C901
         len(toplevel_output_node.args) == 1
     ), f"Invalid output node: {toplevel_output_node} with args {toplevel_output_node.args}"
 
+    placeholders = {
+        node.name: node
+        for node in original_program.graph.nodes
+        if node.op == "placeholder"
+    }
     new_output_args = [
-        arg
+        (
+            placeholders[inputs_written_by_delegate[arg.name]]
+            if isinstance(arg, torch.fx.Node) and arg.name in inputs_written_by_delegate
+            else arg
+        )
         for arg in toplevel_output_node.args[0]
-        if not isinstance(arg, torch.fx.Node) or arg.name not in output_specs_to_delete
+        if not isinstance(arg, torch.fx.Node)
+        or arg.name not in output_specs_to_delete
+        or arg.name in inputs_written_by_delegate
     ]
     toplevel_output_node.args = (tuple(new_output_args),)
 

@@ -8,6 +8,7 @@ from typing import Sequence, Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -157,10 +158,7 @@ class RewriteIndexPutPass(ArmOpTargetedPass):
         )
 
         # CALCULATE FLATTENED INDEX [N=1, W]
-        plain_meta_dict = dict(meta.data)
-        plain_meta_dict["input_qparams"] = {}
-        plain_meta_dict["output_qparams"] = {}
-        plain_meta = NodeMetadata(plain_meta_dict)
+        plain_meta = meta_without_qparams(meta)
         indices_flattened = self._calculate_flat_indices(
             indices_tensor_list, K_i, plain_meta
         )

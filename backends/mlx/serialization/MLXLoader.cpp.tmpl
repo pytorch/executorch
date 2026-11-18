@@ -320,6 +320,19 @@ MLXProgram load_program(const void* data, size_t size) {
     }
   }
 
+  if (fb_graph->mutated_inputs()) {
+    check_collection_size(fb_graph->mutated_inputs()->size(), "mutated_inputs");
+    for (uint32_t position : *fb_graph->mutated_inputs()) {
+      if (position >= program.input_map.size() ||
+          program.input_map[position].slot_type != SlotType::TensorSlot) {
+        throw std::runtime_error(
+            "mutated_inputs: position " + std::to_string(position) +
+            " is not a tensor input");
+      }
+      program.mutated_inputs.push_back(position);
+    }
+  }
+
   return program;
 }
 

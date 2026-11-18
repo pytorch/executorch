@@ -17,6 +17,14 @@ using executorch::runtime::Span;
 using executorch::runtime::tensor_shape_to_c_string;
 using executorch::runtime::internal::kMaximumPrintableTensorShapeElement;
 
+TEST(TensorShapeToCStringTest, EmptyShape) {
+  auto str32 = tensor_shape_to_c_string(Span<const std::int32_t>());
+  EXPECT_STREQ(str32.data(), "()");
+
+  auto str64 = tensor_shape_to_c_string(Span<const std::int64_t>());
+  EXPECT_STREQ(str64.data(), "()");
+}
+
 TEST(TensorShapeToCStringTest, Basic) {
   std::array<executorch::aten::SizesType, 3> sizes = {123, 456, 789};
   auto str = tensor_shape_to_c_string(

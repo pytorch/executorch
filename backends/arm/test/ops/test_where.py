@@ -131,6 +131,11 @@ float32_tensor_cond_tuple_dtype_bool = Where(
     (torch.float32, torch.bool),
     tensor_condition,
 )
+int32_float32_tensor_cond = Where(
+    1,
+    (torch.int32, torch.float32),
+    lambda input: input.to(torch.float32) > 0,
+)
 
 # Scalar tests
 two_dim_scalar_cond = Where(
@@ -182,6 +187,9 @@ test_modules_FP = {
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
     "float16_tensor_cond": lambda: float16_tensor_cond,
     "const_float32": lambda: const_float32,
+}
+test_modules_mixed = {
+    "int32_float32_tensor_cond": lambda: int32_float32_tensor_cond,
 }
 
 test_modules_FP_bf16 = {
@@ -292,7 +300,9 @@ def test_where_self_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_FP | test_modules_FP_bf16)
+@common.parametrize(
+    "test_module", test_modules_FP | test_modules_FP_bf16 | test_modules_mixed
+)
 @common.SkipIfNoModelConverter
 def test_where_self_vgf_no_quant(test_module):
     module = test_module()

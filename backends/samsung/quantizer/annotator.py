@@ -223,12 +223,22 @@ def annotate_2in1out(node: Node, quant_config: QuantizationConfig) -> None:
         quant_config.output_activation if _is_float_tensor(node) else None
     )
 
+    def _input_qspec_for(inp):
+        # If the input already carries a quantization_annotation (e.g. a shape-only
+        # op such as transpose/permute/flatten that used SharedQuantizationSpec on
+        # its output), share with it. Otherwise assign a fresh input_activation.
+        # Without this, a fresh observer here would break the shared-scale
+        # invariant across shape-only ops that feed matmul/bmm/div/sum.
+        if isinstance(inp, Node) and "quantization_annotation" in inp.meta:
+            return SharedQuantizationSpec(inp)
+        return input_act_qspec
+
     input_qspec_map = {}
     if _is_float_tensor(input_act0):
-        input_qspec_map[input_act0] = input_act_qspec
+        input_qspec_map[input_act0] = _input_qspec_for(input_act0)
 
     if _is_float_tensor(input_act1):
-        input_qspec_map[input_act1] = input_act_qspec
+        input_qspec_map[input_act1] = _input_qspec_for(input_act1)
 
     node.meta["quantization_annotation"] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
@@ -478,6 +488,7 @@ def annotate_1in1out(node: Node, quant_config: QuantizationConfig) -> None:
         torch.ops.aten.chunk.default,
         torch.ops.aten.view_copy.default,
         torch.ops.aten.flip.default,
+        torch.ops.aten.contiguous.default,
     ]
 )
 def annotate_1in1out_with_SharedQuant(

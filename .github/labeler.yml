@@ -8,12 +8,6 @@
     - 'docs/source/android-arm-vgf.md'
     - 'docs/source/arm-delegate-runtime-build.svg'
 
-ciflow/trunk:
-- changed-files:
-  - any-glob-to-any-file:
-    - 'backends/arm/**'
-    - 'examples/arm/**'
-
 # Same paths docker-builds triggers on. It has no pull_request trigger, so this
 # label is what rebuilds the images for a PR that changes them.
 ciflow/docker:

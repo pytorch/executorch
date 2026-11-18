@@ -150,11 +150,10 @@ source_mapping:
 
   backends_ethos_u:
     path: "backends/arm/runtime/"
-    # Cortex-M host only. The Cortex-A/Linux host variant
-    # (EthosUBackend_Cortex_A.cpp) is intentionally not exposed in this
-    # pack — generate_components.py filters it out via exclude_patterns
-    # so the Cortex-M backend component does not pull in the Linux TU
+    # Core driver only. EthosUBackend_LinuxDriver.cpp is intentionally not
+    # exposed in this pack — generate_components.py filters it out via
+    # exclude_patterns so the backend component does not pull in the Linux TU
     # (the two define the same platform_* symbols).
     components:
-      - name: "Backend EthosU"         # Cortex-M host (bare-metal)
-        exclude_patterns: ["VGF", "Cortex_A"]
+      - name: "Backend EthosU"         # Core driver (bare-metal)
+        exclude_patterns: ["VGF", "LinuxDriver"]

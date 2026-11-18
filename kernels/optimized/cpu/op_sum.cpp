@@ -157,11 +157,14 @@ Tensor& opt_sum_dim_out(
     return out;
   }
 
-  // Fast path: single reduction dim, matching dtype, non-complex, contiguous.
-  // Anything else falls through to the portable kernel.
-  const bool fast_eligible = dim_list.has_value() &&
-      dim_list.value().size() == 1 && in.scalar_type() == out.scalar_type() &&
-      !executorch::runtime::isComplexType(in.scalar_type()) &&
+  // Fast path: non-0-d input, single reduction dim, matching dtype,
+  // contiguous. It accumulates in fp32, so it only takes Float, Half and
+  // BFloat16. Anything else falls through to the portable kernel.
+  const ScalarType in_type = in.scalar_type();
+  const bool fast_eligible = in.dim() > 0 && dim_list.has_value() &&
+      dim_list.value().size() == 1 && in_type == out.scalar_type() &&
+      (in_type == ScalarType::Float || in_type == ScalarType::Half ||
+       in_type == ScalarType::BFloat16) &&
       tensor_is_contiguous(in);
 
   if (fast_eligible) {
@@ -177,21 +180,17 @@ Tensor& opt_sum_dim_out(
 
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     static constexpr const char op_name[] = "sum.IntList_out";
-    bool handled = false;
-    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
-      const CTYPE* ip = in.const_data_ptr<CTYPE>();
-      CTYPE* op = out.mutable_data_ptr<CTYPE>();
-      if (inner_size == 1) {
-        sum_innermost<CTYPE>(ip, op, outer_size, reduce_size);
-        handled = true;
-      } else {
-        sum_strided<CTYPE>(ip, op, outer_size, reduce_size, inner_size);
-        handled = true;
-      }
-    });
-    if (handled) {
-      return out;
-    }
+    ET_SWITCH_THREE_TYPES(
+        Float, Half, BFloat16, in_type, ctx, op_name, CTYPE, [&] {
+          const CTYPE* ip = in.const_data_ptr<CTYPE>();
+          CTYPE* op = out.mutable_data_ptr<CTYPE>();
+          if (inner_size == 1) {
+            sum_innermost<CTYPE>(ip, op, outer_size, reduce_size);
+          } else {
+            sum_strided<CTYPE>(ip, op, outer_size, reduce_size, inner_size);
+          }
+        });
+    return out;
   }
 
   // Fallback.

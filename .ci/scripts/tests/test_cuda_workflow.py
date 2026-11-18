@@ -34,41 +34,29 @@ def _model_quant(entry):
 class CudaWorkflowTest(unittest.TestCase):
     def test_build_matrix_preserves_existing_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
-        self.assertEqual(
-            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
-        )
+        self.assertEqual(job["strategy"]["matrix"]["cuda-version"], ["13.0", "13.4"])
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
-    def test_cuda134_driver_uses_matching_workflow_and_action_revision(self):
+    def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
+        # This job used to pin linux_job_v2 to a test-infra SHA because that was
+        # the only ref carrying driver-version / driver-download-url, and it
+        # installed R615 for the 13.4 cell. On OSDC the driver belongs to the
+        # node and a pod cannot replace it, so the job takes what the node has.
         job = WORKFLOW["jobs"]["test-cuda-builds"]
-        workflow, revision = job["uses"].split("@")
         self.assertEqual(
-            workflow, "pytorch/test-infra/.github/workflows/linux_job_v2.yml"
+            job["uses"], "pytorch/test-infra/.github/workflows/linux_job_v3.yml@main"
         )
-        self.assertRegex(revision, r"^[0-9a-f]{40}$")
-        self.assertEqual(job["with"]["test-infra-ref"], revision)
-        self.assertEqual(
-            job["with"]["driver-version"],
-            "${{ matrix.cuda-version == '13.4' && '615.71.09' || '580.65.06' }}",
-        )
-        self.assertEqual(
-            job["with"]["driver-download-url"],
-            "${{ matrix.cuda-version == '13.4' && "
-            "'https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/"
-            "NVIDIA-Linux-x86_64-615.71.09.run' || '' }}",
-        )
+        for pin in ("test-infra-ref", "driver-version", "driver-download-url"):
+            self.assertNotIn(pin, job["with"])
 
-    def test_cuda134_runtime_update_precedes_build_and_propagates_failure(self):
+    def test_cuda_runtime_update_precedes_build_and_propagates_failure(self):
         script = WORKFLOW["jobs"]["test-cuda-builds"]["with"]["script"]
         stubs = """
 conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
-source() { printf 'BUILD %s\n' "$*"; }
+source() { printf 'BUILD %s\n' "$*"; printf 'LIBRARY PATH %s\n' "$LD_LIBRARY_PATH"; }
 """
         for version, conda_status in (
-            ("12.6", 0),
-            ("13.0", 0),
-            ("13.4", 0),
-            ("13.4", 1),
+            (version, status) for version in ("13.0", "13.4") for status in (0, 1)
         ):
             with self.subTest(version=version, conda_status=conda_status):
                 result = subprocess.run(
@@ -77,19 +65,26 @@ source() { printf 'BUILD %s\n' "$*"; }
                         "-c",
                         stubs + script.replace("${{ matrix.cuda-version }}", version),
                     ],
-                    env={**os.environ, "CONDA_STATUS": str(conda_status)},
+                    env={
+                        **os.environ,
+                        "CONDA_STATUS": str(conda_status),
+                        "LD_LIBRARY_PATH": "/cuda/lib64",
+                    },
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, conda_status, result.stderr)
-                expected = []
-                if version == "13.4":
-                    expected.append(
-                        "CONDA install -y -n base -c conda-forge "
-                        "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
-                    )
+                expected = [
+                    "CONDA install -y -n base -c conda-forge "
+                    "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
+                ]
                 if conda_status == 0:
-                    expected.append(f"BUILD .ci/scripts/test-cuda-build.sh {version}")
+                    expected.extend(
+                        (
+                            f"BUILD .ci/scripts/test-cuda-build.sh {version}",
+                            "LIBRARY PATH /opt/conda/lib:/cuda/lib64",
+                        )
+                    )
                 self.assertEqual(result.stdout.splitlines(), expected)
 
     def test_cuda_probe_checks_the_result_and_torch_train(self):
@@ -191,8 +186,14 @@ sys.modules['torch'] = SimpleNamespace(
         self.assertIn("--run_only", script)
         self.assertGreaterEqual(script.count('"${MODEL_DIR}"'), 2)
 
-    def test_model_e2e_does_not_transfer_artifacts(self):
+    def test_model_e2e_only_uploads_benchmark_results(self):
         self.assertNotIn("test-cuda-pybind", WORKFLOW["jobs"])
-        keys = set(_all_keys(WORKFLOW["jobs"]["test-model-cuda-e2e"]))
-        self.assertNotIn("upload-artifact", keys)
-        self.assertNotIn("download-artifact", keys)
+        job = WORKFLOW["jobs"]["test-model-cuda-e2e"]
+        self.assertNotIn("download-artifact", set(_all_keys(job)))
+        self.assertTrue(job["with"]["upload-artifact"].startswith("cuda-bench-"))
+        # Exported .pte/.ptd live outside RUNNER_ARTIFACT_DIR; only the
+        # benchmark JSON under bench/ is uploaded.
+        script = job["with"]["script"]
+        self.assertIn('MODEL_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/', script)
+        self.assertEqual(1, script.count("RUNNER_ARTIFACT_DIR"))
+        self.assertIn('BENCH_RESULTS_DIR="${RUNNER_ARTIFACT_DIR}/bench"', script)

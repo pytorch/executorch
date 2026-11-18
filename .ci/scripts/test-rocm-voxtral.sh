@@ -35,10 +35,10 @@ export HF_TOKEN
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import TORCHAO_NIGHTLY_VERSION
+from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
 from torch_pin import TORCH_VERSION
 
-print(TORCH_VERSION, TORCHAO_NIGHTLY_VERSION)
+print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
@@ -48,7 +48,22 @@ python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
   "${TORCHAO_WHEEL}"
-python -m pip install --editable . --no-build-isolation
+# ExecuTorch requires torchao>=TORCHAO_NIGHTLY_VERSION, which has no ROCm build, so
+# install its other dependencies separately to keep the ROCm TorchAO wheel in place.
+python -m pip install --editable . --no-build-isolation --no-deps
+python - <<'PY' >"${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
+from importlib.metadata import requires
+
+from packaging.requirements import Requirement
+
+for spec in requires("executorch") or []:
+    req = Requirement(spec)
+    if req.name == "torchao":
+        continue
+    if req.marker is None or req.marker.evaluate({"extra": ""}):
+        print(spec)
+PY
+python -m pip install -r "${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
 
 if ! command -v conda >/dev/null; then
   echo "The ROCm CI image must provide conda for its runtime libraries"

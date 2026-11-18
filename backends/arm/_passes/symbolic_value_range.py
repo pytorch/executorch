@@ -11,6 +11,7 @@ from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.utils._sympy.interp import sympy_interp
 
 _MAX_SET_SIZE = 256
+_MAX_EXACT_FLOAT_INT = 2**53
 _ExactValues = Optional[frozenset[sympy.Basic]]
 
 
@@ -158,6 +159,22 @@ class _ExactValueAnalysis:
     @staticmethod
     def python_floordiv(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
         return _ExactValueAnalysis.floordiv(lhs, rhs)
+
+    @staticmethod
+    def int_truediv(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
+        if (
+            lhs is None
+            or rhs is None
+            or any(
+                b == 0 or abs(a // b) > _MAX_EXACT_FLOAT_INT for a in lhs for b in rhs
+            )
+        ):
+            return None
+        return _combine_values(
+            lhs,
+            rhs,
+            lambda a, b: a // b if a % b == 0 else sympy.Float(int(a) / int(b)),
+        )
 
     @staticmethod
     def pow(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:

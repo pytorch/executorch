@@ -10,7 +10,7 @@ import operator
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
@@ -38,8 +38,10 @@ from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
 from torch.export import ExportedProgram
+from torch.export.graph_signature import ConstantArgument
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
+from torch.fx.experimental.symbolic_shapes import compute_unbacked_bindings
 from torch.fx.graph import CodeGen
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import _extract_tensor_metadata, TensorMetadata
@@ -237,6 +239,65 @@ class ExportedProgramPassResult:
     modified: bool
 
 
+def _sync_output_specs(exported_program: ExportedProgram) -> bool:
+    """Realign ``output_specs`` with the graph's output node.
+
+    A pass that replaces an output node leaves the signature naming the old one,
+    which later stages then disagree with. Rewriting the spec to match is always
+    safe; changing an output between a node and a literal is not, so that raises
+    rather than guessing.
+
+    Returns whether any spec changed.
+    """
+    output_node = exported_program.graph_module.graph.output_node()
+    outputs = output_node.args[0]
+    assert isinstance(outputs, (tuple, list))
+
+    output_specs = exported_program.graph_signature.output_specs
+    if len(outputs) != len(output_specs):
+        raise ExportPassBaseError(
+            f"Graph has {len(outputs)} outputs, but its signature has "
+            f"{len(output_specs)} output specs"
+        )
+
+    modified = False
+    for output, output_spec in zip(outputs, output_specs):
+        if isinstance(output_spec.arg, ConstantArgument):
+            if isinstance(output, torch.fx.Node):
+                raise ExportPassBaseError(
+                    f"Output {output.name} replaced a literal output; changing output "
+                    "representation is not supported"
+                )
+            if output_spec.arg.value != output:
+                output_spec.arg = replace(output_spec.arg, value=output)
+                modified = True
+            continue
+        if not isinstance(output, torch.fx.Node):
+            raise ExportPassBaseError(
+                f"Output {output_spec.arg.name} became a literal; changing output "
+                "representation is not supported"
+            )
+        if output_spec.arg.name != output.name:
+            output_spec.arg = replace(output_spec.arg, name=output.name)
+            modified = True
+    return modified
+
+
+def _rename_output_specs(exported_program: ExportedProgram, old: str, new: str) -> None:
+    """Rename ``old`` to ``new`` in ``output_specs`` only.
+
+    ``ExportGraphSignature.get_replace_hook`` renames input specs alongside the
+    output ones, so replacing a placeholder that is also returned renames its
+    input spec out from under callers that still look it up by its old name
+    (``delete_constant_placeholder``, for one).
+    """
+    for output_spec in exported_program.graph_signature.output_specs:
+        if isinstance(output_spec.arg, ConstantArgument):
+            continue
+        if output_spec.arg.name == old:
+            output_spec.arg = replace(output_spec.arg, name=new)
+
+
 class ExportedProgramPassBase(ABC):
     """
     Base interface for implementing passes that operate on ExportedProgram.
@@ -245,12 +306,41 @@ class ExportedProgramPassBase(ABC):
     def __call__(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         """
         Runs the precondition check, the pass itself, and the postcondition check.
+
+        Prefer the node replacement APIs (``replace_all_uses_with``,
+        ``replace_input_with``) in ``call``: a replace hook keeps the signature
+        valid as the graph changes. Output specs are realigned with the graph
+        afterwards regardless, so ``ensures`` sees a self-consistent program.
         """
 
         self.requires(exported_program)
-        res = self.call(exported_program)
-        self.ensures(exported_program)
-        return res
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+        hook_modified = False
+
+        def tracking_hook(old: torch.fx.Node, new: str, user: torch.fx.Node) -> None:
+            # Bound to the graph the hook was installed on: GraphModule.__deepcopy__
+            # carries _replace_hooks over to the copy, and rewriting the copy must
+            # not touch this program. The signature is read now rather than
+            # captured because a pass can swap _graph_signature for a fresh object
+            # while it runs.
+            if user.graph is not graph or user.op != "output" or old.name == new:
+                return
+            nonlocal hook_modified
+            hook_modified = True
+            _rename_output_specs(exported_program, old.name, new)
+
+        with graph_module._set_replace_hook(tracking_hook):
+            res = self.call(exported_program)
+        result_graph_module = res.exported_program.graph_module
+        if tracking_hook in result_graph_module._replace_hooks:
+            result_graph_module._unregister_replace_node_hook(tracking_hook)
+        signature_modified = _sync_output_specs(res.exported_program)
+        self.ensures(res.exported_program)
+        return ExportedProgramPassResult(
+            res.exported_program,
+            res.modified or hook_modified or signature_modified,
+        )
 
     @abstractmethod
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
@@ -360,14 +450,11 @@ class _ExportPassBase(PassBase):
 
                     try:
                         assert self.fake_tensor_mode is not None
-                        # TODO we should allocate static shapes
-                        # for param/buffer values
-                        if isinstance(x, torch.nn.Parameter):
-                            fake_tensor = self.fake_tensor_mode.from_tensor(
-                                x, static_shapes=True
-                            )
-                        else:
-                            fake_tensor = self.fake_tensor_mode.from_tensor(x)
+                        # A real tensor here is constant data, so its sizes
+                        # are known and must not become new symbols.
+                        fake_tensor = self.fake_tensor_mode.from_tensor(
+                            x, static_shapes=True
+                        )
                     except UnsupportedFakeTensorException:
                         # TODO: This is just a workaround to get over the
                         # x.as_subclass error
@@ -597,6 +684,9 @@ class _ExportPassBase(PassBase):
             kind, target, args_proxy, kwargs_proxy, name=name
         )
         res_proxy.node.meta.update(meta.data)
+        if self.fake_tensor_mode and (shape_env := self.fake_tensor_mode.shape_env):
+            if symbol_to_path := compute_unbacked_bindings(shape_env, res_data):
+                res_proxy.node.meta["unbacked_bindings"] = symbol_to_path
         self.tracer.set_metadata(res_proxy.node, res_data)
         return ProxyValue(res_data, res_proxy)
 
@@ -872,8 +962,25 @@ class _ExportPassBase(PassBase):
         self.tracer.fake_tensor_mode = fake_tensor_mode
         self.fake_tensor_mode = fake_tensor_mode
 
-        with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
-            result = self.call_submodule(graph_module, tuple(inputs))
+        shape_env = fake_tensor_mode.shape_env
+        outer_pending = None
+        outer_ignorable = None
+        if shape_env is not None:
+            # Replay may be nested inside an operator that owns pending symbols.
+            outer_pending = list(shape_env.pending_fresh_unbacked_symbols)
+            outer_ignorable = list(shape_env.ignorable_fresh_unbacked_symbols)
+            shape_env.pending_fresh_unbacked_symbols.clear()
+            shape_env.ignorable_fresh_unbacked_symbols.clear()
+
+        try:
+            with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
+                result = self.call_submodule(graph_module, tuple(inputs))
+        finally:
+            if shape_env is not None:
+                shape_env.pending_fresh_unbacked_symbols.clear()
+                shape_env.ignorable_fresh_unbacked_symbols.clear()
+                shape_env.pending_fresh_unbacked_symbols.extend(outer_pending)
+                shape_env.ignorable_fresh_unbacked_symbols.extend(outer_ignorable)
 
         return result
 

@@ -6,11 +6,13 @@
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+from torch._guards import detect_fake_mode
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 from .utils import copy_meta
 
@@ -48,8 +50,9 @@ class InsertCastForFpActQuantizedWeight(ExportPass):
         optionally wrapped in a dequantize op
       - Input activation dtype is fp32
 
-    The bias meta["val"] is also updated to fp16 to stay consistent with the
-    fp16 compute domain of the node.
+    The bias and the weight dequantize are moved to fp16 as well, so the node
+    stays valid if it falls back to CPU instead of being delegated. A bias
+    parameter is replaced by an fp16 copy, leaving the caller's tensor untouched.
     """
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
@@ -77,6 +80,25 @@ class InsertCastForFpActQuantizedWeight(ExportPass):
         param_node = self._get_weight_param_node(weight)
         return param_node is not None and bool(param_node.meta.get(QCOM_QUANT_ATTRS))
 
+    def _replace_bias_with_fp16_copy(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        bias_node: torch.fx.Node,
+    ):
+        bias = get_parameter(bias_node, self.edge_program).detach().to(torch.float16)
+        buffer_name = get_new_attr_name_with_prefix(f"{bias_node.name}_fp16")(
+            graph_module
+        )
+        graph_module.register_buffer(buffer_name, bias)
+        with graph_module.graph.inserting_after(bias_node):
+            get_attr_node = graph_module.graph.get_attr(buffer_name)
+        fake_mode = detect_fake_mode(bias_node.meta["val"])
+        get_attr_node.meta["val"] = fake_mode.fake_tensor_converter.from_real_tensor(
+            fake_mode, bias
+        )
+        node.replace_input_with(bias_node, get_attr_node)
+
     def _insert_fp32_fp16_casts(
         self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
     ):
@@ -96,12 +118,19 @@ class InsertCastForFpActQuantizedWeight(ExportPass):
             )
         node.replace_input_with(input_act, cast_in)
 
-        # Update bias meta["val"] to fp16 if present.
         if len(node.args) > 2 and node.args[2] is not None:
             bias_node = node.args[2]
             if isinstance(bias_node, torch.fx.Node) and "val" in bias_node.meta:
                 if bias_node.meta["val"].dtype == torch.float32:
-                    bias_node.meta["val"] = bias_node.meta["val"].to(torch.float16)
+                    if is_parameter(bias_node, self.edge_program):
+                        self._replace_bias_with_fp16_copy(graph_module, node, bias_node)
+                    else:
+                        bias_node.meta["val"] = bias_node.meta["val"].to(torch.float16)
+
+        weight = node.args[1]
+        if weight.target in dq_ops and weight.meta["val"].dtype == torch.float32:
+            weight.kwargs = {**weight.kwargs, "out_dtype": torch.float16}
+            weight.meta["val"] = weight.meta["val"].to(torch.float16)
 
         users = list(node.users.keys())
         orig_output_val = node.meta["val"]

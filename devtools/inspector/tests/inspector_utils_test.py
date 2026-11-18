@@ -6,11 +6,19 @@
 
 # pyre-unsafe
 
+import io
+import math
+import os
+import sys
 import tempfile
+import types
 import unittest
+import warnings
 from typing import Dict, Tuple
+from unittest.mock import patch
 
 import executorch.exir.tests.models as models
+import pandas as pd
 
 import torch
 from executorch.devtools import generate_etrecord, parse_etrecord
@@ -30,8 +38,10 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    compare_results,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
+    display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     find_op_names,
     find_populated_event,
@@ -41,6 +51,7 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     NodeFilter,
+    plot_metric,
     propagate_back_debug_handle,
     TimeScale,
 )
@@ -228,6 +239,73 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertLess(calculate_mse([a], [b])[0], 0.5)
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
+
+    def test_compare_results_with_non_tensor_output(self):
+        # Non-tensor outputs (e.g. ints) have no metric value and must not
+        # break printing or plotting.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        a = torch.rand(4, 4)
+        b = a.clone()
+        b[0, 0] += 1e-2
+        for plot in (False, True):
+            results = compare_results([a, 3], [b, 3], plot=plot)
+            for values in results.values():
+                self.assertEqual(len(values), 2)
+                self.assertIsNotNone(values[0])
+                self.assertIsNone(values[1])
+
+    def test_compare_results_plot_non_finite_metrics(self):
+        # SNR is inf for identical tensors and -inf when the reference is all
+        # zeros; plotting must not fail on non-finite axis limits.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        a = torch.rand(4, 4)
+        zeros = torch.zeros(4, 4)
+        for ref, out, expected_snr in ((a, a.clone(), math.inf), (zeros, a, -math.inf)):
+            results = compare_results([ref], [out], plot=True)
+            self.assertEqual(results["snr"], [expected_snr])
+
+    def test_plot_metric_empty_result(self):
+        # No values to plot: return without creating a figure or writing a file.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cwd = os.getcwd()
+            os.chdir(tmp_dir)
+            try:
+                plot_metric([], "snr")
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(os.listdir(tmp_dir), [])
+        self.assertEqual(plt.get_fignums(), [])
+
+    def test_display_or_print_df_in_ipython(self):
+        displayed = []
+        fake_display = types.ModuleType("IPython.display")
+        fake_display.display = displayed.append
+        fake_ipython = types.ModuleType("IPython")
+        fake_ipython.get_ipython = lambda: object()
+        fake_ipython.display = fake_display
+        out = io.StringIO()
+        with patch.dict(
+            sys.modules, {"IPython": fake_ipython, "IPython.display": fake_display}
+        ), warnings.catch_warnings():
+            # Styler.applymap is deprecated in pandas 2.1 and removed in 3.0.
+            warnings.filterwarnings(
+                "error", message=".*applymap.*", category=FutureWarning
+            )
+            display_or_print_df(pd.DataFrame({"a": [1.0]}), out)
+        self.assertEqual(len(displayed), 1, out.getvalue())
+        self.assertIsInstance(displayed[0], pd.io.formats.style.Styler)
+        self.assertIn("font-size: 12px", displayed[0].to_html())
+        self.assertEqual(out.getvalue(), "")
 
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)

@@ -36,9 +36,13 @@ class QnnHtpPassManager(QnnPassManager):
         return deps
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         passes = [DecomposeReciprocal, RecomposeHadamard]
-        passes.extend(super().get_annotation_passes())
+        passes.extend(
+            super().get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            )
+        )
         return passes
 
     @classmethod

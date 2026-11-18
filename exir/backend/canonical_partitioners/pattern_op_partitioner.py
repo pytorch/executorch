@@ -110,6 +110,7 @@ def generate_pattern_op_partitions(
     partitions_list: Optional[List[List[torch.fx.Node]]] = None,
     op_support: Optional[OperatorSupportBase] = None,
     ignore_literals: bool = False,
+    skip_horizontal_fusion: bool = False,
 ) -> List[Partition]:
     """
     Args:
@@ -126,6 +127,7 @@ def generate_pattern_op_partitions(
             - Getting the result of create_op_support()
             - Getting the result of create_pattern_support()
             - Multiple OperatorSupportBase classes chained together with chain()
+        skip_horizontal_fusion: Restrict merging to data-dependent partitions.
 
     Returns
         A list of partitions (largest possible subgraphs) containing nodes are
@@ -175,6 +177,7 @@ def generate_pattern_op_partitions(
         graph_module,
         final_op_support,
         allows_single_node_partition=True,
+        skip_horizontal_fusion=skip_horizontal_fusion,
     )
     partition_list = capability_partitioner.propose_partitions()
 

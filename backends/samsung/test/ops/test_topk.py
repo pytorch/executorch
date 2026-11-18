@@ -40,13 +40,17 @@ class TestTopK(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_topk_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_topk_dim3(self):
-        inputs = (torch.randn(1, 16, 8, 8),)
+        # Random permutation of 1..1024 gives well-separated values,
+        # so TopK k-boundary ordering is unambiguous.
+        x = torch.randperm(16 * 8 * 8, dtype=torch.float32).view(1, 16, 8, 8)
+        inputs = (x,)
         self._test(TopK(k=5, dim=3), inputs)
 
     def test_fp32_topk_dim_negative1(self):
-        inputs = (torch.randn(1, 16, 8, 8),)
+        x = torch.randperm(16 * 8 * 8, dtype=torch.float32).view(1, 16, 8, 8)
+        inputs = (x,)
         self._test(TopK(k=5, dim=-1), inputs)

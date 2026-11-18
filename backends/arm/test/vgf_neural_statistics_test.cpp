@@ -64,6 +64,18 @@ class ScopedNeuralStatisticsEnv {
   std::string old_mode_;
 };
 
+vgf::VgfNeuralStatisticsMetadataContext make_g2_metadata_context(
+    int mode_index = 1) {
+  vgf::VgfNeuralStatisticsMetadataContext metadata;
+  metadata.mode_index = mode_index;
+  metadata.target_available = true;
+  metadata.device_name = "Mali-G2-Pro-NX MC1";
+  metadata.vendor_id = 5045;
+  metadata.device_id = 7;
+  metadata.driver_version = 11;
+  return metadata;
+}
+
 } // namespace
 
 TEST(VgfNeuralStatisticsTest, RuntimeConfigDefaultsToMode1) {
@@ -107,12 +119,13 @@ TEST(VgfNeuralStatisticsTest, RuntimeConfigRecognizesFalseLikeValues) {
 
 TEST(VgfNeuralStatisticsTest, SerializesUnavailableWrapper) {
   const std::string metadata =
-      vgf::make_vgf_neural_statistics_unavailable_metadata("api missing");
+      vgf::make_vgf_neural_statistics_unavailable_metadata(
+          "api missing", make_g2_metadata_context());
 
   EXPECT_NE(
       metadata.find("\"schema\":\"executorch.vgf.neural_statistics\""),
       std::string::npos);
-  EXPECT_NE(metadata.find("\"schema_version\":1"), std::string::npos);
+  EXPECT_NE(metadata.find("\"schema_version\":2"), std::string::npos);
   EXPECT_NE(metadata.find("\"api_available\":false"), std::string::npos);
   EXPECT_NE(metadata.find("\"data_available\":false"), std::string::npos);
   EXPECT_NE(metadata.find("\"available\":false"), std::string::npos);
@@ -123,6 +136,7 @@ TEST(VgfNeuralStatisticsTest, SerializesMockedBlobs) {
   vgf::VgfNeuralStatisticsCollection collection;
   collection.api_available = true;
   collection.data_available = true;
+  collection.metadata_context = make_g2_metadata_context();
 
   vgf::VgfCollectedSegmentNeuralStatistics segment;
   segment.segment_id = 7;
@@ -146,33 +160,87 @@ TEST(VgfNeuralStatisticsTest, SerializesMockedBlobs) {
   const std::string metadata =
       vgf::serialize_vgf_neural_statistics_collection(collection);
 
-  EXPECT_NE(metadata.find("\"schema_version\":1"), std::string::npos);
+  EXPECT_NE(metadata.find("\"schema_version\":2"), std::string::npos);
   EXPECT_NE(metadata.find("\"api_available\":true"), std::string::npos);
   EXPECT_NE(metadata.find("\"data_available\":true"), std::string::npos);
   EXPECT_NE(metadata.find("\"segment_id\":7"), std::string::npos);
+  EXPECT_NE(
+      metadata.find(
+          "\"statistics_mode\":{\"executorch_index\":1,\"vulkan_value\":2,"
+          "\"vulkan_name\":\"VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM\"}"),
+      std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"device_name\":\"Mali-G2-Pro-NX MC1\""),
+      std::string::npos);
+  EXPECT_NE(metadata.find("\"vendor_id\":5045"), std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"counter_layout\":{\"available\":true,"
+                    "\"schema_id\":\"arm.mali-g2.neural-statistics.mode1\","
+                    "\"schema_version\":1,\"endianness\":\"little\","
+                    "\"word_type\":\"uint32\",\"words_per_task\":64,"
+                    "\"leading_block_count\":1"),
+      std::string::npos);
 
   // Base64("AQID") = {0x01,0x02,0x03}; Base64("3q0=") = {0xDE,0xAD}.
   EXPECT_NE(metadata.find("\"data\":\"AQID\""), std::string::npos);
   EXPECT_NE(metadata.find("\"data\":\"3q0=\""), std::string::npos);
 }
 
+TEST(VgfNeuralStatisticsTest, SerializesMode0InterpretationMetadata) {
+  vgf::VgfNeuralStatisticsCollection collection;
+  collection.metadata_context = make_g2_metadata_context(/*mode_index=*/0);
+
+  const std::string metadata =
+      vgf::serialize_vgf_neural_statistics_collection(collection);
+
+  EXPECT_NE(
+      metadata.find(
+          "\"statistics_mode\":{\"executorch_index\":0,\"vulkan_value\":1,"
+          "\"vulkan_name\":\"VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM\"}"),
+      std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"schema_id\":\"arm.mali-g2.neural-statistics.mode0\""),
+      std::string::npos);
+}
+
+TEST(VgfNeuralStatisticsTest, DoesNotClaimG2LayoutForUnknownTarget) {
+  vgf::VgfNeuralStatisticsCollection collection;
+  collection.metadata_context = make_g2_metadata_context();
+  collection.metadata_context.device_name = "Unknown accelerator";
+
+  const std::string metadata =
+      vgf::serialize_vgf_neural_statistics_collection(collection);
+
+  EXPECT_NE(
+      metadata.find("\"counter_layout\":{\"available\":false"),
+      std::string::npos);
+  EXPECT_NE(metadata.find("\"schema_id\":\"\""), std::string::npos);
+}
+
 TEST(VgfNeuralStatisticsTest, TestCollectorMocksVulkanApi) {
   vgf::set_vgf_neural_statistics_collector_for_test(
       [](VkDevice, const std::vector<vgf::VgfNeuralStatisticsSegmentContext>&)
-          -> std::string {
-        return "{\"schema\":\"executorch.vgf.neural_statistics\","
-               "\"schema_version\":1,"
-               "\"api_available\":true,"
-               "\"data_available\":true,"
-               "\"available\":true,"
-               "\"segments\":[]}";
+          -> vgf::VgfNeuralStatisticsCollection {
+        vgf::VgfNeuralStatisticsCollection collection;
+        collection.api_available = true;
+        collection.data_available = true;
+        return collection;
       });
 
-  const std::string metadata =
-      vgf::collect_vgf_neural_statistics_metadata(VK_NULL_HANDLE, {});
+  const std::string metadata = vgf::collect_vgf_neural_statistics_metadata(
+      VK_NULL_HANDLE, {}, make_g2_metadata_context());
 
-  EXPECT_NE(metadata.find("\"schema_version\":1"), std::string::npos);
+  EXPECT_NE(metadata.find("\"schema_version\":2"), std::string::npos);
   EXPECT_NE(metadata.find("\"data_available\":true"), std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"statistics_mode\":{\"executorch_index\":1"),
+      std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"device_name\":\"Mali-G2-Pro-NX MC1\""),
+      std::string::npos);
+  EXPECT_NE(
+      metadata.find("\"schema_id\":\"arm.mali-g2.neural-statistics.mode1\""),
+      std::string::npos);
 
   vgf::reset_vgf_neural_statistics_collector_for_test();
 }
@@ -180,10 +248,10 @@ TEST(VgfNeuralStatisticsTest, TestCollectorMocksVulkanApi) {
 TEST(VgfNeuralStatisticsTest, DefaultCollectorHandlesUnavailableApi) {
   vgf::reset_vgf_neural_statistics_collector_for_test();
 
-  const std::string metadata =
-      vgf::collect_vgf_neural_statistics_metadata(VK_NULL_HANDLE, {});
+  const std::string metadata = vgf::collect_vgf_neural_statistics_metadata(
+      VK_NULL_HANDLE, {}, make_g2_metadata_context());
 
-  EXPECT_NE(metadata.find("\"schema_version\":1"), std::string::npos);
+  EXPECT_NE(metadata.find("\"schema_version\":2"), std::string::npos);
   EXPECT_NE(metadata.find("\"data_available\":false"), std::string::npos);
   EXPECT_NE(metadata.find("\"available\":false"), std::string::npos);
 }

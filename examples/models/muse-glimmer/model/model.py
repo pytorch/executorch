@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-
 # Config
 
 
@@ -71,9 +70,19 @@ class MuseGlimmerConfig:
         return pattern[count_backward % len(pattern)]
 
     @staticmethod
-    def from_json(path: str) -> "MuseGlimmerConfig":
+    def from_json(
+        path: str, *, require_native_context: bool = False
+    ) -> "MuseGlimmerConfig":
+        """Read params, optionally requiring an explicit checkpoint context limit."""
         with open(path) as f:
             d = json.load(f)
+        if require_native_context:
+            value = d.get("max_seq_len") if isinstance(d, dict) else None
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"Native context requires a positive non-boolean integer "
+                    f"'max_seq_len' in {path}; got {value!r}"
+                )
         return MuseGlimmerConfig(
             **{
                 k: v
@@ -173,12 +182,20 @@ def apply_rotary_emb(
 # KV Caches
 
 
+def ring_buffer_size(window_size: int, max_write_len: int) -> int:
+    """Ring slots so every query of a ``max_write_len``-token write sees its window.
+
+    The first query of a T-token write still needs the W - 1 keys before it,
+    so W + T - 1 consecutive positions must coexist in the ring.
+    """
+    return window_size + max_write_len - 1
+
+
 class RingKVCache(nn.Module):
     """Ring-buffer KV cache for sliding window attention.
 
-    Sized to ``window_size * 2`` to avoid index_copy_ collisions when
-    prefill chunks approach the window size. The C++ runner must chunk
-    prefill to not exceed buf_size.
+    ``max_write_len`` is the largest single ``update`` (the max prefill
+    chunk); it defaults to ``window_size``, like the MLX ``RingBufferKVCache``.
     """
 
     def __init__(
@@ -187,10 +204,12 @@ class RingKVCache(nn.Module):
         window_size: int,
         num_kv_heads: int,
         head_dim: int,
+        max_write_len: int | None = None,
     ):
         super().__init__()
         self.window_size = window_size
-        self.buf_size = window_size * 2
+        self.max_write_len = window_size if max_write_len is None else max_write_len
+        self.buf_size = ring_buffer_size(window_size, self.max_write_len)
         cache_shape = (max_batch_size, num_kv_heads, self.buf_size, head_dim)
         self.register_buffer("k_cache", torch.zeros(cache_shape), persistent=False)
         self.register_buffer("v_cache", torch.zeros(cache_shape), persistent=False)
@@ -502,6 +521,7 @@ class MuseGlimmerModel(nn.Module):
 
         # Sliding window size for mask building (from config pattern)
         self._sliding_window = max(config.attn_pattern)
+        self.max_prefill_chunk = self._sliding_window
 
         # Constants as buffers so they move with .to(device)
         self.register_buffer(
@@ -520,6 +540,24 @@ class MuseGlimmerModel(nn.Module):
             persistent=False,
         )
 
+    def set_max_prefill_chunk(self, max_prefill_chunk: int) -> None:
+        """Size the sliding-window ring buffers for prefill chunks up to this long."""
+        self.max_prefill_chunk = max_prefill_chunk
+        for layer in self.layers:
+            attn = layer.self_attn
+            if not attn.is_sliding:
+                continue
+            old = attn.kv_cache.k_cache
+            with torch.device(old.device):
+                cache = RingKVCache(
+                    max_batch_size=old.shape[0],
+                    window_size=attn.window_size,
+                    num_kv_heads=attn.n_kv_heads,
+                    head_dim=attn.head_dim,
+                    max_write_len=max_prefill_chunk,
+                )
+            attn.kv_cache = cache.to(old.dtype)
+
     def _build_masks(
         self, input_pos: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -536,7 +574,7 @@ class MuseGlimmerModel(nn.Module):
 
         # Sliding window mask over ring buffer: (1, 1, T_q, buf_size)
         window_size = self._sliding_window
-        buf_size = window_size * 2
+        buf_size = ring_buffer_size(window_size, self.max_prefill_chunk)
         seq_len = input_pos.shape[0]
         total_written = input_pos[0] + seq_len
         j = torch.arange(buf_size, dtype=torch.long, device=input_pos.device)
@@ -884,7 +922,7 @@ def _split_gate_up(
 
 
 def load_unfused_bf16_state_dict(
-    checkpoint_dir: str, max_seq_len: int = 16384
+    checkpoint_dir: str, max_seq_len: int | None = 16384
 ) -> tuple[dict[str, torch.Tensor], MuseGlimmerConfig]:
     """Load a consolidated Muse Glimmer checkpoint as a fully-unfused bf16 state dict.
 
@@ -894,8 +932,13 @@ def load_unfused_bf16_state_dict(
     fusion both operate on this canonical form downstream (``quantize_and_save``
     and ``checkpoint_loader``), so no fusion layout is baked into the checkpoint.
     """
-    config = MuseGlimmerConfig.from_json(os.path.join(checkpoint_dir, "params.json"))
-    config.max_seq_len = max_seq_len
+    # None preserves the checkpoint limit instead of sizing an export-time cache.
+    config = MuseGlimmerConfig.from_json(
+        os.path.join(checkpoint_dir, "params.json"),
+        require_native_context=max_seq_len is None,
+    )
+    if max_seq_len is not None:
+        config.max_seq_len = max_seq_len
     state_dict = _load_and_remap_checkpoint(checkpoint_dir)
     state_dict = _split_fused_qkv(state_dict, config)
     state_dict = _split_gate_up(state_dict, config)

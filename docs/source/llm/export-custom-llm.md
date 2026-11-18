@@ -513,7 +513,8 @@ lowered graph():
 
 ### Further Model Analysis and Debugging
 
-Through the [ExecuTorch's Developer Tools](getting-started.md#performance-analysis), users are able to profile model execution, giving timing information for each operator in the model, doing model numeric debugging, etc.
+Use [ExecuTorch's Developer Tools](../devtools-overview.md) to profile model
+execution, inspect per-operator timing, and debug numerical differences.
 
 An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.rst).
 

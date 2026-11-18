@@ -41,6 +41,7 @@ class SafeTensorsReader {
  private:
   std::unordered_map<std::string, TensorEntry> entries_;
   std::vector<std::string> names_;
+  size_t total_bytes_ = 0;
 
  public:
   static constexpr size_t kLengthPrefixSize = 8;

@@ -40,7 +40,7 @@ The main configuration point for the lowering is the `EthosUCompileSpec` consume
 The full user-facing API is documented below.
 
 ```python
-class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None)
+class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None, plan_delegate_scratch: bool = False)
 ```
 Normalise Ethos-U compile configuration and compiler flags.
 
@@ -57,6 +57,11 @@ Args:
         Defaults to ``"Arm/vela.ini"``.
 - **external_block_placements (VelaExternalBlockPlacements | None)**: Command
         and weight data to emit as named data with their placement tags.
+- **max_scratch_size (int | None)**: Maximum delegate scratch arena size in
+        bytes for the deployment platform. Checked against Vela's output;
+        independent of Vela's arena cache size. None disables the check.
+- **plan_delegate_scratch (bool)**: Declare delegate scratch for AOT
+        memory planning. Defaults to False.
 
 ```python
 def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -73,6 +78,19 @@ Set a path for dumping TOSA and PTE intermediate results.
 
 Args:
 - **output_path**: Path to dump intermediate results to.
+
+```python
+def EthosUCompileSpec.set_delegate_mutable_buffers(self, enabled: bool = True) -> 'EthosUCompileSpec':
+```
+Let the delegate own mutable buffers (streaming state).
+
+The buffers become variables in a persistent region kept across
+invocations, instead of being passed as program inputs and outputs.
+Requires Vela 5.3 or later (for --separate-persistent-region), and the
+firmware must be built with ETHOSU_PERSISTENT_REGION.
+
+Args:
+- **enabled**: Whether the delegate owns mutable buffers.
 
 ```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
@@ -155,6 +173,24 @@ The placement of the scratch buffer and the Neural Network determine the memory 
 | **SRAM-Only**      | On-chip SRAM                     | On-chip SRAM               | When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC | Limited by SRAM size; often not feasible for larger NNs |
 | **Shared-SRAM**    | On-chip SRAM                     | External memory (Flash/DRAM) | Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage | Requires enough SRAM to hold the largest intermediate tensor |
 | **Dedicated-SRAM** | External memory  | External memory (Flash/DRAM) | Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM  | Need high-bandwidth external memory to deliver good performance |
+
+Set `EthosUCompileSpec(max_scratch_size=...)` to the number of bytes reserved for
+delegate scratch on the deployment platform. After Vela compilation, the backend
+checks each delegate's generated scratch arena against this budget and rejects
+oversized arenas with the required size, available capacity, and excess in bytes.
+This budget covers delegate scratch; other runtime allocations need their own
+memory budgets.
+
+The U55 test helper (`get_u55_compile_spec`) and AOT compiler
+(`aot_arm_compiler.py`) default to a 2 MiB (2,097,152 byte) scratch budget only
+for the Corstone-300 test configuration: U55 `Shared_Sram` with
+`Ethos_U55_High_End_Embedded` and `Arm/vela.ini`, including when these settings
+are omitted. Custom system configurations or INI files have no implicit scratch
+limit in either flow.
+For another deployment platform, pass its actual capacity through
+`max_scratch_size` or the AOT compiler's `--max_scratch_size` option. Vela's
+`--arena-cache-size` does not impose a hard limit on the total `Shared_Sram`
+scratch arena.
 
 Here is an in-depth explanation of the different modes:
 

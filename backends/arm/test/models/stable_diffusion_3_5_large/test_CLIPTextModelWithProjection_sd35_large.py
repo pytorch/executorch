@@ -67,14 +67,19 @@ class TestCLIPTextModelWithProjection:
             ),
         )
 
-    def create_model(
+    def prepare_model_and_inputs(
         self,
         config,
-    ) -> SD3CLIPTextEncoderWrapper:
-        """Instantiate wrapped CLIPTextModelWithProjection for tests."""
-        return SD3CLIPTextEncoderWrapper(
+    ) -> tuple[SD3CLIPTextEncoderWrapper, input_t]:
+        """Prepare wrapped CLIPTextModelWithProjection for export."""
+        model = SD3CLIPTextEncoderWrapper(
             CLIPTextModelWithProjection(config).to(dtype=config.dtype)  # type: ignore[call-arg]
         ).eval()
+        inputs = self.create_dummy_inputs(config)
+        # Install Transformers' lazy hidden-state hooks before strict export.
+        with torch.no_grad():
+            model(*inputs)
+        return model, inputs
 
     @staticmethod
     def ops_after_partitioner_INT(config) -> dict[str, int]:
@@ -107,11 +112,12 @@ def test_clip_text_model_with_projection_tosa_FP(config_factory, atol):
     """Run the CLIPTextModelWithProjection TOSA FP test for a given config."""
     test_helper = TestCLIPTextModelWithProjection()
     config = config_factory()
+    model, inputs = test_helper.prepare_model_and_inputs(config)
 
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
-            test_helper.create_model(config),
-            test_helper.create_dummy_inputs(config),
+            model,
+            inputs,
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
@@ -136,11 +142,12 @@ def test_clip_text_model_with_projection_tosa_INT(config_factory, atol):
     """Run the CLIPTextModelWithProjection TOSA INT test for a given config."""
     test_helper = TestCLIPTextModelWithProjection()
     config = config_factory()
+    model, inputs = test_helper.prepare_model_and_inputs(config)
 
     with torch.no_grad():
         pipeline = TosaPipelineINT[input_t](
-            test_helper.create_model(config),
-            test_helper.create_dummy_inputs(config),
+            model,
+            inputs,
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
@@ -168,11 +175,12 @@ def test_clip_text_model_with_projection_vgf_no_quant(config_factory):
     """Run the CLIPTextModelWithProjection VGF no-quant test."""
     test_helper = TestCLIPTextModelWithProjection()
     config = config_factory()
+    model, inputs = test_helper.prepare_model_and_inputs(config)
 
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
-            test_helper.create_model(config),
-            test_helper.create_dummy_inputs(config),
+            model,
+            inputs,
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
@@ -200,11 +208,12 @@ def test_clip_text_model_with_projection_vgf_quant(config_factory, atol):
     """Run the CLIPTextModelWithProjection VGF quant test."""
     test_helper = TestCLIPTextModelWithProjection()
     config = config_factory()
+    model, inputs = test_helper.prepare_model_and_inputs(config)
 
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
-            test_helper.create_model(config),
-            test_helper.create_dummy_inputs(config),
+            model,
+            inputs,
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,

@@ -8,18 +8,27 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <bitset>
+#include <cmath>
 #include <iomanip>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/runtime.h>
 
+#include <executorch/backends/vulkan/runtime/ExternalIO.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -39,7 +48,9 @@
 #include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 using namespace vkcompute;
+namespace etvk = executorch::backends::vulkan;
 using namespace vkcompute::api;
+using executorch::runtime::Error;
 
 std::vector<float>
 transpose_matrix(std::vector<float>& mat, const int H, const int W) {
@@ -221,9 +232,9 @@ std::vector<int64_t> get_reference_dim_order(
 std::vector<int64_t> get_reference_padded_sizes(
     const std::vector<int64_t>& sizes,
     const int32_t packed_dim,
-    const int32_t packed_dim_block_size,
+    const int32_t packed_dim_align,
     const int32_t outer_packed_dim = -1,
-    const int32_t outer_packed_dim_block_size = 1) {
+    const int32_t outer_packed_dim_align = 1) {
   int64_t ndim = sizes.size();
   if (ndim == 0) {
     ndim = 1;
@@ -236,23 +247,22 @@ std::vector<int64_t> get_reference_padded_sizes(
     padded_sizes.at(i) = utils::val_at(i - ndim_up4, sizes);
   }
 
-  // Pad the packed dim to the next multiple of the block size if > 1
-  if (packed_dim_block_size > 1) {
+  // Pad the packed dim to the next multiple of the alignment if > 1
+  if (packed_dim_align > 1) {
     const int64_t dim_offset = packed_dim + 1;
     const int64_t padded_dim_size = utils::val_at(-dim_offset, sizes);
     padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up(
-        padded_dim_size, static_cast<int64_t>(packed_dim_block_size));
+        padded_dim_size, static_cast<int64_t>(packed_dim_align));
   }
 
   // For block-packed layouts, also pad the outer packed dimension if > 1
   if (outer_packed_dim >= 0 && outer_packed_dim != packed_dim &&
-      outer_packed_dim_block_size > 1) {
+      outer_packed_dim_align > 1) {
     const int64_t outer_dim_offset = outer_packed_dim + 1;
     const int64_t outer_padded_dim_size =
         utils::val_at(-outer_dim_offset, sizes);
     padded_sizes.at(ndim_up4 - outer_dim_offset) = utils::align_up(
-        outer_padded_dim_size,
-        static_cast<int64_t>(outer_packed_dim_block_size));
+        outer_padded_dim_size, static_cast<int64_t>(outer_packed_dim_align));
   }
 
   return padded_sizes;
@@ -261,7 +271,8 @@ std::vector<int64_t> get_reference_padded_sizes(
 std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
     const utils::GPUMemoryLayout layout,
-    const bool flip_unsqueezed = false) {
+    const bool flip_unsqueezed = false,
+    const int64_t packed_dim_align = 1) {
   int64_t C = utils::val_at(-3, sizes);
   int64_t H = utils::val_at(-2, sizes);
   int64_t W = utils::val_at(-1, sizes);
@@ -270,6 +281,7 @@ std::vector<int64_t> get_reference_strides(
 
   switch (layout) {
     case utils::kWidthPacked:
+      W = utils::align_up(W, packed_dim_align);
       switch (sizes.size()) {
         case 1:
           if (flip_unsqueezed)
@@ -290,13 +302,14 @@ std::vector<int64_t> get_reference_strides(
         default:
           return {};
       }
-      break;
     case utils::kHeightPacked:
+      H = utils::align_up(H, packed_dim_align);
       switch (sizes.size()) {
         case 1:
+          // The implicit H dim is innermost, padded to H.
           if (flip_unsqueezed)
-            return {1, numel, numel, numel};
-          return {1};
+            return {H, numel, numel, numel};
+          return {H};
         case 2:
           if (flip_unsqueezed)
             return {H, 1, numel, numel};
@@ -314,15 +327,17 @@ std::vector<int64_t> get_reference_strides(
           return {};
       }
     case utils::kChannelsPacked:
+      C = utils::align_up(C, packed_dim_align);
       switch (sizes.size()) {
+        // The implicit C dim is innermost, padded to C.
         case 1:
           if (flip_unsqueezed)
-            return {1, numel, numel, numel};
-          return {1};
+            return {C, numel, numel, numel};
+          return {C};
         case 2:
           if (flip_unsqueezed)
-            return {1, W, numel, numel};
-          return {W, 1};
+            return {C, W * C, numel, numel};
+          return {W * C, C};
         case 3:
           if (flip_unsqueezed)
             return {C, W * C, 1, numel};
@@ -575,7 +590,7 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
         // - kInt8 non-block-packed + buffer: 4 (alignment)
         // - kInt8 block-packed: 4 (4 values per dim per texel)
         // - Standard texture: 4 (4 values per texel)
-        // - Contiguous buffer: 1 (no padding)
+        // - Standard buffer: 1 (scalar elements)
         const bool is_non_block_packed_int8 =
             config.dtype == vkapi::kChar && !config.is_block_packed;
         int32_t expected_packed_dim_block_size;
@@ -588,6 +603,8 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
         } else {
           expected_packed_dim_block_size = 1;
         }
+        const int32_t expected_packed_dim_align =
+            config.dtype == vkapi::kFloat ? 4 : expected_packed_dim_block_size;
 
         // For block-packed layouts, outer_packed_dim is also padded
         const int32_t expected_outer_packed_dim_block_size =
@@ -606,6 +623,9 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
             packed_dim_info.packed_dim_block_size,
             expected_packed_dim_block_size)
             << "packed_dim_block_size mismatch for layout="
+            << static_cast<int>(config.layout);
+        ASSERT_EQ(packed_dim_info.packed_dim_align, expected_packed_dim_align)
+            << "packed_dim_align mismatch for layout="
             << static_cast<int>(config.layout);
         ASSERT_EQ(packed_dim_info.outer_packed_dim, config.outer_packed_dim)
             << "outer_packed_dim mismatch for layout="
@@ -636,7 +656,7 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
         std::vector<int64_t> ref_padded_sizes = get_reference_padded_sizes(
             sizes,
             config.packed_dim,
-            expected_packed_dim_block_size,
+            expected_packed_dim_align,
             config.outer_packed_dim,
             expected_outer_packed_dim_block_size);
         ASSERT_TRUE(tensor.padded_sizes() == ref_padded_sizes)
@@ -648,8 +668,8 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
           // For int8 layouts, we rely on padded_sizes and dim_order
           // verification
           if (config.dtype == vkapi::kFloat) {
-            std::vector<int64_t> ref_strides =
-                get_reference_strides(sizes, config.layout);
+            std::vector<int64_t> ref_strides = get_reference_strides(
+                sizes, config.layout, false, expected_packed_dim_align);
             ASSERT_TRUE(tensor.strides() == ref_strides)
                 << "Strides mismatch for layout="
                 << static_cast<int>(config.layout);
@@ -659,8 +679,8 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test) {
             std::vector<int64_t> unsqueezed_strides =
                 flip_and_unsqueeze<int64_t>(
                     tensor.strides(), kTensorStrides, numel);
-            std::vector<int64_t> ref_unsqueezed_strides =
-                get_reference_strides(sizes, config.layout, true);
+            std::vector<int64_t> ref_unsqueezed_strides = get_reference_strides(
+                sizes, config.layout, true, expected_packed_dim_align);
             ASSERT_TRUE(unsqueezed_strides == ref_unsqueezed_strides);
           }
 
@@ -720,10 +740,10 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kWidthPacked,
        /* expected_dim_order */ {0},
-       /* expected_padded_sizes_buffer */ {1, 1, 1, 7},
+       /* expected_padded_sizes_buffer */ {1, 1, 1, 8},
        /* expected_padded_sizes_texture */ {1, 1, 1, 8},
        /* expected_strides_buffer */ {1},
-       /* expected_physical_numel_buffer */ 7,
+       /* expected_physical_numel_buffer */ 8,
        /* expected_physical_numel_texture */ 8,
        /* expected_image_extents */ {2, 1, 1}},
 
@@ -732,23 +752,23 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kWidthPacked,
        /* expected_dim_order */ {0},
-       /* expected_padded_sizes_buffer */ {1, 1, 1, 13},
+       /* expected_padded_sizes_buffer */ {1, 1, 1, 16},
        /* expected_padded_sizes_texture */ {1, 1, 1, 16},
        /* expected_strides_buffer */ {1},
-       /* expected_physical_numel_buffer */ 13,
+       /* expected_physical_numel_buffer */ 16,
        /* expected_physical_numel_texture */ 16,
        /* expected_image_extents */ {4, 1, 1}},
 
       // 1D tensor [7] with channels packed, float dtype
-      // C dimension (implicit, size 1) is padded to 4
+      // C dimension (implicit, size 1) is padded to 4 and is innermost
       {/* sizes */ {7},
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kChannelsPacked,
        /* expected_dim_order */ {0},
-       /* expected_padded_sizes_buffer */ {1, 1, 1, 7},
+       /* expected_padded_sizes_buffer */ {1, 4, 1, 7},
        /* expected_padded_sizes_texture */ {1, 4, 1, 7},
-       /* expected_strides_buffer */ {1},
-       /* expected_physical_numel_buffer */ 7,
+       /* expected_strides_buffer */ {4},
+       /* expected_physical_numel_buffer */ 28,
        /* expected_physical_numel_texture */ 28,
        /* expected_image_extents */ {7, 1, 1}},
 
@@ -757,10 +777,10 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kWidthPacked,
        /* expected_dim_order */ {0, 1},
-       /* expected_padded_sizes_buffer */ {1, 1, 5, 7},
+       /* expected_padded_sizes_buffer */ {1, 1, 5, 8},
        /* expected_padded_sizes_texture */ {1, 1, 5, 8},
-       /* expected_strides_buffer */ {7, 1},
-       /* expected_physical_numel_buffer */ 35,
+       /* expected_strides_buffer */ {8, 1},
+       /* expected_physical_numel_buffer */ 40,
        /* expected_physical_numel_texture */ 40,
        /* expected_image_extents */ {2, 5, 1}},
 
@@ -769,10 +789,10 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kChannelsPacked,
        /* expected_dim_order */ {1, 2, 0},
-       /* expected_padded_sizes_buffer */ {1, 3, 5, 7},
+       /* expected_padded_sizes_buffer */ {1, 4, 5, 7},
        /* expected_padded_sizes_texture */ {1, 4, 5, 7},
-       /* expected_strides_buffer */ {1, 7 * 3, 3},
-       /* expected_physical_numel_buffer */ 105,
+       /* expected_strides_buffer */ {1, 7 * 4, 4},
+       /* expected_physical_numel_buffer */ 140,
        /* expected_physical_numel_texture */ 140,
        /* expected_image_extents */ {7, 5, 1}},
 
@@ -781,10 +801,10 @@ TEST_F(VulkanComputeAPITest, tensor_layout_metadata_test_against_golden) {
        /* dtype */ vkapi::kFloat,
        /* layout */ utils::kHeightPacked,
        /* expected_dim_order */ {0, 1, 3, 2},
-       /* expected_padded_sizes_buffer */ {2, 3, 5, 7},
+       /* expected_padded_sizes_buffer */ {2, 3, 8, 7},
        /* expected_padded_sizes_texture */ {2, 3, 8, 7},
-       /* expected_strides_buffer */ {3 * 5 * 7, 5 * 7, 1, 5},
-       /* expected_physical_numel_buffer */ 210,
+       /* expected_strides_buffer */ {3 * 8 * 7, 8 * 7, 1, 8},
+       /* expected_physical_numel_buffer */ 336,
        /* expected_physical_numel_texture */ 336,
        /* expected_image_extents */ {7, 2, 6}},
 
@@ -1143,12 +1163,15 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   for (size_t i = 0; i < spec_vars.size(); ++i) {
     ASSERT_TRUE(entries[i].constantID == i);
     ASSERT_TRUE(entries[i].offset == sv_size * i);
-    if (i != 4) {
-      ASSERT_TRUE(entries[i].size == 4);
-    } else {
-      ASSERT_TRUE(entries[i].size == 1);
-    }
+    ASSERT_TRUE(entries[i].size == sizeof(VkBool32));
   }
+
+  const vkapi::SpecVarList bool_vars{SV(false), SV(true)};
+  const auto bool_entries = bool_vars.generate_map_entries();
+  ASSERT_EQ(bool_entries[0].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_entries[1].size, sizeof(VkBool32));
+  ASSERT_EQ(bool_vars.at(0).value.as_bool, VK_FALSE);
+  ASSERT_EQ(bool_vars.at(1).value.as_bool, VK_TRUE);
 
   // Check copy
   vkapi::SpecVarList spec_vars_copy(spec_vars);
@@ -1156,7 +1179,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
   // Check validity of the copied data
   const vkapi::SpecVar* copy_data = spec_vars_copy.data();
-  ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
+  ASSERT_TRUE(copy_data[4].value.as_bool == VK_TRUE);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
   ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
 }
@@ -1192,6 +1215,80 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, scale * i + offset);
+  }
+}
+
+TEST_F(VulkanComputeAPITest, half_texture_store_rounds_to_nearest_even) {
+  if (!context()->adapter_ptr()->has_full_float16_buffers_support()) {
+    GTEST_SKIP() << "kHalf tensors are stored as float32 on this device";
+  }
+  // Ties, their neighbors, f16 subnormals and values at and past the largest
+  // f16, where rounding toward zero differs from rounding to nearest even.
+  const std::vector<float> values = {
+      1.0f + 0x1p-11f,
+      1.0f + 0x3p-11f,
+      -(1.0f + 0x3p-11f),
+      std::nextafter(1.0f + 0x1p-11f, 0.0f),
+      std::nextafter(1.0f + 0x1p-11f, 2.0f),
+      0x1p-25f,
+      0x3p-25f,
+      std::nextafter(0x1p-25f, 0.0f),
+      0x1.ffcp-15f,
+      -0x1.0p-24f,
+      65504.0f,
+      65519.0f,
+      65520.0f,
+      -65520.0f,
+      1e6f,
+      -1e6f,
+  };
+
+  struct Params final {
+    utils::ivec3 size;
+    int32_t fill;
+    utils::vec4 values;
+  };
+
+  for (size_t i = 0; i < values.size(); i += 4) {
+    vTensor a(
+        context(),
+        {4, 1, 1},
+        vkapi::kHalf,
+        utils::kTexture3D,
+        utils::kChannelsPacked);
+    Params block{
+        {1, 1, 1},
+        0,
+        {values[i], values[i + 1], values[i + 2], values[i + 3]},
+    };
+    ParamsBuffer params(context(), block);
+
+    vkapi::PipelineBarrier pipeline_barrier{};
+    context()->submit_compute_job(
+        VK_KERNEL(fill_texture__test_half),
+        pipeline_barrier,
+        GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(1u, 1u, 1u),
+        {},
+        VK_NULL_HANDLE,
+        0,
+        a.image(
+            pipeline_barrier,
+            vkapi::PipelineStage::COMPUTE,
+            vkapi::MemoryAccessType::WRITE),
+        params.buffer());
+
+    const std::vector<float> out = extract_vtensor(a);
+    for (size_t j = 0; j < 4; ++j) {
+      const float expected = float(executorch::aten::Half(values[i + j]));
+      // Some devices (Adreno 740 and 750) flush f16 subnormals to zero in the
+      // image store's format conversion, after the shader has rounded.
+      const bool flushed = expected != 0.0f && std::abs(expected) < 0x1p-14f &&
+          out[j] == 0.0f && std::signbit(out[j]) == std::signbit(expected);
+      if (!flushed) {
+        EXPECT_EQ(out[j], expected) << "input " << values[i + j];
+      }
+    }
   }
 }
 
@@ -1621,6 +1718,35 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   EXPECT_THROW(fill_vtensor(a, data_a), vkapi::Error);
 }
 
+TEST_F(VulkanComputeAPITest, buffer_resize_checks_padded_capacity) {
+  vTensor tensor(
+      context(), {2, 4}, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  EXPECT_THROW(tensor.virtual_resize({8, 1}), vkapi::Error);
+  EXPECT_EQ(tensor.sizes(), (std::vector<int64_t>{2, 4}));
+  EXPECT_EQ(tensor.physical_numel(), 8);
+  EXPECT_NO_THROW(tensor.virtual_resize({1, 8}));
+  EXPECT_EQ(tensor.physical_numel(), 8);
+}
+
+TEST_F(VulkanComputeAPITest, buffer_reconfigure_checks_padded_capacity) {
+  vTensor tensor(
+      context(), {2, 4}, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  EXPECT_THROW(tensor.virtual_reconfigure({8, 1}, {0, 1}), vkapi::Error);
+  EXPECT_EQ(tensor.sizes(), (std::vector<int64_t>{2, 4}));
+  EXPECT_EQ(tensor.physical_numel(), 8);
+  EXPECT_NO_THROW(tensor.virtual_reconfigure({1, 2, 4}, {0, 1, 2}));
+  EXPECT_EQ(tensor.physical_numel(), 8);
+}
+
+TEST_F(VulkanComputeAPITest, buffer_view_checks_padded_capacity) {
+  vTensor tensor(
+      context(), {2, 4}, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  EXPECT_THROW(vTensor(tensor, {8, 1}, {0, 1}), vkapi::Error);
+  vTensor view(tensor, {1, 8}, {0, 1});
+  EXPECT_TRUE(view.is_view_of(tensor));
+  EXPECT_EQ(view.physical_numel(), 8);
+}
+
 TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
   context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {8, 12, 12};
@@ -1892,6 +2018,411 @@ TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_does_not_own_it) {
   context()->flush();
   EXPECT_TRUE(owner.buffer());
   EXPECT_FALSE(owner.buffer().is_copy());
+}
+
+TEST_F(VulkanComputeAPITest, test_external_io_registry_binds_one_owner) {
+  // The registry logs its errors.
+  executorch::runtime::runtime_init();
+  vkapi::VulkanBuffer buffer =
+      context()->adapter_ptr()->vma().create_storage_buffer(64);
+  const etvk::ExternalIOBinding binding{
+      etvk::SlotType::Input,
+      0,
+      etvk::ExternalIOTarget::Staging,
+      etvk::ExternalVkBuffer{buffer.handle(), 64}};
+  const int owner_a = 0;
+  const int owner_b = 0;
+
+  ASSERT_EQ(etvk::register_external_io("registry_test", {binding}), Error::Ok);
+  EXPECT_EQ(
+      etvk::register_external_io("registry_test", {binding}),
+      Error::InvalidState);
+
+  auto claimed = etvk::claim_external_io("registry_test", &owner_a);
+  ASSERT_TRUE(claimed.ok());
+  EXPECT_EQ(claimed->size(), 1u);
+  EXPECT_EQ(
+      etvk::claim_external_io("registry_test", &owner_b).error(),
+      Error::InvalidState);
+  EXPECT_EQ(etvk::unregister_external_io("registry_test"), Error::InvalidState);
+
+  etvk::release_external_io(&owner_a);
+  EXPECT_TRUE(etvk::claim_external_io("registry_test", &owner_b).ok());
+  etvk::release_external_io(&owner_b);
+
+  EXPECT_EQ(etvk::unregister_external_io("registry_test"), Error::Ok);
+  EXPECT_EQ(
+      etvk::claim_external_io("registry_test", &owner_a).error(),
+      Error::NotFound);
+}
+
+TEST_F(VulkanComputeAPITest, test_external_io_registry_rejects_bad_sets) {
+  executorch::runtime::runtime_init();
+  vkapi::VulkanBuffer buffer =
+      context()->adapter_ptr()->vma().create_storage_buffer(64);
+  const etvk::ExternalIOBinding input{
+      etvk::SlotType::Input,
+      0,
+      etvk::ExternalIOTarget::Staging,
+      etvk::ExternalVkBuffer{buffer.handle(), 64}};
+
+  EXPECT_EQ(etvk::register_external_io("", {input}), Error::InvalidArgument);
+  EXPECT_EQ(etvk::register_external_io("bad", {}), Error::InvalidArgument);
+  EXPECT_EQ(
+      etvk::register_external_io("bad", {input, input}),
+      Error::InvalidArgument);
+
+  // A staging resource may serve an input and an output; a tensor resource
+  // may back only one tensor.
+  etvk::ExternalIOBinding output = input;
+  output.slot = etvk::SlotType::Output;
+  EXPECT_EQ(etvk::register_external_io("shared", {input, output}), Error::Ok);
+  EXPECT_EQ(etvk::unregister_external_io("shared"), Error::Ok);
+  etvk::ExternalIOBinding tensor_input = input;
+  etvk::ExternalIOBinding tensor_output = output;
+  tensor_input.target = etvk::ExternalIOTarget::Tensor;
+  tensor_output.target = etvk::ExternalIOTarget::Tensor;
+  EXPECT_EQ(
+      etvk::register_external_io("bad", {tensor_input, tensor_output}),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input,
+            0,
+            etvk::ExternalIOTarget::Staging,
+            etvk::ExternalVkBuffer{VK_NULL_HANDLE, 64}}}),
+      Error::InvalidArgument);
+
+  vTensor image_owner(context(), {1, 4, 8}, vkapi::kFloat, utils::kTexture3D);
+  const etvk::ExternalVkImage image{
+      image_owner.image().handle(),
+      image_owner.image().image_view(),
+      image_owner.image().format(),
+      image_owner.image().extents()};
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input, 0, etvk::ExternalIOTarget::Staging, image}}),
+      Error::InvalidArgument);
+#ifndef VK_ANDROID_external_memory_android_hardware_buffer
+  EXPECT_EQ(
+      etvk::register_external_io(
+          "bad",
+          {{etvk::SlotType::Input,
+            0,
+            etvk::ExternalIOTarget::Staging,
+            etvk::ExternalAHardwareBuffer{nullptr}}}),
+      Error::NotSupported);
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
+  EXPECT_EQ(etvk::claim_external_io("bad", this).error(), Error::NotFound);
+}
+
+TEST(VulkanComputeGraphTest, test_external_staging_buffers) {
+  // Buffer storage pads the width of 6 to 8; the staging data stays unpadded.
+  for (const utils::StorageType storage : {utils::kTexture3D, utils::kBuffer}) {
+    GraphConfig config;
+    config.set_storage_type_override(storage);
+    ComputeGraph graph(config);
+    const std::vector<int64_t> sizes = {1, 4, 6};
+    const size_t numel = utils::multiply_integers(sizes);
+
+    // Host-visible buffers stand in for an app's VkBuffers.
+    api::StagingBuffer app_in(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    api::StagingBuffer app_out(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
+    api::StagingBuffer too_small(
+        graph.context(),
+        vkapi::kFloat,
+        numel - 1,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+
+    const ValueRef in = graph.add_tensor(sizes, vkapi::kFloat);
+    EXPECT_THROW(
+        graph.set_input_tensor(
+            in,
+            vkapi::kFloat,
+            vkapi::VulkanBuffer::alias(
+                too_small.buffer().handle(), too_small.nbytes())),
+        vkapi::Error);
+    const ValueRef in_staging = graph.set_input_tensor(
+        in,
+        vkapi::kFloat,
+        vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+    const ValueRef out = graph.add_tensor(sizes, vkapi::kFloat);
+    VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+    graph.set_output_tensor(
+        out,
+        vkapi::kFloat,
+        vkapi::VulkanBuffer::alias(
+            app_out.buffer().handle(), app_out.nbytes()));
+    EXPECT_TRUE(graph.get_staging(in_staging)->is_external());
+    EXPECT_THROW(graph.get_staging(in_staging)->data(), vkapi::Error);
+    graph.prepare();
+    graph.prepack();
+
+    std::vector<float> data_in(numel);
+    std::iota(data_in.begin(), data_in.end(), 0.0f);
+    app_in.copy_from(data_in.data(), numel * sizeof(float));
+    graph.execute();
+
+    std::vector<float> data_out(numel);
+    app_out.copy_to(data_out.data(), numel * sizeof(float));
+    for (size_t i = 0; i < numel; ++i) {
+      CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensors_backed_by_external_buffers) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> sizes = {1, 64, 256};
+  const size_t numel = utils::multiply_integers(sizes);
+  const size_t nbytes = numel * sizeof(float);
+
+  api::StagingBuffer app_in(
+      graph.context(),
+      vkapi::kFloat,
+      numel,
+      vkapi::CopyDirection::HOST_TO_DEVICE);
+  api::StagingBuffer app_out(
+      graph.context(),
+      vkapi::kFloat,
+      numel,
+      vkapi::CopyDirection::DEVICE_TO_HOST);
+  const ValueRef in = graph.add_external_vkbuffer_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kWidthPacked,
+      vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+  graph.set_input_tensor(in, /*use_staging=*/false);
+  const ValueRef out = graph.add_external_vkbuffer_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kWidthPacked,
+      vkapi::VulkanBuffer::alias(app_out.buffer().handle(), app_out.nbytes()));
+  VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+  graph.set_output_tensor(out, /*use_staging=*/false);
+  EXPECT_TRUE(graph.val_has_external_storage(in));
+
+  // External tensors must not get memory of their own.
+  vkapi::Allocator& vma = graph.context()->adapter_ptr()->vma();
+  const VkDeviceSize allocated_before =
+      vma.get_memory_statistics().total.statistics.allocationBytes;
+  graph.prepare();
+  graph.prepack();
+  EXPECT_LT(
+      vma.get_memory_statistics().total.statistics.allocationBytes -
+          allocated_before,
+      nbytes);
+
+  std::vector<float> data_in(numel);
+  std::iota(data_in.begin(), data_in.end(), 1.0f);
+  app_in.copy_from(data_in.data(), nbytes);
+  graph.execute();
+
+  std::vector<float> data_out(numel);
+  app_out.copy_to(data_out.data(), nbytes);
+  for (size_t i = 0; i < numel; ++i) {
+    CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensors_backed_by_padded_external_buffers) {
+  // A buffer holds the tensor's physical layout, with the packed dim padded to
+  // four: here the width, and a packed dim beyond the rank, which pads every
+  // element.
+  const std::vector<std::pair<std::vector<int64_t>, utils::GPUMemoryLayout>>
+      cases = {
+          {{1, 3, 255}, utils::kWidthPacked},
+          {{5, 7}, utils::kChannelsPacked},
+      };
+  for (const auto& [sizes, layout] : cases) {
+    GraphConfig config;
+    config.set_storage_type_override(utils::kBuffer);
+    ComputeGraph graph(config);
+    const size_t numel = utils::multiply_integers(sizes);
+    const api::vTensor probe(
+        graph.context(),
+        sizes,
+        vkapi::kFloat,
+        utils::kBuffer,
+        layout,
+        /*allocate_memory=*/false);
+    const size_t physical_numel = probe.physical_numel();
+    EXPECT_GT(physical_numel, numel);
+
+    api::StagingBuffer unpadded(
+        graph.context(),
+        vkapi::kFloat,
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    EXPECT_THROW(
+        graph.add_external_vkbuffer_backed_tensor(
+            sizes,
+            vkapi::kFloat,
+            layout,
+            vkapi::VulkanBuffer::alias(
+                unpadded.buffer().handle(), unpadded.nbytes())),
+        vkapi::Error);
+
+    api::StagingBuffer app_in(
+        graph.context(),
+        vkapi::kFloat,
+        physical_numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
+    api::StagingBuffer app_out(
+        graph.context(),
+        vkapi::kFloat,
+        physical_numel,
+        vkapi::CopyDirection::DEVICE_TO_HOST);
+    const ValueRef in = graph.add_external_vkbuffer_backed_tensor(
+        sizes,
+        vkapi::kFloat,
+        layout,
+        vkapi::VulkanBuffer::alias(app_in.buffer().handle(), app_in.nbytes()));
+    graph.set_input_tensor(in, /*use_staging=*/false);
+    const ValueRef out = graph.add_external_vkbuffer_backed_tensor(
+        sizes,
+        vkapi::kFloat,
+        layout,
+        vkapi::VulkanBuffer::alias(
+            app_out.buffer().handle(), app_out.nbytes()));
+    VK_GET_OP_FN("aten.add.Tensor")(graph, {in, in, kDummyValueRef, out});
+    graph.set_output_tensor(out, /*use_staging=*/false);
+    graph.prepare();
+    graph.prepack();
+
+    // Elements sit at their strided offsets; the padding is zero.
+    const std::vector<int64_t> strides = graph.strides_of(in);
+    std::vector<float> data_in(physical_numel, 0.0f);
+    for (size_t i = 0; i < numel; ++i) {
+      size_t rem = i;
+      size_t offset = 0;
+      for (size_t d = sizes.size(); d-- > 0;) {
+        offset += (rem % sizes[d]) * strides[d];
+        rem /= sizes[d];
+      }
+      ASSERT_LT(offset, physical_numel);
+      data_in[offset] = i + 1.0f;
+    }
+    app_in.copy_from(data_in.data(), app_in.nbytes());
+    const std::vector<float> poison(physical_numel, NAN);
+    app_out.copy_from(poison.data(), app_out.nbytes());
+    graph.execute();
+
+    std::vector<float> data_out(physical_numel);
+    app_out.copy_to(data_out.data(), app_out.nbytes());
+    for (size_t i = 0; i < physical_numel; ++i) {
+      CHECK_VALUE(data_out, i, 2.0f * data_in[i]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_tensor_backed_by_external_image) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> sizes = {1, 4, 8};
+
+  vTensor app_image(graph.context(), sizes, vkapi::kFloat, utils::kTexture3D);
+  // An app writes its image before binding it, which leaves it in
+  // VK_IMAGE_LAYOUT_GENERAL.
+  fill_vtensor(app_image, 0.0f);
+  submit_to_gpu();
+  api::context()->flush();
+  const vkapi::VulkanImage& owned = app_image.image();
+  ASSERT_EQ(owned.layout(), VK_IMAGE_LAYOUT_GENERAL);
+  EXPECT_THROW(
+      graph.add_external_vkimage_backed_tensor(
+          sizes,
+          vkapi::kFloat,
+          utils::kChannelsPacked,
+          owned.handle(),
+          owned.image_view(),
+          VK_FORMAT_R16G16B16A16_SFLOAT,
+          owned.extents()),
+      vkapi::Error);
+
+  IOValueRef in =
+      graph.add_input_tensor(sizes, vkapi::kFloat, utils::kChannelsPacked);
+  const ValueRef mid = graph.add_external_vkimage_backed_tensor(
+      sizes,
+      vkapi::kFloat,
+      utils::kChannelsPacked,
+      owned.handle(),
+      owned.image_view(),
+      owned.format(),
+      owned.extents());
+  IOValueRef out = {};
+  out.value = graph.add_tensor(sizes, vkapi::kFloat, utils::kChannelsPacked);
+  auto add_fn = VK_GET_OP_FN("aten.add.Tensor");
+  add_fn(graph, {in.value, in.value, kDummyValueRef, mid});
+  add_fn(graph, {mid, mid, kDummyValueRef, out.value});
+  out.staging = graph.set_output_tensor(out.value);
+  graph.prepare();
+  graph.prepack();
+  EXPECT_TRUE(graph.val_has_external_storage(mid));
+
+  for (int i = 0; i < 2; ++i) {
+    fill_vtensor(graph, in, 1.5f + i);
+    graph.execute();
+    EXTRACT_TENSOR(out);
+    for (size_t j = 0; j < graph.numel_of(out.value); ++j) {
+      CHECK_VALUE(data_out, j, 4.0f * (1.5f + i));
+    }
+  }
+}
+
+TEST_F(VulkanComputeAPITest, test_external_image_stays_in_general_layout) {
+  vTensor owner = make_image_owner();
+  const vkapi::VulkanImage& owned = owner.image();
+  const vkapi::VulkanImage alias = vkapi::VulkanImage::alias(
+      context()->device(),
+      {VK_IMAGE_TYPE_3D,
+       owned.format(),
+       owned.extents(),
+       VK_IMAGE_TILING_OPTIMAL,
+       VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT},
+      owned.handle(),
+      owned.image_view(),
+      owned.sampler(),
+      VK_IMAGE_LAYOUT_GENERAL);
+  vTensor external(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      &alias);
+  vTensor internal = make_image_owner();
+
+  // A shader read moves an internal image to a read-only layout; an external
+  // one stays in the layout its owner relies on.
+  for (vTensor* tensor : {&external, &internal}) {
+    vkapi::PipelineBarrier barrier{};
+    tensor->image(
+        barrier, vkapi::PipelineStage::COMPUTE, vkapi::MemoryAccessType::WRITE);
+    tensor->image(
+        barrier, vkapi::PipelineStage::COMPUTE, vkapi::MemoryAccessType::READ);
+  }
+  EXPECT_EQ(external.image().layout(), VK_IMAGE_LAYOUT_GENERAL);
+  EXPECT_EQ(
+      internal.image().layout(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  EXPECT_TRUE(external.memory_is_bound());
+  EXPECT_TRUE(external.has_external_storage());
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -2458,6 +2989,84 @@ TEST(VulkanComputeGraphTest, choose_qparams_handles_dynamic_row_counts) {
   }
 }
 
+TEST(VulkanComputeGraphTest, choose_qparams_affine_handles_1d_input) {
+  constexpr int64_t kK = 128;
+
+  ComputeGraph graph(GraphConfig{});
+  const IOValueRef input =
+      graph.add_input_tensor({kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef scales = graph.add_tensor(
+      {1}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {1}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("torchao.choose_qparams_affine.default")
+  (graph,
+   {input.value,
+    graph.add_none(), // mapping_type
+    graph.add_scalar_list<int64_t>({kK}),
+    graph.add_none(), // target_dtype
+    graph.add_scalar<int64_t>(-128),
+    graph.add_scalar<int64_t>(127),
+    graph.add_none(), // eps
+    graph.add_none(), // scale_dtype
+    graph.add_none(), // zero_point_dtype
+    graph.add_value_list({scales, zero_points})});
+
+  const ValueRef scales_staging = graph.set_output_tensor(scales);
+  const ValueRef zero_points_staging = graph.set_output_tensor(zero_points);
+
+  graph.prepare();
+  graph.prepack();
+
+  // The row's maximum is its last element, so the whole row must be reduced.
+  std::vector<float> input_data(kK);
+  for (int64_t k = 0; k < kK; ++k) {
+    input_data[k] = 0.5f * float(k);
+  }
+  graph.maybe_cast_and_copy_into_staging(
+      input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+  graph.execute();
+
+  float scale = 0;
+  int8_t zero_point = 0;
+  graph.maybe_cast_and_copy_from_staging(
+      scales_staging, &scale, 1, vkapi::kFloat);
+  graph.maybe_cast_and_copy_from_staging(
+      zero_points_staging, &zero_point, 1, vkapi::kChar);
+  EXPECT_NEAR(scale, input_data.back() / 255.0f, 1e-6f);
+  EXPECT_EQ(zero_point, -128);
+}
+
+TEST(VulkanComputeGraphTest, quantize_and_pack_accepts_1d_input) {
+  constexpr int64_t kK = 128;
+
+  ComputeGraph graph(GraphConfig{});
+  const IOValueRef input =
+      graph.add_input_tensor({kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef scales = graph.add_tensor(
+      {1}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {1}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef packed_input = graph.add_tensor(
+      {1, kK}, vkapi::kInt8x4, utils::kBuffer, utils::kPackedInt8_4H4W);
+  const ValueRef input_sums =
+      graph.add_tensor({4}, vkapi::kInt, utils::kBuffer, utils::kWidthPacked);
+  const QuantizationConfig input_quant_config(
+      8, kPerChannel, {1, kK}, false, true);
+
+  EXPECT_NO_THROW(add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      input.value,
+      input_sums,
+      scales,
+      zero_points,
+      packed_input,
+      graph.add_scalar<int64_t>(kK)));
+}
+
 void test_quantize_and_pack_handles_dynamic_row_counts(
     const int64_t group_size_value,
     const utils::uvec3& expected_local_wg_size) {
@@ -2588,6 +3197,260 @@ TEST(
     VulkanComputeGraphTest,
     quantize_and_pack_handles_dynamic_row_counts_with_large_groups) {
   test_quantize_and_pack_handles_dynamic_row_counts(128, {2u, 1u, 32u});
+}
+
+template <typename T>
+void test_q4gsw_decode_prefill(
+    vkapi::ScalarType dtype,
+    const int64_t K = 384,
+    const bool check_prefill = true) {
+  constexpr int64_t max_m = 8;
+  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+    for (const int64_t N : {12, 1024, 1028, 2048, 4100, 8192}) {
+      for (const int64_t group_size : {32, 128}) {
+        for (const bool has_bias : {false, true}) {
+          SCOPED_TRACE(
+              ::testing::Message()
+              << "N=" << N << " group_size=" << group_size
+              << " bias=" << has_bias << " storage=" << int(storage));
+          GraphConfig config;
+          config.expect_dynamic_shapes = true;
+          config.enable_querypool = true;
+          ComputeGraph graph(config);
+
+          std::mt19937 rng(419);
+          std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+          std::vector<uint8_t> weights(N * K / 2);
+          for (auto& value : weights) {
+            value = static_cast<uint8_t>(rng());
+          }
+          std::vector<T> scales(K / group_size * N);
+          for (auto& value : scales) {
+            value = T(0.01f + 0.1f * std::abs(distribution(rng)));
+          }
+          std::vector<T> bias(N);
+          for (auto& value : bias) {
+            value = T(distribution(rng));
+          }
+          const auto input = graph.add_input_tensor(
+              {max_m, K}, dtype, storage, utils::kWidthPacked);
+          const auto output =
+              graph.add_tensor({max_m, N}, dtype, storage, utils::kWidthPacked);
+          VK_GET_OP_FN("et_vk.q4gsw_linear.default")
+          (graph,
+           {input.value,
+            graph.add_tensorref({N, K / 2}, vkapi::kByte, weights.data()),
+            graph.add_tensorref({K / group_size, N}, dtype, scales.data()),
+            graph.add_scalar<int64_t>(group_size),
+            has_bias ? graph.add_tensorref({N}, dtype, bias.data())
+                     : graph.add_none(),
+            output});
+          const auto staging = graph.set_output_tensor(output);
+          graph.prepare();
+          graph.prepack();
+
+          for (const int64_t M : {1, 8, 1, 3, 1}) {
+            SCOPED_TRACE(M);
+            graph.resize_input(0, {M, K});
+            graph.propagate_resize();
+            ASSERT_EQ(graph.sizes_of(output), std::vector<int64_t>({M, N}));
+            std::vector<T> x(M * K);
+            for (auto& value : x) {
+              value = T(distribution(rng));
+            }
+            graph.maybe_cast_and_copy_into_staging(
+                input.staging, x.data(), x.size(), dtype);
+            graph.execute();
+            std::vector<T> actual(M * N);
+            graph.maybe_cast_and_copy_from_staging(
+                staging, actual.data(), actual.size(), dtype);
+            graph.context()->querypool().extract_results();
+            bool has_gemv = false;
+            bool has_gemm = false;
+            bool has_grouped = false;
+            for (const auto& result :
+                 graph.context()->querypool().get_shader_timestamp_data()) {
+              has_gemv |= result.kernel_name.find("q4gsw_linear_gemv") !=
+                  std::string::npos;
+              has_gemm |= result.kernel_name.find("q4gsw_linear_gemm") !=
+                  std::string::npos;
+              has_grouped |=
+                  result.kernel_name.find("_grouped_") != std::string::npos;
+            }
+            EXPECT_EQ(has_gemv, M == 1);
+            EXPECT_EQ(has_gemm, M != 1);
+            EXPECT_EQ(
+                has_grouped,
+                M == 1 && K == 2048 && group_size == 128 && N > 1024);
+            if (!check_prefill && M != 1) {
+              continue;
+            }
+            double squared_error = 0.0;
+            double squared_reference = 0.0;
+            for (int64_t m = 0; m < M; ++m) {
+              for (int64_t n = 0; n < N; ++n) {
+                double expected = has_bias ? float(bias[n]) : 0.0;
+                double magnitude = std::abs(expected);
+                for (int64_t k = 0; k < K; ++k) {
+                  const int q =
+                      ((weights[n * K / 2 + k / 2] >> (4 * (k % 2))) & 15) - 8;
+                  const double product = double(float(x[m * K + k])) * q *
+                      float(scales[(k / group_size) * N + n]);
+                  expected += product;
+                  magnitude += std::abs(product);
+                }
+                const double half_tolerance =
+                    storage == utils::kBuffer ? 5e-4 : 2e-3;
+                const double tolerance = dtype == vkapi::kHalf
+                    ? half_tolerance * (1.0 + std::abs(expected)) +
+                        (M == 1 ? 0.0 : 5e-3 * magnitude)
+                    : 2e-5 * (1.0 + std::abs(expected));
+                ASSERT_NEAR(float(actual[m * N + n]), expected, tolerance)
+                    << "m=" << m << " n=" << n;
+                const double error = float(actual[m * N + n]) - expected;
+                squared_error += error * error;
+                squared_reference += expected * expected;
+              }
+            }
+            EXPECT_LT(
+                std::sqrt(squared_error / squared_reference),
+                dtype == vkapi::kHalf ? (M == 1 ? 2e-3 : 1e-2) : 2e-5);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_prefill_float) {
+  test_q4gsw_decode_prefill<float>(vkapi::kFloat);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_prefill_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_prefill<executorch::aten::Half>(vkapi::kHalf);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_float) {
+  test_q4gsw_decode_prefill<float>(
+      vkapi::kFloat, 2048, /*check_prefill=*/false);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_prefill<executorch::aten::Half>(
+      vkapi::kHalf, 2048, /*check_prefill=*/false);
+}
+
+template <typename T>
+void test_q4gsw_decode_with_padded_weights(
+    vkapi::ScalarType dtype,
+    const int64_t K = 12,
+    const int64_t padded_K = 16,
+    const int64_t N = 128,
+    const int64_t group_size = 12,
+    const bool expect_grouped = false) {
+  const int64_t num_groups = (K + group_size - 1) / group_size;
+  std::vector<utils::StorageType> storages = {utils::kBuffer};
+  if ((std::max(padded_K, N) + 3) / 4 <=
+      api::context()->adapter_ptr()->max_texture3d_dim()) {
+    storages.push_back(utils::kTexture3D);
+  }
+  for (const auto storage : storages) {
+    SCOPED_TRACE(int(storage));
+    GraphConfig config;
+    config.expect_dynamic_shapes = true;
+    config.enable_querypool = true;
+    ComputeGraph graph(config);
+    const auto input = graph.add_input_tensor(
+        {1, padded_K}, dtype, storage, utils::kWidthPacked);
+    graph.resize_input(0, {1, K});
+    const auto output =
+        graph.add_tensor({1, N}, dtype, storage, utils::kWidthPacked);
+
+    // Match export's zero padding before packing pairs of signed 4-bit weights.
+    std::vector<uint8_t> weights(N * padded_K / 2, 0x88);
+    for (int64_t n = 0; n < N; ++n) {
+      std::fill_n(weights.begin() + n * padded_K / 2, K / 2, 0x99);
+    }
+    std::vector<T> scales(num_groups * N, T(1.0f));
+    VK_GET_OP_FN("et_vk.q4gsw_linear.default")
+    (graph,
+     {input.value,
+      graph.add_tensorref({N, padded_K / 2}, vkapi::kByte, weights.data()),
+      graph.add_tensorref({num_groups, N}, dtype, scales.data()),
+      graph.add_scalar<int64_t>(group_size),
+      graph.add_none(),
+      output});
+    const auto staging = graph.set_output_tensor(output);
+    graph.prepare();
+    graph.prepack();
+
+    // Poison spare input capacity using only the staging node. Zero weights
+    // must not hide activation reads beyond logical K.
+    graph.resize_input(0, {1, padded_K});
+    graph.propagate_resize();
+    std::vector<T> x(padded_K, T(std::numeric_limits<float>::quiet_NaN()));
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, x.data(), x.size(), dtype);
+    graph.context()->set_cmd();
+    graph.execute_nodes().front()->encode(&graph);
+    graph.context()->submit_cmd_to_gpu();
+    graph.context()->wait_for_queue();
+
+    graph.resize_input(0, {1, K});
+    graph.propagate_resize();
+    std::fill_n(x.begin(), K, T(1.0f));
+    graph.maybe_cast_and_copy_into_staging(input.staging, x.data(), K, dtype);
+    graph.execute();
+    graph.context()->querypool().extract_results();
+    bool has_grouped = false;
+    for (const auto& result :
+         graph.context()->querypool().get_shader_timestamp_data()) {
+      has_grouped |= result.kernel_name.find("_grouped_") != std::string::npos;
+    }
+    EXPECT_EQ(has_grouped, expect_grouped);
+    std::vector<T> actual(N);
+    graph.maybe_cast_and_copy_from_staging(
+        staging, actual.data(), actual.size(), dtype);
+    for (int64_t n = 0; n < N; ++n) {
+      ASSERT_EQ(float(actual[n]), float(K)) << "n=" << n;
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_float) {
+  test_q4gsw_decode_with_padded_weights<float>(vkapi::kFloat);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(vkapi::kHalf);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
 }
 
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
@@ -3095,6 +3958,400 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
   }
 }
 
+TEST(VulkanComputeGraphTest, direct_copy_prepack_preserves_padded_rows) {
+  for (const std::vector<int64_t>& sizes :
+       {std::vector<int64_t>{2, 3}, {2, 4}}) {
+    SCOPED_TRACE(::testing::Message() << ::testing::PrintToString(sizes));
+    std::vector<float> data(utils::multiply_integers(sizes));
+    for (size_t i = 0; i < data.size(); ++i) {
+      data[i] = float(i + 1);
+    }
+    ComputeGraph graph(GraphConfig{});
+    const auto input = graph.add_tensorref(sizes, vkapi::kFloat, data.data());
+    const auto out = prepack_direct_copy_buffer(graph, input);
+    const auto staging = graph.set_output_tensor(out);
+    graph.prepare();
+    graph.prepack();
+    graph.execute();
+    std::vector<float> output(data.size());
+    graph.maybe_cast_and_copy_from_staging(
+        staging, output.data(), output.size(), vkapi::kFloat);
+    EXPECT_EQ(output, data);
+  }
+}
+
+TEST(VulkanComputeGraphTest, buffer_copy_convert_preserves_order_after_resize) {
+  for (const auto in_layout :
+       {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+    for (const auto out_layout :
+         {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+      for (const auto dtype : {vkapi::kFloat, vkapi::kHalf}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "in_layout=" << in_layout << " out_layout="
+                                 << out_layout << " dtype=" << dtype);
+        ComputeGraph graph(GraphConfig{});
+        const auto input = graph.add_input_tensor(
+            {2, 3, 4}, vkapi::kFloat, utils::kBuffer, in_layout);
+        const auto out =
+            graph.add_tensor({2, 3, 4}, dtype, utils::kBuffer, out_layout);
+        const auto none = graph.add_none();
+        VK_GET_OP_FN("dim_order_ops._to_dim_order_copy.default")
+        (graph, {input.value, none, none, none, none, none, none, out});
+        const auto staging = graph.set_output_tensor(out);
+        graph.prepare();
+        graph.prepack();
+        for (const std::vector<int64_t>& sizes :
+             {std::vector<int64_t>{2, 3, 4}, {2, 3, 3}, {2, 2, 3}}) {
+          graph.resize_input(0, sizes);
+          graph.propagate_resize();
+          std::vector<float> data(utils::multiply_integers(sizes));
+          for (size_t i = 0; i < data.size(); ++i) {
+            data[i] = float(i + 1);
+          }
+          graph.maybe_cast_and_copy_into_staging(
+              input.staging, data.data(), data.size(), vkapi::kFloat);
+          graph.execute();
+          if (dtype == vkapi::kHalf) {
+            std::vector<executorch::aten::Half> output(data.size());
+            graph.maybe_cast_and_copy_from_staging(
+                staging, output.data(), output.size(), dtype);
+            for (size_t i = 0; i < data.size(); ++i) {
+              EXPECT_EQ(float(output[i]), data[i]);
+            }
+          } else {
+            std::vector<float> output(data.size());
+            graph.maybe_cast_and_copy_from_staging(
+                staging, output.data(), output.size(), vkapi::kFloat);
+            EXPECT_EQ(output, data);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, buffer_implicit_packed_dim_is_innermost) {
+  struct TestCase {
+    std::vector<int64_t> sizes;
+    utils::GPUMemoryLayout layout;
+    // A view of the tensor whose packed dim is explicit and innermost.
+    std::vector<int64_t> padded_sizes;
+    std::vector<int64_t> padded_dim_order;
+  };
+  for (const auto& test_case : std::vector<TestCase>{
+           {{7}, utils::kChannelsPacked, {1, 4, 1, 7}, {0, 2, 3, 1}},
+           {{3, 5}, utils::kChannelsPacked, {1, 4, 3, 5}, {0, 2, 3, 1}},
+           {{7}, utils::kHeightPacked, {1, 1, 4, 7}, {0, 1, 3, 2}}}) {
+    SCOPED_TRACE(
+        ::testing::Message() << ::testing::PrintToString(test_case.sizes)
+                             << " layout=" << test_case.layout);
+    ComputeGraph graph(GraphConfig{});
+    const auto input = graph.add_input_tensor(
+        test_case.sizes, vkapi::kFloat, utils::kBuffer, test_case.layout);
+    EXPECT_FALSE(graph.is_contiguous(input.value));
+    const auto padded = graph.add_tensor_view(
+        input.value, test_case.padded_sizes, test_case.padded_dim_order);
+    const auto staging = graph.set_output_tensor(padded);
+    graph.prepare();
+    graph.prepack();
+
+    std::vector<float> data(utils::multiply_integers(test_case.sizes));
+    std::iota(data.begin(), data.end(), 1.0f);
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, data.data(), data.size(), vkapi::kFloat);
+    graph.execute();
+
+    // Index 0 of the packed dim holds the data; the rest is zero padding.
+    std::vector<float> output(utils::multiply_integers(test_case.padded_sizes));
+    graph.maybe_cast_and_copy_from_staging(
+        staging, output.data(), output.size(), vkapi::kFloat);
+    std::vector<float> expected(output.size(), 0.0f);
+    std::copy(data.begin(), data.end(), expected.begin());
+    EXPECT_EQ(output, expected);
+  }
+}
+
+// The input arrives with NaN in the padding of its last K vec4, as when the op
+// that produces it leaves padding unwritten. Only the logical K may be read.
+TEST(VulkanComputeGraphTest, dynamic_clamp_zeroes_output_padding) {
+  // Width-packed [3, 5] pads its width to 8.
+  constexpr int64_t H = 3;
+  constexpr int64_t W = 5;
+  constexpr int64_t padded_W = 8;
+  std::vector<float> input(H * W);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = float(i) * 0.5f - 4.0f;
+  }
+  const std::vector<float> poison(H * padded_W, 7.0f);
+  for (const utils::StorageType storage : {utils::kBuffer, utils::kTexture3D}) {
+    SCOPED_TRACE(storage == utils::kBuffer ? "buffer" : "texture3d");
+    ComputeGraph graph(GraphConfig{});
+    const ValueRef in =
+        graph.add_tensor({H, W}, vkapi::kFloat, storage, utils::kWidthPacked);
+    const ValueRef staging_in = graph.set_input_tensor(in);
+    const ValueRef out =
+        graph.add_tensor({H, W}, vkapi::kFloat, storage, utils::kWidthPacked);
+    // A view of the output's physical texels writes poison into its padding
+    // before the clamp runs, and reads the padding back after.
+    const ValueRef padded = graph.add_tensor_view(out, {H, padded_W}, {0, 1});
+    const ValueRef staging_poison = graph.set_input_tensor(padded);
+    const ValueRef low = graph.add_symint(0);
+    const ValueRef high = graph.add_symint(0);
+    VK_GET_OP_FN("aten.clamp.default")(graph, {in, low, high, out});
+    const ValueRef staging_out = graph.set_output_tensor(out);
+    const ValueRef staging_padded = graph.set_output_tensor(padded);
+    graph.prepare();
+    graph.prepack();
+
+    // Neither bound range contains zero, so the padding must be masked.
+    for (const auto& [low_val, high_val] :
+         {std::pair<int32_t, int32_t>{1, 2}, {-3, -1}}) {
+      SCOPED_TRACE(low_val);
+      graph.set_symint(low, low_val);
+      graph.set_symint(high, high_val);
+      graph.maybe_cast_and_copy_into_staging(
+          staging_in, input.data(), input.size(), vkapi::kFloat);
+      graph.maybe_cast_and_copy_into_staging(
+          staging_poison, poison.data(), poison.size(), vkapi::kFloat);
+      graph.execute();
+
+      std::vector<float> output(H * W);
+      graph.maybe_cast_and_copy_from_staging(
+          staging_out, output.data(), output.size(), vkapi::kFloat);
+      std::vector<float> physical(H * padded_W);
+      graph.maybe_cast_and_copy_from_staging(
+          staging_padded, physical.data(), physical.size(), vkapi::kFloat);
+      for (size_t i = 0; i < output.size(); ++i) {
+        EXPECT_EQ(
+            output[i], std::clamp(input[i], float(low_val), float(high_val)))
+            << "i=" << i;
+      }
+      for (int64_t h = 0; h < H; ++h) {
+        for (int64_t w = W; w < padded_W; ++w) {
+          EXPECT_EQ(physical[h * padded_W + w], 0.0f)
+              << "h=" << h << " w=" << w;
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, gemm_ignores_buffer_k_padding) {
+  constexpr int64_t B = 2;
+  constexpr int64_t M = 3;
+  constexpr int64_t K = 7;
+  constexpr int64_t N = 5;
+  constexpr int64_t padded_K = 8;
+  for (const std::string op :
+       {"aten.linear.default", "aten.mm.default", "aten.bmm.default"}) {
+    SCOPED_TRACE(op);
+    const bool linear = op == "aten.linear.default";
+    const int64_t batches = op == "aten.bmm.default" ? B : 1;
+    const auto batched = [&](std::vector<int64_t> sizes) {
+      if (batches > 1) {
+        sizes.insert(sizes.begin(), batches);
+      }
+      return sizes;
+    };
+
+    std::vector<float> x(batches * M * padded_K);
+    for (size_t i = 0; i < x.size(); ++i) {
+      x[i] = i % padded_K == K ? NAN : float(i % 7) * 0.25f - 0.75f;
+    }
+    // [N, K] for linear, otherwise [K, N] per batch.
+    std::vector<float> w(batches * K * N);
+    for (size_t i = 0; i < w.size(); ++i) {
+      w[i] = float(i % 5) * 0.5f - 1.0f;
+    }
+
+    ComputeGraph graph(GraphConfig{});
+    // The input is a view of a buffer that holds its row padding explicitly.
+    const IOValueRef padded = graph.add_input_tensor(
+        batched({M, padded_K}), vkapi::kFloat, utils::kBuffer);
+    const std::vector<int64_t> input_sizes = batched({M, K});
+    std::vector<int64_t> dim_order(input_sizes.size());
+    std::iota(dim_order.begin(), dim_order.end(), 0);
+    const ValueRef input =
+        graph.add_tensor_view(padded.value, input_sizes, dim_order);
+    const ValueRef out =
+        graph.add_tensor(batched({M, N}), vkapi::kFloat, utils::kBuffer);
+    IOValueRef weight{};
+    if (linear) {
+      weight.value = graph.add_tensorref({N, K}, vkapi::kFloat, w.data());
+      VK_GET_OP_FN(op)(graph, {input, weight.value, graph.add_none(), out});
+    } else {
+      weight = graph.add_input_tensor(
+          batched({K, N}), vkapi::kFloat, utils::kBuffer);
+      VK_GET_OP_FN(op)(graph, {input, weight.value, out});
+    }
+    const ValueRef staging_out = graph.set_output_tensor(out);
+    graph.prepare();
+    graph.prepack();
+
+    graph.maybe_cast_and_copy_into_staging(
+        padded.staging, x.data(), x.size(), vkapi::kFloat);
+    if (!linear) {
+      graph.maybe_cast_and_copy_into_staging(
+          weight.staging, w.data(), w.size(), vkapi::kFloat);
+    }
+    graph.execute();
+
+    std::vector<float> output(batches * M * N);
+    graph.maybe_cast_and_copy_from_staging(
+        staging_out, output.data(), output.size(), vkapi::kFloat);
+    for (int64_t b = 0; b < batches; ++b) {
+      for (int64_t m = 0; m < M; ++m) {
+        for (int64_t n = 0; n < N; ++n) {
+          float expected = 0.0f;
+          for (int64_t k = 0; k < K; ++k) {
+            const float w_kn = linear ? w[n * K + k] : w[(b * K + k) * N + n];
+            expected += x[(b * M + m) * padded_K + k] * w_kn;
+          }
+          EXPECT_NEAR(output[(b * M + m) * N + n], expected, 1e-4f)
+              << "b=" << b << " m=" << m << " n=" << n;
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, buffer_view_preserves_highdim_outer_order) {
+  ComputeGraph graph(GraphConfig{});
+  const std::vector<int64_t> sizes = {2, 2, 2, 2, 1, 1, 3, 4};
+  const auto input = graph.add_input_tensor(
+      sizes, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  graph.virtual_transpose(input.value, 0, 1);
+  IOValueRef out;
+  out.value = graph.add_tensor(
+      sizes, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  VK_GET_OP_FN("aten.view_copy.default")
+  (graph, {input.value, graph.add_none(), out.value});
+  out.staging = graph.set_output_tensor(out.value);
+  graph.prepare();
+  graph.prepack();
+  fill_vtensor(graph, input, 0.0, true);
+  graph.execute();
+  EXTRACT_TENSOR(out);
+  for (int i = 0; i < graph.numel_of(out.value); ++i) {
+    CHECK_VALUE(data_out, i, i);
+  }
+}
+
+TEST(VulkanComputeGraphTest, unary_preserves_shape_after_resize) {
+  // Vulkan bounds sin and cos to 2^-11 absolute error and derives tan's
+  // precision from sin(x) / cos(x); this is that quotient's worst-case error.
+  const auto tan_tolerance = [](float x) {
+    constexpr float sin_cos_error = 1.0f / 2048.0f;
+    const float c = std::abs(std::cos(x));
+    return sin_cos_error * (c + std::abs(std::sin(x))) /
+        (c * (c - sin_cos_error));
+  };
+  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+    for (const auto layout :
+         {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+      for (const bool use_tan : {false, true}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "storage=" << storage << " layout="
+                                 << layout << " use_tan=" << use_tan);
+        ComputeGraph graph(GraphConfig{});
+        const auto input =
+            graph.add_input_tensor({2, 3, 4}, vkapi::kFloat, storage, layout);
+        const auto out =
+            graph.add_tensor({2, 3, 4}, vkapi::kFloat, storage, layout);
+        VK_GET_OP_FN(use_tan ? "aten.tan.default" : "aten.neg.default")
+        (graph, {input.value, out});
+        const auto staging = graph.set_output_tensor(out);
+        graph.prepare();
+        graph.prepack();
+        for (const std::vector<int64_t>& sizes :
+             {std::vector<int64_t>{2, 3, 4}, {2, 3, 3}, {2, 2, 3}}) {
+          graph.resize_input(0, sizes);
+          graph.propagate_resize();
+          EXPECT_EQ(graph.sizes_of(out), sizes);
+          std::vector<float> data(utils::multiply_integers(sizes));
+          for (size_t i = 0; i < data.size(); ++i) {
+            data[i] = 0.125f * float(i % 7 + 1);
+          }
+          graph.maybe_cast_and_copy_into_staging(
+              input.staging, data.data(), data.size(), vkapi::kFloat);
+          graph.execute();
+          std::vector<float> output(data.size());
+          graph.maybe_cast_and_copy_from_staging(
+              staging, output.data(), output.size(), vkapi::kFloat);
+          for (size_t i = 0; i < data.size(); ++i) {
+            EXPECT_NEAR(
+                output[i],
+                use_tan ? std::tan(data[i]) : -data[i],
+                use_tan ? tan_tolerance(data[i]) : 1e-5);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, binary_packed_dim_broadcast_after_resize) {
+  const std::vector<int64_t> a_sizes = {2, 3, 5};
+  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+    for (const auto layout :
+         {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+      SCOPED_TRACE(
+          ::testing::Message()
+          << "storage=" << storage << " layout=" << layout);
+      ComputeGraph graph(GraphConfig{});
+      const auto a =
+          graph.add_input_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      const auto b =
+          graph.add_input_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      const auto out =
+          graph.add_tensor(a_sizes, vkapi::kFloat, storage, layout);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {a.value, b.value, kDummyValueRef, out});
+      const auto staging = graph.set_output_tensor(out);
+      graph.prepare();
+      graph.prepack();
+
+      // Toggle whether b broadcasts along the packed dim after the graph is
+      // built.
+      const int64_t packed_dim = 2 - graph.packed_dim_of(out);
+      std::vector<int64_t> b_broadcast_sizes = a_sizes;
+      b_broadcast_sizes[packed_dim] = 1;
+      for (const std::vector<int64_t>& b_sizes :
+           {b_broadcast_sizes, a_sizes, b_broadcast_sizes}) {
+        graph.resize_input(1, b_sizes);
+        graph.propagate_resize();
+        ASSERT_EQ(graph.sizes_of(out), a_sizes);
+
+        std::vector<float> a_data(utils::multiply_integers(a_sizes));
+        std::iota(a_data.begin(), a_data.end(), 1.0f);
+        std::vector<float> b_data(utils::multiply_integers(b_sizes));
+        std::iota(b_data.begin(), b_data.end(), 100.0f);
+        graph.maybe_cast_and_copy_into_staging(
+            a.staging, a_data.data(), a_data.size(), vkapi::kFloat);
+        graph.maybe_cast_and_copy_into_staging(
+            b.staging, b_data.data(), b_data.size(), vkapi::kFloat);
+        graph.execute();
+
+        std::vector<float> output(a_data.size());
+        graph.maybe_cast_and_copy_from_staging(
+            staging, output.data(), output.size(), vkapi::kFloat);
+        for (int64_t c = 0; c < a_sizes[0]; ++c) {
+          for (int64_t h = 0; h < a_sizes[1]; ++h) {
+            for (int64_t w = 0; w < a_sizes[2]; ++w) {
+              const int64_t b_idx = (std::min(c, b_sizes[0] - 1) * b_sizes[1] +
+                                     std::min(h, b_sizes[1] - 1)) *
+                      b_sizes[2] +
+                  std::min(w, b_sizes[2] - 1);
+              const int64_t out_idx = (c * a_sizes[1] + h) * a_sizes[2] + w;
+              EXPECT_EQ(output[out_idx], a_data[out_idx] + b_data[b_idx]);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 class VulkanToFromGPUShaderTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -3507,6 +4764,87 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
+}
+
+TEST(VulkanComputeGraphOpsTest, legacy_qdq_preserves_padded_buffers) {
+  for (const auto layout :
+       {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
+    SCOPED_TRACE(::testing::Message() << "layout=" << layout);
+    ComputeGraph graph(GraphConfig{});
+    const std::vector<int64_t> sizes = {1, 3, 5, 7};
+    const auto input =
+        graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer, layout);
+    const auto out =
+        graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer, layout);
+    const auto packed = graph.add_tensor(
+        sizes, vkapi::kInt8x4, utils::kBuffer, utils::kPackedInt8_4W4C);
+    const auto scale = graph.add_scalar(0.25);
+    const auto zero_point = graph.add_scalar(int64_t(0));
+    add_quantize_and_pack_4w4c_node(
+        graph, input.value, scale, zero_point, packed);
+    add_unpack_4w4c_and_dequantize_node(
+        graph, packed, scale, zero_point, out.value);
+    graph.set_output_tensor(out.value);
+    graph.prepare();
+    graph.prepack();
+    execute_graph_and_check_output(graph, {1.0f, 0.0f}, {1.0f});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, gemm_ignores_nonfinite_padding) {
+  for (const auto dtype : {vkapi::kFloat, vkapi::kHalf}) {
+    for (const bool linear : {false, true}) {
+      for (const int64_t K : {1, 2, 3, 5}) {
+        SCOPED_TRACE(
+            ::testing::Message()
+            << "dtype=" << dtype << " linear=" << linear << " K=" << K);
+        GraphConfig config;
+        ComputeGraph graph(config);
+        const auto input = graph.add_input_tensor(
+            {2, K}, dtype, utils::kBuffer, utils::kWidthPacked);
+        const auto activation = graph.add_tensor(
+            {2, K}, dtype, utils::kBuffer, utils::kWidthPacked);
+        VK_GET_OP_FN("aten.rsqrt.default")
+        (graph, {input.value, activation});
+
+        const std::vector<int64_t> weight_sizes =
+            linear ? std::vector<int64_t>{3, K} : std::vector<int64_t>{K, 3};
+        const std::vector<float> weights(3 * K, 1.0f);
+        const std::vector<uint16_t> half_weights(3 * K, 0x3C00);
+        const void* weight_data = dtype == vkapi::kHalf
+            ? static_cast<const void*>(half_weights.data())
+            : static_cast<const void*>(weights.data());
+        const auto weight =
+            graph.add_tensorref(weight_sizes, dtype, weight_data);
+        const auto out = graph.add_tensor(
+            {2, 3}, dtype, utils::kBuffer, utils::kWidthPacked);
+        if (linear) {
+          VK_GET_OP_FN("aten.linear.default")
+          (graph, {activation, weight, graph.add_none(), out});
+        } else {
+          VK_GET_OP_FN("aten.mm.default")
+          (graph, {activation, weight, out});
+        }
+        const auto staging_out = graph.set_output_tensor(out);
+        graph.prepare();
+        graph.prepack();
+        if (dtype == vkapi::kHalf) {
+          const std::vector<executorch::aten::Half> data(2 * K, 1.0f);
+          graph.maybe_cast_and_copy_into_staging(
+              input.staging, data.data(), data.size(), dtype);
+          graph.execute();
+          std::vector<executorch::aten::Half> output(6);
+          graph.maybe_cast_and_copy_from_staging(
+              staging_out, output.data(), output.size(), dtype);
+          for (const auto value : output) {
+            EXPECT_EQ(float(value), float(K));
+          }
+        } else {
+          execute_graph_and_check_output(graph, {1.0f}, {float(K)});
+        }
+      }
+    }
+  }
 }
 
 void test_mm_with_resize_reencode(
@@ -3972,6 +5310,49 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_int8x4_staging_byte_dtype_round_trip) {
+  const std::vector<utils::GPUMemoryLayout> layouts = {
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4C1W,
+  };
+  const std::vector<std::vector<int64_t>> shapes = {
+      {7}, {7, 11}, {2, 9, 7}, {2, 3, 5, 7}, {1, 4, 8, 8}};
+  for (const auto& sizes : shapes) {
+    for (const auto layout : layouts) {
+      for (const auto dtype : {vkapi::kChar, vkapi::kByte}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "layout " << layout << " dtype " << dtype);
+        GraphConfig config;
+        ComputeGraph graph(config);
+        const ValueRef tensor =
+            graph.add_tensor(sizes, vkapi::kInt8x4, utils::kBuffer, layout);
+        const ValueRef staging_in = graph.set_input_tensor(tensor, dtype);
+        const ValueRef staging_out = graph.set_output_tensor(tensor, dtype);
+        const size_t numel = utils::multiply_integers(sizes);
+
+        EXPECT_GE(graph.get_staging(staging_in)->nbytes(), numel);
+        EXPECT_GE(graph.get_staging(staging_out)->nbytes(), numel);
+        std::vector<uint8_t> data_in(numel);
+        for (size_t i = 0; i < numel; ++i) {
+          data_in[i] = static_cast<uint8_t>(i * 37 + 13);
+        }
+        std::vector<uint8_t> data_out(numel);
+
+        graph.prepare();
+        graph.prepack();
+        graph.maybe_cast_and_copy_into_staging(
+            staging_in, data_in.data(), numel, dtype);
+        graph.execute();
+        graph.maybe_cast_and_copy_from_staging(
+            staging_out, data_out.data(), numel, dtype);
+        EXPECT_EQ(data_out, data_in);
+      }
+    }
+  }
+}
+
 TEST(VulkanWorkGroupSizeTest, lwg) {
   const LocalWorkGroup lwg(64u, 2u, 1u);
 
@@ -3992,7 +5373,6 @@ TEST(VulkanWorkGroupSizeTest, lwg) {
   EXPECT_EQ(large_z_lwg.z(), 1024u);
 
   EXPECT_FALSE(LocalWorkGroup().is_valid());
-  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
 }
 
 TEST(VulkanWorkGroupSizeTest, lwg_validation) {
@@ -4239,3 +5619,150 @@ TEST(VulkanWorkGroupSizeTest, compute_graph_preserves_dispatch_intent) {
   EXPECT_EQ(graph.create_lwg(buffer_gwg), buffer_gwg.required_lwg_size());
   EXPECT_FALSE(texture_gwg.is_linear());
 }
+
+class VulkanSwiGLUTest : public ::testing::TestWithParam<std::tuple<
+                             utils::StorageType,
+                             vkapi::ScalarType,
+                             utils::GPUMemoryLayout,
+                             int64_t,
+                             bool>> {};
+
+TEST_P(VulkanSwiGLUTest, MatchesUnfusedAcrossResizes) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  const auto storage = std::get<0>(GetParam());
+  const auto dtype = std::get<1>(GetParam());
+  const auto layout = std::get<2>(GetParam());
+  const auto width = std::get<3>(GetParam());
+  const auto broadcast = std::get<4>(GetParam());
+  GraphConfig config;
+  config.set_storage_type_override(storage);
+  config.set_memory_layout_override(layout);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> max_shape = {2, 63, width};
+  const std::vector<int64_t> up_shape =
+      broadcast ? std::vector<int64_t>{1, 1, width} : max_shape;
+  const IOValueRef gate = graph.add_input_tensor(max_shape, dtype);
+  const IOValueRef up = graph.add_input_tensor(up_shape, dtype);
+  const ValueRef sigmoid = graph.add_tensor(max_shape, dtype);
+  const ValueRef silu = graph.add_tensor(max_shape, dtype);
+  const ValueRef unfused = graph.add_tensor(max_shape, dtype);
+  const ValueRef fused = graph.add_tensor(max_shape, dtype);
+  VK_GET_OP_FN("aten.sigmoid.default")(graph, {gate.value, sigmoid});
+  VK_GET_OP_FN("aten.mul.Tensor")(graph, {gate.value, sigmoid, silu});
+  VK_GET_OP_FN("aten.mul.Tensor")(graph, {silu, up.value, unfused});
+  VK_GET_OP_FN("et_vk.swiglu.default")(graph, {gate.value, up.value, fused});
+  const ValueRef unfused_staging = graph.set_output_tensor(unfused);
+  const ValueRef fused_staging = graph.set_output_tensor(fused);
+  graph.prepare();
+  graph.prepack();
+
+  auto check_resizes = [&](auto scalar) {
+    using T = decltype(scalar);
+    for (const int64_t rows : {1, 7, 63, 1}) {
+      SCOPED_TRACE(rows);
+      const std::vector<int64_t> shape = {2, rows, width};
+      graph.resize_input(0, shape);
+      if (!broadcast) {
+        graph.resize_input(1, shape);
+      }
+      graph.propagate_resize();
+      ASSERT_EQ(graph.sizes_of(fused), shape);
+      const size_t count = 2 * rows * width;
+      std::vector<T> gate_data(count);
+      std::vector<T> up_data(broadcast ? width : count);
+      for (size_t i = 0; i < gate_data.size(); ++i) {
+        gate_data[i] = 20.0f * std::sin(static_cast<float>(i));
+      }
+      for (size_t i = 0; i < up_data.size(); ++i) {
+        up_data[i] = 2.0f * std::cos(static_cast<float>(i));
+      }
+      graph.maybe_cast_and_copy_into_staging(
+          gate.staging, gate_data.data(), gate_data.size(), dtype);
+      graph.maybe_cast_and_copy_into_staging(
+          up.staging, up_data.data(), up_data.size(), dtype);
+      graph.execute();
+      std::vector<T> expected(count);
+      std::vector<T> actual(count);
+      graph.maybe_cast_and_copy_from_staging(
+          unfused_staging, expected.data(), count, dtype);
+      graph.maybe_cast_and_copy_from_staging(
+          fused_staging, actual.data(), count, dtype);
+      for (size_t i = 0; i < count; ++i) {
+        const float x = float(gate_data[i]);
+        const float y = float(up_data[broadcast ? i % width : i]);
+        const float reference = (x / (1.0f + std::exp(-x))) * y;
+        if (dtype == vkapi::kHalf) {
+          constexpr float fp16_min_normal = 0x1p-14f;
+          constexpr float unfused_rtol = 3e-3f;
+          ASSERT_NEAR(
+              float(actual[i]),
+              reference,
+              1e-3f * std::abs(reference) + fp16_min_normal)
+              << "element " << i;
+          const float sigmoid_reference = 1.0f / (1.0f + std::exp(-x));
+          const auto is_subnormal = [](const float value) {
+            return value != 0.0f && std::abs(value) < fp16_min_normal;
+          };
+          const auto may_underflow = [](const float value) {
+            return value != 0.0f &&
+                std::abs(value) < fp16_min_normal * (1.0f + unfused_rtol);
+          };
+          float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          if (is_subnormal(x) || is_subnormal(y) ||
+              may_underflow(sigmoid_reference) ||
+              may_underflow(x * sigmoid_reference) ||
+              may_underflow(reference)) {
+            // Flushing the unfused path to zero can lose the full reference
+            // magnitude. Its relative tolerance then vanishes, so the extra
+            // 1e-3 covers the fused result's relative error.
+            atol += (1.0f + 1e-3f) * std::abs(reference);
+          }
+          ASSERT_NEAR(
+              float(actual[i]),
+              float(expected[i]),
+              unfused_rtol * std::abs(float(expected[i])) + atol)
+              << "element " << i;
+        } else {
+          ASSERT_NEAR(
+              float(actual[i]), reference, 2e-6f * std::abs(reference) + 1e-7f)
+              << "element " << i;
+          ASSERT_NEAR(
+              float(actual[i]),
+              float(expected[i]),
+              2e-6f * std::abs(float(expected[i])) + 1e-7f)
+              << "element " << i;
+        }
+      }
+    }
+  };
+  if (dtype == vkapi::kHalf) {
+    check_resizes(executorch::aten::Half{});
+  } else {
+    check_resizes(float{});
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    StorageDtypeLayoutWidthBroadcast,
+    VulkanSwiGLUTest,
+    ::testing::Combine(
+        ::testing::Values(utils::kBuffer, utils::kTexture3D),
+        ::testing::Values(vkapi::kFloat, vkapi::kHalf),
+        ::testing::Values(
+            utils::kWidthPacked,
+            utils::kHeightPacked,
+            utils::kChannelsPacked),
+        ::testing::Values(int64_t(13), int64_t(1023)),
+        ::testing::Bool()));
+
+INSTANTIATE_TEST_SUITE_P(
+    LlmHiddenSize,
+    VulkanSwiGLUTest,
+    ::testing::Combine(
+        ::testing::Values(utils::kBuffer, utils::kTexture3D),
+        ::testing::Values(vkapi::kFloat, vkapi::kHalf),
+        ::testing::Values(utils::kWidthPacked),
+        ::testing::Values(int64_t(3072)),
+        ::testing::Bool()));

@@ -16,6 +16,21 @@ fbcode_target(_kind = runtime.export_file,
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
+fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_cuda.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
+fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_dlpack.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
+fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_executorch_result.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
 # cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
 # file to match the lib anyway, so we just expose the file like this and then have genrules consume and
 # rename it before passing it to executorch pybindings.
@@ -34,9 +49,10 @@ fbcode_target(_kind = runtime.genrule,
     outs = {
         "aten_lib.pyi": ["aten_lib.pyi"],
         "core.pyi": ["core.pyi"],
+        "cuda_lib.pyi": ["cuda_lib.pyi"],
         "_C.pyi": ["_C.pyi"],
     },
-    cmd = "cp $(location :pybinding_types)/* $OUT/_C.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi && cp $(location :pybinding_types)/* $OUT/core.pyi",
+    cmd = "cp $(location :pybinding_types)/* $OUT/_C.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi && cp $(location :pybinding_types)/* $OUT/core.pyi && cp $(location :pybinding_types)/* $OUT/cuda_lib.pyi",
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
@@ -55,10 +71,23 @@ fbcode_target(_kind = executorch_pybindings,
     visibility = ["PUBLIC"],
 )
 
+# The CUDA backend defines the same aoti_torch_* symbols as LibTorch, so
+# cuda_lib must not be linked into a binary that also links LibTorch.
+fbcode_target(_kind = executorch_pybindings,
+    cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB + [
+        "//executorch/backends/cuda/runtime:cuda_backend",
+    ],
+    python_module_name = "cuda_lib",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[cuda_lib.pyi]"],
+    use_cuda = True,
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
 fbcode_target(_kind = executorch_pybindings,
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],
+    use_aten = True,
     visibility = ["PUBLIC"],
 )
 
@@ -68,7 +97,6 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         ":_C",
-        "//executorch/exir:_warnings",
     ],
 )
 
@@ -92,6 +120,9 @@ fbcode_target(
     _kind = cpp_python_extension,
     name = "data_loader",
     srcs = ["pybindings_data_loader.cpp"],
+    headers = [
+        "pybindings_data_loader.h",
+    ],
     base_module = "executorch.extension.pybindings",
     deps = [
         ":data_loader_types",

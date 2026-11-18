@@ -393,10 +393,12 @@ def test_reusing_a_cached_manager_still_applies_the_guard(
     monkeypatch.setattr(qnn_sdk_setup, "_sdk_ready", True)
     registry = qnn_manager_lifecycle.QnnManagerRegistry()
     backend_type = QnnExecuTorchBackendType.kHtpBackend
-    registry._registry[backend_type] = object()
+    soc_model = 0
+    key = (backend_type, soc_model)
+    registry._registry[key] = object()
 
     monkeypatch.setattr(torch.backends.mkldnn, "enabled", True)
-    registry.get_or_create_qnn_manager(backend_type, b"")
+    registry.get_or_create_qnn_manager(backend_type, b"", soc_model)
 
     assert not torch.backends.mkldnn.enabled
     # Nothing may reach the real installer from a test: it downloads about a gigabyte and

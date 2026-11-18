@@ -30,7 +30,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_output_tile.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile.glslh"
 
 void store_out_d4(
     const LINEAR_FP_OUTPUT_TILE_VEC4_T out_texel,

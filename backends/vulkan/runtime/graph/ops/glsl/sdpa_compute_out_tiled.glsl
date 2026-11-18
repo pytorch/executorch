@@ -56,7 +56,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "sdpa_fp_attn_weight_tile_load.glslh"
 #include "sdpa_fp_v_cache_tile_load.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 #include "sdpa_fp_out_tile_store.glslh"
 
 /*

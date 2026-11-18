@@ -87,8 +87,23 @@ class ArmPass(ExportPass):
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         ops_without_quantized_fake_kernel = {
+            exir_ops.edge.aten.atan.default,
             exir_ops.edge.aten.bmm.default,
+            exir_ops.edge.aten.cos.default,
+            exir_ops.edge.aten.erf.default,
+            exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.leaky_relu.default,
+            exir_ops.edge.aten.log.default,
+            exir_ops.edge.aten.log1p.default,
+            exir_ops.edge.aten.pow.Tensor_Scalar,
+            exir_ops.edge.aten.reciprocal.default,
+            exir_ops.edge.aten.remainder.Scalar,
+            exir_ops.edge.aten.rsqrt.default,
+            exir_ops.edge.aten.sigmoid.default,
+            exir_ops.edge.aten.sin.default,
+            exir_ops.edge.aten.sinh.default,
+            exir_ops.edge.aten.softplus.default,
+            exir_ops.edge.aten.tanh.default,
         }
         if (
             op in ops_without_quantized_fake_kernel

@@ -46,17 +46,26 @@ def _compute_post_pad(
     divisor_override,
 ) -> int | torch.SymInt:
 
-    if pad == 0:
+    # Without padding, count_include_pad=True divides a window that runs past
+    # the end of the input by its valid elements only, as the decomposed
+    # count_include_pad=False avg_pool2d does. A divisor_override needs full
+    # windows though, so the part of a ceil_mode window outside the input must
+    # still be padded with zeros.
+    if pad == 0 and not (ceil_mode and divisor_override is not None):
         return pad
     pad_adjust = adjust_pooling_pad_if_needed(size, kernel, stride, pad, ceil_mode)
 
     if ceil_mode and divisor_override is None and pad_adjust > pad:
         return pad
 
-    # Padding must never be below 0; the above adjustment may return -1.
+    # Padding must never be below 0; the above adjustment is negative when the
+    # last window ends before the end of the input. No post padding is needed
+    # then, SizeAdjustInputPass truncates the unused input instead. Padding
+    # with ``pad`` would make ceil_mode keep a last window that PyTorch drops
+    # because it starts in the padding.
     if pad_adjust >= 0:
         return pad_adjust
-    return pad
+    return 0
 
 
 def _get_avgpool_post_pad(
@@ -111,7 +120,7 @@ class DecomposeAvgPool2dPass(ArmOpTargetedPass):
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
 
-        if len(args) > 2 and args[2] is not None:
+        if len(args) > 2 and args[2]:
             stride_h, stride_w = args[2]
         else:
             stride_h, stride_w = kernel_h, kernel_w
@@ -141,7 +150,7 @@ class DecomposeAvgPool2dPass(ArmOpTargetedPass):
             divisor_override,
         )
 
-        if count_include_pad and (pad_h > 0 or pad_w > 0):
+        if count_include_pad and any(p != 0 for p in pad):
             if op in aten_avg_pool2d:
                 pad_args = (x, pad, "constant", 0.0)
             else:

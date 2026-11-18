@@ -13,6 +13,8 @@ def define_common_targets():
         name = "package_test",
         srcs = ["test_package.cpp"],
         deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
             "//executorch/backends/native/runtime/deserialize:package",
             "fbsource//third-party/libzip:zip",
         ],
@@ -23,6 +25,16 @@ def define_common_targets():
         srcs = ["test_safetensors_reader.cpp"],
         deps = [
             "//executorch/backends/native/runtime/deserialize:safetensors_reader",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "samples_test",
+        srcs = ["test_samples.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/deserialize:samples",
         ],
     )
 

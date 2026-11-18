@@ -7,8 +7,8 @@
 """Checks that generated shader names match the names the dispatcher asks for.
 
 A kernel name is built at runtime rather than looked up: `add_binary_op_node`
-concatenates "binary_", the op, a storage suffix and a dtype suffix, then hands
-the result to `VK_KERNEL_FROM_STR`. The yaml, meanwhile, is free to name a
+concatenates "binary_op" (or "binary_cmp" for comparisons), a storage suffix and
+a dtype suffix, then hands the result to `VK_KERNEL_FROM_STR`. The yaml, meanwhile, is free to name a
 variant anything at all. Nothing connects the two, so a variant whose name does
 not follow that shape compiles a shader nothing references and leaves the name
 the dispatcher wants missing.
@@ -24,6 +24,7 @@ drift when a dtype is added.
 """
 
 import importlib.util
+import os
 import re
 import unittest
 from pathlib import Path
@@ -41,8 +42,10 @@ _spec = importlib.util.spec_from_file_location(
 gen_vulkan_spv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen_vulkan_spv)
 
-# The yaml templates whose variants `add_binary_op_node` dispatches into.
-_BINARY_TEMPLATES = ("binary_op_buffer", "binary_op_texture")
+# The yaml template whose variants `add_binary_op_node` dispatches into.
+_BINARY_TEMPLATE = os.path.join("binary", "binary")
+# The yaml template whose variants `add_binary_scalar_op_node` dispatches into.
+_BINARY_SCALAR_TEMPLATE = os.path.join("binary", "binary_scalar")
 
 
 def _function_body(text: str, name: str) -> str:
@@ -112,12 +115,9 @@ class TestShaderNames(unittest.TestCase):
         the dtype in the middle and so generated a name no dispatch could ever
         build. Kokoro's synthesizer aborted on it.
         """
-        for template, expected in (
-            ("binary_op_buffer", "binary_eq_buffer_int32"),
-            ("binary_op_texture", "binary_eq_texture3d_int32"),
-        ):
-            with self.subTest(template=template):
-                self.assertIn(expected, self.names[template])
+        for expected in ("binary_cmp_buffer_int32", "binary_cmp_texture3d_int32"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, self.names[_BINARY_TEMPLATE])
 
     def test_binary_variants_end_in_a_storage_and_dtype_suffix(self) -> None:
         """The general form of the same bug, for every binary op at once.
@@ -131,10 +131,7 @@ class TestShaderNames(unittest.TestCase):
             storage + dtype for storage in STORAGE_SUFFIXES for dtype in DTYPE_SUFFIXES
         )
         unreachable = [
-            name
-            for template in _BINARY_TEMPLATES
-            for name in self.names[template]
-            if not name.endswith(legal)
+            name for name in self.names[_BINARY_TEMPLATE] if not name.endswith(legal)
         ]
         self.assertEqual(
             unreachable,
@@ -142,6 +139,21 @@ class TestShaderNames(unittest.TestCase):
             "these shaders are generated but no dispatch can name them; "
             "see add_binary_op_node in BinaryOp.cpp",
         )
+
+    def test_binary_scalar_shaders_cover_every_dispatch(self) -> None:
+        """Every name `add_binary_scalar_op_node` can build must be generated.
+
+        It appends a storage suffix, the tensor's dtype suffix and the scalar's
+        dtype suffix. The scalar is read as float for float and half tensors,
+        and as int32 or float for int32 tensors.
+        """
+        dtype_pairs = ("_half_float", "_float_float", "_int32_int32", "_int32_float")
+        for prefix in ("binary_scalar_op", "binary_scalar_cmp"):
+            for storage in ("_buffer", "_texture3d"):
+                for dtypes in dtype_pairs:
+                    expected = prefix + storage + dtypes
+                    with self.subTest(expected=expected):
+                        self.assertIn(expected, self.names[_BINARY_SCALAR_TEMPLATE])
 
 
 if __name__ == "__main__":

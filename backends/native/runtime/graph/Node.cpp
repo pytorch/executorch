@@ -66,4 +66,18 @@ std::vector<ValueId> Node::input_value_ids() const {
   return ids;
 }
 
+std::vector<ValueId> Node::output_value_ids() const {
+  std::vector<ValueId> ids;
+  for (const Output& output : outputs) {
+    if (output.kind == OutputValueKind::TensorList) {
+      for (const ValueId id : output.elem_ids) {
+        push_id(ids, id);
+      }
+    } else {
+      push_id(ids, output.value_id);
+    }
+  }
+  return ids;
+}
+
 } // namespace ptn

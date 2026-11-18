@@ -10,6 +10,8 @@ on:
       - ciflow/nightly/*
   pull_request:
     paths:
+      - .ci/scripts/setup-openvino.sh
+      - .ci/scripts/test_backend.sh
       - .github/workflows/test-backend-openvino.yml
       - .github/workflows/_test_backend.yml
   workflow_dispatch:
@@ -30,3 +32,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
+      upload-test-run-reports: true

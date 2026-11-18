@@ -20,16 +20,19 @@
 #include <executorch/backends/native/runtime/Program.h>
 
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include <flatbuffers/flatbuffers.h>
 
+#include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
 
 namespace ptn {
@@ -114,22 +117,22 @@ OutputKind map_output_kind(fbs::OutputKind k) {
   }
 }
 
-// The wire describes a dim as a min..max range, while the IR holds a concrete
-// extent. Collapsing a range to its upper bound would run the graph at that
-// bound and compute over elements the caller never supplied, so a dim that is
-// not a single non-negative extent is refused where it enters the IR.
-int64_t static_extent(
+std::pair<int64_t, int64_t> extent_bounds(
     const fbs::Dim* d,
     const std::string& value_name,
     flatbuffers::uoffset_t i) {
-  if (d->min() == d->max() && d->min() >= 0) {
-    return d->min();
+  if (d->min() >= 0 && d->max() >= d->min()) {
+    if (static_cast<uint64_t>(d->max()) > detail::kMaxTensorDimension) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + value_name + " dim " + std::to_string(i) +
+          " exceeds dimension limit");
+    }
+    return {d->min(), d->max()};
   }
   throw std::runtime_error(
       "build_tensor_meta: " + value_name + " dim " + std::to_string(i) +
-      " is not a static extent (" + std::to_string(d->min()) + ".." +
-      (d->max() < 0 ? std::string("inf") : std::to_string(d->max())) +
-      "); this runtime requires static shapes");
+      " has invalid or unbounded range (" + std::to_string(d->min()) + ".." +
+      (d->max() < 0 ? std::string("inf") : std::to_string(d->max())) + ")");
 }
 
 TensorMeta build_tensor_meta(
@@ -141,15 +144,77 @@ TensorMeta build_tensor_meta(
   }
   out.dtype = map_scalar_type(m->dtype());
   if (const auto* sizes = m->sizes()) {
+    if (sizes->size() > detail::kMaxTensorRank) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + name + " exceeds tensor rank limit");
+    }
     out.sizes.reserve(sizes->size());
+    size_t numel = 1;
+    std::vector<int64_t> lower_bounds;
+    lower_bounds.reserve(sizes->size());
+    bool dynamic = false;
     for (flatbuffers::uoffset_t i = 0; i < sizes->size(); ++i) {
-      out.sizes.push_back(static_extent(sizes->Get(i), name, i));
+      const auto [lower, upper] = extent_bounds(sizes->Get(i), name, i);
+      lower_bounds.push_back(lower);
+      out.sizes.push_back(upper);
+      dynamic |= lower != upper;
+      if (!detail::checked_mul(numel, static_cast<size_t>(upper), numel)) {
+        throw ResourceLimitError(
+            "build_tensor_meta: " + name + " element count overflows");
+      }
+    }
+    size_t nbytes = 0;
+    if (!detail::checked_mul(numel, element_size(out.dtype), nbytes) ||
+        nbytes > detail::kMaxTensorBytes) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + name + " exceeds tensor byte limit");
+    }
+    if (dynamic) {
+      out.lower_bounds = std::move(lower_bounds);
     }
   }
   if (const auto* dord = m->dim_order()) {
     out.dim_order_hint.reserve(dord->size());
     for (flatbuffers::uoffset_t i = 0; i < dord->size(); ++i) {
       out.dim_order_hint.push_back(static_cast<int32_t>(dord->Get(i)));
+    }
+  }
+  if (const auto* quant = m->quant()) {
+    switch (quant->scheme_type()) {
+      case fbs::QuantScheme::AffineGroup: {
+        const fbs::AffineGroup* affine = quant->scheme_as_AffineGroup();
+        if (affine == nullptr) {
+          throw std::runtime_error(
+              "build_tensor_meta: " + name +
+              " has a malformed affine quant scheme");
+        }
+        out.quant = AffineGroupQuant{
+            .scale_data_key = str_of(affine->scale_data_key()),
+            .scale_dtype = map_scalar_type(affine->scale_dtype()),
+            .quant_min = affine->quant_min(),
+            .quant_max = affine->quant_max(),
+            .group_size = affine->group_size(),
+            .zero_point_data_key = str_of(affine->zero_point_data_key()),
+            .zero_point_dtype = map_scalar_type(affine->zero_point_dtype()),
+        };
+        break;
+      }
+      case fbs::QuantScheme::PackedQuant: {
+        const fbs::PackedQuant* packed = quant->scheme_as_PackedQuant();
+        if (packed == nullptr) {
+          throw std::runtime_error(
+              "build_tensor_meta: " + name +
+              " has a malformed packed quant scheme");
+        }
+        out.quant = PackedQuant{.codec = str_of(packed->codec())};
+        break;
+      }
+      case fbs::QuantScheme::NONE:
+        throw std::runtime_error(
+            "build_tensor_meta: " + name + " has an empty quant scheme");
+      default:
+        throw std::runtime_error(
+            "build_tensor_meta: " + name + " has an unsupported quant scheme");
     }
   }
   return out;
@@ -593,6 +658,7 @@ Method Program::build_method(size_t index) const {
 // the deserializer helpers it drives: get_method is the public lazy entry
 // point, build_method the private materializer it calls on a cache miss.
 const Method& Program::get_method(const std::string& name) const {
+  const std::lock_guard<std::mutex> lock(method_cache_mutex_);
   const auto it = method_cache_.find(name);
   if (it != method_cache_.end()) {
     return it->second;

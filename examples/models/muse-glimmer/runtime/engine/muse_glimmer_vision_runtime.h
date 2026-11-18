@@ -19,6 +19,32 @@
 
 namespace executorch::extension::llm {
 
+// CPU-only storage: no planned tensors, masks, module, or backend lifetime.
+struct MuseGlimmerRGBImage {
+  std::vector<uint8_t> rgb;
+  int32_t width = 0;
+  int32_t height = 0;
+};
+
+struct MuseGlimmerImageLimits {
+  size_t max_encoded_bytes = 20 * 1024 * 1024;
+  int32_t max_image_dimension = 32768;
+  int64_t max_image_pixels = 16 * 1024 * 1024;
+};
+
+struct MuseGlimmerImageGrid {
+  int32_t height = 0;
+  int32_t width = 0;
+  int64_t soft_tokens = 0;
+};
+
+::executorch::runtime::Result<MuseGlimmerRGBImage> decode_muse_glimmer_image(
+    ::executorch::runtime::Span<const uint8_t> encoded_image,
+    const MuseGlimmerImageLimits& limits);
+
+::executorch::runtime::Result<MuseGlimmerImageGrid>
+muse_glimmer_image_grid(int32_t width, int32_t height, int64_t max_soft_tokens);
+
 struct PreparedMuseGlimmerImage {
   std::vector<uint16_t> embeddings;
   int64_t num_soft_tokens = 0;
@@ -56,12 +82,14 @@ class MuseGlimmerVisionRuntime final {
         encoded_image.data(), encoded_image.size()));
   }
 
- private:
+  // The caller owns at least width * height * 3 RGB bytes and calls this on its
+  // execution thread. Dimensions are checked against the configured limits.
   ::executorch::runtime::Result<PreparedMuseGlimmerImage> prepare_decoded_image(
       const uint8_t* rgb,
       int32_t width,
       int32_t height) const;
 
+ private:
   MuseGlimmerVisionRuntimeConfig config_;
   std::vector<float> pos_embed_table_;
 };

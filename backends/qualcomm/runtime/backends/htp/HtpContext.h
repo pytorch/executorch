@@ -26,8 +26,10 @@ class HtpContext : public QnnContext {
       QnnDevice* device,
       QnnBackendCache* cache,
       const QnnExecuTorchHtpBackendOptions* htp_options,
+      const QnnExecuTorchTargetOptions* target_options,
       QnnDlcManager* qnn_dlc_manager,
-      const QnnExecuTorchProfileLevel& profile_level)
+      const QnnExecuTorchProfileLevel& profile_level,
+      Qnn_ContextHandle_t spill_fill_handle = nullptr)
       : QnnContext(
             implementation,
             system_implementation,
@@ -35,9 +37,10 @@ class HtpContext : public QnnContext {
             device,
             cache,
             qnn_dlc_manager,
-            profile_level) {
+            profile_level),
+        sf_handle_(spill_fill_handle) {
     htp_context_custom_config_ = std::make_unique<HtpContextCustomConfig>(
-        this, htp_options, profile_level);
+        this, htp_options, target_options, profile_level);
   }
   ~HtpContext() {}
 
@@ -48,13 +51,11 @@ class HtpContext : public QnnContext {
  protected:
   executorch::runtime::Error MakeConfig(
       std::vector<const QnnContext_Config_t*>& config) override;
-  executorch::runtime::Error AfterConfigure() override;
 
  private:
   std::vector<QnnContext_Config_t> context_config_;
   std::unique_ptr<HtpContextCustomConfig> htp_context_custom_config_;
-  // this is shared between all partitions inside one pte
-  static inline Qnn_ContextHandle_t sf_handle_ = 0x0;
+  Qnn_ContextHandle_t sf_handle_;
 };
 
 } // namespace qnn

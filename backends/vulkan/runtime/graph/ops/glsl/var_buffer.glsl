@@ -54,7 +54,7 @@ void main() {
   shared_count[tid] = 0;
   barrier();
 
-  const int R = in_sizes[reduce_dim];
+  const int R = safe_idx(in_sizes, reduce_dim);
   const uint N = gl_WorkGroupSize[reduce_dim];
 
   // Each workgroup processes a contiguous chunk of the input tensor

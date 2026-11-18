@@ -45,40 +45,6 @@ bool check_same_packed_dim(
 }
 
 //
-// Broadcast flag functions
-//
-
-bool is_packed_dim_broadcasted(
-    ComputeGraph& graph,
-    const ValueRef sndr,
-    const ValueRef rcvr) {
-  // We assume that the tensors are broadcastable. If values aren't equal at
-  // some index, then the value of rcvr is 1 and hence should be broadcasted.
-  const std::vector<int64_t> sndr_sizes = graph.sizes_of(sndr);
-  const std::vector<int64_t> rcvr_sizes = graph.sizes_of(rcvr);
-
-  switch (graph.packed_dim_of(sndr)) {
-    case WHCN::kChannelsDim:
-      return utils::val_at(-3, sndr_sizes) > utils::val_at(-3, rcvr_sizes);
-    case WHCN::kHeightDim:
-      return utils::val_at(-2, sndr_sizes) > utils::val_at(-2, rcvr_sizes);
-    case WHCN::kWidthDim:
-      return utils::val_at(-1, sndr_sizes) > utils::val_at(-1, rcvr_sizes);
-    default:
-      VK_THROW("Invalid packed dim");
-  }
-}
-
-utils::ivec2 create_broadcast_params(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2) {
-  return utils::make_ivec2(
-      {is_packed_dim_broadcasted(graph, t2, t1),
-       is_packed_dim_broadcasted(graph, t1, t2)});
-}
-
-//
 // Work group size calculation functions
 //
 

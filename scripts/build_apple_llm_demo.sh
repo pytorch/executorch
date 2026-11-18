@@ -9,11 +9,17 @@ set -euo pipefail
 
 ARTIFACTS_DIR_NAME="$1"
 APP_PATH="extension/benchmark/apple/Benchmark/Benchmark"
+DERIVED_DATA_PATH="$(pwd)/cmake-out/ios-benchmark-derived-data"
+BUILD_DIR="${DERIVED_DATA_PATH}/Build/Products"
+MODE="Release"
+PLATFORM="iphoneos"
 
 xcodebuild build-for-testing \
   -project "${APP_PATH}.xcodeproj" \
   -scheme Benchmark \
-  -destination "platform=iOS" \
+  -configuration "${MODE}" \
+  -derivedDataPath "${DERIVED_DATA_PATH}" \
+  -destination "generic/platform=iOS" \
   -sdk iphoneos \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM=78E7V7QP35 \
@@ -23,13 +29,7 @@ xcodebuild build-for-testing \
   CODE_SIGNING_REQUIRED=No \
   CODE_SIGNING_ALLOWED=No
 
-# The hack to figure out where the xctest package locates
-BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
-
-# Prepare the demo app, debug mode here is the default from xcodebuild and match
-# with what we have in the test spec
-MODE="Release"
-PLATFORM="iphoneos"
+# Prepare the benchmark app.
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
 rm -rf Payload && mkdir Payload

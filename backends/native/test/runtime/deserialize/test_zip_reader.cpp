@@ -9,6 +9,8 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -95,6 +97,34 @@ TEST(ZipReaderTest, ReadsStoredMemberRanges) {
       zip.read("program.ptg"),
       (std::vector<uint8_t>{'p', 'r', 'o', 'g', 'r', 'a', 'm'}));
   EXPECT_NO_THROW(zip.verify("program.safetensors"));
+}
+
+TEST(ZipReaderTest, ExposesMemberBytesOfMemoryArchives) {
+  const TempZip file;
+  EXPECT_EQ(
+      ZipReader::open(file.path()).member_bytes("program.safetensors"),
+      std::nullopt);
+
+  std::ifstream stream(file.path(), std::ios::binary);
+  const std::vector<uint8_t> archive(
+      (std::istreambuf_iterator<char>(stream)),
+      std::istreambuf_iterator<char>());
+  const ZipReader zip = ZipReader::open(ByteSpan(archive));
+
+  const std::optional<ByteSpan> member =
+      zip.member_bytes("program.safetensors");
+  ASSERT_TRUE(member);
+  EXPECT_GE(member->data(), archive.data());
+  EXPECT_LE(member->data() + member->size(), archive.data() + archive.size());
+  EXPECT_EQ(
+      std::string_view(
+          reinterpret_cast<const char*>(member->data()), member->size()),
+      "0123456789");
+  EXPECT_EQ(zip.member_bytes("missing"), std::nullopt);
+
+  std::array<uint8_t, 4> bytes{};
+  zip.read_into("program.safetensors", 3, MutableByteSpan(bytes));
+  EXPECT_EQ(bytes, (std::array<uint8_t, 4>{'3', '4', '5', '6'}));
 }
 
 TEST(ZipReaderTest, RejectsInvalidRanges) {

@@ -32,7 +32,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_output_tile.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile.glslh"
 
 // ============================================================
 // Shared store helpers (buffer or texture; fp32 or input-dtype)

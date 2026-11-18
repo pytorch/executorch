@@ -11,13 +11,17 @@ from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
-import executorch.exir as exir
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.library import cmsis_nn
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.utils import (
     build_activation_lut,
     is_foldable_alpha,
     quantize_multiplier_aot,
@@ -25,14 +29,6 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     SHIFT_INT8,
     to_physical_order,
 )
-from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
-    required_cmsis_nn_buffer_sizes,
-)
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
-)
-from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,
@@ -80,32 +76,8 @@ class AtenToCortexMPass(AtenToDialectPass):
                 raise RuntimeError(
                     f"Cortex-M lowering left {node.target} in the graph."
                 )
-            self._initialize_alloc_node_size(node)
 
         return PassResult(result.graph_module, result.modified or max_pool_modified)
-
-    def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
-        """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
-        scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
-            node, self.target_config.backend
-        )
-        if scratch_buffer_sizes is None:
-            return
-
-        for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
-            scratch_arg = node.args[-(i + 1)]
-            if (
-                not isinstance(scratch_arg, torch.fx.Node)
-                or scratch_arg.target != exir.memory.alloc
-            ):
-                raise RuntimeError(
-                    f"Expected scratch alloc node as final argument(s) for {node.target}, got {scratch_arg}."
-                )
-
-            scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
-            scratch_arg.meta["val"] = torch.empty(
-                (scratch_buffer_size,), dtype=torch.uint8, device="meta"
-            )
 
 
 def _create_uninitialized_alloc_node(
@@ -269,16 +241,7 @@ def _compute_kernel_sum(weights, bias, input_offset, weight_offset):
 
     for i = (1, ..., n), where j indexes the input activations.
     """
-    weights_transposed = weights.T
-    weights_int32 = weights_transposed.to(torch.int32)
-    offset_weights = weights_int32 + weight_offset
-    kernel_sum = torch.sum(offset_weights, dim=0, keepdim=True, dtype=torch.int32)
-    kernel_sum_offset = kernel_sum * input_offset
-
-    if bias is not None:
-        kernel_sum_offset += bias
-
-    return kernel_sum_offset
+    return cmsis_nn.vector_sum_s8(weights, input_offset, bias, weight_offset)
 
 
 def _get_batch_size_from_conv(conv_node: torch.fx.Node):
@@ -388,21 +351,32 @@ def _get_linear_replacement(
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
-    weight_scale = node.meta["input_qparams"][1].scale
-    weight_zp = node.meta["input_qparams"][1].zp
+    weight_qparams = node.meta["input_qparams"][1]
     output_scale = node.meta["output_qparams"][0].scale
     output_zp = node.meta["output_qparams"][0].zp
     output_min = node.meta["output_qparams"][0].qmin
     output_max = node.meta["output_qparams"][0].qmax
 
-    if weight_zp != 0:
+    # Per-channel weights carry one scale and zero point per output feature.
+    if weight_qparams.per_channel:
+        assert (
+            weight_qparams.axis == 0
+        ), f"Per-channel linear weights must be quantized on axis 0; got {weight_qparams.axis}"
+        weight_scales = weight_qparams.get_scale_per_channel()
+        weight_zps = weight_qparams.get_zp_per_channel()
+    else:
+        weight_scales, weight_zps = [weight_qparams.scale], [weight_qparams.zp]
+    if any(zp != 0 for zp in weight_zps):
         raise NotImplementedError(
             f"cortex_m::quantized_linear assumes symmetric weight "
-            f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+            f"quantization (weight_zp == 0); got weight_zp={weight_qparams.zp}"
         )
 
-    quantized_multiplier, quantized_shift = quantize_multiplier_aot(
-        (input_scale * weight_scale) / output_scale
+    quantized_multipliers, quantized_shifts = zip(
+        *(
+            quantize_multiplier_aot((input_scale * weight_scale) / output_scale)
+            for weight_scale in weight_scales
+        )
     )
 
     # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
@@ -421,7 +395,7 @@ def _get_linear_replacement(
 
     if target_config.backend == cmsis_nn.Backend.MVE:
         kernel_sum_tensor = _compute_kernel_sum(
-            weights_tensor, bias_tensor, -input_zp, -weight_zp
+            weights_tensor, bias_tensor, -input_zp, -weight_zps[0]
         )
         with node.graph.inserting_after(weights):
             kernel_sum_arg = create_constant_placeholder(
@@ -436,21 +410,82 @@ def _get_linear_replacement(
         kernel_sum_arg = None
         bias_arg = bias_node
 
+    multipliers_arg: Argument
+    shifts_arg: Argument
+    if len(weight_scales) == 1:
+        target = exir_ops.edge.cortex_m.quantized_linear.default
+        multipliers_arg = list(quantized_multipliers)
+        shifts_arg = list(quantized_shifts)
+    else:
+        target = exir_ops.edge.cortex_m.quantized_linear_per_channel.default
+        with node.graph.inserting_after(weights):
+            multipliers_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+            shifts_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
     args = (
         linear_args[0],
         weights,
         bias_arg,
         kernel_sum_arg,
         -input_zp,
-        -weight_zp,
+        -weight_zps[0],
         output_zp,
-        [quantized_multiplier],
-        [quantized_shift],
+        multipliers_arg,
+        shifts_arg,
         output_max,
         output_min,
     )
 
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_linear.default, args)
+    return DialectNodeSpec(target, args)
+
+
+def _prepare_convolution_weights(
+    node: Node,
+    dialect_pass: AtenToCortexMPass,
+    weight: torch.Tensor,
+    use_depthwise_conv: bool,
+) -> tuple[torch.Tensor, torch.Tensor | None, list[int], bool]:
+    """Prepare weights at export and preserve their logical filter shape.
+
+    AOT-enabled MVE regular convolution packs weights and precomputes effective
+    bias together. Other paths only permute weights to the CMSIS-NN layout.
+    """
+    # CMSIS-NN reads contiguous IHWO for depthwise and OHWI for regular conv.
+    permutation = (1, 2, 3, 0) if use_depthwise_conv else (0, 2, 3, 1)
+    prepared_weight = weight.permute(permutation).contiguous()
+    logical_filter_shape = list(prepared_weight.shape)
+    effective_bias = None
+    use_packed_conv = (
+        not use_depthwise_conv
+        and dialect_pass.target_config.backend == cmsis_nn.Backend.MVE
+        and cmsis_nn.is_aot_enabled()
+    )
+    if use_packed_conv:
+        bias = cast(Node | None, node.args[2])
+        bias_tensor = (
+            get_param_tensor(dialect_pass.exported_program, bias)
+            if bias is not None
+            else None
+        )
+        prepared_weight, effective_bias = cmsis_nn.convolve_s8_prepare_weights(
+            prepared_weight,
+            -node.meta["input_qparams"][0].zp,
+            bias_tensor,
+            groups=cast(int, node.args[8]),
+        )
+    return prepared_weight, effective_bias, logical_filter_shape, use_packed_conv
 
 
 @AtenToCortexMPass.register_dialect_substitution(
@@ -526,6 +561,17 @@ def _get_convolution_replacement(
     in_channels = param_weight_tensor.shape[1] * groups
     out_channels = param_weight_tensor.shape[0]
     is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
+    # CMSIS-NN MVE already repacks these weights and runs regular convolution on
+    # every inference. Emit that layout at export to avoid repeated repacking
+    # and its scratch storage. The >8 limit covers both compiler thresholds.
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    if (
+        is_depthwise
+        and dialect_pass.target_config.backend == cmsis_nn.Backend.MVE
+        and in_channels == 1
+        and out_channels > 8
+    ):
+        is_depthwise = False
 
     # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
     # unoptimized implementation otherwise.
@@ -540,19 +586,11 @@ def _get_convolution_replacement(
     # )
     use_depthwise_conv = is_depthwise and (batch_size == 1)
 
-    if use_depthwise_conv:
-        # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
-        # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
-        # The permute achieves the desired logical layout (IHWO). CMSIS-NN expects
-        # weights in physically contiguous memory after the permute (not in channels-last)
-        # so we use contiguous() here.
-        weight_permuted = param_weight_tensor.permute(1, 2, 3, 0).contiguous()
-    else:
-        # For regular conv: OIHW -> OHWI
-        # The permute achieves the desired logical layout (OHWI). CMSIS-NN expects
-        # weights in physically contiguous memory after the permute (not in channels-last)
-        # so we use contiguous() here.
-        weight_permuted = param_weight_tensor.permute(0, 2, 3, 1).contiguous()
+    prepared_weight, effective_bias_tensor, logical_filter_shape, use_packed_conv = (
+        _prepare_convolution_weights(
+            node, dialect_pass, param_weight_tensor, use_depthwise_conv
+        )
+    )
 
     with node.graph.inserting_after(weight):
         if bias is None and groups > 1:
@@ -568,12 +606,12 @@ def _get_convolution_replacement(
                 torch.zeros(out_channels, dtype=torch.int32),
             )
 
-        weight_nhwc = create_constant_placeholder(
+        prepared_weight_node = create_constant_placeholder(
             exported_program,
             node.graph,
-            node.name + "_weight_nhwc",
+            node.name + "_prepared_weight",
             InputKind.PARAMETER,
-            weight_permuted,
+            prepared_weight,
         )
 
         quantized_multiplier_tensor = create_constant_placeholder(
@@ -607,7 +645,7 @@ def _get_convolution_replacement(
 
         depthwise_args = (
             x,
-            weight_nhwc,
+            prepared_weight_node,
             bias,
             stride,
             padding,
@@ -631,11 +669,21 @@ def _get_convolution_replacement(
         )
 
     # Use regular convolution operator
+    if use_packed_conv:
+        with node.graph.inserting_after(prepared_weight_node):
+            bias = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_effective_bias",
+                InputKind.PARAMETER,
+                cast(torch.Tensor, effective_bias_tensor),
+            )
+
     scratch = _create_uninitialized_alloc_node(node, exported_program)
 
     conv2d_args = (
         x,
-        weight_nhwc,
+        prepared_weight_node,
         bias,
         stride,
         padding,
@@ -648,6 +696,16 @@ def _get_convolution_replacement(
         output_qmax,
         scratch,
     )
+    if use_packed_conv:
+        return DialectNodeSpec(
+            (
+                exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
+                if explicit_nhwc
+                else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
+            ),
+            conv2d_args,
+            {"filter_shape": logical_filter_shape},
+        )
     return DialectNodeSpec(
         (
             exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
@@ -880,7 +938,7 @@ def _get_avg_pool2d_replacement(
     output_mult, output_shift = quantize_multiplier_aot(input_scale)
 
     avg_padding = padding
-    if count_include_pad:
+    if count_include_pad and any(padding):
         pad_h, pad_w = padding
         if explicit_nhwc:
             pre_pad = post_pad = [0, pad_h, pad_w, 0]
@@ -1133,7 +1191,6 @@ def _get_softmax_replacement(
             "Softmax output zero-point must match CMSIS (-128). "
             f"Got {output_zp_val}."
         )
-
     args = (
         node.args[0],
         node.args[1],

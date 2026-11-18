@@ -9,6 +9,8 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -86,6 +88,26 @@ def test_roll_tosa_INT(test_data) -> None:
     data, shifts, dims = test_data()
     pipeline = TosaPipelineINT[input_t1](Roll(shifts, dims), (data,), aten_op, exir_op)
     pipeline.count_tosa_ops({"SLICE": 4, "CONCAT": 2})
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_quant)
+@common.XfailIfNoCorstone300
+def test_roll_u55_INT(test_data) -> None:
+    data, shifts, dims = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Roll(shifts, dims), (data,), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_quant)
+@common.XfailIfNoCorstone320
+def test_roll_u85_INT(test_data) -> None:
+    data, shifts, dims = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        Roll(shifts, dims), (data,), aten_op, exir_op
+    )
     pipeline.run()
 
 

@@ -43,8 +43,8 @@ Layout difference from torchao ``Int4Tensor``:
 Bits-per-weight: 4.0 (qdata) + 8/32 (scale codes) + 16/256 (fp16 scale step) +
 8/32 (uint8 zero codes) + 16/256 (fp16 zero step) = 4.625 bpw.
 
-The coalesced [N, n_groups] layout is exactly what the W4A8 dp4a matvec kernel
-(``executorch_cuda::int4_plain_mm`` / ``int4_plain_mm.cuh``) reads row-for-row
+The coalesced [N, n_groups] layout is exactly what the W4A8 DP4A decode kernels
+(``triton::int4_quantized_gemm_m{M}``, triton/kernels/int4_quantized_gemm.py) read row-for-row
 with qdata, so the exported decode graph carries no per-step transpose. The
 is owned by :meth:`from_exportable_int4_tensor` so
 it is baked into the serialized weight constant once at pack time.

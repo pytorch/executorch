@@ -51,7 +51,7 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
 
 #include "sdpa_fp_q_projected_tile_load.glslh"
 #include "sdpa_fp_k_cache_tile_load.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 #include "sdpa_fp_attn_weight_tile_store.glslh"
 
 shared FPOutTile partial_sums[NUM_WORKERS_PER_OUT];
@@ -132,7 +132,6 @@ void main() {
         s,
         q_h,
         D4,
-        D,
         S,
         Q_H);
 
@@ -142,10 +141,16 @@ void main() {
         c,
         kv_h,
         D4,
-        D,
         context_len,
         C,
         KV_H);
+
+      // Each worker covers about one d4, so checking for the partial last
+      // vec4 in the loop is cheap.
+      if (mul_4(d4) + 4 > D) {
+        mask_q_projected_tile_d_tail(q_tile, d4, D);
+        mask_k_cache_tile_d_tail(w_tile, d4, D);
+      }
 
       fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }

@@ -42,13 +42,15 @@ class FuseBatchNorm2dPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
-    def get_bias_name(self, weight_node: Node, bias_node: Node | None) -> str:
+    def get_bias_name(
+        self, weight_node: Node, bias_node: Node | None, suffix: str
+    ) -> str:
         if bias_node:
-            return bias_node.name + "_fused_bn"
+            return bias_node.name + suffix
         elif "weight" in weight_node.name:
-            return weight_node.name.replace("weight", "bias") + "_fused_bn"
+            return weight_node.name.replace("weight", "bias") + suffix
         else:
-            return weight_node.name + "_bias_fused_bn"
+            return weight_node.name + "_bias" + suffix
 
     @staticmethod
     def _fuse_grouped_transposed_conv_bn_weights(
@@ -281,13 +283,16 @@ class FuseBatchNorm2dPass(ArmPass):
                     transpose=transposed,
                 )
 
-            # Create fused weights and bias to conv and replace conv args
+            # Create fused weights and bias to conv and replace conv args.
+            # Several convolutions can share one weight and fold different
+            # batch norms, so the names must include the batch norm.
+            fused_suffix = f"_{node.name}_fused_bn"
             with graph_module.graph.inserting_before(input_weight_node):
                 fused_conv_weight_node = create_constant_placeholder(
                     exp_program=self.exported_program,
                     graph=graph_module.graph,
                     kind=InputKind.PARAMETER,
-                    name=input_weight_node.name + "_fused_bn",
+                    name=input_weight_node.name + fused_suffix,
                     data=fused_weight,
                 )
 
@@ -296,7 +301,9 @@ class FuseBatchNorm2dPass(ArmPass):
                         exp_program=self.exported_program,
                         graph=graph_module.graph,
                         kind=InputKind.PARAMETER,
-                        name=self.get_bias_name(input_weight_node, input_bias_node),
+                        name=self.get_bias_name(
+                            input_weight_node, input_bias_node, fused_suffix
+                        ),
                         data=fused_bias,
                     )
                 else:

@@ -518,6 +518,17 @@ def facto_testcase_gen(  # noqa: C901
                 spec.inspec[index].constraints.extend(
                     [cp.Value.Ge(lambda deps, _: deps[1])]
                 )
+            elif in_spec.name == "exponent" and op_name == "pow.Tensor_Scalar":
+                # A Gt(0) bound makes nextup(0) = 5e-324 an edge value, which
+                # flushes to 0 in float32 kernels and turns 0 ** e into 0 ** 0.
+                spec.inspec[index].constraints.extend(
+                    [
+                        cp.Value.Ge(
+                            lambda deps, dtype: torch.finfo(torch.float32).tiny
+                        ),
+                        cp.Value.Le(lambda deps, dtype: 2),
+                    ]
+                )
             elif in_spec.name == "negative_slope" and op_name == "leaky_relu.default":
                 # For leaky_relu, negative_slope should be in typical range (0, 1]
                 spec.inspec[index].constraints.extend(

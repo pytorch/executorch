@@ -30,7 +30,6 @@ $if MODE == "llm":
   #define Q_LAYOUT DHSB
   #define K_LAYOUT DHSB
 $else:
-  #define SDPA_PAD_D
   #define Q_LAYOUT DSHB
   #define K_LAYOUT DSHB
 
@@ -70,7 +69,7 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
 
 #include "sdpa_fp_q_projected_tile_load.glslh"
 #include "sdpa_fp_k_cache_tile_load.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 #include "sdpa_fp_attn_weight_tile_store.glslh"
 
 /*
@@ -175,14 +174,14 @@ void main() {
   } else
 #endif
   {
-    for (int d4 = 0; d4 < D4; d4++) {
+    const int D4_full = div_4(D);
+    for (int d4 = 0; d4 < D4_full; d4++) {
       load_q_projected_tile_with_checks(
         q_tile,
         d4,
         s,
         q_h,
         D4,
-        D,
         S,
         Q_H);
 
@@ -192,11 +191,20 @@ void main() {
         c,
         kv_h,
         D4,
-        D,
         context_len,
         C,
         KV_H);
 
+      fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
+    }
+    // Padding lanes of the last D vec4 may be non-finite; mask them.
+    if (D4_full < D4) {
+      load_q_projected_tile_with_checks(
+        q_tile, D4_full, s, q_h, D4, S, Q_H);
+      load_k_cache_tile_with_checks(
+        w_tile, D4_full, c, kv_h, D4, context_len, C, KV_H);
+      mask_q_projected_tile_d_tail(q_tile, D4_full, D);
+      mask_k_cache_tile_d_tail(w_tile, D4_full, D);
       fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }
 

@@ -49,7 +49,7 @@ void main() {
   // value that fails the out_of_bounds check below.
   TensorIndex in_tidx = out_tidx;
   [[unroll]] for (int d = 0; d < 4; d++) {
-    in_tidx.data[0][d] -= uint(pad_per_dim[d]);
+    in_tidx.data[0][d] -= uint(safe_idx(pad_per_dim, d));
   }
 
   if (out_of_bounds(in_tidx, inp)) {

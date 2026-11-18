@@ -6,6 +6,7 @@
 
 import inspect
 import itertools
+import logging
 import math
 import random
 from functools import partial, reduce
@@ -15,6 +16,11 @@ import torch
 
 # Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
 from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
+from executorch.backends.qualcomm.export_utils import (
+    make_quantizer,
+    prepare_pt2e,
+    QuantDtype,
+)
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
@@ -962,10 +968,11 @@ class Cast(torch.nn.Module):
         inputs = [
             (torch.randn(1, 2, 3, 4),),
             (torch.randint(-10, 10, (1, 2, 3, 4)),),
+            (torch.randint(0, 100, (1, 2, 3, 4), dtype=torch.uint8),),
         ]
-        dtypes = [torch.long, torch.float]
+        dtypes = [torch.long, torch.float, torch.float]
         for input, dtype in zip(inputs, dtypes):
-            with subtests.test(msg=f"to dtype:{dtype}"):
+            with subtests.test(msg=f"{input[0].dtype} to dtype:{dtype}"):
                 with expected as metrics:
                     export_and_verify(
                         module=__class__(dtype=dtype),
@@ -1371,6 +1378,52 @@ class Conv(torch.nn.Module):
         )
 
     @staticmethod
+    def test_2d_16a16w_default(subtests, caplog):
+        warning = "use_16a16w with per-channel conv weights"
+
+        def weight_qscheme(**make_quantizer_kwargs):
+            module = __class__(
+                in_channels=4,
+                out_channels=8,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                dilation=1,
+                groups=1,
+                bias=True,
+                variant=2,
+                transpose=False,
+            ).eval()
+            inputs = (torch.randn(1, 4, 8, 8),)
+            quantizer = make_quantizer(
+                quant_dtype=QuantDtype.use_16a16w,
+                **make_quantizer_kwargs,
+            )
+            exported = torch.export.export(module, inputs, strict=True).module()
+            prepared = prepare_pt2e(exported, quantizer)
+            [conv] = [
+                n
+                for n in prepared.graph.nodes
+                if n.target == torch.ops.aten.conv2d.default
+            ]
+            # prepare_pt2e inserts the weight observer between weight and conv.
+            return prepared.get_submodule(conv.args[1].target).qscheme
+
+        with subtests.test(msg="default_is_per_tensor"):
+            with caplog.at_level(logging.WARNING):
+                caplog.clear()
+                qscheme = weight_qscheme()
+            assert qscheme == torch.per_tensor_symmetric, qscheme
+            assert warning not in caplog.text
+
+        with subtests.test(msg="explicit_per_channel_is_respected_and_warns"):
+            with caplog.at_level(logging.WARNING):
+                caplog.clear()
+                qscheme = weight_qscheme(per_channel_conv=True)
+            assert qscheme == torch.per_channel_symmetric, qscheme
+            assert warning in caplog.text
+
+    @staticmethod
     @unpack_fixtures
     def test_2d_linear_like(subtests, qnn_config, quantizer, compile_spec, expected):
         __class__._test(
@@ -1437,6 +1490,52 @@ class Conv(torch.nn.Module):
             variant=3,
             transpose=True,
         )
+
+
+class ConvBackward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(4, 3, 3, 3), requires_grad=False)
+
+    def forward(self, grad_output, x):
+        forward_output = torch.ops.aten.convolution.default(
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+        )
+        grad_input = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, False, False],
+        )[0]
+        return forward_output, grad_input
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=(torch.randn(1, 4, 5, 5), torch.randn(1, 3, 9, 10)),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class Cos(torch.nn.Module):
@@ -1640,6 +1739,102 @@ class Embedding(torch.nn.Module):
                         compile_specs=compile_spec,
                         metrics=metrics,
                     )
+
+
+class Empty(torch.nn.Module):
+    def __init__(self, shape=None, dtype=None, memory_format=torch.contiguous_format):
+        super().__init__()
+        self.shape = shape
+        self.dtype = dtype
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        # zeros_like makes the uninitialized buffer deterministic for comparison.
+        # dtype is decoupled from the input to exercise the cast path.
+        empty = torch.empty(
+            x.shape if self.shape is None else self.shape,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+            memory_format=self.memory_format,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # Sweep dtypes/shapes/memory_formats that exercise the DecomposeEmpty cast path.
+        cases = [
+            ("dtype:float32", __class__(dtype=torch.float32), (4, 3)),
+            ("dtype:int32", __class__(dtype=torch.int32), (4, 3)),
+            # channels_last: layout is unobservable (uninitialized memory)
+            (
+                "memory_format:channels_last",
+                __class__(memory_format=torch.channels_last),
+                (1, 2, 3, 4),
+            ),
+            # degenerate ends of the shape handling
+            ("shape:0d", __class__(shape=()), (4, 3)),
+            ("shape:1d", __class__(shape=(4,)), (4,)),
+        ]
+        for msg, module, input_shape in cases:
+            with subtests.test(msg=msg):
+                with expected as metrics:
+                    export_and_verify(
+                        module=module,
+                        inputs=(torch.randn(*input_shape),),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class EmptyStrided(torch.nn.Module):
+    def __init__(self, shape, strides, dtype=None):
+        super().__init__()
+        self.shape = shape
+        self.strides = strides
+        self.dtype = dtype
+
+    def forward(self, x):
+        # zeros_like makes the uninitialized buffer deterministic for comparison.
+        empty = torch.empty_strided(
+            self.shape,
+            self.strides,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # A contiguous stride decomposes into full.default
+        with subtests.test(msg="stride:contiguous"):
+            with expected as metrics:
+                export_and_verify(
+                    module=__class__(shape=(2, 3), strides=(3, 1)),
+                    inputs=(torch.randn(2, 3),),
+                    qnn_config=qnn_config,
+                    quantizer=quantizer,
+                    compile_specs=compile_spec,
+                    metrics=metrics,
+                )
+
+    @staticmethod
+    @unpack_fixtures
+    def test_non_contiguous(qnn_config, quantizer, compile_spec, expected):
+        # Non-contiguous stride: still decomposes since uninitialized memory
+        # makes strides unobservable. Without the decomposition, empty_strided
+        # has no node visitor, so the partitioner falls back to CPU and the
+        # graph is no longer fully delegated.
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(shape=(2, 3), strides=(1, 2)),
+                inputs=(torch.randn(2, 3),),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class Equal(torch.nn.Module):
@@ -2974,6 +3169,42 @@ class Linear(torch.nn.Module):
                     with expected as metrics:
                         export_and_verify(
                             module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
+
+
+class LinearLargeBias(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features)
+        # Default init keeps |bias| <= 1/sqrt(in_features), so a bias dropped by
+        # the HTP FullyConnected block-scale over-read (pytorch/executorch#23746)
+        # still passes a loose tolerance.
+        with torch.no_grad():
+            self.linear.bias.uniform_(-2.0, 2.0)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # The over-read depends on heap layout, so each case is lowered twice.
+        repeats = 2
+        with torch.random.fork_rng():
+            torch.manual_seed(0)
+            for (in_f, out_f), rank, it in itertools.product(
+                [(512, 32), (1024, 512), (64, 128)], [2, 4], range(repeats)
+            ):
+                input_shape = (3,) * (rank - 1) + (in_f,)
+                with subtests.test(msg=f"in:{in_f}, out:{out_f}, rank:{rank}, it:{it}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(in_f, out_f),
                             inputs=(torch.randn(input_shape),),
                             qnn_config=qnn_config,
                             quantizer=quantizer,
@@ -5360,12 +5591,16 @@ class Unfold(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(2, 128, 32, 32),)
+        inputs = (torch.randn(2, 128, 64, 64),)
         configs = [
             {"kernel_size": 2, "stride": 2, "padding": 0, "dilation": 1},
             {"kernel_size": 4, "stride": 4, "padding": 0, "dilation": 1},
             {"kernel_size": (2, 2), "stride": (2, 2), "padding": 0, "dilation": 1},
             {"kernel_size": (4, 4), "stride": (4, 4), "padding": 0, "dilation": 1},
+            {"kernel_size": (2, 2), "stride": (2, 1), "padding": 0, "dilation": 1},
+            {"kernel_size": (4, 4), "stride": (2, 2), "padding": 0, "dilation": 1},
+            {"kernel_size": (4, 2), "stride": (2, 2), "padding": 0, "dilation": 1},
+            {"kernel_size": (2, 2), "stride": (2, 2), "padding": (1, 1), "dilation": 1},
         ]
         for cfg in configs:
             with subtests.test(msg=str(cfg)):
@@ -5382,13 +5617,15 @@ class Unfold(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test_unsupported(subtests, qnn_config, quantizer, compile_spec, expected):
-        # stride != kernel_size is not supported by DecomposeColIm
-        inputs = (torch.randn(2, 128, 32, 32),)
+        # dilation != 1 is not supported by DecomposeColIm
+        inputs = (torch.randn(2, 128, 64, 64),)
         configs = [
-            {"kernel_size": (2, 2), "stride": (2, 1), "padding": 0, "dilation": 1},
-            {"kernel_size": (4, 4), "stride": (2, 2), "padding": 0, "dilation": 1},
-            {"kernel_size": (2, 2), "stride": (2, 2), "dilation": (2, 2)},
-            {"kernel_size": (2, 2), "stride": (2, 2), "padding": (1, 1)},
+            {
+                "kernel_size": (2, 2),
+                "stride": (2, 2),
+                "padding": (0, 0),
+                "dilation": (2, 2),
+            },
         ]
         for cfg in configs:
             with subtests.test(msg=str(cfg)):
@@ -5402,7 +5639,7 @@ class Unfold(torch.nn.Module):
                         metrics=metrics,
                     )
         inputs = (torch.randn(2, 128, 32),)
-        cfg = {"kernel_size": (2, 2), "stride": (2, 2)}
+        cfg = {"kernel_size": (2, 2), "stride": (2, 2), "padding": 0, "dilation": 1}
         with subtests.test(msg="Unsupported input shape"):
             with expected as metrics:
                 export_and_verify(

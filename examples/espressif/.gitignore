@@ -1,0 +1,9 @@
+build/
+build-*/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+__pycache__/
+camera_stream/models/
+idf_component_consumer/main/idf_component.yml

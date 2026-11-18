@@ -7,9 +7,11 @@
 
 import argparse
 import os
+import random
 import unittest
 
 import evaluate
+import numpy as np
 import torch
 
 from executorch.backends.samsung.quantizer import EnnQuantizer, Precision
@@ -29,6 +31,23 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestMilestoneMobileBertQAT(unittest.TestCase):
+    # transformers' Trainer calls set_seed(args.seed) from both __init__ and
+    # train(), which reseeds Python, NumPy and torch process-wide. unittest runs
+    # the whole suite in one process, so everything ordered after this file then
+    # draws from a different stream: test_mobilenet_v2 builds its input with an
+    # unseeded torch.randn and compares against atol=0.02, and the draw seed 42
+    # produces lands just outside it. Snapshot the generators here and restore
+    # them afterwards so this test stops reaching into the ones that follow.
+    def setUp(self):
+        self._random_state = random.getstate()
+        self._np_random_state = np.random.get_state()
+        self._torch_rng_state = torch.get_rng_state()
+
+    def tearDown(self):
+        random.setstate(self._random_state)
+        np.random.set_state(self._np_random_state)
+        torch.set_rng_state(self._torch_rng_state)
+
     def test_mobilebert_qat_a8w8(self):
         """
         Test MobileBERT QAT quantization process (A8W8 precision) - using custom QAT training function
@@ -77,10 +96,10 @@ class TestMilestoneMobileBertQAT(unittest.TestCase):
             example_inputs[1].size(2),
             example_inputs[1].size(3),
         )
-        vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
+        vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
         vector_attention_mask = torch.zeros(
-            size_attention_mask, dtype=torch.float32
-        ).to(device)
+            size_attention_mask, dtype=torch.float32, device=device
+        )
         export_inputs = (
             vector_input_ids,
             vector_attention_mask,

@@ -127,10 +127,25 @@ class RecomposeRmsNorm(ExportPass):
                 if gamma_node is None:
                     continue
 
+                input_node = self._get_input_node(rms_norm_pattern[6])
+                # Only the last-dim form the RmsNorm builder supports is recomposed.
+                # Anything else, e.g. a 0-d scale, is left decomposed.
+                input_shape = list(input_node.meta["val"].shape)
+                rank = len(input_shape)
+                mean_node = rms_norm_pattern[5]
+                mean_dims = mean_node.args[1] or range(rank)
+                keepdim = len(mean_node.args) > 2 and mean_node.args[2]
+                if (
+                    rank == 0
+                    or [dim % rank for dim in mean_dims] != [rank - 1]
+                    or not (keepdim or rank == 1)
+                    or list(gamma_node.meta["val"].shape) != input_shape[-1:]
+                ):
+                    continue
+
                 eps = rms_norm_pattern[4].args[1]
                 if isinstance(eps, torch.fx.Node):
                     eps = eps.meta["val"].constant.item()
-                input_node = self._get_input_node(rms_norm_pattern[6])
 
                 with graph.inserting_before(last_mul_node):
                     # args schema
@@ -140,7 +155,7 @@ class RecomposeRmsNorm(ExportPass):
                         self.rms_norm_target,
                         (
                             input_node,
-                            list(gamma_node.meta["val"].shape),
+                            input_shape[-1:],
                             gamma_node,
                             eps,
                         ),

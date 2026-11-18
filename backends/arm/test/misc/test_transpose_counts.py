@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
 )
+from executorch.backends.test.harness.stages import StageType
 
 
 InputT = Tuple[Any, ...]
@@ -540,11 +541,6 @@ cases_channels_last = {
         (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
         3,
     ),
-    "groupnorm_channels_last": TransposeCountCase(
-        GroupNormModule(),
-        (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),),
-        1,
-    ),
     "cumsum_rank4_dim3_channels_last": TransposeCountCase(
         CumsumModule(),
         (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last), 3),
@@ -577,4 +573,25 @@ xfails = {
 def test_transpose_counts_tosa_FP_channels_last(case: TransposeCountCase) -> None:
     pipeline = TosaPipelineFP[InputT](case.module, case.inputs, aten_op=[])
     pipeline.count_tosa_ops({"TRANSPOSE": case.expected_transposes})
+    pipeline.run()
+
+
+def test_transpose_counts_tosa_FP_groupnorm_channels_last() -> None:
+    inputs = (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),)
+    pipeline = TosaPipelineFP[InputT](
+        GroupNormModule(), inputs, aten_op="torch.ops.aten.group_norm.default"
+    )
+    pipeline.tester.export()
+    pipeline.pop_stage("export")
+
+    # PyTorch's output layout determines the boundary transposes before lowering.
+    exported_program = pipeline.tester.get_artifact(StageType.EXPORT)
+    output_node = next(n for n in exported_program.graph.nodes if n.op == "output")
+    (output,) = output_node.args[0]
+    expected_transposes = {
+        (0, 1, 2, 3): 1,
+        (0, 2, 3, 1): 2,
+    }[output.meta["val"].dim_order()]
+
+    pipeline.count_tosa_ops({"TRANSPOSE": expected_transposes})
     pipeline.run()

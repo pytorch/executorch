@@ -204,6 +204,13 @@ if(TARGET coremldelegate)
   executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
+# Samsung Enn backend
+if(TARGET enn_backend)
+  set(enn_backend_libs enn_backend enn_logging)
+  list(APPEND link_libraries ${enn_backend_libs})
+  executorch_target_link_options_shared_lib(enn_backend)
+endif()
+
 # This one is needed for cpuinfo where it uses android specific log lib
 if(ANDROID)
   list(APPEND link_libraries log)

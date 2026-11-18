@@ -1,11 +1,12 @@
 # Building from Source
 
-On Linux and macOS you may not need to build at all. `pip install executorch` ships the
-runtime as prebuilt libraries with headers and a CMake package, so a C++ program can link
-it directly. See [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
-including the CUDA packages for running on a GPU. Build from source when you need a
-platform the package does not cover, a build option it does not enable, or your own
-changes to the runtime.
+On Linux and macOS you may not need to build at all. Current main/nightly wheels
+ship the runtime as prebuilt libraries with headers and a CMake package, so a
+C++ program can link it directly. See
+[Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
+including the CUDA packages for running on a GPU. Build from source when you
+need a platform the package does not cover, a build option it does not enable,
+or your own changes to the runtime.
 
 ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
@@ -33,12 +34,17 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - `conda` is recommended as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+  - [uv](https://docs.astral.sh/uv/getting-started/installation/) is also supported.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.14
+* `python` version 3.11-3.15
+* `cmake` version 3.26 or higher
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
-  - `Xcode Command Line Tools`
+  - Xcode for the Apple platform presets, or Xcode Command Line Tools when
+    using another CMake generator
+  - To build the MLX backend, install the Metal toolchain with
+    `xcodebuild -downloadComponent MetalToolchain`
 * **Windows**
   - `Visual Studio Clang Tools` - See [Clang/LLVM support in Visual Studio](https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170).
 
@@ -50,11 +56,34 @@ portability details.
 ## Environment Setup
  Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place of conda.
    ```bash
-   git clone -b viable/strict https://github.com/pytorch/executorch.git
+   git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10
+   conda create -yn executorch python=3.11
    conda activate executorch
    ```
+
+Alternatively, create a virtual environment with uv:
+
+```bash
+uv venv --python 3.12 .venv
+```
+
+Activate it on macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+On Windows, activate it from a [Visual Studio Developer PowerShell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+The installation scripts use pip to install ExecuTorch and its dependencies.
+If pip is missing, they first install it with uv from `PATH`, targeting the
+running Python environment. There is no need to seed pip manually. Subsequent
+installation steps and later runs use pip.
 
 > **_NOTE:_** Additional Windows Setup
 >
@@ -72,6 +101,12 @@ portability details.
    ```bash
    # Install ExecuTorch pip package and its dependencies.
    ./install_executorch.sh
+   ```
+
+   On Windows, run this command in the same Developer PowerShell:
+
+   ```powershell
+   .\install_executorch.bat
    ```
 
    The `install_executorch.sh` script supports the following flags:
@@ -104,7 +139,9 @@ portability details.
 
   For Intel-based macOS systems, use `--use-pt-pinned-commit --minimal`. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in [PyTorch Installation](https://github.com/pytorch/pytorch#installation).
 
-  Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags:
+  XNNPACK and Core ML are built by default. On Apple silicon, MLX is also built
+  when the Metal compiler is installed. Additional backends can be enabled or
+  disabled by setting the corresponding CMake flags:
 
   ```bash
   # Enable the Vulkan backend
@@ -158,9 +195,9 @@ When user code is not using CMake, the runtime can be built standalone and linke
 | :------------------------- | :--------------------------------------------------------------------------------- |
 | C++ with user CMake        | Use CMake `add_subdirectory`.                                                      |
 | C++ without user CMake     | Build ExecuTorch standalone with CMake. Link libraries with user build.            |
-| Android with Java/Kotlin   | Use [scripts/build_android_libraries.sh](#cross-compiling-for-android).            |
+| Android with Java/Kotlin   | Use [scripts/build_android_library.sh](#cross-compiling-for-android).             |
 | Android with C++           | Follow C++ build steps, [cross-compile for Android](#cross-compiling-for-android). |
-| iOS                        | Use [scripts/build_ios_frameworks.sh](#cross-compiling-for-ios).                   |
+| iOS                        | Use [scripts/build_apple_frameworks.sh](#cross-compiling-for-ios).                 |
 
 ### Configuring
 
@@ -170,8 +207,8 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 
 CMake configuration for standalone runtime build:
 ```bash
-cmake -B cmake-out --preset [preset] [options]
-cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
+cmake -B cmake-out --preset [preset] -DCMAKE_BUILD_TYPE=Release [options]
+cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 #### Build Presets
@@ -294,10 +331,24 @@ cd executorch
 # building, and tends to speed up the build significantly. It's typical to use
 # "core count + 1" as the `-j` value; the command below derives that
 # dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).
-cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
+cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+
+#### Limiting Build Parallelism
+
+The `-j` value above applies only when invoking `cmake --build` directly. The workflow presets (`cmake --workflow --preset llm-release`) and the `Makefile` runner targets that wrap them (`make llama-cpu`, `make whisper-cpu`, and so on) build with unbounded parallelism, so the number of concurrent compiler processes is limited by the build graph rather than by core count.
+
+Set `CMAKE_BUILD_PARALLEL_LEVEL` to cap the job count. It takes precedence over the parallelism configured by a preset, so it works for every build entry point:
+
+```bash
+# Start low on a memory-constrained machine, and raise it if the build
+# stays comfortably within available RAM.
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+
+make llama-cpu
+```
 
 <hr/>
 
@@ -333,9 +384,13 @@ Backends typically introduce additional targets. See backend-specific documentat
 
 To verify the build, ExecuTorch optionally compiles a simple, stand-alone model runner to run PTE files with all-one input tensors. It is not enabled by default in most presets, but can be enabled by configuring with `-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON`.
 
-Once compiled, invoke the runner with a sample PTE (such as the one generated by [verifying the Python build](#verify-the-build)).
+Once compiled, invoke the runner with a sample PTE (such as the one generated by [verifying the Python build](#verify-the-build)). Single-configuration generators such as Ninja and Make place it directly in `cmake-out`; multi-configuration generators such as Xcode and Visual Studio place it under the selected configuration.
 ```bash
+# Ninja or Make
 cmake-out/executor_runner --model_path=mv2_xnnpack_fp32.pte
+
+# Xcode or Visual Studio
+cmake-out/Release/executor_runner --model_path=mv2_xnnpack_fp32.pte
 ```
 
 If the runner runs successfully, you should see output similar to the following:
@@ -355,8 +410,9 @@ OutputX 0: tensor(sizes=[1, 1000], [
 
 ### Pre-requisites
 - Set up a Python environment and clone the ExecuTorch repository, as described in [Environment Setup](#environment-setup).
-- Install the [Android SDK](https://developer.android.com/studio). Android Studio is recommended.
-- Install the [Android NDK](https://developer.android.com/ndk).
+- Install JDK 17. The Android Gradle plugin used by ExecuTorch requires it.
+- Install the [Android SDK](https://developer.android.com/studio), including SDK Platform 34. Android Studio is recommended.
+- Install Android NDK r28c, the version used in ExecuTorch CI.
   - Option 1: Install via [Android Studio](https://developer.android.com/studio/projects/install-ndk).
   - Option 2: Download from [NDK Downloads](https://developer.android.com/ndk/downloads).
 
@@ -365,11 +421,16 @@ OutputX 0: tensor(sizes=[1, 1000], [
 With the NDK installed, the `build_android_library.sh` script will build the ExecuTorch Java AAR, which contains ExecuTorch Java bindings. See [Using the AAR File](using-executorch-android.md#using-aar-file) for usage.
 
 ```bash
+export ANDROID_SDK=/path/to/android/sdk
+export ANDROID_NDK=/path/to/android/sdk/ndk/28.2.13676358
 export ANDROID_ABIS=arm64-v8a
 export BUILD_AAR_DIR=aar-out
-mkdir -p $BUILD_AAR_DIR
-sh scripts/build_android_library.sh
+mkdir -p "$BUILD_AAR_DIR"
+./scripts/build_android_library.sh
 ```
+
+The build script passes `ANDROID_SDK` to Gradle as `ANDROID_HOME`. The resulting
+AAR is `aar-out/executorch.aar`.
 
 ### Android Native
 

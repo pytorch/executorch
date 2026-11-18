@@ -12,7 +12,9 @@
 #include <stdexcept>
 #include <string_view>
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 #include <executorch/backends/native/runtime/deserialize/Json.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 
 namespace ptn {
 namespace {
@@ -26,7 +28,7 @@ std::unordered_map<std::string, std::string> parse_aliases(
     const SafeTensorsReader& tensors) {
   Json doc;
   try {
-    doc = Json::parse(std::string_view(
+    doc = parse_json(std::string_view(
         reinterpret_cast<const char*>(member.data()), member.size()));
   } catch (const Json::exception& error) {
     throw std::runtime_error(
@@ -34,6 +36,9 @@ std::unordered_map<std::string, std::string> parse_aliases(
   }
   if (!doc.is_object()) {
     throw std::runtime_error("package: aliases.json is not a JSON object");
+  }
+  if (doc.size() > detail::kMaxAliasCount) {
+    throw ResourceLimitError("package: alias count exceeds limit");
   }
 
   std::unordered_map<std::string, std::string> aliases;
@@ -62,9 +67,7 @@ std::unordered_map<std::string, std::string> parse_aliases(
       throw std::runtime_error(
           "package: '" + key + "' is both a safetensors owner and an alias");
     }
-    if (!aliases.emplace(key, owner).second) {
-      throw std::runtime_error("package: duplicate alias key: " + key);
-    }
+    aliases.emplace(key, owner);
   }
   return aliases;
 }
@@ -83,13 +86,28 @@ Package::Package()
 
 Package Package::load(OwnedBytes bytes) {
   Package out;
-  out.archive_bytes_ = std::move(bytes);
-  out.zip_ = ZipReader::open(out.archive_bytes_.span());
+  out.archive_bytes_ = std::make_shared<const OwnedBytes>(std::move(bytes));
+  if (out.archive_bytes_->span().size() > detail::kMaxPackageBytes) {
+    throw ResourceLimitError("package: image exceeds size limit");
+  }
+  out.zip_ = ZipReader::open(out.archive_bytes_->span());
   out.load_metadata();
   return out;
 }
 
 Package Package::load(const std::string& path) {
+  std::optional<OwnedBytes> mapped;
+  try {
+    mapped = OwnedBytes::from_file(path, true, detail::kMaxPackageBytes);
+  } catch (const ResourceLimitError&) {
+    throw;
+  } catch (const std::runtime_error&) {
+    // No mmap on this platform or filesystem. Opening through libzip reports
+    // any error that is not about mapping.
+  }
+  if (mapped) {
+    return load(std::move(*mapped));
+  }
   Package out;
   out.zip_ = ZipReader::open(path);
   out.load_metadata();
@@ -111,9 +129,13 @@ Package& Package::operator=(Package&& other) noexcept {
 }
 
 void Package::load_metadata() {
-  if (!zip_->member_size(kProgramEntry)) {
+  const std::optional<size_t> program_size = zip_->member_size(kProgramEntry);
+  if (!program_size) {
     throw std::runtime_error(
         std::string("package: missing required member ") + kProgramEntry);
+  }
+  if (*program_size > detail::kMaxProgramBytes) {
+    throw ResourceLimitError("package: program exceeds size limit");
   }
   program_ = zip_->read(kProgramEntry);
 
@@ -129,6 +151,10 @@ void Package::load_metadata() {
     }
     zip_->read_into(kSafeTensorsEntry, 0, MutableByteSpan(prefix));
     const size_t header_size = SafeTensorsReader::header_size(prefix);
+    if (header_size > detail::kMaxJsonBytes) {
+      throw ResourceLimitError(
+          "package: safetensors header exceeds size limit");
+    }
     if (header_size > *tensor_size - prefix.size()) {
       throw std::runtime_error(
           "package: safetensors header exceeds its zip member");
@@ -140,11 +166,15 @@ void Package::load_metadata() {
         ByteSpan(header), *tensor_size - tensor_data_offset_);
   }
 
-  if (zip_->member_size(kAliasesEntry)) {
+  const std::optional<size_t> aliases_size = zip_->member_size(kAliasesEntry);
+  if (aliases_size) {
     if (!tensors_) {
       throw std::runtime_error(
           std::string("package: has ") + kAliasesEntry + " but no " +
           kSafeTensorsEntry);
+    }
+    if (*aliases_size > detail::kMaxJsonBytes) {
+      throw ResourceLimitError("package: aliases exceed size limit");
     }
     const std::vector<uint8_t> aliases = zip_->read(kAliasesEntry);
     aliases_ = parse_aliases(ByteSpan(aliases), *tensors_);
@@ -184,6 +214,22 @@ std::optional<OwnedBytes> Package::acquire_constant(
   return OwnedBytes::from_vector(std::move(bytes));
 }
 
+std::optional<OwnedBytes> Package::view_constant(const std::string& key) const {
+  const std::optional<ConstantInfo> info = constant_info(key);
+  if (!info) {
+    return std::nullopt;
+  }
+  const std::optional<ByteSpan> member = zip_->member_bytes(kSafeTensorsEntry);
+  if (!member) {
+    return std::nullopt;
+  }
+  return OwnedBytes::view(
+      archive_bytes_,
+      member->subspan(
+          tensor_data_offset_ + tensors_->find(info->owner)->offset,
+          info->nbytes));
+}
+
 bool Package::load_constant_into(
     const std::string& key,
     MutableByteSpan destination) const {
@@ -203,9 +249,13 @@ bool Package::load_constant_into(
   return true;
 }
 
-void Package::verify_constants() const {
+void Package::verify() const {
+  zip_->verify(kProgramEntry);
   if (tensors_) {
     zip_->verify(kSafeTensorsEntry);
+  }
+  if (zip_->member_size(kAliasesEntry)) {
+    zip_->verify(kAliasesEntry);
   }
 }
 

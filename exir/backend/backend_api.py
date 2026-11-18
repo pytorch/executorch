@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -111,17 +111,22 @@ def _(
     # All backend implementation are final, so we don't need to consider nested subclasses.
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
-            copied_edge_program = copy.deepcopy(edge_program)
+            copied_edge_program = cls.copy_exported_program_for_preprocess(
+                edge_program, compile_specs
+            )
+            lowered_compile_specs = list(compile_specs)
             preprocess_result: PreprocessResult = cls.preprocess(
                 copied_edge_program,
-                compile_specs,
+                lowered_compile_specs,
             )
             lowered_module = LoweredBackendModule(
                 edge_program=edge_program,
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
-                compile_specs=compile_specs,
+                compile_specs=lowered_compile_specs,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
+                share_handle_across_calls=preprocess_result.share_handle_across_calls,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
@@ -299,7 +304,7 @@ def _partition_and_lower_one_graph_module(
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
-        logging.debug(f"Partitioned graph module: {tagged_graph_module}")
+        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
 
         (
             submodule_program,
@@ -418,8 +423,9 @@ def _(
 
     update_to_real_program(tagged_exported_program, edge_program)
 
-    for tag, _ in partitioner_result.partition_tags.items():
-        _maybe_duplicate_constant_nodes(tagged_exported_program, tag)
+    _maybe_duplicate_constant_nodes(
+        tagged_exported_program, partitioner_result.partition_tags.keys()
+    )
 
     tagged_graph_module = _partition_and_lower(
         tagged_exported_program.graph_module,
@@ -481,7 +487,7 @@ def _create_partitions_in_graph_module(
         submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
-        logging.debug(f"Partitioned graph module: {tagged_graph_module}")
+        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
         (
             submodule_program,
             toplevel_input_specs_to_delete,
@@ -616,6 +622,8 @@ def lower_all_submodules_to_backend(
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_spec,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
+                share_handle_across_calls=preprocess_result.share_handle_across_calls,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map,
@@ -743,8 +751,9 @@ def _(
 
         update_to_real_program(tagged_exported_program, edge_program)
 
-        for tag, _ in partitioner_result.partition_tags.items():
-            _maybe_duplicate_constant_nodes(tagged_exported_program, tag)
+        _maybe_duplicate_constant_nodes(
+            tagged_exported_program, partitioner_result.partition_tags.keys()
+        )
 
         backend_id_to_call_submodule_nodes = _create_partitions(
             tagged_exported_program.graph_module,

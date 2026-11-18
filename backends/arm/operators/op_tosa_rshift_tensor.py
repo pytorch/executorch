@@ -32,12 +32,11 @@ class RshiftVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_same_dtype(self.target, [*inputs, output])
         validate_valid_dtype(
             self.target,
             [*inputs, output],
             [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

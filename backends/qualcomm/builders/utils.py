@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 from torch._export.utils import (
@@ -15,6 +15,25 @@ from torch._export.utils import (
     is_lifted_tensor_constant,
     is_param,
 )
+
+
+def get_attr_from_target(graph_module: torch.fx.GraphModule, target: str) -> Any:
+    """Resolve a possibly dotted get_attr target (e.g. ``linear.weight``)."""
+    attr: Any = graph_module
+    for target_atom in target.split("."):
+        attr = getattr(attr, target_atom)
+    return attr
+
+
+def set_attr_from_target(
+    graph_module: torch.fx.GraphModule, target: str, replacement: Any
+) -> None:
+    """Assign to a possibly dotted get_attr target (e.g. ``linear.weight``)."""
+    attr: Any = graph_module
+    target_list = target.split(".")
+    for target_atom in target_list[:-1]:
+        attr = getattr(attr, target_atom)
+    setattr(attr, target_list[-1], replacement)
 
 
 def is_parameter(

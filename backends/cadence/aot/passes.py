@@ -61,6 +61,9 @@ from executorch.backends.cadence.aot.simplify_ops import (
     SimplifySliceOpPass,
 )
 from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
+from executorch.backends.cadence.aot.weight_packing import (
+    fold_and_pack_fully_connected_weights,
+)
 from executorch.exir import EdgeProgramManager
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager, PassType
@@ -197,6 +200,13 @@ def apply_exir_ops_passes(
         cast(
             list[Callable[[torch.fx.GraphModule], Optional[PassResult]]], cadence_passes
         )
+    )
+    # Weight packing runs last and outside the pass list on purpose: it changes
+    # the shape of a weight constant, so it needs the ExportedProgram rather
+    # than the GraphModule that `transform` hands to a pass.
+    config = edge_passes_config or EdgePassesConfig()
+    fold_and_pack_fully_connected_weights(
+        cadence_prog_manager.exported_program(), config.weight_bits
     )
     return cadence_prog_manager
 

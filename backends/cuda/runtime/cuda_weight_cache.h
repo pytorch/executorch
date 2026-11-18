@@ -61,6 +61,11 @@ class CudaWeightCache final {
       size_t& variant_index,
       bool& uses_ptx_fallback);
 
+  // Compiled shapes of the off-graph KV constants, whose storage the runtime
+  // supplies rather than loads.
+  static std::unordered_map<std::string, std::vector<int64_t>>
+  offgraph_kv_sizes(const Metadata& metadata);
+
   runtime::Error load(
       CudaDelegateHandle* handle,
       const runtime::NamedDataMap* named_data_map,

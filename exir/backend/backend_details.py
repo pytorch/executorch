@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -19,6 +20,36 @@ from torch.export.exported_program import ExportedProgram
 def enforcedmethod(func):
     func.__enforcedmethod__ = True
     return func
+
+
+@experimental("This API is experimental and subject to change without notice.")
+@dataclass
+class DelegateScratchSpec:
+    """A scratch buffer the delegate needs for the duration of one execute() call.
+
+    The memory planner places these in the arena and may reuse the bytes for
+    anything whose lifetime does not overlap the delegate call. They arrive at
+    ``execute()`` through ``BackendExecutionContext::scratch_buffers()``, which
+    documents the contract the backend must honor, including the fact that no
+    absolute alignment is guaranteed.
+
+    Which memory pool a buffer lands in is a property of the target rather than
+    of the backend, so it is not expressed here. An integrator who needs
+    scratch in a particular pool sets ``mem_id`` on the spec from their own
+    memory planning pass, and ``label`` is how they tell the buffers apart:
+    the backend says what a buffer is for, the integrator decides where that
+    belongs. Labels are descriptive rather than identifying, so two buffers
+    may share one and land in the same pool without being the same buffer.
+    """
+
+    nbytes: int
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        if self.nbytes <= 0:
+            raise ValueError(
+                f"Scratch buffer size must be positive, got {self.nbytes} bytes."
+            )
 
 
 @dataclass
@@ -37,6 +68,21 @@ class PreprocessResult:
     # lowered_module.meta field in the graph, but not directly serialized
     # into the PTE file.
     _delegate_info_meta: Optional[Any] = None
+
+    # Scratch buffers the delegate needs at execute() time, memory planned into
+    # the arena and delivered through BackendExecutionContext::scratch_buffers()
+    # in this order. They are not arguments of the delegate call.
+    scratch_specs: Optional[List[DelegateScratchSpec]] = None
+
+    # Whether every call of this lowered module in a method may run on one
+    # delegate handle, so the runtime initializes the backend once instead of
+    # once per call. Set it only if execute(), in every runtime version of the
+    # backend, reads its arguments again on every call, keeps nothing on the
+    # handle that is tied to one call or that changes later results, and writes
+    # outputs only into the output tensors it is given. Ignored when
+    # scratch_specs is not empty, because the runtime keeps scratch on the
+    # delegate and each call has its own.
+    share_handle_across_calls: bool = False
 
 
 """

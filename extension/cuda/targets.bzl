@@ -1,3 +1,5 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -7,35 +9,47 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+
+    # Outside fbcode the CUDA headers resolve only on CUDA platforms.
+    cuda_kwargs = {} if is_fbcode() or runtime.is_oss else {
+        "platforms": [CXX],
+        "compatible_with": ["ovr_config//cuda:has_cuda"],
+    }
+
     # Keep runtime types independent of the caller-stream implementation.
     runtime.cxx_library(
         name = "runtime_api",
         exported_headers = [
+            "export.h",
             "runtime_api.h",
         ],
         visibility = ["PUBLIC"],
-        external_deps = [
+        exported_external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
     )
 
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
-    # share a caller's stream. The caller-stream thread-local must be one
-    # instance per process, so the main target stays shareable: OSS cxx_library
-    # defaults force_static=True, which would duplicate the thread-local into
-    # every dependent shared object (see export.h). The :caller_stream_static
-    # variant stays available for fully-static consumers.
+    # share a caller's stream. The caller-stream and current-stream
+    # thread-locals must each be one instance per process, so the main target
+    # stays shareable: OSS cxx_library defaults force_static=True, which would
+    # duplicate them into every dependent shared object (see export.h).
     runtime.cxx_library(
         name = "caller_stream",
         srcs = [
             "caller_stream.cpp",
+            "current_stream.cpp",
+            "device_guard.cpp",
         ],
         exported_headers = [
             "caller_stream.h",
-            "export.h",
+            "current_stream.h",
+            "device_guard.h",
         ],
         exported_deps = [
             ":runtime_api",
+            "//executorch/runtime/core:core",
         ],
         # Opt out of the OSS force_static default so consumers *can* link one
         # shared instance and keep the thread-local unique (see above); the
@@ -50,4 +64,34 @@ def define_common_targets():
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        **cuda_kwargs
+    )
+
+    runtime.cxx_library(
+        name = "cuda_allocator",
+        # Allow delegates to share the singleton, as they share caller_stream.
+        force_static = False,
+        srcs = [
+            "cuda_allocator.cpp",
+        ],
+        exported_headers = [
+            "cuda_allocator.h",
+        ],
+        supports_python_dlopen = True,
+        preprocessor_flags = [
+            "-DEXECUTORCH_EXTENSION_CUDA_BUILDING",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            ":runtime_api",
+            "//executorch/runtime/core:device_allocator",
+        ],
+        deps = [
+            ":caller_stream",
+            "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        **cuda_kwargs
     )

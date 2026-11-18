@@ -18,7 +18,6 @@
  *
  * Optional macros:
  *   K_CACHE_BUFFER / K_BUFFER — use buffer path; otherwise texture
- *   SDPA_PAD_D       — zero-pad last d4 texel when D % 4 != 0
  */
 
 #ifndef SDPA_FP_K_CACHE_TILE_LOAD_GLSLH
@@ -31,7 +30,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_weight_tile.glslh"
+#include "gemm/tile_utils/linear_fp_weight_tile.glslh"
 
 // Determine whether buffer mode is active. Both K_CACHE_BUFFER (LLM) and
 // K_BUFFER (fused) activate the buffer path.
@@ -44,7 +43,6 @@ LINEAR_FP_WEIGHT_TILE_VEC4_T load_k_cache_d4(
     const int c,
     const int kv_h,
     const int D4,
-    const int D,
     const int C,
     const int KV_H) {
   LINEAR_FP_WEIGHT_TILE_VEC4_T val;
@@ -63,17 +61,6 @@ LINEAR_FP_WEIGHT_TILE_VEC4_T load_k_cache_d4(
   #endif
 #endif
 
-#ifdef SDPA_PAD_D
-  if (d4 == D4 - 1) {
-    const int valid = D - mul_4(d4);
-    [[unroll]] for (int i = 0; i < 4; ++i) {
-      if (i >= valid) {
-        val[i] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0)[i];
-      }
-    }
-  }
-#endif
-
   return val;
 }
 
@@ -83,7 +70,6 @@ void load_k_cache_tile_no_checks(
     const int c_start,
     const int kv_h,
     const int D4,
-    const int D,
     const int context_len,
     const int C,
     const int KV_H) {
@@ -92,7 +78,7 @@ void load_k_cache_tile_no_checks(
     const int c4i = mod_4(c);
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row =
-          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
+          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
 
       // Transpose in-place
       const int d_base = mul_4(d4);
@@ -110,7 +96,6 @@ void load_k_cache_tile_with_checks(
     const int c_start,
     const int kv_h,
     const int D4,
-    const int D,
     const int context_len,
     const int C,
     const int KV_H) {
@@ -120,7 +105,7 @@ void load_k_cache_tile_with_checks(
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row = LINEAR_FP_WEIGHT_TILE_VEC4_T(0.0);
       if (d4_start + d4 < D4 && c_start + c < context_len) {
-        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
+        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
       }
 
       // Transpose in-place
@@ -129,6 +114,21 @@ void load_k_cache_tile_with_checks(
       tile.data[d_base + 1][c4][c4i] = d4_row[1];
       tile.data[d_base + 2][c4][c4i] = d4_row[2];
       tile.data[d_base + 3][c4][c4i] = d4_row[3];
+    }
+  }
+}
+
+// Padding lanes at or beyond D may hold non-finite values. The tile holds K^T,
+// so they are whole rows.
+void mask_k_cache_tile_d_tail(
+    inout FPWeightTile tile,
+    const int d4_start,
+    const int D) {
+  [[unroll]] for (int d = 0; d < TILE_K; ++d) {
+    if (mul_4(d4_start) + d >= D) {
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+        tile.data[d][n4] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0);
+      }
     }
   }
 }

@@ -1,17 +1,15 @@
 name: Test Cadence
 
 permissions:
-  id-token: write
   contents: read
 
 on:
   workflow_call:
     inputs:
       docker-image:
-        description: 'Name of the docker image to use, without registry or tag suffix'
-        required: false
+        description: 'Fully qualified CI image (resolved by the caller)'
+        required: true
         type: string
-        default: ci-image:executorch-ubuntu-22.04-clang12
       runner:
         description: 'Runner type'
         required: false
@@ -29,20 +27,14 @@ on:
         default: 90
 
 jobs:
-  docker-image:
-    name: Resolve CI docker image
-    uses: ./.github/workflows/_docker-image.yml
-
   test-aot:
-    needs: docker-image
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
-      id-token: write
       contents: read
     with:
       job-name: test-aot
       runner: ${{ inputs.runner }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       ref: ${{ inputs.ref }}
       timeout: ${{ inputs.timeout }}
@@ -58,15 +50,13 @@ jobs:
         python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
-    needs: docker-image
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
-      id-token: write
       contents: read
     with:
       job-name: test-ops
       runner: ${{ inputs.runner }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       ref: ${{ inputs.ref }}
       timeout: ${{ inputs.timeout }}

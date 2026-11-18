@@ -17,7 +17,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace py = pybind11;
 namespace executorch {
@@ -188,6 +190,39 @@ class PyQnnTensorWrapper {
  private:
   std::shared_ptr<TensorWrapper> tensor_wrapper_;
 };
+
+class PyQnnDlcHandle {
+ public:
+  PyQnnDlcHandle(std::shared_ptr<QnnManager> owner, void* handle)
+      : owner_(std::move(owner)), handle_(handle) {}
+
+  ~PyQnnDlcHandle() {
+    Close();
+  }
+
+  void Close() {
+    if (handle_ != nullptr) {
+      owner_->FreeDlc(handle_);
+      handle_ = nullptr;
+    }
+  }
+
+  void* Get() const {
+    if (handle_ == nullptr) {
+      throw std::runtime_error("QNN DLC handle has already been freed");
+    }
+    return handle_;
+  }
+
+  bool IsOwnedBy(const std::shared_ptr<QnnManager>& owner) const {
+    return owner_ == owner;
+  }
+
+ private:
+  std::shared_ptr<QnnManager> owner_;
+  void* handle_;
+};
+
 class PyQnnManager {
  public:
   // used for AoT compilation
@@ -245,7 +280,7 @@ class PyQnnManager {
     return qnn_manager_->IsNodeSupportedByBackend(op_wrappers);
   }
 
-  py::array_t<char> Compile(
+  py::bytes Compile(
       const std::vector<std::string>& graph_names,
       std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers) {
     QnnExecuTorchContextBinary binary_info;
@@ -254,7 +289,7 @@ class PyQnnManager {
       if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) !=
           executorch::runtime::Error::Ok) {
         QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN graph");
-        return py::array_t<char>(0);
+        return py::bytes("", 0);
       }
     }
     auto qnn_executorch_options = GetQnnExecuTorchOptions(
@@ -262,15 +297,49 @@ class PyQnnManager {
     if (qnn_executorch_options->saver() ||
         qnn_manager_->GetContextBinary(binary_info) !=
             executorch::runtime::Error::Ok) {
-      return py::array_t<char>(0);
+      return py::bytes("", 0);
     }
 
-    // allocate py::array (to pass the result of the C++ function to Python)
-    auto result = py::array_t<char>(binary_info.nbytes);
-    auto result_buffer = result.request();
-    char* result_ptr = (char*)result_buffer.ptr;
-    std::memcpy(result_ptr, binary_info.buffer, binary_info.nbytes);
-    return result;
+    return py::bytes(
+        reinterpret_cast<const char*>(binary_info.buffer), binary_info.nbytes);
+  }
+  std::shared_ptr<PyQnnDlcHandle> CreateDlc() {
+    void* handle = nullptr;
+    if (qnn_manager_->CreateDlc(&handle) != Error::Ok) {
+      throw std::runtime_error("Failed to create QNN DLC");
+    }
+    return std::make_shared<PyQnnDlcHandle>(qnn_manager_, handle);
+  }
+
+  void CompileToDlc(
+      const std::vector<std::string>& graph_names,
+      std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers,
+      PyQnnDlcHandle& dlc_handle) {
+    for (uint32_t i = 0; i < graph_names.size(); ++i) {
+      if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) != Error::Ok) {
+        throw std::runtime_error("Failed to compile QNN graph");
+      }
+    }
+    if (qnn_manager_->AddContextToDlc(dlc_handle.Get()) != Error::Ok) {
+      throw std::runtime_error("Failed to add QNN context to DLC");
+    }
+  }
+
+  py::bytes GetDlcBinary(PyQnnDlcHandle& dlc_handle) {
+    if (!dlc_handle.IsOwnedBy(qnn_manager_)) {
+      throw std::runtime_error(
+          "QNN DLC binary must be retrieved by its creating manager");
+    }
+    std::vector<uint8_t> dlc_binary;
+    if (qnn_manager_->GetDlcBinary(dlc_handle.Get(), dlc_binary) != Error::Ok) {
+      throw std::runtime_error("Failed to get QNN DLC binary");
+    }
+    QnnExecuTorchContextBinary binary(
+        {dlc_binary.data(), static_cast<uint64_t>(dlc_binary.size())});
+    QnnContextCustomProtocol custom_protocol(binary.nbytes);
+    custom_protocol.BuildContextCustomBuffer(binary);
+    auto [buffer, size] = custom_protocol.GetCustomProtocolBuffer();
+    return py::bytes(reinterpret_cast<const char*>(buffer), size);
   }
 
   void Destroy() {

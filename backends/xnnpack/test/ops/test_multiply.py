@@ -1,6 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,9 +29,15 @@ class TestMul(unittest.TestCase):
             z = torch.mul(x, y) * torch.functional.torch.mul(x, y)
             return z
 
-    class MulScalar(torch.nn.Module):
+    class ComplexMul(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            angles = torch.rand(4, 3)
+            self.register_buffer("freqs", torch.polar(torch.ones_like(angles), angles))
+
         def forward(self, x):
-            return torch.ops.aten.mul.Scalar(x, 0.5)
+            pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+            return torch.view_as_real(pairs * self.freqs).flatten(-2)
 
     class MulRelu(torch.nn.Module):
         def forward(self, x, y):
@@ -63,16 +68,21 @@ class TestMul(unittest.TestCase):
         inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
         self._test_mul(inputs)
 
-    def test_fp32_mul_scalar(self):
+    def test_fp32_complex_mul(self):
+        # Programs compute complex products with real numbers, which XNNPACK
+        # takes.
         (
-            Tester(self.MulScalar(), (torch.randn(2, 3),))
+            Tester(self.ComplexMul(), (torch.randn(2, 4, 6),))
             .export()
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-                    "executorch_exir_dialects_edge__ops_aten_mul_Scalar",
+                    "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_add_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_cat_default",
+                    "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor",
                 ]
             )
             .to_executorch()

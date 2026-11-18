@@ -125,11 +125,17 @@ def CONCAT(inputs: list[torch.Tensor], *, axis: int) -> torch.Tensor:
 
 
 @register_fake_tosa_op(
-    "PAD(Tensor input1, SymInt[] padding, *, Scalar value) -> Tensor",
+    "PAD(Tensor input1, SymInt[] padding, Tensor value) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
-def PAD(x: torch.Tensor, padding: list[int | torch.SymInt], *, value) -> torch.Tensor:
+def PAD(
+    x: torch.Tensor, padding: list[int | torch.SymInt], value: torch.Tensor
+) -> torch.Tensor:
     _validate_data_layout_dtype(x.dtype, "PAD")
+    if value.dtype != x.dtype or value.numel() != 1:
+        raise TosaValueError(
+            "PAD value must be a scalar tensor with the input dtype", op="PAD"
+        )
 
     if len(padding) != 2 * len(x.shape):
         raise TosaValueError(
@@ -202,15 +208,25 @@ def SLICE(
         )
 
     for i, dim_start in enumerate(start):
-        if dim_start < 0 or dim_start > x.shape[i]:
+        if not isinstance(dim_start, int):
+            continue
+        if dim_start < 0 or (isinstance(dim_start, int) and dim_start > x.shape[i]):
             raise TosaValueError(
                 f"Expected start values between [0, {x.shape[i]}] but got {dim_start}",
                 op="SLICE",
             )
-        dim_size = size[i]
-        if dim_size <= 0 or dim_start + dim_size > x.shape[i]:
+    for i, dim_size in enumerate(size):
+        if not isinstance(dim_size, int):
+            continue
+        dim_start = start[i]
+        if dim_size <= 0 or (
+            isinstance(dim_start, int)
+            and isinstance(x.shape[i], int)
+            and dim_start + dim_size > x.shape[i]
+        ):
             raise TosaValueError(
-                f"Expected start + size values between [0, {x.shape[i]}] but got {dim_start + dim_size}",
+                f"Expected start + size values between [0, {x.shape[i]}] but got "
+                f"{dim_start + dim_size}",
                 op="SLICE",
             )
 

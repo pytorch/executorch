@@ -7,6 +7,7 @@ import torch
 import torch.fx as fx
 
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    _is_integer_dtype,
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
@@ -35,5 +36,10 @@ class BoolBitwiseSupported(SupportedTOSAOperatorCheck):
     ) -> bool:  # type: ignore[override, misc]
         if node.meta["val"].dtype == torch.bool:
             return True
+        if _is_integer_dtype(node.meta["val"].dtype) and tosa_spec.support_integer():
+            return True
 
+        self.reporter.report_reject(
+            node, "Non-boolean bitwise operations require the INT profile."
+        )
         return False

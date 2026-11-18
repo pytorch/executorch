@@ -198,7 +198,7 @@ def get_imagenet_dataset(
     inputs, targets = [], []
     data_loader = get_data_loader()
     for index, data in enumerate(data_loader):
-        if index >= data_size:
+        if data_size is not None and index >= data_size:
             break
         feature, target = data
         inputs.append((feature,))

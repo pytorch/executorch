@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
+from typing import Any, cast, List
 
 import torch
 
@@ -14,11 +14,13 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_node_visitor
@@ -34,32 +36,25 @@ class TosaPadVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        supported_dtypes = [ts.DType.BOOL]
-        if self.tosa_spec.support_integer():
-            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
-        if self.tosa_spec.support_float():
-            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
-        if self.tosa_spec.support_extension("bf16"):
-            supported_dtypes.append(ts.DType.BF16)
-        if self.tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes.append(ts.DType.FP8E4M3)
-        if self.tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes.append(ts.DType.FP8E5M2)
+        supported_dtypes = supported_data_layout_dtypes(self.tosa_spec)
 
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output])
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             supported_dtypes,
-            self.tosa_spec,
         )
-        pad_const = tosa_graph.addConst(
-            [1],
-            output.dtype,
-            [node.kwargs.get("value", 0)],
-            name=node.name + "_padding_value",
-        )
+        value_node = cast(torch.fx.Node, node.args[2])
+        pad_value_name = inputs[2].name
+        if value_node.target == exir_ops.backend.tosa.CONST.default:
+            pad_value = tosa_graph.addConst(
+                [1],
+                output.dtype,
+                value_node.args[0],
+                name=node.name + "_padding_value",
+            )
+            pad_value_name = pad_value.name
 
         attr = ts.TosaSerializerAttribute()
         attr.PadAttribute()
@@ -71,7 +66,7 @@ class TosaPadVisitor(NodeVisitor):
             [
                 inputs[0].name,
                 inputs[1].name,
-                pad_const.name,
+                pad_value_name,
             ],
             [output.name],
             attr,

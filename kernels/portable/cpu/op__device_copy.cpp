@@ -53,7 +53,7 @@ namespace {
 //
 // `index == -1` requests the allocator's current device. This is a convention
 // of the CUDA allocator implementation (see CudaAllocator::copy_* /
-// CudaAllocator::allocate in backends/cuda/runtime/cuda_allocator.cpp), not a
+// CudaAllocator::allocate in extension/cuda/cuda_allocator.cpp), not a
 // documented guarantee on the DeviceAllocator interface. It assumes the planned
 // buffer lives on the current device, i.e. a single-GPU ATen-mode setup;
 // multi-GPU ATen mode (planned buffer not on the current device) is not handled

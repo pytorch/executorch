@@ -166,7 +166,8 @@ You target microcontrollers, DSPs, or other resource-constrained hardware where 
 
 ## Step 4: What is your model's status?
 
-The right workflow depends on whether you are starting from scratch, using a supported model, or working with a custom architecture.
+The right workflow depends on whether you are starting from scratch, using an
+existing export recipe, or working with a custom architecture.
 
 ```{list-table} Model Status Routing
 :header-rows: 1
@@ -174,10 +175,10 @@ The right workflow depends on whether you are starting from scratch, using a sup
 
 * - **Model Status**
   - **Recommended Path**
-* - Using a supported LLM (Llama, Phi, Qwen, SmolLM)
-  - Use the {doc}`llm/export-llm` script for a streamlined export with quantization and optimization built in. Pre-exported models are also available on `HuggingFace ExecuTorch Community <https://huggingface.co/executorch-community>`_.
-* - Using a HuggingFace model
-  - Use {doc}`llm/export-llm-optimum` (Optimum ExecuTorch) for broad HuggingFace model support with familiar APIs.
+* - Using an LLM covered by an `export_llm` recipe
+  - Use the {doc}`llm/export-llm` script for a streamlined export with quantization and optimization built in. Pre-exported models are also available from the [ExecuTorch Community on Hugging Face](https://huggingface.co/executorch-community).
+* - Using a Hugging Face model
+  - Use the [experimental Transformers exporter](https://huggingface.co/docs/transformers/en/exporters) for broad programmatic XNNPACK or CUDA export, or {doc}`llm/export-llm-optimum` for tested task-level recipes and higher-level APIs.
 * - Using a custom PyTorch model
   - Follow {doc}`getting-started` for the standard export flow, then consult {doc}`using-executorch-export` for advanced lowering options.
 * - Model requires dynamic shapes

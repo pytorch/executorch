@@ -131,6 +131,11 @@ test_data_suite_Uxx = {
     ),
 }
 
+test_data_suite_Uxx_same_size = {
+    "rand_same_size": lambda: (torch.rand(2, 3, 5, 5), (5, 5), None, False),
+    "rand_same_scale": lambda: (torch.rand(2, 3, 5, 5), None, 1.0, False),
+}
+
 test_data_u55 = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
 }
@@ -420,6 +425,24 @@ def test_upsample_bilinear2d_vec_u55_INT_UpsamplingBilinear2d_not_delegated(
         u55_subset=True,
     )
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_Uxx_same_size)
+def test_upsample_bilinear2d_vec_u85_INT_same_size(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data()
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        InterpolateAlignCornersFalse(size, scale_factor),
+        (test_data,),
+        aten_op,
+        qtol=1,
+        use_to_edge_transform_and_lower=True,
+    )
+    if not compare_outputs:
+        pipeline.pop_stage(-1)
     pipeline.run()
 
 

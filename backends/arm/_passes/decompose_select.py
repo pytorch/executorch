@@ -16,6 +16,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -61,8 +62,8 @@ class DecomposeSelectPass(ArmOpTargetedPass):
                 # ``index + 1`` (from negative-index wrap-around against a
                 # dynamic shape) into graph nodes in a single call (shares
                 # producer-discovery + hash-cons). Static ints pass through.
-                start_arg, end_arg = graph_module.graph.materialize_symints(
-                    [index, index + 1]
+                start_arg, end_arg = materialize_symints(
+                    graph_module.graph, [index, index + 1]
                 )
                 slice_node = create_node(
                     graph_module.graph,

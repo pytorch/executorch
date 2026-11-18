@@ -89,6 +89,26 @@ def define_common_targets(is_fbcode=False):
                 ],
             )
 
+    runtime.cxx_test(
+        name = "ptn_hooks_test",
+        srcs = ["ptn_hooks_test.cpp"],
+        deps = [
+            "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/extension/module:module",
+            "//executorch/extension/module:ptn_module_internal",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "ptn_no_hooks_test",
+        srcs = ["ptn_no_hooks_test.cpp"],
+        deps = [
+            "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/extension/module:module",
+            "//executorch/extension/module:ptn_module_internal",
+        ],
+    )
+
     runtime.filegroup(
         name = "resources",
         srcs = native.glob([

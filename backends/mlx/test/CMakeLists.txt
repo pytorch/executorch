@@ -115,34 +115,58 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
 endif()
 add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
 
-# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
-# links GTest + executorch_core and registers the ctest target.
+# Lazy-graph evaluation threshold (kEvalThresholdBytesKey). Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
 et_cxx_test(
-  mlx_sequence_cache_test
+  mlx_eval_threshold_test
   SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_eval_threshold_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema
   mlx
 )
 target_include_directories(
-  mlx_sequence_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  mlx_eval_threshold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
-    mlx_sequence_cache_test PRIVATE -fsanitize=address,undefined
+    mlx_eval_threshold_test PRIVATE -fsanitize=address,undefined
                                     -fno-omit-frame-pointer
   )
   target_link_options(
-    mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+    mlx_eval_threshold_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Temp-slot release. Drives the interpreter over hand-built programs; no
+# model/tokenizer needed.
+et_cxx_test(
+  mlx_temp_release_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_temp_release_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_temp_release_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_temp_release_test PRIVATE -fsanitize=address,undefined
+                                  -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_temp_release_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()
 
 et_cxx_test(
-  mlx_batched_sequence_cache_test
+  mlx_batch_control_test
   SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_batched_sequence_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_batch_control_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema
@@ -150,23 +174,22 @@ et_cxx_test(
   extension_llm_cache
 )
 target_include_directories(
-  mlx_batched_sequence_cache_test
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  mlx_batch_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
-    mlx_batched_sequence_cache_test PRIVATE -fsanitize=address,undefined
-                                            -fno-omit-frame-pointer
+    mlx_batch_control_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
   )
   target_link_options(
-    mlx_batched_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+    mlx_batch_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()
 
 et_cxx_test(
-  mlx_cell_cache_test
+  mlx_sequence_control_test
   SOURCES
-  ${CMAKE_CURRENT_LIST_DIR}/mlx_cell_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_control_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema
@@ -174,14 +197,14 @@ et_cxx_test(
   extension_llm_cache
 )
 target_include_directories(
-  mlx_cell_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  mlx_sequence_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
-    mlx_cell_cache_test PRIVATE -fsanitize=address,undefined
-                                -fno-omit-frame-pointer
+    mlx_sequence_control_test PRIVATE -fsanitize=address,undefined
+                                      -fno-omit-frame-pointer
   )
   target_link_options(
-    mlx_cell_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+    mlx_sequence_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()

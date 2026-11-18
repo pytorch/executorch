@@ -255,11 +255,41 @@ def get_ethosu_partitioner(
 
 
 def get_vgf_partitioner(
-    compile_spec: Optional[str], compiler_flags: Optional[List[str]]
+    compile_spec: Optional[str],
+    compiler_flags: Optional[List[str]],
+    alias_buffer_mutations: bool = False,
 ):
     from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
     from executorch.backends.arm.vgf.partitioner import VgfPartitioner
 
-    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+    compile_spec_obj = VgfCompileSpec(
+        compile_spec,
+        compiler_flags,
+        alias_buffer_mutations=alias_buffer_mutations,
+    )
 
     return VgfPartitioner(compile_spec_obj)
+
+
+def get_samsung_partitioner(chipset: str = "E9965", use_kv_cache: bool = False):
+    assert (
+        use_kv_cache is True
+    ), "Samsung exynos backend currently only supports static shape and use_kv_cache=True at the moment."
+    try:
+        from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
+        from executorch.backends.samsung.serialization.compile_options import (
+            gen_samsung_backend_compile_spec,
+            PerformanceMode,
+        )
+    except ImportError:
+        raise ImportError(
+            "Please follow the guide README.md to install exynos backend."
+        )
+
+    compile_specs = [
+        gen_samsung_backend_compile_spec(
+            chipset,
+            PerformanceMode.HIGH_PERFORMANCE,
+        )
+    ]
+    return EnnPartitioner(compile_specs)

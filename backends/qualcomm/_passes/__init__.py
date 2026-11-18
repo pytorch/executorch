@@ -12,6 +12,7 @@ from .annotate_unbind import AnnotateUnbind
 from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
+from .convert_complex_stft import ConvertComplexStft
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
@@ -26,9 +27,9 @@ from .decompose_col_im import DecomposeColIm
 from .decompose_diagonal import DecomposeDiagonal
 from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
+from .decompose_empty import DecomposeEmpty
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
-from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_hardsigmoid import DecomposeHardsigmoid
 from .decompose_hyperbolic_variants import DecomposeHyperbolicVariants
@@ -52,7 +53,9 @@ from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
+from .fuse_batch_norm_with_conv import FuseBatchNormWithConv
 from .fuse_consecutive_cast import FuseConsecutiveCast
+from .fuse_consecutive_reshape import FuseConsecutiveReshape
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
@@ -82,6 +85,7 @@ __all__ = [
     BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -96,9 +100,9 @@ __all__ = [
     DecomposeDiagonal,
     DecomposeDivMode,
     DecomposeEinsum,
+    DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeHardsigmoid,
@@ -122,7 +126,9 @@ __all__ = [
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,

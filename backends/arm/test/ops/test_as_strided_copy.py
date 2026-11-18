@@ -11,6 +11,7 @@ from executorch.backends.arm.common.as_strided_utils import contiguous_strides
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -148,5 +149,17 @@ def test_as_strided_no_target_not_delegated(test_data):
         (tensor,),
         {"executorch_exir_dialects_edge__ops_aten_as_strided_copy_default": 1},
         n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_as_strided_u85_INT():
+    tensor, size, stride = _make_case((4, 6), (3, 8))
+    module = AsStridedCopyModule(size, stride)
+    pipeline = EthosU85PipelineINT[input_t](
+        module,
+        (tensor,),
+        aten_op,
     )
     pipeline.run()

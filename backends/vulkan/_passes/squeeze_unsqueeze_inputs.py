@@ -72,7 +72,7 @@ class SqueezeUnsqueezeInputs(ExportPass):
         squeeze_out = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (args[0], squeeze_shape),
-            kwargs,
+            {},
             meta,
         )
         # call linear on squeezed output
@@ -88,6 +88,6 @@ class SqueezeUnsqueezeInputs(ExportPass):
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (linear_out, unsqueeze_shape),
-            kwargs,
+            {},
             meta,
         )

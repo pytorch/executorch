@@ -16,7 +16,11 @@ from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPo
 from executorch.backends.arm._passes.symbolic_value_range import (
     evaluate_symbolic_expr_values,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
+)
 from executorch.backends.arm.tosa.specification import get_context_shape_env
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -40,6 +44,49 @@ def conv_remainder(
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
 
 
+def has_dynamic_conv_padding(conv_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a convolution requires symbolic padding.
+
+    Args:
+        conv_node (torch.fx.Node): Convolution node to inspect.
+
+    Returns:
+        bool: Whether the convolution needs runtime padding.
+
+    """
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return True
+
+    input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
+    weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
+    spatial_rank = len(input_shape) - 2
+    strides = expand_around_channel(cast(Sequence[int] | int, stride_hw), spatial_rank)
+    pads = expand_around_channel(cast(Sequence[int] | int, pad_hw), spatial_rank)
+    dilations = expand_around_channel(
+        cast(Sequence[int] | int, dilation_hw), spatial_rank
+    )
+    shape_env = get_context_shape_env()
+
+    for axis_index, (stride, pad, dilation) in enumerate(zip(strides, pads, dilations)):
+        remainder = conv_remainder(
+            input_shape[axis_index + 2],
+            pad,
+            dilation,
+            weight_shape[axis_index + 2],
+            stride,
+        )
+        if not isinstance(remainder, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+        if exact_values is None or (len(exact_values) != 1 and max(exact_values) != 0):
+            return True
+
+    return False
+
+
 def pooling_remainder(
     input_size: SymIntLike, pad: int, kernel_size: int, stride: int
 ) -> SymIntLike:
@@ -47,6 +94,82 @@ def pooling_remainder(
     kernel size.
     """
     return (input_size + 2 * pad - kernel_size) % stride
+
+
+def _get_pooling_ceil_mode(pooling_node: torch.fx.Node) -> bool:
+    ceil_mode_index = (
+        5
+        if pooling_node.target
+        in (
+            max_pooling_op,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        )
+        else 4
+    )
+    return bool(
+        pooling_node.args[ceil_mode_index]
+        if len(pooling_node.args) > ceil_mode_index
+        else False
+    )
+
+
+def _ceil_mode_adds_output(
+    input_size: int, pad: int, kernel_size: int, stride: int
+) -> bool:
+    """Return whether ceil_mode gives one more output element than floor mode.
+
+    PyTorch drops a last ceil_mode window that would start in the right padding.
+    Ceil mode then pools over the same windows as floor mode, and the input has
+    to be truncated in the same way.
+
+    """
+    ceil_post_pad = adjust_pooling_pad_if_needed(
+        input_size, kernel_size, stride, pad, True
+    )
+    floor_post_pad = adjust_pooling_pad_if_needed(
+        input_size, kernel_size, stride, pad, False
+    )
+    return bool(ceil_post_pad != floor_post_pad)
+
+
+def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a pool requires symbolic padding.
+
+    Args:
+        pooling_node (torch.fx.Node): Pooling node to inspect.
+
+    Returns:
+        bool: Whether the pooling operation needs runtime padding.
+
+    """
+    input_node = cast(torch.fx.Node, pooling_node.args[0])
+    kernel_size = pooling_node.args[1]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
+    padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
+    ceil_mode = _get_pooling_ceil_mode(pooling_node)
+    input_shape = input_node.meta["val"].shape
+    kernel_sizes = expand_around_channel(cast(Sequence[int] | int, kernel_size), 2)
+    strides = expand_around_channel(cast(Sequence[int] | int, stride), 2)
+    pads = expand_around_channel(cast(Sequence[int] | int, padding), 2)
+    shape_env = get_context_shape_env()
+
+    for dim, (kernel, stride, pad) in enumerate(
+        zip(kernel_sizes, strides, pads), start=2
+    ):
+        adjusted_pad = adjust_pooling_pad_if_needed(
+            input_shape[dim], kernel, stride, pad, bool(ceil_mode)
+        )
+        if not isinstance(adjusted_pad, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(adjusted_pad.node.expr, shape_env)
+        if exact_values is None or len(exact_values) != 1:
+            return True
+
+    return False
 
 
 def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
@@ -137,8 +260,13 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
 
     input_node = pooling_node.args[0]
     kernel_size = pooling_node.args[1]
-    stride = pooling_node.args[2]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
     padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
+    ceil_mode = _get_pooling_ceil_mode(pooling_node)
 
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
 
@@ -149,6 +277,16 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
     for dim, (kernel_length, stride_length, pad_size) in enumerate(
         zip(kernel_sizes, strides, pads), start=2
     ):
+        # When ceil_mode adds an output element, its window reaches the end of
+        # the input, so there is nothing to truncate in this dimension.
+        if (
+            ceil_mode
+            and not isinstance(input_shape[dim], torch.SymInt)
+            and _ceil_mode_adds_output(
+                input_shape[dim], pad_size, kernel_length, stride_length
+            )
+        ):
+            continue
         remainder = pooling_remainder(
             input_shape[dim], pad_size, kernel_length, stride_length
         )
@@ -168,6 +306,11 @@ def get_slices(node: torch.fx.Node) -> Slices:
         return get_slices_pooling(node)
     else:
         raise ValueError(f"Unsupported node target, was expecting {valid_operators}")
+
+
+def _has_static_spatial_shape(node: torch.fx.Node) -> bool:
+    input_shape = cast(torch.fx.Node, node.args[0]).meta["val"].shape
+    return not any(isinstance(dim, torch.SymInt) for dim in input_shape[2:])
 
 
 def is_valid_operator(node: torch.fx.Node) -> bool:
@@ -190,14 +333,20 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
                     "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2dPass been run?"
                 )
 
-        # If using ceil mode for rounding, the input does not need adjusting
-        return not ceil_mode
+        # Ceil mode needs the same input adjustment as floor mode where it does
+        # not add an output element, see get_slices_pooling. This is only
+        # handled for static spatial shapes.
+        return not ceil_mode or _has_static_spatial_shape(node)
     elif node.target == avg_pooling_op:
         ceil_mode = node.args[4] if len(node.args) >= 5 else False
         count_include_pad = node.args[5] if len(node.args) >= 6 else True
         divisor_override = node.args[6] if len(node.args) >= 7 else None
 
-        return not ceil_mode and not count_include_pad and divisor_override is None
+        return (
+            (not ceil_mode or _has_static_spatial_shape(node))
+            and not count_include_pad
+            and divisor_override is None
+        )
 
     return False
 
@@ -280,7 +429,7 @@ class SizeAdjustInputPass(ArmPass):
                 # symints with shared sub-expressions get hash-consed into
                 # one subgraph. Plain ints pass through unchanged.
                 flat = [a for args in slice_args for a in args]
-                materialized = iter(graph.materialize_symints(flat))
+                materialized = iter(materialize_symints(graph, flat))
                 # Pop exactly len(args) values from the materialized iterator
                 # and pack them back into a tuple -- regroups the flat list
                 # of lifted values into the original (dim, start, end) shape.

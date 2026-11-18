@@ -52,6 +52,15 @@ def test_unparseable_version_warns_without_xfail(version):
     assert "Vela regression" in str(caught[0].message)
 
 
+@pytest.mark.parametrize("version,expected", [("0.9.0", True), ("0.11.0", False)])
+def test_emulation_layer_version_from_environment(monkeypatch, version, expected):
+    monkeypatch.setenv("EMULATION_LAYER_VERSION", version)
+
+    marker = common.xfail_if_emulation_layer_version("<0.11", reason="regression")
+
+    assert marker.kwargs["condition"] is expected
+
+
 @pytest.mark.parametrize("version,expected", [("5.0.0", False), ("5.1.0", True)])
 def test_dependency_distribution_metadata(tmp_path, monkeypatch, version, expected):
     distribution = tmp_path / f"xfail_test_dependency-{version}.dist-info"

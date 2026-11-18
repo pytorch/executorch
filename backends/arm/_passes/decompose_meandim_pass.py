@@ -16,8 +16,9 @@ from executorch.backends.arm._passes.fuse_constant_ops_pass import (
 )
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, ProxyValue
 
 
 def get_meandim_decomposition(op) -> tuple:
@@ -76,14 +77,13 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
     multiplication by 1/N, which works on any axis without layout
     constraints (unlike AVG_POOL2D which only pools over spatial H×W).
 
-    For rank < 4, the input is reshaped to 4D by padding with dim=1 from the
-    left.
+    For rank > 4, the input is flattened down to 4D. Rank four and below is
+    left as it is.
 
     Example:
         x = mean_dim(x, (0,2), keepdim=False) # x = (c,h,w)
     Becomes:
-        x = view_copy.default(x, new_shape=(1,c,h,w)) # Reshape to 4D
-        x = sum.dim_IntList(x, dim=(1,3), keepdims=True) # Reduce c,w with sum
+        x = sum.dim_IntList(x, dim=(0,2), keepdims=True) # Reduce c,w with sum
         x = mul.Tensor(x, 1/(c*w)) # Divide by number of elements to get mean
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
 
@@ -106,6 +106,18 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
         super().__init__(*args, **kwargs)
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
+
+    def _call_view_with_materialized_shape(self, view_op, x, shape, meta):
+        materialized_shape = materialize_symints(self.tracer.graph, shape)
+        shape_proxies = [
+            (
+                ProxyValue(dim.meta["val"], self.tracer.proxy(dim))
+                if isinstance(dim, torch.fx.Node)
+                else dim
+            )
+            for dim in materialized_shape
+        ]
+        return super().call_operator(view_op, (x, shape_proxies), {}, meta, True)
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in self.target_ops or not self.allowed_to_transform(meta):
@@ -135,20 +147,21 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
             # for static shapes we should ensure that we only keep non 1 dimensions.
             dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
-        # Reshape to 4D
-        if len(input_shape) != 4:
+        # Flatten anything above 4D down to 4D. Ranks at or below four are left
+        # alone: REDUCE_SUM reduces any axis at any rank, so padding up to 4D
+        # only introduced a rank-four island around the reduction -- a rank
+        # change is opaque to pattern matching, and here it wrapped every mean
+        # in a promote/demote pair. The normalisation is a leftover from the
+        # AVG_POOL2D lowering, which did require NHWC.
+        if len(input_shape) > 4:
             new_shape = copy(input_shape)
-
-            while len(new_shape) < 4:
-                new_shape.insert(0, 1)
-                dims_to_reduce = [dim + 1 for dim in dims_to_reduce]
 
             while len(new_shape) > 4:
                 i = new_shape.pop(0)
                 new_shape[0] = new_shape[0] * i
                 dims_to_reduce = [dim - 1 for dim in dims_to_reduce]
 
-            x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
+            x = self._call_view_with_materialized_shape(view_op, x, new_shape, meta)
             x = self._maybe_insert_q_dq_after(x, meta)
 
         # Reshape back to 5D if necessary
@@ -158,7 +171,7 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
             temp_shape = original_dims + temp_shape
             dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]
 
-            x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
+            x = self._call_view_with_materialized_shape(view_op, x, temp_shape, meta)
             x = self._maybe_insert_q_dq_after(x, meta)
 
         if has_symbolic_reduce_dim:
@@ -168,13 +181,12 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
 
         # Reshape to correct output shape if necessary
         if list(x.data.shape) != output_shape:
-            x = super().call_operator(view_op, (x, output_shape), {}, meta, True)
+            x = self._call_view_with_materialized_shape(view_op, x, output_shape, meta)
 
         return x
 
     def _reduce_by_sum_symbolic(self, op, input_node, dims, meta):
-        input_shape = input_node.data.size()
-        reduced_shape = [input_shape[dim] for dim in dims]
+        reduced_shape = [self.call_size_operator(input_node, dim, meta) for dim in dims]
 
         sum_op, mul_op, full_op, recip_op, expand_op = (
             get_dynamic_meandim_decomposition(op)
@@ -241,11 +253,9 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
         op with identical quantization parameters.
         """
 
-        if len(op.node.all_input_nodes) > 1:
-            raise ValueError(
-                f"Expected one input to {op.node}, got inputs {op.node.all_input_nodes}"
-            )
-        input_node = op.node.all_input_nodes[0]
+        input_node = op.node.args[0]
+        if not isinstance(input_node, torch.fx.Node):
+            raise ValueError(f"Expected a tensor input to {op.node}")
         if (quant_ops := get_quantization(input_node.target)) is None:
             return op
 

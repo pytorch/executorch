@@ -27,6 +27,10 @@ void check_args(
     const ValueRef out) {
   (void)permute_dims;
   VK_CHECK_COND(check_same_packed_dim(graph, in, out));
+  if (!graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(in));
+    VK_CHECK_COND(graph.has_standard_axis_map(out));
+  }
 }
 
 struct WHCNPermuteDims {
@@ -171,7 +175,7 @@ void add_permute_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       param_ubos,
       push_constants,

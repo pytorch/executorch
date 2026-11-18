@@ -33,11 +33,14 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int reduce_dim = 0;
 
-#define NWORKERS 4
-#define MAX_NTHREADS 16
+// Supplied by the dispatch so it can scale with the length of the row being
+// normalised. Four threads walking a 254-element row left the GPU idle.
+layout(constant_id = 4) const int NWORKERS = 4;
+// Upper bound on NWORKERS, and the size of the shared arrays below.
+#define MAX_NTHREADS 256
 
-shared T shared_max[NWORKERS];
-shared T shared_sum[NWORKERS];
+shared T shared_max[MAX_NTHREADS];
+shared T shared_sum[MAX_NTHREADS];
 
 /*
  * Buffer-based softmax. Each workgroup processes one "row" along the reduction
@@ -81,11 +84,18 @@ void main() {
   shared_max[tid] = local_max;
   barrier();
 
-  // Reduce partial maximums across workers
-  T max_val = shared_max[0];
-  for (int i = 1; i < NWORKERS; ++i) {
-    max_val = max(max_val, shared_max[i]);
+  // Combine the partials as a tree. This was a serial walk of all NWORKERS
+  // entries run by EVERY thread, so its cost grew with the worker count and
+  // cancelled most of the benefit of widening the group. The loop bound is
+  // uniform and barrier() sits outside the guard, so every thread reaches
+  // every barrier.
+  for (uint s = uint(NWORKERS) >> 1; s > 0u; s >>= 1) {
+    if (tid < s) {
+      shared_max[tid] = max(shared_max[tid], shared_max[tid + s]);
+    }
+    barrier();
   }
+  const T max_val = shared_max[0];
 
   // Phase 2: Compute sum of exp(x - max_val)
   T local_sum = T(0);
@@ -97,13 +107,15 @@ void main() {
   shared_sum[tid] = local_sum;
   barrier();
 
-  // Reduce partial sums across workers
-  T sum_val = shared_sum[0];
-  for (int i = 1; i < NWORKERS; ++i) {
-    sum_val += shared_sum[i];
+  // Same tree reduction for the sum.
+  for (uint s = uint(NWORKERS) >> 1; s > 0u; s >>= 1) {
+    if (tid < s) {
+      shared_sum[tid] = shared_sum[tid] + shared_sum[tid + s];
+    }
+    barrier();
   }
   // Clamp denominator to avoid 0/0 = NaN when all exp values underflow.
-  sum_val = max(sum_val, T(1e-37));
+  const T sum_val = max(shared_sum[0], T(1e-37));
 
   // Phase 3: Write outputs
   for (int i = int(tid); i < R; i += NWORKERS) {

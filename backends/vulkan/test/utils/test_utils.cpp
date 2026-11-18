@@ -35,7 +35,8 @@ GlobalWorkGrid make_linear_dispatch(
 
 bool is_bitw8(vkapi::ScalarType dtype) {
   return dtype == vkapi::kByte || dtype == vkapi::kChar ||
-      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
+      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8 ||
+      dtype == vkapi::kBool;
 }
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
@@ -112,7 +113,7 @@ void record_nchw_to_buffer_op(
   context->submit_compute_job(
       get_nchw_to_tensor_shader(v_dst, true),
       pipeline_barrier,
-      make_linear_dispatch(context, v_dst.numel(), lwg),
+      make_linear_dispatch(context, v_dst.physical_numel(), lwg),
       lwg,
       specialization_constants,
       VK_NULL_HANDLE,
@@ -339,7 +340,6 @@ void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
       break;
     default:
       throw std::runtime_error("Unsupported dtype");
-      break;
   }
 
   api::ParamsBuffer params(api::context(), int32_t(v_ten.numel()));
@@ -373,10 +373,11 @@ void record_scalar_add_buffer(
   std::string kernel = "scalar_add_buffer";
   add_dtype_suffix(kernel, v_ten.dtype());
   const LocalWorkGroup lwg(64u, 1u, 1u);
+  api::ParamsBuffer params(api::context(), int32_t(v_ten.physical_numel()));
   api::context()->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel),
       pipeline_barrier,
-      make_linear_dispatch(context, v_ten.numel(), lwg),
+      make_linear_dispatch(context, v_ten.physical_numel(), lwg),
       lwg,
       specialization_constants,
       VK_NULL_HANDLE,
@@ -385,7 +386,7 @@ void record_scalar_add_buffer(
           pipeline_barrier,
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::READ | vkapi::MemoryAccessType::WRITE),
-      v_ten.numel_ubo());
+      params.buffer());
 }
 
 void record_reference_matmul(

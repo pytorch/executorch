@@ -10,12 +10,28 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <type_traits>
+
 namespace torch {
 namespace executor {
 namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
+
+namespace {
+
+// `*` on bool trips -Wint-in-bool-context; for bool the product is `&&`.
+template <typename T>
+T multiply(T a, T b) {
+  if constexpr (std::is_same_v<T, bool>) {
+    return a && b;
+  } else {
+    return a * b;
+  }
+}
+
+} // namespace
 
 Tensor& prod_out(
     KernelRuntimeContext& ctx,
@@ -40,7 +56,7 @@ Tensor& prod_out(
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(1);
       for (const auto i : c10::irange(in.numel())) {
-        data_out[0] *= static_cast<CTYPE_OUT>(data_in[i]);
+        data_out[0] = multiply(data_out[0], static_cast<CTYPE_OUT>(data_in[i]));
       }
     });
   });
@@ -86,7 +102,8 @@ Tensor& prod_int_out(
                     map_reduce_over_dim<CTYPE_IN, CTYPE_OUT>(
                         [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
                         [](CTYPE_OUT outv, long, CTYPE_OUT acc, long) {
-                          return std::tuple<CTYPE_OUT, long>{acc * outv, 0};
+                          return std::tuple<CTYPE_OUT, long>{
+                              multiply(acc, outv), 0};
                         },
                         in,
                         dim,

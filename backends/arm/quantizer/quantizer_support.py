@@ -6,7 +6,10 @@
 from itertools import product
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_strictly_positive_tensor_node,
+)
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_annotator import (
     _conv_ops,
@@ -53,8 +56,8 @@ class ReluFusedPatternCheck(PatternCheck):
 class ArithmeticFloatInputsCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
-        """For arithmetic ops all inputs must be quantizeable for quantization
-        to make sense.
+        """For arithmetic and comparison ops all inputs must be quantizeable for
+        quantization to make sense.
         """
         for node in pattern:
             for input_node in node.all_input_nodes:
@@ -66,6 +69,34 @@ class ArithmeticFloatInputsCheck(PatternCheck):
                     return False
 
         return True
+
+
+class PowTensorTensorPositiveBaseCheck(ArithmeticFloatInputsCheck):
+    """Allow Tensor/Tensor pow only when the base is proven strictly positive.
+
+    The INT lowering rewrites pow(x, y) as exp(y * log(x)). That rewrite must
+    not be selected merely because calibration/example inputs happen to be
+    positive: the constraint has to be visible in the exported graph.
+
+    """
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        if not super().check_pattern(pattern):
+            return False
+
+        if len(pattern) != 1:
+            return False
+
+        pow_node = pattern[0]
+        if len(pow_node.args) < 2:
+            return False
+
+        base_node = pow_node.args[0]
+        if not isinstance(base_node, torch.fx.Node):
+            return False
+
+        return is_strictly_positive_tensor_node(base_node)
 
 
 class CastCheck(PatternCheck):
@@ -119,6 +150,12 @@ BINARY_OP_PATTERNS = [
     (torch.ops.aten.bmm.default,),
     (torch.ops.aten.mul.Tensor,),
     (torch.ops.aten.mul_.Tensor,),
+    (torch.ops.aten.lt.Tensor,),
+    (torch.ops.aten.le.Tensor,),
+    (torch.ops.aten.gt.Tensor,),
+    (torch.ops.aten.ge.Tensor,),
+    (torch.ops.aten.eq.Tensor,),
+    (torch.ops.aten.ne.Tensor,),
 ]
 ACTIVATION_FUNCTION_PATTERNS = [
     (torch.ops.aten.hardswish.default,),
@@ -209,18 +246,15 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.abs.default,),
         (torch.ops.aten.minimum.default,),
         (torch.ops.aten.maximum.default,),
-        (torch.ops.aten.lt.Tensor,),
-        (torch.ops.aten.le.Tensor,),
-        (torch.ops.aten.gt.Tensor,),
-        (torch.ops.aten.ge.Tensor,),
-        (torch.ops.aten.eq.Tensor,),
-        (torch.ops.aten.ne.Tensor,),
         (torch.ops.aten.lt.Scalar,),
         (torch.ops.aten.le.Scalar,),
         (torch.ops.aten.gt.Scalar,),
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        # Integer-valued output: only the input is annotated, the TOSA ARGMAX
+        # output is int32.
+        (torch.ops.aten.argmax.default,),
         # TFA decomposes these recurrent ops after quantization support is
         # selected, so the original operators must be admitted here.
         (torch.ops.aten.lstm.input,),

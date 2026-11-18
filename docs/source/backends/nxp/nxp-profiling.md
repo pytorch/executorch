@@ -13,6 +13,14 @@ There are three steps required to obtain profiling results for an NXP‑delegate
 
 ---
 
+## Limitations
+
+- Profiling requires **eIQ Neutron SDK >= 3.2.1**. Building the ExecuTorch runtime with
+  an older SDK will cause a linker error because `neutronGetSdkVersion()` is not available
+  in SDK <= 3.2.0.
+
+---
+
 ## Delegate a model with the profiling support
 
 Profiling data is generated only for a **profilable** model. 

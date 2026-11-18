@@ -13,6 +13,7 @@ from executorch.backends.samsung._passes import (
     DecomposeEinsum,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeRemainder,
     DecomposeRoll,
     FoldQDQPass,
     FuseActivationPass,
@@ -32,6 +33,7 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
 )
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.transforms.utils import reserve_node_names
 
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -43,6 +45,7 @@ class EnnPassManager(PassManager):
         super().__init__()
 
     def _transform(self, graph_module: GraphModule):
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     # before annotator, for quant models
@@ -59,6 +62,7 @@ class EnnPassManager(PassManager):
     def transform_for_export_pass(self, exported_program: ExportedProgram):
         self.add_pass(ComputeConstAttrs())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeRemainder())
         self._transform(exported_program.graph_module)
         return exported_program
 

@@ -316,6 +316,11 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             stride_condition = 1 <= stride <= 3
             dilation_condition = (not has_padding) and (dilation == 1)
             if (not stride_condition) and (not dilation_condition):
+                self.reporter.report_reject(
+                    node,
+                    "Convolution stride must be in [1, 3] unless padding is zero "
+                    "and dilation is 1.",
+                )
                 return False
 
         return True

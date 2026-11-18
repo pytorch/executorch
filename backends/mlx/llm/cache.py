@@ -13,7 +13,7 @@ Provides reusable KV cache implementations optimized for the MLX backend:
 """
 
 import inspect
-from typing import Tuple
+from typing import Sequence, Tuple, TypedDict
 
 import torch
 import torch.nn as nn
@@ -22,11 +22,12 @@ import torch.nn as nn
 from executorch.backends.mlx import custom_ops as _mlx_custom_ops  # noqa: F401
 
 
-def resolve_hf_text_config(config):
-    """Return the text config for multimodal HF models, or the config itself."""
-    if hasattr(config, "get_text_config"):
-        return config.get_text_config()
-    return getattr(config, "text_config", config)
+class KVCacheLayerConfig(TypedDict):
+    """Resolved geometry for one cache owner; zero window means full attention."""
+
+    num_kv_heads: int
+    head_dim: int
+    window_size: int
 
 
 def resolve_hf_cache_layout(config):
@@ -38,7 +39,7 @@ def resolve_hf_cache_layout(config):
     so our replacement cache allocates the same number of layers with the same
     `(num_heads, head_dim)` for each backing cache entry.
     """
-    text_config = resolve_hf_text_config(config)
+    text_config = config.get_text_config()
     layer_types = getattr(text_config, "layer_types", None)
 
     if layer_types is None:
@@ -225,6 +226,51 @@ class KVCache(nn.Module):
         return self.k_cache[:, :, :, :], self.v_cache[:, :, :, :]
 
 
+def sliding_window_mask(
+    start_pos: int,
+    seq_len: int,
+    window_size: int,
+    buffer_size: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Build a ring-buffer sliding-window attention mask from static geometry.
+
+    Branchless and derived purely from ``(start_pos, seq_len, window_size,
+    buffer_size)`` - no mutable state and no live cache reference - so an export
+    attention can build it from the traced key length instead of the cache object.
+
+    Returns an additive mask ``[1, 1, seq_len, buffer_size]`` (0 = attend,
+    -inf = block) in ``dtype``.
+    """
+    w = window_size
+    b = buffer_size
+    end_pos = start_pos + seq_len
+
+    # Slot indices [buffer_size]
+    slots = torch.arange(b, dtype=torch.long)
+
+    last_write_slot = (end_pos - 1) % b
+    current_cycle_base = end_pos - 1 - last_write_slot
+    pos_current = current_cycle_base + slots
+    pos_previous = current_cycle_base - b + slots
+
+    cache_pos = torch.where(slots <= last_write_slot, pos_current, pos_previous)
+
+    # Query positions [seq_len, 1]
+    pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
+
+    # Delta from query to each cached position [seq_len, buffer_size]
+    delta = pos_q - cache_pos
+
+    # A slot is attendable if: filled (pos >= 0), causal (delta >= 0),
+    # and within the sliding window (delta < w)
+    attn_mask = (cache_pos >= 0) & (delta >= 0) & (delta < w)
+
+    zero = torch.zeros(1, dtype=dtype)
+    neg_inf = torch.full((1,), float("-inf"), dtype=dtype)
+    return torch.where(attn_mask, zero, neg_inf).unsqueeze(0).unsqueeze(0)
+
+
 class RingBufferKVCache(nn.Module):
     """
     Ring buffer KV cache for sliding window attention.
@@ -348,38 +394,22 @@ class RingBufferKVCache(nn.Module):
             Additive mask [1, 1, seq_len, buffer_size] in the cache's dtype,
             where 0 = attend, -inf = block.
         """
-        w = self.window_size
-        b = self.buffer_size
-        end_pos = start_pos + seq_len
-
-        # Slot indices [buffer_size]
-        slots = torch.arange(b, dtype=torch.long)
-
-        last_write_slot = (end_pos - 1) % b
-        current_cycle_base = end_pos - 1 - last_write_slot
-        pos_current = current_cycle_base + slots
-        pos_previous = current_cycle_base - b + slots
-
-        cache_pos = torch.where(slots <= last_write_slot, pos_current, pos_previous)
-
-        # Query positions [seq_len, 1]
-        pos_q = (start_pos + torch.arange(seq_len, dtype=torch.long)).view(-1, 1)
-
-        # Delta from query to each cached position [seq_len, buffer_size]
-        delta = pos_q - cache_pos
-
-        # A slot is attendable if: filled (pos >= 0), causal (delta >= 0),
-        # and within the sliding window (delta < w)
-        attn_mask = (cache_pos >= 0) & (delta >= 0) & (delta < w)
-
         # Use cache dtype (e.g. bf16) to avoid float32 AsTypeNode casts in SDPA
-        dtype = self.k_cache.dtype
-        zero = torch.zeros(1, dtype=dtype)
-        neg_inf = torch.full((1,), float("-inf"), dtype=dtype)
-        return torch.where(attn_mask, zero, neg_inf).unsqueeze(0).unsqueeze(0)
+        return sliding_window_mask(
+            start_pos=start_pos,
+            seq_len=seq_len,
+            window_size=self.window_size,
+            buffer_size=self.buffer_size,
+            dtype=self.k_cache.dtype,
+        )
 
 
-from transformers.cache_utils import StaticCache
+from transformers.cache_utils import (
+    Cache,
+    StaticCache,
+    StaticLayer,
+    StaticSlidingWindowLayer,
+)
 
 
 class HFStaticCache(StaticCache):
@@ -404,6 +434,115 @@ class HFStaticCache(StaticCache):
         ...                              cache_kwargs={"cache_position": pos_tensor})
     """
 
+    @classmethod
+    def from_layer_configs(  # noqa: C901
+        cls,
+        layer_configs: Sequence[KVCacheLayerConfig],
+        *,
+        max_cache_len: int,
+        max_write_len: int,
+        max_batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
+    ) -> "HFStaticCache":
+        """Allocate only the final MLX buffers, without reading a model config."""
+        for name, value in (
+            ("max_batch_size", max_batch_size),
+            ("max_cache_len", max_cache_len),
+            ("max_write_len", max_write_len),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+        if max_batch_size != 1:
+            raise ValueError("Only max_batch_size=1 is supported")
+        if max_write_len > max_cache_len:
+            raise ValueError("max_write_len must be <= max_cache_len")
+        if not layer_configs:
+            raise ValueError("layer_configs must contain at least one cache owner")
+        for i, config in enumerate(layer_configs):
+            if not isinstance(config, dict):
+                raise ValueError(f"layer_configs[{i}] must be a dictionary")
+            for name in ("num_kv_heads", "head_dim", "window_size"):
+                value = config.get(name)
+                minimum = 0 if name == "window_size" else 1
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value < minimum
+                ):
+                    raise ValueError(
+                        f"layer_configs[{i}].{name} must be an integer >= "
+                        f"{minimum}, got {value!r}"
+                    )
+            window_size = config["window_size"]
+            if window_size > 0 and max_write_len > window_size:
+                raise ValueError(
+                    f"max_write_len must be <= layer_configs[{i}].window_size"
+                )
+
+        # Native layers supply HF bookkeeping only; never run their allocating
+        # lazy_initialization or the model-config-based StaticCache constructor.
+        layers = [
+            (
+                StaticSlidingWindowLayer(
+                    max_cache_len=config["window_size"],
+                    sliding_window=config["window_size"],
+                )
+                if config["window_size"] > 0
+                else StaticLayer(max_cache_len=max_cache_len)
+            )
+            for config in layer_configs
+        ]
+        cache = cls.__new__(cls)
+        Cache.__init__(cache, layers=layers)
+        cache.num_model_layers = len(layer_configs)
+        cache.num_layers = len(layer_configs)
+        cache.layer_types = [
+            "sliding_attention" if config["window_size"] else "full_attention"
+            for config in layer_configs
+        ]
+        cache.num_heads = [config["num_kv_heads"] for config in layer_configs]
+        cache.head_dim = [config["head_dim"] for config in layer_configs]
+        cache.kv_cache = nn.ModuleList()
+        for config, layer in zip(layer_configs, layers):
+            if config["window_size"] > 0:
+                layer_cache = RingBufferKVCache(
+                    max_batch_size=max_batch_size,
+                    max_context_length=config["window_size"],
+                    n_heads=config["num_kv_heads"],
+                    head_dim=config["head_dim"],
+                    dtype=dtype,
+                    max_write_len=max_write_len,
+                )
+            else:
+                layer_cache = KVCache(
+                    max_batch_size=max_batch_size,
+                    max_context_length=max_cache_len,
+                    n_heads=config["num_kv_heads"],
+                    head_dim=config["head_dim"],
+                    enable_dynamic_shape=True,
+                    dtype=dtype,
+                )
+            cache.kv_cache.append(layer_cache)
+            layer.keys = layer_cache.k_cache
+            layer.values = layer_cache.v_cache
+            layer.dtype = dtype
+            layer.device = layer.keys.device
+            layer.batch_size = max_batch_size
+            layer.max_batch_size = max_batch_size
+            layer.num_heads = config["num_kv_heads"]
+            layer.head_dim = config["head_dim"]
+            layer.k_head_dim = config["head_dim"]
+            layer.v_head_dim = config["head_dim"]
+            # HF versions use either scalar or length-one counters; preserve
+            # the native shape for the export wrapper's in-place position copy.
+            layer.cumulative_length = torch.as_tensor(
+                getattr(layer, "cumulative_length", 0),
+                dtype=torch.long,
+                device=layer.device,
+            )
+            layer.is_initialized = True
+        return cache
+
     def __init__(
         self,
         config,
@@ -425,7 +564,7 @@ class HFStaticCache(StaticCache):
         """
         # Resolve dimensions from the text config before calling parent. Multimodal
         # configs like Gemma 4 expose transformer dims under text_config.
-        text_config = resolve_hf_text_config(config)
+        text_config = config.get_text_config()
         layer_types, num_heads, head_dims = resolve_hf_cache_layout(config)
         num_model_layers = text_config.num_hidden_layers
         actual_max_cache_len = max_cache_len or getattr(
@@ -538,8 +677,8 @@ class HFStaticCache(StaticCache):
             # Current HF ExecuTorch wrappers copy the requested cache position
             # into each StaticCache layer's cumulative_length before forward().
             if hasattr(self.layers[layer_idx], "cumulative_length"):
-                # cumulative_length is a scalar; KVCache.update indexes [0], so
-                # give it the 1-D shape a cache_kwargs caller would have passed.
+                # Normalize scalar and length-one counters to the 1-D shape
+                # expected by KVCache.update, which indexes [0].
                 cache_position = self.layers[layer_idx].cumulative_length.reshape(1)
             else:
                 raise RuntimeError(
@@ -562,8 +701,19 @@ class HFStaticCache(StaticCache):
         # Check if any value in the head_dim is non-zero for each position
         return (k_cache[0, 0, :, 0] != 0).sum().item()
 
+    def get_mask_sizes(
+        self, query_length=None, layer_idx: int = 0, *, cache_position=None
+    ) -> Tuple[int, int]:
+        """Return physical buffer geometry without native sliding-cache branches.
+
+        HF passes either a query length or (in older versions) cache positions.
+        Neither affects the full buffers returned by MLX updates. Ring slots are
+        not a contiguous token range; MLX attention builds their mask separately.
+        """
+        return self.get_max_cache_shape(layer_idx), 0
+
     def get_max_cache_shape(self, layer_idx: int = 0) -> int:
-        return self.max_cache_len
+        return self.kv_cache[layer_idx].k_cache.shape[2]
 
     def reset(self):
         for layer_cache in self.kv_cache:

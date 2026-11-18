@@ -825,8 +825,7 @@ TEST(
 // Interleaved (EdgeTAM) RoPE reference and tests
 //
 // x:         [B, N, C] with (real, imag) pairs interleaved along C
-// freqs_cis: any rank with N * C elements. Commonly 2D [N, C] or 4D
-//            [1, N, C/2, 2] from torch.view_as_real(...).unsqueeze(0). The
+// freqs_cis: [N, C], [N, C/2, 2] or [1, N, C/2, 2]. The
 //            (cos, sin) pairs are interleaved along the innermost axis in
 //            the flattened view.
 //
@@ -874,8 +873,7 @@ void test_reference_interleaved(
 
   IOValueRef r_x = graph.add_input_tensor(
       x.sizes().vec(), from_at_scalartype(x.scalar_type()));
-  // freqs_cis is always buffer-backed: the shader flat-indexes it so it is
-  // insensitive to the tensor's declared rank (matches op_registry pinning).
+  // Frequencies remain buffer-backed regardless of output storage.
   IOValueRef r_freqs_cis = graph.add_input_tensor(
       freqs_cis.sizes().vec(),
       from_at_scalartype(freqs_cis.scalar_type()),
@@ -1043,4 +1041,18 @@ TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_4d_freqs_fp16) {
       /*C=*/256,
       at::kHalf,
       /*freqs_shape=*/{1, 1792, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, frequency_shapes_across_storage) {
+  const std::vector<std::vector<int64_t>> freqs_shapes = {
+      {3, 12}, {3, 6, 2}, {1, 3, 6, 2}, {2, 18}};
+  for (const auto dtype : {at::kFloat, at::kHalf}) {
+    for (const auto& shape : freqs_shapes) {
+      SCOPED_TRACE(
+          ::testing::Message()
+          << "dtype=" << dtype << " shape=" << ::testing::PrintToString(shape));
+      test_reference_interleaved(2, 3, 12, dtype, shape);
+      test_reference_interleaved_buffer(2, 3, 12, dtype, shape);
+    }
+  }
 }

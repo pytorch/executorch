@@ -38,9 +38,6 @@ from executorch.backends.nxp.nxp_backend import (
     default_preserve_ops,
     generate_neutron_compile_spec,
 )
-from executorch.backends.nxp.quantizer.utils import (
-    _replace_histogram_observers_for_integer_inputs,
-)
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_default_quantizer,
@@ -108,8 +105,9 @@ class NeutronRecipeConfig:
         use_neutron_for_format_conversion: Whether Neutron handles data-format conversion.
         fetch_constants_to_sram: Place constant tensors in SRAM on the target.
         dump_kernel_selection_code: Generate kernel-selection files after compilation.
-        use_profiling: Enable Neutron execution profiling. IMPORTANT: To also generate an
-                       ETRecord, pass generate_etrecord=True to export() separately.
+        use_profiling: Enable Neutron execution profiling. When True, the recipe
+                       automatically sets generate_etrecord=True so that a matching
+                       ETRecord is produced without any extra configuration.
         train_fn: Training function required for QAT recipe types (INT8_QAT_NEUTRON and
                   INT8_QAT_NO_DELEGATE). Receives the prepared GraphModule and must
                   perform the training loop. Ignored for PTQ recipe types.
@@ -131,7 +129,6 @@ class NeutronRecipeConfig:
 
 
 class NXPRecipeProvider(BackendRecipeProvider):
-
     @property
     def backend_name(self) -> str:
         return NXP_BACKEND
@@ -219,6 +216,9 @@ class NXPRecipeProvider(BackendRecipeProvider):
             executorch_backend_config=ExecutorchBackendConfig(
                 extract_delegate_segments=False
             ),
+            # Profiling requires an ETRecord; set the flag here so callers do
+            # not need to pass generate_etrecord=True to export() separately.
+            generate_etrecord=rc.use_profiling,
         )
 
 
@@ -241,14 +241,9 @@ def _wrap_exir_pass(pass_cls, *args, **kwargs):
     return _wrapped
 
 
-def _histogram_observer_fix_pass(m):
-    """Callable(GraphModule) -> GraphModule that replaces HistogramObserver for integer inputs."""
-    _replace_histogram_observers_for_integer_inputs(m)
-    return m
-
-
 # ---------------------------------------------------------------------------
 # Module-level builder helpers
+
 # ---------------------------------------------------------------------------
 
 
@@ -265,13 +260,11 @@ def _build_quantization_recipe(
     """
     _quantizer = rc.get_quantizer_fn()
 
-    # post_prepare_passes: always fix HistogramObserver for non-float inputs.
-    # For QAT, also insert the simulated linear-BN fusion before training so
-    # fake-quantize nodes see fused weights during the training loop.
+    # post_prepare_passes: for QAT, insert the simulated linear-BN fusion before
+    # training so fake-quantize nodes see fused weights during the training loop.
     post_prepare: list[Callable] = []
     if is_qat:
         post_prepare.append(_wrap_exir_pass(AddSimulatedLinearBatchNormFusionQATPass))
-    post_prepare.append(_histogram_observer_fix_pass)
 
     if is_qat:
         # pre_convert_passes: tear down the simulated fusion and fold BN into

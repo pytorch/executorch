@@ -28,7 +28,7 @@ import math
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast, Iterable, Sequence
 
@@ -41,15 +41,25 @@ from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
+from torchao.quantization.pt2e.fake_quantize import (
+    disable_fake_quant,
+    disable_observer,
+    enable_fake_quant,
+    FakeQuantize,
+)
+from torchao.quantization.pt2e.observer import HistogramObserver
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
 
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
+
 EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
+from examples.arm.QAT_example.pruning import TwoOfFourPruner  # noqa: E402
 from examples.arm.QAT_example.rife_vgf import (  # noqa: E402
     configure_rife_vgf,
     configure_rife_vgf_quantizer,
@@ -58,6 +68,9 @@ from executorch.backends.arm.quantizer import (  # noqa: E402
     get_uint8_io_quantization_config,
     get_vgf_snorm_quantization_config,
     VgfQuantizer,
+)
+from executorch.backends.arm.quantizer.quantization_config import (  # noqa: E402
+    QuantizationConfig,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner  # noqa: E402
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower  # noqa: E402
@@ -118,39 +131,51 @@ def validate_input_shape(height: int, width: int) -> None:
         )
 
 
-def load_rife_model(model_root: Path, checkpoint: Path | None) -> torch.nn.Module:
+def load_rife_model(
+    model_root: Path,
+    checkpoint: Path | None = None,
+    model_class: str = "IFNet",
+) -> torch.nn.Module:
+    """Load a selected RIFE class with an optional checkpoint.
+
+    Args:
+        model_root (Path): Practical-RIFE source directory.
+        checkpoint (Path | None): Weights to load, or None to keep the model's
+            initial weights.
+        model_class (str): Class name in train_log.IFNet_HDv3.
+
+    Returns:
+        torch.nn.Module: Evaluation wrapper accepting two input frames.
+
+    """
     if not model_root.exists():
         raise FileNotFoundError(f"Practical-RIFE repo not found: {model_root}")
-    checkpoint = checkpoint or model_root / "train_log" / "flownet.pkl"
     sys.path.insert(0, str(model_root))
     ifnet_module = importlib.import_module("train_log.IFNet_HDv3")
     ifnet = cast(Any, ifnet_module)
-
-    if not checkpoint.exists():
-        raise FileNotFoundError(
-            "RIFE checkpoint was not found. Pass --checkpoint or place "
-            f"flownet.pkl at {checkpoint}."
-        )
-
-    checkpoint_data = torch.load(
-        checkpoint,
-        map_location=torch.device("cpu"),
-        weights_only=True,
-    )
-    if not isinstance(checkpoint_data, dict):
-        raise TypeError(f"Unexpected RIFE checkpoint type: {type(checkpoint_data)}")
-
-    state_dict = {
-        key.removeprefix("module."): value for key, value in checkpoint_data.items()
-    }
     if hasattr(ifnet, "backwarp_tenGrid"):
         ifnet.backwarp_tenGrid.clear()
-    flownet = ifnet.IFNet()
-    incompatible_keys = flownet.load_state_dict(state_dict, strict=False)
-    if incompatible_keys.missing_keys:
-        raise RuntimeError(
-            f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
+    try:
+        model_type = getattr(ifnet, model_class)
+    except AttributeError as error:
+        raise ValueError(f"Unknown RIFE model class {model_class!r}") from error
+    flownet = model_type()
+    if checkpoint is not None:
+        checkpoint_data = torch.load(
+            checkpoint,
+            map_location=torch.device("cpu"),
+            weights_only=True,
         )
+        if not isinstance(checkpoint_data, dict):
+            raise TypeError(f"Unexpected RIFE checkpoint type: {type(checkpoint_data)}")
+        state_dict = {
+            key.removeprefix("module."): value for key, value in checkpoint_data.items()
+        }
+        incompatible_keys = flownet.load_state_dict(state_dict, strict=False)
+        if incompatible_keys.missing_keys:
+            raise RuntimeError(
+                f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
+            )
     return RIFEWrapper(flownet).eval()
 
 
@@ -658,6 +683,25 @@ def quantization_coverage(graph_module: torch.nn.Module) -> dict[str, Any]:
     }
 
 
+def histogram_qat_config(config: QuantizationConfig) -> QuantizationConfig:
+    """Use cumulative activation ranges for tensors sharing QAT observers.
+
+    Args:
+        config (QuantizationConfig): QAT configuration to customize.
+
+    Returns:
+        QuantizationConfig: Configuration retaining weight and bias policies.
+
+    """
+    activation = replace(
+        cast(QuantizationSpec, config.input_activation),
+        observer_or_fake_quant_ctr=FakeQuantize.with_args(
+            observer=HistogramObserver.with_args(eps=2**-16),
+        ),
+    )
+    return replace(config, input_activation=activation, output_activation=activation)
+
+
 def make_quantizer(
     *,
     is_qat: bool,
@@ -667,14 +711,19 @@ def make_quantizer(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
-    global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
+    global_config: QuantizationConfig = get_vgf_snorm_quantization_config(is_qat=is_qat)
+    if is_qat:
+        global_config = histogram_qat_config(global_config)
     quantizer.set_global(global_config)
     configure_rife_vgf_quantizer(quantizer)
 
     if io_quantization == "int8":
         quantizer.set_io(global_config)
     elif io_quantization == "uint8":
-        quantizer.set_io(get_uint8_io_quantization_config(is_qat=is_qat))
+        io_config: QuantizationConfig = get_uint8_io_quantization_config(is_qat=is_qat)
+        if is_qat:
+            io_config = histogram_qat_config(io_config)
+        quantizer.set_io(io_config)
     elif io_quantization == "none":
         quantizer.set_io(None)
     else:
@@ -706,8 +755,10 @@ def build_ptq_model(
     calibration_inputs: list[tuple[torch.Tensor, torch.Tensor]],
     *,
     io_quantization: str,
+    prune_layers: Sequence[str] = (),
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
+    pruner = TwoOfFourPruner(model, prune_layers)
     calibration_inputs = [
         (
             inputs[0].contiguous(memory_format=torch.channels_last),
@@ -723,6 +774,7 @@ def build_ptq_model(
     prepared_model = prepare_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_eval(prepared_model)
+    pruner.apply_(prepared_model)
 
     with torch.no_grad():
         for inputs in calibration_inputs:
@@ -743,8 +795,10 @@ def build_qat_model(
     steps: int,
     lr: float,
     io_quantization: str,
+    prune_layers: Sequence[str] = (),
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
+    pruner = TwoOfFourPruner(model, prune_layers)
     training_samples = [
         (
             (
@@ -763,6 +817,14 @@ def build_qat_model(
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
+    pruner.apply_(prepared_model)
+    # Shared observers must collect a common range before weight updates.
+    prepared_model.apply(disable_fake_quant)
+    with torch.no_grad():
+        for inputs, _ in training_samples:
+            prepared_model(*inputs)
+    prepared_model.apply(disable_observer)
+    prepared_model.apply(enable_fake_quant)
     optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
 
     for step in range(steps):
@@ -778,6 +840,7 @@ def build_qat_model(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            pruner.apply_(prepared_model)
             total_loss += float(loss.detach().item())
         print(
             f"qat_step={step + 1}/{steps} "
@@ -893,6 +956,7 @@ def write_markdown_report(
         f"- Triples: {aggregate['triple_count']}",
         f"- Input shape: `1x3x{aggregate['height']}x{aggregate['width']}`",
         f"- Mode: `{aggregate['mode']}`",
+        f"- 2:4 pruning patterns: `{aggregate['prune_2_4']}`",
         f"- IO quantization: `{aggregate['io_quantization']}`",
         f"- Data source: `{aggregate['data_source']}`",
         f"- Random seed: `{aggregate['random_seed']}`",
@@ -909,14 +973,22 @@ def write_markdown_report(
         ("eager_channels_last_ssim", "Eager Channels-Last SSIM"),
         ("eager_channels_last_vs_eager_mae", "Eager Channels-Last vs eager MAE"),
         ("eager_channels_last_vs_eager_sqnr", "Eager Channels-Last vs eager SQNR"),
+        ("eager_pruned_psnr", "Pruned eager FP32 PSNR"),
+        ("eager_pruned_ssim", "Pruned eager FP32 SSIM"),
+        ("eager_pruned_vs_eager_mae", "Pruned eager vs dense eager MAE"),
+        ("eager_pruned_vs_eager_sqnr", "Pruned eager vs dense eager SQNR"),
         ("ptq_psnr", "PTQ PSNR"),
         ("ptq_ssim", "PTQ SSIM"),
         ("ptq_vs_eager_mae", "PTQ vs eager MAE"),
         ("ptq_vs_eager_sqnr", "PTQ vs eager SQNR"),
+        ("ptq_vs_eager_pruned_mae", "PTQ vs pruned eager MAE"),
+        ("ptq_vs_eager_pruned_sqnr", "PTQ vs pruned eager SQNR"),
         ("qat_psnr", "QAT PSNR"),
         ("qat_ssim", "QAT SSIM"),
         ("qat_vs_eager_mae", "QAT vs eager MAE"),
         ("qat_vs_eager_sqnr", "QAT vs eager SQNR"),
+        ("qat_vs_eager_pruned_mae", "QAT vs pruned eager MAE"),
+        ("qat_vs_eager_pruned_sqnr", "QAT vs pruned eager SQNR"),
     ):
         if f"{key}_mean" not in aggregate:
             continue
@@ -1018,18 +1090,15 @@ def parse_args() -> argparse.Namespace:
         "--model-root",
         type=Path,
         required=True,
-        help=(
-            "Path to a standard Practical-RIFE repo containing train_log/ "
-            "and train_log/flownet.pkl."
-        ),
+        help="Path to a Practical-RIFE repo containing train_log/IFNet_HDv3.py.",
     )
     parser.add_argument(
         "--checkpoint",
         type=Path,
         default=None,
         help=(
-            "Path to the Practical-RIFE flownet.pkl checkpoint. Defaults "
-            "to <model-root>/train_log/flownet.pkl."
+            "Path to a Practical-RIFE checkpoint. Omit to use the model's "
+            "initial weights."
         ),
     )
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
@@ -1073,6 +1142,21 @@ def parse_args() -> argparse.Namespace:
         help=(
             "eager=FP32 only, ptq=PTQ only, both=eager+PTQ, "
             "qat=eager+QAT, all=eager+PTQ+QAT."
+        ),
+    )
+    parser.add_argument(
+        "--model-class",
+        default="IFNet",
+        help="Class in practical-rife train_log.IFNet_HDv3 (for example IFNetTwoBlock).",
+    )
+    parser.add_argument(
+        "--prune-2-4",
+        action="append",
+        default=[],
+        metavar="LAYER_PATTERN",
+        help=(
+            "Prune matching Conv2d layers for eager evaluation, PTQ or QAT "
+            "with fixed 2:4 input-channel masks. Repeat for multiple patterns."
         ),
     )
     parser.add_argument(
@@ -1206,6 +1290,7 @@ def build_requested_quantized_models(
             model,
             calibration_inputs,
             io_quantization=args.io_quantization,
+            prune_layers=args.prune_2_4,
         )
         ptq_model = ptq.model
         quantization_reports["ptq"] = ptq.coverage
@@ -1232,6 +1317,7 @@ def build_requested_quantized_models(
             steps=args.qat_steps,
             lr=args.qat_lr,
             io_quantization=args.io_quantization,
+            prune_layers=args.prune_2_4,
         )
         qat_model = qat.model
         quantization_reports["qat"] = qat.coverage
@@ -1560,6 +1646,8 @@ def print_progress(index: int, total: int, row: dict[str, Any]) -> None:
         progress += f" eager_psnr={row['eager_psnr']:.3f}"
     if "eager_channels_last_psnr" in row:
         progress += f" eager_cl_psnr={row['eager_channels_last_psnr']:.3f}"
+    if "eager_pruned_psnr" in row:
+        progress += f" eager_pruned_psnr={row['eager_pruned_psnr']:.3f}"
     if "ptq_psnr" in row:
         progress += f" ptq_psnr={row['ptq_psnr']:.3f}"
     if "qat_psnr" in row:
@@ -1578,8 +1666,12 @@ def evaluate_triples(
     eager_channels_last_model: torch.nn.Module | None,
     ptq_model: torch.nn.Module | None,
     qat_model: torch.nn.Module | None,
+    *,
+    eager_pruned_model: torch.nn.Module | None = None,
 ) -> list[dict[str, Any]]:
-    run_eager = args.mode in ("eager", "both", "qat", "all")
+    run_eager = (
+        args.mode in ("eager", "both", "qat", "all") or eager_pruned_model is not None
+    )
     rows: list[dict[str, Any]] = []
     for index, triple in enumerate(triples):
         inputs, target = load_triple_tensors(
@@ -1623,6 +1715,23 @@ def evaluate_triples(
                     reference=eager_output,
                 )
 
+        eager_pruned_output = None
+        if eager_pruned_model is not None:
+            assert eager_output is not None
+            eager_pruned_output = run_model(eager_pruned_model, inputs)
+            update_row_with_prediction_metrics(
+                row,
+                prefix="eager_pruned",
+                prediction=eager_pruned_output,
+                target=target,
+            )
+            update_row_with_delta_metrics(
+                row,
+                prefix="eager_pruned_vs_eager",
+                prediction=eager_pruned_output,
+                reference=eager_output,
+            )
+
         if ptq_model is not None:
             ptq_output = run_model(ptq_model, inputs)
             update_row_with_prediction_metrics(
@@ -1639,6 +1748,13 @@ def evaluate_triples(
                 prediction=ptq_output,
                 reference=eager_output,
             )
+            if eager_pruned_output is not None:
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="ptq_vs_eager_pruned",
+                    prediction=ptq_output,
+                    reference=eager_pruned_output,
+                )
 
         if qat_model is not None:
             qat_output = run_model(qat_model, inputs)
@@ -1656,6 +1772,13 @@ def evaluate_triples(
                 prediction=qat_output,
                 reference=eager_output,
             )
+            if eager_pruned_output is not None:
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="qat_vs_eager_pruned",
+                    prediction=qat_output,
+                    reference=eager_pruned_output,
+                )
 
         rows.append(row)
         print_progress(index, len(triples), row)
@@ -1674,6 +1797,7 @@ def build_aggregate(
         "width": args.width,
         "preprocess": args.preprocess,
         "mode": args.mode,
+        "prune_2_4": args.prune_2_4,
         "io_quantization": args.io_quantization,
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
         "random_seed": args.random_seed,
@@ -1683,10 +1807,14 @@ def build_aggregate(
         "eager",
         "eager_channels_last",
         "eager_channels_last_vs_eager",
+        "eager_pruned",
+        "eager_pruned_vs_eager",
         "ptq",
         "ptq_vs_eager",
+        "ptq_vs_eager_pruned",
         "qat",
         "qat_vs_eager",
+        "qat_vs_eager_pruned",
         "ptq_runtime",
         "ptq_runtime_vs_ptq",
         "qat_runtime",
@@ -1734,6 +1862,7 @@ def print_summary(aggregate: dict[str, Any]) -> None:
     for prefix, label in (
         ("eager", "eager"),
         ("eager_channels_last", "eager_channels_last"),
+        ("eager_pruned", "eager_pruned"),
         ("ptq", "ptq"),
         ("ptq_runtime", "ptq_runtime"),
         ("qat", "qat"),
@@ -1796,9 +1925,13 @@ def main() -> int:
     print(f"IO quantization: {args.io_quantization}")
     print(f"Data source: {source}")
 
-    model = load_rife_model(args.model_root, args.checkpoint)
+    model = load_rife_model(args.model_root, args.checkpoint, args.model_class)
     configure_rife_vgf()
     eager_channels_last_model = clone_model(model, channels_last=True)
+    eager_pruned_model = None
+    if args.prune_2_4:
+        eager_pruned_model = clone_model(model)
+        TwoOfFourPruner(eager_pruned_model, args.prune_2_4)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
         args,
         model,
@@ -1811,6 +1944,7 @@ def main() -> int:
         eager_channels_last_model,
         ptq_model,
         qat_model,
+        eager_pruned_model=eager_pruned_model,
     )
     artifacts = export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
     reference_models = {
