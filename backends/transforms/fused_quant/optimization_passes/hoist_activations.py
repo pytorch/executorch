@@ -6,6 +6,9 @@
 
 
 import executorch.exir.dialects.fused_quant.ops  # noqa
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    has_only_per_tensor_qparams,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
 from torch import fx
@@ -50,6 +53,10 @@ class HoistActivations(PassBase):
 
         for target in _ACTIVATION_OPS:
             for activation_node in graph.find_nodes(op="call_function", target=target):
+                # Per-axis qparams are laid out for the activation's input, which
+                # the data-movement op would change.
+                if not has_only_per_tensor_qparams(activation_node):
+                    continue
                 out_dtype = activation_node.meta["val"].dtype
 
                 data_movement_node = activation_node.args[0]
