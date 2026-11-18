@@ -22,8 +22,6 @@
 namespace ptn::ggml_detail {
 namespace {
 
-constexpr size_t kHostEvalMaxElements = size_t{1} << 16;
-
 // a op b for equal shapes, or with b a single value; nullopt if fn overflows.
 std::optional<HostInts> broadcast_ints(
     const HostInts& a,
