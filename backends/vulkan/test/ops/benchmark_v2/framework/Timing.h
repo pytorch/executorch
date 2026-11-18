@@ -14,6 +14,22 @@
 
 namespace vkcompute::shader_profiling {
 
+// Copies between two scratch buffers of cache_flush_bytes before each
+// repetition, evicting the measured work's data from the GPU caches.
+class CacheFlush {
+ public:
+  // Adds the copy's execute nodes when the spec sets cache_flush_bytes.
+  CacheFlush(ComputeGraph& graph, const Json& spec);
+
+  // Encodes the copy behind a full barrier. The caller must place a full
+  // barrier between the copy and the measured work.
+  void encode(ComputeGraph& graph) const;
+
+ private:
+  size_t first_;
+  size_t end_;
+};
+
 Report measure(
     const Json& spec,
     ComputeGraph& graph,

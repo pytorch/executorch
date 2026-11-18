@@ -46,6 +46,11 @@ Report benchmark_shader(
     bool validation_only) {
   GraphConfig config;
   config.force_resize = true;
+  if (!validation_only && spec.contains("cache_flush_bytes")) {
+    // Each repetition's copy allocates its own descriptor set.
+    config.descriptor_pool_safety_factor *=
+        spec.value("max_dispatches", 65536u);
+  }
   ComputeGraph graph(config);
   const auto tensors = create_tensors(spec, graph, host_data, validation_only);
 
@@ -156,6 +161,7 @@ Report benchmark_shader(
   const LocalWorkGroup& lwg = workgroups.lwg;
 
   const size_t input_nodes = graph.execute_nodes().size();
+  const CacheFlush cache_flush(graph, spec);
   std::map<std::string, ValueRef> outputs;
   if (validation_only) {
     Json accesses = Json::object();
@@ -230,6 +236,7 @@ Report benchmark_shader(
     bind_resources(descriptors, initial);
     context.register_barrier(initial);
     for (uint32_t i = 0; i < count; ++i) {
+      cache_flush.encode(graph);
       context.extract_cmd().bind_pipeline(pipeline, pipeline_layout, lwg);
       // Barriers derived from tensor accesses alone let some drivers overlap
       // consecutive repetitions.
@@ -288,6 +295,9 @@ Report benchmark_shader(
       {lwg[0], lwg[1], lwg[2]},
       actual_tensor_dtypes(graph, tensors),
       specialization);
+  if (spec.contains("cache_flush_bytes")) {
+    result["cache_flush_bytes"] = spec.at("cache_flush_bytes");
+  }
   if (validation_only) {
     result["validation"] =
         validate_outputs(spec, graph, tensors, outputs, host_data);

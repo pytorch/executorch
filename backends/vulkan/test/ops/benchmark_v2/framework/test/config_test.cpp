@@ -504,6 +504,18 @@ TEST(ShaderProfilingConfig, RejectsMalformedOrShaderRouteSelections) {
   EXPECT_THROW(parse_configs(op), std::invalid_argument);
 }
 
+TEST(ShaderProfilingConfig, ValidatesCacheFlushBytes) {
+  for (Json spec : {operator_config(), config()}) {
+    spec["cache_flush_bytes"] = 8u << 20;
+    EXPECT_NO_THROW(parse_configs(spec));
+    for (const Json& invalid :
+         {Json(0), Json(-1), Json(1.5), Json("8MiB"), Json((1ull << 30) + 1)}) {
+      spec["cache_flush_bytes"] = invalid;
+      EXPECT_THROW(parse_configs(spec), std::invalid_argument);
+    }
+  }
+}
+
 TEST(ShaderProfilingConfig, RejectsLegacyRouteSelectionKeys) {
   for (const char* key : {"implementation", "implementation_sweep"}) {
     for (Json spec : {operator_config(), config()}) {

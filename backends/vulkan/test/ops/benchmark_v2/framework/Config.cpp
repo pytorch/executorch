@@ -215,6 +215,13 @@ void validate_config(const Json& spec) {
         "Use storage: constant instead of the tensor constant flag");
     validate_data_initializer(tensor, tensor_numel(tensor.at("sizes")));
   }
+  if (spec.contains("cache_flush_bytes")) {
+    const Json& bytes = spec.at("cache_flush_bytes");
+    require(
+        bytes.is_number_unsigned() && bytes.get<uint64_t>() > 0 &&
+            bytes.get<uint64_t>() <= (uint64_t(1) << 30),
+        "cache_flush_bytes must be an integer in [1, 2^30]");
+  }
   if (is_operator) {
     for (const char* key :
          {"gwg_size",

@@ -148,6 +148,7 @@ Benchmark conditions such as `target_ms` and `benchmark_runs` belong in the JSON
 | `warmup_runs` | Unmeasured batches per timing mode, default 3. |
 | `benchmark_runs` | Measured batches per timing mode, default 10. |
 | `sustain_s` | Replace the measurement passes with back-to-back query-free replay for this many seconds. See [sustained replay](#sustained-replay-for-hardware-counters). |
+| `cache_flush_bytes` | Before each repetition, copy a scratch buffer of this many bytes to evict the case's working set from GPU caches. See [cold-cache measurement](#cold-cache-measurement). |
 | `check` | Registered validation-only check, e.g. capability or dynamic-resize checks. |
 | `reference` | Optional registered CPU reference name; inferred for supported operators/shaders. |
 | `validation_method` | Comparison function and tolerances, e.g. `{"function":"is_close","atol":0.01,"rtol":0.01}`. Optional `outputs` selects named tensors to check. |
@@ -784,6 +785,29 @@ cache conditions, and their repetition counts may differ.
 Prepacking remains outside timing.
 Breakdowns are omitted when timestamps are unavailable, including on this
 repository's SwiftShader build.
+
+### Cold-cache measurement
+
+Repetitions of one case reuse the same inputs and weights, so they normally run
+with the case's working set already in GPU caches. In a model, a layer's
+weights and inputs are usually not cached when it runs. Set `cache_flush_bytes`
+to measure that cold-cache cost: before each repetition, the benchmark copies
+between two scratch buffers of that size, then runs the operator or shader. Full
+pipeline barriers separate the copy from the previous repetition and from the
+measured work. Choose a size well above the GPU's cache capacity; 8 MiB or more
+evicts the caches of current mobile GPUs.
+
+The copy is part of every repetition, so batch, wall, and raw shader latencies
+include it. To isolate the measured work:
+
+- For operators, use the shader breakdown. The copy is not profiled, so
+  `gpu_timestamp_shader_us` and `gpu_timestamp_barrier_us` cover only the
+  operator's dispatches; the copy and the barriers around it appear in the first
+  dispatch's `gpu_timestamp_gap_us`.
+- For operators and raw shaders, subtract a separately benchmarked
+  `aten.clone.default` case on float32 buffers of the same size.
+
+Reports include the requested `cache_flush_bytes`.
 
 ### Sustained replay for hardware counters
 
