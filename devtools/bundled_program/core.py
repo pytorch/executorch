@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
-from typing import Dict, List, NamedTuple, Optional, Sequence, Type, Union
+from typing import Dict, List, Optional, Sequence, Type, Union
 
 import executorch.devtools.bundled_program.schema as bp_schema
 
@@ -19,12 +19,7 @@ from executorch.devtools.bundled_program.config import ConfigValue, MethodTestSu
 from executorch.devtools.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 
 from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
-from executorch.exir._serialize._flatbuffer_program import (
-    _convert_from_flatbuffer_dataclass,
-    _patch_generated_flatbuffer_aliases,
-)
-from executorch.exir._serialize.generated.executorch_flatbuffer.EValue import EValueT
-from executorch.exir._serialize.generated.executorch_flatbuffer.Program import Program
+from executorch.exir._serialize import deserialize_program_method_io, ProgramMethodIO
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum
 
 # pyre-ignore
@@ -34,11 +29,6 @@ supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] =
     core_schema.Double: float,
     core_schema.Bool: bool,
 }
-
-
-class _MethodIO(NamedTuple):
-    inputs: List[core_schema.KernelTypes]
-    outputs: List[core_schema.KernelTypes]
 
 
 class BundledProgram:
@@ -171,9 +161,12 @@ class BundledProgram:
     @staticmethod
     def _emit_bundled_tensor(
         tensor: torch.Tensor,
-        dim_order: List[int],
+        dim_order: Optional[List[int]],
         bundled_values: List[bp_schema.Value],
     ) -> None:
+        assert (
+            dim_order is not None
+        ), "Program I/O tensor is missing its dimension order"
         sizes = list(tensor.shape)
         # Store bytes in the physical order declared by the method's I/O tensor.
         tensor = tensor.permute(dim_order).contiguous().resolve_conj().resolve_neg()
@@ -203,39 +196,17 @@ class BundledProgram:
 
     def _get_method_io(
         self, program: Union[core_schema.Program, bytes]
-    ) -> Dict[str, _MethodIO]:
+    ) -> Dict[str, ProgramMethodIO]:
         if isinstance(program, core_schema.Program):
             return {
-                plan.name: _MethodIO(
+                plan.name: ProgramMethodIO(
                     inputs=[plan.values[index].val for index in plan.inputs],
                     outputs=[plan.values[index].val for index in plan.outputs],
                 )
                 for plan in program.execution_plan
             }
 
-        # Read only I/O metadata, without unpacking constants or delegate payloads.
-        _patch_generated_flatbuffer_aliases()
-        flatbuffer_program = Program.GetRootAs(program)
-        method_io = {}
-        for plan_index in range(flatbuffer_program.ExecutionPlanLength()):
-            plan = flatbuffer_program.ExecutionPlan(plan_index)
-            method_io[plan.Name().decode("utf-8")] = _MethodIO(
-                inputs=[
-                    _convert_from_flatbuffer_dataclass(
-                        EValueT.InitFromObj(plan.Values(plan.Inputs(index))),
-                        core_schema.EValue,
-                    ).val
-                    for index in range(plan.InputsLength())
-                ],
-                outputs=[
-                    _convert_from_flatbuffer_dataclass(
-                        EValueT.InitFromObj(plan.Values(plan.Outputs(index))),
-                        core_schema.EValue,
-                    ).val
-                    for index in range(plan.OutputsLength())
-                ],
-            )
-        return method_io
+        return deserialize_program_method_io(program)
 
     def _get_program_input(
         self, program: core_schema.Program, plan_idx: int, input_idx: int

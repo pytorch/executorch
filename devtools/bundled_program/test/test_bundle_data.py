@@ -145,19 +145,32 @@ class TestBundle(unittest.TestCase):
         self.assertEqual(values[0].val.sizes, [1])
         self.assertEqual(values[0].val.data, tensor.resolve_conj().numpy().tobytes())
 
-    def test_bundle_uses_program_dim_order(self) -> None:
-        class Permute(torch.nn.Module):
-            def forward(self, x):
-                return x.permute(0, 2, 3, 1)
+    def test_missing_dim_order_has_clear_error(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "dimension order"):
+            BundledProgram._emit_bundled_tensor(torch.ones(2, 3), None, [])
 
-        model = Permute()
-        export_input = torch.zeros(2, 3, 4, 5)
+    def test_scalar_accepts_empty_dim_order(self) -> None:
+        tensor = torch.tensor(3.0)
+        values: List[bp_schema.Value] = []
+        BundledProgram._emit_bundled_tensor(tensor, [], values)
+        self.assertEqual(values[0].val.sizes, [])
+        self.assertEqual(values[0].val.dim_order, [])
+        self.assertEqual(values[0].val.data, tensor.numpy().tobytes())
+
+    def test_bundle_uses_program_dim_order(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x * 2
+
+        model = Model()
+        export_input = torch.zeros(2, 3, 4, 5).contiguous(
+            memory_format=torch.channels_last
+        )
         program = to_edge(export(model, (export_input,))).to_executorch()
-        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 4, 3, 5)
-        input_tensor = input_tensor.transpose(1, 2)
+        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 3, 4, 5)
         expected = model(input_tensor)
-        self.assertFalse(input_tensor.is_contiguous())
-        self.assertFalse(expected.is_contiguous())
+        self.assertTrue(input_tensor.is_contiguous())
+        self.assertTrue(expected.is_contiguous())
         suites = [
             MethodTestSuite("forward", [MethodTestCase((input_tensor,), (expected,))])
         ]
@@ -178,9 +191,10 @@ class TestBundle(unittest.TestCase):
                     for value, source in zip(
                         case.inputs + case.expected_outputs, (input_tensor, expected)
                     ):
-                        self.assertEqual(value.val.dim_order, [0, 1, 2, 3])
+                        self.assertEqual(value.val.dim_order, [0, 2, 3, 1])
                         self.assertEqual(
-                            value.val.data, source.contiguous().numpy().tobytes()
+                            value.val.data,
+                            source.permute(0, 2, 3, 1).contiguous().numpy().tobytes(),
                         )
 
     def test_pte_reader_matches_in_memory_program(self) -> None:
