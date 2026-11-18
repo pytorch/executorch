@@ -240,8 +240,8 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "replace_in_place_ops",
-        srcs = ["replace_in_place_ops.py"],
+        name = "replace_inplace_ops",
+        srcs = ["replace_inplace_ops.py"],
         visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
@@ -702,13 +702,13 @@ def define_common_targets():
     )
 
     runtime.python_test(
-        name = "test_replace_in_place_ops",
+        name = "test_replace_inplace_ops",
         srcs = [
-            "test/test_replace_in_place_ops.py",
+            "test/test_replace_inplace_ops.py",
         ],
         deps = [
             "//caffe2:torch",
-            ":replace_in_place_ops",
+            ":replace_inplace_ops",
         ],
     )
 

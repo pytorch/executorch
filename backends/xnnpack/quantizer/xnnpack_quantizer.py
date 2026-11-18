@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional, Set, TYPE_CHECKING
 import torch
 import torch._dynamo as torchdynamo
 import torch.nn.functional as F
-from executorch.backends.transforms.replace_in_place_ops import replace_in_place_ops
+from executorch.backends.transforms.replace_inplace_ops import ReplaceInplaceOpsPass
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
@@ -382,8 +382,9 @@ class XNNPACKQuantizer(Quantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        """Transforms scalar values to tensor attributes"""
-        model = replace_in_place_ops(model)
+        """Replaces in-place writes through views and transforms scalar values
+        to tensor attributes"""
+        model = ReplaceInplaceOpsPass()(model).graph_module
         return _convert_scalars_to_attrs(model)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
