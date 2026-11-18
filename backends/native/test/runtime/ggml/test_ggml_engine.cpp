@@ -1920,6 +1920,49 @@ std::vector<uint8_t> make_update_and_attend_program(
   return program.finish("selected");
 }
 
+// make_update_and_attend_program's attention once per cache layer in
+// [0, layers), over the same q, k and v, summed.
+std::vector<uint8_t> make_layered_attention_program(
+    int64_t tokens,
+    int64_t layers) {
+  TestProgram program;
+  program.input(
+      "q", fbs::ScalarType::FLOAT, {1, kOffGraphHeads, tokens, kOffGraphDim});
+  program.input(
+      "k", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input(
+      "v", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input("position", fbs::ScalarType::LONG, {tokens, 1});
+  std::string sum;
+  for (int64_t layer = 0; layer < layers; ++layer) {
+    const std::string attention = "attention" + std::to_string(layer);
+    program.call(
+        attention,
+        "torch.ops.kvcache.update_and_attend.default",
+        {{"q", std::string("q")},
+         {"k", std::string("k")},
+         {"v", std::string("v")},
+         {"position", std::string("position")},
+         {"layer_id", layer},
+         {"scale", kOffGraphScale}},
+        fbs::ScalarType::FLOAT,
+        {1, kOffGraphHeads, tokens, kOffGraphDim});
+    if (sum.empty()) {
+      sum = attention;
+      continue;
+    }
+    const std::string next = "sum" + std::to_string(layer);
+    program.call(
+        next,
+        "torch.ops.aten.add.Tensor",
+        {{"self", sum}, {"other", attention}},
+        fbs::ScalarType::FLOAT,
+        {1, kOffGraphHeads, tokens, kOffGraphDim});
+    sum = next;
+  }
+  return program.finish(sum);
+}
+
 // A ggml cache built through the factory and published under a registry key,
 // with the context option that names it.
 struct InstalledCache {
@@ -1932,19 +1975,29 @@ struct InstalledCache {
   }
 };
 
+// One layer per entry of `windows`: flat for 0, else a ring of that window.
 InstalledCache install_cache(
     int capacity,
     int initial_capacity,
     ScalarType kv_dtype = ScalarType::Float,
-    int head_dim = static_cast<int>(kOffGraphDim)) {
+    int head_dim = static_cast<int>(kOffGraphDim),
+    const std::vector<int>& windows = {0},
+    std::optional<int> max_write = std::nullopt) {
   register_ggml_cache_builders();
   kv::CacheGeometry geometry;
-  geometry.layers.push_back(kv::LayerGeometry{
-      .n_kv_heads = static_cast<int>(kOffGraphKvHeads), .head_dim = head_dim});
+  for (const int window : windows) {
+    geometry.layers.push_back(kv::LayerGeometry{
+        .policy = window > 0
+            ? kv::LayerPolicy{kv::LayerPolicy::Kind::Ring, window}
+            : kv::LayerPolicy{},
+        .n_kv_heads = static_cast<int>(kOffGraphKvHeads),
+        .head_dim = head_dim});
+  }
   const kv::CacheConfig cfg{
       .capacity = capacity,
       .kv_dtype = static_cast<int>(kv_dtype),
-      .initial_capacity = initial_capacity};
+      .initial_capacity = initial_capacity,
+      .max_write = max_write};
   auto built = kv::CacheFactory::global().build(
       kGgmlCacheBackendId, kv::kind::kSingle, geometry, cfg);
   if (!built.ok()) {
@@ -1965,9 +2018,13 @@ InstalledCache install_cache(
 }
 
 // What the cache should hold: K and V [Hkv, D] per position, written by each
-// step, attended causally by naive softmax attention.
+// step, attended causally by naive softmax attention once per entry of
+// `windows`, over the last `window` positions when it is nonzero, and summed.
 class OffGraphReference {
  public:
+  explicit OffGraphReference(std::vector<int> windows = {0})
+      : windows_(std::move(windows)) {}
+
   // Runs `tokens` tokens from `start` through `executable`, with inputs that
   // depend on the position and `seed`, and returns the largest difference
   // from the reference.
@@ -2022,28 +2079,36 @@ class OffGraphReference {
       for (int64_t t = 0; t < tokens; ++t) {
         const float* query = &q[(h * tokens + t) * kOffGraphDim];
         const int64_t keys = start + t + 1;
-        std::vector<double> weights(keys);
-        for (int64_t s = 0; s < keys; ++s) {
-          weights[s] = std::exp(
-              std::inner_product(
-                  query,
-                  query + kOffGraphDim,
-                  &k_[s][kv_head * kOffGraphDim],
-                  0.0) *
-              kOffGraphScale);
-        }
-        const double total =
-            std::accumulate(weights.begin(), weights.end(), 0.0);
-        for (int64_t d = 0; d < kOffGraphDim; ++d) {
-          double sum = 0.0;
-          for (int64_t s = 0; s < keys; ++s) {
-            sum += weights[s] * v_[s][kv_head * kOffGraphDim + d];
+        std::vector<double> want(kOffGraphDim, 0.0);
+        for (const int window : windows_) {
+          const int64_t first =
+              window > 0 ? std::max<int64_t>(0, keys - window) : 0;
+          std::vector<double> weights(keys);
+          for (int64_t s = first; s < keys; ++s) {
+            weights[s] = std::exp(
+                std::inner_product(
+                    query,
+                    query + kOffGraphDim,
+                    &k_[s][kv_head * kOffGraphDim],
+                    0.0) *
+                kOffGraphScale);
           }
+          const double total =
+              std::accumulate(weights.begin() + first, weights.end(), 0.0);
+          for (int64_t d = 0; d < kOffGraphDim; ++d) {
+            double sum = 0.0;
+            for (int64_t s = first; s < keys; ++s) {
+              sum += weights[s] * v_[s][kv_head * kOffGraphDim + d];
+            }
+            want[d] += sum / total;
+          }
+        }
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
           worst = std::max(
               worst,
               std::abs(
                   out[(h * tokens + t) * kOffGraphDim + d] -
-                  static_cast<float>(sum / total)));
+                  static_cast<float>(want[d])));
         }
       }
     }
@@ -2051,6 +2116,7 @@ class OffGraphReference {
   }
 
  private:
+  std::vector<int> windows_;
   std::vector<std::vector<float>> k_;
   std::vector<std::vector<float>> v_;
 };
@@ -2208,6 +2274,81 @@ TEST(GgmlEngineTest, RejectsOffGraphStepsPastCapacityOrNotConsecutive) {
   prefill->set_input(2, kv_step.data(), kv_step.size(), ScalarType::Float);
   prefill->set_input(3, positions.data(), positions.size(), ScalarType::Long);
   EXPECT_THROW(prefill->execute(), std::invalid_argument);
+}
+
+// A ring layer attends each query's window, within a prefill wider than the
+// window too, while decoding wraps the ring several times.
+TEST(GgmlEngineTest, OffGraphRingAttentionMatchesReference) {
+  for (const size_t graphs : {size_t{0}, size_t{4}}) {
+    for (const int window : {2, 5}) {
+      for (const auto& [dtype, tol] :
+           {std::pair{ScalarType::Float, 1e-4f},
+            std::pair{ScalarType::Half, 2e-2f}}) {
+        SCOPED_TRACE(
+            "graphs " + std::to_string(graphs) + ", window " +
+            std::to_string(window) + ", " +
+            std::string(scalar_type_name(dtype)));
+        InstalledCache cache = install_cache(
+            64, 1, dtype, static_cast<int>(kOffGraphDim), {window}, 3);
+        auto host = GgmlEngineHost::create({.max_cached_graphs = graphs});
+        auto prefill_context = make_context(
+            *host, make_update_and_attend_program(3), cache.options);
+        auto decode_context = make_context(
+            *host, make_update_and_attend_program(1), cache.options);
+        auto prefill = prefill_context->compile("forward");
+        auto decode = decode_context->compile("forward");
+        OffGraphReference reference({window});
+        EXPECT_LT(reference.step(*prefill, 0, 3), tol);
+        for (int64_t pos = 3; pos < 20; ++pos) {
+          SCOPED_TRACE(pos);
+          EXPECT_LT(reference.step(*decode, pos, 1), tol);
+        }
+        EXPECT_LT(reference.step(*prefill, 20, 3), tol);
+      }
+    }
+  }
+}
+
+// A flat and a ring layer share one sequence in one forward.
+TEST(GgmlEngineTest, OffGraphFlatAndRingLayersShareASequence) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {0, 3}, 3);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_layered_attention_program(3, 2), cache.options);
+  auto decode_context =
+      make_context(*host, make_layered_attention_program(1, 2), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference({0, 3});
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 12; ++pos) {
+    SCOPED_TRACE(pos);
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+}
+
+// A ring layer can rewind only as far as the rows it still holds.
+TEST(GgmlEngineTest, OffGraphRingRewindsWithinTheRowsItHolds) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {4}, 3);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference({4});
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 10; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  // The ring holds positions 4..9; the step after a rewind to 7 reads 4..7.
+  EXPECT_FALSE(cache.control().rewind(6));
+  ASSERT_TRUE(cache.control().rewind(7));
+  EXPECT_LT(reference.step(*decode, 7, 1, /*seed=*/4), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 8, 1, /*seed=*/4), 1e-4f);
 }
 
 TEST(GgmlEngineTest, OffGraphAttentionNeedsAMatchingCache) {
