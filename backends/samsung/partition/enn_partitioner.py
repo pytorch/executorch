@@ -23,7 +23,10 @@ from executorch.backends.samsung.serialization.compile_options import (
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
-from executorch.backends.transforms.addmm_mm_to_linear import addmm_can_be_linear
+from executorch.backends.transforms.addmm_mm_to_linear import (
+    addmm_can_be_linear,
+    is_constant_tensor,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -87,11 +90,14 @@ class EnnOperatorSupport(OperatorSupportBase):
             # turns an addmm into a linear when addmm_can_be_linear allows it.
             # ConstantPropPass runs before that transform and folds the
             # transpose of a constant weight, so such an addmm stays an addmm.
+            # The transform also keeps an addmm whose weight is computed at
+            # run time.
             if node in self.nodes_in_const_subgraph:
                 return True
             return (
                 addmm_can_be_linear(node)
                 and node.args[2] not in self.nodes_in_const_subgraph
+                and is_constant_tensor(node.args[2].args[0], self.edge_program)
             )
 
         if node.target in SUPPORTED_OPS:
