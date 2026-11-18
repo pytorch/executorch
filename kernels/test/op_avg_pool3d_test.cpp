@@ -298,20 +298,34 @@ TEST_F(OpAvgPool3DOutTest, ExcessPadding) {
   ET_EXPECT_KERNEL_FAILURE(context_, pool(in, {2}, {1}, {2}, false, true, out));
 }
 
-TEST_F(OpAvgPool3DOutTest, SingleElementPaddingExceedsHalfKernelOnOtherAxes) {
+TEST_F(
+    OpAvgPool3DOutTest,
+    SingleElementPaddingExceedsHalfKernelOnOtherAxesExcludePad) {
   TensorFactory<ScalarType::Float> tf;
   auto in = tf.ones({1, 1, 3, 3, 3});
   auto out = tf.zeros({1, 1, 3, 5, 5});
   ET_EXPECT_KERNEL_FAILURE(
       context_, pool(in, {3, 1, 1}, {1}, {1}, false, false, out));
+}
+
+TEST_F(
+    OpAvgPool3DOutTest,
+    SingleElementPaddingExceedsHalfKernelOnOtherAxesIncludePad) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.ones({1, 1, 3, 3, 3});
+  auto out = tf.zeros({1, 1, 3, 5, 5});
   ET_EXPECT_KERNEL_FAILURE(
       context_, pool(in, {3, 1, 1}, {1}, {1}, false, true, out));
+}
 
-  TensorFactory<ScalarType::Long> tf_long;
-  auto in_long = tf_long.ones({1, 1, 3, 3, 3});
-  auto out_long = tf_long.zeros({1, 1, 3, 5, 5});
+TEST_F(
+    OpAvgPool3DOutTest,
+    SingleElementPaddingExceedsHalfKernelOnOtherAxesLong) {
+  TensorFactory<ScalarType::Long> tf;
+  auto in = tf.ones({1, 1, 3, 3, 3});
+  auto out = tf.zeros({1, 1, 3, 5, 5});
   ET_EXPECT_KERNEL_FAILURE(
-      context_, pool(in_long, {3, 1, 1}, {1}, {1}, false, false, out_long));
+      context_, pool(in, {3, 1, 1}, {1}, {1}, false, false, out));
 }
 
 TEST_F(OpAvgPool3DOutTest, NegativePadding) {
@@ -435,6 +449,15 @@ TEST_F(OpAvgPool3DOutTest, NonDefaultDimOrder) {
   auto in = tf.make_with_dimorder(
       {2, 2, 2, 2, 2}, std::vector<float>(32, 1), {0, 2, 3, 4, 1});
   auto out = tf.zeros({2, 2, 1, 1, 1});
+  ET_EXPECT_KERNEL_FAILURE(context_, pool(in, {2}, {}, {0}, false, true, out));
+}
+
+TEST_F(OpAvgPool3DOutTest, ChannelsLastInAndOut) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.make_with_dimorder(
+      {2, 2, 2, 2, 2}, std::vector<float>(32, 1), {0, 2, 3, 4, 1});
+  auto out = tf.make_with_dimorder(
+      {2, 2, 1, 1, 1}, std::vector<float>(4, 0), {0, 2, 3, 4, 1});
   ET_EXPECT_KERNEL_FAILURE(context_, pool(in, {2}, {}, {0}, false, true, out));
 }
 #endif

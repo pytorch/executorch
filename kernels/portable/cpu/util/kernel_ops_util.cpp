@@ -448,27 +448,12 @@ bool check_avg_pool3d_args(
       in.size(in.dim() - 4) > 0, "Expected non-empty channels");
   for (const auto i : c10::irange(3)) {
     const int64_t kernel = val_at(kernel_size, i);
-    const int64_t step = val_at(stride, i, kernel);
     ET_CHECK_OR_RETURN_FALSE(
-        kernel <= std::numeric_limits<int32_t>::max() &&
-            step <= std::numeric_limits<int32_t>::max(),
-        "Kernel size and stride must fit in int32_t");
+        val_at(stride, i, kernel) <= std::numeric_limits<int32_t>::max(),
+        "Stride must fit in int32_t");
     ET_CHECK_OR_RETURN_FALSE(
         in.size(in.dim() - 3 + i) >= kernel,
         "Input spatial size must be at least the kernel size");
-    const int64_t size = _kernel_output_size_helper(
-        in.size(in.dim() - 3 + i),
-        kernel,
-        val_at(padding, i),
-        step,
-        1,
-        ceil_mode,
-        false,
-        0);
-    ET_CHECK_OR_RETURN_FALSE(
-        size > 0 &&
-            size <= std::numeric_limits<executorch::aten::SizesType>::max(),
-        "Invalid pooling output size");
   }
   if (divisor_override.has_value()) {
     ET_CHECK_OR_RETURN_FALSE(
