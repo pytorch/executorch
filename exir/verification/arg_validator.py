@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeDialectFunctionSchema, EdgeOpOverload
@@ -105,8 +105,9 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
         ret_index = 0
         kernel_rets = self.node.meta["val"]
+        # A single Tensor[] return is one schema return, not multiple returns.
         ret_iter = iter(
-            kernel_rets if isinstance(kernel_rets, Sequence) else [kernel_rets]
+            kernel_rets if len(target._schema.returns) > 1 else [kernel_rets]
         )
         for schema_ret in target._schema.returns:
             name = schema_ret.name if schema_ret.name else f"__ret_{ret_index}"

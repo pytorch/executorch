@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import unittest
 
 import torch
@@ -12,7 +13,7 @@ from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.verification.arg_validator import EdgeOpArgValidator
-from torch.export import export
+from torch.export import Dim, export
 
 
 class TestArgValidator(unittest.TestCase):
@@ -20,6 +21,52 @@ class TestArgValidator(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
+
+    def test_tensor_list_return_preserves_dynamic_batch(self) -> None:
+        class Split(torch.nn.Module):
+            def __init__(self, operation):
+                super().__init__()
+                self.operation = operation
+
+            def forward(self, x):
+                if self.operation == "chunk":
+                    return torch.chunk(x, 3, dim=-1)
+                sizes = [2, 2, 2] if self.operation == "split_with_sizes" else 2
+                return torch.split(x, sizes, dim=-1)
+
+        dtypes = (
+            torch.bool,
+            torch.uint8,
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+            torch.uint16,
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+            torch.float64,
+        )
+        for operation, dtype in itertools.product(
+            ("split", "split_with_sizes", "chunk"), dtypes
+        ):
+            with self.subTest(operation=operation, dtype=dtype):
+                model = Split(operation)
+                ep = export(
+                    model,
+                    (torch.randint(0, 5, (2, 3, 6)).to(dtype),),
+                    dynamic_shapes=({0: Dim("batch", min=1, max=8)},),
+                )
+                ranges = dict(ep.range_constraints)
+                edge = to_edge(ep).exported_program()
+                self.assertEqual(edge.range_constraints, ranges)
+                placeholder = next(
+                    node for node in edge.graph.nodes if node.op == "placeholder"
+                )
+                self.assertIsInstance(placeholder.meta["val"].shape[0], torch.SymInt)
+                for batch in (1, 2, 5, 8):
+                    x = torch.randint(0, 5, (batch, 3, 6)).to(dtype)
+                    torch.testing.assert_close(edge.module()(x), model(x))
 
     def test_edge_dialect_passes(self) -> None:
         class TestModel(torch.nn.Module):
