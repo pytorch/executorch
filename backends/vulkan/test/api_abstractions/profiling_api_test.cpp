@@ -24,8 +24,8 @@ using ProfilingApiTest = VulkanTest;
 
 TEST(ProfilingValueTest, TimestampVectorsSupportStandardAlgorithms) {
   const std::vector<vkapi::ShaderTimestamp> samples = {
-      {"first", 1, 2, {{8, 1, 1}, {4, 1, 1}}},
-      {"second", 3, 4, {{16, 1, 1}, {8, 1, 1}}}};
+      {"first", 1, 2, 3, {{8, 1, 1}, {4, 1, 1}}},
+      {"second", 4, 5, 6, {{16, 1, 1}, {8, 1, 1}}}};
   auto reordered = samples;
   std::reverse(reordered.begin(), reordered.end());
   EXPECT_EQ(reordered.front().kernel_name, "second");
@@ -35,6 +35,25 @@ TEST(ProfilingValueTest, TimestampVectorsSupportStandardAlgorithms) {
   reordered.back().metadata.gwg[0] = 32;
   EXPECT_EQ(reordered.back().metadata.gwg[0], 32);
   EXPECT_EQ(samples.front().metadata.gwg[0], 8);
+}
+
+TEST(ProfilingValueTest, OrderViolationsCountOutOfOrderTimestamps) {
+  const vkapi::ShaderMetadata metadata{{1, 1, 1}, {1, 1, 1}};
+  EXPECT_EQ(vkapi::count_order_violations({}), 0u);
+  EXPECT_EQ(
+      vkapi::count_order_violations(
+          {{"a", 1, 2, 3, metadata}, {"b", 3, 4, 5, metadata}}),
+      0u);
+  // Barrier finish after shader execution finish.
+  EXPECT_EQ(
+      vkapi::count_order_violations(
+          {{"a", 1, 4, 3, metadata}, {"b", 5, 6, 7, metadata}}),
+      1u);
+  // The second dispatch's window starts before the first one finishes.
+  EXPECT_EQ(
+      vkapi::count_order_violations(
+          {{"a", 1, 2, 5, metadata}, {"b", 4, 6, 7, metadata}}),
+      1u);
 }
 
 bool timestamps_available(ComputeGraph& graph) {
@@ -108,12 +127,12 @@ TEST_F(ProfilingApiTest, UnfinishedAndUnsubmittedCapturesHaveNoTimestampTicks) {
     context.flush();
     auto recording = context.dispatch_lock();
     context.set_cmd();
-    context.report_shader_dispatch_start(
+    context.report_previous_work_finish(
         "unsubmitted",
         GlobalWorkGrid({1, 1, 1}, kTextureExtentsWorkGrid),
         LocalWorkGroup(1, 1, 1));
     if (complete) {
-      context.report_shader_dispatch_end();
+      context.report_shader_exec_finish();
     }
     EXPECT_TRUE(context.querypool().get_shader_timestamp_ticks().empty());
   }
@@ -167,13 +186,49 @@ TEST_F(ProfilingApiTest, TimestampTogglePreservesExecutionAndArgumentMetadata) {
             return entry.kernel_name.find("binary_op_") == 0;
           });
       ASSERT_NE(target, ticks.end());
-      EXPECT_GE(target->end_ticks, target->start_ticks);
+      EXPECT_GE(
+          target->barrier_finish_ticks, target->previous_work_finish_ticks);
+      EXPECT_GE(target->shader_exec_finish_ticks, target->barrier_finish_ticks);
       EXPECT_GT(target->metadata.gwg[0], 0);
       EXPECT_GT(target->metadata.lwg[0], 0);
     } else {
       EXPECT_TRUE(ticks.empty());
     }
   }
+}
+
+TEST_F(ProfilingApiTest, ProfiledIndependentDispatchesDoNotOverlap) {
+  executorch::runtime::runtime_init();
+  ComputeGraph probe{GraphConfig{}};
+  if (!timestamps_available(probe)) {
+    GTEST_SKIP() << "GPU timestamps are unavailable";
+  }
+  GraphConfig config;
+  config.enable_querypool = true;
+  ComputeGraph graph(config);
+  graph.context()->set_shader_profiling_enabled(true);
+  const std::vector<int64_t> sizes = {1, 64, 64, 64};
+  const auto a = graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+  const auto b = graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+  const auto out_a = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+  const auto out_b = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+  // No data dependency between the two adds, so only profiling serializes
+  // them.
+  VK_GET_OP_FN("aten.add.Tensor")
+  (graph, {a.value, a.value, graph.add_scalar(1.0), out_a});
+  VK_GET_OP_FN("aten.add.Tensor")
+  (graph, {b.value, b.value, graph.add_scalar(1.0), out_b});
+  graph.set_output_tensor(out_a);
+  graph.set_output_tensor(out_b);
+  graph.prepare();
+  graph.prepack();
+  graph.propagate_resize();
+  graph.execute();
+  const auto ticks = graph.context()->querypool().get_shader_timestamp_ticks();
+  ASSERT_GE(ticks.size(), 2);
+  EXPECT_EQ(vkapi::count_order_violations(ticks), 0u);
+  graph.context()->querypool().extract_results();
+  EXPECT_EQ(graph.context()->querypool().num_order_violations(), 0u);
 }
 
 } // namespace
