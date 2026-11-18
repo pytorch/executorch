@@ -456,6 +456,40 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         writes = self._lower(low_memory=False)
         self.assertEqual([writes.count(size) for size in self._SIZES[:2]], [2, 2])
 
+    def test_buffer_resized_per_method_writes_its_own_storage(self) -> None:
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+
+        class _AddBuffer(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("pos", torch.randn(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.pos
+
+        module = _AddBuffer().eval()
+        small = torch.export.export(module, (torch.randn(4),), strict=True)
+        module.register_buffer("pos", torch.randn(8))
+        large = torch.export.export(module, (torch.randn(8),), strict=True)
+
+        def partitioner(name):
+            return [
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec(name)]
+                )
+            ]
+
+        with _counting_writes() as writes:
+            to_edge_transform_and_lower(
+                {"small": small, "large": large},
+                partitioner={name: partitioner(name) for name in ("small", "large")},
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        # Each method's own pos storage: 4 and 8 float32 elements.
+        self.assertEqual(sorted(writes), [4 * 4, 8 * 4])
+
 
 class CudaWeightPerMethodDataTest(unittest.TestCase):
     """Methods of one program may hold different data under one FQN."""
@@ -464,14 +498,24 @@ class CudaWeightPerMethodDataTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
 
-    def _method(self, collector, so_key, tensor):
-        with collector.capture(lambda _: AOTI_DEVICE_TYPE_CPU) as capture:
+    def _method(self, collector, so_key, tensor, mutated_fqns=()):
+        with collector.capture(
+            lambda _: AOTI_DEVICE_TYPE_CPU, mutated_fqns=set(mutated_fqns)
+        ) as capture:
             artifact = collector.materialize(
                 _weights(w=tensor), self.directory.name, capture
             )
         result = _parent_result(so_key)
         collector.add_preprocess_result(result, artifact, "cuda")
         return result
+
+    def test_mutated_buffer_with_different_data_is_rejected(self) -> None:
+        first = torch.arange(6, dtype=torch.float32)
+        second = first + 100
+        collector = CudaWeightCollector()
+        self._method(collector, "so-0", first, mutated_fqns={"w"})
+        with self.assertRaisesRegex(ValueError, "with different data"):
+            self._method(collector, "so-1", second, mutated_fqns={"w"})
 
     def test_same_fqn_with_different_data_is_stored_per_method(self) -> None:
         first = torch.arange(6, dtype=torch.float32).reshape(2, 3)

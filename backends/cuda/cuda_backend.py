@@ -1083,7 +1083,15 @@ class CudaBackend(AotiBackend, BackendDetails):
         compile_specs: List[CompileSpec],
         collector: CudaWeightCollector,
     ) -> PreprocessResult:
-        with collector.capture(_aoti_device_type_for_weight) as capture:
+        signature = getattr(edge_program, "graph_signature", None)
+        mutated_fqns = (
+            set(signature.buffers_to_mutate.values())
+            if signature is not None
+            else set()
+        )
+        with collector.capture(
+            _aoti_device_type_for_weight, mutated_fqns
+        ) as capture:
             result = super().preprocess(edge_program, compile_specs)
         if capture.artifact is None:
             raise RuntimeError("CUDA AOTI did not return a structured Weights output")

@@ -52,8 +52,9 @@ class CudaWeightArtifact:
     # re-read: that relies on the source not changing between methods in ways
     # its version counter misses.
     stored: Dict[str, str] = field(default_factory=dict)
-    # ``id()`` of the collector that materialized this artifact, if any.
-    producer: Optional[int] = None
+    # FQNs this method's graph mutates. Their initial data must agree
+    # across methods, unlike a read-only buffer resized per method.
+    mutated_fqns: Set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,7 @@ class _CudaWeightCapture:
     collector: "CudaWeightCollector"
     device_type_for_weight: Callable[[torch.Tensor], int]
     artifact: Optional[CudaWeightArtifact] = None
+    mutated_fqns: Set[str] = field(default_factory=set)
     # This method's moved storage -> the CPU source it was copied from. The
     # StorageWeakRefs (which hash and compare by address) keep both storage
     # objects, not their data, allocated, so no other storage can take either
@@ -245,6 +247,10 @@ def _storage_key(
     if aoti_library_key is not None:
         fqn = f"{aoti_library_key}:{fqn}"
     return f"cuda_fqn_weight:{device}:{fqn}"
+
+
+def _content_key(storage_key: str, data: FileBackedData) -> str:
+    return f"{storage_key}:{data.sha256().hex()}"
 
 
 def _is_aoti_library_local_fqn(fqn: str) -> bool:
@@ -459,10 +465,10 @@ class CudaWeightCollector:
         # storage is compared with each of them on the device and not written
         # again while it is still allocated.
         self._stored_variants: Dict[str, List[Tuple[torch.Tensor, str]]] = {}
-        # The first content key each storage key was written under, which
-        # ends in its SHA-256. Only used to reject data materialized by
-        # another collector (see ``CudaWeightArtifact.producer``).
-        self._content_keys: Dict[str, str] = {}
+        # The content key each mutated buffer's storage key was first
+        # written under. Mutated buffers must start from the same data in
+        # every method, so a different content key for one is rejected.
+        self._mutated_content_keys: Dict[str, str] = {}
         # The CPU source views each storage key was written from, with the
         # content key of that write. When methods share their CPU weights
         # (low_memory_mode), each moves the same source to the GPU and frees
@@ -476,10 +482,14 @@ class CudaWeightCollector:
 
     @contextlib.contextmanager
     def capture(
-        self, device_type_for_weight: Callable[[torch.Tensor], int]
+        self,
+        device_type_for_weight: Callable[[torch.Tensor], int],
+        mutated_fqns: Optional[Set[str]] = None,
     ) -> Iterator[_CudaWeightCapture]:
         previous = getattr(self._active, "current", None)
-        capture = _CudaWeightCapture(self, device_type_for_weight)
+        capture = _CudaWeightCapture(
+            self, device_type_for_weight, mutated_fqns=set(mutated_fqns or ())
+        )
         self._active.current = capture
         try:
             yield capture
@@ -591,7 +601,10 @@ class CudaWeightCollector:
 
         trim_host_memory()
         return CudaWeightArtifact(
-            entries=entries, storages=storages, stored=stored, producer=id(self)
+            entries=entries,
+            storages=storages,
+            stored=stored,
+            mutated_fqns=set(capture.mutated_fqns),
         )
 
     def _write_or_reuse_storage(
@@ -631,18 +644,15 @@ class CudaWeightCollector:
                     return
         data = _materialize_storage(tensor, directory)
         storages[storage_key] = data
-        content_key = f"{storage_key}:{data.sha256().hex()}"
+        content_key = _content_key(storage_key, data)
         if shareable:
             self._stored_variants.setdefault(storage_key, []).append(
                 (tensor, content_key)
             )
         if moved is not None:
-            variants = self._written_source_variants.setdefault(storage_key, [])
-            if not any(
-                written.identity == moved.identity and not written.source.expired()
-                for written, _ in variants
-            ):
-                variants.append((moved, content_key))
+            self._written_source_variants.setdefault(storage_key, []).append(
+                (moved, content_key)
+            )
 
     def _merge_aoti_data(
         self,
@@ -731,26 +741,34 @@ class CudaWeightCollector:
                 # Programs can write their weights to the same file name, so the
                 # key carries the content: another program's file then fails to
                 # load instead of running this program with its weights. One
-                # program's methods may hold different data under one FQN (a
-                # buffer resized per method), so data materialized by this
-                # collector is stored under its own content key per method;
-                # data from another collector is still rejected. This applies
-                # to mutated buffers too: different initial bytes per method
-                # keep separate state instead of failing the export.
-                content_key = f"{entry.storage_key}:{data.sha256().hex()}"
-                if (
-                    self._content_keys.setdefault(entry.storage_key, content_key)
-                    != content_key
-                    and artifact.producer != id(self)
-                ):
-                    data.close()
-                    raise ValueError(
-                        f"CUDA FQN weight {entry.fqn!r} is stored with different data"
+                # FQN may hold different data per method (a buffer resized per
+                # method), each stored under its own content key. A mutated
+                # buffer is the exception: its initial data must agree across
+                # methods, since the methods share its runtime state.
+                content_key = _content_key(entry.storage_key, data)
+                if entry.fqn in artifact.mutated_fqns:
+                    known = self._mutated_content_keys.setdefault(
+                        entry.storage_key, content_key
                     )
+                    if known != content_key:
+                        data.close()
+                        raise ValueError(
+                            f"CUDA FQN weight {entry.fqn!r} is stored with "
+                            "different data"
+                        )
                 entry = replace(entry, storage_key=content_key)
                 self._add_weight(entry, data, external_tag)
             elif entry.storage_key in artifact.stored:
                 content_key = artifact.stored[entry.storage_key]
+                if entry.fqn in artifact.mutated_fqns:
+                    known = self._mutated_content_keys.setdefault(
+                        entry.storage_key, content_key
+                    )
+                    if known != content_key:
+                        raise ValueError(
+                            f"CUDA FQN weight {entry.fqn!r} is stored with "
+                            "different data"
+                        )
                 if content_key not in self._store.key_to_buffer_idx:
                     raise RuntimeError(
                         f"CUDA FQN weight {entry.fqn!r} was reused but never stored"
@@ -771,5 +789,5 @@ class CudaWeightCollector:
         for result in self._results:
             result.data_store_output = shared_output
         self._stored_variants.clear()
-        self._content_keys.clear()
+        self._mutated_content_keys.clear()
         self._written_source_variants.clear()
