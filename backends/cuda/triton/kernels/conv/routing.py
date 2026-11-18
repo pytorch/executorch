@@ -7,17 +7,17 @@
 """Which conv nodes become ``triton::convolution``.
 
 ``plan(node)`` is the replacement pass's preflight for convolutions
-(see ``triton/routing.py``): it binds the node's arguments, checks the
-templates' ``supports()``, and classifies the node without touching the graph.
-The replacement produces exactly the output strides the node recorded, which
-must be a dense layout. ``OPTIONAL`` means a template runs it, its
-``worth_routing`` (the measured range where it beats the regular lowering)
-accepts it, and the regular lowering could run it too; ``REQUIRED`` means a
-template runs it and the regular lowering cannot.
+(see ``triton/routing.py``): it binds the node's arguments and lists the two
+implementations without touching the graph. ``triton::convolution`` can run
+the call if a template's ``supports()`` accepts it; it produces exactly the
+output strides the node recorded, which must be a dense layout. The regular
+lowering can run it unless ``regular_lowering_gap`` knows it cannot. The
+static choice is the replacement where the regular lowering cannot run the
+call or a template's ``worth_routing`` (the range where it beats the regular
+lowering) accepts it.
 
-A failure while planning follows the same contract: it raises
-``ReplacementError`` when the regular lowering cannot compile the node, and
-otherwise leaves the node unchanged.
+A failure while planning raises ``ReplacementError`` when the regular
+lowering cannot compile the node, and otherwise leaves the node unchanged.
 """
 
 from __future__ import annotations
@@ -36,19 +36,16 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     out_shape_and_stride,
 )
 from executorch.backends.cuda.triton.routing import (
+    Candidate,
+    REGULAR_LOWERING,
+    regular_only,
     ReplacementError,
     ReplacementPlan,
-    Route,
-    unsupported,
 )
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-
-def _unsupported(reason: str) -> ReplacementPlan:
-    return unsupported("conv", reason)
 
 
 def regular_lowering_gap(target: Any, call: ConvCall) -> Optional[str]:
@@ -83,41 +80,55 @@ def _is_static(t: Optional[torch.Tensor]) -> bool:
     )
 
 
-def _check(node: Node, call: ConvCall, gap: Optional[str]) -> ReplacementPlan:
-    """An UNSUPPORTED plan, or an OPTIONAL one labelled with the template."""
+@dataclasses.dataclass(frozen=True)
+class _Support:
+    # The first template that runs the call, and the first that is also
+    # worth routing it to (its static range accepts it).
+    template: Optional[str] = None
+    worth: Optional[str] = None
+    # Why no template runs it, or why none is worth it.
+    reason: str = ""
+
+
+def _check(node: Node, call: ConvCall) -> _Support:
     expected = node.meta.get("val")
     if not all(_is_static(t) for t in (call.input, call.weight, call.bias, expected)):
-        return _unsupported("symbolic shapes or missing fake tensors")
+        return _Support(reason="symbolic shapes or missing fake tensors")
     if call.input.device.type != "cuda":
-        return _unsupported(f"input on {call.input.device}")
+        return _Support(reason=f"input on {call.input.device}")
     if not dense_strides(expected.shape, expected.stride()):
-        return _unsupported(
-            f"the node's output strides {list(expected.stride())} are not a "
+        return _Support(
+            reason=f"the node's output strides {list(expected.stride())} are not a "
             "dense layout"
         )
     size, _ = out_shape_and_stride(call)
     if size != tuple(expected.shape):
-        return _unsupported(
-            f"output size {list(size)} differs from the node's {list(expected.shape)}"
+        return _Support(
+            reason=f"output size {list(size)} differs from the node's "
+            f"{list(expected.shape)}"
         )
     call = dataclasses.replace(call, output_strides=tuple(expected.stride()))
-    reasons = []
+    reasons, not_worth = [], []
+    first = None
     for template in TEMPLATES:
         reason = template.supports(call)
-        # A call the regular lowering cannot compile is routed whenever a
-        # template runs it; otherwise only where the template is worth it.
-        if reason is None and gap is None:
-            reason = template.worth_routing(call)
-        if reason is None:
-            return ReplacementPlan(Route.OPTIONAL, "", "conv", template.name)
-        reasons.append(reason)
-    return _unsupported(f"no template takes it: {'; '.join(reasons)}")
+        if reason is not None:
+            reasons.append(reason)
+            continue
+        first = first or template.name
+        worth = template.worth_routing(call)
+        if worth is None:
+            return _Support(first, template.name)
+        not_worth.append(worth)
+    if first is None:
+        return _Support(reason=f"no template takes it: {'; '.join(reasons)}")
+    return _Support(first, reason="; ".join(reasons + not_worth))
 
 
 def plan(node: Node) -> ReplacementPlan:
-    """Classifies a conv node; never changes the graph."""
+    """The implementations of a conv node; never changes the graph."""
     if torch.version.hip is not None:
-        return _unsupported("ROCm")
+        return regular_only("conv", "ROCm")
 
     def value(arg: Any) -> Any:
         return arg.meta.get("val") if isinstance(arg, Node) else arg
@@ -128,32 +139,42 @@ def plan(node: Node) -> ReplacementPlan:
         )
         call = ConvCall(value(input), value(weight), value(bias), params)
     except Exception as e:  # noqa: BLE001 - nothing is classified yet
-        return _unsupported(f"cannot bind arguments: {e!r}")
+        return regular_only("conv", f"cannot bind arguments: {e!r}")
     gap = regular_lowering_gap(node.target, call)
     try:
-        result = _check(node, call, gap)
+        support = _check(node, call)
     except Exception as e:
         if gap is not None:
             raise ReplacementError(
                 f"{call.signature()} ({gap}): preflight failed: {e!r}"
             ) from e
         logger.warning("Conv preflight failed for %s: %r", node.name, e)
-        return _unsupported(f"preflight failed: {e!r}")
-    if result.route is Route.UNSUPPORTED:
-        if gap is not None:
-            result = _unsupported(f"{result.reason}; regular lowering: {gap}")
-        return result
-    route = Route.OPTIONAL if gap is None else Route.REQUIRED
+        return regular_only("conv", f"preflight failed: {e!r}")
+    regular = Candidate(REGULAR_LOWERING, gap)
+    if support.template is None:
+        return ReplacementPlan(
+            "conv",
+            (regular, Candidate("conv", support.reason)),
+            signature=call.signature(),
+        )
     # The output follows the strides the node recorded.
     call = dataclasses.replace(call, output_strides=tuple(node.meta["val"].stride()))
-    return ReplacementPlan(
-        route,
-        gap or "",
+    label = support.worth if gap is None and support.worth else support.template
+    replacement = Candidate(
         "conv",
-        f"{result.label} template",
+        None,
+        f"{label} template",
         torch.ops.triton.convolution.default,
         (input, weight, bias, *_canonical_args(params), list(call.output_strides)),
+    )
+    worth = gap is not None or support.worth is not None
+    return ReplacementPlan(
+        "conv",
+        (regular, replacement),
+        "conv" if worth else REGULAR_LOWERING,
+        support.reason,
         call.signature(),
+        measure=True,
     )
 
 

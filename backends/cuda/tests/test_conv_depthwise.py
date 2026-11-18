@@ -484,8 +484,10 @@ class DepthwiseLoweringTest(unittest.TestCase):
             self.skipTest("CUDA required")
 
     def test_depthwise_block_lowers_and_runs(self):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.backends.cuda.tests.routing_test_utils import (
+            static_routing_compile_specs,
+        )
         from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
         torch.manual_seed(0)
@@ -496,15 +498,11 @@ class DepthwiseLoweringTest(unittest.TestCase):
         with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
             edge = to_edge_transform_and_lower(
                 program,
-                partitioner=[
-                    CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec("forward")]
-                    )
-                ],
+                partitioner=[CudaPartitioner(static_routing_compile_specs())],
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
         output = "\n".join(logs.output)
-        self.assertEqual(output.count("(optional, direct template)"), 2)
+        self.assertEqual(output.count("(direct template)"), 2)
         self.assertIn("Skipping conv replacement", output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
 
@@ -529,8 +527,10 @@ class DepthwiseLoweringTest(unittest.TestCase):
         torch.testing.assert_close(output, expected.cpu(), atol=1e-4, rtol=1e-4)
 
     def test_grouped_block_lowers_and_runs_with_both_apis(self):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.backends.cuda.tests.routing_test_utils import (
+            static_routing_compile_specs,
+        )
         from executorch.exir import (
             EdgeCompileConfig,
             to_edge,
@@ -547,9 +547,7 @@ class DepthwiseLoweringTest(unittest.TestCase):
         config = EdgeCompileConfig(_check_ir_validity=False)
         for api in ("to_edge_transform_and_lower", "to_edge_to_backend"):
             with self.subTest(api=api):
-                partitioner = CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
-                )
+                partitioner = CudaPartitioner(static_routing_compile_specs())
                 with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
                     if api == "to_edge_transform_and_lower":
                         edge = to_edge_transform_and_lower(
@@ -560,7 +558,7 @@ class DepthwiseLoweringTest(unittest.TestCase):
                             partitioner
                         )
                 output = "\n".join(logs.output)
-                self.assertEqual(output.count("(optional, direct template)"), 3)
+                self.assertEqual(output.count("(direct template)"), 3)
                 self.assertIn("Replaced 3 nodes with Triton kernels", output)
                 if is_fbcode():
                     # Running the program is skipped in fbcode.
