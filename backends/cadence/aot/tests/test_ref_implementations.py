@@ -1906,6 +1906,51 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
+            ("stride2", 1, 2, 4),
+            ("stride1", 1, 1, 4),
+            ("batch2", 2, 2, 4),
+            ("out_channels1", 1, 2, 1),
+        ]
+    )
+    def test_quantized_w8a32_transpose_conv2d_matches_float(
+        self, name: str, batch: int, stride_w: int, out_channels: int
+    ) -> None:
+        # NHWC input and OHWI weights against aten conv_transpose2d on the
+        # dequantized weights in NCHW.
+        torch.manual_seed(0)
+        in_channels, kernel_w = 8, 3
+        x = torch.randn(batch, 1, 5, in_channels)
+        weight = torch.randint(
+            -127, 128, (out_channels, 1, kernel_w, in_channels), dtype=torch.int8
+        )
+        bias = torch.randint(-127, 128, (out_channels,), dtype=torch.int8)
+        w_scale, b_scale = 0.01, 0.005
+
+        output = torch.ops.cadence.quantized_w8a32_transpose_conv2d(
+            x, weight, w_scale, bias, b_scale, stride_w
+        )
+
+        expected = torch.nn.functional.conv_transpose2d(
+            x.permute(0, 3, 1, 2),
+            weight.float().permute(3, 0, 1, 2) * w_scale,
+            bias.float() * b_scale,
+            stride=(1, stride_w),
+        ).permute(0, 2, 3, 1)
+        torch.testing.assert_close(output, expected, rtol=1e-5, atol=1e-5)
+
+    def test_quantized_w8a32_transpose_conv2d_invalid_in_channels(self) -> None:
+        input_tensor = torch.zeros((1, 1, 4, 3), dtype=torch.float32)
+        weight = torch.zeros((4, 1, 2, 3), dtype=torch.int8)
+        bias = torch.zeros(4, dtype=torch.int8)
+        with self.assertRaisesRegex(
+            AssertionError, "in_channels must be multiple of 4"
+        ):
+            torch.ops.cadence.quantized_w8a32_transpose_conv2d(
+                input_tensor, weight, 1.0, bias, 1.0, 2
+            )
+
+    @expand(
+        [
             # Test case 1: Basic int8 case with negative scale
             *[
                 (
