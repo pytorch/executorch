@@ -1118,9 +1118,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         cls, edge_program: Any, compile_specs: List[CompileSpec]
     ) -> PreprocessResult:
         """Compile one CUDA method with its own weight collector."""
-        collector = CudaWeightCollector(
-            set(edge_program.graph_signature.buffers_to_mutate.values())
-        )
+        collector = CudaWeightCollector()
         result = cls._preprocess_with_weight_collector(
             edge_program, compile_specs, collector
         )

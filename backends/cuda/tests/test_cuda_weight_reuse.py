@@ -334,26 +334,24 @@ class CudaWeightReuseTest(unittest.TestCase):
         )
         self._assert_stored_per_method(collector, first_result, second_result)
 
-    def test_a_freed_written_source_lets_a_live_source_take_over(self) -> None:
+    def test_a_new_source_with_the_same_bytes_is_reused_by_source(self) -> None:
         collector = CudaWeightCollector()
         first = torch.randn(256, 8)
         with _counting_writes() as writes:
             self._moved_method(collector, "so-0", {"w": first})
             shared = first.clone()
-            del first
             self._moved_method(collector, "so-1", {"w": shared})
             self._moved_method(collector, "so-2", {"w": shared})
         self.assertEqual(len(writes), 2)
 
     def test_reuse_after_divergence_binds_to_the_matched_write(self) -> None:
-        # so-1 takes the key over from a freed source with different data;
-        # so-2 reuses so-1's source and must bind to so-1's write, not so-0's.
+        # so-1 writes different data than so-0; so-2 reuses so-1's
+        # source and must bind to so-1's write, not so-0's.
         collector = CudaWeightCollector()
         first = torch.randn(256, 8)
         with _counting_writes() as writes:
             _, first_result = self._moved_method(collector, "so-0", {"w": first})
             shared = first + 1
-            del first
             _, second_result = self._moved_method(collector, "so-1", {"w": shared})
             _, third_result = self._moved_method(collector, "so-2", {"w": shared})
         self.assertEqual(len(writes), 2)
@@ -495,22 +493,22 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         class _AddBuffer(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.register_buffer("pos", torch.randn(4))
+                self.register_buffer("pos", torch.randn(16))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x + self.pos
 
         module = _AddBuffer().eval()
-        small = torch.export.export(module, (torch.randn(4),), strict=True)
-        module.register_buffer("pos", torch.randn(8))
-        large = torch.export.export(module, (torch.randn(8),), strict=True)
+        small = torch.export.export(module, (torch.randn(16),), strict=True)
+        module.register_buffer("pos", torch.randn(32))
+        large = torch.export.export(module, (torch.randn(32),), strict=True)
 
         writes, manifests = self._lower_programs({"small": small, "large": large})
-        self.assertEqual(sorted(writes), [4 * 4, 8 * 4])
+        self.assertEqual(sorted(writes), [16 * 4, 32 * 4])
         small_entry = self._entry(manifests[0], "pos")
         large_entry = self._entry(manifests[1], "pos")
         self.assertEqual(
-            (small_entry.storage_nbytes, large_entry.storage_nbytes), (16, 32)
+            (small_entry.storage_nbytes, large_entry.storage_nbytes), (64, 128)
         )
         self.assertNotEqual(small_entry.storage_key, large_entry.storage_key)
 
@@ -518,7 +516,7 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         class _StateWriter(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.register_buffer("state", torch.zeros(4))
+                self.register_buffer("state", torch.zeros(16))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 self.state.add_(1)
@@ -527,13 +525,13 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         class _StateReader(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.register_buffer("state", torch.zeros(4))
+                self.register_buffer("state", torch.zeros(16))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x + self.state
 
         def export(module):
-            return torch.export.export(module.eval(), (torch.randn(4),), strict=True)
+            return torch.export.export(module.eval(), (torch.randn(16),), strict=True)
 
         # Same initial data: both manifests name one content key.
         writer = _StateWriter()
@@ -548,7 +546,7 @@ class CudaWeightReuseExportTest(unittest.TestCase):
         # Different initial data between two mutating methods: rejected.
         writer = _StateWriter()
         first = export(writer)
-        writer.register_buffer("state", torch.ones(4))
+        writer.register_buffer("state", torch.ones(16))
         with self.assertRaisesRegex(Exception, "same initial data"):
             self._lower_programs({"a": first, "b": export(writer)})
 
@@ -557,7 +555,7 @@ class CudaWeightReuseExportTest(unittest.TestCase):
             with self.subTest(order=names):
                 writer = _StateWriter()
                 reader = _StateReader()
-                reader.register_buffer("state", torch.ones(4))
+                reader.register_buffer("state", torch.ones(16))
                 programs = {
                     "writer": export(writer),
                     "reader": export(reader),

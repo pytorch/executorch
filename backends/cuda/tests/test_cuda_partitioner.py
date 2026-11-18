@@ -403,10 +403,6 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             collector.add_preprocess_result(second_result, second_artifact, "cuda")
             collector.finish()
 
-            from executorch.backends.cuda.cuda_weight_collector import (
-                decode_cuda_aoti_metadata,
-            )
-
             first_entry = decode_cuda_aoti_metadata(
                 first_result.processed_bytes
             ).entries[0]
@@ -415,20 +411,17 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             ).entries[0]
             self.assertNotEqual(first_entry.storage_key, second_entry.storage_key)
             stored = {
-                key: collector._store.buffers[index]
+                key: (
+                    buffer if isinstance(buffer, bytes) else buffer.to_bytes()
+                )
                 for key, index in collector._store.key_to_buffer_idx.items()
+                for buffer in (collector._store.buffers[index],)
             }
             self.assertEqual(
-                bytes(stored[first_entry.storage_key])
-                if isinstance(stored[first_entry.storage_key], bytes)
-                else stored[first_entry.storage_key].to_bytes(),
-                bytes(first.untyped_storage()),
+                stored[first_entry.storage_key], bytes(first.untyped_storage())
             )
             self.assertEqual(
-                bytes(stored[second_entry.storage_key])
-                if isinstance(stored[second_entry.storage_key], bytes)
-                else stored[second_entry.storage_key].to_bytes(),
-                bytes(second.untyped_storage()),
+                stored[second_entry.storage_key], bytes(second.untyped_storage())
             )
 
             for artifact in (first_artifact, second_artifact):
