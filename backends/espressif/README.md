@@ -15,6 +15,10 @@ Each delegate payload is a compact int8 graph (XTS3) that the delegate's
 interpreter executes. A host reference interpreter reproduces the device
 arithmetic, so fully delegated programs are checked bit-exactly.
 
+The full documentation, including the operator constraints, quantization,
+troubleshooting and a tutorial, is in
+[`docs/source/backends/espressif`](../../docs/source/backends/espressif/espressif-overview.md).
+
 ## Contents
 
 ```
@@ -44,9 +48,9 @@ symmetric weights, as annotated by `EspNNQuantizer`.
 
 | Group | Operators |
 |---|---|
-| Convolution | `conv2d` (any stride and padding, groups 1 or depthwise, dilation through phase decomposition), `conv_transpose2d`, `linear` |
+| Convolution | `conv2d` (any stride and padding, groups 1, grouped or depthwise, dilation through phase decomposition), `conv_transpose2d`, `linear` |
 | Activations | `relu`, `relu6`, `hardtanh`, plus table lookups for `hardswish`, `hardsigmoid`, `sigmoid`, `silu`, `tanh`, `gelu`, `elu`, `leaky_relu` |
-| Elementwise | `add`, `mul` (with broadcasting), `softmax` (last dim) |
+| Elementwise | `add`, `mul` (with broadcasting), `softmax` (dim 1 of batch-1 rank-2 or rank-4 tensors) |
 | Pooling | `max_pool2d`, `avg_pool2d`, `adaptive_avg_pool2d`, `mean` over H and W |
 | Resize | `upsample_nearest2d`, `upsample_bilinear2d` (`align_corners` either way) |
 | Data movement | `reshape`, `view`, `flatten`, `unflatten`, `permute`, `transpose`, `squeeze`, `unsqueeze`, `slice`, `select`, `expand`, `pad`, `cat`, `stack`, `split`, `chunk`, `unbind` |
