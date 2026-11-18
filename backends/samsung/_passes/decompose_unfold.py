@@ -57,28 +57,17 @@ class _UnfoldDecoder(torch.nn.Module):
                 s = torch.ops.aten.slice.Tensor(x_reshaped, self.dim, i, i + U, 1)
                 slices.append(s)
             # Cat along the S axis -> [..., U, N*S=C, ...]
-            windows = [torch.cat(slices, dim=self.dim + 1)]
+            out = torch.cat(slices, dim=self.dim + 1)
         else:
-            # General case: slice each window directly
+            # General case: slice each window directly, then stack the
+            # [..., C, ...] windows along a new U axis.
             windows = []
             for u in range(U):
                 w = torch.ops.aten.slice.Tensor(
                     x, self.dim, u * self.S, u * self.S + self.C, 1
                 )
-                windows.append(w)
-
-        # unsqueeze + cat
-        # For the C==N*S optimized path, windows is a single pre-concatenated
-        # tensor of shape [..., U, C, ...] — no extra unsqueeze needed.
-        # For the general path, windows contains U tensors of shape [..., C, ...].
-        if len(windows) == 1 and windows[0].shape[self.dim] == U:
-            # C==N*S path: already [..., U, C, ...], skip unsqueeze+cat
-            out = windows[0]
-        elif len(windows) == 1:
-            out = windows[0].unsqueeze(self.dim)
-        else:
-            windows_us = [w.unsqueeze(self.dim) for w in windows]
-            out = torch.cat(windows_us, dim=self.dim)
+                windows.append(w.unsqueeze(self.dim))
+            out = torch.cat(windows, dim=self.dim)
 
         # permute: [..., U, C, post] -> [..., U, post, C]
         rank = len(out.shape)

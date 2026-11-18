@@ -162,6 +162,12 @@ class EnnBackend(BackendDetails):
                 )
             preprocess_results[method_name] = preprocess_results_for_method
 
+        # Methods may differ in partition count (e.g. encoders vs. decoder
+        # methods), but every weight-sharing GEN partition needs a USE one.
+        assert (
+            not gen_compile_specs
+        ), "WEIGHT_SHARING_GEN partitions are left without a WEIGHT_SHARING_USE partition!"
+
         # Set the same data_store_output for all PreprocessResults
         for method_name in preprocess_results:
             for result in preprocess_results[method_name]:

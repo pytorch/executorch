@@ -146,11 +146,10 @@ def annotate_cat(node: Node, quant_config: QuantizationConfig) -> None:
         _annotated=True,
     )
 
-    second_input = inputs[1]
-    if "quantization_annotation" in second_input.meta:
-        second_input.meta["quantization_annotation"].output_qspec = (
-            quant_config.input_activation
-        )
+    if len(inputs) > 1 and "quantization_annotation" in inputs[1].meta:
+        inputs[1].meta[
+            "quantization_annotation"
+        ].output_qspec = quant_config.input_activation
 
 
 def annotate_index_put(node: Node, quant_config: QuantizationConfig) -> None:
@@ -436,52 +435,3 @@ def custom_annotate_gemma3_a16w4(gm: torch.fx.GraphModule) -> None:
             if "quantization_annotation" in node.meta:
                 del node.meta["quantization_annotation"]
             OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)
-
-
-def custom_annotate_gemma_a16w4(gm: torch.fx.GraphModule) -> None:
-    # Annotate 16a8w for matmul op to get better performance
-    quant_config_a16w8 = get_a16w8_enn_quant_config(
-        is_per_channel=False,
-        is_qat=False,
-        act_symmetric=False,
-        wei_symmetric=False,
-        act_observer_cls=HistogramObserver,
-    )
-    # Annotate 8a8w for second input of matmul until past_kv_cache
-    quant_config_a8w8 = get_a8w8_enn_quant_config(
-        is_per_channel=False,
-        is_qat=False,
-        act_symmetric=True,
-        wei_symmetric=True,
-        act_observer_cls=HistogramObserver,
-    )
-    # Annotate 16a8w for lm_head op to get better performance
-    quant_config_a16w8_linear = get_a16w8_enn_quant_config(
-        is_per_channel=True,
-        is_qat=False,
-        act_symmetric=False,
-        wei_symmetric=True,
-        act_observer_cls=HistogramObserver,
-    )
-
-    for node in gm.graph.nodes:
-        # Changing Quant from index_put to input of Matmul to support Mixed precision.
-        if (
-            node.op == "call_function"
-            and node.target == torch.ops.aten.matmul.default
-            and (
-                node.args[0].op == "call_function"
-                and node.args[1].op == "call_function"
-            )
-        ):
-            annotate_2in1out_for_mul(node, quant_config_a16w8)  # for matmul op
-            annotate_from_index_put_to_matmul_input(node.args[1], quant_config_a8w8)
-
-        # added for Gemma3-1b <----------------------------------------------------
-        # last linear op is A16W4 --> A16W8 <--------------------------------------
-        if node.op == "call_function" and node.target == torch.ops.aten.linear.default:
-            name = node.args[1]
-            if str(name) == "lm_head_weight":
-                if "quantization_annotation" in node.meta:
-                    del node.meta["quantization_annotation"]
-                OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)

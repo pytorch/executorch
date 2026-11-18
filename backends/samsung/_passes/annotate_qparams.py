@@ -311,7 +311,9 @@ class AnnotateQparamsPass(ExportPass):
         new_partitions = []
 
         for partition in original_partitions:
-            bmm_nodes = [n for n in partition.nodes if "bmm" in n.name]
+            bmm_nodes = [
+                n for n in partition.nodes if n.target == exir_ops.edge.aten.bmm.default
+            ]
 
             if len(bmm_nodes) <= 1:
                 new_partitions.append(partition)
@@ -334,6 +336,8 @@ class AnnotateQparamsPass(ExportPass):
                     if any(user in sub_nodes for user in n.users)
                 ]
                 sub_outputs = [n for n in partition.output_nodes if n in sub_nodes]
+                if not sub_outputs:
+                    continue
 
                 new_part = SourcePartition(
                     nodes=list(sub_nodes),
