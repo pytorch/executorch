@@ -24,7 +24,9 @@ Json build_sdpa_route(
   const char* name = Override == kShaderOverrideForceGqa ? "gqa"
       : Override == kShaderOverrideForceTile2            ? "gqa_tile2"
       : Override == kShaderOverrideForceBase             ? "gqa_base"
-                                                         : "non_gqa";
+      : Override == kShaderOverrideForceSeparateQkSoftmax
+      ? "separate_qk_softmax"
+      : "non_gqa";
   return {{"name", name}, {"options", options}};
 }
 
@@ -45,6 +47,10 @@ REGISTER_OPERATOR_ROUTES {
       llama.custom_sdpa.default,
       gqa_base,
       (build_sdpa_route<kShaderOverrideForceBase>));
+  REGISTER_OPERATOR_ROUTE(
+      llama.custom_sdpa.default,
+      separate_qk_softmax,
+      (build_sdpa_route<kShaderOverrideForceSeparateQkSoftmax>));
 }
 
 } // namespace

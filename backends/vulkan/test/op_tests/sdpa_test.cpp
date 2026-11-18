@@ -1124,6 +1124,24 @@ TEST(VulkanSDPATest, test_sdpa_op_unaligned_head_dim) {
   test_vulkan_sdpa(0, {3, 1, 1, 2}, head_dim, num_heads, num_kv_heads, 1);
 }
 
+// Decode within 256 tokens of context is served by the fused QK+softmax node,
+// and beyond it by the separate attn-weights and softmax pair. These decode
+// steps cross that cutoff, so one graph switches paths on resize.
+const std::vector<int> kDecodeAcrossFusedCutoff =
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+
+TEST(VulkanSDPATest, test_sdpa_op_decode_crosses_fused_cutoff) {
+  test_vulkan_sdpa(250, kDecodeAcrossFusedCutoff, 64, 8, 2, 1);
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_decode_crosses_fused_cutoff_fp16) {
+  test_vulkan_sdpa(250, kDecodeAcrossFusedCutoff, 64, 8, 2, 1, at::kHalf);
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_decode_crosses_fused_cutoff_unaligned_dim) {
+  test_vulkan_sdpa(250, kDecodeAcrossFusedCutoff, 6, 4, 2, 1);
+}
+
 // q, k and v arrive with NaN in their head_dim padding, as when the ops that
 // produce them leave padding unwritten. Only the logical head_dim may be read.
 void test_vulkan_sdpa_ignores_head_dim_padding(const int seq_len) {

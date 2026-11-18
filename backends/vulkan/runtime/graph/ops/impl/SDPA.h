@@ -54,6 +54,7 @@ constexpr int64_t kShaderOverrideForceNonGqa = 0;
 constexpr int64_t kShaderOverrideForceGqa = 1;
 constexpr int64_t kShaderOverrideForceTile2 = 2;
 constexpr int64_t kShaderOverrideForceBase = 3;
+constexpr int64_t kShaderOverrideForceSeparateQkSoftmax = 4;
 
 // shader_override: test-only knob selecting the single-token decode AV shader.
 // It is a ValueRef holding one of the kShaderOverride* int64 scalars above, or
@@ -69,6 +70,11 @@ constexpr int64_t kShaderOverrideForceBase = 3;
 //                             variant (tile2 on Adreno).
 //   kShaderOverrideForceTile2  — force the tiled variant regardless of vendor.
 //   kShaderOverrideForceBase   — force the base variant regardless of vendor.
+//   kShaderOverrideForceSeparateQkSoftmax — keep the decode AV shader on auto,
+//                             but serve a short decode context with the
+//                             separate attn-weights and softmax nodes instead
+//                             of the fused QK+softmax node, to A/B the fusion
+//                             on one shape. Only sdpa_impl reads it.
 // Lets the benchmark/test exercise every AV shader on the same shape, and gives
 // the Adreno-only tile2 variant deterministic coverage on any device. Forcing
 // the GQA family requires a GQA-eligible shape (Hq divisible by Hkv, group size
