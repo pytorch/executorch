@@ -27,7 +27,7 @@ if EXECUTORCH_ROOT_DIR not in sys.path:
 
 import torch
 
-from executorch.backends.arm.scripts.aot_arm_compiler import (
+from executorch.backends.arm.scripts.aot_arm_compiler_backend import (
     CALIBRATION_MAX_SAMPLES,
     dump_delegation_info,
     get_model_and_inputs_from_name,
