@@ -123,7 +123,7 @@ if [[ "$FLOW" == *nxp* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON"
 
     # Some operator tests (e.g. LSTM) exceed the default 120 s limit on CI runners.
-    export EXECUTORCH_OPERATORS_TEST_TIMEOUT_S=240
+    export EXECUTORCH_OPERATORS_TEST_TIMEOUT_S="${EXECUTORCH_OPERATORS_TEST_TIMEOUT_S:-240}"
 fi
 
 if [[ "$FLOW" == *openvino* ]]; then
