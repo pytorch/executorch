@@ -7,12 +7,17 @@ from typing import cast, Dict, Protocol, Tuple
 
 import torch
 
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm.test import common
-
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineINT,
 )
+
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import Dim, export
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -131,3 +136,44 @@ def test_decompose_mean_dim_u55_INT(module: ModuleWithMeanAttrs) -> None:
 
     pipeline.dump_artifact("quantize")
     pipeline.run()
+
+
+def test_decompose_mean_dim_materializes_intermediate_dynamic_shapes() -> None:
+    class MeanRank3(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x.mean((0,), False)
+
+    class MeanRank5(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x.mean((2,), False)
+
+    cases = (
+        (
+            MeanRank3(),
+            (torch.rand(2, 3, 4),),
+            {"x": {1: Dim("height", min=1, max=8)}},
+        ),
+        (
+            MeanRank5(),
+            (torch.rand(2, 3, 4, 5, 6),),
+            {"x": {1: Dim("height", min=1, max=8)}},
+        ),
+    )
+    tosa_spec = TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
+
+    for module, inputs, dynamic_shapes in cases:
+        edge_model = to_edge(export(module, inputs, dynamic_shapes=dynamic_shapes))
+        graph_module = edge_model.exported_program().graph_module
+        result = DecomposeMeanDimPass(graph_module, tosa_spec)(graph_module)
+        assert result is not None
+
+        view_nodes = [
+            node
+            for node in result.graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.view_copy.default
+        ]
+        assert view_nodes
+        assert all(
+            not any(isinstance(dim, torch.SymInt) for dim in node.args[1])
+            for node in view_nodes
+        )

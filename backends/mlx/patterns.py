@@ -123,6 +123,10 @@ def _int4_qparams_lower(qdata_node: Node, scale_node: Node, group_size: int) -> 
 class IndexCopyHandler(PatternHandler):
     """
     Pattern for index-based updates on mutable buffers.
+
+    Only a buffer the method mutates is written in place: the delegate owns it
+    across calls. A mutated user input's index_copy is left to the functional
+    handler, and its result is written back to the input afterwards.
     """
 
     def __init__(
@@ -148,10 +152,8 @@ class IndexCopyHandler(PatternHandler):
         if not match_target(index_copy_node, torch.ops.aten.index_copy.default):
             return None
 
-        # index_copy should write to a mutable input/buffer to be an index update.
-        if (index_copy_node.name not in ep.graph_signature.buffers_to_mutate) and (
-            index_copy_node.name not in ep.graph_signature.user_inputs_to_mutate
-        ):
+        # index_copy should write to a mutable buffer to be an index update.
+        if index_copy_node.name not in ep.graph_signature.buffers_to_mutate:
             return None
 
         # index_copy(dst, axis, indices, update)
@@ -992,7 +994,6 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
         x_node, w_node = n.args[0:2]
         b_node = n.args[2] if len(n.args) > 2 else None
 
-        needs_cast = x_node.meta["val"].dtype != self.output_dtype
         has_bias = b_node is not None
         has_per_tensor_scale = True
 
@@ -1004,6 +1005,18 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
         if not isinstance(per_tensor_scale_value, FakeTensor):
             if per_tensor_scale_value.item() == 1.0:
                 has_per_tensor_scale = False
+
+        # Unlike PyTorch's scalar multiplication, MLX promotes a bf16 result
+        # times a 0-dim float32 scale to float32. Account for bias promotion too,
+        # then restore the output dtype before subsequent ops consume it.
+        result_dtype = x_node.meta["val"].dtype
+        if has_per_tensor_scale:
+            result_dtype = torch.promote_types(
+                result_dtype, per_tensor_scale_value.dtype
+            )
+        if has_bias:
+            result_dtype = torch.promote_types(result_dtype, b_node.meta["val"].dtype)
+        needs_cast = result_dtype != self.output_dtype
 
         x, w, scales, bias, per_tensor_scale = P.slot_map(
             [x_node, self.qdata, self.scale, b_node, self.per_tensor_scale]

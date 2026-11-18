@@ -411,6 +411,20 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         return True
 
 
+# Ops whose second operand contributes only its shape, never its values, so it
+# must not be tied into the shared qparams of the first.
+_SHAPE_AS_OPS = {
+    torch.ops.aten.expand_as.default,
+    torch.ops.aten.view_as.default,
+}
+
+
+# Whether ``node`` shares qparams with its input ``input_node``: always for an
+# ordinary shared op, but for a shape-as op only through its data operand.
+def _shares_qparams_with(node: Node, input_node: Node) -> bool:
+    return node.target not in _SHAPE_AS_OPS or input_node is node.args[0]
+
+
 class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     """Assures that specific ops share quantization parameters on all
     inputs/outputs.
@@ -442,6 +456,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.repeat_interleave.self_int,
         torch.ops.aten.expand_copy.default,
         torch.ops.aten.expand.default,
+        torch.ops.aten.expand_as.default,
         torch.ops.aten.select.int,
         torch.ops.aten.select_copy.int,
         torch.ops.aten.slice.Tensor,
@@ -543,7 +558,11 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         return Q_ANNOTATION_KEY in node.meta
 
     def _get_input_nodes_with_float_output(self, node: Node) -> list[Node]:
-        return [n for n in node.all_input_nodes if has_float_output(n)]
+        return [
+            n
+            for n in node.all_input_nodes
+            if has_float_output(n) and _shares_qparams_with(node, n)
+        ]
 
     def _get_user_nodes_with_float_input(self, node: Node) -> list[Node]:
         return [n for n in node.users.keys() if has_float_output(node)]
@@ -640,6 +659,8 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             shared_nodes.add(node)
 
             for input_node in node.all_input_nodes:
+                if not _shares_qparams_with(node, input_node):
+                    continue
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(input_node)
@@ -648,6 +669,8 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 )
 
             for output_node in node.users.keys():
+                if not _shares_qparams_with(output_node, node):
+                    continue
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(output_node)

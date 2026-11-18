@@ -211,6 +211,9 @@ AOTITorchError aoti_torch_cuda_sort_stable(
     case c10_slim::ScalarType::Float:
       elem_size = sizeof(float);
       break;
+    case c10_slim::ScalarType::Double:
+      elem_size = sizeof(double);
+      break;
     case c10_slim::ScalarType::BFloat16:
       elem_size = sizeof(__nv_bfloat16);
       break;
@@ -408,6 +411,17 @@ AOTITorchError aoti_torch_cuda_sort_stable(
       case c10_slim::ScalarType::Float: {
         sort_slice_impl(
             static_cast<float*>(values_base) + offset,
+            idx_ptr,
+            sort_size,
+            desc,
+            is_stable,
+            device_idx,
+            stream);
+        break;
+      }
+      case c10_slim::ScalarType::Double: {
+        sort_slice_impl(
+            static_cast<double*>(values_base) + offset,
             idx_ptr,
             sort_size,
             desc,

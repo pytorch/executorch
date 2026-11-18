@@ -144,7 +144,8 @@ Error TensorWrapper::FillDataBuffer(const void* data) {
 }
 
 Error TensorWrapper::AllocateDataBuffer() {
-  char* static_data_buffer = new (std::nothrow) char[bytes_]; // NOLINT
+  // The graph reads mutable buffers before the first write; start from zero.
+  char* static_data_buffer = new (std::nothrow) char[bytes_](); // NOLINT
   if (static_data_buffer == nullptr) {
     return Error::Internal;
   }

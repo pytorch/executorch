@@ -8,10 +8,9 @@
 
 #pragma once
 
-#include <optional>
-
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/current_stream.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
@@ -20,6 +19,10 @@
 namespace executorch::backends::cuda {
 
 using ::executorch::extension::cuda::CUDAGuard;
+using ::executorch::extension::cuda::internal::clearCurrentCUDAStream;
+using ::executorch::extension::cuda::internal::getCurrentCUDAStream;
+using ::executorch::extension::cuda::internal::peekCurrentCUDAStream;
+using ::executorch::extension::cuda::internal::setCurrentCUDAStream;
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
@@ -28,46 +31,6 @@ using executorch::runtime::Result;
 // CUDA APIs use int, but implicit widening (int8_t -> int) handles outbound
 // calls, and explicit static_cast handles inbound conversions from CUDA APIs.
 using executorch::backends::aoti::slim::c10::DeviceIndex;
-
-/**
- * Set the current CUDA stream for the specified device.
- *
- * @param stream The CUDA stream to set as current
- * @param device_index The device index (-1 to use current device)
- * @return Error code indicating success or failure
- */
-Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index = -1);
-
-/**
- * Get the current CUDA stream for the specified device.
- * If no stream has been set, creates a new stream and sets it as current.
- *
- * @param device_index The device index (-1 to use current device)
- * @return Result containing the current stream on success, or an error code on
- * failure
- */
-Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index = -1);
-
-/**
- * The CUDA stream registered for the specified device, or std::nullopt if none
- * is set. Unlike getCurrentCUDAStream, it never creates one, so it can snapshot
- * the current selection without side effects. Also returns std::nullopt if the
- * current device cannot be queried (device_index -1), so nullopt does not
- * distinguish "no stream set" from "device query failed".
- *
- * @param device_index The device index (-1 to use current device)
- */
-std::optional<cudaStream_t> peekCurrentCUDAStream(
-    DeviceIndex device_index = -1);
-
-/**
- * Clears any CUDA stream registered for the specified device, restoring the
- * "no stream selected" state. Best-effort: if device_index is -1 and the
- * current device cannot be queried, it silently does nothing.
- *
- * @param device_index The device index (-1 to use current device)
- */
-void clearCurrentCUDAStream(DeviceIndex device_index = -1);
 
 /**
  * RAII guard that sets the current CUDA device and stream, restoring both on

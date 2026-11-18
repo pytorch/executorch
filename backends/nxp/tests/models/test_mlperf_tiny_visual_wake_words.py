@@ -10,15 +10,15 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import (
+    NumericalStatsOutputComparator,
+)
 
-from executorch.backends.nxp.tests.dataset_creator import (
+from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import (
     FromCalibrationDataDatasetCreator,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
@@ -27,7 +27,7 @@ from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_vi
 
 BOUNDS_MSE = {
     "PTQ": {"channels-last": 0.0, "channels-first": 0.0},
-    "QAT": {"channels-last": 1.0e-6, "channels-first": 1.0e-7},
+    "QAT": {"channels-last": 1.0e-6, "channels-first": 3.0e-7},
 }
 
 

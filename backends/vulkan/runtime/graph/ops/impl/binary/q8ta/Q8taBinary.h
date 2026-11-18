@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/BinaryOp.h>
 
 namespace vkcompute {
 
@@ -28,6 +29,6 @@ void add_q8ta_binary_node(
     const ValueRef output_zp,
     const ValueRef alpha,
     const ValueRef packed_int8_output,
-    const std::string& op_name);
+    const BinaryOpType op_type);
 
 } // namespace vkcompute

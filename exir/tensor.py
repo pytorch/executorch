@@ -50,7 +50,7 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
 
 
 def dim_order_from_stride(
-    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
 ) -> Tuple[bytes]:
     """
     Dimension order represents how dimensions are laid out in memory,
@@ -116,6 +116,25 @@ def dim_order_from_stride(
         if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
             sorted_dims = [0, *range(2, ndim), 1]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
+
+
+def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a copy of it if it has a zero stride, which
+    ExecuTorch cannot store. The copy is channels-last only if PyTorch calls
+    the tensor channels-last but not contiguous, and contiguous otherwise.
+
+    Tensor.contiguous() is not enough: PyTorch ignores the stride of a size-1
+    dim, and every stride of an empty tensor, when it checks contiguity, so it
+    can return a tensor with a zero stride unchanged.
+    """
+    if 0 not in tensor.stride():
+        return tensor
+    if not tensor.is_contiguous() and tensor.is_contiguous(
+        memory_format=torch.channels_last
+    ):
+        return tensor.clone(memory_format=torch.channels_last)
+    return tensor.clone(memory_format=torch.contiguous_format)
 
 
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
@@ -196,7 +215,10 @@ class TensorSpec:
 
     @property
     def allocated_memory(self) -> int:
-        nbytes = num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+        nbytes = max(
+            num_bytes_from_shape_and_dtype(self.shape, self.dtype),
+            self.min_allocated_memory,
+        )
         return calculate_aligned_num_bytes(nbytes, self.alignment)
 
     def realign(self, new_alignment: int) -> int:
@@ -210,7 +232,7 @@ class TensorSpec:
     def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
             # for non-contigous tensors, convert to a contiguous one
-            tensor = tensor.contiguous()
+            tensor = without_zero_strides(tensor.contiguous())
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
                 tensor = tensor.clone()
@@ -240,6 +262,8 @@ class TensorSpec:
         self.storage_base: Optional["TensorSpec"] = None
         # Byte offset into storage_base when this spec is storage-backed.
         self.storage_base_offset: int = 0
+        # Bytes to plan at least, so that a memory.view of this tensor fits too.
+        self.min_allocated_memory: int = 0
 
     @property
     def inplace_base(self) -> Optional["TensorSpec"]:

@@ -125,7 +125,7 @@ def _assert_profiling(
 
 
 def test_aot_example__mobilenet_v2():
-    """Test that mobilenet can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
+    """Test that MobileNetV2 can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
 
     num_random_samples = 1
 
@@ -154,7 +154,7 @@ def test_aot_example__mobilenet_v2():
 
 
 def test_aot_example__mobilenet_v2__profiling():
-    """Test that mobilenet_v2 can be lowered to Neutron backend via `aot_neutron_compile.py`, all ops are delegated,
+    """Test that MobileNetV2 can be lowered to Neutron backend via `aot_neutron_compile.py`, all ops are delegated,
     the output model is profilable and ETRecord is generated properly."""
 
     num_random_samples = 1

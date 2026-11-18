@@ -4,8 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
+import operator
 import os
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -42,6 +44,7 @@ from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.backends.transforms.fuse_duplicate_users_pass import (
     build_node_signature,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import Dim, export
@@ -970,6 +973,46 @@ def test_rewrite_conv_int16_bias_lowers_to_single_tosa_conv(
     bias_node = tosa_conv_nodes[0].args[2]
     assert isinstance(bias_node, torch.fx.Node)
     assert bias_node.meta.get(TosaSpecialDtype.meta_key()) == TosaSpecialDtype.INT48
+
+
+def test_rewrite_conv_materializes_padding_from_scaled_input_symbol():
+    model = ConvModule()
+    example_inputs = (torch.randn(1, 3, 48, 48),)
+    ep = export(
+        model,
+        example_inputs,
+        dynamic_shapes={
+            "x": {
+                2: Dim("height", min=2, max=6) * 16,
+                3: Dim("width", min=2, max=6) * 16,
+            }
+        },
+    )
+    edge_model = to_edge(ep)
+    graph = edge_model.exported_program().graph
+    x = next(
+        node for node in graph.nodes if node.op == "placeholder" and node.name == "x"
+    )
+    height = x.meta["val"].shape[2] // 16
+    pad = 1 - ((height - 1) % 2)
+
+    with patch.object(
+        torch.fx.Graph,
+        "materialize_symints",
+        side_effect=AssertionError("materialize_symints: no producer for height"),
+    ):
+        with graph.inserting_before(
+            next(node for node in graph.nodes if node.op == "output")
+        ):
+            materialized = materialize_symints(graph, [pad])
+
+    edge_model.exported_program().graph_module.graph.lint()
+    assert len(materialized) == 1
+    assert isinstance(materialized[0], torch.fx.Node)
+    targets = {node.target for node in graph.nodes if node.op == "call_function"}
+    assert torch.ops.aten.sym_size.int in targets
+    assert operator.floordiv in targets
+    assert operator.mod in targets
 
 
 def test_rewrite_conv_dynamic_keeps_static_padding_when_symbolic_remainder_is_zero():

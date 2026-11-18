@@ -29,7 +29,6 @@
 #include <string>
 #include <thread>
 #include <utility>
-using namespace std;
 
 typedef enum {
   LOW_POWER_MODE = 0, // For model execution preference

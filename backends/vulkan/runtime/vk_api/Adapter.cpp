@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -12,6 +14,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 namespace vkcompute {
 namespace vkapi {
@@ -86,7 +89,10 @@ VkDevice create_logical_device(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
     std::vector<Adapter::Queue>& queues,
-    std::vector<uint32_t>& queue_usage) {
+    std::vector<uint32_t>& queue_usage,
+    std::vector<std::string>& enabled_extensions_out,
+    executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures&
+        enabled_features_out) {
   // Find compute queues up to the requested number of queues
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
@@ -139,6 +145,8 @@ VkDevice create_logical_device(
       physical_device.handle,
       enabled_device_extensions,
       requested_device_extensions);
+  enabled_extensions_out.assign(
+      enabled_device_extensions.begin(), enabled_device_extensions.end());
 
   // Enable the base device features that ExecuTorch shaders rely on, but only
   // those that the physical device reports as supported. With pEnabledFeatures
@@ -153,6 +161,29 @@ VkDevice create_logical_device(
       physical_device.supports_int64_shader_types ? VK_TRUE : VK_FALSE;
   enabled_features.shaderFloat64 =
       physical_device.supports_float64_shader_types ? VK_TRUE : VK_FALSE;
+
+  enabled_features.shaderImageGatherExtended =
+      physical_device.shader_features.shaderImageGatherExtended;
+  enabled_features.shaderStorageImageMultisample =
+      physical_device.shader_features.shaderStorageImageMultisample;
+  enabled_features.shaderUniformBufferArrayDynamicIndexing =
+      physical_device.shader_features.shaderUniformBufferArrayDynamicIndexing;
+  enabled_features.shaderSampledImageArrayDynamicIndexing =
+      physical_device.shader_features.shaderSampledImageArrayDynamicIndexing;
+  enabled_features.shaderStorageBufferArrayDynamicIndexing =
+      physical_device.shader_features.shaderStorageBufferArrayDynamicIndexing;
+  enabled_features.shaderStorageImageArrayDynamicIndexing =
+      physical_device.shader_features.shaderStorageImageArrayDynamicIndexing;
+  enabled_features.imageCubeArray =
+      physical_device.shader_features.imageCubeArray;
+  enabled_features.shaderResourceMinLod =
+      physical_device.shader_features.shaderResourceMinLod;
+  enabled_features.shaderStorageImageExtendedFormats =
+      physical_device.shader_features.shaderStorageImageExtendedFormats;
+  enabled_features.shaderStorageImageReadWithoutFormat =
+      physical_device.shader_features.shaderStorageImageReadWithoutFormat;
+  enabled_features.shaderStorageImageWriteWithoutFormat =
+      physical_device.shader_features.shaderStorageImageWriteWithoutFormat;
 
   VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
@@ -235,9 +266,65 @@ VkDevice create_logical_device(
   VK_CHECK(vkCreateDevice(
       physical_device.handle, &device_create_info, nullptr, &handle));
 
-#ifdef USE_VULKAN_VOLK
-  volkLoadDevice(handle);
-#endif /* USE_VULKAN_VOLK */
+  // Preserve the exact VkDevice enablement contract. Physical-device support
+  // alone is insufficient for a borrowing Adapter to select shaders safely.
+  auto& f = enabled_features_out;
+  f.shader_int16 = enabled_features.shaderInt16 == VK_TRUE;
+  f.shader_int64 = enabled_features.shaderInt64 == VK_TRUE;
+  f.shader_float64 = enabled_features.shaderFloat64 == VK_TRUE;
+#ifdef VK_KHR_16bit_storage
+  f.storage_buffer_16bit_access =
+      shader_16bit_storage.storageBuffer16BitAccess == VK_TRUE;
+  f.uniform_and_storage_buffer_16bit_access =
+      shader_16bit_storage.uniformAndStorageBuffer16BitAccess == VK_TRUE;
+  f.storage_push_constant_16 =
+      shader_16bit_storage.storagePushConstant16 == VK_TRUE;
+  f.storage_input_output_16 =
+      shader_16bit_storage.storageInputOutput16 == VK_TRUE;
+#endif
+#ifdef VK_KHR_8bit_storage
+  f.storage_buffer_8bit_access =
+      shader_8bit_storage.storageBuffer8BitAccess == VK_TRUE;
+  f.uniform_and_storage_buffer_8bit_access =
+      shader_8bit_storage.uniformAndStorageBuffer8BitAccess == VK_TRUE;
+  f.storage_push_constant_8 =
+      shader_8bit_storage.storagePushConstant8 == VK_TRUE;
+#endif
+#ifdef VK_KHR_shader_float16_int8
+  f.shader_float16 = shader_float16_int8_types.shaderFloat16 == VK_TRUE;
+  f.shader_int8 = shader_float16_int8_types.shaderInt8 == VK_TRUE;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+  f.shader_integer_dot_product =
+      shader_int_dot_product_features.shaderIntegerDotProduct == VK_TRUE;
+#endif
+#ifdef VK_KHR_cooperative_matrix
+  f.cooperative_matrix =
+      cooperative_matrix_features.cooperativeMatrix == VK_TRUE;
+#endif
+#ifdef VK_NV_cooperative_matrix2
+  f.cooperative_matrix2_workgroup_scope =
+      cooperative_matrix2_features.cooperativeMatrixWorkgroupScope == VK_TRUE;
+  f.cooperative_matrix2_flexible_dimensions =
+      cooperative_matrix2_features.cooperativeMatrixFlexibleDimensions ==
+      VK_TRUE;
+  f.cooperative_matrix2_tensor_addressing =
+      cooperative_matrix2_features.cooperativeMatrixTensorAddressing == VK_TRUE;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+  f.subgroup_size_control =
+      subgroup_size_control_features.subgroupSizeControl == VK_TRUE &&
+      physical_device.supports_subgroup_size_control;
+  f.compute_full_subgroups =
+      subgroup_size_control_features.computeFullSubgroups == VK_TRUE &&
+      f.subgroup_size_control;
+#endif
+
+  // Intentionally do not call volkLoadDevice(handle).
+  // volkLoadInstance() leaves device commands routed through the Vulkan loader,
+  // which is Volk's supported mode for multiple VkDevice objects. All Vulkan
+  // shared devices in this backend are constrained to one VkInstance so these
+  // global instance-loaded entry points remain valid for every child device.
 
   populate_queue_info(
       physical_device, handle, queues_to_get, queues, queue_usage);
@@ -275,6 +362,81 @@ bool test_linear_tiling_3d_image_support(
   return res == VK_SUCCESS;
 }
 
+// A shared Adapter can use only features enabled at VkDevice creation.
+// Missing feature metadata from an external device remains conservative.
+executorch::backends::vulkan_shared::SharedVulkanDevicePtr
+checked_shared_device(
+    executorch::backends::vulkan_shared::SharedVulkanDevicePtr context) {
+  VK_CHECK_COND(context && context->is_valid(), "Invalid shared Vulkan device");
+  return context;
+}
+
+PhysicalDevice shared_physical_device(
+    const executorch::backends::vulkan_shared::SharedVulkanDevicePtr& context) {
+  PhysicalDevice physical(context->instance(), context->physical_device());
+  const uint32_t family = context->queue_family_index();
+  VK_CHECK_COND(
+      family < physical.queue_families.size() &&
+          physical.queue_families[family].queueCount > 0 &&
+          (physical.queue_families[family].queueFlags & VK_QUEUE_COMPUTE_BIT),
+      "Shared Vulkan queue family must support compute");
+  physical.num_compute_queues = 1;
+  const auto& f = context->enabled_device_features();
+  physical.supports_int16_shader_types &= f.shader_int16;
+  physical.supports_int64_shader_types &= f.shader_int64;
+  physical.supports_float64_shader_types &= f.shader_float64;
+#ifdef VK_KHR_16bit_storage
+  physical.shader_16bit_storage.storageBuffer16BitAccess &=
+      f.storage_buffer_16bit_access ? VK_TRUE : VK_FALSE;
+  physical.shader_16bit_storage.uniformAndStorageBuffer16BitAccess &=
+      f.uniform_and_storage_buffer_16bit_access ? VK_TRUE : VK_FALSE;
+  physical.shader_16bit_storage.storagePushConstant16 &=
+      f.storage_push_constant_16 ? VK_TRUE : VK_FALSE;
+  physical.shader_16bit_storage.storageInputOutput16 &=
+      f.storage_input_output_16 ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_KHR_8bit_storage
+  physical.shader_8bit_storage.storageBuffer8BitAccess &=
+      f.storage_buffer_8bit_access ? VK_TRUE : VK_FALSE;
+  physical.shader_8bit_storage.uniformAndStorageBuffer8BitAccess &=
+      f.uniform_and_storage_buffer_8bit_access ? VK_TRUE : VK_FALSE;
+  physical.shader_8bit_storage.storagePushConstant8 &=
+      f.storage_push_constant_8 ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_KHR_shader_float16_int8
+  physical.shader_float16_int8_types.shaderFloat16 &=
+      f.shader_float16 ? VK_TRUE : VK_FALSE;
+  physical.shader_float16_int8_types.shaderInt8 &=
+      f.shader_int8 ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+  physical.shader_int_dot_product_features.shaderIntegerDotProduct &=
+      f.shader_integer_dot_product ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_KHR_cooperative_matrix
+  physical.cooperative_matrix_features.cooperativeMatrix &=
+      f.cooperative_matrix ? VK_TRUE : VK_FALSE;
+  physical.supports_int8_coopmat &= f.cooperative_matrix;
+#endif
+#ifdef VK_NV_cooperative_matrix2
+  physical.cooperative_matrix2_features.cooperativeMatrixWorkgroupScope &=
+      f.cooperative_matrix2_workgroup_scope ? VK_TRUE : VK_FALSE;
+  physical.cooperative_matrix2_features.cooperativeMatrixFlexibleDimensions &=
+      f.cooperative_matrix2_flexible_dimensions ? VK_TRUE : VK_FALSE;
+  physical.cooperative_matrix2_features.cooperativeMatrixTensorAddressing &=
+      f.cooperative_matrix2_tensor_addressing ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+  physical.subgroup_size_control_features.subgroupSizeControl &=
+      f.subgroup_size_control ? VK_TRUE : VK_FALSE;
+  physical.subgroup_size_control_features.computeFullSubgroups &=
+      f.compute_full_subgroups ? VK_TRUE : VK_FALSE;
+#endif
+  physical.supports_subgroup_size_control &= f.subgroup_size_control;
+  physical.supports_compute_full_subgroups &= f.compute_full_subgroups;
+  return physical;
+}
+
 } // namespace
 
 //
@@ -296,7 +458,9 @@ Adapter::Adapter(
           physical_device_,
           num_queues,
           queues_,
-          queue_usage_)),
+          queue_usage_,
+          enabled_device_extensions_,
+          enabled_device_features_)),
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
@@ -320,7 +484,7 @@ Adapter::Adapter(
       queue_usage_{},
       queue_mutexes_{},
       instance_(instance),
-      device_(logical_device),
+      device_(logical_device, false),
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
@@ -344,7 +508,62 @@ Adapter::Adapter(
       physical_device_, device_.handle, queues_to_get, queues_, queue_usage_);
 }
 
+Adapter::Adapter(
+    executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device,
+    const std::string& cache_data_path)
+    : shared_device_(checked_shared_device(std::move(shared_device))),
+      enabled_device_extensions_(shared_device_->enabled_device_extensions()),
+      enabled_device_features_(shared_device_->enabled_device_features()),
+      queue_usage_mutex_{},
+      physical_device_(shared_physical_device(shared_device_)),
+      // Shared adapters expose only a local queue lease, not the raw VkQueue.
+      // The actual queue is accessed through with_locked_queue() so host
+      // operations are serialized by the shared mutex. queue_index == 0
+      // identifies the local lease only; it is not the Vulkan queue index used
+      // to obtain the queue.
+      queues_{
+          {shared_device_->queue_family_index(),
+           0,
+           physical_device_.queue_families[shared_device_->queue_family_index()]
+               .queueFlags,
+           VK_NULL_HANDLE}},
+      queue_usage_{0},
+      queue_mutexes_{},
+      instance_(shared_device_->instance()),
+      device_(shared_device_->device(), false),
+      shader_layout_cache_(device_.handle),
+      shader_cache_(device_.handle),
+      pipeline_layout_cache_(device_.handle),
+      compute_pipeline_cache_(device_.handle, cache_data_path),
+      sampler_cache_(device_.handle),
+      vma_(instance_, physical_device_.handle, device_.handle),
+      linear_tiling_3d_enabled_(test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)),
+      owns_device_(false) {}
+
+void Adapter::wait_idle(const Queue& queue) {
+  if (shared_device_) {
+    VK_CHECK_COND(
+        queue.family_index == shared_device_->queue_family_index() &&
+            queue.queue_index == 0 && queue.handle == VK_NULL_HANDLE,
+        "Queue does not belong to this shared-device adapter");
+    shared_device_->with_locked_queue(
+        [](VkQueue handle) { VK_CHECK(vkQueueWaitIdle(handle)); });
+    return;
+  }
+  // Preserve the non-shared path; no registry participation is introduced.
+  VK_CHECK(vkQueueWaitIdle(queue.handle));
+}
+
 Adapter::~Adapter() {
+  if (shared_device_) {
+    try {
+      compute_pipeline_cache_.save_cache();
+    } catch (...) {
+      // Destructors must not throw. Cache persistence is best effort.
+    }
+  }
   if (!owns_device_) {
     device_.handle = VK_NULL_HANDLE;
   }
@@ -409,6 +628,18 @@ void Adapter::submit_cmd(
       set_signal_semaphore ? 1u : 0u, // signalSemaphoreCount
       set_signal_semaphore ? &signal_semaphore : nullptr, // pSignalSemaphores
   };
+
+  if (shared_device_) {
+    VK_CHECK_COND(
+        device_queue.family_index == shared_device_->queue_family_index() &&
+            device_queue.queue_index == 0 &&
+            device_queue.handle == VK_NULL_HANDLE,
+        "Queue does not belong to this shared-device adapter");
+    shared_device_->with_locked_queue([&](VkQueue queue) {
+      VK_CHECK(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    });
+    return;
+  }
 
   std::lock_guard<std::mutex> queue_lock(
       queue_mutexes_[device_queue.queue_index % NUM_QUEUE_MUTEXES]);
@@ -683,6 +914,124 @@ uint32_t resolve_required_subgroup_size(
         shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
   }
   return resolved;
+}
+
+bool Adapter::supports_spirv_capability(const uint32_t value) {
+  const auto capability = static_cast<SpirvCapability>(value);
+  switch (capability) {
+    case SpirvCapability::MATRIX:
+    case SpirvCapability::SHADER:
+    case SpirvCapability::SAMPLED_1D:
+    case SpirvCapability::IMAGE_1D:
+    case SpirvCapability::SAMPLED_BUFFER:
+    case SpirvCapability::IMAGE_BUFFER:
+    case SpirvCapability::IMAGE_QUERY:
+      return true;
+    default:
+      break;
+  }
+  const auto& features = physical_device_.shader_features;
+  switch (capability) {
+    case SpirvCapability::FLOAT16:
+      return supports_float16_shader_types();
+    case SpirvCapability::FLOAT64:
+      return supports_float64_shader_types();
+    case SpirvCapability::INT64:
+      return supports_int64_shader_types();
+    case SpirvCapability::INT16:
+      return supports_int16_shader_types();
+    case SpirvCapability::INT8:
+      return supports_int8_shader_types();
+    case SpirvCapability::IMAGE_GATHER_EXTENDED:
+      return features.shaderImageGatherExtended == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_MULTISAMPLE:
+      return features.shaderStorageImageMultisample == VK_TRUE;
+    case SpirvCapability::UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderUniformBufferArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::SAMPLED_IMAGE_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderSampledImageArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderStorageBufferArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_ARRAY_DYNAMIC_INDEXING:
+      return features.shaderStorageImageArrayDynamicIndexing == VK_TRUE;
+    case SpirvCapability::IMAGE_CUBE_ARRAY:
+    case SpirvCapability::SAMPLED_CUBE_ARRAY:
+      return features.imageCubeArray == VK_TRUE;
+    case SpirvCapability::MIN_LOD:
+      return features.shaderResourceMinLod == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_EXTENDED_FORMATS:
+      return features.shaderStorageImageExtendedFormats == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_READ_WITHOUT_FORMAT:
+      return features.shaderStorageImageReadWithoutFormat == VK_TRUE;
+    case SpirvCapability::STORAGE_IMAGE_WRITE_WITHOUT_FORMAT:
+      return features.shaderStorageImageWriteWithoutFormat == VK_TRUE;
+    case SpirvCapability::GROUP_NON_UNIFORM:
+      return supports_subgroup_compute_basic();
+    case SpirvCapability::GROUP_NON_UNIFORM_VOTE:
+      return supports_subgroup_compute_vote();
+    case SpirvCapability::GROUP_NON_UNIFORM_ARITHMETIC:
+      return supports_subgroup_compute_arithmetic();
+    case SpirvCapability::GROUP_NON_UNIFORM_BALLOT:
+      return supports_subgroup_compute_ballot();
+    case SpirvCapability::GROUP_NON_UNIFORM_SHUFFLE:
+      return supports_subgroup_compute_shuffle();
+    case SpirvCapability::GROUP_NON_UNIFORM_SHUFFLE_RELATIVE:
+      return supports_subgroup_compute_shuffle_relative();
+    case SpirvCapability::GROUP_NON_UNIFORM_CLUSTERED:
+      return supports_subgroup_compute_clustered();
+    case SpirvCapability::GROUP_NON_UNIFORM_QUAD:
+      return supports_subgroup_compute_quad();
+#if defined(VK_KHR_16bit_storage) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::STORAGE_BUFFER_16_BIT_ACCESS:
+      return supports_16bit_storage_buffers();
+    case SpirvCapability::UNIFORM_AND_STORAGE_BUFFER_16_BIT_ACCESS:
+      return physical_device_.shader_16bit_storage
+                 .uniformAndStorageBuffer16BitAccess == VK_TRUE;
+    case SpirvCapability::STORAGE_PUSH_CONSTANT_16:
+      return physical_device_.shader_16bit_storage.storagePushConstant16 ==
+          VK_TRUE;
+    case SpirvCapability::STORAGE_INPUT_OUTPUT_16:
+      return physical_device_.shader_16bit_storage.storageInputOutput16 ==
+          VK_TRUE;
+#endif
+#if defined(VK_KHR_8bit_storage) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::STORAGE_BUFFER_8_BIT_ACCESS:
+      return supports_8bit_storage_buffers();
+    case SpirvCapability::UNIFORM_AND_STORAGE_BUFFER_8_BIT_ACCESS:
+      return physical_device_.shader_8bit_storage
+                 .uniformAndStorageBuffer8BitAccess == VK_TRUE;
+    case SpirvCapability::STORAGE_PUSH_CONSTANT_8:
+      return physical_device_.shader_8bit_storage.storagePushConstant8 ==
+          VK_TRUE;
+#endif
+    case SpirvCapability::DOT_PRODUCT_INPUT_ALL:
+    case SpirvCapability::DOT_PRODUCT_INPUT_4X8_BIT:
+    case SpirvCapability::DOT_PRODUCT_INPUT_4X8_BIT_PACKED:
+    case SpirvCapability::DOT_PRODUCT:
+      return supports_int8_dot_product();
+    case SpirvCapability::COOPERATIVE_MATRIX_KHR:
+      return supports_cooperative_matrix();
+#if defined(VK_NV_cooperative_matrix2) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::COOPERATIVE_MATRIX_REDUCTIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixReductions == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_CONVERSIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixConversions == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_PER_ELEMENT_OPERATIONS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixPerElementOperations == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_TENSOR_ADDRESSING_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixTensorAddressing == VK_TRUE;
+    case SpirvCapability::COOPERATIVE_MATRIX_BLOCK_LOADS_NV:
+      return physical_device_.cooperative_matrix2_features
+                 .cooperativeMatrixBlockLoads == VK_TRUE;
+#endif
+    default:
+      // Unhandled requirements have no logical-device feature enablement path.
+      return false;
+  }
 }
 
 } // namespace vkapi

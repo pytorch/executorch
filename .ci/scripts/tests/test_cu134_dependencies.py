@@ -40,10 +40,11 @@ class TestCu134Dependencies(unittest.TestCase):
         nightly=True,
         system="Linux",
         python_version=(3, 14),
+        env=None,
     ):
         self.utils.determine_torch_url.cache_clear()
         with (
-            patch.dict(os.environ, {}, clear=True),
+            patch.dict(os.environ, env or {}, clear=True),
             patch.object(
                 self.utils,
                 "_get_cuda_version",
@@ -102,7 +103,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         )
 
     def test_other_cuda_trains_keep_existing_pins(self):
-        for cuda in ((12, 6), (13, 0), (13, 2)):
+        for cuda in ((13, 0), (13, 2)):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     core, local, domains, examples = self.install_commands(
@@ -133,6 +134,61 @@ class TestCu134Dependencies(unittest.TestCase):
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
+    def test_cpu_release_dependencies_are_opt_in(self):
+        for machine, python_version, audio in (
+            ("x86_64", (3, 12), "2.11.0"),
+            ("aarch64", (3, 12), "2.11.0"),
+            ("x86_64", (3, 15), "2.11.1"),
+            ("aarch64", (3, 15), "2.11.1"),
+        ):
+            with self.subTest(machine=machine, python_version=python_version):
+                core, _, domains, examples = self.install_commands(
+                    None,
+                    machine,
+                    python_version=python_version,
+                    env={"EXECUTORCH_USE_RELEASE_CPU_DEPS": "1"},
+                )
+                self.assertIn("torch==2.14.0", core)
+                self.assertIn(f"torchao=={self.installer.TORCHAO_STABLE_VERSION}", core)
+                self.assertIn("torchvision==0.29.0", domains)
+                self.assertIn(f"torchaudio=={audio}", domains)
+                for command in (core, domains, examples):
+                    self.assertIn("https://download.pytorch.org/whl/cpu", command)
+                    self.assertFalse(
+                        any("/nightly" in arg or "/test/" in arg for arg in command)
+                    )
+
+    def test_cpu_release_option_keeps_cuda_pins(self):
+        for cuda in ((13, 0), (13, 2), (13, 4)):
+            for machine in ("x86_64", "aarch64"):
+                with self.subTest(cuda=cuda, machine=machine):
+                    self.assertEqual(
+                        self.install_commands(cuda, machine),
+                        self.install_commands(
+                            cuda,
+                            machine,
+                            env={"EXECUTORCH_USE_RELEASE_CPU_DEPS": "1"},
+                        ),
+                    )
+
+    def test_cpu_source_build_keeps_nightly_torchao(self):
+        for flag in (
+            "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+            "TORCHAO_BUILD_EXPERIMENTAL_MPS",
+        ):
+            with self.subTest(flag=flag):
+                core, local, domains, _ = self.install_commands(
+                    None,
+                    env={"EXECUTORCH_USE_RELEASE_CPU_DEPS": "1", flag: "1"},
+                )
+                self.assertIn(
+                    f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                )
+                self.assertIn("https://download.pytorch.org/whl/nightly/cpu", core)
+                for command in (core, domains):
+                    self.assertIn("https://download.pytorch.org/whl/test/cpu", command)
+                self.assertIn("third-party/ao", local)
+
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")
         self.assertIn("torch==2.14.0", core)
@@ -149,6 +205,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     audio = "2.11.1" if version >= (3, 15) else "2.11.0"
                     self.assertIn(f"torchaudio=={audio}", domains)
                     self.assertIn("torchvision==0.29.0", domains)
+                    self.assertIn("https://download.pytorch.org/whl/test/cpu", domains)
 
     def test_python315_cuda_domains_use_available_torchaudio(self):
         for machine in ("x86_64", "aarch64"):
@@ -231,6 +288,35 @@ class TestCu134Dependencies(unittest.TestCase):
         )
         return namespace["_torchao_requirement"]()
 
+    def test_cpu_release_metadata_is_opt_in(self):
+        for value in (None, "0", "1"):
+            with self.subTest(value=value):
+                self.utils.determine_torch_url.cache_clear()
+                env = (
+                    {} if value is None else {"EXECUTORCH_USE_RELEASE_CPU_DEPS": value}
+                )
+                with (
+                    patch.dict(os.environ, env, clear=True),
+                    patch.object(
+                        self.utils,
+                        "_get_cuda_version",
+                        side_effect=RuntimeError("no nvcc"),
+                    ),
+                    patch.object(
+                        self.installer.platform, "system", return_value="Linux"
+                    ),
+                ):
+                    version = (
+                        self.installer.TORCHAO_STABLE_VERSION
+                        if value == "1"
+                        else self.installer.TORCHAO_NIGHTLY_VERSION
+                    )
+                    major, minor = (int(part) for part in version.split(".")[:2])
+                    self.assertEqual(
+                        self.torchao_requirement(),
+                        f"torchao>={version},<{major}.{minor + 1}",
+                    )
+
     def test_package_install_preserves_source_pinned_torchao(self):
         with patch.dict(sys.modules, {"install_requirements": self.installer}):
             package_installer = load_module("install_executorch")
@@ -252,6 +338,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         "argv",
                         ["install_executorch", "--use-pt-pinned-commit", "--minimal"],
                     ),
+                    patch.object(package_installer, "ensure_pip"),
                     patch.object(
                         package_installer, "python_is_compatible", return_value=True
                     ),
@@ -289,6 +376,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     ),
                     patch.object(self.installer.sys, "platform", "linux"),
                     patch.object(sys, "argv", ["install_executorch"]),
+                    patch.object(package_installer, "ensure_pip"),
                     patch.object(
                         package_installer, "python_is_compatible", return_value=True
                     ),

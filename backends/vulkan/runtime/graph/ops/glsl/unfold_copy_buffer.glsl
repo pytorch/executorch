@@ -39,6 +39,10 @@ void main() {
   }
 
   const TensorIndex out_tidx = linear_idx_to_tensor_idx(out_meta, out_bufi);
+  if (out_of_bounds(out_tidx, out_meta)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
   TensorIndex in_tidx;
   initialize(in_tidx);
 

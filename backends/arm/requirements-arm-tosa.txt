@@ -6,6 +6,6 @@
 # These dependencies need to match pyproject.toml
 
 ml_dtypes == 0.5.1
-flatbuffers == 24.3.25
+flatbuffers == 25.2.10
 pytest-timeout == 2.4.0
 tosa-tools == 2026.5.0

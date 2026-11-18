@@ -12,7 +12,13 @@ Public API is defined by explicit module exports (e.g., ``.vgf``, ``.ethosu``,
 from __future__ import annotations
 
 import importlib
+
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
+if logger.level == logging.NOTSET:
+    logger.setLevel(min(logging.INFO, logging.root.getEffectiveLevel()))
 
 # Register Arm-specific torch.library ops and MXFP transforms at package
 # import time.
