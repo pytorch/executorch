@@ -193,6 +193,7 @@ if [[ "${espnn_kernels}" == optimized ]]; then
     logged "scratch-tests.log" env EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1 \
         python -m pytest -q backends/espressif/test/test_scratch.py
     logged "operator-library-host-tests.log" python -m pytest -q \
+        backends/espressif/test/test_pass_manager.py \
         backends/espressif/test/ops -k 'not implementation'
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
