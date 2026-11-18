@@ -61,6 +61,38 @@ def _is_float_tensor(node: Node):
     return node.meta["val"].dtype in (torch.bfloat16, torch.float32)
 
 
+def _is_non_float_tensor(node: Node):
+    """Check if the node's tensor is definitely not a float tensor.
+
+    This is not the negation of _is_float_tensor: that one also returns False for a
+    node whose value is a list or tuple (aten.native_layer_norm.default, aten.max.dim),
+    and those outputs are legitimately annotated.
+    """
+    if not isinstance(node, Node) or not isinstance(node.meta.get("val"), FakeTensor):
+        return False
+    return not node.meta["val"].dtype.is_floating_point
+
+
+def drop_non_float_annotations(graph_module: torch.fx.GraphModule) -> None:
+    """Remove every quantization spec that landed on an integer or boolean tensor.
+
+    Observers only work with float tensors, so such a spec makes convert_pt2e emit a
+    quantize_per_tensor whose input assert fires at export time. Annotators guard the
+    operands they know about, but an annotator cannot see which of its operands a
+    neighbouring op will later claim, so the invariant is enforced once here.
+    """
+    for node in graph_module.graph.nodes:
+        annotation = node.meta.get(Q_ANNOTATION_KEY)
+        if annotation is None:
+            continue
+        if _is_non_float_tensor(node):
+            annotation.output_qspec = None
+        for arg in [
+            arg for arg in annotation.input_qspec_map if _is_non_float_tensor(arg)
+        ]:
+            del annotation.input_qspec_map[arg]
+
+
 def annotate_in_out_obs_sharing_op(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
