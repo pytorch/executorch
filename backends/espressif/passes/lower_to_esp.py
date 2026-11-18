@@ -537,9 +537,8 @@ def _conv2d_kernel_args(program, node, constants, size_query, *, depthwise=False
         )
     except ValueError:
         return None
-    if depthwise:
-        # FQ uses OHWI; ESP-NN depthwise indexes weights as 1HWO.
-        weight = weight.permute(3, 1, 2, 0).contiguous()
+    # FQ uses OHWI; ESP-NN depthwise indexes weights as 1HWO.
+    weight = weight.permute(3, 1, 2, 0).contiguous() if depthwise else weight
     weight_node = add_constant(
         program, f"{node.name}_weight", weight, node, InputKind.CONSTANT_TENSOR
     )

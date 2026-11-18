@@ -342,6 +342,23 @@ def test_depthwise_without_sizing(monkeypatch, missing):
     ).to_executorch().serialize()
 
 
+def test_depthwise_falls_back_when_sizing_rejects_bounds(s3_queries):
+    with pytest.raises(ValueError, match="scratch query intermediates"):
+        s3_queries.depthwise_conv2d_scratch_size(
+            input_dims=(7, 7, 4800),
+            filter_dims=(7, 7, 4800),
+            output_dims=(7, 7, 4800),
+            stride=(1, 1),
+            padding=(3, 3),
+            channel_multiplier=1,
+        )
+    model = EspDepthwiseConv2d(4800, kernel=7, padding=3, supported=False)
+    inputs = (ramp_tensor(-3, 5, (1, 4800, 7, 7)),)
+    EspTester(model, inputs).test_dialect(
+        model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
+    ).to_executorch().serialize()
+
+
 @pytest.mark.parametrize("extent,supported", [(32768, True), (32769, False)])
 @pytest.mark.parametrize("axis", [2, 3])
 def test_depthwise_spatial_index_bounds(
