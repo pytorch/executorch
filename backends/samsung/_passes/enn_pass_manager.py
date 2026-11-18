@@ -13,8 +13,10 @@ from executorch.backends.samsung._passes import (
     DecomposeEinsum,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeOuter,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeUnfold,
     FoldQDQPass,
     FuseActivationPass,
     InsertQDQPass,
@@ -54,6 +56,7 @@ class EnnPassManager(PassManager):
         self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeOuter())
         self.add_pass(DecomposeLinalgVectorNorm())
         self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)
@@ -62,6 +65,7 @@ class EnnPassManager(PassManager):
     def transform_for_export_pass(self, exported_program: ExportedProgram):
         self.add_pass(ComputeConstAttrs())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeUnfold())
         self.add_pass(DecomposeRemainder())
         self._transform(exported_program.graph_module)
         return exported_program

@@ -31,3 +31,15 @@ def save_tensors(tensors, prefix: str, artifact_dir: str) -> None:
             logging.warning("Skipping unsupported type: %s", type(obj))
 
     _collect(tensors, [])
+
+
+def save_position_embeddings(tensors, path: str) -> None:
+    """Concatenate position-embedding tables into a single raw .bin file.
+
+    ``tensors`` is a flat sequence ordered as the runtime expects the tables
+    (e.g. global cos, global sin, local cos, local sin). Each tensor is
+    written as C-contiguous raw bytes, back to back, without any header.
+    """
+    with open(path, "wb") as f:
+        for tensor in tensors:
+            f.write(tensor.cpu().detach().contiguous().numpy().tobytes())

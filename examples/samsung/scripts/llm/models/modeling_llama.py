@@ -19,7 +19,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -304,6 +304,27 @@ class LlamaForCausalLM_ENN(LlamaPreTrainedModel_ENN, GenerationMixin):
             "get_hidden_dim": self.config.hidden_size,
         }
 
+    def get_position_embeddings(
+        self, position_ids: Optional[torch.LongTensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute the RoPE tables the graphs take as inputs.
+
+        Returns (cos, sin), the order the runtime expects them laid out in
+        pos_embedding.bin. With ``position_ids`` None, positions
+        [0, max_context_len) are used so the runtime can slice per-step rows
+        out of the full table.
+        """
+        if position_ids is None:
+            position_ids = torch.arange(
+                self.max_context_len, device=self.target_device
+            ).unsqueeze(0)
+        hidden_states_dummy = torch.zeros(
+            (self.batch_size, position_ids.shape[1], self.hidden_size),
+            device=self.target_device,
+        )
+        cos, sin = self.rotary_emb(hidden_states_dummy, position_ids)
+        return (cos.to(self.dtype_setting), sin.to(self.dtype_setting))
+
     def _build_attention_mask(
         self, num_token: int, cache_position: torch.Tensor
     ) -> torch.Tensor:
@@ -358,13 +379,7 @@ class LlamaForCausalLM_ENN(LlamaPreTrainedModel_ENN, GenerationMixin):
         )
         position_ids = torch.arange(num_token, device=self.target_device)
         position_ids = position_ids.unsqueeze(0)
-        hidden_states_dummy = torch.zeros(input_ids.shape + (self.hidden_size,)).to(
-            self.target_device
-        )
-        position_embeddings = self.rotary_emb(hidden_states_dummy, position_ids)
-        position_embeddings = tuple(
-            data.to(self.dtype_setting) for data in position_embeddings
-        )
+        position_embeddings = self.get_position_embeddings(position_ids)
 
         # Match the reference: keep the full static buffer but only feed the
         # graph a prefix of length max_context_len - num_token, so the model
@@ -459,13 +474,7 @@ class LlamaForCausalLM_ENN(LlamaPreTrainedModel_ENN, GenerationMixin):
             position_ids = cache_position.unsqueeze(0)
 
         # Create position embeddings shared across the decoder layers.
-        hidden_states_dummy = torch.zeros(
-            input_ids.shape + (self.hidden_size,), device=self.target_device
-        )
-        position_embeddings = self.rotary_emb(hidden_states_dummy, position_ids)
-        position_embeddings = tuple(
-            data.to(self.dtype_setting) for data in position_embeddings
-        )
+        position_embeddings = self.get_position_embeddings(position_ids)
 
         # Update past_key_values with dummy states so HF `generate` tracks the
         # sequence length, matching the reference forward.

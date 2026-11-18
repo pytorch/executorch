@@ -36,7 +36,7 @@ from executorch.examples.samsung.scripts.llm.util.util import (
     replace_rms_norm_with_native_rms_norm,
 )
 
-from executorch.examples.samsung.utils import save_tensors
+from executorch.examples.samsung.utils import save_position_embeddings, save_tensors
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
@@ -479,6 +479,13 @@ def export_llm(args: argparse.Namespace) -> None:
 
     # Save the pte
     save_pte_program(export_program, args.model_name, args.output_dir)
+
+    # Save the full-length position-embedding tables next to the pte; the
+    # runtime slices per-step cos/sin rows from them to feed the graphs.
+    save_position_embeddings(
+        causal_model.get_position_embeddings(),
+        os.path.join(args.output_dir, "pos_embedding.bin"),
+    )
 
     # Save example_inputs and example_outputs to separate directories
     if args.dump:

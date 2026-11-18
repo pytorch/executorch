@@ -296,7 +296,11 @@ def annotate_2in1out_with_SharedQuant(
     if isinstance(input0, Node) and isinstance(input1, Node):
         shared_qspec = SharedQuantizationSpec((input0, node))
         input_qspec_map[input0] = quant_config.input_activation
-        input_qspec_map[input1] = shared_qspec
+        # input1 may be a non-float (e.g. bool mask) operand; only quantize it
+        # if it is a float tensor, otherwise convert would insert a
+        # quantize_per_tensor on a bool tensor.
+        if _is_float_tensor(input1):
+            input_qspec_map[input1] = shared_qspec
 
         node.meta["quantization_annotation"] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
@@ -368,7 +372,8 @@ def annotate_add_ops_with_SharedQuant(
         else:
             shared_qspec = SharedQuantizationSpec((input0, node))
             input_qspec_map[input0] = quant_config.input_activation
-            input_qspec_map[input1] = shared_qspec
+            if _is_float_tensor(input1):
+                input_qspec_map[input1] = shared_qspec
 
             node.meta["quantization_annotation"] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
@@ -498,6 +503,12 @@ def annotate_1in1out_with_SharedQuant(
     input = node.args[0]
     assert isinstance(input, Node)
     if _is_annotated([node]) or not _is_float_tensor(input):
+        return
+
+    # `to.dtype` may cast to a non-float type (e.g. a bool visibility/attention
+    # mask on the model output). Never quantize the input of such casts,
+    # otherwise convert would insert a `quantize_per_tensor` on a bool tensor.
+    if node.target == torch.ops.aten.to.dtype and not _is_float_tensor(node):
         return
 
     shared_qspec = SharedQuantizationSpec((input, node))
@@ -717,9 +728,10 @@ def annotate_rms_norm(node: Node, quant_config: QuantizationConfig) -> None:
     quantization_annotation.input_qspec_map[node.args[0]] = (
         quant_config.input_activation
     )  # active
-    quantization_annotation.input_qspec_map[node.args[2]] = (
-        quant_config.input_activation
-    )  # weight
+    if len(node.args) > 2 and node.args[2] is not None:
+        quantization_annotation.input_qspec_map[node.args[2]] = (
+            quant_config.input_activation
+        )  # weight
     quantization_annotation.output_qspec = quant_config.output_activation
     node.meta["quantization_annotation"] = quantization_annotation
     node.meta["quantization_annotation"]._annotated = True
@@ -739,9 +751,10 @@ def annotate_group_norm(node: Node, quant_config: QuantizationConfig) -> None:
     quantization_annotation.input_qspec_map[node.args[0]] = (
         quant_config.input_activation
     )  # active
-    quantization_annotation.input_qspec_map[node.args[2]] = (
-        quant_config.weight
-    )  # weight
+    if len(node.args) > 2 and node.args[2] is not None:
+        quantization_annotation.input_qspec_map[node.args[2]] = (
+            quant_config.weight
+        )  # weight
     quantization_annotation.output_qspec = quant_config.output_activation
 
     node.meta["quantization_annotation"] = quantization_annotation
@@ -762,9 +775,10 @@ def annotate_layer_norm(node: Node, quant_config: QuantizationConfig) -> None:
     quantization_annotation.input_qspec_map[node.args[0]] = (
         quant_config.input_activation
     )  # active
-    quantization_annotation.input_qspec_map[node.args[2]] = (
-        quant_config.input_activation
-    )  # weight
+    if len(node.args) > 2 and node.args[2] is not None:
+        quantization_annotation.input_qspec_map[node.args[2]] = (
+            quant_config.input_activation
+        )  # weight
     quantization_annotation.output_qspec = quant_config.output_activation
 
     node.meta["quantization_annotation"] = quantization_annotation

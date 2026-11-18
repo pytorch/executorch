@@ -28,6 +28,7 @@ class EnnQuantizer(Quantizer):
         self.enable_spin = False
         self.custom_quant_annotations: Sequence[Callable] = []
         self.act_observer_cls = MinMaxObserver
+        self._eps = None
 
     def setup_precision(self, quant_dtype: Precision) -> None:
         assert quant_dtype in Precision, f"No support for Precision {quant_dtype}."
@@ -43,6 +44,7 @@ class EnnQuantizer(Quantizer):
         is_qat=False,
         enable_spin=False,
         act_observer_cls=MinMaxObserver,
+        eps=None,
     ) -> None:
         assert quant_dtype in Precision, f"No support for Precision {quant_dtype}."
         self._precision = quant_dtype
@@ -50,6 +52,7 @@ class EnnQuantizer(Quantizer):
         self._is_qat = is_qat
         self.enable_spin = enable_spin
         self.act_observer_cls = act_observer_cls
+        self._eps = eps
 
     def annotate(self, model: GraphModule) -> GraphModule:
         self._annotate(model)
@@ -63,6 +66,7 @@ class EnnQuantizer(Quantizer):
             self._is_qat,
             self.enable_spin,
             self.act_observer_cls,
+            self._eps,
         )
         annotate(gm.graph, quant_config)
 

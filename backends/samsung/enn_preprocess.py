@@ -91,11 +91,6 @@ class EnnBackend(BackendDetails):
         enn_wrapper = PyEnnWrapper.EnnWrapper()
         enn_wrapper.Init()
 
-        first_programs_len = len(next(iter(edge_programs.values())))
-        assert all(
-            len(programs) == first_programs_len for programs in edge_programs.values()
-        ), "All subgraphs must have the same number of partitions!"
-
         preprocess_results = {}
         # Store GEN compile specs to set weight_buffer_hash_id_spec.value in USE phase
         gen_compile_specs = []

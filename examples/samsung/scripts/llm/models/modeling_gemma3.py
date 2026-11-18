@@ -363,6 +363,38 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
             "get_hidden_dim": self.config.hidden_size,
         }
 
+    def get_position_embeddings(
+        self, position_ids: Optional[torch.LongTensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute the RoPE tables the graphs take as inputs.
+
+        Returns (global cos, global sin, local cos, local sin), the order the
+        runtime expects them laid out in pos_embedding.bin. With
+        ``position_ids`` None, positions [0, max_context_len) are used so the
+        runtime can slice per-step rows out of the full table.
+        """
+        if position_ids is None:
+            position_ids = torch.arange(
+                self.max_context_len, device=self.target_device
+            ).unsqueeze(0)
+        hidden_states_dummy = torch.zeros(
+            (self.batch_size, position_ids.shape[1], self.hidden_size),
+            device=self.target_device,
+        )
+        g_cos, g_sin = self.rotary_emb(
+            hidden_states_dummy, position_ids, layer_type="full_attention"
+        )
+        l_cos, l_sin = self.rotary_emb(
+            hidden_states_dummy, position_ids, layer_type="sliding_attention"
+        )
+        dtype = self.dtype_setting
+        return (
+            g_cos.to(dtype),
+            g_sin.to(dtype),
+            l_cos.to(dtype),
+            l_sin.to(dtype),
+        )
+
     def get_example_inputs(
         self,
         num_token=1,
@@ -377,15 +409,9 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
         attention_mask = (full_mask, sliding_mask)
         position_ids = torch.arange(num_token, device=self.target_device)
         position_ids = position_ids.unsqueeze(0)
-        hidden_states_dummy = torch.zeros(input_ids.shape + (self.hidden_size,)).to(
-            self.target_device
-        )
-        position_embeddings_global = self.rotary_emb(
-            hidden_states_dummy, position_ids, layer_type="full_attention"
-        )
-        position_embeddings_local = self.rotary_emb(
-            hidden_states_dummy, position_ids, layer_type="sliding_attention"
-        )
+        g_cos, g_sin, l_cos, l_sin = self.get_position_embeddings(position_ids)
+        position_embeddings_global = (g_cos, g_sin)
+        position_embeddings_local = (l_cos, l_sin)
 
         # Match the reference: keep the full static buffer but only feed the
         # graph a prefix of length max_context_len - num_token, so the model
@@ -492,18 +518,9 @@ class Gemma3ForCausalLM_ENN(Gemma3PreTrainedModel, GenerationMixin):
         hidden_states_dummy = torch.zeros(
             input_ids.shape + (self.hidden_size,), device=self.target_device
         )
-        position_embeddings_global = self.rotary_emb(
-            hidden_states_dummy, position_ids, layer_type="full_attention"
-        )
-        position_embeddings_local = self.rotary_emb(
-            hidden_states_dummy, position_ids, layer_type="sliding_attention"
-        )
-        position_embeddings_global = tuple(
-            data.to(self.dtype_setting) for data in position_embeddings_global
-        )
-        position_embeddings_local = tuple(
-            data.to(self.dtype_setting) for data in position_embeddings_local
-        )
+        g_cos, g_sin, l_cos, l_sin = self.get_position_embeddings(position_ids)
+        position_embeddings_global = (g_cos, g_sin)
+        position_embeddings_local = (l_cos, l_sin)
 
         # Update past_key_values with dummy states so HF `generate` tracks the
         # sequence length, matching the reference forward.

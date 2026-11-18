@@ -4,19 +4,75 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
+import os
+import random
 import typing
 
+import numpy as np
 import torch
+from torch.fx import Interpreter, Node
 
 from transformers.models.gemma3.modeling_gemma3 import Gemma3RMSNorm
+
+try:
+    from transformers.models.gemma4.modeling_gemma4 import (
+        Gemma4RMSNorm,
+        Gemma4VisionAttention,
+    )
+except ImportError:
+    # transformers version without gemma4 support
+    Gemma4RMSNorm = None
+    Gemma4VisionAttention = None
+
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
+
+def seed_everything(seed: int = 42):
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def free_memory():
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def _get_rms_dim(
+    name: str,
+    child: Gemma4RMSNorm,
+    parent: torch.nn.Module,
+) -> int:
+    """Get the normalization dimension for Gemma4RMSNorm."""
+    if hasattr(child, "weight"):
+        return child.weight.shape[-1]
+    elif "embedding_pre_projection_norm" in name:
+        dim = parent.multimodal_hidden_size
+    elif "v_norm" in name and (
+        Gemma4VisionAttention is not None and isinstance(parent, Gemma4VisionAttention)
+    ):
+        dim = parent.head_dim
+    else:
+        assert 1 == 2, f"Unsupport norm layer {name}"
+    return dim
 
 
 # ----------------------------------------------------------------------
 # Replace
 #     Modified from executorch.examples.models.llama.source_transformation.rms_norm.py
 # ----------------------------------------------------------------------
-def replace_rms_norm_with_native_rms_norm(module: torch.nn.Module):
+def replace_rms_norm_with_native_rms_norm(
+    module: torch.nn.Module,
+):
+    """Recursively replace Gemma4RMSNorm with torch.nn.RMSNorm."""
     for name, child in module.named_children():
         if isinstance(child, LlamaRMSNorm):
             rms_norm = torch.nn.RMSNorm(
@@ -27,6 +83,18 @@ def replace_rms_norm_with_native_rms_norm(module: torch.nn.Module):
         elif isinstance(child, Gemma3RMSNorm):
             rms_norm = torch.nn.RMSNorm(child.weight.shape[-1], eps=child.eps)
             rms_norm.weight = torch.nn.Parameter(child.weight + 1.0)
+            setattr(module, name, rms_norm)
+        elif Gemma4RMSNorm is not None and isinstance(child, Gemma4RMSNorm):
+            param = next(module.parameters())
+            dim = _get_rms_dim(name, child, module)
+            rms_norm = torch.nn.RMSNorm(
+                dim, eps=child.eps, elementwise_affine=child.with_scale
+            ).to(param)
+            if child.with_scale:
+                rms_norm.weight = torch.nn.Parameter(child.weight.data)
+            else:
+                rms_norm.weight = torch.nn.Parameter(torch.ones(dim))
+            rms_norm = rms_norm.to(param)
             setattr(module, name, rms_norm)
         else:
             replace_rms_norm_with_native_rms_norm(child)
@@ -292,8 +360,6 @@ def rotate_ov_proj(layer, head_dim, R2=None):
 
 def cleanup_memory() -> None:
     """Run GC and clear GPU memory."""
-    import gc
-
     # gc.collect and empty cache are necessary to clean up GPU memory if the model was distributed
     gc.collect()
 
@@ -327,3 +393,201 @@ def apply_spin_quant_r1_r2(model: torch.nn.Module, optimized_rotation_path: str)
         rotate_mlp_output(layer, R1)
         rotate_ov_proj(layer, head_dim, R2=R2)
     return model
+
+
+def adding_dequant(gm, state_dict):
+    dequantize_op = torch.ops.quantized_decomposed.dequantize_per_channel.default
+
+    def convert_layer_name(name, exceptions):
+        # Sort by length descending to avoid partial matches
+        exceptions_sorted = sorted(exceptions, key=len, reverse=True)
+
+        # Step 1: protect exceptions with placeholder
+        protected = name
+        placeholders = {}
+        for i, exc in enumerate(exceptions_sorted):
+            ph = f"\x00{i}\x00"
+            placeholders[ph] = exc
+            protected = protected.replace(exc, ph)
+
+        # Step 2: replace remaining '_' with '.'
+        replaced = protected.replace("_", ".")
+
+        # Step 3: restore exceptions
+        for ph, exc in placeholders.items():
+            replaced = replaced.replace(ph, exc)
+
+        return replaced
+
+    EXCEPTIONS = [
+        "self_attn",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "input_layernorm",
+        "post_attention_layernorm",
+        "embed_tokens",
+        "lm_head",
+    ]
+
+    for node in gm.graph.nodes:
+        if node.target == torch.ops.aten.linear.default:
+            wei_obs = node.args[1]
+            name = wei_obs.args[0]  # layers_0_self_attn_q_proj_weight
+            if str(name) == "lm_head_weight":
+                break
+            name_dict = convert_layer_name(str(name), EXCEPTIONS)
+            weight = state_dict["model." + name_dict]
+            weight_scale = state_dict["model." + name_dict + "_scale"]  # .squeeze()
+            weight_zp = torch.zeros_like(weight_scale)
+
+            frozen_name = str(name) + "_frozen_param_"
+            scale_name = str(name) + "_scale_"
+            zp_name = str(name) + "_zero_point_"
+            gm.register_buffer(
+                frozen_name, weight.to(torch.int8)
+            )  # wei_observer.w_int.to(torch.int8))
+            gm.register_buffer(scale_name, weight_scale)  # wei_observer.scale)
+            gm.register_buffer(
+                zp_name, weight_zp
+            )  # wei_observer.offset.to(torch.int8))
+
+            graph = gm.graph
+            with graph.inserting_after(wei_obs):
+                frozen_node = graph.create_node("get_attr", frozen_name, (), {})
+                scale_node = graph.create_node("get_attr", scale_name, (), {})
+                zp_node = graph.create_node("get_attr", zp_name, (), {})
+            with graph.inserting_after(frozen_node):
+                dq_node = graph.call_function(
+                    dequantize_op,
+                    args=(
+                        frozen_node,
+                        scale_node,
+                        zp_node,
+                        0,  # axis
+                        -8,  # qmin
+                        7,  # qmax
+                        torch.int8,  # dtype
+                    ),
+                )
+            wei_obs.replace_all_uses_with(dq_node)
+            gm.graph.erase_node(wei_obs)
+
+    gm.graph.lint()
+    gm.recompile()
+    return gm
+
+
+class IntermediateTracer(Interpreter):
+    def __init__(self, gm):
+        super().__init__(gm)
+        self.node_inout = {"input": {}, "output": {}, "connect": {}}
+
+    def clone_tensor(self, obj):
+        import types
+
+        if isinstance(obj, torch.Tensor):
+            return self._materialize_tensor(obj)
+        elif isinstance(obj, tuple):
+            return tuple(self.clone_tensor(x) for x in obj)
+        elif isinstance(obj, list):
+            return [self.clone_tensor(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: self.clone_tensor(v) for k, v in obj.items()}
+        elif isinstance(obj, types.ModuleType):
+            return f"<Module: {obj.__name__}>"
+        return None
+
+    def _materialize_tensor(self, t):
+        # Turn any torch.Tensor (including non-picklable subclasses such as
+        # BatchedTensorImpl / functional tensors that expose no real storage)
+        # into a plain CPU tensor. `torch.save` stores tensors via their
+        # storage, so a storage-less subclass raises NotImplementedError at
+        # pickling time. We guard against that and fall back to picklable
+        # metadata so the dump never crashes.
+        for fn in (
+            lambda: t.detach().cpu().clone(),
+            lambda: t.cpu(),
+            lambda: t.to("cpu"),
+            lambda: t.detach(),
+        ):
+            try:
+                out = fn()
+                out.untyped_storage()  # rejects storage-less tensor subclasses
+                return out.cpu().clone()
+            except Exception:
+                continue
+        try:
+            return {
+                "_undumpable_tensor": True,
+                "shape": tuple(t.shape),
+                "dtype": str(t.dtype),
+                "device": str(t.device),
+            }
+        except Exception:
+            return None
+
+    def run_node(self, n: Node):
+        args, kwargs = self.fetch_args_kwargs_from_env(n)
+
+        self.node_inout["connect"][n.name] = {
+            "ifm": [str(name) for name in n.args],
+            "ofm": [str(name) for name in n.users],
+        }
+
+        self.node_inout["input"][n.name] = (
+            self.clone_tensor(args),
+            self.clone_tensor(kwargs),
+        )
+
+        result = super().run_node(n)
+        self.node_inout["output"][n.name] = self.clone_tensor(result)
+        return result
+
+    def save_inout(self, path):
+        torch.save(self.node_inout, path)
+
+    def get_flat_inputs_for_interpreter(self, edge_program, user_inputs):
+        flat_inputs = []
+
+        sig = edge_program.graph_signature
+        state_dict = edge_program.state_dict
+
+        if isinstance(user_inputs, torch.Tensor):
+            user_inputs = [user_inputs]
+        else:
+            user_inputs = list(user_inputs)
+
+        user_input_idx = 0
+
+        for input_spec in sig.input_specs:
+            kind = input_spec.kind.name
+            target = input_spec.target
+
+            if kind == "PARAMETER" or kind == "BUFFER":
+                if target in state_dict:
+                    flat_inputs.append(state_dict[target])
+                else:
+                    raise KeyError(f"Can't get the parameter in state_dict: {target}")
+
+            elif kind == "USER_INPUT":
+                if user_input_idx < len(user_inputs):
+                    flat_inputs.append(user_inputs[user_input_idx])
+                    user_input_idx += 1
+                else:
+                    raise RuntimeError("The number of inputs is wrong")
+
+            else:
+                if (
+                    hasattr(edge_program, "constants")
+                    and target in edge_program.constants
+                ):
+                    flat_inputs.append(edge_program.constants[target])
+                else:
+                    pass
+
+        return flat_inputs

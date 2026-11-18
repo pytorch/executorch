@@ -8,14 +8,17 @@ from typing import Optional
 
 import torch
 from executorch.backends.samsung.quantizer.annotator import (
-    _get_quantization_annotation,
     _is_annotated,
     _is_float_tensor,
     OP_ANNOTATOR,
 )
 
 from executorch.backends.samsung.quantizer.qconfig import (
+    _get_eps,
+    get_a16w2_enn_quant_config,
+    get_a16w4_enn_quant_config,
     get_a16w8_enn_quant_config,
+    get_a8w4_enn_quant_config,
     get_a8w8_enn_quant_config,
     QuantizationConfig,
 )
@@ -94,6 +97,23 @@ def annotate_2in1out_wo_SharedQuant(
     annotate_2_binary_inputs(node, quant_config)
 
 
+def annotate_embedding(node: Node, quant_config: QuantizationConfig) -> None:
+    input_qspec_map = {}
+    weight = node.args[0]
+
+    input_qspec_map[weight] = quant_config.weight
+
+    output_act_qspec = (
+        quant_config.output_activation if _is_float_tensor(node) else None
+    )
+
+    node.meta["quantization_annotation"] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=output_act_qspec,
+        _annotated=True,
+    )
+
+
 def annotate_cat(node: Node, quant_config: QuantizationConfig) -> None:
     inputs = node.args[0]
     assert isinstance(inputs, (list, tuple)), "cat inputs must be a list/tuple"
@@ -125,6 +145,12 @@ def annotate_cat(node: Node, quant_config: QuantizationConfig) -> None:
         output_qspec=shared_qspec,
         _annotated=True,
     )
+
+    second_input = inputs[1]
+    if "quantization_annotation" in second_input.meta:
+        second_input.meta["quantization_annotation"].output_qspec = (
+            quant_config.input_activation
+        )
 
 
 def annotate_index_put(node: Node, quant_config: QuantizationConfig) -> None:
@@ -158,6 +184,29 @@ def annotate_1in1out(node: Node, quant_config: QuantizationConfig) -> None:
     node.meta["quantization_annotation"]._annotated = True
 
 
+def annotate_conv2d(node: Node, quant_config: QuantizationConfig) -> None:
+    # skipping quantization if weights are not float
+    if _is_annotated([node]) or not _is_float_tensor(node.args[1]):
+        return
+
+    input = node.args[0]
+    # input & weight (or bias) setting for Conv node(producer_node)
+    quantization_annotation = node.meta.get(
+        "quantization_annotation", QuantizationAnnotation()
+    )
+    if quantization_annotation.input_qspec_map is None:
+        quantization_annotation.input_qspec_map = {}
+
+    quantization_annotation.input_qspec_map[input] = quant_config.input_activation
+    quantization_annotation.input_qspec_map[node.args[1]] = quant_config.weight
+    if len(node.args) > 2 and quant_config.bias is not None:
+        quantization_annotation.input_qspec_map[node.args[2]] = quant_config.bias
+    quantization_annotation.output_qspec = quant_config.output_activation
+
+    node.meta["quantization_annotation"] = quantization_annotation
+    node.meta["quantization_annotation"]._annotated = True
+
+
 def annotate_from_index_put_to_matmul_input(
     node: Node, quant_config: QuantizationConfig
 ):
@@ -184,35 +233,6 @@ def annotate_from_index_put_to_matmul_input(
             annotate_from_index_put_to_matmul_input(arg0, quant_config)
 
 
-def annotate_conv2d(node: Node, quant_config: QuantizationConfig) -> None:
-    # skipping quantization if weights are not float
-    if _is_annotated([node]) or not _is_float_tensor(node.args[1]):
-        return
-
-    input = node.args[0]
-    # input & weight (or bias) setting for Conv node(producer_node)
-    quantization_annotation = node.meta.get(
-        "quantization_annotation", QuantizationAnnotation()
-    )
-    if quantization_annotation.input_qspec_map is None:
-        quantization_annotation.input_qspec_map = {}
-
-    shared_quant_node = _get_quantization_annotation(input)
-    if shared_quant_node:
-        quantization_annotation.input_qspec_map[input] = SharedQuantizationSpec(
-            shared_quant_node
-        )
-    else:
-        quantization_annotation.input_qspec_map[input] = quant_config.input_activation
-    quantization_annotation.input_qspec_map[node.args[1]] = quant_config.weight
-    if len(node.args) > 2 and quant_config.bias is not None:
-        quantization_annotation.input_qspec_map[node.args[2]] = quant_config.bias
-    quantization_annotation.output_qspec = quant_config.output_activation
-
-    node.meta["quantization_annotation"] = quantization_annotation
-    node.meta["quantization_annotation"]._annotated = True
-
-
 def _is_matmul_with_call_function_inputs(node: Node) -> bool:
     """True if ``node`` is a matmul whose two inputs are both call_function nodes."""
     return (
@@ -234,6 +254,122 @@ def _find_lm_head(gm: torch.fx.GraphModule) -> Optional[Node]:
         if n.op == "call_function" and n.target == torch.ops.aten.linear.default
     ]
     return linears[-1] if linears else None
+
+
+def annotate_linear_with_config(node: Node, quant_config: QuantizationConfig) -> None:
+    annotate_conv2d(node, quant_config)
+    ifm = node.args[0]
+    if "quantization_annotation" in ifm.meta:
+        ifm.meta["quantization_annotation"].output_qspec = quant_config.input_activation
+
+    for user in node.users:
+        if "quantization_annotation" not in user.meta:
+            continue
+        qa = user.meta["quantization_annotation"]
+        if qa.input_qspec_map is None:
+            qa.input_qspec_map = {}
+        qa.input_qspec_map[node] = quant_config.output_activation
+
+
+def custom_annotate_gemma4_text_decoder(gm: torch.fx.GraphModule) -> None:
+    # Annotate 16a8w for matmul op to get better performance
+    quant_config_a16w8 = get_a16w8_enn_quant_config(
+        is_per_channel=False,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+    # Annotate 8a8w for second input of matmul until past_kv_cache
+    quant_config_a8w8 = get_a8w8_enn_quant_config(
+        is_per_channel=False,
+        is_qat=False,
+        act_symmetric=True,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+    # Annotate 16a8w for lm_head op to get better performance
+    quant_config_a16w8_linear = get_a16w8_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+
+    # Annotate 16a8w for ple op to get better performance
+    quant_config_a8w8_ple = get_a8w8_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=True,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+
+    quant_config_a8w4_linear = get_a8w4_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=True,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+    # Annotate 16a4w for embedding
+    quant_config_a16w4_embedding = get_a16w4_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+
+    quant_config_a16w2_embedding = get_a16w2_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=True,
+        eps=_get_eps,
+    )
+
+    # KV cache
+    for node in gm.graph.nodes:
+        # Changing Quant from index_put to input of Matmul to support Mixed precision.
+        if (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.matmul.default
+            and (
+                node.args[0].op == "call_function"
+                and node.args[1].op == "call_function"
+            )
+        ):
+            annotate_2in1out_for_mul(node, quant_config_a16w8)  # for matmul op
+            annotate_from_index_put_to_matmul_input(node.args[1], quant_config_a8w8)
+
+        # Key linear op is A16W4 --> A16W8
+        if node.op == "call_function" and node.target == torch.ops.aten.linear.default:
+            if "quantization_annotation" in node.meta:
+                del node.meta["quantization_annotation"]
+            if "per_layer_projection_weight" in str(
+                node.args[1]
+            ) or "per_layer_input_gate_weight" in str(node.args[1]):
+                annotate_linear_with_config(node, quant_config_a8w8_ple)
+            elif "lm_head_weight" in str(
+                node.args[1]
+            ) or "per_layer_model_projection_weight" in str(node.args[1]):
+                OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)
+            else:
+                annotate_linear_with_config(node, quant_config_a8w4_linear)
+
+        # Per-ch (4 bits) for embedding weight
+        if (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.embedding.default
+        ):
+            if "quantization_annotation" in node.meta:
+                del node.meta["quantization_annotation"]
+            if "self_decoder_embed_tokens_weight" in node.args[0].name:
+                annotate_embedding(node, quant_config_a16w2_embedding)
+            else:
+                annotate_embedding(node, quant_config_a16w4_embedding)
 
 
 def custom_annotate_llama_a16w4(gm: torch.fx.GraphModule) -> None:
@@ -300,3 +436,52 @@ def custom_annotate_gemma3_a16w4(gm: torch.fx.GraphModule) -> None:
             if "quantization_annotation" in node.meta:
                 del node.meta["quantization_annotation"]
             OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)
+
+
+def custom_annotate_gemma_a16w4(gm: torch.fx.GraphModule) -> None:
+    # Annotate 16a8w for matmul op to get better performance
+    quant_config_a16w8 = get_a16w8_enn_quant_config(
+        is_per_channel=False,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=False,
+        act_observer_cls=HistogramObserver,
+    )
+    # Annotate 8a8w for second input of matmul until past_kv_cache
+    quant_config_a8w8 = get_a8w8_enn_quant_config(
+        is_per_channel=False,
+        is_qat=False,
+        act_symmetric=True,
+        wei_symmetric=True,
+        act_observer_cls=HistogramObserver,
+    )
+    # Annotate 16a8w for lm_head op to get better performance
+    quant_config_a16w8_linear = get_a16w8_enn_quant_config(
+        is_per_channel=True,
+        is_qat=False,
+        act_symmetric=False,
+        wei_symmetric=True,
+        act_observer_cls=HistogramObserver,
+    )
+
+    for node in gm.graph.nodes:
+        # Changing Quant from index_put to input of Matmul to support Mixed precision.
+        if (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.matmul.default
+            and (
+                node.args[0].op == "call_function"
+                and node.args[1].op == "call_function"
+            )
+        ):
+            annotate_2in1out_for_mul(node, quant_config_a16w8)  # for matmul op
+            annotate_from_index_put_to_matmul_input(node.args[1], quant_config_a8w8)
+
+        # added for Gemma3-1b <----------------------------------------------------
+        # last linear op is A16W4 --> A16W8 <--------------------------------------
+        if node.op == "call_function" and node.target == torch.ops.aten.linear.default:
+            name = node.args[1]
+            if str(name) == "lm_head_weight":
+                if "quantization_annotation" in node.meta:
+                    del node.meta["quantization_annotation"]
+                OP_ANNOTATOR[node.target](node, quant_config_a16w8_linear)

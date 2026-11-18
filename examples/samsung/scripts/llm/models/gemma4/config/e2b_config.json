@@ -1,0 +1,62 @@
+{
+  "model_type": "gemma4",
+  "text_config": {
+    "hidden_size": 1536,
+    "intermediate_size": 6144,
+    "use_double_wide_mlp": true,
+    "num_hidden_layers": 35,
+    "num_attention_heads": 8,
+    "head_dim": 256,
+    "global_head_dim": 512,
+    "num_key_value_heads": 1,
+    "vocab_size": 262144,
+    "vocab_size_per_layer_input": 262144,
+    "max_position_embeddings": 131072,
+    "rms_norm_eps": 1e-06,
+    "rope_theta": 1000000.0,
+    "rope_local_base_freq": 10000.0,
+    "partial_rotary_factor": 0.25,
+    "sliding_window": 512,
+    "hidden_activation": "gelu_pytorch_tanh",
+    "final_logit_softcapping": 30.0,
+    "hidden_size_per_layer_input": 256,
+    "num_kv_shared_layers": 20,
+    "tie_word_embeddings": true,
+    "layer_types": [
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
+      "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention"
+    ]
+  },
+  "audio_config": {
+    "model_type": "gemma4_audio",
+    "hidden_size": 1024,
+    "output_proj_dims": 1536,
+    "num_attention_heads": 8,
+    "num_hidden_layers": 12,
+    "rms_norm_eps": 1e-06,
+    "conv_kernel_size": 5,
+    "residual_weight": 0.5,
+    "attention_chunk_size": 12,
+    "attention_context_left": 13,
+    "attention_context_right": 0,
+    "attention_logit_cap": 50.0
+  },
+  "audio_seq_length": 750,
+  "audio_ms_per_token": 40,
+  "audio_sample_rate": 16000,
+  "max_audio_length_sec": 30,
+  "special_tokens": {
+    "audio_token_id": 258881,
+    "boa_token_id": 256000,
+    "eoa_token_id": 258883,
+    "boi_token_id": 255999,
+    "eoi_token_id": 258882,
+    "image_token_id": 258880,
+    "video_token_id": 258884
+  }
+}

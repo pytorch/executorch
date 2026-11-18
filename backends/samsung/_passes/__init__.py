@@ -13,10 +13,13 @@ from .customized_constant_prop import ConstantPropPass
 from .decompose_einsum import DecomposeEinsum
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_outer import DecomposeOuter
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
+from .decompose_unfold import DecomposeUnfold
 from .fold_qdq import FoldQDQPass
 from .fuse_activation import FuseActivationPass
+from .fuse_embedding_dequant import FuseEmbeddingDequantPass
 from .insert_qdq import InsertQDQPass
 from .remove_useless_ops import RemoveUselessOpPass
 from .replace_inf_values import ReplaceInfValues
@@ -32,9 +35,12 @@ __all__ = [
     "DecomposeEinsum",
     "DecomposeGlu",
     "DecomposeLinalgVectorNorm",
+    "DecomposeOuter",
     "DecomposeRemainder",
     "DecomposeRoll",
+    "DecomposeUnfold",
     "FoldQDQPass",
+    "FuseEmbeddingDequantPass",
     "FuseActivationPass",
     "InsertQDQPass",
     "RemoveUselessOpPass",
