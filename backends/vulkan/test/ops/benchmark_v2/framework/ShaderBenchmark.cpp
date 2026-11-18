@@ -231,11 +231,9 @@ Report benchmark_shader(
     context.register_barrier(initial);
     for (uint32_t i = 0; i < count; ++i) {
       context.extract_cmd().bind_pipeline(pipeline, pipeline_layout, lwg);
-      // Serialize repeats, including across submissions of the cached buffer.
-      vkapi::PipelineBarrier barrier{};
-      barrier.stage = {
-          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT,
-          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT};
+      // Barriers derived from tensor accesses alone let some drivers overlap
+      // consecutive repetitions.
+      vkapi::PipelineBarrier barrier = vkapi::full_pipeline_barrier();
       bind_resources(descriptors, barrier);
       context.register_shader_dispatch(
           descriptors,
