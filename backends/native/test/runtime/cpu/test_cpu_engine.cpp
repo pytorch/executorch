@@ -818,7 +818,7 @@ TEST(CPUEngineTest, SupportsEmptyAndPassthroughGraphs) {
 
 TEST(CPUEngineTest, RejectsUnsupportedSemanticsDuringCompilation) {
   const std::vector<std::pair<std::string, std::string>> scenarios{
-      {"alias", "unsupported Native view torch.ops.aten.alias.default"},
+      {"expand", "unsupported Native view torch.ops.aten.expand.default"},
       {"mutation_output", "mutation outputs are not supported"},
       {"mutation_input", "Native alias does not match its operand"},
       {"layout", "value 'x' is not a static contiguous tensor"},
@@ -834,8 +834,13 @@ TEST(CPUEngineTest, RejectsUnsupportedSemanticsDuringCompilation) {
                              : std::vector<int32_t>{},
         scenario == "dynamic");
     graph.input("x", meta);
-    if (scenario == "alias") {
-      graph.unary("result", "x", "torch.ops.aten.alias.default", meta, "x");
+    if (scenario == "expand") {
+      graph.view_op(
+          "result",
+          "x",
+          "torch.ops.aten.expand.default",
+          {2, 2, 2},
+          {graph.int_list_arg("size", {2, 2, 2})});
     } else if (scenario == "operator") {
       graph.unary("result", "x", "test.unsupported", meta);
     } else {
@@ -1018,7 +1023,7 @@ TEST(CPUEngineTest, MaterializesNativeViewAliases) {
   EXPECT_EQ(output(*compiled.executable), (std::vector<float>{2, 4, 6, 8}));
 }
 
-TEST(CPUEngineTest, MaterializesNativeSliceSqueezeAndUnsqueezeAliases) {
+TEST(CPUEngineTest, MaterializesNativeSliceSqueezeUnsqueezeAndAliasAliases) {
   TestGraph graph;
   graph.input("x", graph.meta(fbs::ScalarType::FLOAT, {2, 3}));
   graph.view_op(
@@ -1042,8 +1047,9 @@ TEST(CPUEngineTest, MaterializesNativeSliceSqueezeAndUnsqueezeAliases) {
       "torch.ops.aten.squeeze.dims",
       {2, 2},
       {graph.int_list_arg("dim", {-1})});
+  graph.view_op("same", "rows", "torch.ops.aten.alias.default", {2, 2}, {});
   graph.add(
-      "result", "rows", "rows", graph.meta(fbs::ScalarType::FLOAT, {2, 2}));
+      "result", "same", "same", graph.meta(fbs::ScalarType::FLOAT, {2, 2}));
   graph.output("result");
   auto compiled = compile(graph.program());
   const std::array<float, 6> input{1, 2, 3, 4, 5, 6};
@@ -1054,19 +1060,27 @@ TEST(CPUEngineTest, MaterializesNativeSliceSqueezeAndUnsqueezeAliases) {
 }
 
 TEST(CPUEngineTest, RedirectsOutputAliasOfNativeMutation) {
-  TestGraph graph;
-  const auto meta = graph.meta();
-  graph.input("x", meta);
-  graph.add("sum", "x", "x", meta);
-  graph.view("alias", "sum", {4});
-  graph.unary("relu", "sum", "torch.ops.aten.relu_.default", meta, "sum", true);
-  graph.output("alias");
-  auto compiled = compile(graph.program());
-  const std::array<float, 4> input{-2, -1, 1, 2};
-  compiled.executable->set_input(
-      0, input.data(), input.size(), ScalarType::Float);
-  compiled.executable->execute();
-  EXPECT_EQ(output(*compiled.executable), (std::vector<float>{0, 0, 2, 4}));
+  for (const std::string scenario : {"view", "alias"}) {
+    SCOPED_TRACE(scenario);
+    TestGraph graph;
+    const auto meta = graph.meta();
+    graph.input("x", meta);
+    graph.add("sum", "x", "x", meta);
+    if (scenario == "view") {
+      graph.view("alias", "sum", {4});
+    } else {
+      graph.view_op("alias", "sum", "torch.ops.aten.alias.default", {4}, {});
+    }
+    graph.unary(
+        "relu", "sum", "torch.ops.aten.relu_.default", meta, "sum", true);
+    graph.output("alias");
+    auto compiled = compile(graph.program());
+    const std::array<float, 4> input{-2, -1, 1, 2};
+    compiled.executable->set_input(
+        0, input.data(), input.size(), ScalarType::Float);
+    compiled.executable->execute();
+    EXPECT_EQ(output(*compiled.executable), (std::vector<float>{0, 0, 2, 4}));
+  }
 }
 
 TEST(CPUEngineTest, RejectsChannelsLastCopyDuringCompilation) {
