@@ -68,6 +68,31 @@ def define_common_targets(is_fbcode = False):
             **get_oss_build_kwargs()
         )
 
+        # `qnn_llama_runner`'s CLI with its entry point renamed to
+        # `qnn_llama_runner_main`, for a binary that wraps it.
+        runtime.cxx_library(
+            name = "qnn_llama_runner_main",
+            srcs = [
+                "qnn_llama_runner.cpp",
+            ],
+            compiler_flags = [
+                "-Wno-global-constructors",
+            ],
+            preprocessor_flags = [
+                "-Dmain=qnn_llama_runner_main",
+            ],
+            exported_deps = [
+                ":runner_lib",
+                "//executorch/extension/threadpool:threadpool",
+            ],
+            external_deps = [
+                "gflags",
+            ],
+            platforms = [ANDROID],
+            visibility = ["PUBLIC"],
+            **get_oss_build_kwargs()
+        )
+
     else:
         runtime.python_library(
             name = "static_llama",

@@ -10,6 +10,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -332,16 +333,17 @@ class LowerInt16RsqrtPass(ArmPass):
                         args=(output_node, torch.int32),
                         from_node=node,
                     )
+                mul_shift = create_const(graph, 0, torch.int8, node)
                 saturated_zero = create_node(
                     graph,
                     self._MUL,
-                    args=(qmax_output_i32, zero_mask),
+                    args=(qmax_output_i32, zero_mask, mul_shift),
                     from_node=node,
                 )
                 masked_output = create_node(
                     graph,
                     self._MUL,
-                    args=(output_i32, nonzero_mask),
+                    args=(output_i32, nonzero_mask, mul_shift),
                     from_node=node,
                 )
                 output_node = create_node(

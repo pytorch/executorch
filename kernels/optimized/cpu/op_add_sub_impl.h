@@ -95,51 +95,17 @@ Tensor& opt_add_sub_out_impl(
       using Vec = at::vec::Vectorized<CTYPE>;
       Vec alpha_val_vec(alpha_val);
       if constexpr (is_sub) {
-        if (selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-            selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-            selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-          auto add_lambda = [&alpha_val_vec](auto x, auto y) {
-            return y - alpha_val_vec * x;
-          };
-          torch::executor::handle_broadcast_elementwise<CTYPE>(
-              ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-        } else {
-          auto add_lambda = [&alpha_val_vec](auto x, auto y) {
-            return x - alpha_val_vec * y;
-          };
-          torch::executor::handle_broadcast_elementwise<CTYPE>(
-              ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-        }
+        auto add_lambda = [&alpha_val_vec](auto x, auto y) {
+          return x - alpha_val_vec * y;
+        };
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
       } else {
-        if (selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-            selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-            selected_optimized_path ==
-                ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-          // Reason we swap out args here is because
-          // handle_broadcast_elementwise handles this selected_optimized_path
-          // option a bit differently. This should really be resolved in
-          // handle_broadcast_elementwise. However, the current blocker is that
-          // handle_broadcast_elementwise tries to be agnostic of op. This
-          // should be fixed, likely by moving lambda creation to
-          // handle_broadcast_elementwise and it be aware of which op is being
-          // executed.
-          auto add_lambda = [&alpha_val_vec](auto x, auto y) {
-            return y + alpha_val_vec * x;
-          };
-          torch::executor::handle_broadcast_elementwise<CTYPE>(
-              ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-        } else {
-          auto add_lambda = [&alpha_val_vec](auto x, auto y) {
-            return x + alpha_val_vec * y;
-          };
-          torch::executor::handle_broadcast_elementwise<CTYPE>(
-              ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-        }
+        auto add_lambda = [&alpha_val_vec](auto x, auto y) {
+          return x + alpha_val_vec * y;
+        };
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
       }
     });
   } else {

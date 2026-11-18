@@ -440,12 +440,12 @@ std::string& set_and_get_pipeline_cache_data_path(
   return global_cache_data_path;
 }
 
-Runtime* runtime() {
+std::shared_ptr<Runtime> runtime_owner() {
   // The global vulkan runtime is declared as a static local variable within a
   // non-static function to ensure it has external linkage. If it were a global
   // static variable there would be one copy per translation unit that includes
   // Runtime.h as it would have internal linkage.
-  static const std::unique_ptr<Runtime> p_runtime =
+  static const std::shared_ptr<Runtime> p_runtime =
       init_global_vulkan_runtime(set_and_get_pipeline_cache_data_path(""));
 
   VK_CHECK_COND(
@@ -453,7 +453,11 @@ Runtime* runtime() {
       "Pytorch Vulkan Runtime: The global runtime could not be retrieved "
       "because it failed to initialize.");
 
-  return p_runtime.get();
+  return p_runtime;
+}
+
+Runtime* runtime() {
+  return runtime_owner().get();
 }
 
 std::unique_ptr<Adapter> init_external_adapter(

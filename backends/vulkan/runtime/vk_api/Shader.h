@@ -51,6 +51,58 @@ class ShaderLayout final {
   friend void swap(ShaderLayout& lhs, ShaderLayout& rhs) noexcept;
 };
 
+enum class SpirvCapability : uint32_t {
+  MATRIX = 0,
+  SHADER = 1,
+  FLOAT16 = 9,
+  FLOAT64 = 10,
+  INT64 = 11,
+  INT16 = 22,
+  IMAGE_GATHER_EXTENDED = 25,
+  STORAGE_IMAGE_MULTISAMPLE = 27,
+  UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING = 28,
+  SAMPLED_IMAGE_ARRAY_DYNAMIC_INDEXING = 29,
+  STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING = 30,
+  STORAGE_IMAGE_ARRAY_DYNAMIC_INDEXING = 31,
+  IMAGE_CUBE_ARRAY = 34,
+  INT8 = 39,
+  MIN_LOD = 42,
+  SAMPLED_1D = 43,
+  IMAGE_1D = 44,
+  SAMPLED_CUBE_ARRAY = 45,
+  SAMPLED_BUFFER = 46,
+  IMAGE_BUFFER = 47,
+  STORAGE_IMAGE_EXTENDED_FORMATS = 49,
+  IMAGE_QUERY = 50,
+  STORAGE_IMAGE_READ_WITHOUT_FORMAT = 55,
+  STORAGE_IMAGE_WRITE_WITHOUT_FORMAT = 56,
+  GROUP_NON_UNIFORM = 61,
+  GROUP_NON_UNIFORM_VOTE = 62,
+  GROUP_NON_UNIFORM_ARITHMETIC = 63,
+  GROUP_NON_UNIFORM_BALLOT = 64,
+  GROUP_NON_UNIFORM_SHUFFLE = 65,
+  GROUP_NON_UNIFORM_SHUFFLE_RELATIVE = 66,
+  GROUP_NON_UNIFORM_CLUSTERED = 67,
+  GROUP_NON_UNIFORM_QUAD = 68,
+  STORAGE_BUFFER_16_BIT_ACCESS = 4433,
+  UNIFORM_AND_STORAGE_BUFFER_16_BIT_ACCESS = 4434,
+  STORAGE_PUSH_CONSTANT_16 = 4435,
+  STORAGE_INPUT_OUTPUT_16 = 4436,
+  STORAGE_BUFFER_8_BIT_ACCESS = 4448,
+  UNIFORM_AND_STORAGE_BUFFER_8_BIT_ACCESS = 4449,
+  STORAGE_PUSH_CONSTANT_8 = 4450,
+  COOPERATIVE_MATRIX_REDUCTIONS_NV = 5430,
+  COOPERATIVE_MATRIX_CONVERSIONS_NV = 5431,
+  COOPERATIVE_MATRIX_PER_ELEMENT_OPERATIONS_NV = 5432,
+  COOPERATIVE_MATRIX_TENSOR_ADDRESSING_NV = 5433,
+  COOPERATIVE_MATRIX_BLOCK_LOADS_NV = 5434,
+  DOT_PRODUCT_INPUT_ALL = 6016,
+  DOT_PRODUCT_INPUT_4X8_BIT = 6017,
+  DOT_PRODUCT_INPUT_4X8_BIT_PACKED = 6018,
+  DOT_PRODUCT = 6019,
+  COOPERATIVE_MATRIX_KHR = 6022,
+};
+
 struct ShaderInfo final {
   struct {
     const uint32_t* bin = nullptr;
@@ -75,6 +127,7 @@ struct ShaderInfo final {
   // Sourced from the yaml's `SUBGROUP_SIZE` template parameter — single
   // source of truth shared with GLSL ${SUBGROUP_SIZE} substitution.
   uint32_t required_subgroup_size = 0u;
+  std::vector<uint32_t> required_capabilities;
 
   explicit ShaderInfo();
 
@@ -90,7 +143,8 @@ struct ShaderInfo final {
       const bool requires_integer_dot_product_ext,
       const bool requires_shader_int64_ext,
       const bool requires_shader_float64_ext,
-      const uint32_t required_subgroup_size_arg = 0u);
+      const uint32_t required_subgroup_size_arg = 0u,
+      std::vector<uint32_t> required_capabilities_arg = {});
 
   operator bool() const {
     return src_code.bin != nullptr;

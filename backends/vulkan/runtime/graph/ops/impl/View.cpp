@@ -94,7 +94,7 @@ void add_view_copy_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
@@ -136,7 +136,7 @@ void add_view_copy_convert_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers

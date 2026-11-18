@@ -61,6 +61,41 @@ class OpLeTensorOutTest : public OperatorTest {
     op_le_tensor_out(a, b, out);
     EXPECT_TENSOR_EQ(out, tf_out.make({2, 2}, {false, true, true, false}));
   }
+
+  // Output dtype matches the inputs so the optimized broadcast paths are taken.
+  template <ScalarType DTYPE>
+  void test_broadcast_same_dtype_out() {
+    TensorFactory<DTYPE> tf;
+
+    // kBroadcast2dBy1d
+    Tensor x = tf.make({4}, {1, 2, 3, 4});
+    Tensor y = tf.make({2, 4}, {0, 2, 4, 6, 4, 3, 2, 1});
+    Tensor out = tf.zeros({2, 4});
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(x, y, out), tf.make({2, 4}, {0, 1, 1, 1, 1, 1, 0, 0}));
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(y, x, out), tf.make({2, 4}, {1, 1, 0, 0, 0, 0, 1, 1}));
+
+    // kBroadcastLastDim
+    x = tf.make({2, 1}, {2, 3});
+    y = tf.make({2, 3}, {1, 2, 3, 4, 3, 2});
+    out = tf.zeros({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(x, y, out), tf.make({2, 3}, {0, 1, 1, 1, 1, 0}));
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(y, x, out), tf.make({2, 3}, {1, 1, 0, 0, 1, 1}));
+
+    // kBroadcastNdByNd
+    x = tf.make({2, 1, 2}, {1, 4, 3, 2});
+    y = tf.make({2, 3, 2}, {0, 4, 1, 5, 2, 3, 3, 1, 4, 2, 2, 0});
+    out = tf.zeros({2, 3, 2});
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(x, y, out),
+        tf.make({2, 3, 2}, {0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0}));
+    EXPECT_TENSOR_EQ(
+        op_le_tensor_out(y, x, out),
+        tf.make({2, 3, 2}, {1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1}));
+  }
 };
 
 TEST_F(OpLeScalarOutTest, AllRealInputBoolOutputSupport) {
@@ -1178,4 +1213,23 @@ TEST_F(OpLeTensorOutTest, MonotonicIncreasingVsScalarBroadcastTest) {
   }
 
   EXPECT_TENSOR_EQ(out, tf_bool.make({1, 64}, expected_data));
+}
+
+TEST_F(OpLeTensorOutTest, BroadcastSameDtypeOut) {
+  test_broadcast_same_dtype_out<ScalarType::Float>();
+  test_broadcast_same_dtype_out<ScalarType::Int>();
+}
+
+TEST_F(OpLeTensorOutTest, BroadcastBoolInputs) {
+  TensorFactory<ScalarType::Bool> tf;
+  Tensor x = tf.make({4}, {false, true, false, true});
+  Tensor y =
+      tf.make({2, 4}, {false, false, true, true, true, true, false, false});
+  Tensor out = tf.zeros({2, 4});
+  EXPECT_TENSOR_EQ(
+      op_le_tensor_out(x, y, out),
+      tf.make({2, 4}, {true, false, true, true, true, true, true, false}));
+  EXPECT_TENSOR_EQ(
+      op_le_tensor_out(y, x, out),
+      tf.make({2, 4}, {true, true, false, true, false, true, true, true}));
 }

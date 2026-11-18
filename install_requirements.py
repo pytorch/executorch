@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-25 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,14 +11,20 @@ import platform
 import subprocess
 import sys
 
-from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+from install_utils import (
+    determine_torch_url,
+    ensure_pip,
+    is_intel_mac_os,
+    python_is_compatible,
+)
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
-TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+TORCHAO_STABLE_VERSION = "0.18.0"
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
+CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
@@ -37,6 +43,23 @@ def torchao_from_source():
         os.environ.get("EXECUTORCH_BUILD_KERNELS_TORCHAO") == "1"
         or os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1"
     )
+
+
+def get_torchao_version(torch_url):
+    if (
+        os.environ.get("EXECUTORCH_USE_RELEASE_CPU_DEPS") == "1"
+        and torch_url.endswith("/cpu")
+        and not torchao_from_source()
+    ):
+        return TORCHAO_STABLE_VERSION
+    return TORCHAO_NIGHTLY_VERSION
+
+
+def get_torch_url():
+    torch_url = determine_torch_url(TORCH_URL_BASE)
+    if get_torchao_version(torch_url) == TORCHAO_STABLE_VERSION:
+        return "https://download.pytorch.org/whl/cpu"
+    return torch_url
 
 
 def cu134_requirements(torch_url, include_domains=False):
@@ -79,19 +102,17 @@ def install_requirements(use_pytorch_nightly):
         sys.exit(1)
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_URL_BASE)
+    torch_url = get_torch_url()
     cu134_packages = cu134_requirements(torch_url)
     if cu134_packages:
         torch_url = determine_torch_url(TORCHAO_URL_BASE)
         if not use_pytorch_nightly:
             cu134_packages[0] = "torch"
-    # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
-    # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
-    # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
-    # where it exists. This nightly is what a development checkout is tested against, and the
-    # wheel's own torchao lower bound is this same version so that installing the package
-    # afterwards leaves this pin in place rather than replacing it.
-    if platform.machine().lower() in ("aarch64", "arm64"):
+    torchao_version = get_torchao_version(torch_url)
+    if torchao_version == TORCHAO_STABLE_VERSION:
+        torchao_url = "https://download.pytorch.org/whl/cpu"
+    # CUDA TorchAO wheels cover x86_64 only; use CPU wheels on aarch64.
+    elif platform.machine().lower() in ("aarch64", "arm64"):
         # The cpu channel specifically, not the index root. The root carries every variant, and a
         # pin without a local segment admits all of them while ordering a local segment highest,
         # so the xpu channel's pure python wheel would win on version before pip compares wheel
@@ -106,7 +127,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         ("torch==2.14.0" if use_pytorch_nightly else "torch"),
-        f"torchao=={TORCHAO_NIGHTLY_VERSION}",
+        f"torchao=={torchao_version}",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -191,7 +212,7 @@ def install_requirements(use_pytorch_nightly):
 
 def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_URL_BASE)
+    torch_url = get_torch_url()
     cu134_packages = (
         cu134_requirements(torch_url, include_domains=True)
         if use_pytorch_nightly
@@ -268,6 +289,7 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    ensure_pip()
     if not python_is_compatible():
         sys.exit(1)
     main(sys.argv[1:])

@@ -25,11 +25,13 @@ namespace executorch::extension::llm::serving::detail {
 inline runtime::Result<std::vector<batching::Token>> prepare_text_prompt(
     const tokenizers::Tokenizer& tokenizer,
     const PromptInput& input,
-    std::size_t max_tokens = std::numeric_limits<batching::Position>::max()) {
+    std::size_t max_tokens = std::numeric_limits<batching::Position>::max(),
+    std::size_t* num_tokens = nullptr) {
   const auto limit = std::min(
       max_tokens,
       static_cast<std::size_t>(std::numeric_limits<batching::Position>::max()));
   std::vector<batching::Token> prepared;
+  std::size_t total = 0;
   for (const auto& segment : input.segments) {
     std::vector<batching::Token> encoded;
     const std::vector<batching::Token>* ids;
@@ -45,12 +47,19 @@ inline runtime::Result<std::vector<batching::Token>> prepare_text_prompt(
     } else {
       return runtime::Error::InvalidArgument;
     }
-    if (ids->size() > limit - prepared.size()) {
+    if (ids->size() > std::numeric_limits<std::size_t>::max() - total) {
       return runtime::Error::InvalidArgument;
     }
-    prepared.insert(prepared.end(), ids->begin(), ids->end());
+    total += ids->size();
+    // Count all segments on overflow without retaining the oversized prompt.
+    if (total <= limit) {
+      prepared.insert(prepared.end(), ids->begin(), ids->end());
+    }
   }
-  if (prepared.empty()) {
+  if (num_tokens) {
+    *num_tokens = total;
+  }
+  if (total == 0 || total > limit) {
     return runtime::Error::InvalidArgument;
   }
   return prepared;
@@ -136,8 +145,13 @@ inline PreparedPromptResult prepare_prompt(
   if (model_preparer) {
     result = model_preparer(context, std::move(input));
   } else {
-    auto tokens = prepare_text_prompt(context.tokenizer, input, limit);
+    std::size_t num_tokens = 0;
+    auto tokens =
+        prepare_text_prompt(context.tokenizer, input, limit, &num_tokens);
     if (!tokens.ok()) {
+      if (num_tokens > limit) {
+        return context_length_error(num_tokens, limit);
+      }
       return ServingError{
           ErrorCode::InvalidArgument, "prompt preparation failed"};
     }
@@ -152,9 +166,12 @@ inline PreparedPromptResult prepare_prompt(
   }
   const auto size = prepared ? prepared->size() : 0;
   const auto identity = prepared ? prepared->prefix_identity() : nullptr;
-  if (!size || size > limit || (identity && identity->size() != size)) {
+  if (!size || (identity && identity->size() != size)) {
     return ServingError{
         ErrorCode::InvalidArgument, "invalid prepared prompt size or identity"};
+  }
+  if (size > limit) {
+    return context_length_error(size, limit);
   }
   return prepared;
 }

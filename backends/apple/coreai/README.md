@@ -23,3 +23,632 @@ python -m pytest backends/apple/coreai
 
 `CoreAIAOTCompileTest` needs `xcrun coreai-build` from the Metal Toolchain
 (`xcodebuild -downloadComponent MetalToolchain`) and skips without it.
+
+## Runtime
+
+The delegate manifest's `packaging` field names the embedded format: `aimodel`
+for a portable `.aimodel` bundle, located by `path`, or `aimodelc` for
+AOT-compiled per-architecture `.aimodelc` bundles, located by `archs`. Both
+formats require exactly one of a `function` name or `enumerated_functions` (see
+[Enumerated input shapes](#enumerated-input-shapes)), and ordered
+`input_names` and `output_names` matching the converter's bindings. Dictionary
+iteration order is not a binding contract. `export_hash` identifies the exported
+program used to namespace embedded assets. The `files` object maps relative
+filenames to byte sizes; `bundle_digests` maps each bundle basename to its
+export-time SHA-256 digest. The optional boolean `multifunction` marks a delegate
+exported as one function of a model shared with other delegates. Asset paths,
+including bundle and directory names,
+must remain distinct under case-insensitive, canonically normalized Unicode
+comparison. Accepted names are preserved, not rewritten.
+
+Parsing returns an immutable `Manifest` covering all exported bundles. Pure
+platform and architecture selection through `select_bundle` produces an immutable
+`SelectedBundle` with one bundle's path, digest, and files. Host probing returns a
+`SelectedHostBundle` containing that selection and its platform/architecture.
+without validation; filesystem materialization and SDK host probing remain
+outside the manifest parser.
+
+The experimental `CoreAIBackend` runtime supports stateless FP32/FP16 tensor
+models in both formats. ExecuTorch tensors must be contiguous. Output shapes
+must fit the executor's declared resize and capacity constraints. Stateful
+functions, image values, other dtypes, and interleaved layouts are not supported.
+Calls on one session must be serialized by the caller.
+
+Supported inputs are borrowed directly from ExecuTorch storage through Core AI
+raw views. The bridge copies shape metadata, not tensor bytes, and does not
+allocate intermediate input `NSData`, `Data`, or `NDArray` buffers. Each call
+wraps `const_data_ptr()` and the current shape's `nbytes()`, not the allocation's
+maximum capacity. Outputs use the SDK's actual returned shape; the backend
+resizes them within ExecuTorch's declared bounds before copying only the logical
+result bytes. Unused capacity is neither wrapped as input nor written as output.
+The backend waits for inference and all input access to finish before returning
+from `execute`, including on errors. This uses ExecuTorch's normal input-lifetime
+contract; callers must not concurrently mutate, release, or rebind the input
+storage. Output copiers retain the SDK arrays and copy directly into validated
+ExecuTorch destinations, without an intermediate `Data` allocation or payload
+copy. If any destination overlaps an input or another destination, all outputs
+are staged before writing destinations in order. This preserves input/output
+aliasing and overlapping-output semantics. Staging is not zero-initialized.
+This does not guarantee that Core AI itself avoids device transfers or internal
+copies.
+
+After an execution error, do not use the outputs as inference results. Output
+shapes may already have changed, but no result bytes are copied unless every
+output passes validation and resizing. Malformed SDK outputs return `Internal`.
+Output dtype/rank mismatches and incompatible shapes or capacity return
+`InvalidArgument`.
+
+### Calling from Swift
+
+When using the Core AI backend, run ExecuTorch model loading, inference and
+cache operations on a background `DispatchQueue` or a dedicated worker thread.
+Do not call these synchronous APIs directly inside Swift `Task` or
+`Task.detached`, because doing so can hang your application.
+
+From async Swift code, submit the entire ExecuTorch call with
+`DispatchQueue.async` and await its result using a continuation. Do not block
+the Swift task with `DispatchQueue.sync` or a semaphore. Keep input tensors alive
+and unchanged through all output copies, even if the waiting task is cancelled.
+
+### AOT architecture selection
+
+Configure AOT export with `AOTCompileConfig`, including the target `platform` and
+optional `architectures` list. For example, `AOTCompileConfig(platform="iOS",
+architectures=["h17p"])` requests that compiler architecture; omitting the list
+lets the compiler emit its supported architectures for the target platform.
+These are Core AI architecture names, not CPU names such as `arm64`.
+
+At load time, the runtime queries `AIModel.deviceArchitectureName` and selects
+the exact matching entry in the manifest's `archs` map. No runtime architecture
+option is required, and there is no fallback to another architecture. Platform,
+deployment floor, and architecture checks happen before asset reads or storage
+creation. Missing-architecture errors identify the device architecture, list
+available architectures, and request a matching export. Missing selected files
+are reported separately from an absent architecture entry.
+
+Both formats can require device specialization. Every load first attempts SDK
+bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
+to source materialization and persistent specialization, then binds the requested
+function and ordered I/O on that same acquired model.
+
+### Multi-function export
+
+By default each Core AI delegate is its own model with a single `main` function.
+`CoreAIPartitioner(multifunction=True)` instead lowers every Core AI partition of
+every method into one model, with one function per partition named
+`<method>_<partition index>`:
+
+```python
+lowered = to_edge_transform_and_lower(
+    {"forward": forward_ep, "prefill": prefill_ep},
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(multifunction=True)],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Here the delegates bind `forward_0` and `prefill_0`; a graph break adds
+`forward_1`, `prefill_1` and so on. Weights shared between methods are stored
+once. Every partition must carry identical compile specs (AOT config, deployment
+floor), except `input_enumerations`, which each method may set on its own (see
+below).
+
+Each delegate keeps its own manifest naming its function and ordered I/O; all of
+them reference the same embedded bundle. Function bindings are not part of the
+cache key, so the first load specializes the model and the other delegates
+restore it from the same bookmark. Each delegate still loads its own model
+instance unless the `coreai_share_multifunction_model` runtime option is set
+(see [Runtime options](#runtime-options)). Multi-function manifests carry
+`"multifunction": true`.
+
+### Enumerated input shapes
+
+`CoreAIPartitioner(input_enumerations=...)` compiles a dynamic dim to a fixed set
+of sizes instead of leaving it dynamic. Entries align with the ET model inputs and
+map a dim index to its allowed values; the dim must be exported dynamic:
+
+```python
+batch = torch.export.Dim("batch", min=1, max=64)
+ep = torch.export.export(model, (x,), dynamic_shapes={"x": {0: batch}})
+lowered = to_edge_transform_and_lower(
+    ep,
+    transform_passes=get_default_passes(),
+    partitioner=[CoreAIPartitioner(input_enumerations=[{0: [4, 16, 32]}])],
+    compile_config=get_default_compile_config(),
+)
+```
+
+Core AI replaces the delegate's dynamic function with one static function per
+combination of enumerated values, so the manifest lists them under
+`enumerated_functions` instead of naming one `function`:
+
+```json
+"enumerated_functions": [
+  {"function": "main_s31_4", "input_shapes": [[4, 8]]},
+  {"function": "main_s31_16", "input_shapes": [[16, 8]]},
+  {"function": "main_s31_32", "input_shapes": [[32, 8]]}
+]
+```
+
+`input_shapes` gives every input's shape in `input_names` order. The delegate
+binds every listed function at load and runs the one whose shapes equal the call's
+inputs; inputs matching none of them fail with `InvalidArgument` without running.
+All functions come from one model, so they share weights, one specialization and
+one cache entry. The function count is the product of the enumerated value counts
+across dims, and specialization and load time grow with it: on an M4 Max, a warm
+load of a two-layer MLP (256 to 1024 to 256 features) took 7 ms with 1 function, 41 ms with 16 and 248 ms
+with 64.
+
+With `multifunction=True`, give each method its own partitioner to enumerate only
+some methods, or different values per method:
+
+```python
+partitioner={
+    "decode": [CoreAIPartitioner(multifunction=True)],
+    "prefill": [CoreAIPartitioner(multifunction=True, input_enumerations=[{0: [64, 128]}])],
+}
+```
+
+Every enumerated partition expands into its own functions (`prefill_0_<key>`, and
+`prefill_1_<key>` past a graph break) inside the one shared model, while `decode_0`
+stays a single function. The other compile specs must still match across methods.
+
+### Cache directory
+
+Backend initialization reads the string runtime spec `coreai_cache_dir`. If
+absent, it sets the directory to `executorch_coreai` beneath user-domain
+`NSCachesDirectory`. The coordinator and storage helpers always receive that
+explicit directory. It contains raw bookmarks, source bundles and lock files.
+
+The cache directory must be an absolute path reserved for this backend. A
+symlink in the final component of the configured path is resolved before
+opening the cache directory. Entry and source operations retain directory descriptors and do not follow internal
+symlinks. The application must still prevent concurrent renaming, replacement,
+or modification while SDK calls use source URLs. Written files and changed directories
+are synced with `fsync`. Bookmark publication uses `F_FULLFSYNC` on the temporary
+file before rename and on the directory afterward. Source-bundle publication
+fully flushes the pending build directory after syncing its files and subdirectories,
+then fully flushes the destination directory after rename. A failure before
+rename preserves the old contents; a failure of the final flush reports an error
+even though the new complete contents are already visible. Use a local APFS
+volume; unsupported full-device flushes are reported as errors, not downgraded
+to `fsync`.
+
+Embedded bundles are read through `NamedDataMap` and materialized as unchanged
+files under the cache directory. Named data can be supplied externally; embedded
+bundles do not require all bytes to reside in one physical PTE.
+computes each bundle digest from all delivered relative filenames and file bytes,
+not just the SDK's bytecode-only `main.hash`. Each AOT architecture has an
+independent digest; only the selected architecture is materialized. NDS key names
+and raw asset bytes are unchanged.
+
+When source recovery is needed, existing bundles are checked for the expected
+file set, sizes, entry types and directory structure without reading asset
+contents or requesting NDS payloads. Unicode paths are compared in canonical
+decomposed form; NDS keys and bytes remain unchanged. Reuse fully flushes the
+`sources` directory, including after a previous publication's final flush failed.
+Missing bundles are written to a `.pending-<uuid>` directory and published with an
+exclusive rename; each selected NDS payload is fetched once and checked for size
+before writing. If another loader publishes first, its bundle is validated and
+used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
+normal source preparation without replacement, since an SDK model may still be
+using them. The acquisition coordinator can explicitly replace a damaged bundle
+under the same entry lock and rebuild it from available named data. Replacement
+preflights the full descriptor-bound tree, then revalidates entries while
+removing them without following links. Named-data and SDK failures are not
+retried. Temporary bundles are removed on ordinary failures before publication;
+a caller can explicitly retry after addressing the failure.
+
+These are completeness checks, not full content-integrity verification. Same-size
+content changes are not detected, and a complete stored bundle does not cause its
+NDS source to be reread. The export-time digest is a trusted artifact identifier;
+the runtime does not rehash source or stored bytes. Core AI may reject invalid
+contents, but SDK load failures do not automatically evict the extracted copy.
+
+Preparing the cache directory sets `NSURLIsExcludedFromBackupKey` on it, which covers
+everything beneath it. Ancestors are not modified. This is backup exclusion, not
+a control for iCloud Drive synchronization.
+
+Newly created roots request
+`NSFileProtectionCompleteUntilFirstUserAuthentication`. On iOS, this allows cache
+access while the device is locked after its first unlock following a reboot. New
+subdirectories and files inherit their parent's protection. Existing cache
+contents are not migrated. Directory preparation skips creation when the root
+already exists; child directories are opened first and created only when missing.
+Directory creation uses default permissions filtered by the process umask, without
+an explicit owner-only restriction. Existing permissions are not changed.
+Backup exclusion and required durability flushes still apply on reused paths.
+
+Cache-directory preparation owns location and backup/protection policy; descriptor
+storage owns no-follow operations, publication, and synchronization. Creation
+and enumeration use explicit policies, with a missing child distinguishable
+from an error. Fault injection is a separate, thread-local test interface and
+compiles away in production.
+
+Delegate construction and registration do not create storage directories or load
+models. Per-model initialization performs SDK acquisition and function loading,
+validating source assets only when recovery requires them. There is no synthetic
+zero-input inference at initialization. SDK specialization and function resource
+loading can still be substantial.
+
+The runtime uses `AIModelCache.default` with storage-pressure-only purging and
+stores an opaque bookmark for direct restoration. `coreai_cache_dir` does not
+choose the SDK artifact directory. The backend does not inspect SDK-private
+files, alter their backup flags, or use an App Group cache.
+
+Each selected bundle has a `bundle_identity` derived from its bundle digest,
+name, and packaging (`aimodel` or `aimodelc`). This identifies the delivered bundle independently of
+`export_hash`, which namespaces embedded assets. A readable cache key combines
+that bundle identity with
+the platform and Core AI device architecture, plus a hash of a versioned
+specialization identity supplied as plain data by the SDK boundary. Function
+bindings and delivery location are excluded, and no model bytes are hashed at
+runtime. Each variant key determines a raw bookmark in `bookmarks`, a bundle
+directory in `sources`, and one of 256 shared coordination files in `locks`.
+There is no PTE-wide bookmark list or serialized lifecycle record.
+
+A healthy bookmark hit does not consult NDS and attempts to clean the leftover
+source bundle. On a missing bookmark or confirmed SDK miss, the coordinator prepares
+the source, specializes it and atomically writes the returned bookmark bytes.
+After durable publication, it attempts to remove the entire keyed source
+directory while holding the key's stripe lock. The SDK cache supports
+inference and bookmark restoration without that extracted copy.
+Keep the packaged named data available: a later SDK cache miss requires source
+materialization again. There is no secondary source-URL cache lookup.
+
+SDK errors, unreadable bookmarks and publication failures fail loading without
+automatic cache deletion. If publication fails after specialization, the SDK
+entry and source remain. Cleanup after a bookmark hit or durable publication is
+best-effort: failures are logged without discarding the usable model or bookmark.
+A later load can finish cleanup or rebuild a partially removed source after an
+SDK miss. No cleanup failure triggers SDK eviction or retries within that load.
+The backend does not track historical or unrecorded SDK entries.
+
+Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
+maximum, and are published atomically because losing one orphans an SDK entry.
+A fixed pool of at most 256 disk locks coordinates loading and eviction across
+threads and processes. A SHA-256 hash of the full validated cache key selects a
+stripe modulo the configured pool size. Files are created on demand, so new
+model versions do not grow the pool beyond 256. Different keys on the same
+stripe serialize; different stripes remain independent. Bookmarks and source bundles
+remain separate for every key. Runtime operations hold only one stripe at a
+time.
+
+Lock ownership is maintained by the OS, and acquiring a lock does not flush its
+file or directory. Stripe files are never removed, including during cache
+clearing or after process exit, so waiters and future openers keep using the
+same inode. Removing the cache directory externally requires all loads, sessions
+and maintenance to stop.
+
+### Lifecycle logging
+
+Build with `EXECUTORCH_ENABLE_LOGGING=ON` and `EXECUTORCH_LOG_LEVEL=Info` to
+observe cache lookup, bookmark restoration hits, missing-bookmark versus
+SDK-confirmed misses, specialization start/success, durable bookmark saves, and
+cache-clearing milestones. Each message carries the cache key so events from
+multiple partitions can be correlated. These messages do not include bookmark
+contents, model data, or per-inference logs.
+
+A cache hit means that the SDK successfully restored a model from its bookmark.
+Specialization start means a request to the SDK's default cache; the
+SDK does not report whether that request compiled afresh or reused an internal
+artifact. The durable-save message confirms local bookmark publication,
+including its final directory flush, not independent verification of SDK-private
+artifact storage. During clearing, SDK entry absence and successful local
+cleanup are reported separately. Failed operations do not emit their success
+messages, and clearing an absent entry remains quiet.
+
+### Clearing cached assets
+
+The public C++ maintenance APIs are in `executorch::backends::coreai`:
+
+```cpp
+runtime::Error clear_cache(const char* coreai_cache_dir = nullptr);
+runtime::Error clear_cache_for_pte(
+    runtime::DataLoader& pte, const char* coreai_cache_dir = nullptr);
+runtime::Error clear_cache_for_pte(
+    const char* pte_path, const char* coreai_cache_dir = nullptr);
+```
+
+All three APIs use the same default cache directory as backend initialization
+when the directory is omitted or null. A supplied path must be absolute; invalid
+paths fail without falling back to the default. If loading used a custom cache
+directory, pass it when clearing; the PTE does not store runtime overrides.
+
+Cache clearing inventories keyed bookmarks and staged directories. PTE clearing
+finds every Core AI delegate in every method and derives each bundle's identity.
+Matching that identity in cache keys clears every recorded platform,
+device, and specialization variant without querying the host or SDK. All
+manifests are validated before any entry is cleared; their minimum OS and runtime
+compatibility do not restrict maintenance. Discovery does not load models or
+materialize assets. Actual SDK eviction still requires a usable bookmark and an
+available loader.
+
+These synchronous calls require callers to unload affected models and prevent
+concurrent loads, inference and maintenance across processes. Stripe locks are
+not a whole-root barrier. Clearing first deletes the recorded SDK entry, then
+its source bundle, then its bookmark. Busy or unknown SDK errors preserve the files;
+SDK-confirmed absence permits cleanup. Filesystem errors may leave partial
+cleanup, but the bookmark is retained until source removal succeeds so cleanup
+can be retried. Independent keys are still attempted in sorted order, and the
+first key error is returned. Each removal syncs the directory it changed. A
+missing root or absent entry is a noncreating no-op.
+
+Everything under a keyed `sources/<key>` directory belongs to the backend and is
+removed with that key. Outside keyed entries, clearing does not delete PTEs,
+other files or the stable lock files. Unkeyed interrupted `.pending-*` directories
+also remain untouched. Bookmarks are SDK eviction handles, not weights. For an
+existing entry with a missing or structurally invalid bookmark, clearing logs an
+Info message with the cache key, attempts local cleanup, and continues to other keys.
+The message states that SDK eviction could not be confirmed; bookmark contents
+are not logged. Absent entries remain quiet no-ops. I/O failures and SDK eviction
+errors still preserve bookmarks for retry. Lost bookmarks can leave SDK entries
+that these APIs cannot target. No history of removed entries is retained.
+Copied or reused exported artifacts can share keys; clearing them also removes
+the other copy's warm-cache benefit. Subsequent loads can specialize again.
+
+
+### Persistent SDK Rejection
+
+SDK errors are not classified as transient or permanent.
+Busy errors and all unclassified eviction/restore errors retain the local
+bookmark for retry; only successful eviction or a confirmed SDK miss permits
+normal removal. If retries keep failing, first stop every process using the
+cache directory. Back up or quarantine only the affected key's bookmark and keyed
+source bundle outside that directory, leaving the stable lock files in place. A later load
+can attempt cold acquisition and publish a new bookmark.
+This manual recovery does not confirm SDK eviction or guarantee disk-space
+reclamation: keep the backup because it may contain the only remaining eviction
+handle. Do not perform manual recovery while loading, inference, or maintenance
+is running.
+
+### Runtime options
+
+Pass options through the public `Module` API before loading. In an error-returning
+loader using the `executorch::runtime` namespace:
+
+```cpp
+BackendOptions<1> options;
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_cache_dir", cache_dir));
+LoadBackendOptionsMap map;
+ET_CHECK_OK_OR_RETURN_ERROR(map.set_options("CoreAIBackend", options.view()));
+ET_CHECK_OK_OR_RETURN_ERROR(module.load(map));
+```
+
+No options are required when using the default cache directory. `coreai_cache_dir`
+selects an application-chosen cache directory reserved for this backend. The
+supplied path is validated during preflight, but warm bookmark hits need no
+source.
+
+Use separate option maps to choose different cache directories for different models.
+The path names the cache directory, not a bundle. ExecuTorch option strings
+have a 255-byte limit.
+
+`coreai_compute_unit` selects the Core AI specialization options. Each value is
+one configuration the SDK provides:
+
+| Value | Core AI `SpecializationOptions` | Allowed compute units |
+|---|---|---|
+| `default` (or absent) | `.default` | CPU, GPU, Neural Engine |
+| `cpu_only` | `.cpuOnly` | CPU |
+| `prefer_cpu` | `init(preferredComputeUnitKind: .cpu)` | CPU, GPU, Neural Engine |
+| `prefer_gpu` | `init(preferredComputeUnitKind: .gpu)` | CPU, GPU, Neural Engine |
+| `prefer_neural_engine` | `init(preferredComputeUnitKind: .neuralEngine)` | CPU, GPU, Neural Engine |
+
+`cpu_only` is the only restriction: a preference maximizes use of that unit but
+falls back to any allowed unit for operations it cannot run. The SDK has no
+other combinations, such as CPU and Neural Engine only. Unknown values fail
+initialization with `InvalidArgument`. The selection is part of the cache key,
+so each value is specialized and cached separately; clearing a PTE removes every
+variant.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_compute_unit", "cpu_only"));
+```
+
+`coreai_expect_frequent_reshapes` (bool, default `false`) sets the SDK's
+`SpecializationOptions.expectFrequentReshapes` on top of the selected compute
+unit. Set it for models whose input shapes change between calls. It is part of
+the cache key, so each value is specialized and cached separately, and delegates
+only share a model (`coreai_share_multifunction_model`) when they agree on it.
+For AOT exports, the matching export-time setting is
+`AOTCompileConfig(expect_frequent_reshapes=True)`.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_expect_frequent_reshapes", true));
+```
+
+`coreai_share_multifunction_model` (bool, default `false`) makes the delegates of
+a multi-function export (`CoreAIPartitioner(multifunction=True)`) share one
+loaded Core AI model per process instead of each loading its own. Without it,
+every delegate restores a separate model with its own copy of the weights. With
+it, the first delegate loads the model and the others reuse it until the last
+one is destroyed. Delegates that start loading the same model concurrently wait
+for that single load; loads of other models proceed in parallel. Delegates sharing a model run one at a time: concurrent
+execution on one model is serialized by a per-model lock, because the SDK does
+not document it as safe and it produced wrong outputs in testing. Setting the
+option on a delegate that isn't from a multi-function export fails
+initialization with `InvalidArgument`.
+
+Sharing is process-wide, not per program, but scoped to the cache directory.
+Separate `Module`s that load the same PTE with the option set and the same
+`coreai_cache_dir` share one model, so their `execute` calls block each other.
+`Module`s with different cache directories never share: each loads its own model
+and keeps its own bookmark. A symlink to a cache directory counts as that
+directory. Different `coreai_compute_unit` values also load separate models,
+since each is a separate specialization.
+
+```cpp
+BackendOptions<2> options;
+ET_CHECK_OK_OR_RETURN_ERROR(
+    options.set_option("coreai_share_multifunction_model", true));
+```
+
+## SDK Bridge
+
+The private Swift module `CoreAIBridge` separates error/completion support,
+tensor layout/copying, and model/session lifecycle into three source files. It
+wraps the `CoreAI` framework behind the Objective-C protocols in
+`runtime/ETCoreAIBridge.h`. It restores models from bookmarks, specializes source
+bundles in the default SDK cache with storage-pressure-only purging, and binds
+named functions with ordered inputs and outputs. Each loader owns an immutable
+snapshot of its actual specialization options and exposes a stable, versioned
+identity derived from that snapshot. Asynchronous SDK calls run in detached
+tasks and report through completion blocks; function binding completes
+synchronously.
+
+Inputs are borrowed from caller storage through Core AI raw views; only shape
+metadata is copied. Outputs retain their SDK storage and expose a copier after
+all fallible layout validation finishes. Dense row-major outputs copy with one
+`memcpy`, while padded or transposed outputs use strided copies. Only FP16 and
+FP32 NDArrays are supported. Callers keep inputs live through output copying and
+stage copies before writing destinations that could alias inputs or other output
+destinations.
+
+Bridge-owned Objective-C types live in `runtime/ETCoreAITensor.mm`, separately
+from the production SDK entry points in `runtime/coreai_bridge.mm`. Both build in
+the private `coreai_bridge_obj` object library, while SDK-free tests can link the
+types and substitute fake entry points.
+
+`coreai_swift_bridge_test` runs the bridge's XCTests under `xctest` with
+`EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI and is registered with CTest only
+when the macOS host meets the configured Core AI deployment target.
+The test build exports static- and dynamic-shape models for real session tests.
+The SDK source-lifetime regression checks live inference and fresh-process
+bookmark restoration through the bridge after removing disposable portable and
+AOT source copies. The AOT case is skipped when the SDK cannot identify the
+device architecture. A killed probe can leave an SDK entry if it dies before
+saving its bookmark; cleanup never purges unrelated default-cache entries.
+CMake's `PYTHON_EXECUTABLE` must use the Python environment with the pinned Core
+AI requirements above. Backend Python changes regenerate the dedicated fixture
+directory, replacing previous contents. CTest supplies its location to XCTest;
+direct XCTest runs without it skip the session tests. Building only
+`coreai_host_test` does not export fixtures or build the Swift test bundle.
+
+## Building
+
+Core AI builds require an Apple SDK 27 or newer, Swift from Xcode 27, and CMake
+3.31 or newer with the Ninja or Xcode generator. Execution requires macOS 27 or
+iOS 27. `EXECUTORCH_BUILD_COREAI` defaults to `OFF`. Enabling it builds the
+private Swift implementation, module `CoreAIBridge`. Only Core AI targets get an
+OS 27 minimum; unrelated runtime targets keep the configured deployment target.
+Ninja builds use one architecture per build directory. Current runtime support
+covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
+`Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
+
+Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for the public PTE-file
+maintenance API and consumers such as `Module`.
+Link the CMake target `coreaidelegate`, not just its archive filename. Its
+transitive dependencies supply Swift and Foundation/CoreAI linkage, and its
+link interface retains static backend registration. With
+`EXECUTORCH_BUILD_SHARED=ON`, the delegate is a shared library linked to the
+single consolidated `executorch_shared` runtime. Otherwise it is static.
+Consumers of the shared delegate must use that same shared runtime.
+Installed CMake targets resolve framework and Swift runtime dependencies using
+the consumer's selected SDK and toolchain, not the producer's Xcode paths.
+Select the Apple SDK/toolchain when configuring the consumer project.
+SwiftPM and XCFramework distribution are not integrated yet.
+
+The `coreai_runtime_smoke` target checks final linkage of a C++ consumer,
+including Swift dependencies, backend registration retention, and the public
+cache-clearing overloads. With
+`EXECUTORCH_BUILD_TESTS=ON` it is built; otherwise it is excluded from the
+default build. SDK-linked tests are registered with CTest only for native macOS
+builds when the host meets the target's deployment minimum (at least 27.0).
+Cross-builds and older hosts can build these tests without registering them.
+Running the smoke test checks registration and availability; it does not perform
+model inference. Do not execute SDK27 binaries on an older host.
+
+## Backend-local PTE Inspection
+
+The private `inspect_coreai_pte(DataLoader&)` reader extracts Core AI processed
+buffers without loading methods, external assets, or SDK models. Inspection does
+not derive cache keys or mutate cache state. It verifies FlatBuffer structure
+and program semantics, skips delegates without a matching backend ID, and
+returns `NotFound` for absent segments or out-of-range references. Legacy
+headers may omit the segment extent; selected segment bounds are still checked.
+
+## Host Tests
+
+On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
+registers the standalone `coreai_host_test` executable with CTest. It tests
+manifest parsing, PTE inspection, AOT asset selection, cache identity, bookmark
+I/O, acquisition coordination, lock contention, filesystem storage, and delegate
+initialization and execution against a fake bridge. It uses Foundation without
+Swift or CoreAI SDK calls. Acquisition contention tests run two threads inside a
+bounded child process; bookmark lock tests separately cover contention between
+processes. The host test target is omitted for Apple cross-builds. On supported
+macOS hosts, CTest also runs the Swift bridge tests, source-lifetime probes, and
+`coreai_runtime_smoke`, which link Swift and the Core AI framework.
+`coreai_pte_export_test` compares inspected metadata with the manifest from an
+actual exported PTE. It uses the generated bridge fixture without loading SDK
+models.
+
+CI builds and runs these tests on macOS 27. To use the same configuration from
+the repository root:
+
+```bash
+cmake -S . -B <build-dir> -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
+  -DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_TESTS=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON -DEXECUTORCH_BUILD_PORTABLE_OPS=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON
+cmake --build <build-dir> --target backends/apple/coreai/all
+ctest --test-dir <build-dir>/backends/apple/coreai --output-on-failure --no-tests=error
+```
+
+With the module extension and portable operators enabled, `coreai_multithread_test`
+runs a real multi-delegate FP16 model through independently owned Modules. Workers
+start loading together and immediately execute after their own load, allowing
+loading, inference, and teardown to overlap. Every inference checks output shape,
+dtype, finite values, and numerical agreement. Cold and warm rounds share one
+isolated test cache; cleanup happens only after all workers have joined. CTest
+bounds the whole process with a timeout.
+
+The default is a small smoke run. CI uses the following stress size:
+
+```bash
+COREAI_STRESS_THREADS=50 COREAI_STRESS_ITERATIONS=100 \
+  ctest --test-dir <build-dir>/backends/apple/coreai \
+  -R '^coreai_multithread_test$' --output-on-failure --no-tests=error
+```
+
+For a compile-only production smoke build, use a fresh build directory without
+`EXECUTORCH_BUILD_TESTS`, set `CMAKE_OSX_ARCHITECTURES=arm64`, and build
+`coreai_runtime_smoke`. For iOS also set `CMAKE_SYSTEM_NAME=iOS` and
+`CMAKE_OSX_SYSROOT=iphoneos`. Do not run the iOS binary on the host or install
+a simulator as part of this build.
+
+## Shared Backend Suite
+
+The shared model/operator suite has five CoreAI flows: `coreai_fp32`,
+`coreai_fp16`, `coreai_w8a8`, `coreai_w8`, and `coreai_w4`. The last two use
+weight-only quantization. Weightless operator cases still exercise delegation
+but do not demonstrate weight quantization. Reports distinguish delegated and
+undelegated cases; a portable fallback is not evidence of CoreAI execution.
+
+Build the Python runtime with CoreAI enabled before running these flows on macOS
+27. A normal Python installation without the delegate cannot execute their PTEs:
+
+```bash
+CMAKE_GENERATOR=Ninja \
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_COREML=OFF -DEXECUTORCH_BUILD_MLX=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0" \
+  python install_executorch.py --editable
+python -m pip install -r backends/apple/coreai/requirements.txt \
+  pytest-xdist pytest-json-report pytest-timeout
+COREAI_TEST_RUNTIME=1 python -m pytest backends/apple/coreai/test/test_tester.py -x
+python -m pytest -c /dev/null backends/test/suite/operators/ \
+  -m flow_coreai_fp32 -x --json-report --json-report-file=coreai-results.json
+```
+
+Use `models` in place of `operators` for the model suite, and select another flow
+with its `flow_` marker. The CoreAI serialized stage passes an isolated cache root
+through per-program backend options, not global options. Set
+`GOLDEN_ARTIFACTS_DIR` to preserve the shared suite's PTE and reference artifacts.
+CI runs each suite/flow pair with bounded parallelism and propagates test failures
+without a failure allowance.

@@ -38,6 +38,10 @@ size_t as_strided_copy_compute_storage_nbytes(
   return size * itemsize_bytes;
 }
 
+bool is_1d_empty(const Tensor& t) {
+  return t.dim() == 1 && t.numel() == 0;
+}
+
 } // namespace
 
 bool check_as_strided_copy_args(
@@ -84,18 +88,16 @@ bool check_cat_args(
   // Ensure the input tensors list is non-empty
   ET_LOG_AND_RETURN_IF_FALSE(tensors.size() > 0);
 
-  // Find the first non-empty tensor in the list to use as a reference
+  // Like PyTorch, skip 1-D empty tensors and use the first other tensor as the
+  // reference.
   size_t ref_i = 0;
   for (const auto i : c10::irange(tensors.size())) {
-    if (tensors[i].numel() > 0) {
+    if (!is_1d_empty(tensors[i])) {
       ref_i = i;
       break;
     }
   }
 
-  // "All tensors must either have the same shape (except in the concatenating
-  // dimension) or be empty."
-  // https://pytorch.org/docs/stable/generated/torch.cat.html
   for (const auto i : c10::irange(tensors.size())) {
     // All input dtypes must be castable to the output dtype.
     ET_LOG_AND_RETURN_IF_FALSE(
@@ -103,8 +105,10 @@ bool check_cat_args(
 
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(tensors[i], out));
 
-    // Empty tensors have no shape constraints.
-    if (tensors[i].numel() == 0) {
+    // Only 1-D empty tensors skip the shape checks. get_cat_out_target_size
+    // can take the output shape from any other empty tensor, and the copy
+    // sizes every input by the output shape.
+    if (is_1d_empty(tensors[i])) {
       continue;
     }
 
@@ -122,7 +126,7 @@ bool check_cat_args(
 
   // Ensure dim is in range.
   ET_LOG_AND_RETURN_IF_FALSE(
-      tensors[ref_i].numel() == 0 || tensors[ref_i].dim() > dim);
+      is_1d_empty(tensors[ref_i]) || tensors[ref_i].dim() > dim);
   ET_LOG_AND_RETURN_IF_FALSE(dim >= 0);
 
   return true;
@@ -133,25 +137,28 @@ bool get_cat_out_target_size(
     int64_t dim,
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
-  // Find the first non-1D-or-empty tensor in the list to use as a reference
-  // because an 1D empty tensor is a wildcard and should be ignored when we
-  // calculate out dim
+  // Skip 1-D empty tensors, as check_cat_args does. Other empty tensors still
+  // add their size along dim, as in PyTorch.
   size_t ref_i = 0;
   size_t cat_dim_size = 0;
   for (const auto i : c10::irange(tensors.size())) {
-    if (tensors[i].numel() > 0) {
-      ET_CHECK_OR_RETURN_FALSE(
-          static_cast<size_t>(tensors[i].size(dim)) <=
-              static_cast<size_t>(
-                  std::numeric_limits<executorch::aten::SizesType>::max()) -
-                  cat_dim_size,
-          "Concatenated size along dim %" PRId64 " overflows SizesType",
-          dim);
-      cat_dim_size += tensors[i].size(dim);
+    if (is_1d_empty(tensors[i])) {
+      continue;
     }
-    if (tensors[i].dim() != 1 || tensors[i].numel() != 0) {
-      ref_i = i;
-    }
+    ET_CHECK_OR_RETURN_FALSE(
+        dim >= 0 && dim < tensors[i].dim(),
+        "Dim %" PRId64 " is out of range for a %zd-D input",
+        dim,
+        static_cast<ssize_t>(tensors[i].dim()));
+    ET_CHECK_OR_RETURN_FALSE(
+        static_cast<size_t>(tensors[i].size(dim)) <=
+            static_cast<size_t>(
+                std::numeric_limits<executorch::aten::SizesType>::max()) -
+                cat_dim_size,
+        "Concatenated size along dim %" PRId64 " overflows SizesType",
+        dim);
+    cat_dim_size += tensors[i].size(dim);
+    ref_i = i;
   }
 
   *out_ndim = tensors[ref_i].dim();

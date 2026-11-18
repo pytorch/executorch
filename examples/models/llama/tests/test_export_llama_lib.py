@@ -35,6 +35,9 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+    StaticQuantizedKVCache,
+)
 from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import (
     LlmConfig,
@@ -69,6 +72,96 @@ def _tiny_llm_builder():
 
 
 class ExportLlamaLibTest(unittest.TestCase):
+    def test_reset_vgf_static_kv_buffers_handles_buffer_persistence(self):
+        class Model(torch.nn.Module):
+            def __init__(self, persistent):
+                super().__init__()
+                self.kv_cache = StaticQuantizedKVCache(
+                    max_batch_size=1,
+                    max_context_length=4,
+                    n_heads=1,
+                    head_dim=2,
+                    scale=0.25,
+                    use_custom_update_cache_op=False,
+                    return_float_values=False,
+                )
+                if persistent:
+                    for name in ("k_cache", "v_cache"):
+                        self.kv_cache.register_buffer(
+                            name, self.kv_cache.get_buffer(name), persistent=True
+                        )
+                self.kv_cache.k_cache.fill_(7)
+                self.kv_cache.v_cache.fill_(-3)
+
+            def forward(self, input_pos, k, v):
+                return self.kv_cache.update(input_pos, k, v)
+
+        inputs = (
+            torch.tensor([0]),
+            torch.ones(1, 1, 1, 2),
+            torch.full((1, 1, 1, 2), 2.0),
+        )
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                builder = LLMEdgeManager(
+                    model=Model(persistent),
+                    modelname="static_kv",
+                    max_seq_len=1,
+                    use_kv_cache=True,
+                    example_inputs=inputs,
+                ).export()
+                exported = builder._export(builder.pre_autograd_graph_module)
+                names = {"kv_cache.k_cache", "kv_cache.v_cache"}
+                self.assertEqual(
+                    set(exported.graph_signature.buffers_to_mutate.values()), names
+                )
+                for name in names:
+                    self.assertEqual(
+                        name in exported.graph_signature.non_persistent_buffers,
+                        not persistent,
+                    )
+                    storage = exported.state_dict if persistent else exported.constants
+                    self.assertGreater(storage[name].count_nonzero().item(), 0)
+
+                export_llama_lib._reset_vgf_static_kv_buffers(builder)
+
+                module = builder.pre_autograd_graph_module
+                for name in names:
+                    buffer = module.get_buffer(name)
+                    self.assertEqual(buffer.dtype, torch.int8)
+                    self.assertEqual(buffer.count_nonzero().item(), 0)
+                for name in ("k_cache_scales", "v_cache_scales"):
+                    scales = module.get_buffer(f"kv_cache.{name}")
+                    torch.testing.assert_close(scales, torch.full_like(scales, 0.25))
+
+                k, v = module(*inputs)
+                expected = torch.zeros(1, 1, 4, 2, dtype=torch.int8)
+                expected[:, :, 0] = 4
+                torch.testing.assert_close(k, expected)
+                torch.testing.assert_close(v, expected * 2)
+
+    def test_reset_vgf_static_kv_buffers_rejects_non_int8_buffers(self):
+        class Model(torch.nn.Module):
+            def __init__(self, persistent):
+                super().__init__()
+                self.register_buffer("cache", torch.ones(2), persistent=persistent)
+
+            def forward(self, value):
+                self.cache.copy_(value)
+                return self.cache
+
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                builder = LLMEdgeManager(
+                    model=Model(persistent),
+                    modelname="float_kv",
+                    max_seq_len=1,
+                    use_kv_cache=True,
+                    example_inputs=(torch.ones(2),),
+                ).export()
+                with self.assertRaisesRegex(ValueError, "must use torch.int8"):
+                    export_llama_lib._reset_vgf_static_kv_buffers(builder)
+
     def _assert_routes_to(self, lowering, coreml=False, vulkan=False, qnn=False):
         """Assert which lowering an export routes to, without running one."""
         llm_config = LlmConfig()

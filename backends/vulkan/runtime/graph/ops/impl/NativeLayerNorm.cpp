@@ -150,8 +150,15 @@ void add_native_layer_norm_node(
         graph, affine_sizes, affine_dtype, /*ones=*/false);
   }
 
-  ValueRef arg_weight = prepack_standard_like(graph, synthesized_weight, in);
-  ValueRef arg_bias = prepack_standard_like(graph, synthesized_bias, in);
+  const bool is_buffer = graph.is_buffer_storage(in);
+
+  // The buffer shader indexes weight and bias as dense arrays.
+  const utils::GPUMemoryLayout affine_layout =
+      is_buffer ? utils::kWidthPacked : graph.estimate_memory_layout_of(in);
+  ValueRef arg_weight = prepack_standard(
+      graph, synthesized_weight, graph.storage_type_of(in), affine_layout);
+  ValueRef arg_bias = prepack_standard(
+      graph, synthesized_bias, graph.storage_type_of(in), affine_layout);
 
   const auto out_val = graph.get_value_list(out);
   const ValueRef out_tensor = out_val->at(0);
@@ -164,8 +171,6 @@ void add_native_layer_norm_node(
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out_tensor));
   add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
-
-  const bool is_buffer = graph.is_buffer_storage(in);
 
   if (!is_buffer) {
     VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));

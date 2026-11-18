@@ -7,94 +7,192 @@
 """Parse Muse Glimmer ATEM text into OpenAI-compatible tool calls.
 
 Blocks may contain multiple invocations. Parameters are coerced using the
-declared tool schema. Malformed blocks are hidden, while calls to undefined
-tools remain visible text.
+declared tool schema. Malformed or invalid calls fail the entire response.
 """
 
 import json
-import logging
-import math
 import re
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Optional
 
 from executorch.examples.llm_server.python.tool_parsers.types import (
     ParseResult,
     ToolCallItem,
 )
 
-logger = logging.getLogger(__name__)
+from ..framing import _masked_text, FenceTracker, recipient_headers, wire_tool_name
+from .schema import ToolOutputBudget, ToolOutputError, ToolSchema
 
-_START = "<|start|>"
-_MESSAGE = "<|message|>"
 _FUNCTION_CALLS_OPEN = "<atem:function_calls>"
 _INVOKE_OPEN = "<atem:invoke"
 
-# Require a following structural boundary so delimiter-like text inside a
-# parameter value does not end the match early.
-_INVOKE_RE = re.compile(
-    r'<atem:invoke\s+name="([^"]*)"\s*>(.*?)</atem:invoke>\s*'
-    r"(?=<atem:invoke|</atem:function_calls>|<atem:function_calls>|\Z)",
-    re.DOTALL,
+# Tag discovery never scans an invocation body with a backtracking regex.
+_TAG_RE = re.compile(r"</?atem:(?:function_calls|invoke|parameter)\b")
+_OPEN_RE = re.compile(r'<atem:(invoke|parameter)\s+name="([^"]*)"\s*>')
+_PARAMETER_END_RE = re.compile(
+    r"</atem:parameter>\s*(?=<atem:parameter|</atem:invoke>|\Z)"
 )
-_PARAMETER_RE = re.compile(
-    r'<atem:parameter\s+name="([^"]*)"\s*>(.*?)</atem:parameter>\s*'
-    r"(?=<atem:parameter|</atem:invoke>|\Z)",
-    re.DOTALL,
-)
-
-# Match the optional assistant prefix and recipient header before an ATEM block.
-_IDENT = r"[a-zA-Z_][a-zA-Z0-9_-]*"
-_RECIPIENT = rf"{_IDENT}(?:\.{_IDENT})*"
-_HEADER_RE = re.compile(
-    rf"(?:{re.escape(_START)}assistant)?"
-    rf" to={_RECIPIENT}"
-    rf"(?: constrain={_IDENT})?"
-    rf"{re.escape(_MESSAGE)}"
-)
-
-_INT_RE = re.compile(r"[+-]?[0-9]+$")
-_NUM_RE = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$")
+_TERMINATOR_RE = re.compile(r"\s*<\|eo[mt]\|>")
 
 
-class _UndefinedToolCall(Exception):
-    """Raised when a call names a tool absent from the request."""
+@dataclass
+class _Invocation:
+    start: int
+    name: str | None
+    body: int
+    end: int | None = None
+    parameters: list = field(default_factory=list)
+    malformed: bool = False
 
 
-def _coerce(value: str, declared_type: Optional[str]) -> Any:
-    """Coerce a raw parameter using its declared JSON-schema type.
+class _Syntax:
+    def __init__(self, text):
+        self.invocations = {}
+        self.markers = []
+        self.wrapper_ends = {}
+        self.nested_wrappers = set()
+        self._wrappers = []
+        self.parameters = []
+        self.text = text
+        self._parameter_ends = list(_PARAMETER_END_RE.finditer(text))
+        self._close_index = 0
+        self._active = None
+        self._cursor = 0
+        skip = 0
+        for tag in _TAG_RE.finditer(text):
+            if tag.start() < skip:
+                continue
+            skip = self._parameter(tag)
+            if not skip:
+                self._record_tag(tag)
 
-    Failed declared conversions remain strings. Untyped values use JSON parsing,
-    and non-finite numbers remain strings so serialized arguments stay valid.
-    """
-    v = value.strip()
-    if declared_type == "string":
-        return value
-    if declared_type == "boolean":
-        low = v.lower()
-        if low == "true":
-            return True
-        if low == "false":
-            return False
-        return value  # not a valid bool literal -> keep raw, don't mistype
-    if declared_type == "integer":
-        # strict: digits only (no float, no underscores)
-        return int(v) if _INT_RE.match(v) else value
-    if declared_type == "number":
-        if _NUM_RE.match(v):
-            f = float(v)
-            if math.isfinite(f):
-                return f
-        return value  # non-numeric / non-finite -> keep raw, never emit NaN/Inf
-    # Unknown/absent declared type (also array/object): a JSON guess, but reject
-    # non-finite (json.loads parses NaN/Infinity by default, which json.dumps
-    # would then re-emit).
-    try:
-        guess = json.loads(v)
-    except (ValueError, TypeError):
-        return value
-    if isinstance(guess, float) and not math.isfinite(guess):
-        return value
-    return guess
+    def _parameter(self, tag):
+        active = self._active
+        if tag.group() != "<atem:parameter" or active is None:
+            return 0
+        opening = _OPEN_RE.match(self.text, tag.start())
+        closes = self._parameter_ends
+        while (
+            self._close_index < len(closes)
+            and closes[self._close_index].start() < tag.start()
+        ):
+            self._close_index += 1
+        if opening is None:
+            return 0
+        if self._close_index == len(closes):
+            self.parameters.append((opening.end(), len(self.text)))
+            return len(self.text)
+        close = closes[self._close_index]
+        active.malformed |= bool(self.text[self._cursor : tag.start()].strip())
+        active.parameters.append((opening.group(2), opening.end(), close.start()))
+        self.parameters.append((opening.end(), close.start()))
+        self._cursor = close.end()
+        return close.end()
+
+    def _record_tag(self, tag):
+        start = tag.start()
+        if tag.group() == "<atem:invoke":
+            self.markers.append(start)
+            if self._active is not None:
+                self._active.malformed = True
+            opening = _OPEN_RE.match(self.text, start)
+            self._active = _Invocation(
+                start,
+                opening.group(2) if opening else None,
+                opening.end() if opening else tag.end(),
+            )
+            self.invocations[start] = self._active
+            self._cursor = self._active.body
+        elif self.text.startswith("</atem:invoke>", start) and self._active is not None:
+            self._active.malformed |= bool(self.text[self._cursor : start].strip())
+            self._active.end = start + len("</atem:invoke>")
+            self._active = None
+        elif self.text.startswith("<atem:function_calls>", start):
+            self.markers.append(start)
+            if self._wrappers:
+                self.nested_wrappers.add(self._wrappers[0])
+            self._wrappers.append(start)
+        elif self.text.startswith("</atem:function_calls>", start):
+            if self._wrappers:
+                self.wrapper_ends[self._wrappers.pop()] = start + len(
+                    "</atem:function_calls>"
+                )
+            self._active = None
+
+    def block_end(self, start):
+        if self.text.startswith(_INVOKE_OPEN, start):
+            return self.invocations[start].end
+        return self.wrapper_ends.get(start)
+
+
+def _tool_blocks(text, syntax=None):
+    syntax = syntax if syntax is not None else _Syntax(text)
+    visible = _masked_text(text, syntax.parameters)
+    headers = iter(recipient_headers(visible))
+    following = next(headers, None)
+    header = None
+    offset = scanned = 0
+    excluded_until = 0
+    fences = FenceTracker()
+    line_text = header_text = False
+    for start in syntax.markers:
+        if start < max(offset, excluded_until):
+            continue
+        prefix = visible[scanned:start]
+        line_text = (line_text if "\n" not in prefix else False) or bool(
+            prefix.rsplit("\n", 1)[-1].strip()
+        )
+        prefix_start = scanned
+        while following is not None and following.end() <= start:
+            header = following
+            header_text = False
+            prefix_start = header.end()
+            following = next(headers, None)
+            fences = FenceTracker()
+        header_text |= bool(visible[prefix_start:start].strip())
+        for terminator in re.finditer(r"<\|eo[mt]\|>", visible[prefix_start:start]):
+            cut = prefix_start + terminator.start()
+            fences.scan(visible, max(scanned, prefix_start), cut)
+            if not fences.in_fence:
+                header = None
+            scanned = prefix_start + terminator.end()
+        fences.scan(visible, max(scanned, prefix_start), start)
+        scanned = start
+        if header is not None and header.start() < offset:
+            header = None
+        adjacent = header is not None and not header_text
+        if (
+            fences.in_fence
+            or (header is not None and header.group(1) in ("self", "user"))
+            or (not adjacent and line_text)
+        ):
+            # An ineligible wrapper owns its children, including bare invokes.
+            if text.startswith(_FUNCTION_CALLS_OPEN, start):
+                excluded_until = syntax.block_end(start) or len(text)
+            continue
+        end = syntax.block_end(start)
+        yield start, end, header.start() if adjacent else start
+        if end is None:
+            return
+        offset = scanned = end
+        fences = FenceTracker()
+        line_text = header_text = False
+        header = None
+
+
+def tool_start(text):
+    block = next(_tool_blocks(text), None)
+    return block[0] if block is not None else None
+
+
+def parameter_value_spans(text):
+    if "<atem:" not in text:
+        return []
+    return _Syntax(text).parameters
+
+
+class IncompleteToolOutputError(ToolOutputError):
+    pass
 
 
 class AtemToolCallDetector:
@@ -108,73 +206,86 @@ class AtemToolCallDetector:
     def __init__(self):
         self._next_index = 0
 
-    def detect_and_parse(self, text: str, tools: dict[str, dict]) -> ParseResult:
-        """Return leading text + any complete tool calls.
-
-        Missing markers preserve the text. Truncated or malformed blocks are
-        removed from the first marker; undefined tools preserve the full text.
-        ``tools`` maps tool names to their parameter schemas.
-        """
-        first = _INVOKE_RE.search(text)
-        if first is None:
-            # No complete call. If a tool marker is present the call was
-            # truncated/partial -> strip it; otherwise there is no tool intent.
-            markers = [
-                i
-                for i in (text.find(self.bot_token), text.find(_INVOKE_OPEN))
-                if i != -1
-            ]
-            if markers:
-                return ParseResult(normal_text=text[: min(markers)].strip())
-            return ParseResult(normal_text=text)
-        # Leading text ends at the block open if present, else at the first
-        # <atem:invoke>; a harmony "to=NAME<|message|>" header that immediately
-        # precedes it is excluded so the header does not leak into content.
-        block = text.find(self.bot_token)
-        cut = block if (block != -1 and block <= first.start()) else first.start()
-        header = self._preceding_header(text, cut)
-        if header is not None:
-            cut = header
-        normal = text[:cut].strip()
+    def detect_and_parse(
+        self, text: str, tools: dict, *, finish_reason=None, truncated=False
+    ) -> ParseResult:
+        normal, calls = [], []
+        offset = 0
+        incomplete = False
+        budget = ToolOutputBudget()
+        syntax = _Syntax(text)
+        invocations = iter(syntax.invocations.values())
+        invocation = next(invocations, None)
         try:
-            calls = self._parse_calls(text, tools)
-        except _UndefinedToolCall as e:
-            logger.debug("undefined tool %s; returning raw text (no partial calls)", e)
-            return ParseResult(normal_text=text)
-        except Exception as e:  # noqa: BLE001 - never crash
-            logger.debug("malformed ATEM tool call (%s); degrading to leading text", e)
-            return ParseResult(normal_text=normal)
-        if not calls:
-            return ParseResult(normal_text=text)
-        return ParseResult(normal_text=normal, calls=calls)
+            for start, end, header in _tool_blocks(text, syntax):
+                normal.append(text[offset:header])
+                offset = end or len(text)
+                # Consume only framing belonging to this call block.
+                terminator = _TERMINATOR_RE.match(text, offset)
+                if terminator:
+                    offset = terminator.end()
+                if end is None:
+                    raise IncompleteToolOutputError("Incomplete ATEM tool call")
+                if start in syntax.nested_wrappers:
+                    raise ToolOutputError("Nested ATEM call wrappers are malformed")
+                selected = []
+                while invocation is not None and invocation.start < end:
+                    if invocation.start >= start:
+                        selected.append(invocation)
+                    invocation = next(invocations, None)
+                calls.extend(
+                    self._parse_calls(text, start, end, selected, tools, budget=budget)
+                )
+        except IncompleteToolOutputError:
+            if finish_reason != "length" and not truncated:
+                raise
+            calls = []
+            incomplete = True
+        except (ValueError, RecursionError) as error:
+            raise ToolOutputError("Malformed ATEM tool call") from error
+        normal.append(text[offset:])
+        return ParseResult(
+            normal_text="".join(normal).strip() if calls or incomplete else text,
+            calls=calls,
+            incomplete=incomplete,
+        )
 
-    @staticmethod
-    def _preceding_header(text: str, cut: int) -> Optional[int]:
-        """Return the start of a recipient header adjacent to ``cut``."""
-        last: Optional[int] = None
-        for m in _HEADER_RE.finditer(text):
-            if m.end() <= cut and text[m.end() : cut].strip() == "":
-                last = m.start()
-        return last
-
-    def _parse_calls(self, text: str, tools: dict[str, dict]) -> list[ToolCallItem]:
-        """Parse every invocation and coerce its parameters."""
+    def _parse_calls(self, text, start, end, invocations, tools, *, budget):
+        if not invocations:
+            raise ToolOutputError("Closed ATEM block has no complete invocation")
         calls = []
-        for im in _INVOKE_RE.finditer(text):
-            name, body = im.group(1), im.group(2)
-            props = (tools.get(name) or {}).get("properties", {})
+        cursor = start
+        for invocation in invocations:
+            gap = text[cursor : invocation.start].replace(_FUNCTION_CALLS_OPEN, "")
+            if "atem:" in gap or invocation.end is None or invocation.malformed:
+                raise ToolOutputError("Malformed invocation in closed ATEM block")
+            cursor = invocation.end
+            name = invocation.name
+            if name not in tools:
+                matches = [key for key in tools if wire_tool_name(key) == name]
+                if len(matches) == 1:
+                    name = matches[0]
+            if name not in tools:
+                raise ToolOutputError(f"Model called undefined tool {name!r}")
+            schema = tools[name]
+            if not isinstance(schema, ToolSchema):
+                raise TypeError("ATEM requires precompiled ToolSchema instances")
             args = {}
-            for pm in _PARAMETER_RE.finditer(body):
-                key = pm.group(1)
-                args[key] = _coerce(pm.group(2), props.get(key, {}).get("type"))
+            for key, begin, stop in invocation.parameters:
+                if key in args:
+                    raise ValueError("Duplicate parameter")
+                args[key] = text[begin:stop]
+            args = schema.coerce_arguments(name, args, budget=budget)
             calls.append(self._make_item(name, args, tools))
+        if "atem:" in text[cursor:end].replace("</atem:function_calls>", ""):
+            raise ToolOutputError("Malformed invocation in closed ATEM block")
         return calls
 
     def _make_item(
-        self, name: Optional[str], arguments: dict, tools: dict[str, dict]
+        self, name: Optional[str], arguments: dict, tools: dict[str, ToolSchema]
     ) -> ToolCallItem:
         if not name or name not in tools:
-            raise _UndefinedToolCall(repr(name))
+            raise ToolOutputError(f"Model called undefined tool {name!r}")
         item = ToolCallItem(
             tool_index=self._next_index,
             name=name,

@@ -25,9 +25,9 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_tensor,
     is_qparam,
     is_quant,
-    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
+    COMPUTED_PARAM_TAG,
     get_input_node,
     is_depthwise_conv,
     is_getitem,
@@ -39,8 +39,9 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 )
 from executorch.exir.backend.utils import WhyNoPartition
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
-from torch.fx.experimental.symbolic_shapes import free_symbols
+from torch.fx.experimental.symbolic_shapes import free_symbols, statically_known_true
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -48,6 +49,77 @@ from torch.fx.passes.utils.source_matcher_utils import (
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
+
+
+def get_static_param_deps(  # noqa: C901
+    ep: ExportedProgram, node: torch.fx.Node, user: torch.fx.Node
+) -> Optional[List[torch.fx.Node]]:
+    """
+    Returns the nodes to partition with user for node to be a static param, or
+    None. That is node itself if it is a param. Otherwise it is node and the
+    unmutated params it is computed from with pure ATen ops, such as the weight
+    of a conv under weight_norm. Preprocess folds node into a param that
+    replaces them without growing the program, so only node and the params may
+    have users outside of the computation, and only user, and node may not be
+    larger than the params it frees. The computing nodes add user's name to
+    their COMPUTED_PARAM_TAG set.
+    """
+    if is_param_node(ep, node):
+        return [node]
+
+    signature = ep.graph_signature
+    mutated_buffers = set(signature.buffers_to_mutate.values())
+    deps = {}
+    pending = [node]
+    while pending:
+        dep = pending.pop()
+        if dep in deps:
+            continue
+        deps[dep] = None
+        if dep.op == "placeholder" and is_param_node(ep, dep):
+            if signature.inputs_to_buffers.get(dep.name) in mutated_buffers:
+                why(user, f"{dep} is a mutated buffer")
+                return None
+            # Folding would move data tagged for an external file into the PTE.
+            if dep.meta.get("custom", {}).get("delegate_constant_tag") is not None:
+                why(user, f"{dep} is tagged for an external data file")
+                return None
+            continue
+        # Preprocess runs these ops on CPU, and a custom op may only have a fake kernel.
+        if (
+            dep.op != "call_function"
+            or dep.is_impure()
+            or is_quant(dep)
+            or is_dequant(dep)
+            or is_qparam(dep)
+            or not (
+                is_getitem(dep)
+                or (
+                    isinstance(dep.target, (torch._ops.OpOverload, EdgeOpOverload))
+                    and dep.target.namespace in ("aten", "dim_order_ops")
+                )
+            )
+        ):
+            why(user, f"{dep} is neither a param nor an op that can be folded into one")
+            return None
+        pending.extend(dep.all_input_nodes)
+
+    for dep in deps:
+        for u in dep.users:
+            if u not in deps and not (
+                u is user and (dep is node or dep.op == "placeholder")
+            ):
+                why(user, f"{dep} is also used by {u}")
+                return None
+    removed = [dep for dep in deps if dep.op == "placeholder" and user not in dep.users]
+    if node.meta["val"].nbytes > sum(param.meta["val"].nbytes for param in removed):
+        why(user, f"folding {node} would grow the program")
+        return None
+
+    for dep in deps:
+        if dep.op == "call_function":
+            dep.meta.setdefault(COMPUTED_PARAM_TAG, set()).add(user.name)
+    return list(deps)
 
 
 class GEMMConfig(XNNPartitionerConfig):
@@ -139,11 +211,6 @@ class GEMMConfig(XNNPartitionerConfig):
         valid_deps = valid_bias and valid_weight and valid_act and valid_output
         deps = list(chain(bias_deps, weight_deps, act_deps, output_deps))
 
-        # Tag q/dq nodes as implicit q/dq nodes
-        for dep in deps:
-            if is_dequant(dep) or is_quant(dep):
-                tag_as_implicit_q_dq(dep)
-
         return valid_deps, deps
 
     def _get_weight_deps(
@@ -153,10 +220,10 @@ class GEMMConfig(XNNPartitionerConfig):
         if precision == ConfigPrecisionType.FP32:
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
-            if not is_param_node(ep, weight_node):
-                why(node, "Expected weight to be a static param")
+            weight_deps = get_static_param_deps(ep, weight_node, node)
+            if weight_deps is None:
                 return (False, [])
-            gemm_deps.append(weight_node)
+            gemm_deps.extend(weight_deps)
 
             return (True, gemm_deps)
         else:
@@ -224,9 +291,12 @@ class GEMMConfig(XNNPartitionerConfig):
             node_users = list(node.users.keys())
             if len(node_users) == 1:
                 n_output = node_users[0]
+                # After a decomposed linear, the activation can have more dims than
+                # XNNPACK allows even when the 2-D matmul does not. Leave it out then.
                 if (
                     n_output.op == "call_function"
                     and format_target_name(n_output.target.__name__) in self.fused_acts
+                    and self._check_tensor_ranks(n_output)
                 ):
                     gemm_deps.append(n_output)
 
@@ -248,10 +318,10 @@ class GEMMConfig(XNNPartitionerConfig):
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
-                if not is_param_node(ep, bias_node):
-                    why(node, "Expected bias to be a static param")
+                bias_deps = get_static_param_deps(ep, bias_node, node)
+                if bias_deps is None:
                     return (False, [])
-                gemm_deps.append(bias_node)
+                gemm_deps.extend(bias_deps)
 
         return (True, gemm_deps)
 
@@ -345,6 +415,7 @@ class LinearConfig(GEMMConfig):
 
 class ConvolutionConfig(GEMMConfig):
     target_name = "convolution.default"
+    supports_bf16 = False
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -364,12 +435,6 @@ class ConvolutionConfig(GEMMConfig):
 
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
-        if any(
-            value.meta["val"].dtype == torch.bfloat16
-            for value in (node, kernel_node, get_input_node(node, 0))
-        ):
-            why(node, "XNNPACK does not support BF16 convolution")
-            return False
         # The weight rank is the only reliable indicator of the conv dimensionality.
         # stride, padding and dilation may each be a single value that ATen
         # broadcasts over every spatial dim.
@@ -492,6 +557,24 @@ class AddmmConfig(GEMMConfig):
 
         return super()._get_weight_deps(node, ep, precision)
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        # XNNPACK's fully connected op cannot scale the bias or the product.
+        if node.kwargs.get("beta", 1) != 1 or node.kwargs.get("alpha", 1) != 1:
+            why(node, "Addmm with beta or alpha other than 1 is not supported")
+            return False
+        # The fully connected op also takes 1 bias value per output channel.
+        # MMConfig inherits this check, and an mm has no bias argument.
+        if self.bias_idx is not None:
+            bias = get_input_node(node, self.bias_idx).meta["val"]
+            channels = node.meta["val"].shape[-1]
+            # A bias whose size is not known when lowering is kept out as well.
+            if not statically_known_true(bias.numel() == channels) or (
+                bias.dim() > 0 and not statically_known_true(bias.shape[-1] == channels)
+            ):
+                why(node, "Addmm bias must have 1 value per output channel")
+                return False
+        return super().check_constraints(node, ep)
+
     def get_deps(
         self,
         node: torch.fx.Node,
@@ -570,17 +653,23 @@ class AddmmConfig(GEMMConfig):
         node.args = tuple(fake_args)
         node.users = src_partition.output_nodes[0].users
         valid_deps, deps = super().get_deps(node, ep)
+        _, precision = self._overwrite_precision(node)
 
         # Reset addmm node back to old args and users
         node.args = old_args
         node.users = old_users
 
-        # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
-        # Else we want to be greedy.
+        # A float linear with force_non_static_weights_for_f32_linear takes only the
+        # deps inside the source partition. Else we want to be greedy, but leave out
+        # views XNNPACK cannot hold.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
             if self.force_non_static_weights_for_f32_linear
-            else list(set(deps) | set(src_partition.nodes))
+            and precision == ConfigPrecisionType.FP32
+            else list(
+                set(deps)
+                | {n for n in src_partition.nodes if self._check_tensor_ranks(n)}
+            )
         )
 
         return valid_deps, ret_deps

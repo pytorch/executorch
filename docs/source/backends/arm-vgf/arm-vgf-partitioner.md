@@ -13,7 +13,8 @@ Partitions subgraphs supported by the Arm Vgf backend.
 
 Args:
 - **compile_spec**: The Vgf compilation specification.
-- **additional_checks**: Optional sequence of additional operator support checks.
+- **additional_checks**: Optional sequence of additional operator support
+        checks.
 
 ```python
 def VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported_program.ExportedProgram) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.node.Node], bool]]]:

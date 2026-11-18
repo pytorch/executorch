@@ -36,21 +36,20 @@ void main() {
     return;
   }
 
-  uint inp_bufi = outp_bufi;
-
-  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout)) {
-    TensorIndex outp_tidx = linear_idx_to_tensor_idx(
-        outp, outp_bufi, outp_layout);
-
-    // To map the output to the input, find the input element that has the same
-    // contiguous index as the output element.
-    const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
-
-    TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, contig_idx);
-
-    inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+  if (has_same_physical_element_order(outp, inp, outp_layout, inp_layout)) {
+    t_outp[outp_bufi] = OUT_T(t_inp[outp_bufi]);
+    return;
   }
 
-  // Convert data type from input to output
+  const TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
+  if (out_of_bounds(outp_tidx, outp)) {
+    t_outp[outp_bufi] = OUT_T(0);
+    return;
+  }
+
+  const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
+  const TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, contig_idx);
+  const uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+
   t_outp[outp_bufi] = OUT_T(t_inp[inp_bufi]);
 }
