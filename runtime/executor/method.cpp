@@ -378,21 +378,27 @@ bool tensor_has_missing_data(const executorch::aten::Tensor& tensor) {
   return tensor.const_data_ptr() == nullptr && tensor.nbytes() > 0;
 }
 
+ET_NOINLINE const executorch_flatbuffer::Operator* get_plan_operator(
+    const executorch_flatbuffer::ExecutionPlan* plan,
+    int32_t op_index) {
+  const auto* ops = plan == nullptr ? nullptr : plan->operators();
+  if (ops == nullptr || op_index < 0 ||
+      static_cast<flatbuffers::uoffset_t>(op_index) >= ops->size()) {
+    return nullptr;
+  }
+  return ops->Get(static_cast<flatbuffers::uoffset_t>(op_index));
+}
+
 bool is_et_view_output_arg(
     const executorch_flatbuffer::ExecutionPlan* plan,
     const executorch_flatbuffer::KernelCall* kernel_call,
     InstructionArgs args,
     size_t arg_idx) {
-  if (arg_idx != 2 || args.size() != 3 || !args[2]->isTensor()) {
+  if (arg_idx != 2 || args.size() != 3 || kernel_call == nullptr ||
+      args[2] == nullptr || !args[2]->isTensor()) {
     return false;
   }
-  const auto* ops = plan->operators();
-  const int32_t op_index = kernel_call->op_index();
-  if (ops == nullptr || op_index < 0 ||
-      static_cast<flatbuffers::uoffset_t>(op_index) >= ops->size()) {
-    return false;
-  }
-  const auto* op = ops->Get(static_cast<flatbuffers::uoffset_t>(op_index));
+  const auto* op = get_plan_operator(plan, kernel_call->op_index());
   return op != nullptr && op->name() != nullptr &&
       std::strcmp(op->name()->c_str(), "executorch_prim::et_view") == 0 &&
       op->overload() != nullptr &&
@@ -400,42 +406,36 @@ bool is_et_view_output_arg(
 }
 
 Error validate_evalue_tensors(const EValue& value) {
-  if (value.isTensor()) {
-    ET_CHECK_OR_RETURN_ERROR(
-        !tensor_has_missing_data(value.toTensor()),
-        InvalidState,
-        "Tensor data is null with nbytes %" ET_PRIsize_t,
-        static_cast<size_t>(value.toTensor().nbytes()));
-  } else if (value.isTensorList()) {
-    auto tensor_list = value.tryToTensorList();
-    if (!tensor_list.ok()) {
-      return tensor_list.error();
+  const EValue* single = &value;
+  executorch::aten::ArrayRef<const EValue*> elements(&single, 1);
+  bool optional = false;
+  if (!value.isTensor()) {
+    if (!value.isTensorList() && !value.isListOptionalTensor()) {
+      return Error::Ok;
     }
-    for (size_t i = 0; i < tensor_list->size(); ++i) {
-      ET_CHECK_OR_RETURN_ERROR(
-          !tensor_has_missing_data((*tensor_list)[i]),
-          InvalidState,
-          "TensorList element %" ET_PRIsize_t
-          " has null data with nbytes %" ET_PRIsize_t,
-          i,
-          static_cast<size_t>((*tensor_list)[i].nbytes()));
+    auto list_elements = value.tryGetTensorListElements();
+    if (!list_elements.ok()) {
+      return list_elements.error();
     }
-  } else if (value.isListOptionalTensor()) {
-    auto opt_tensor_list = value.tryToListOptionalTensor();
-    if (!opt_tensor_list.ok()) {
-      return opt_tensor_list.error();
-    }
-    for (size_t i = 0; i < opt_tensor_list->size(); ++i) {
-      if ((*opt_tensor_list)[i].has_value()) {
-        const auto& tensor = (*opt_tensor_list)[i].value();
-        ET_CHECK_OR_RETURN_ERROR(
-            !tensor_has_missing_data(tensor),
-            InvalidState,
-            "OptionalTensorList element %" ET_PRIsize_t
-            " has null data with nbytes %" ET_PRIsize_t,
-            i,
-            static_cast<size_t>(tensor.nbytes()));
+    elements = executorch::aten::ArrayRef<const EValue*>(
+        list_elements->data(), list_elements->size());
+    optional = value.isListOptionalTensor();
+  }
+  for (const EValue* element : elements) {
+    if (element == nullptr) {
+      if (optional) {
+        continue;
       }
+      return Error::InvalidState;
+    }
+    if (!element->isTensor()) {
+      if (optional && element->isNone()) {
+        continue;
+      }
+      return Error::InvalidType;
+    }
+    if (tensor_has_missing_data(element->toTensor())) {
+      return Error::InvalidState;
     }
   }
   return Error::Ok;
@@ -444,35 +444,21 @@ Error validate_evalue_tensors(const EValue& value) {
 Error validate_kernel_call_tensor_args(
     const executorch_flatbuffer::ExecutionPlan* plan,
     const executorch_flatbuffer::KernelCall* kernel_call,
-    InstructionArgs args,
-    ET_UNUSED size_t chain_idx,
-    ET_UNUSED size_t instr_idx) {
+    InstructionArgs args) {
   for (size_t i = 0; i < args.size(); ++i) {
     const EValue* arg = args[i];
-    if (arg->isTensor()) {
-      if (tensor_has_missing_data(arg->toTensor()) &&
-          !is_et_view_output_arg(plan, kernel_call, args, i)) {
-        ET_LOG(
-            Error,
-            "KernelCall at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
-            " arg %" ET_PRIsize_t
-            " is a Tensor with null data and nbytes %" ET_PRIsize_t,
-            chain_idx,
-            instr_idx,
-            i,
-            static_cast<size_t>(arg->toTensor().nbytes()));
-        return Error::InvalidState;
+    if (arg == nullptr) {
+      return Error::InvalidState;
+    }
+    if (arg->isTensor() && tensor_has_missing_data(arg->toTensor())) {
+      if (is_et_view_output_arg(plan, kernel_call, args, i)) {
+        continue;
       }
-    } else if (arg->isTensorList() || arg->isListOptionalTensor()) {
+      return Error::InvalidState;
+    }
+    if (!arg->isTensor()) {
       Error err = validate_evalue_tensors(*arg);
       if (err != Error::Ok) {
-        ET_LOG(
-            Error,
-            "KernelCall at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
-            " arg %" ET_PRIsize_t " contains a Tensor with null data",
-            chain_idx,
-            instr_idx,
-            i);
         return err;
       }
     }
@@ -491,21 +477,12 @@ Error validate_method_outputs(
   for (size_t i = 0; i < outputs->size(); ++i) {
     const int32_t output_idx =
         outputs->Get(static_cast<flatbuffers::uoffset_t>(i));
-    ET_CHECK_OR_RETURN_ERROR(
-        output_idx >= 0 && static_cast<size_t>(output_idx) < n_value,
-        InvalidProgram,
-        "Output %" ET_PRIsize_t " index %" PRId32
-        " out of range %" ET_PRIsize_t,
-        i,
-        output_idx,
-        n_value);
+    if (output_idx < 0 || static_cast<size_t>(output_idx) >= n_value) {
+      return Error::InvalidProgram;
+    }
     Error err =
         validate_evalue_tensors(values[static_cast<size_t>(output_idx)]);
     if (err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Method output %" ET_PRIsize_t " contains a Tensor with null data",
-          i);
       return err;
     }
   }
@@ -1002,34 +979,38 @@ ET_NODISCARD Error validate_input_tensor_layout(
  * of this buffer is of size operator_name_size.
  */
 Error populate_operator_name(
-    const executorch_flatbuffer::Operator* const& op,
+    const executorch_flatbuffer::Operator* op,
     const size_t operator_name_size,
     char* operator_name) {
-  const bool has_overload =
-      op->overload() != nullptr && op->overload()->size() > 0;
+  const auto* name = op == nullptr ? nullptr : op->name();
+  const auto* overload = op == nullptr ? nullptr : op->overload();
+  const char* overload_cstr = (overload != nullptr && overload->size() > 0)
+      ? overload->c_str()
+      : nullptr;
 
   ET_CHECK_OR_RETURN_ERROR(
-      op->name() != nullptr, InvalidProgram, "Missing operator name");
+      name != nullptr, InvalidProgram, "Missing operator name");
+  const char* name_cstr = name->c_str();
   // Avoid pulling printf formatting code into builds that otherwise omit it.
-  const size_t name_size = strlen(op->name()->c_str());
+  const size_t name_size = strlen(name_cstr);
   const size_t overload_size =
-      has_overload ? strlen(op->overload()->c_str()) : 0;
+      overload_cstr != nullptr ? strlen(overload_cstr) : 0;
   const uint64_t needed_size = static_cast<uint64_t>(name_size) +
-      overload_size + (has_overload ? 1 : 0) + 1;
+      overload_size + (overload_cstr != nullptr ? 1 : 0) + 1;
   ET_CHECK_OR_RETURN_ERROR(
       needed_size <= operator_name_size,
       Internal,
       "Operator name %s%s%s exceeds internal buffer limit of %" ET_PRIsize_t,
-      op->name()->c_str(),
-      has_overload ? "." : "",
-      has_overload ? op->overload()->c_str() : "",
+      name_cstr,
+      overload_cstr != nullptr ? "." : "",
+      overload_cstr != nullptr ? overload_cstr : "",
       operator_name_size);
 
-  memcpy(operator_name, op->name()->c_str(), name_size);
+  memcpy(operator_name, name_cstr, name_size);
   size_t pos = name_size;
-  if (has_overload) {
+  if (overload_cstr != nullptr) {
     operator_name[pos++] = '.';
-    memcpy(operator_name + pos, op->overload()->c_str(), overload_size);
+    memcpy(operator_name + pos, overload_cstr, overload_size);
     pos += overload_size;
   }
   operator_name[pos] = '\0';
@@ -1049,14 +1030,12 @@ Error Method::resolve_operator(
   // resolve name
   constexpr size_t kTempBufferSizeForName = 100;
   char operator_name[kTempBufferSizeForName];
-  const auto ops = serialization_plan_->operators();
+  const auto* op = get_plan_operator(serialization_plan_, op_index);
   ET_CHECK_OR_RETURN_ERROR(
-      ops != nullptr &&
-          static_cast<flatbuffers::uoffset_t>(op_index) < ops->size(),
+      op != nullptr,
       InvalidProgram,
       "Op index %" PRIu32 " out of range",
       op_index);
-  const auto& op = ops->Get(op_index);
 
   Error err = populate_operator_name(op, kTempBufferSizeForName, operator_name);
   if (err != Error::Ok) {
@@ -1853,6 +1832,7 @@ Error Method::execute_instruction() {
   auto instruction = instructions->Get(step_state_.instr_idx);
   size_t next_instr_idx = step_state_.instr_idx + 1;
   Error err = Error::Ok;
+  const void* instr_args = instruction->instr_args();
 
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
@@ -1864,10 +1844,8 @@ Error Method::execute_instruction() {
       auto args = chain.argument_lists_[step_state_.instr_idx];
       err = validate_kernel_call_tensor_args(
           serialization_plan_,
-          instruction->instr_args_as_KernelCall(),
-          args,
-          step_state_.chain_idx,
-          step_state_.instr_idx);
+          static_cast<const executorch_flatbuffer::KernelCall*>(instr_args),
+          args);
       if (err != Error::Ok) {
         break;
       }
@@ -1953,7 +1931,8 @@ Error Method::execute_instruction() {
           internal::EventTracerProfileOpScope(event_tracer_, "JF_CALL");
       // We know that instr_args_as_JumpFalseCall is non-null because it was
       // checked at init time.
-      auto jf_call = instruction->instr_args_as_JumpFalseCall();
+      auto jf_call =
+          static_cast<const executorch_flatbuffer::JumpFalseCall*>(instr_args);
       // We know that index is a valid values_ index because it was checked at
       // init time.
       auto index = jf_call->cond_value_index();
@@ -1972,7 +1951,8 @@ Error Method::execute_instruction() {
           internal::EventTracerProfileOpScope(event_tracer_, "MOVE_CALL");
       // We know that instr_args_as_MoveCall is non-null because it was checked
       // at init time.
-      auto move_call = instruction->instr_args_as_MoveCall();
+      auto move_call =
+          static_cast<const executorch_flatbuffer::MoveCall*>(instr_args);
       mutable_value(move_call->move_to()) = get_value(move_call->move_from());
     } break;
     case executorch_flatbuffer::InstructionArguments::FreeCall: {
@@ -1981,7 +1961,8 @@ Error Method::execute_instruction() {
           internal::EventTracerProfileOpScope(event_tracer_, "FREE_CALL");
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
-      auto free_call = instruction->instr_args_as_FreeCall();
+      auto free_call =
+          static_cast<const executorch_flatbuffer::FreeCall*>(instr_args);
       auto t = mutable_value(free_call->value_index()).tryToTensor();
       if (!t.ok()) {
         ET_LOG(

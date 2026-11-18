@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -784,9 +785,8 @@ TEST_F(TensorParserTest, ExecuteEtViewRejectsNullInputSelfTensor) {
 TEST_F(
     TensorParserTest,
     ExecuteEtViewNonDefaultOverloadRejectsNullOutputTensor) {
-  ASSERT_FALSE(
-      executorch::runtime::registry_has_op_function(
-          "executorch_prim::et_view.custom"));
+  ASSERT_FALSE(executorch::runtime::registry_has_op_function(
+      "executorch_prim::et_view.custom"));
   executorch::runtime::Kernel custom_view_kernel(
       "executorch_prim::et_view.custom", custom_et_view_noop);
   Span<const executorch::runtime::Kernel> extra_kernels(&custom_view_kernel, 1);
@@ -1096,4 +1096,493 @@ TEST_F(
     EXPECT_EQ(method->step(), Error::Ok);
     EXPECT_EQ(method->step(), Error::EndOfMethod);
   }
+}
+
+TEST_F(
+    TensorParserTest,
+    ExecuteOptionalTensorListWithAbsentEntryAndModuleIndex) {
+  // OptionalTensorList with index == -1 (nullptr element) alongside a valid
+  // index tensor must execute cleanly.
+  {
+    flatbuffers::FlatBufferBuilder builder(2048);
+    auto v0 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/0);
+    auto v1 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::LONG,
+        {2},
+        {0},
+        /*memory_planned=*/true,
+        /*memory_offset=*/64);
+    auto opt_items = builder.CreateVector(std::vector<int32_t>{-1, 1});
+    auto opt_list =
+        executorch_flatbuffer::CreateOptionalTensorList(builder, opt_items);
+    auto v2 = executorch_flatbuffer::CreateEValue(
+        builder,
+        executorch_flatbuffer::KernelTypes::OptionalTensorList,
+        opt_list.Union());
+    auto v3 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/128);
+
+    auto op_name = builder.CreateString("aten::index");
+    auto op_overload = builder.CreateString("Tensor_out");
+    auto op =
+        executorch_flatbuffer::CreateOperator(builder, op_name, op_overload);
+
+    auto call_args = builder.CreateVector(std::vector<int32_t>{0, 2, 3, 3});
+    auto call = executorch_flatbuffer::CreateKernelCall(builder, 0, call_args);
+    auto instr = executorch_flatbuffer::CreateInstruction(
+        builder,
+        executorch_flatbuffer::InstructionArguments::KernelCall,
+        call.Union());
+
+    AlignedProgramBuffer prog_buf;
+    finish_single_plan_program(
+        builder, {v0, v1, v2, v3}, {0, 1}, {3}, {instr}, {op}, prog_buf);
+
+    auto loader = prog_buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &mmm.get());
+    ASSERT_EQ(method.error(), Error::Ok);
+
+    float in_data[8] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+    int32_t in_sizes[2] = {4, 2};
+    executorch::aten::TensorImpl in_impl(
+        ScalarType::Float, 2, in_sizes, in_data);
+    ASSERT_EQ(method->set_input(EValue(Tensor(&in_impl)), 0), Error::Ok);
+
+    int64_t idx_data[2] = {1, 0};
+    int32_t idx_sizes[1] = {2};
+    executorch::aten::TensorImpl idx_impl(
+        ScalarType::Long, 1, idx_sizes, idx_data);
+    ASSERT_EQ(method->set_input(EValue(Tensor(&idx_impl)), 1), Error::Ok);
+
+    ASSERT_EQ(method->execute(), Error::Ok);
+    const Tensor& out = method->get_output(0).toTensor();
+    const float expected[8] = {2.0f, 1.0f, 4.0f, 3.0f, 6.0f, 5.0f, 8.0f, 7.0f};
+    for (int i = 0; i < 8; ++i) {
+      EXPECT_FLOAT_EQ(out.const_data_ptr<float>()[i], expected[i]);
+    }
+  }
+
+  // OptionalTensorList with index == -1 alongside a null-data tensor must still
+  // fail with Error::InvalidState.
+  {
+    flatbuffers::FlatBufferBuilder builder(2048);
+    auto v0 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/0);
+    auto v1 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::LONG,
+        {2},
+        {0},
+        /*memory_planned=*/false);
+    auto opt_items = builder.CreateVector(std::vector<int32_t>{-1, 1});
+    auto opt_list =
+        executorch_flatbuffer::CreateOptionalTensorList(builder, opt_items);
+    auto v2 = executorch_flatbuffer::CreateEValue(
+        builder,
+        executorch_flatbuffer::KernelTypes::OptionalTensorList,
+        opt_list.Union());
+    auto v3 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/64);
+
+    auto op_name = builder.CreateString("aten::index");
+    auto op_overload = builder.CreateString("Tensor_out");
+    auto op =
+        executorch_flatbuffer::CreateOperator(builder, op_name, op_overload);
+
+    auto call_args = builder.CreateVector(std::vector<int32_t>{0, 2, 3, 3});
+    auto call = executorch_flatbuffer::CreateKernelCall(builder, 0, call_args);
+    auto instr = executorch_flatbuffer::CreateInstruction(
+        builder,
+        executorch_flatbuffer::InstructionArguments::KernelCall,
+        call.Union());
+
+    AlignedProgramBuffer prog_buf;
+    finish_single_plan_program(
+        builder, {v0, v1, v2, v3}, {0}, {3}, {instr}, {op}, prog_buf);
+
+    auto loader = prog_buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &mmm.get());
+    ASSERT_EQ(method.error(), Error::Ok);
+
+    float in_data[8] = {};
+    int32_t in_sizes[2] = {4, 2};
+    executorch::aten::TensorImpl in_impl(
+        ScalarType::Float, 2, in_sizes, in_data);
+    ASSERT_EQ(method->set_input(EValue(Tensor(&in_impl)), 0), Error::Ok);
+
+    EXPECT_EQ(method->execute(), Error::InvalidState);
+    EXPECT_FALSE(method->in_progress());
+  }
+
+  // Stock ModuleIndex.pte exports slice indices as OptionalTensorList items
+  // with -1 entries and must execute cleanly.
+  {
+    const char* index_path = std::getenv("ET_MODULE_INDEX_PATH");
+    ASSERT_NE(index_path, nullptr);
+    Result<FileDataLoader> index_loader = FileDataLoader::from(index_path);
+    ASSERT_EQ(index_loader.error(), Error::Ok);
+    Result<Program> program = Program::load(
+        &index_loader.get(), Program::Verification::InternalConsistency);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &mmm.get());
+    ASSERT_EQ(method.error(), Error::Ok);
+
+    auto input_cleanup = executorch::extension::prepare_input_tensors(*method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
+    EXPECT_EQ(method->execute(), Error::Ok);
+  }
+}
+
+TEST_F(
+    TensorParserTest,
+    ExecuteEtViewRejectsTensorListOutputSlotAndNullOverload) {
+  executorch::runtime::Kernel view_kernel(
+      "executorch_prim::et_view.default", fallback_et_view);
+  Span<const executorch::runtime::Kernel> extra_kernels;
+  if (!executorch::runtime::registry_has_op_function(
+          "executorch_prim::et_view.default")) {
+    extra_kernels = Span<const executorch::runtime::Kernel>(&view_kernel, 1);
+  }
+
+  // Calling executorch_prim::et_view.default with a TensorList containing a
+  // null-data tensor at args[2] must return Error::InvalidState without
+  // reaching the kernel's toTensor() check.
+  {
+    flatbuffers::FlatBufferBuilder builder(2048);
+    auto v0 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {2, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/0);
+    auto dim0 = executorch_flatbuffer::CreateInt(builder, 4);
+    auto v1 = executorch_flatbuffer::CreateEValue(
+        builder, executorch_flatbuffer::KernelTypes::Int, dim0.Union());
+    auto shape_items = builder.CreateVector(std::vector<int64_t>{1});
+    auto shape_list =
+        executorch_flatbuffer::CreateIntList(builder, shape_items);
+    auto v2 = executorch_flatbuffer::CreateEValue(
+        builder,
+        executorch_flatbuffer::KernelTypes::IntList,
+        shape_list.Union());
+    auto v3 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4},
+        {0},
+        /*memory_planned=*/false);
+    auto list_items = builder.CreateVector(std::vector<int32_t>{3});
+    auto tensor_list =
+        executorch_flatbuffer::CreateTensorList(builder, list_items);
+    auto v4 = executorch_flatbuffer::CreateEValue(
+        builder,
+        executorch_flatbuffer::KernelTypes::TensorList,
+        tensor_list.Union());
+    auto v5 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {2, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/64);
+
+    auto op_name = builder.CreateString("executorch_prim::et_view");
+    auto op_overload = builder.CreateString("default");
+    auto op =
+        executorch_flatbuffer::CreateOperator(builder, op_name, op_overload);
+
+    auto call_args = builder.CreateVector(std::vector<int32_t>{0, 2, 4});
+    auto call = executorch_flatbuffer::CreateKernelCall(builder, 0, call_args);
+    auto instr = executorch_flatbuffer::CreateInstruction(
+        builder,
+        executorch_flatbuffer::InstructionArguments::KernelCall,
+        call.Union());
+
+    AlignedProgramBuffer prog_buf;
+    finish_single_plan_program(
+        builder, {v0, v1, v2, v3, v4, v5}, {0}, {5}, {instr}, {op}, prog_buf);
+
+    auto loader = prog_buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<executorch::runtime::Method> method = program->load_method(
+        "forward", &mmm.get(), nullptr, nullptr, nullptr, extra_kernels);
+    ASSERT_EQ(method.error(), Error::Ok);
+
+    float in_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+    int32_t sizes[2] = {2, 2};
+    executorch::aten::TensorImpl impl(ScalarType::Float, 2, sizes, in_data);
+    ASSERT_EQ(method->set_input(EValue(Tensor(&impl)), 0), Error::Ok);
+    EXPECT_EQ(method->execute(), Error::InvalidState);
+    EXPECT_FALSE(method->in_progress());
+  }
+
+  // An operator whose name embeds ".default" with a null overload must not be
+  // treated as executorch_prim::et_view with overload "default".
+  {
+    executorch::runtime::Kernel null_overload_kernel(
+        "executorch_prim::et_view.default", custom_et_view_noop);
+    Span<const executorch::runtime::Kernel> custom_kernels(
+        &null_overload_kernel, 1);
+
+    flatbuffers::FlatBufferBuilder builder(2048);
+    auto v0 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {2, 2},
+        {0, 1},
+        /*memory_planned=*/true,
+        /*memory_offset=*/0);
+    auto dim0 = executorch_flatbuffer::CreateInt(builder, 4);
+    auto v1 = executorch_flatbuffer::CreateEValue(
+        builder, executorch_flatbuffer::KernelTypes::Int, dim0.Union());
+    auto shape_items = builder.CreateVector(std::vector<int64_t>{1});
+    auto shape_list =
+        executorch_flatbuffer::CreateIntList(builder, shape_items);
+    auto v2 = executorch_flatbuffer::CreateEValue(
+        builder,
+        executorch_flatbuffer::KernelTypes::IntList,
+        shape_list.Union());
+    auto v3 = make_tensor_evalue(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        {4},
+        {0},
+        /*memory_planned=*/false);
+
+    auto op_name = builder.CreateString("executorch_prim::et_view.default");
+    auto op = executorch_flatbuffer::CreateOperator(builder, op_name, 0);
+
+    auto call_args = builder.CreateVector(std::vector<int32_t>{0, 2, 3});
+    auto call = executorch_flatbuffer::CreateKernelCall(builder, 0, call_args);
+    auto instr = executorch_flatbuffer::CreateInstruction(
+        builder,
+        executorch_flatbuffer::InstructionArguments::KernelCall,
+        call.Union());
+
+    AlignedProgramBuffer prog_buf;
+    finish_single_plan_program(
+        builder, {v0, v1, v2, v3}, {0}, {3}, {instr}, {op}, prog_buf);
+
+    auto loader = prog_buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<executorch::runtime::Method> method = program->load_method(
+        "forward", &mmm.get(), nullptr, nullptr, nullptr, custom_kernels);
+    ASSERT_EQ(method.error(), Error::Ok);
+
+    float in_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+    int32_t sizes[2] = {2, 2};
+    executorch::aten::TensorImpl impl(ScalarType::Float, 2, sizes, in_data);
+    ASSERT_EQ(method->set_input(EValue(Tensor(&impl)), 0), Error::Ok);
+
+    g_custom_et_view_invoked = false;
+    EXPECT_EQ(method->execute(), Error::InvalidState);
+    EXPECT_FALSE(g_custom_et_view_invoked);
+    EXPECT_FALSE(method->in_progress());
+  }
+}
+
+TEST_F(TensorParserTest, ExecuteDuplicateEtViewOperatorsSucceeds) {
+  executorch::runtime::Kernel view_kernel(
+      "executorch_prim::et_view.default", fallback_et_view);
+  Span<const executorch::runtime::Kernel> extra_kernels;
+  if (!executorch::runtime::registry_has_op_function(
+          "executorch_prim::et_view.default")) {
+    extra_kernels = Span<const executorch::runtime::Kernel>(&view_kernel, 1);
+  }
+
+  flatbuffers::FlatBufferBuilder builder(2048);
+  auto v0 = make_tensor_evalue(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      {2, 2},
+      {0, 1},
+      /*memory_planned=*/true,
+      /*memory_offset=*/0);
+  auto dim4 = executorch_flatbuffer::CreateInt(builder, 4);
+  auto v1 = executorch_flatbuffer::CreateEValue(
+      builder, executorch_flatbuffer::KernelTypes::Int, dim4.Union());
+  auto shape1_items = builder.CreateVector(std::vector<int64_t>{1});
+  auto shape1_list =
+      executorch_flatbuffer::CreateIntList(builder, shape1_items);
+  auto v2 = executorch_flatbuffer::CreateEValue(
+      builder,
+      executorch_flatbuffer::KernelTypes::IntList,
+      shape1_list.Union());
+  auto v3 = make_tensor_evalue(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      {4},
+      {0},
+      /*memory_planned=*/false);
+  auto dim1 = executorch_flatbuffer::CreateInt(builder, 1);
+  auto v4 = executorch_flatbuffer::CreateEValue(
+      builder, executorch_flatbuffer::KernelTypes::Int, dim1.Union());
+  auto shape2_items = builder.CreateVector(std::vector<int64_t>{4, 1});
+  auto shape2_list =
+      executorch_flatbuffer::CreateIntList(builder, shape2_items);
+  auto v5 = executorch_flatbuffer::CreateEValue(
+      builder,
+      executorch_flatbuffer::KernelTypes::IntList,
+      shape2_list.Union());
+  auto v6 = make_tensor_evalue(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      {1, 4},
+      {0, 1},
+      /*memory_planned=*/false);
+
+  auto op0_name = builder.CreateString("executorch_prim::et_view");
+  auto op0_overload = builder.CreateString("default");
+  auto op0 =
+      executorch_flatbuffer::CreateOperator(builder, op0_name, op0_overload);
+  auto op1_name = builder.CreateString("executorch_prim::et_view");
+  auto op1_overload = builder.CreateString("default");
+  auto op1 =
+      executorch_flatbuffer::CreateOperator(builder, op1_name, op1_overload);
+
+  auto call0_args = builder.CreateVector(std::vector<int32_t>{0, 2, 3});
+  auto call0 = executorch_flatbuffer::CreateKernelCall(builder, 0, call0_args);
+  auto instr0 = executorch_flatbuffer::CreateInstruction(
+      builder,
+      executorch_flatbuffer::InstructionArguments::KernelCall,
+      call0.Union());
+
+  auto call1_args = builder.CreateVector(std::vector<int32_t>{3, 5, 6});
+  auto call1 = executorch_flatbuffer::CreateKernelCall(builder, 1, call1_args);
+  auto instr1 = executorch_flatbuffer::CreateInstruction(
+      builder,
+      executorch_flatbuffer::InstructionArguments::KernelCall,
+      call1.Union());
+
+  AlignedProgramBuffer prog_buf;
+  finish_single_plan_program(
+      builder,
+      {v0, v1, v2, v3, v4, v5, v6},
+      {0},
+      {6},
+      {instr0, instr1},
+      {op0, op1},
+      prog_buf);
+
+  auto loader = prog_buf.loader();
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<executorch::runtime::Method> method = program->load_method(
+      "forward", &mmm.get(), nullptr, nullptr, nullptr, extra_kernels);
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float in_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+  int32_t sizes[2] = {2, 2};
+  executorch::aten::TensorImpl impl(ScalarType::Float, 2, sizes, in_data);
+  ASSERT_EQ(method->set_input(EValue(Tensor(&impl)), 0), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+
+  const Tensor& out = method->get_output(0).toTensor();
+  ASSERT_NE(out.const_data_ptr(), nullptr);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_FLOAT_EQ(out.const_data_ptr<float>()[i], in_data[i]);
+  }
+}
+
+TEST_F(TensorParserTest, TryGetTensorListElementsValidatesTagsAndPointers) {
+  EValue none_eval;
+  EXPECT_EQ(none_eval.tryGetTensorListElements().error(), Error::InvalidType);
+
+  EValue int_eval(static_cast<int64_t>(7));
+  EXPECT_EQ(int_eval.tryGetTensorListElements().error(), Error::InvalidType);
+
+  float data[2] = {1.0f, 2.0f};
+  int32_t sizes[1] = {2};
+  executorch::aten::TensorImpl impl(ScalarType::Float, 1, sizes, data);
+  Tensor tensor(&impl);
+  EValue tensor_eval(tensor);
+  EXPECT_EQ(tensor_eval.tryGetTensorListElements().error(), Error::InvalidType);
+
+  EValue* wrapped_tensors[1] = {&tensor_eval};
+  Tensor unwrapped_tensors[1] = {tensor};
+  executorch::runtime::BoxedEvalueList<Tensor> boxed_tensors(
+      wrapped_tensors, unwrapped_tensors, 1);
+  ASSERT_EQ(boxed_tensors.wrapped_values().size(), 1U);
+  EXPECT_EQ(boxed_tensors.wrapped_values()[0], &tensor_eval);
+
+  EValue tensor_list_eval(&boxed_tensors);
+  auto tensor_elems = tensor_list_eval.tryGetTensorListElements();
+  ASSERT_EQ(tensor_elems.error(), Error::Ok);
+  ASSERT_EQ(tensor_elems->size(), 1U);
+  EXPECT_EQ((*tensor_elems)[0], &tensor_eval);
+
+  EValue* wrapped_opt[2] = {nullptr, &tensor_eval};
+  std::optional<Tensor> unwrapped_opt[2];
+  executorch::runtime::BoxedEvalueList<std::optional<Tensor>> boxed_opt(
+      wrapped_opt, unwrapped_opt, 2);
+  EValue opt_list_eval(&boxed_opt);
+  auto opt_elems = opt_list_eval.tryGetTensorListElements();
+  ASSERT_EQ(opt_elems.error(), Error::Ok);
+  ASSERT_EQ(opt_elems->size(), 2U);
+  EXPECT_EQ((*opt_elems)[0], nullptr);
+  EXPECT_EQ((*opt_elems)[1], &tensor_eval);
+
+  EValue null_tensor_list_eval;
+  null_tensor_list_eval.tag = executorch::runtime::Tag::ListTensor;
+  null_tensor_list_eval.payload.copyable_union.as_tensor_list_ptr = nullptr;
+  EXPECT_EQ(
+      null_tensor_list_eval.tryGetTensorListElements().error(),
+      Error::InvalidState);
+
+  EValue null_opt_list_eval;
+  null_opt_list_eval.tag = executorch::runtime::Tag::ListOptionalTensor;
+  null_opt_list_eval.payload.copyable_union.as_list_optional_tensor_ptr =
+      nullptr;
+  EXPECT_EQ(
+      null_opt_list_eval.tryGetTensorListElements().error(),
+      Error::InvalidState);
 }
