@@ -27,13 +27,15 @@ else()
   find_package(CUDAToolkit REQUIRED)
 endif()
 
-# SHARED on purpose: the caller-stream thread-local must have a single
-# definition across every shared object in the process (see export.h). A static
-# copy linked into multiple shared libraries would create multiple thread-locals
-# and silently break the caller-stream handshake. The CUDA allocator lives here
-# too, so one singleton serves every delegate.
+# SHARED on purpose: the caller-stream and current-stream thread-locals must
+# each have a single definition across every shared object in the process (see
+# export.h). A static copy linked into multiple shared libraries would create
+# multiple thread-locals and silently break the caller-stream handshake, or let
+# the CUDA delegate and its shims each see a different current stream. The CUDA
+# allocator lives here too, so one singleton serves every delegate.
 add_library(
-  extension_cuda SHARED caller_stream.cpp cuda_allocator.cpp device_guard.cpp
+  extension_cuda SHARED caller_stream.cpp cuda_allocator.cpp current_stream.cpp
+                        device_guard.cpp
 )
 if(EXECUTORCH_BUILD_SHARED)
   # Named after what it provides rather than after the target, matching the
@@ -46,17 +48,18 @@ if(EXECUTORCH_BUILD_SHARED)
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(extension_cuda)
 endif()
-# The allocator and device guard call the runtime. The caller-stream helper
-# treats its handle as opaque. The toolkit is present in accelerator builds.
+# The allocator, device guard and current-stream helper call the runtime. The
+# caller-stream helper treats its handle as opaque. The toolkit is present in
+# accelerator builds.
 if(EXECUTORCH_BUILD_ROCM)
   target_link_libraries(extension_cuda PUBLIC hip::host)
 else()
   target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 endif()
-# The allocator and device guard log through the ExecuTorch runtime. Where one
-# shared runtime exists, the helper retains it so there is a single registry.
-# Where it does not, the helper does nothing, and this library carries the parts
-# of the static core it needs instead.
+# The allocator, device guard and current-stream helper log through the
+# ExecuTorch runtime. Where one shared runtime exists, the helper retains it so
+# there is a single registry. Where it does not, the helper does nothing, and
+# this library carries the parts of the static core it needs instead.
 if(EXECUTORCH_BUILD_SHARED)
   executorch_target_link_shared_runtime(extension_cuda)
 else()

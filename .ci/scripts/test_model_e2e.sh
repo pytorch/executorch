@@ -51,7 +51,7 @@ Arguments:
                 - vr-streaming: Voxtral Realtime streaming mode
                 - vr-offline: Voxtral Realtime offline mode
                 - solo-text: Muse Glimmer solo text mode
-                - solo-text-batching: Muse Glimmer text on the CUDA batching runtime
+                - dflash-image-batching: Muse Glimmer DFlash text and image on the CUDA batching runtime
                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Environment:
@@ -126,7 +126,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-batching|dflash-image)
+    solo-text|dflash-image-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -135,7 +135,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -321,12 +321,12 @@ case "$HF_MODEL" in
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
         ;;
-      solo-text-batching)
+      dflash-image-batching)
         # Built by `make muse-glimmer-batching-cuda` into its own directory.
         RUNNER_PATH="muse-glimmer-batching"
         RUNNER_TARGET="muse_glimmer_batching_runner"
-        EXPECTED_OUTPUT="Paris"
-        IMAGE_URL=""
+        EXPECTED_OUTPUT="dog"
+        IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       dflash-image)
         RUNNER_TARGET="dflash_runner"
@@ -334,7 +334,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'dflash-image-batching' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -500,12 +500,12 @@ EOF
     fi
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
     RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
-    if [ "$MODE" = "solo-text-batching" ]; then
-      # The batching runner goes through ServingRuntime and takes its own flags.
-      printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
-      RUNNER_ARGS="--pte ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd --tokenizer ${MODEL_DIR}/$TOKENIZER_FILE --prompt \"\$(cat $PROMPT_FILE)\" --max_new_tokens 128 --temperature 0 --max_session_tokens 4096"
+    if [ "$MODE" = "dflash-image-batching" ]; then
+      # The batching runner goes through ServingRuntime and takes its own flags;
+      # pos_embed.bin is read from beside model.pte.
+      RUNNER_ARGS="--pte ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd --tokenizer ${MODEL_DIR}/$TOKENIZER_FILE --prompt \"\$(cat $PROMPT_FILE)\" --max_new_tokens 512 --temperature 0 --max_session_tokens 4096 --dflash"
     fi
-    if [ "$MODE" = "dflash-image" ]; then
+    if [ "$MODE" = "dflash-image" ] || [ "$MODE" = "dflash-image-batching" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"
     fi
     ;;
@@ -607,14 +607,15 @@ else
 fi
 echo "::endgroup::"
 
-if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "solo-text-batching" ]; then
+if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "dflash-image-batching" ]; then
   echo "::group::Run $MODEL_NAME batching serving smoke"
   # The CI-only correctness tool is not part of the normal serving build.
   bash .ci/scripts/build_muse_glimmer_batching_smoke.sh
-  # Concurrent staggered requests through ServingRuntime on CudaExecutor.
+  # Concurrent staggered requests through ServingRuntime on the DFlash executor.
   cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_smoke \
     --pte "${MODEL_DIR}/model.pte" --data_path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
     --tokenizer "${MODEL_DIR}/$TOKENIZER_FILE" --max_sessions 8 --max_session_tokens 2048 \
+    --dflash \
     --mode requests --requests 5 --prompt_tokens 600 --max_new_tokens 64 --stagger_ms 200
 
   pip install -r examples/llm_server/python/requirements.txt
@@ -639,6 +640,7 @@ PY
     --hf-tokenizer "${MODEL_DIR}" \
     --max-context 4096 \
     --prefix-cache-entries 2 \
+    --dflash \
     --host 127.0.0.1 \
     --port "$PORT" >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
@@ -651,13 +653,15 @@ PY
   }
   trap cleanup_mg_server EXIT
 
-  if ! python - "$PORT" "$SERVER_LOG" <<'PY'
+  if ! python - "$PORT" "$SERVER_LOG" "${MODEL_DIR}/test_image.jpg" <<'PY'
+import base64
 import json
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
-port, log_path = sys.argv[1], sys.argv[2]
+port, log_path, image_path = sys.argv[1], sys.argv[2], sys.argv[3]
 base = f"http://127.0.0.1:{port}"
 
 
@@ -711,6 +715,38 @@ for line in stream.splitlines():
         pieces.append((delta.get("content") or "") + (delta.get("reasoning_content") or ""))
 if len([p for p in pieces if p]) < 2 or "Paris" not in "".join(pieces):
     raise AssertionError(f"expected Paris streamed in several chunks, got: {pieces!r}")
+
+with open(image_path, "rb") as f:
+    image_url = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii")
+image_body = {
+    "model": "muse_glimmer",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What animal is in this image?"},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ],
+        }
+    ],
+    "max_tokens": 512,
+    "temperature": 0,
+}
+
+
+def answer(payload):
+    message = json.loads(request("/v1/chat/completions", payload))["choices"][0]["message"]
+    return (message.get("content") or "") + (message.get("reasoning_content") or "")
+
+
+# Image and text requests in flight together share DFlash executor steps.
+with ThreadPoolExecutor(max_workers=3) as pool:
+    image_a, text, image_b = pool.map(answer, (image_body, body, image_body))
+for reply in (image_a, image_b):
+    if "dog" not in reply.lower():
+        raise AssertionError(f"expected dog in image response, got: {reply!r}")
+if "Paris" not in text:
+    raise AssertionError(f"expected Paris beside image requests, got: {text!r}")
 print("Muse Glimmer CUDA batching serving smoke passed")
 PY
   then

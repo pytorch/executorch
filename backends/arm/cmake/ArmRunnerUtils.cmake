@@ -11,6 +11,7 @@ include_guard(DIRECTORY)
 set(ARM_RUNNER_UTILS_API_COMMANDS
     arm_runner_add_minimal_executable
     arm_runner_add_standalone_executorch
+    arm_runner_check_lock_free_atomics
     arm_runner_configure_ethos_u_platform
     arm_runner_configure_linker_script
     arm_runner_configure_model
@@ -34,6 +35,10 @@ set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_add_minimal_executable
 set(ARM_RUNNER_UTILS_API_KIND_arm_runner_add_standalone_executorch macro)
 set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_add_standalone_executorch
     "arm_runner_add_standalone_executorch()"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_check_lock_free_atomics function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_check_lock_free_atomics
+    "arm_runner_check_lock_free_atomics(OUT_VAR)"
 )
 set(ARM_RUNNER_UTILS_API_KIND_arm_runner_configure_ethos_u_platform function)
 set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_configure_ethos_u_platform

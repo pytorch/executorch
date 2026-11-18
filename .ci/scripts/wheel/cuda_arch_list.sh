@@ -41,29 +41,6 @@ _cuda_arch_aarch64_cu130="8.0 9.0 10.0 11.0 12.0"
 _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
 _cuda_arch_aarch64_cu134="${_cuda_arch_aarch64_cu130}"
 
-# The older CUDA train.
-#
-# The two architectures do not carry identical lists, because each covers what the published PyTorch
-# build for that architecture covers, and those differ. Matching them to each other instead would mean
-# advertising a GPU on one architecture that PyTorch cannot serve there.
-#
-# The smaller embedded modules are deliberately absent, with one exception. An embedded-only
-# architecture in a generic wheel would advertise a device the row cannot otherwise serve, since
-# those devices also need the CUDA, TensorRT and PyTorch pinned by their own software release
-# rather than the ones a generic wheel resolves.
-#
-# 8.7 is that exception. This is the only row whose CUDA major matches what that module's software
-# release ships, and the wheel declares no PyTorch, so the user supplies the build that carries
-# their architecture. Omitting it does not protect them from a bad pairing, it only removes the
-# device code they need.
-#
-# The floor is 8.0 rather than the oldest architecture PyTorch still carries. One of these sources compiles
-# an integer matrix-multiply path only at 8.0 and newer, so an older architecture would get a delegate that
-# loads, runs most models, and fails on one that needs that operator. Claiming hardware the delegate only
-# partly serves is the same problem the embedded modules have, so the row leaves it out for the same reason.
-_cuda_arch_x86_64_cu126="8.0 8.6 8.9 9.0"
-_cuda_arch_aarch64_cu126="8.0 8.7 9.0"
-
 # A CUDA train with no architecture list would leave the build detecting the builder's GPU, which is
 # the failure this file exists to prevent. Adding a train to the release matrix without adding its
 # architectures should fail loudly rather than silently produce a single-GPU wheel.
@@ -103,7 +80,6 @@ executorch_cuda_arch_list() {
   case "${machine}" in
     aarch64 | arm64)
       case "${train}" in
-        126) printf '%s' "${_cuda_arch_aarch64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_aarch64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_aarch64_cu132}" ;;
         134) printf '%s' "${_cuda_arch_aarch64_cu134}" ;;
@@ -112,7 +88,6 @@ executorch_cuda_arch_list() {
       ;;
     x86_64)
       case "${train}" in
-        126) printf '%s' "${_cuda_arch_x86_64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_x86_64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_x86_64_cu132}" ;;
         134) printf '%s' "${_cuda_arch_x86_64_cu134}" ;;

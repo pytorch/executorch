@@ -221,6 +221,12 @@ OP_CASES = {
         (torch.randn(1, 3, 4, 5), torch.randn(1, 3, 4, 5)),
         None,
     ),
+    "expand_as": OpCase(
+        torch.ops.aten.expand_as.default,
+        _build_module(lambda x, y: torch.ops.aten.expand_as.default(x, y)),
+        (torch.randn(1, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
     "select": OpCase(
         torch.ops.aten.select.int,
         _build_module(lambda x, y: torch.ops.aten.select.int(x, 1, 0)),

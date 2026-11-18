@@ -100,7 +100,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "op_linalg_svd",
         srcs = ["op_linalg_svd.cpp"],
-        headers = ["op_linalg_svd.h"],
+        exported_headers = ["op_linalg_svd.h"],
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -431,32 +431,6 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = ["PUBLIC"],
-    )
-
-    runtime.cxx_library(
-        name = "op_idma_copy",
-        srcs = ["op_idma_copy.cpp"],
-        exported_headers = ["op_idma_copy.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = ["PUBLIC"],
-    )
-
-    runtime.cxx_library(
-        name = "op_idma_wait",
-        srcs = ["op_idma_wait.cpp"],
-        exported_headers = ["op_idma_wait.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
         visibility = ["PUBLIC"],
     )

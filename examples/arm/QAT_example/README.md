@@ -60,6 +60,13 @@ range consistent across the graph avoids requantization boundaries around the
 fused flow-offset samplers while ensuring sampled images never use the
 ambiguous SNORM value `-128`.
 
+QAT first calibrates on the selected training inputs with fake quantization
+disabled. Histogram observers accumulate the combined distribution of tensors
+that share quantization parameters. Moving-average observers can instead
+narrow the shared range toward individual tensors and cause clipping. After
+calibration, observers are frozen and fake quantization is enabled for weight
+training, so the calibrated ranges remain fixed throughout QAT.
+
 ## Smoke Runs
 
 Small random or short QAT runs are useful only for checking that the flow runs.

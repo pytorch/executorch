@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include <thread>
+
 namespace slim = ::executorch::backends::aoti::slim;
 using namespace ::executorch::runtime;
 using namespace ::executorch::backends::cuda;
@@ -49,14 +51,14 @@ class CudaOutputCopyTest : public ::testing::Test {
         storage_offset);
   }
 
-  Error copy(const slim::SlimTensor& source) {
+  Error copy(const slim::SlimTensor& source, cudaStream_t stream = nullptr) {
     etensor::TensorImpl::SizesType sizes[] = {2, 2};
     etensor::TensorImpl::DimOrderType dim_order[] = {0, 1};
     etensor::TensorImpl::StridesType strides[] = {2, 1};
     etensor::TensorImpl impl(
         etensor::ScalarType::Float, 2, sizes, destination_, dim_order, strides);
     etensor::Tensor output(&impl);
-    return copy_slimtensor_to_device_etensor_async(&source, &output, nullptr);
+    return copy_slimtensor_to_device_etensor_async(&source, &output, stream);
   }
 
   std::vector<float> copied() {
@@ -90,6 +92,33 @@ TEST_F(CudaOutputCopyTest, CopiesAStridedView) {
       source_, {2, 4}, slim::c10::ScalarType::Float, slim::DEFAULT_CUDA_DEVICE);
   columns.as_strided_({2, 2}, {4, 1}, /*storage_offset=*/1);
   ASSERT_EQ(copy(columns), Error::Ok);
+  EXPECT_EQ(copied(), (std::vector<float>{1, 2, 5, 6}));
+}
+
+// While one thread captures a CUDA graph, CUDA rejects any use of the legacy
+// stream, so another thread's copy has to stay on its own stream.
+TEST_F(CudaOutputCopyTest, CopiesAStridedViewWhileAnotherThreadCaptures) {
+  slim::SlimTensor columns = slim::from_blob(
+      source_, {2, 4}, slim::c10::ScalarType::Float, slim::DEFAULT_CUDA_DEVICE);
+  columns.as_strided_({2, 2}, {4, 1}, /*storage_offset=*/1);
+
+  cudaStream_t capturing = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&capturing), cudaSuccess);
+  ASSERT_EQ(
+      cudaStreamBeginCapture(capturing, cudaStreamCaptureModeRelaxed),
+      cudaSuccess);
+  Error copied_while_capturing = Error::Internal;
+  std::thread([&] {
+    copied_while_capturing = copy(columns, cudaStreamPerThread);
+  }).join();
+  cudaGraph_t graph = nullptr;
+  EXPECT_EQ(cudaStreamEndCapture(capturing, &graph), cudaSuccess);
+  if (graph != nullptr) {
+    EXPECT_EQ(cudaGraphDestroy(graph), cudaSuccess);
+  }
+  EXPECT_EQ(cudaStreamDestroy(capturing), cudaSuccess);
+
+  ASSERT_EQ(copied_while_capturing, Error::Ok);
   EXPECT_EQ(copied(), (std::vector<float>{1, 2, 5, 6}));
 }
 

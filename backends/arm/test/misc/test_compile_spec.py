@@ -108,6 +108,27 @@ def test_compile_spec_vgf_no_quant():
         EthosUCompileSpec._from_list(spec_list)
 
 
+def test_compile_spec_vgf_default_enables_bf16():
+    """The default VGF spec advertises BF16 without dropping other
+    extensions.
+    """
+    spec = VgfCompileSpec()
+    assert spec.tosa_spec.support_float()
+    assert spec.tosa_spec.support_integer()
+    assert spec.tosa_spec.support_extension("int4")
+    assert spec.tosa_spec.support_extension("int16")
+    assert spec.tosa_spec.support_extension("bf16")
+
+    roundtripped = VgfCompileSpec._from_list(spec._to_list())
+    assert roundtripped.tosa_spec.support_extension("bf16")
+
+
+def test_compile_spec_vgf_explicit_tosa_spec_does_not_enable_bf16():
+    """Opting into a narrower TOSA spec must still remain possible."""
+    spec = VgfCompileSpec("TOSA-1.0+FP+INT+int4+int16")
+    assert not spec.tosa_spec.support_extension("bf16")
+
+
 def test_compile_spec_vgf_defaults_leaky_relu_to_decompose():
     compile_spec = VgfCompileSpec()
     pipeline_config = compile_spec._get_pass_pipeline_config()
@@ -173,6 +194,7 @@ def test_alias_buffer_mutation_compile_specs_are_partition_local(monkeypatch):
     monkeypatch.setattr(TOSAPartitioner, "partition", fake_partition)
     monkeypatch.setattr(partitioner, "_validate_mutable_buffers", lambda _: None)
     monkeypatch.setattr(vgf_partitioner, "tag_mutated_buffer", lambda _: None)
+    monkeypatch.setattr(partitioner, "_check_mutable_buffers_owned", lambda _: None)
 
     result = partitioner.partition(tagged_program)
     tag0_specs = result.partition_tags["tag0"].compile_specs
@@ -191,6 +213,37 @@ def test_alias_buffer_mutation_compile_specs_are_partition_local(monkeypatch):
     tag0_specs.append(CompileSpec("mutable_buffer_pairs", b"0:0:0"))
     assert all(spec.key != "mutable_buffer_pairs" for spec in tag1_specs)
     assert all(spec.key != "mutable_buffer_pairs" for spec in shared_spec.compile_specs)
+
+
+@mark.parametrize("returned", [False, True])
+def test_vgf_aliasing_rejects_a_buffer_the_delegate_cannot_own(monkeypatch, returned):
+    class MutatingCache(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("cache", torch.zeros(4, dtype=torch.int8))
+
+        def forward(self, x):
+            self.cache.add_(x)
+            # A delegate cannot own a buffer whose new value is returned.
+            return self.cache if returned else self.cache + 1
+
+    partitioner = VgfPartitioner(VgfCompileSpec(alias_buffer_mutations=True))
+
+    def tag_every_op(_self, program):
+        for node in program.graph.nodes:
+            if node.op == "call_function":
+                node.meta["delegation_tag"] = "tag0"
+        return PartitionResult(program, {"tag0": partitioner.delegation_spec})
+
+    monkeypatch.setattr(TOSAPartitioner, "partition", tag_every_op)
+    exported_program = torch.export.export(
+        MutatingCache(), (torch.ones(4, dtype=torch.int8),)
+    ).run_decompositions()
+    if returned:
+        with raises(ValueError, match="cannot be aliased"):
+            partitioner.partition(exported_program)
+    else:
+        partitioner.partition(exported_program)
 
 
 def test_vgf_direct_aliasing_requires_partitioner(monkeypatch):
@@ -334,3 +387,24 @@ def test_ethosu_persistent_region_extra_flag_does_not_delegate_buffers_u85_INT()
     roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
     assert not compile_spec.delegate_mutable_buffers
     assert not roundtripped.delegate_mutable_buffers
+
+
+@mark.parametrize("plan_delegate_scratch", [False, True])
+def test_ethosu_planned_scratch_roundtrip(plan_delegate_scratch):
+    compile_spec = EthosUCompileSpec(
+        "ethos-u55-128", plan_delegate_scratch=plan_delegate_scratch
+    )
+    serialized = compile_spec._to_list()
+    roundtripped = EthosUCompileSpec._from_list(serialized)
+    assert roundtripped.plan_delegate_scratch is plan_delegate_scratch
+    assert (
+        roundtripped.compiler_flags == EthosUCompileSpec("ethos-u55-128").compiler_flags
+    )
+    if not plan_delegate_scratch:
+        assert all(spec.key != "plan_delegate_scratch" for spec in serialized)
+
+
+@mark.parametrize("plan_delegate_scratch", [None, 0, 1, "True"])
+def test_ethosu_planned_scratch_rejects_invalid_values(plan_delegate_scratch):
+    with raises(ValueError, match="plan_delegate_scratch must be a boolean"):
+        EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=plan_delegate_scratch)

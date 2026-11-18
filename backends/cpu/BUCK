@@ -30,6 +30,7 @@ fbcode_target(
         "//executorch/exir/backend:compile_spec_schema",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
+        "//executorch/exir/passes:constant_prop_pass",
         "//executorch/export:lib",
     ],
 )
@@ -48,6 +49,23 @@ fbcode_target(
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/export:lib",
+        "//executorch/exir/native:native",
+        "//pytorch/ao:torchao",
+        "//pytorch/vision:torchvision", # @manual
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_workflow_export",
+    srcs = ["test/test_workflow_export.py", "workflows/export.py"],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/export:lib",
+        "//executorch/exir/native:native",
         "//pytorch/ao:torchao",
         "//pytorch/vision:torchvision", # @manual
     ],
@@ -68,6 +86,32 @@ fbcode_target(
     deps = [
         ":export_torchvision_lib",
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "etdump_lib",
+    srcs = ["workflows/etdump.py"],
+    deps = ["//executorch/devtools/inspector:lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "etdump_cpu",
+    par_style = "xar",
+    main_module = "executorch.backends.cpu.workflows.etdump",
+    deps = [":etdump_lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_etdump",
+    srcs = ["test/test_etdump.py"],
+    deps = [
+        ":etdump_lib",
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etdump:serialize",
     ],
 )
 

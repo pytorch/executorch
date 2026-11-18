@@ -36,6 +36,7 @@ et_cxx_test(
 target_include_directories(
   backends_xnnpack_test
   PRIVATE ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/XNNPACK/include
+          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/XNNPACK
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/XNNPACK/src
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include

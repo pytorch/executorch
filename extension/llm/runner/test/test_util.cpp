@@ -185,3 +185,20 @@ TEST_F(ConvertToBFloat16Test, EtUnwrapTokenizerExpressionForm) {
 }
 
 } // namespace
+
+TEST(StopSafePrefix, ReportsSelectedIndexIncludingTies) {
+  bool hit = false;
+  size_t index = 99;
+  EXPECT_EQ(
+      stop_safe_prefix_len("a<|eom|>", {"<|", "<|eom|>"}, hit, &index), 1u);
+  EXPECT_TRUE(hit);
+  EXPECT_EQ(index, 0u);
+  EXPECT_EQ(
+      stop_safe_prefix_len("a<|eom|>", {"<|eom|>", "<|"}, hit, &index), 1u);
+  EXPECT_EQ(index, 0u);
+  EXPECT_EQ(stop_safe_prefix_len("aXbY", {"Y", "X"}, hit, &index), 1u);
+  EXPECT_EQ(index, 1u);
+  stop_safe_prefix_len("abc", {"X"}, hit, &index);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(index, std::string::npos);
+}

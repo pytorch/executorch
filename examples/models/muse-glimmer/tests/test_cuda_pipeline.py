@@ -248,8 +248,9 @@ class TestChunkedPrefillTest(unittest.TestCase):
             if layer.is_sliding:
                 window = layer.self_attn.window_size
                 break
-        buf_size = window * 2
-        prompt_len = buf_size + 4
+        chunk_len = 2 * window
+        model_chunk.set_max_prefill_chunk(chunk_len)
+        prompt_len = TINY_CONFIG.max_seq_len
         torch.manual_seed(0)
         prompt = torch.randint(0, config.vocab_size, (1, prompt_len), device="cuda")
 
@@ -260,15 +261,12 @@ class TestChunkedPrefillTest(unittest.TestCase):
                 pos = torch.tensor([i], dtype=torch.long, device="cuda")
                 logits_seq = model_seq(tok, pos)
 
-        # Chunked: two chunks
+        # Chunked: max-size chunks, so later chunks wrap the ring buffer.
         with torch.no_grad():
-            chunk1 = prompt[:, :buf_size]
-            pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
-            model_chunk(chunk1, pos1)
-
-            chunk2 = prompt[:, buf_size:]
-            pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
-            logits_chunk = model_chunk(chunk2, pos2)
+            for start in range(0, prompt_len, chunk_len):
+                end = min(start + chunk_len, prompt_len)
+                pos = torch.arange(start, end, dtype=torch.long, device="cuda")
+                logits_chunk = model_chunk(prompt[:, start:end], pos)
 
         max_diff = (logits_seq[0, -1].float() - logits_chunk[0, -1].float()).abs().max()
         self.assertTrue(

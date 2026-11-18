@@ -29,7 +29,7 @@ ops_expected_absent_after_lowering = [
 ]
 
 # TODO/MLETORCH-2163: Investigate Swin2SR delegation gaps around index/view
-# in FP and Q/DQ, clamp, and expand_copy in INT.
+# in FP and Q/DQ and clamp in INT.
 swin2sr_fp_lowered_outer_graph_ops = {
     "torch.ops.higher_order.executorch_call_delegate": 2,
     "executorch_exir_dialects_edge__ops_aten_index_Tensor": 2,
@@ -38,7 +38,6 @@ swin2sr_fp_lowered_outer_graph_ops = {
 swin2sr_int_lowered_outer_graph_ops = {
     "torch.ops.higher_order.executorch_call_delegate": 3,
     "executorch_exir_dialects_edge__ops_aten_clamp_default": 4,
-    "executorch_exir_dialects_edge__ops_aten_expand_copy_default": 4,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 5,
 }

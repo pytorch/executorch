@@ -59,15 +59,23 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
         zero_spatial_padding = [0] * (spatial_rank * 2)
         padding_shape = [*zero_padding_pair, *padding, *zero_padding_pair]
 
+        pad_value = args[6] if len(args) == 8 else None
+        if pad_value is None:
+            pad_value = super().call_operator(
+                exir_ops.backend.tosa.CONST.default,
+                ([0], [1], input_tensor.data.dtype),
+                {},
+                meta,
+                True,
+            )
         pad_res = super().call_operator(
             exir_ops.backend.tosa.PAD.default,
             (
                 input_tensor,
                 padding_shape,
+                pad_value,
             ),
-            {
-                "value": 0,
-            },
+            {},
             meta,
             True,
         )

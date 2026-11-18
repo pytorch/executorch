@@ -27,6 +27,12 @@ void compute_variance(
     optional<ArrayRef<int64_t>> dim_list,
     const size_t num,
     const double denominator) {
+  using ACC = typename executorch::runtime::
+      promote_types<CTYPE_OUT, CTYPE_OUT, /*half_to_float=*/true>::type;
+  // Inputs are converted to the output dtype first, as in ATen.
+  const auto to_acc = [](CTYPE_IN v) {
+    return static_cast<ACC>(static_cast<CTYPE_OUT>(v));
+  };
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   if (num == 0 || denominator <= 0) {
     for (const auto out_ix : c10::irange(out.numel())) {
@@ -37,20 +43,17 @@ void compute_variance(
     const bool success = parallel_for_each_reduce_over_dim_list_output_index(
         in, dim_list, out, [&](const auto begin, const auto end) {
           for (const auto out_ix : c10::irange(begin, end)) {
-            CTYPE_OUT sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
-                [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-                out_ix);
-            CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
-            CTYPE_OUT sum2 = plan.execute<CTYPE_IN, CTYPE_OUT>(
-                [mean](CTYPE_IN v) {
-                  return (
-                      (static_cast<CTYPE_OUT>(v) - mean) *
-                      (static_cast<CTYPE_OUT>(v) - mean));
+            ACC sum = plan.execute<CTYPE_IN, ACC>(
+                to_acc, [](ACC outv, ACC acc) { return acc + outv; }, out_ix);
+            ACC mean = sum / static_cast<ACC>(num);
+            ACC sum2 = plan.execute<CTYPE_IN, ACC>(
+                [mean, to_acc](CTYPE_IN v) {
+                  const ACC diff = to_acc(v) - mean;
+                  return diff * diff;
                 },
-                [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                [](ACC outv, ACC acc) { return acc + outv; },
                 out_ix);
-            out_data[out_ix] = sum2 / denominator;
+            out_data[out_ix] = static_cast<CTYPE_OUT>(sum2 / denominator);
           }
         });
     ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");

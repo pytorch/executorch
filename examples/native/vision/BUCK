@@ -12,7 +12,6 @@ fbcode_target(
     deps = [
         "fbsource//third-party/pypi/pillow:pillow",
         "//caffe2:torch",
-        "//executorch/examples/models:models",
         "//executorch/exir/native:native",
         "//pytorch/vision:torchvision",  # @manual
     ],

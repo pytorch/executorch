@@ -45,8 +45,29 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
 #endif
 }
 
-// The Python API has no way to pass a stream or a readiness event, so the
-// Python boundary is synchronous and waits for the whole device.
+// Allocates host memory pinned for DMA, so copies between it and a device
+// transfer at pinned rather than pageable speed. Returns an empty pointer
+// when this build has no CUDA support or pinning fails; the caller then
+// falls back to ordinary host memory, which only loses speed.
+inline std::shared_ptr<void> allocate_pinned_host_buffer(size_t nbytes) {
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+  void* data = nullptr;
+  const auto status = cudaMallocHost(&data, nbytes);
+  if (status != cudaSuccess) {
+    (void)cudaGetLastError();
+    return nullptr;
+  }
+  return std::shared_ptr<void>(
+      data, [](void* pointer) { (void)cudaFreeHost(pointer); });
+#else
+  (void)nbytes;
+  return nullptr;
+#endif
+}
+
+// A tensor handed across the Python boundary carries no readiness event, and
+// another library may write it on any stream, so the boundary waits for the
+// whole device, even inside an executorch.runtime.cuda stream block.
 inline void synchronize_cuda_device(int index) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
   auto guard = executorch::extension::cuda::CUDAGuard::create(index);

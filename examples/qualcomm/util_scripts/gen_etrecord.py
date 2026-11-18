@@ -6,10 +6,10 @@
 
 import torch
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -67,16 +67,16 @@ def main(args):
         exec_prog.write_to_file(f)
 
     # setup ADB for on-device execution
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=[sample_input])
-    adb.execute()
+    device.push(inputs=[sample_input])
+    device.execute()
 
     # pull etdump back and display the statistics
-    adb.pull_etdump(".")
+    device.pull_etdump(".")
     exec_prog.get_etrecord().save("etrecord.bin")
     inspector = Inspector(
         etdump_path="etdump.etdp",

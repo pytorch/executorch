@@ -252,7 +252,8 @@ Tensor& _fft_r2c_out(
               out_sizes.data(), out_sizes.size())) == Error::Ok,
       InvalidArgument,
       out,
-      "Failed to resize output tensor (last dim %d).",
+      "Failed to resize output tensor (last dim %" ET_PRI_SIZES_AND_STRIDES
+      ").",
       out_sizes[dim.back()]);
 
   // NOTE: as of this writing, upstream PyTorch only supports float/double, so
