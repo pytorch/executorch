@@ -729,8 +729,8 @@ class TestCudaExport(unittest.TestCase):
             offered.extend(c.name for c in choices)
             return original(name, choices, *args, **kwargs)
 
-        module = torch.nn.Conv2d(512, 32, kernel_size=1).eval()
-        inputs = (torch.randn(5, 512, 3, 3),)
+        module = torch.nn.Conv2d(256, 32, kernel_size=1).eval()
+        inputs = (torch.randn(5, 256, 3, 3),)
         with mock.patch.object(
             conv, "autotune_select_algorithm", record
         ), torch._inductor.config.patch(layout_optimization=False):
