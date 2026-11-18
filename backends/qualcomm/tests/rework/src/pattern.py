@@ -3764,6 +3764,123 @@ class FixedLinearKeepDim:
         assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 2)
 
 
+class FoldParameterSplits:
+    class _CrossAttention(torch.nn.Module):
+        # With query != value, nn.MultiheadAttention chunks in_proj_weight at runtime.
+        def __init__(self):
+            super().__init__()
+            self.attn = torch.nn.MultiheadAttention(16, 2, batch_first=True)
+
+        def forward(self, x):
+            q = x.sigmoid()
+            return self.attn(q, q, x, need_weights=False)[0]
+
+    class _SliceOfMutatedBuffer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("cache", torch.zeros(4, 8))
+
+        def forward(self, x):
+            y = x + self.cache[0:2]
+            self.cache.add_(1.0)
+            return y
+
+    class _SymbolicSplitSizes(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 4))
+
+        def forward(self, x):
+            n = x.shape[0]
+            a, b = torch.split(self.weight, [n, 8 - n])
+            return x * a + b.sum()
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+        subtests,
+    ):
+        from executorch.backends.qualcomm.export_utils import (
+            make_quantizer,
+            prepare_qat_pt2e,
+        )
+
+        target_pass = _passes.FoldParameterSplits
+        inputs = (torch.randn(1, 5, 16),)
+
+        with subtests.test(msg="cross_attention_per_channel_8a8w"):
+            # A per-channel weight that is a split output has no scale in
+            # AnnotateQuantAttrs (KeyError: 'scale').
+            gm = pass_pipeline.lower_edge_ep(
+                module=FoldParameterSplits._CrossAttention().eval(),
+                sample_input=inputs,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=_passes.AnnotateQuantAttrs,
+                quantizer=make_quantizer(backend=backend_type, per_channel_linear=True),
+            ).graph_module
+            linears = [
+                n
+                for n in gm.graph.nodes
+                if n.target == exir_ops.edge.aten.linear.default
+            ]
+            assert len(linears) == 4, f"expected q, k, v and out linears: {linears}"
+            for linear in linears:
+                weight = linear.args[1]
+                assert weight.target in dq_ops, f"{linear} weight is {weight}"
+                assert (
+                    weight.args[0].op == "placeholder"
+                ), f"{linear} weight is not a parameter"
+
+        with subtests.test(msg="unused_source_removed"):
+            module = FoldParameterSplits._CrossAttention().eval()
+            gm = pass_pipeline.lower_annotation_gm(module, inputs, target_pass)
+            names = dict(gm.named_parameters())
+            assert "attn.in_proj_weight" not in names
+            assert "attn.in_proj_bias" not in names
+            assert torch.allclose(gm(*inputs), module(*inputs))
+
+        with subtests.test(msg="qat_trains_folded_parameters"):
+            module = FoldParameterSplits._CrossAttention().train()
+            exported = torch.export.export(module, inputs, strict=True).module()
+            prepared = prepare_qat_pt2e(
+                exported,
+                make_quantizer(
+                    backend=backend_type, per_channel_linear=True, is_qat=True
+                ),
+            )
+            folded = [p for n, p in prepared.named_parameters() if "in_proj" in n]
+            assert folded, "expected folded in_proj parameters"
+            prepared(*inputs).sum().backward()
+            assert all(p.grad is not None for p in folded)
+
+        with subtests.test(msg="slice_of_mutated_buffer"):
+            module = FoldParameterSplits._SliceOfMutatedBuffer()
+            x = torch.randn(2, 8)
+            gm = torch.export.export(module, (x,), strict=True).module()
+            assert not target_pass()(gm).modified
+            gm(x)
+            assert torch.equal(gm(x), x + 1.0)
+
+        with subtests.test(msg="symbolic_split_sizes"):
+            module = FoldParameterSplits._SymbolicSplitSizes()
+            x = torch.randn(3, 4)
+            gm = torch.export.export(
+                module,
+                (x,),
+                dynamic_shapes={"x": {0: torch.export.Dim("n", min=2, max=6)}},
+                strict=True,
+            ).module()
+            assert not target_pass()(gm).modified
+            assertions.assert_target_count(
+                gm, torch.ops.aten.split_with_sizes.default, 1
+            )
+
+
 class FoldQDQ:
     @staticmethod
     @unpack_pass_fixtures
