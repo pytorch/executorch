@@ -13,6 +13,10 @@ from typing import AbstractSet, Any, Callable, Dict, List, Optional, Tuple, Unio
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 import executorch.backends.vulkan.utils as utils
 import torch
+from executorch.backends.vulkan.patterns.sdpa import (
+    check_llm_sdpa_node,
+    llm_sdpa_mask_needs_texture,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
@@ -1189,6 +1193,16 @@ def register_q8ta_linear_gemv():
 # =============================================================================
 
 
+def pick_llm_sdpa_storage(
+    node: torch.fx.Node,
+) -> Tuple[utils.TensorRepSet, utils.TensorRepSet]:
+    # Buffer shaders read attn_mask in the query's dtype; texture shaders
+    # sample it as floats.
+    if llm_sdpa_mask_needs_texture(node):
+        return utils.WIDTH_PACKED_TEXTURE, utils.WIDTH_PACKED_TEXTURE
+    return utils.CONTIGUOUS_ANY, utils.CONTIGUOUS_ANY
+
+
 @update_features("llama::sdpa_with_kv_cache")
 def register_sdpa_with_kv_cache():
     return OpFeatures(
@@ -1196,6 +1210,8 @@ def register_sdpa_with_kv_cache():
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_prepacking=True,
+        are_node_inputs_supported_fn=check_llm_sdpa_node,
+        pick_io_storage_fn=pick_llm_sdpa_storage,
     )
 
 
@@ -1210,6 +1226,8 @@ def register_sdpa_cpp_ops():
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=check_llm_sdpa_node,
+        pick_io_storage_fn=pick_llm_sdpa_storage,
     )
 
 

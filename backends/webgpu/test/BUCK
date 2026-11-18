@@ -43,6 +43,10 @@ fbcode_target(
         "ops/test_mul.py",
         "test_webgpu_partitioner.py",
     ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
@@ -54,6 +58,7 @@ fbcode_target(
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/exir:lowered_backend_module",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
     ],
 )
 

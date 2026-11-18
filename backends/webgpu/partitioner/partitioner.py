@@ -20,6 +20,7 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
     VulkanPartitioner,
     VulkanSupportedOperators,
 )
+from executorch.backends.vulkan.patterns.sdpa import llm_sdpa_has_attn_mask
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
@@ -89,6 +90,14 @@ def _convolution_check(
     return vulkan_check(node)
 
 
+def _llm_sdpa_check(
+    node: torch.fx.Node, vulkan_check: Callable[[torch.fx.Node], bool]
+) -> bool:
+    # The WebGPU SDPA has no attn_mask. Masked attention, and the cache updates
+    # it reads, stay on CPU.
+    return not llm_sdpa_has_attn_mask(node) and vulkan_check(node)
+
+
 def _fp32_unary_features() -> OpFeatures:
     return OpFeatures(
         inputs_storage=vk_utils.ANY_STORAGE,
@@ -120,6 +129,14 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
         lambda node, vulkan_check: vulkan_check(node),
         dtypes={torch.float32},
     ),
+    **{
+        target: _webgpu_features(target, _llm_sdpa_check)
+        for target in (
+            "llama::sdpa_with_kv_cache",
+            "llama::custom_sdpa",
+            "llama::update_cache",
+        )
+    },
     exir_ops.edge.aten.elu.default: _fp32_unary_features(),
     exir_ops.edge.aten.erf.default: _fp32_unary_features(),
     exir_ops.edge.aten.silu.default: _fp32_unary_features(),
@@ -127,7 +144,7 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
 
 
 # Vulkan fusion patterns whose fused ops the WebGPU runtime does not implement.
-_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue"}
+_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue", "masked_sdpa"}
 
 _MUL_TARGETS = (torch.ops.aten.mul.Tensor, exir_ops.edge.aten.mul.Tensor)
 

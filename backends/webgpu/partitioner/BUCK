@@ -21,6 +21,7 @@ fbcode_target(
         "//caffe2:torch",
         "//executorch/backends/vulkan:op_registry",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/patterns:vulkan_patterns",
         "//executorch/exir/backend:partitioner",
     ],
     typing = True,

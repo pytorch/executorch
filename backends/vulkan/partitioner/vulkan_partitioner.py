@@ -329,6 +329,9 @@ class VulkanSupportedOperators(OperatorSupportBase):
             return False
 
         features = self.op_features_overrides.get(target)
+        if features is None and hasattr(target, "name"):
+            # Custom ops may be overridden by name, as they are registered.
+            features = self.op_features_overrides.get(target.name())
         if features is None:
             if target in vulkan_supported_ops:
                 features = vulkan_supported_ops[target]

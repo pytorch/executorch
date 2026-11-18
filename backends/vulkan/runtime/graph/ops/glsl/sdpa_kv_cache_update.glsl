@@ -83,14 +83,11 @@ void main() {
   const int c = s + input_pos; // idx along max_context_len dim
   const int C = cache_sizes.z;
 
-  if (d4 >= D4 || c >= C || h >= H) {
+  // Only the S rows starting at input_pos are written. The rows after them
+  // keep their contents, which a masked attention may still read.
+  if (d4 >= D4 || s >= S || c >= C || h >= H) {
     return;
   }
 
-  IN_VEC4_T in_texel = IN_VEC4_T(0.0);
-  if (s < S) {
-    in_texel = read_projected_d4(d4, h, s, D4, H, S);
-  }
-
-  write_cache_d4(in_texel, d4, c, h, D4, C, H);
+  write_cache_d4(read_projected_d4(d4, h, s, D4, H, S), d4, c, h, D4, C, H);
 }
