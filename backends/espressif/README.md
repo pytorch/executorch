@@ -49,7 +49,7 @@ examples/espressif/
   camera_stream/                  live camera classification on the ExecuTorch runtime
 ```
 
-Programs run on the board with the existing
+Delegate programs run on the board with the existing
 [`examples/espressif/project`](../../examples/espressif/project) runner, built
 with `-DET_ESPNN_BACKEND=ON`.
 
@@ -104,8 +104,9 @@ edge, report = to_espnn_edge(torch.export.export(quantized, example_inputs))
 print(report["partitions"], report["delegated_ops"], report["cpu_ops"])
 
 # 4. Serialize the ExecuTorch program
+program = edge.to_executorch()
 with open("mobilenet_v2_espnn.pte", "wb") as f:
-    f.write(edge.to_executorch().buffer)
+    f.write(program.buffer)
 ```
 
 ```
@@ -285,8 +286,9 @@ session = export(
 )
 edge = session.get_edge_program_manager()
 print(get_operator_library_report(edge))
+program = session.get_executorch_program_manager()
 with open("model_esp_ops.pte", "wb") as f:
-    f.write(session.get_executorch_program_manager().buffer)
+    f.write(program.buffer)
 ```
 
 Each calibration sample is a tuple matching the model's inputs. Pass
@@ -322,15 +324,17 @@ matching ESP-IDF and the emulator.
 
 Build the runtime with the `esp-baremetal` preset. Select the portable CPU
 operators your program needs. The quantized kernels provide the
-quantize/dequantize operators at the delegate boundaries. The program lists
-its operators:
+quantize/dequantize operators, and the ESP-IDF component provides the ESP-NN
+operators. Both export examples above retain the serialized program manager
+as `program`; use it to collect portable operators across all methods:
 
 ```python
-plan = edge.to_executorch().executorch_program.execution_plan[0]
-print(",".join(sorted(
-    f"{op.name}.{op.overload}" for op in plan.operators
-    if not op.name.startswith("quantized_decomposed::")
-)))
+print(",".join(sorted({
+    f"{op.name}.{op.overload}"
+    for plan in program.executorch_program.execution_plan
+    for op in plan.operators
+    if not op.name.startswith(("quantized_decomposed::", "esp_nn::"))
+})))
 ```
 
 ```bash
@@ -351,7 +355,7 @@ cmake --build cmake-out-esp --target install
 - pthreadpool needs POSIX calls that ESP-IDF doesn't provide. With it off,
   the quantized kernels run single-threaded.
 - The runner links `executorch_selected_kernels`, which only exists when a
-  selection is given. A fully delegated program with no CPU operators
+  selection is given. A program with no portable CPU operators
   still needs at least one selected operator, such as `aten::add.out`.
 
 ### 2. Build the runner with the ESP-NN backend
