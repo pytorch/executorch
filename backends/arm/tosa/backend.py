@@ -121,10 +121,8 @@ class TOSABackend(BackendDetails):
         Args:
             edge_program (ExportedProgram): Program to lower to TOSA.
             compile_spec (TosaCompileSpec): Backend options. Recognized keys:
-                - output_format: Must be "tosa".
                 - tosa_spec: Target TOSA version/capabilities.
                 - debug_artifact_path: Directory for debug outputs.
-                - compile_flags: Optional backend flags.
                 - dump_debug_info: Enable extra debug JSON dump.
 
         Returns:
@@ -317,7 +315,9 @@ class TOSABackend(BackendDetails):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        graph_module = ArmPassManager(compile_spec).transform_to_backend_pipeline(  # type: ignore
+        graph_module = ArmPassManager(
+            compile_spec
+        ).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program, graph_module=graph_module
         )
 

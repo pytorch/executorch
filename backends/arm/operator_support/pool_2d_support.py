@@ -253,6 +253,7 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         )
         ceil_mode = cast(bool, node.args[5]) if len(node.args) >= 6 else False
 
+        # Accept pools that the U55 lowering can rewrite into supported NPU ops.
         if tosa_spec.is_U55_subset and can_decompose_large_stride_maxpool2d(
             kernel, stride, padding, dilation, ceil_mode, shape
         ):

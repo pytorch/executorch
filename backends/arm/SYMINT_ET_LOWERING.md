@@ -324,7 +324,7 @@ Arm/TOSA lowering code may temporarily build mixed Python containers of integer
 constants, shape-producing `ProxyValue`s, and nested lists or tuples. That is a
 normal intermediate form while constructing shape arguments.
 
-`InsertDynamicPaddingPass` is the main current producer of this form. For a
+`InsertExplicitPaddingPass` is the main current producer of this form. For a
 dynamic 2D convolution or pool, it rewrites implicit spatial padding into an
 explicit `PAD` op and resets the original op padding to zeros. The new `PAD`
 argument is intentionally left as a flattened Python list:
@@ -336,7 +336,7 @@ argument is intentionally left as a flattened Python list:
 where `spatial_padding` may contain shape-producing proxies that came from
 `Graph.materialize_symints(...)`. Before this container reaches serialization,
 `ResolveViewCopyInferredDimPass` and `SymbolicToTosaShapesPass` run after
-`InsertDynamicPaddingPass`. The symbolic pass detects the shape-marked values
+`InsertExplicitPaddingPass`. The symbolic pass detects the shape-marked values
 in the list and asks the helper to flatten and materialize
 the pieces. Conceptually, the 2D padding list becomes a single shape operand such as:
 

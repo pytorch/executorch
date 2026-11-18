@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 from typing import Tuple
 from unittest.mock import patch
 
+import pytest
 import torch
 from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
     can_decompose_large_stride_maxpool2d,
@@ -38,16 +40,22 @@ class MaxPool2d(torch.nn.Module):
         self,
         kernel_size: int | tuple[int, int],
         stride: int | tuple[int, int] | None,
+        padding: int | tuple[int, int] = 0,
+        ceil_mode: bool = False,
     ) -> None:
         super().__init__()
         self.kernel_size = kernel_size
         self.stride = stride
+        self.padding = padding
+        self.ceil_mode = ceil_mode
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.max_pool2d(
             x,
             kernel_size=self.kernel_size,
             stride=self.stride,
+            padding=self.padding,
+            ceil_mode=self.ceil_mode,
         )
 
 
@@ -117,6 +125,30 @@ def test_decompose_large_rectangular_stride_max_pool2d() -> None:
 
 def test_decompose_large_stride_max_pool2d_with_default_stride() -> None:
     _run_pass(MaxPool2d((5, 5), None), (torch.randn(1, 3, 13, 17),), 2)
+
+
+@pytest.mark.parametrize(
+    "shape,kernel,padding,ceil_mode",
+    [
+        ((1, 3, 20, 20), (5, 5), (1, 2), False),
+        ((1, 2, 11, 23), (4, 7), (2, 3), False),
+        ((1, 3, 20, 20), (5, 5), (1, 2), True),
+        ((1, 2, 4, 4), (5, 5), (2, 2), False),
+        ((1, 2, 3, 3), (5, 5), (2, 2), True),
+        ((1, 3, 13, 17), (5, 5), (0, 0), True),
+    ],
+)
+def test_decompose_padded_large_stride_max_pool2d(
+    shape, kernel, padding, ceil_mode
+) -> None:
+    inputs = (-torch.rand(shape) - 1,)
+    _run_pass(MaxPool2d(kernel, None, padding, ceil_mode), inputs, 2)
+
+
+def test_reject_pool_exceeding_u55_padded_dim_limit() -> None:
+    assert not can_decompose_large_stride_maxpool2d(
+        (5, 1), (5, 1), (2, 0), (1, 1), True, (1, 1, 65535, 1)
+    )
 
 
 def test_keep_large_stride_max_pool2d_for_non_u55() -> None:
