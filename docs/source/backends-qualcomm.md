@@ -909,6 +909,12 @@ Supports:
 
 For details, see: backends/qualcomm/quantizer/quantizer.py
 
+Known limitation: with 16a16w, per-channel int16 conv weights make the derived
+int32 bias scale too small, which can severely reduce accuracy
+([#23108](https://github.com/pytorch/executorch/issues/23108)). For this reason
+`make_quantizer` defaults `per_channel_conv` to `False` for `QuantDtype.use_16a16w`.
+Passing `per_channel_conv=True` explicitly is still allowed, but the quantizer warns.
+
 ### Operator Support
 [The full operator support matrix](https://github.com/pytorch/executorch/tree/main/backends/qualcomm/builders#operator-support-status) is tracked and frequently updated in the ExecuTorch repository.
 

@@ -12,6 +12,9 @@
 
 namespace executorch::backends::cpu::xnnpack {
 
+// Reads a literal Int or Float scalar.
+bool literal_scalar(const ptn::Argument& argument, float& value);
+
 // Reads a literal optional clamp bound; None selects `fallback`.
 bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound);
 

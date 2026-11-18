@@ -429,10 +429,10 @@ if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
   if(NOT TARGET ethosu_execution_stats)
     message(
       FATAL_ERROR
-        "EXECUTORCH_ARM_ETHOSU_PMU_STATS is currently only supported by the bare-metal Ethos-U backend"
+        "EXECUTORCH_ARM_ETHOSU_PMU_STATS requires the ethosu_execution_stats target. Enable EXECUTORCH_BUILD_ARM_BAREMETAL or EXECUTORCH_BUILD_ARM_ETHOSU_LINUX."
     )
   endif()
-  target_link_libraries(arm_executor_runner PRIVATE ethosu_execution_stats)
+  executorch_target_whole_archive(arm_executor_runner ethosu_execution_stats)
   target_compile_definitions(
     arm_executor_runner PRIVATE ET_ARM_ETHOSU_PMU_STATS
   )

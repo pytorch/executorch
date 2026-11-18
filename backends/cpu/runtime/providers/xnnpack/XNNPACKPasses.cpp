@@ -151,20 +151,25 @@ class HardswishMatcher {
 
 } // namespace
 
-bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound) {
+bool literal_scalar(const ptn::Argument& argument, float& value) {
   switch (argument.kind()) {
-    case ptn::ArgKind::None:
-      bound = fallback;
-      return true;
     case ptn::ArgKind::Int:
-      bound = static_cast<float>(argument.as_int().value);
+      value = static_cast<float>(argument.as_int().value);
       return argument.as_int().id == ptn::kInvalid;
     case ptn::ArgKind::Float:
-      bound = static_cast<float>(argument.as_float().value);
+      value = static_cast<float>(argument.as_float().value);
       return argument.as_float().id == ptn::kInvalid;
     default:
       return false;
   }
+}
+
+bool clamp_bound(const ptn::Argument& argument, float fallback, float& bound) {
+  if (argument.kind() == ptn::ArgKind::None) {
+    bound = fallback;
+    return true;
+  }
+  return literal_scalar(argument, bound);
 }
 
 std::vector<HardswishChain> find_hardswish_chains(

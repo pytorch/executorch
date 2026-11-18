@@ -40,3 +40,19 @@ def define_common_targets():
 
     _lib_test_bin("moments_utils_test_bin", in_cpu = True)
     _lib_test_bin("libblas_test_bin")
+
+    runtime.cxx_test(
+        name = "complex_binary_broadcast_test",
+        srcs = ["complex_binary_broadcast_test.cpp"],
+        deps = [
+            "//executorch/kernels/optimized/cpu:op_add",
+            "//executorch/kernels/optimized/cpu:op_div",
+            "//executorch/kernels/optimized/cpu:op_mul",
+            "//executorch/kernels/optimized/cpu:op_sub",
+            "//executorch/kernels/optimized:generated_lib_headers",
+            "//executorch/kernels/test:test_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )

@@ -36,6 +36,7 @@ enum class UnaryOpType : int32_t {
   kTan = 18,
   kBitwiseNot = 19,
   kRelu = 20,
+  kElu = 21,
 };
 
 } // namespace vkcompute

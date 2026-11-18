@@ -14,9 +14,16 @@ from executorch.backends.test.suite.reporting import _sum_op_counts
 from executorch.backends.test.suite.runner import run_test
 
 
+# Per-test timeouts in seconds. Can be overridden with the
+# EXECUTORCH_MODELS_TEST_TIMEOUT_S and EXECUTORCH_OPERATORS_TEST_TIMEOUT_S
+# environment variables (e.g. for slower platforms).
 FLOW_TEST_CASE_TIMEOUTS = {
-    "backends/test/suite/models/": 1200,
-    "backends/test/suite/operators/": 120,
+    "backends/test/suite/models/": int(
+        os.environ.get("EXECUTORCH_MODELS_TEST_TIMEOUT_S", 1200)
+    ),
+    "backends/test/suite/operators/": int(
+        os.environ.get("EXECUTORCH_OPERATORS_TEST_TIMEOUT_S", 120)
+    ),
 }
 
 

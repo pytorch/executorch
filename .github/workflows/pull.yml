@@ -397,6 +397,7 @@ jobs:
         ./install_executorch.sh
         pip install safetensors tokenizers huggingface_hub
         python -m pytest examples/models/phonon/tests -q
+        python -m pytest examples/models/pocket_tts/tests -q
         python -m executorch.examples.models.phonon.export_phonon \
           --backend xnnpack --output-dir phonon_exports/xnnpack
         make phonon-cpu
@@ -2031,7 +2032,7 @@ jobs:
         -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"  --editable true
+        .ci/scripts/setup-linux.sh --build-tool "cmake" --editable true
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
