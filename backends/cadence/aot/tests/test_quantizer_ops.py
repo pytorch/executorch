@@ -320,6 +320,12 @@ W8A32_ANNOTATION_TEST_CASES: list[
         CadenceW8A32MixedQuantizer(),
         [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
     ),
+    (
+        "w8a32_layer_norm",
+        lambda self: self._build_w8a32_layer_norm_graph(),
+        CadenceW8A32MixedQuantizer(),
+        [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
+    ),
 ]
 
 # Derive the set of tested quantizer classes from the test cases.
@@ -919,6 +925,42 @@ class QuantizerAnnotationTest(unittest.TestCase):
         CadenceW8A32MixedQuantizer().annotate(gm)
         self.assertNotIn(Q_ANNOTATION_KEY, node.meta)
 
+    def _build_w8a32_layer_norm_graph(
+        self, features: int = 8, kwargs: dict[str, float] | None = None
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with layer_norm(input, [features], weight, bias)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, features))
+        weight = builder.placeholder("weight", torch.randn(features))
+        bias = builder.placeholder("bias", torch.randn(features))
+        layer_norm = builder.call_operator(
+            op=torch.ops.aten.layer_norm.default,
+            args=(x, [features], weight, bias),
+            kwargs=kwargs,
+            meta=NodeMetadata(
+                {"source_fn_stack": [("layer_norm", torch.ops.aten.layer_norm.default)]}
+            ),
+        )
+        builder.output([layer_norm])
+        gm = builder.get_graph_module()
+
+        layer_norm_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.layer_norm.default,
+        )
+        self.assertEqual(
+            len(layer_norm_nodes), 1, "Should find exactly one layer_norm node"
+        )
+        return gm, layer_norm_nodes[0]
+
+    def test_w8a32_layer_norm_unaligned_features_stays_fp32(self) -> None:
+        self._assert_w8a32_leaves_fp32(*self._build_w8a32_layer_norm_graph(6))
+
+    def test_w8a32_layer_norm_eps_kwarg_stays_fp32(self) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_layer_norm_graph(kwargs={"eps": 1e-3})
+        )
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -1180,6 +1222,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.gru.input,
             torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.conv2d.default,
+            torch.ops.aten.layer_norm.default,
         ]
         self.assertCountEqual(actual, expected)
 
@@ -1221,6 +1264,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.gru.input,
             torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.conv2d.default,
+            torch.ops.aten.layer_norm.default,
             torch.ops.aten.addmm.default,
         ]
         self.assertCountEqual(actual, expected)

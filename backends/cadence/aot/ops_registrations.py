@@ -754,6 +754,14 @@ lib.define(
 )
 
 lib.define(
+    "quantized_w8a32_layernorm(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_layernorm.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "slice_scatter_(Tensor(a!) self, Tensor src, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor(a!)"
 )
 
@@ -3524,6 +3532,27 @@ def quantized_w8a32_conv2d_meta(
     output_length = (input_length - kernel_size) // stride_w + 1
     output_shape = (batch_size, 1, output_length, out_channels)
     return input.new_empty(output_shape, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_layernorm")
+def quantized_w8a32_layernorm_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    assert len(weight.shape) == 1
+    assert len(bias.shape) == 1
+    assert input.dtype == torch.float32
+    assert weight.dtype == torch.int8
+    assert weight.shape[0] == input.shape[-1], (
+        f"Weight size ({weight.shape[0]}) must match input channels ({input.shape[-1]})"
+    )
+    assert bias.shape[0] == input.shape[-1], (
+        f"Bias size ({bias.shape[0]}) must match input channels ({input.shape[-1]})"
+    )
+    return input.new_empty(input.shape, dtype=input.dtype)
 
 
 @register_fake("cadence::slice_scatter_")
