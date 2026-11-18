@@ -673,25 +673,17 @@ vkapi::VulkanImage allocate_image(
       return vkapi::VulkanImage();
   }
 
-    // TODO(ssjia): change to always check that the image extents do not exceed
-    // physical limits. Adding the check now based on `maxImageDimension3D` will
-    // cause some existing models to break. Anecdotally, on Adreno and
-    // SwiftShader devices, using 3D textures that exceed `maxImageDimension3D`
-    // appears to be ok. So we need to figure out if is it undefined behaviour
-    // or if there's a better way to figure out what the limit is. For now, only
-    // check during debug build so that we can detect when exceeding physical
-    // limits could be a potential cause for model outputs to be wrong. In the
-    // meantime, the threshold for using texture storage can be configured at
-    // export time.
-#ifdef VULKAN_DEBUG
-  uint32_t max_extent = storage_type == utils::kTexture3D
-      ? adapter_ptr->max_texture3d_dim()
-      : adapter_ptr->max_texture2d_dim();
-
-  VK_CHECK_COND(
-      image_extents[0] <= max_extent && image_extents[1] <= max_extent &&
-      image_extents[2] <= max_extent);
-#endif
+  if (storage_type == utils::kTexture2D) {
+    const uint32_t max_2d = adapter_ptr->max_texture2d_dim();
+    VK_CHECK_COND(
+        image_extents[0] <= max_2d && image_extents[1] <= max_2d &&
+        image_extents[2] == 1);
+  } else if (storage_type == utils::kTexture3D) {
+    const uint32_t max_3d = adapter_ptr->max_texture3d_dim();
+    VK_CHECK_COND(
+        image_extents[0] <= max_3d && image_extents[1] <= max_3d &&
+        image_extents[2] <= max_3d);
+  }
 
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
