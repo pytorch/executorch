@@ -8119,6 +8119,35 @@ class ScatterTest(OpTestCase):
         return (x, index, src)
 
 
+class ScatterValueReuseModel(nn.Module):
+    """Scatters 2.5 into an int32 x, then scales a float y by alpha=2.5."""
+
+    def forward(self, x: torch.Tensor, index: torch.Tensor, y: torch.Tensor):
+        return x.scatter(1, index, 2.5), torch.add(y, y, alpha=2.5)
+
+
+@register_test
+class ScatterValueReuseTest(OpTestCase):
+    """The same scalar lifted for an int32 scatter and for a float op.
+
+    scatter lifts 2.5 as an int32 constant (2) and add lifts alpha as float32.
+    The two must not share one constant, or the add computes y + y * 2. alpha
+    is used because edge already turns the 2.5 in ``y * 2.5`` into a tensor.
+    """
+
+    name = "scatter_value_reuse"
+    expected_node_counts = {"PutAlongAxisNode": 1, "MultiplyNode": 1, "AddNode": 1}
+
+    def create_model(self) -> nn.Module:
+        return ScatterValueReuseModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randint(-8, 8, (4, 8), dtype=torch.int32)
+        index = torch.rand(4, 8).argsort(1)[:, :3].contiguous()
+        y = torch.randn(4, 8)
+        return (x, index, y)
+
+
 @register_test
 class QuantizedEmbeddingTest(OpTestCase):
     """Test case for TorchAO int4 quantized nn.Embedding."""

@@ -2767,9 +2767,8 @@ def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             f"aten.scatter: index must have the same non-zero rank as input, got "
             f"{len(index_meta.shape)} vs {ndim}"
         )
-    if x_meta.dtype == torch.int64:
-        # The only 8-byte dtype the delegate accepts; mlx ScatterAxis::eval_gpu
-        # has no kernel for 8-byte element types.
+    # MLX's Metal scatter kernels reject 8-byte element types at run time.
+    if x_meta.dtype.itemsize == 8:
         raise NotImplementedError(
             f"aten.scatter: {x_meta.dtype} input is not supported"
         )

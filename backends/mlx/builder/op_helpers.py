@@ -157,13 +157,13 @@ def emit_stop_position(
 def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> Slot:
     """Lift a scalar to a 0-D tensor.
 
-    Concrete scalars (int/float/bool) become deduplicated constants.
-    Dynamic values (SymInt Slots) emit a FullNode at runtime.
+    Concrete scalars (int/float/bool) become constants deduplicated per
+    (value, dtype). Dynamic values (SymInt Slots) emit a FullNode at runtime.
     """
 
     if isinstance(value, (int, float, bool)):
         return P.make_or_get_constant(
-            f"_scalar_{value}",
+            f"_scalar_{value}_{dtype}",
             torch.tensor(value, dtype=dtype),  # 0-D
         )
 
