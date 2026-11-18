@@ -122,6 +122,9 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_float16_int8
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_bfloat16
+      VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME,
+#endif /* VK_KHR_shader_bfloat16 */
 #ifdef VK_KHR_shader_integer_dot_product
       VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
 #endif /* VK_KHR_shader_integer_dot_product */
@@ -225,6 +228,15 @@ VkDevice create_logical_device(
   extension_list_top = &shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
 
+#ifdef VK_KHR_shader_bfloat16
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR shader_bfloat16_features{
+      physical_device.shader_bfloat16_features};
+  if (shader_bfloat16_features.shaderBFloat16Type == VK_TRUE) {
+    shader_bfloat16_features.pNext = extension_list_top;
+    extension_list_top = &shader_bfloat16_features;
+  }
+#endif /* VK_KHR_shader_bfloat16 */
+
 #ifdef VK_KHR_shader_integer_dot_product
   VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR
       shader_int_dot_product_features{
@@ -293,6 +305,10 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_float16_int8
   f.shader_float16 = shader_float16_int8_types.shaderFloat16 == VK_TRUE;
   f.shader_int8 = shader_float16_int8_types.shaderInt8 == VK_TRUE;
+#endif
+#ifdef VK_KHR_shader_bfloat16
+  f.shader_bfloat16_type =
+      shader_bfloat16_features.shaderBFloat16Type == VK_TRUE;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
   f.shader_integer_dot_product =
@@ -408,6 +424,12 @@ PhysicalDevice shared_physical_device(
       f.shader_float16 ? VK_TRUE : VK_FALSE;
   physical.shader_float16_int8_types.shaderInt8 &=
       f.shader_int8 ? VK_TRUE : VK_FALSE;
+#endif
+#ifdef VK_KHR_shader_bfloat16
+  physical.shader_bfloat16_features.shaderBFloat16Type &=
+      f.shader_bfloat16_type ? VK_TRUE : VK_FALSE;
+  physical.shader_bfloat16_features.shaderBFloat16DotProduct = VK_FALSE;
+  physical.shader_bfloat16_features.shaderBFloat16CooperativeMatrix = VK_FALSE;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
   physical.shader_int_dot_product_features.shaderIntegerDotProduct &=
@@ -719,6 +741,9 @@ std::string Adapter::stringize() const {
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_bfloat16
+  PRINT_PROP(physical_device_.shader_bfloat16_features, shaderBFloat16Type);
+#endif /* VK_KHR_shader_bfloat16 */
   ss << "    }" << std::endl;
 
   ss << "    Shader 64bit Features {" << std::endl;
@@ -993,6 +1018,10 @@ bool Adapter::supports_spirv_capability(const uint32_t value) {
     case SpirvCapability::STORAGE_INPUT_OUTPUT_16:
       return physical_device_.shader_16bit_storage.storageInputOutput16 ==
           VK_TRUE;
+#endif
+#if defined(VK_KHR_shader_bfloat16) && !defined(ETVK_FORCE_NO_EXTENSIONS)
+    case SpirvCapability::BFLOAT16_TYPE_KHR:
+      return supports_bfloat16_shader_types();
 #endif
 #if defined(VK_KHR_8bit_storage) && !defined(ETVK_FORCE_NO_EXTENSIONS)
     case SpirvCapability::STORAGE_BUFFER_8_BIT_ACCESS:

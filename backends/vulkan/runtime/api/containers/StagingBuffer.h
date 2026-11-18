@@ -24,6 +24,11 @@ namespace api {
 float half_to_float(uint16_t h);
 uint16_t float_to_half(float f);
 
+// bfloat16 conversions; float_to_bfloat16 rounds to the nearest bf16, ties to
+// even.
+float bfloat16_to_float(uint16_t b);
+uint16_t float_to_bfloat16(float f);
+
 vkapi::ScalarType get_staging_dtype(
     Context* context_p,
     vkapi::ScalarType dtype);
@@ -124,6 +129,12 @@ class StagingBuffer final {
       const size_t numel);
 
   void cast_float_to_half_and_copy_to(uint16_t* dst, const size_t numel);
+
+  void cast_bfloat16_to_float_and_copy_from(
+      const uint16_t* src,
+      const size_t numel);
+
+  void cast_float_to_bfloat16_and_copy_to(uint16_t* dst, const size_t numel);
 
   inline void copy_to(void* dst, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= this->nbytes());

@@ -143,13 +143,15 @@ PackedDimInfo calculate_packed_dim_info(
  * tensor is kInt8x4.
  *
  * For kHalf dtype on devices that don't support float16 buffers, alias to
- * kFloat.
+ * kFloat. kBFloat16 likewise aliases to kFloat on devices without bfloat16
+ * buffer support, and for texture storage, which has no bfloat16 format.
  *
  * Otherwise, return the original scalar type.
  */
 vkapi::ScalarType get_effective_scalar_type(
     Context* const context,
     const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout) {
   vkapi::ScalarType effective_dtype = dtype;
   if (utils::is_packed_int8_layout(memory_layout)) {
@@ -158,6 +160,11 @@ vkapi::ScalarType get_effective_scalar_type(
   } else if (
       dtype == vkapi::kHalf &&
       !context->adapter_ptr()->has_full_float16_buffers_support()) {
+    effective_dtype = vkapi::kFloat;
+  } else if (
+      dtype == vkapi::kBFloat16 &&
+      (storage_type != utils::kBuffer ||
+       !context->adapter_ptr()->has_full_bfloat16_buffers_support())) {
     effective_dtype = vkapi::kFloat;
   }
   return effective_dtype;
@@ -652,7 +659,6 @@ vkapi::VulkanImage allocate_image(
     const bool allocate_memory) {
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
-  const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
   vkapi::ImageSampler::Properties sampler_props =
       image_sampler_properties(dtype);
 
@@ -672,17 +678,18 @@ vkapi::VulkanImage allocate_image(
       // Return an empty VulkanImage by default
       return vkapi::VulkanImage();
   }
+  const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
 
-    // TODO(ssjia): change to always check that the image extents do not exceed
-    // physical limits. Adding the check now based on `maxImageDimension3D` will
-    // cause some existing models to break. Anecdotally, on Adreno and
-    // SwiftShader devices, using 3D textures that exceed `maxImageDimension3D`
-    // appears to be ok. So we need to figure out if is it undefined behaviour
-    // or if there's a better way to figure out what the limit is. For now, only
-    // check during debug build so that we can detect when exceeding physical
-    // limits could be a potential cause for model outputs to be wrong. In the
-    // meantime, the threshold for using texture storage can be configured at
-    // export time.
+  // TODO(ssjia): change to always check that the image extents do not exceed
+  // physical limits. Adding the check now based on `maxImageDimension3D` will
+  // cause some existing models to break. Anecdotally, on Adreno and
+  // SwiftShader devices, using 3D textures that exceed `maxImageDimension3D`
+  // appears to be ok. So we need to figure out if is it undefined behaviour
+  // or if there's a better way to figure out what the limit is. For now, only
+  // check during debug build so that we can detect when exceeding physical
+  // limits could be a potential cause for model outputs to be wrong. In the
+  // meantime, the threshold for using texture storage can be configured at
+  // export time.
 #ifdef VULKAN_DEBUG
   uint32_t max_extent = storage_type == utils::kTexture3D
       ? adapter_ptr->max_texture3d_dim()
@@ -932,7 +939,11 @@ vTensor::vTensor(
     const utils::AxisMapLayout axis_map_layout,
     const vkapi::VulkanImage* external_image,
     const vkapi::VulkanBuffer* external_buffer)
-    : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
+    : dtype_(get_effective_scalar_type(
+          context,
+          dtype,
+          storage_type,
+          memory_layout)),
       original_dtype_(dtype),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
