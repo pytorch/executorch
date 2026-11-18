@@ -17,8 +17,23 @@ menu "ExecuTorch ESP-NN backend"
         bool "Split ESP-NN kernels across both cores inside delegates"
         default n
 
+    config ESPNN_DELEGATE_SCRATCH_IN_ARENA
+        bool "Plan ESP-NN scratch inside each delegate's activation arena"
+        default n
+        help
+            Gives each operator's ESP-NN scratch a slot in the activation
+            arena that is live only while the operator runs, instead of a
+            separate buffer sized for the largest operator. This saves
+            internal RAM for small models whose arena fits there; for a model
+            whose arena goes to PSRAM, the scratch moves to PSRAM too, which
+            is slower.
+
     config ESPNN_DELEGATE_PROFILE
         bool "Print a per-operator profile after each delegate's first run"
         default n
+        help
+            Times every operator, which adds a timer read per operator to
+            each execute. Without it, the delegate reads the timer only
+            every few milliseconds, for its cooperative yield.
 
 endmenu
