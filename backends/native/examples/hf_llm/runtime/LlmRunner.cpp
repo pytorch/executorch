@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -32,16 +34,26 @@
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <gflags/gflags.h>
+#include <nlohmann/json.hpp>
 #include <pytorch/tokenizers/error.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 
 DEFINE_string(package, "", "Path to the *.ptn model. Required.");
-DEFINE_string(tokenizer, "", "Path to the Llama TikToken model. Required.");
+DEFINE_string(
+    tokenizer,
+    "",
+    "Path to a Llama 3 TikToken model, or a Hugging Face tokenizer.json or "
+    "its directory. Required.");
 DEFINE_string(prompt, "The capital of France is", "Prompt text.");
 DEFINE_string(method, "", "Method to run. Defaults to the first one.");
 DEFINE_string(eos_ids, "128001,128009", "Comma-separated EOS token IDs.");
 DEFINE_int32(max_new_tokens, 32, "Maximum generated token count.");
 DEFINE_int32(max_seq_length, 2048, "Maximum prompt plus generated tokens.");
-DEFINE_int32(num_bos, 1, "Number of BOS tokens prepended to the prompt.");
+DEFINE_int32(
+    num_bos,
+    -1,
+    "Number of BOS tokens prepended to the prompt. -1 prepends one, or none "
+    "for a Hugging Face tokenizer whose tokenizer_config.json turns BOS off.");
 DEFINE_bool(
     print_token_ids,
     false,
@@ -138,7 +150,7 @@ Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
     bool per_token_positions,
-    ::tokenizers::Tiktoken& tokenizer,
+    ::tokenizers::Tokenizer& tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
     size_t limit,
     const std::unordered_set<uint64_t>& eos_ids,
@@ -289,6 +301,50 @@ Generation generate(
   return generation;
 }
 
+// One BOS token, unless a Hugging Face tokenizer_config.json turns BOS off.
+int config_num_bos(const std::filesystem::path& config_path) {
+  std::ifstream file(config_path);
+  if (!file) {
+    return 1;
+  }
+  const nlohmann::json config =
+      nlohmann::json::parse(file, nullptr, /*allow_exceptions=*/false);
+  if (!config.is_object()) {
+    return 1;
+  }
+  const auto add_bos = config.find("add_bos_token");
+  if (add_bos != config.end() && add_bos->is_boolean()) {
+    return add_bos->get<bool>() ? 1 : 0;
+  }
+  const auto bos = config.find("bos_token");
+  return bos != config.end() && bos->is_null() ? 0 : 1;
+}
+
+// Loads --tokenizer, with the number of BOS tokens its prompts take by default.
+std::pair<std::unique_ptr<::tokenizers::Tokenizer>, int> load_tokenizer(
+    const std::filesystem::path& path) {
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer;
+  std::filesystem::path load_path = path;
+  int num_bos = 1;
+  if (path.extension() == ".json" || std::filesystem::is_directory(path)) {
+    tokenizer = std::make_unique<::tokenizers::HFTokenizer>();
+    // HFTokenizer reads the BOS and EOS tokens that tokenizer_config.json
+    // names only when it loads their directory.
+    if (path.filename() == "tokenizer.json") {
+      load_path = std::filesystem::absolute(path).parent_path();
+    }
+    if (std::filesystem::is_directory(load_path)) {
+      num_bos = config_num_bos(load_path / "tokenizer_config.json");
+    }
+  } else {
+    tokenizer = example::get_tiktoken_for_llama();
+  }
+  if (tokenizer->load(load_path.string()) != ::tokenizers::Error::Ok) {
+    throw std::runtime_error("failed to load --tokenizer " + path.string());
+  }
+  return {std::move(tokenizer), num_bos};
+}
+
 } // namespace
 
 namespace ptn {
@@ -299,9 +355,8 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
     std::fprintf(stderr, "error: --package and --tokenizer are required\n");
     return 1;
   }
-  // The tokenizer takes num_bos as an int8_t.
   if (FLAGS_max_new_tokens <= 0 || FLAGS_max_seq_length <= 0 ||
-      FLAGS_num_bos < 0 || FLAGS_num_bos > 127) {
+      FLAGS_num_bos < -1) {
     std::fprintf(stderr, "error: invalid generation limits\n");
     return 1;
   }
@@ -309,20 +364,20 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
   try {
     const auto eos_ids = ptn::parse_token_ids(FLAGS_eos_ids);
 
-    std::unique_ptr<::tokenizers::Tiktoken> tokenizer =
-        example::get_tiktoken_for_llama();
-    if (tokenizer->load(FLAGS_tokenizer) != ::tokenizers::Error::Ok) {
-      throw std::runtime_error(
-          "failed to load --tokenizer as a Llama 3 TikToken model");
-    }
-    auto encoded =
-        tokenizer->encode(FLAGS_prompt, static_cast<int8_t>(FLAGS_num_bos), 0);
+    const auto [tokenizer, default_num_bos] = load_tokenizer(FLAGS_tokenizer);
+    const int num_bos = FLAGS_num_bos < 0 ? default_num_bos : FLAGS_num_bos;
+    // A tokenizer.json adds BOS only if its post-processor does, so prepend
+    // it here for every tokenizer.
+    auto encoded = tokenizer->encode(FLAGS_prompt, 0, 0);
     if (!encoded.ok()) {
       throw std::runtime_error(
           "failed to encode prompt: tokenizer error " +
           std::to_string(static_cast<uint32_t>(encoded.error())));
     }
-    std::vector<uint64_t> prompt_tokens = std::move(encoded.get());
+    std::vector<uint64_t> prompt_tokens(
+        static_cast<size_t>(num_bos), tokenizer->bos_tok());
+    prompt_tokens.insert(
+        prompt_tokens.end(), encoded.get().begin(), encoded.get().end());
     if (prompt_tokens.empty()) {
       throw std::runtime_error("prompt encoded to no tokens");
     }
