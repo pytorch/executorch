@@ -1124,7 +1124,29 @@ class TestCudaExport(unittest.TestCase):
                 [CompileSpec("triton_kernel_mode", b"OFF")]
             )
         self.assertEqual([type(p) for p in off], [type(p) for p in on])
-        self.assertIsInstance(off[-1], ReplaceEdgeOpWithTritonOpPass)
+        self.assertIn(ReplaceEdgeOpWithTritonOpPass, [type(p) for p in off])
+
+    def test_measured_routing_is_on_by_default(self):
+        """Without the compile spec, the passes that measure the calls several
+        implementations can run follow the replacement pass; OFF leaves them
+        out."""
+        from executorch.backends.cuda.triton.measured_routing import (
+            ApplyChoicesPass,
+            MeasureChoicesPass,
+        )
+
+        default = [type(p) for p in CudaBackend.get_custom_passes([])]
+        off = [
+            type(p)
+            for p in CudaBackend.get_custom_passes(
+                [CompileSpec("measured_routing", b"OFF")]
+            )
+        ]
+        self.assertEqual(
+            default[-3:],
+            [ReplaceEdgeOpWithTritonOpPass, MeasureChoicesPass, ApplyChoicesPass],
+        )
+        self.assertEqual(off, default[:-2])
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for

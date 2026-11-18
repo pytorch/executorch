@@ -14,7 +14,7 @@ import logging
 from typing import Callable
 
 import torch
-from executorch.backends.cuda.triton import routing
+from executorch.backends.cuda.triton import measured_routing, routing
 from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
 from executorch.backends.cuda.triton.kernels.sdpa import (
     _prepare_mask_params,
@@ -68,9 +68,17 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     optimized Triton implementations.
     """
 
-    def __init__(self):
-        """Initialize the pass."""
+    def __init__(self, measured_routing: bool = False):
+        """Initialize the pass.
+
+        Args:
+            measured_routing: Leave a planned call that several
+                implementations can run, of a family that opts in, to
+                ``MeasureChoicesPass`` and ``ApplyChoicesPass``; otherwise take
+                its plan's static choice.
+        """
         super().__init__()
+        self._measured_routing = measured_routing
         self._replacement_count = 0
         self._plans: dict[Node, tuple[routing.ReplacementPlan, routing.Candidate]] = {}
 
@@ -191,6 +199,10 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
                 raise routing.ReplacementError(
                     f"{plan.signature}: nothing can run it ({plan.describe()})"
                 )
+            if len(legal) > 1 and self._measured_routing and plan.measure:
+                measured_routing.record_plan(node, plan)
+                logger.info(f"Measuring {node.name} ({plan.describe()})")
+                return False
             choice = legal[0] if len(legal) == 1 else plan.candidate(plan.static_choice)
             if choice.name == routing.REGULAR_LOWERING:
                 reasons = [c.reason for c in plan.candidates if c.reason]
