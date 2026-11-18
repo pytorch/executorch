@@ -632,6 +632,15 @@ jobs:
         # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
         pip install "flash-linear-attention==0.4.2"
 
+        if [ "${SHARD}" = "system" ]; then
+          # Helion kernels for backends/cuda/tests/test_lower_helion_to_triton.py,
+          # which skips without Helion. Helion does not depend on torch, so this
+          # keeps the pinned torch nightly. 1.6.0 does not import on Python 3.11
+          # (a dataclass with a mappingproxy default).
+          pip install "helion==1.5.2"
+          python -c "import helion"
+        fi
+
         # Build executor_runner (needed by CUDA backend e2e tests in both shards)
         cmake --build cmake-out --target executor_runner
 

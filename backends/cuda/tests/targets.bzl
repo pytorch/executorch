@@ -146,6 +146,30 @@ def define_common_targets(is_fbcode = False):
         ),
     )
 
+    python_unittest_remote_gpu(
+        name = "test_lower_helion_to_triton",
+        srcs = [
+            "test_lower_helion_to_triton.py",
+        ],
+        env = {
+            "RUN_CUDA_PROGRAM": "$(location //executorch/extension/pybindings/test:run_cuda_program)",
+        },
+        deps = [
+            "fbsource//third-party/pypi/numpy:numpy",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:lower_helion_to_triton",
+            "//executorch/exir:lib",
+            "//helion:helion",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
     runtime.python_library(
         name = "autotune_test_utils",
         srcs = [
