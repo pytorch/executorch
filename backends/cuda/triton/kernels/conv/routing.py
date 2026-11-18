@@ -174,6 +174,7 @@ def plan(node: Node) -> ReplacementPlan:
         "conv" if worth else REGULAR_LOWERING,
         support.reason,
         call.signature(),
+        measure=True,
     )
 
 

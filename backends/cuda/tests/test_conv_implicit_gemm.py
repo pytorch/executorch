@@ -847,8 +847,10 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
         """Lowers ``model`` with to_edge_transform_and_lower, or with to_edge
         and to_backend, checks that ``routed`` convolutions take the template
         on ``route``, and runs the program against eager (outside fbcode)."""
-        from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.backends.cuda.tests.routing_test_utils import (
+            static_routing_compile_specs,
+        )
         from executorch.exir import (
             EdgeCompileConfig,
             to_edge,
@@ -857,9 +859,7 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
 
         with torch.no_grad():
             program = torch.export.export(model, inputs, strict=True)
-        partitioner = CudaPartitioner(
-            [CudaBackend.generate_method_name_compile_spec("forward")]
-        )
+        partitioner = CudaPartitioner(static_routing_compile_specs())
         config = EdgeCompileConfig(_check_ir_validity=False)
         with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
             if to_backend:
