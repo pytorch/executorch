@@ -234,12 +234,17 @@ SHAPES = [
     ("3x3", "512 ch 3x3 x2", (2, 512, 3, 3), 512, 3, 1, 1, False),
     ("3x3", "64 ch 21x21 x5", (5, 64, 21, 21), 64, 3, 1, 1, False),
     ("3x3", "512 ch 3x3 x5", (5, 512, 3, 3), 512, 3, 1, 1, False),
+    ("3x3", "128 ch 11x11 x5", (5, 128, 11, 11), 128, 3, 1, 1, False),
+    ("3x3", "256 ch 6x6 x5", (5, 256, 6, 6), 256, 3, 1, 1, False),
     ("3x3_s2", "64-128 ch 120x160", (1, 64, 120, 160), 128, 3, 2, 1, False),
     ("3x3_s2", "128-256 ch 60x80", (1, 128, 60, 80), 256, 3, 2, 1, False),
     ("3x3_s2", "256-512 ch 30x40", (1, 256, 30, 40), 512, 3, 2, 1, False),
     ("3x3_s2", "64-128 ch 21x21 x2", (2, 64, 21, 21), 128, 3, 2, 1, False),
     ("3x3_s2", "128-256 ch 11x11 x2", (2, 128, 11, 11), 256, 3, 2, 1, False),
     ("3x3_s2", "256-512 ch 6x6 x2", (2, 256, 6, 6), 512, 3, 2, 1, False),
+    ("3x3_s2", "64-128 ch 21x21 x5", (5, 64, 21, 21), 128, 3, 2, 1, False),
+    ("3x3_s2", "128-256 ch 11x11 x5", (5, 128, 11, 11), 256, 3, 2, 1, False),
+    ("3x3_s2", "256-512 ch 6x6 x5", (5, 256, 6, 6), 512, 3, 2, 1, False),
     ("3x3_s2", "256-512 ch 56x56 x3", (3, 256, 56, 56), 512, 3, 2, 1, True),
     ("3x3_s2", "512-1024 ch 28x28 x3", (3, 512, 28, 28), 1024, 3, 2, 1, True),
     ("3x3_s2", "1024-2048 ch 14x14 x3", (3, 1024, 14, 14), 2048, 3, 2, 1, True),
@@ -511,6 +516,25 @@ def boundary_cases(precision, layout):
     ]
 
 
+def corner_cases(label, calls, precision):
+    """Contiguous ``Case``s of ``calls``, the (input shape, C_out, kernel,
+    stride, padding) corners of a routed range."""
+    return [
+        Case(
+            label,
+            shape,
+            out_channels,
+            kernel,
+            stride,
+            padding,
+            padding,
+            False,
+            precision,
+        )
+        for shape, out_channels, kernel, stride, padding in calls
+    ]
+
+
 _CALLS_PER_GRAPH = 10
 _REPLAYS = 20
 
@@ -727,7 +751,16 @@ def run_case(case, flush, threshold):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
-        "--suite", default="shapes", choices=["shapes", "envelope", "boundary"]
+        "--suite",
+        default="shapes",
+        choices=[
+            "shapes",
+            "envelope",
+            "boundary",
+            "stage_boundary",
+            "winograd_boundary",
+            "conv3d_boundary",
+        ],
     )
     parser.add_argument(
         "--precision",
@@ -755,6 +788,15 @@ def main():
         ),
         "envelope": lambda: envelope_cases(args.precision.split(",")),
         "boundary": lambda: boundary_cases(args.precision, args.layout),
+        "stage_boundary": lambda: corner_cases(
+            "stage boundary", implicit_gemm.stage_boundary_calls(), args.precision
+        ),
+        "winograd_boundary": lambda: corner_cases(
+            "winograd boundary", implicit_gemm.winograd_boundary_calls(), args.precision
+        ),
+        "conv3d_boundary": lambda: corner_cases(
+            "conv3d boundary", implicit_gemm.conv3d_boundary_calls(), args.precision
+        ),
     }[args.suite]()
     index, count = map(int, args.shard.split("/"))
     l2_bytes = torch.cuda.get_device_properties(0).L2_cache_size
