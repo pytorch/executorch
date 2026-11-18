@@ -98,6 +98,12 @@ void floor_div_double(double a, double b, EValue& out) {
   out = EValue(div);
 }
 
+// Python's % takes the sign of the divisor, C++'s % the sign of the dividend.
+int64_t python_mod(int64_t a, int64_t b) {
+  const int64_t rem = a % b;
+  return (rem != 0 && (rem < 0) != (b < 0)) ? rem + b : rem;
+}
+
 static Kernel prim_ops[] = {
 #if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
     defined(INCLUDE_ATEN_SYM_SIZE_INT)
@@ -621,7 +627,7 @@ static Kernel prim_ops[] = {
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
-          out = EValue(a.toInt() % b.toInt());
+          out = EValue(python_mod(a.toInt(), b.toInt()));
         }),
 #endif
 
@@ -643,7 +649,7 @@ static Kernel prim_ops[] = {
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
-            out = EValue(a.toInt() % b.toInt());
+            out = EValue(python_mod(a.toInt(), b.toInt()));
           } else {
             ET_KERNEL_CHECK_MSG(
                 context,
