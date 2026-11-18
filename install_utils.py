@@ -370,6 +370,13 @@ def determine_torch_url(torch_nightly_url_base):
         cuda_version = _get_cuda_version()
     except Exception as err:
         print(f"CUDA detection failed ({err}), using CPU-only PyTorch")
+        detected = _detected_cuda_version()
+        if detected is not None and detected not in SUPPORTED_CUDA_VERSIONS:
+            print(
+                f"WARNING: CUDA {detected[0]}.{detected[1]} is installed but not supported, "
+                "so the CUDA backend will not be built.",
+                file=sys.stderr,
+            )
         return f"{torch_nightly_url_base}/cpu"
 
     major, minor = cuda_version

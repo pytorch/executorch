@@ -6,10 +6,12 @@
 
 import ast
 import importlib.util
+import io
 import os
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +33,9 @@ class TestCu134Dependencies(unittest.TestCase):
         self.modules = patch.dict(sys.modules, {"install_utils": self.utils})
         self.modules.start()
         self.addCleanup(self.modules.stop)
+        detected = patch.object(self.utils, "_detected_cuda_version", return_value=None)
+        detected.start()
+        self.addCleanup(detected.stop)
         self.installer = load_module("install_requirements")
 
     def install_commands(
@@ -118,16 +123,27 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.assertFalse(any("==" in arg for arg in local))
                     self.assertFalse(any("==" in arg for arg in examples))
 
-    def test_cuda_13_0_is_unsupported(self):
+    def test_cuda_13_0_falls_back_to_cpu_with_a_warning(self):
         self.assertNotIn((13, 0), self.utils.SUPPORTED_CUDA_VERSIONS)
-        self.utils._get_cuda_version.cache_clear()
         nvcc = subprocess.CompletedProcess(
             [], 0, stdout="Cuda compilation tools, release 13.0, V13.0.88"
         )
-        with patch.object(self.utils.subprocess, "run", return_value=nvcc):
-            with self.assertRaisesRegex(RuntimeError, "13.0 is not supported"):
-                self.utils._get_cuda_version()
-        self.utils._get_cuda_version.cache_clear()
+        for cache in (
+            self.utils._get_cuda_version,
+            self.utils.determine_torch_url,
+        ):
+            cache.cache_clear()
+            self.addCleanup(cache.cache_clear)
+        stderr = io.StringIO()
+        with (
+            patch.object(self.utils.subprocess, "run", return_value=nvcc),
+            patch.object(self.utils.platform, "system", return_value="Linux"),
+            patch.object(self.utils, "_detected_cuda_version", return_value=(13, 0)),
+            redirect_stderr(stderr),
+        ):
+            url = self.utils.determine_torch_url(self.installer.TORCH_URL_BASE)
+        self.assertEqual(url, f"{self.installer.TORCH_URL_BASE}/cpu")
+        self.assertIn("CUDA 13.0 is installed but not supported", stderr.getvalue())
 
     def test_source_pinned_torch_is_not_replaced(self):
         for cuda in ((13, 2), (13, 4)):

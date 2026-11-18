@@ -17,6 +17,13 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = yaml.safe_load((ROOT / ".github" / "workflows" / "cuda.yml").read_text())
 
 
+def _supported_cuda_versions():
+    import runpy
+
+    versions = runpy.run_path(str(ROOT / "install_utils.py"))["SUPPORTED_CUDA_VERSIONS"]
+    return [f"{major}.{minor}" for major, minor in versions]
+
+
 def _all_keys(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -34,13 +41,24 @@ def _model_quant(entry):
 class CudaWorkflowTest(unittest.TestCase):
     def test_build_matrix_covers_supported_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
-        self.assertEqual(job["strategy"]["matrix"]["cuda-version"], ["13.2", "13.4"])
+        self.assertEqual(
+            job["strategy"]["matrix"]["cuda-version"], _supported_cuda_versions()
+        )
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
-    def test_no_job_uses_cuda_13_0(self):
-        for name, job in WORKFLOW["jobs"].items():
-            with self.subTest(job=name):
-                self.assertNotEqual(job.get("with", {}).get("gpu-arch-version"), "13.0")
+    def test_every_cuda_job_uses_a_supported_version(self):
+        supported = _supported_cuda_versions()
+        for workflow in ("cuda.yml", "cuda-windows.yml"):
+            jobs = yaml.safe_load(
+                (ROOT / ".github" / "workflows" / workflow).read_text()
+            )["jobs"]
+            for name, job in jobs.items():
+                with_ = job.get("with", {})
+                version = with_.get("gpu-arch-version")
+                if with_.get("gpu-arch-type") != "cuda" or "${{" in str(version):
+                    continue
+                with self.subTest(workflow=workflow, job=name):
+                    self.assertIn(version, supported)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
