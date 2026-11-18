@@ -25,6 +25,8 @@ TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
 TORCHAO_STABLE_VERSION = "0.18.0"
 TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
 CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
+# The cu130 channel stopped publishing TorchAO nightlies after 0.19.0.dev20261103.
+CU130_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
@@ -52,6 +54,8 @@ def get_torchao_version(torch_url):
         and not torchao_from_source()
     ):
         return TORCHAO_STABLE_VERSION
+    if torch_url.endswith("/cu130") and not torchao_from_source():
+        return CU130_TORCHAO_NIGHTLY_VERSION
     return TORCHAO_NIGHTLY_VERSION
 
 
