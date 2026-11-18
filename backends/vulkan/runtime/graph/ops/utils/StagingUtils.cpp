@@ -8,8 +8,18 @@
 
 // @lint-ignore-every CLANGTIDY facebook-security-vulnerable-memcpy
 
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <string>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 

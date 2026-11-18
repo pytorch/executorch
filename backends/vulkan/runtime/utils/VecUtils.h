@@ -12,6 +12,13 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 
+#include <stddef.h>
+#include <stdint.h>
+#include <algorithm>
+#include <initializer_list>
+#include <iterator>
+#include <ostream>
+#include <vector>
 #include <cmath>
 #include <limits>
 #include <numeric>

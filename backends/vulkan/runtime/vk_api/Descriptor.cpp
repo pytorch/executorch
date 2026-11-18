@@ -8,6 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
 #include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
 #include <algorithm>

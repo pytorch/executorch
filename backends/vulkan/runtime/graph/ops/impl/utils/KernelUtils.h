@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>

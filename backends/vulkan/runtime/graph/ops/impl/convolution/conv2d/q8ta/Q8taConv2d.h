@@ -8,8 +8,10 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <vector>
 #include <cstdint>
 
 namespace vkcompute {

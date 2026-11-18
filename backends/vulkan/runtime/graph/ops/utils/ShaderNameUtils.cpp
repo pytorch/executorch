@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 namespace vkcompute {
 
 void add_storage_type_suffix(

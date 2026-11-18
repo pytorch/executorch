@@ -8,6 +8,13 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {

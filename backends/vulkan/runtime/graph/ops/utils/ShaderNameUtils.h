@@ -8,8 +8,12 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string>
 
 namespace vkcompute {

@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2d.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dDirect.h>
@@ -15,6 +17,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/im2col/Q8taConv2dIm2Col.h>
 #include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
+#include <string>
 #include <limits>
 
 namespace vkcompute {

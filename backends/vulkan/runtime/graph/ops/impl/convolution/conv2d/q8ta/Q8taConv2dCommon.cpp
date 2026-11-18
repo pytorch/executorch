@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dCommon.h>
 
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 namespace vkcompute {
 
 ActivationType activation_type_from_string(const std::string& activation) {

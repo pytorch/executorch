@@ -12,6 +12,9 @@
 #include <cmath>
 #include <limits>
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif

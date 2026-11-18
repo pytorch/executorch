@@ -8,7 +8,17 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <stddef.h>
+#include <string>
+
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/BinaryOp.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/unary/UnaryOp.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>

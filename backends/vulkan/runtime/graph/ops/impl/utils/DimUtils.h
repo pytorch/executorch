@@ -8,6 +8,11 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <ostream>
+#include <vector>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 namespace vkcompute {

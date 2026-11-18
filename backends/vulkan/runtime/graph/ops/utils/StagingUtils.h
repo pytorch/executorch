@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {

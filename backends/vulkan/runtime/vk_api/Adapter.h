@@ -12,6 +12,9 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
 // vk_api.h must precede SharedVulkanDevice.h: Volk requires VK_NO_PROTOTYPES
@@ -25,7 +28,16 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/AdapterCapabilityOverrides.h>
 
+#include <stddef.h>
+#include <stdint.h>
+#include <iosfwd>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
 #include <array>
+
+#include "vulkan/vulkan_core.h"
 
 namespace vkcompute {
 namespace vkapi {

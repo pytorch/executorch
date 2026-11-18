@@ -17,7 +17,14 @@
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
 
+#include <stddef.h>
+#include <stdint.h>
+#include <initializer_list>
+#include <mutex>
+#include <vector>
 #include <unordered_map>
+
+#include "vulkan/vulkan_core.h"
 
 namespace vkcompute {
 namespace vkapi {

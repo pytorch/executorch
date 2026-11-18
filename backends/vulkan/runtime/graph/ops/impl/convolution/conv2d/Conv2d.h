@@ -8,11 +8,16 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/BinaryOp.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/unary/UnaryOp.h>
 
+#include <stdint.h>
+#include <vector>
 #include <optional>
 
 namespace vkcompute {

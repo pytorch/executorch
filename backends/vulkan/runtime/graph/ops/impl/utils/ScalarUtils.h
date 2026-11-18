@@ -8,6 +8,10 @@
 
 #pragma once
 
+#include <utility>
+
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
