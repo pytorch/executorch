@@ -73,7 +73,9 @@ Tensor& quantized_depthwise_conv2d_int8_out(
     ET_KERNEL_CHECK(
         ctx,
         padding[axis] >= 0 && padding[axis] <= 32768 &&
-            (out.size(axis + 1) - 1) * stride[axis] - padding[axis] <= 32767,
+            (out.size(axis + 1) - 1) * stride[axis] - padding[axis] <= 32767 &&
+            (out.size(axis + 1) - 1) * stride[axis] + weight.size(axis + 1) <=
+                input.size(axis + 1) + 2 * padding[axis],
         InvalidArgument,
         out);
   }
