@@ -308,6 +308,12 @@ W8A32_ANNOTATION_TEST_CASES: list[
             SharedQuantizationSpec,
         ],
     ),
+    (
+        "w8a32_transpose_conv2d",
+        lambda self: self._build_w8a32_transpose_conv2d_graph(),
+        CadenceW8A32MixedQuantizer(),
+        [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
+    ),
 ]
 
 # Derive the set of tested quantizer classes from the test cases.
@@ -776,6 +782,77 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(gru_nodes), 1, "Should find exactly one gru node")
         return gm, gru_nodes[0]
 
+    def _build_w8a32_transpose_conv2d_graph(
+        self,
+        x_shape: tuple[int, ...] = (1, 4, 1, 8),
+        weight_shape: tuple[int, ...] = (4, 8, 1, 3),
+        with_bias: bool = True,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with conv_transpose2d(input, weight, bias, stride)."""
+        builder = GraphBuilder()
+        # MixedW8A32TransposeConv2dPattern needs a [1, C, 1, W] input,
+        # channels % 4 == 0, kH == 1 and H stride 1.
+        x = builder.placeholder("x", torch.randn(x_shape))
+        # Weight shape: (in_channels, out_channels, kH, kW)
+        weight = builder.placeholder("weight", torch.randn(weight_shape))
+        bias = (
+            builder.placeholder("bias", torch.randn(weight_shape[1]))
+            if with_bias
+            else None
+        )
+        transpose_conv2d = builder.call_operator(
+            op=torch.ops.aten.conv_transpose2d.input,
+            args=(x, weight, bias, [1, 2]),
+            meta=NodeMetadata(
+                {
+                    "source_fn_stack": [
+                        ("conv_transpose2d", torch.ops.aten.conv_transpose2d.input)
+                    ]
+                }
+            ),
+        )
+        builder.output([transpose_conv2d])
+        gm = builder.get_graph_module()
+
+        transpose_conv2d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv_transpose2d.input,
+        )
+        self.assertEqual(
+            len(transpose_conv2d_nodes),
+            1,
+            "Should find exactly one conv_transpose2d node",
+        )
+        return gm, transpose_conv2d_nodes[0]
+
+    def _assert_w8a32_leaves_fp32(
+        self, gm: torch.fx.GraphModule, node: torch.fx.Node
+    ) -> None:
+        for n in gm.graph.nodes:
+            if isinstance(n.meta.get("val"), torch.Tensor):
+                n.meta["tensor_meta"] = _extract_tensor_metadata(n.meta["val"])
+        CadenceW8A32MixedQuantizer().annotate(gm)
+        self.assertNotIn(Q_ANNOTATION_KEY, node.meta)
+
+    @parameterized.expand(
+        [
+            ("ic_not_aligned", (1, 6, 1, 8), (6, 8, 1, 3)),
+            ("batch_2", (2, 4, 1, 8), (4, 8, 1, 3)),
+            ("height_2", (1, 4, 2, 8), (4, 8, 1, 3)),
+        ]
+    )
+    def test_w8a32_transpose_conv2d_unsupported_shape_stays_fp32(
+        self, name: str, x_shape: tuple[int, ...], weight_shape: tuple[int, ...]
+    ) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_transpose_conv2d_graph(x_shape, weight_shape)
+        )
+
+    def test_w8a32_transpose_conv2d_without_bias_stays_fp32(self) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_transpose_conv2d_graph(with_bias=False)
+        )
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -1035,6 +1112,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.linear.default,
             torch.ops.aten.conv1d.default,
             torch.ops.aten.gru.input,
+            torch.ops.aten.conv_transpose2d.input,
         ]
         self.assertCountEqual(actual, expected)
 
@@ -1074,6 +1152,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.linear.default,
             torch.ops.aten.conv1d.default,
             torch.ops.aten.gru.input,
+            torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.addmm.default,
         ]
         self.assertCountEqual(actual, expected)
