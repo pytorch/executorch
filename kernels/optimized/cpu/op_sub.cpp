@@ -59,7 +59,8 @@ Tensor& opt_sub_out(
 
   if (a.numel() == 1 || b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
-        a_type != ScalarType::BFloat16) {
+        a_type != ScalarType::BFloat16 &&
+        !executorch::runtime::isComplexType(a_type)) {
       const Tensor* tensor;
       const Tensor* scalar;
       ScalarType tensor_type;
