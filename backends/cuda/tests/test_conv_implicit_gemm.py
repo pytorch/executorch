@@ -869,7 +869,8 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
                     program, partitioner=[partitioner], compile_config=config
                 )
         output = "\n".join(logs.output)
-        self.assertEqual(output.count(f"({route}, implicit_gemm template)"), routed)
+        only = ", only implementation" if route == "required" else ""
+        self.assertEqual(output.count(f"(implicit_gemm template{only})"), routed)
         self.assertIn(f"Replaced {routed} nodes with Triton kernels", output)
 
         from executorch.export.utils import is_fbcode

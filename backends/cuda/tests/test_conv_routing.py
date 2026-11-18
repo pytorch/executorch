@@ -16,6 +16,7 @@ import dataclasses
 import importlib.util
 import itertools
 import math
+import re
 import unittest
 from unittest import mock
 
@@ -151,7 +152,7 @@ class _PassTest(unittest.TestCase):
             with self.subTest(api=api):
                 targets, logs = self.run_pass(graph_module)
                 self.assertEqual(targets.count(torch.ops.triton.convolution.default), 1)
-                self.assertIn(f"optional, {template} template", logs)
+                self.assertIn(f"({template} template)", logs)
                 self.assertIn("Replaced 1 nodes", logs)
                 node = next(
                     n
@@ -163,6 +164,15 @@ class _PassTest(unittest.TestCase):
                     self.assertEqual(node.args[-1], output_strides)
                 if canonical_args is not None and api == _APIS[0]:
                     self.assertEqual(node.args[3:-1], canonical_args)
+
+    def assertNoImplementation(self, model, *inputs, reason):
+        from executorch.backends.cuda.triton.routing import ReplacementError
+
+        for api, graph_module in _backend_graphs(model, *inputs).items():
+            with self.subTest(api=api), self.assertRaisesRegex(
+                ReplacementError, f"nothing can run it.*{re.escape(reason)}"
+            ):
+                self.run_pass(graph_module)
 
     def assertKept(self, model, *inputs, reason, **export_kwargs):
         for api, graph_module in _backend_graphs(
@@ -306,7 +316,7 @@ class ConvRoutingTest(_PassTest):
             )[_APIS[0]]
             targets, logs = self.run_pass(graph_module)
         self.assertIn(torch.ops.triton.convolution.default, targets)
-        self.assertIn("required, permissive template", logs)
+        self.assertIn("(permissive template, only implementation)", logs)
 
     def test_without_a_template_the_node_is_kept(self):
         from executorch.backends.cuda.triton.kernels.conv import routing
@@ -414,7 +424,9 @@ class ConvFailureContractTest(unittest.TestCase):
         with self.assertLogs(_PASS_LOGGER, "INFO") as logs:
             with mock.patch.object(routing, "TEMPLATES", (_permissive_template(),)):
                 self.run_pass(graph_module)
-        self.assertIn("required, permissive template", "\n".join(logs.output))
+        self.assertIn(
+            "(permissive template, only implementation)", "\n".join(logs.output)
+        )
         self.assertIn(torch.ops.triton.convolution.default, _targets(graph_module))
 
     def test_required_failures_raise(self):
@@ -631,7 +643,9 @@ class DirectTemplateRoutingTest(_PassTest):
                     lambda dtype=dtype: torch.randn(1, 16, 12, 12, dtype=dtype),
                     reason=reason,
                 )
-        self.assertKept(_depthwise(dilation=2, padding=2), x, reason="dilation [2, 2]")
+        self.assertNoImplementation(
+            _depthwise(dilation=2, padding=2), x, reason="dilation [2, 2]"
+        )
         self.assertKept(_depthwise(kernel=11, padding=5), x, reason="larger than 9")
         self.assertKept(
             _depthwise(dtype=torch.float64),
@@ -669,7 +683,16 @@ class DirectTemplateRoutingTest(_PassTest):
             def forward(self, x):
                 return self.conv(x)
 
-        self.assertKept(Transposed, x, reason="transposed convolution")
+        # The regular lowering runs it only as the backend's decomposition of
+        # conv_transpose2d, which to_edge does not keep.
+        from executorch.backends.cuda.triton.routing import ReplacementError
+
+        kept, failed = _backend_graphs(Transposed, x).values()
+        targets, logs = self.run_pass(kept)
+        self.assertNotIn(torch.ops.triton.convolution.default, targets)
+        self.assertIn("transposed convolution", logs)
+        with self.assertRaisesRegex(ReplacementError, "nothing can run it"):
+            self.run_pass(failed)
 
     def test_benchmarked_range(self):
         from executorch.backends.cuda.triton.kernels.conv.core import direct
@@ -1514,12 +1537,14 @@ class ImplicitGemmRoutingTest(_PassTest):
                         self.assertEqual(
                             targets.count(torch.ops.triton.convolution.default), 1
                         )
-                        self.assertIn("required, implicit_gemm template", logs)
+                        self.assertIn(
+                            "(implicit_gemm template, only implementation)", logs
+                        )
                     elif reason is None:
                         self.assertEqual(
                             targets.count(torch.ops.triton.convolution.default), 1
                         )
-                        self.assertIn("optional, implicit_gemm template", logs)
+                        self.assertIn("(implicit_gemm template)", logs)
                     else:
                         self.assertNotIn(torch.ops.triton.convolution.default, targets)
                         self.assertIn(reason, logs)
@@ -1534,7 +1559,7 @@ class ImplicitGemmRoutingTest(_PassTest):
             with self.subTest(api=api):
                 targets, logs = self.run_pass(graph_module)
                 self.assertEqual(targets.count(torch.ops.triton.convolution.default), 1)
-                self.assertIn("required, implicit_gemm template", logs)
+                self.assertIn("(implicit_gemm template, only implementation)", logs)
 
     def test_explicit_pad_stays_its_own_node(self):
         from executorch.backends.cuda.triton.kernels.conv import routing
@@ -1630,26 +1655,46 @@ class ImplicitGemmRoutingTest(_PassTest):
                             for n in graph_module.graph.nodes
                             if n.target == torch.ops.triton.convolution.default
                         ]
-                        self.assertIn(f"{route[api]}, implicit_gemm template", logs)
+                        only = (
+                            ", only implementation" if route[api] == "required" else ""
+                        )
+                        self.assertIn(f"(implicit_gemm template{only})", logs)
                         self.assertTrue(node.args[7])
                         self.assertEqual(node.args[-1], list(node.meta["val"].stride()))
                     else:
                         self.assertNotIn(torch.ops.triton.convolution.default, targets)
                         self.assertIn("transposed convolution is not benchmarked", logs)
 
-    def test_unsupported_transposed_is_kept(self):
-        for model, reason in (
+    def test_unsupported_transposed(self):
+        """A transposed convolution no template runs is kept where the
+        regular lowering runs it (the decomposed conv_transpose1d), and fails
+        the export where nothing does."""
+        from executorch.backends.cuda.triton.routing import ReplacementError
+
+        for model, reason, kept in (
             (
                 _dense(nn.ConvTranspose1d, 8, 8, 3, torch.float32, dilation=2),
                 "implicit GEMM: dilation [2]",
+                (),
             ),
             (
                 _dense(nn.ConvTranspose1d, 8, 8, 3, torch.float32, groups=2),
                 "implicit GEMM: grouped convolution",
+                (_APIS[0],),
             ),
         ):
-            with self.subTest(reason=reason):
-                self.assertKept(model, lambda: torch.randn(1, 8, 9), reason=reason)
+            graphs = _backend_graphs(model, lambda: torch.randn(1, 8, 9))
+            for api, graph_module in graphs.items():
+                with self.subTest(reason=reason, api=api):
+                    if api in kept:
+                        targets, logs = self.run_pass(graph_module)
+                        self.assertNotIn(torch.ops.triton.convolution.default, targets)
+                        self.assertIn(reason, logs)
+                    else:
+                        with self.assertRaisesRegex(
+                            ReplacementError, f"nothing can run it.*{re.escape(reason)}"
+                        ):
+                            self.run_pass(graph_module)
 
     def test_stage_rows(self):
         for row, model, shape, fp32_reason in _STAGE_ROWS:
