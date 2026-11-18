@@ -46,14 +46,18 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
 | `metadata.json` | Producer-defined values by name; present only when given. |
+| `metadata.safetensors` | Producer-defined tensors by name; present only when given. |
 
 `to_native(ep, metadata={...})` writes `metadata.json`, the counterpart to a
 PTE's constant methods: a JSON object whose values are each a bool, number,
-string, or a flat list of those. Names mean nothing to the format; a runner
-reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
-`exir.native.read_metadata` reads them back in Python. LLM exports reuse the
-constant-method names in `extension/llm/export/model_metadata.py`, such as
-`get_windows` for the per-layer sliding windows of an off-graph KV cache.
+string, or a flat list of those. Tensor values go to `metadata.safetensors`
+instead, aligned like constants, and a name is in only one of the two. Names
+mean nothing to the format; a runner reads the ones it knows with
+`Package::metadata_int`, `metadata_ints`, `metadata_string`,
+`metadata_double` and `metadata_tensor`, and `exir.native.read_metadata`
+reads them back in Python. LLM exports reuse the constant-method names in
+`extension/llm/export/model_metadata.py`, such as `get_windows` for the
+per-layer sliding windows of an off-graph KV cache.
 
 ## Samples (optional)
 

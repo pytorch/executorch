@@ -28,8 +28,10 @@ from executorch.backends.native.serialization.schema import (
 )
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._ptn import (
+    _write_safetensors,
     ALIASES_ENTRY,
     METADATA_ENTRY,
+    METADATA_TENSORS_ENTRY,
     PTG_ENTRY,
     read_ptn,
     SAFETENSORS_ENTRY,
@@ -765,11 +767,36 @@ class MetadataTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(read_metadata(self._save(td, metadata)), metadata)
 
+    def test_tensor_metadata_round_trips(self):
+        bos_embeds = torch.randn(1, 1, 8)
+        with tempfile.TemporaryDirectory() as td:
+            path = self._save(td, {"temperature": 0.3, "bos_embeds": bos_embeds})
+            with zipfile.ZipFile(path) as pkg:
+                self.assertIn(METADATA_TENSORS_ENTRY, pkg.namelist())
+                self.assertEqual(
+                    json.loads(pkg.read(METADATA_ENTRY)), {"temperature": 0.3}
+                )
+            metadata = read_metadata(path)
+        self.assertEqual(metadata.keys(), {"temperature", "bos_embeds"})
+        self.assertEqual(metadata["temperature"], 0.3)
+        torch.testing.assert_close(metadata["bos_embeds"], bos_embeds, rtol=0, atol=0)
+
+    def test_name_in_both_members_is_rejected_on_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._save(td, {"temperature": 0.3})
+            with zipfile.ZipFile(path, "a") as pkg:
+                _write_safetensors(
+                    pkg, {"temperature": torch.tensor(0.3)}, METADATA_TENSORS_ENTRY
+                )
+            with self.assertRaisesRegex(ValueError, "temperature"):
+                read_metadata(path)
+
     def test_no_metadata_writes_no_member(self):
         with tempfile.TemporaryDirectory() as td:
             path = self._save(td, None)
             with zipfile.ZipFile(path) as pkg:
                 self.assertNotIn(METADATA_ENTRY, pkg.namelist())
+                self.assertNotIn(METADATA_TENSORS_ENTRY, pkg.namelist())
             self.assertEqual(read_metadata(path), {})
 
     def test_invalid_metadata_is_rejected(self):
@@ -777,13 +804,16 @@ class MetadataTest(unittest.TestCase):
         for metadata in (
             {"": 1},
             {"nested": [[1]]},
-            {"tensor": torch.tensor([1])},
+            {"tensors": [torch.tensor([1])]},
+            {"complex": torch.zeros(2, dtype=torch.complex128)},
             {"none": None},
         ):
             with self.subTest(metadata=metadata), self.assertRaises(TypeError):
                 to_native(program, metadata=metadata)
         with self.assertRaisesRegex(ValueError, "non-finite"):
             to_native(program, metadata={"nan": float("nan")})
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            to_native(program, metadata={"__metadata__": torch.zeros(1)})
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ constexpr const char* kProgramEntry = "program.ptg";
 constexpr const char* kSafeTensorsEntry = "program.safetensors";
 constexpr const char* kAliasesEntry = "aliases.json";
 constexpr const char* kMetadataEntry = "metadata.json";
+constexpr const char* kMetadataTensorsEntry = "metadata.safetensors";
 
 // Metadata for one constant resolved out of a package. `sizes` is borrowed from
 // the Package and must not outlive it.
@@ -39,6 +40,13 @@ struct ConstantInfo {
   // Key that actually owns these bytes. Differs from the requested key when the
   // package deduplicated two byte-identical immutable constants.
   std::string owner;
+};
+
+// One tensor of the metadata.safetensors member, copied out of the package.
+struct MetadataTensor {
+  ScalarType dtype = kFloat;
+  std::vector<int64_t> sizes;
+  OwnedBytes data;
 };
 
 // A loaded .ptn package: the serialized native Program plus the constants it
@@ -61,6 +69,9 @@ class Package {
   std::unordered_map<std::string, std::string> aliases_;
   // The metadata.json object, validated at load; empty when absent.
   std::string metadata_;
+  // The metadata.safetensors index, validated at load; absent with the member.
+  std::optional<SafeTensorsReader> metadata_tensors_;
+  size_t metadata_tensor_data_offset_ = 0;
 
   Package();
 
@@ -104,11 +115,16 @@ class Package {
   // Metadata for `key`, resolving an alias to its owner. nullopt when absent.
   std::optional<ConstantInfo> constant_info(const std::string& key) const;
 
-  // Producer-defined metadata (the metadata.json member) by name. nullopt when
+  // Producer-defined metadata by name: values from the metadata.json member and
+  // tensors from metadata.safetensors, which never share a name. nullopt when
   // absent; throws std::runtime_error when the value has another type.
   std::optional<int64_t> metadata_int(const std::string& name) const;
   std::optional<std::vector<int64_t>> metadata_ints(
       const std::string& name) const;
+  std::optional<std::string> metadata_string(const std::string& name) const;
+  // Integers read as numbers too.
+  std::optional<double> metadata_double(const std::string& name) const;
+  std::optional<MetadataTensor> metadata_tensor(const std::string& name) const;
 
   // Load one constant into a new owning buffer. nullopt when absent.
   std::optional<OwnedBytes> acquire_constant(const std::string& key) const;

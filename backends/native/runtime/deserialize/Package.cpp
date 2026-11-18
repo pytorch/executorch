@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 #include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 #include <executorch/backends/native/runtime/deserialize/Json.h>
@@ -109,6 +110,57 @@ bool is_metadata_int(const Json& value) {
            static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
 }
 
+// The metadata.json value named `name`, or nullopt when there is none. Throws
+// when `name` is a metadata tensor instead.
+std::optional<Json> find_metadata(
+    const std::string& metadata,
+    const std::optional<SafeTensorsReader>& tensors,
+    const std::string& name) {
+  if (tensors && tensors->find(name) != nullptr) {
+    throw std::runtime_error("package: metadata '" + name + "' is a tensor");
+  }
+  if (metadata.empty()) {
+    return std::nullopt;
+  }
+  Json doc = parse_metadata(metadata);
+  const auto found = doc.find(name);
+  if (found == doc.end()) {
+    return std::nullopt;
+  }
+  return std::move(*found);
+}
+
+// The index of the safetensors member `entry`, read without its data section,
+// and the offset of that data section within the member.
+std::pair<SafeTensorsReader, size_t> read_safetensors_index(
+    const ZipReader& zip,
+    const char* entry,
+    size_t member_size) {
+  std::array<uint8_t, SafeTensorsReader::kLengthPrefixSize> prefix{};
+  if (member_size < prefix.size()) {
+    throw std::runtime_error(
+        std::string("package: ") + entry +
+        " is shorter than its length prefix");
+  }
+  zip.read_into(entry, 0, MutableByteSpan(prefix));
+  const size_t header_size = SafeTensorsReader::header_size(prefix);
+  if (header_size > detail::kMaxJsonBytes) {
+    throw ResourceLimitError(
+        std::string("package: ") + entry + " header exceeds size limit");
+  }
+  if (header_size > member_size - prefix.size()) {
+    throw std::runtime_error(
+        std::string("package: ") + entry + " header exceeds its zip member");
+  }
+  std::vector<uint8_t> header(header_size);
+  zip.read_into(entry, prefix.size(), MutableByteSpan(header));
+  const size_t data_offset = prefix.size() + header_size;
+  return {
+      SafeTensorsReader::open_header(
+          ByteSpan(header), member_size - data_offset),
+      data_offset};
+}
+
 } // namespace
 
 bool Package::looks_like_package(ByteSpan bytes) {
@@ -162,6 +214,8 @@ Package& Package::operator=(Package&& other) noexcept {
     tensor_data_offset_ = other.tensor_data_offset_;
     aliases_ = std::move(other.aliases_);
     metadata_ = std::move(other.metadata_);
+    metadata_tensors_ = std::move(other.metadata_tensors_);
+    metadata_tensor_data_offset_ = other.metadata_tensor_data_offset_;
   }
   return *this;
 }
@@ -182,26 +236,10 @@ void Package::load_metadata() {
   const std::optional<size_t> tensor_size =
       zip_->member_size(kSafeTensorsEntry);
   if (tensor_size) {
-    std::array<uint8_t, SafeTensorsReader::kLengthPrefixSize> prefix{};
-    if (*tensor_size < prefix.size()) {
-      throw std::runtime_error(
-          "package: safetensors member is shorter than its length prefix");
-    }
-    zip_->read_into(kSafeTensorsEntry, 0, MutableByteSpan(prefix));
-    const size_t header_size = SafeTensorsReader::header_size(prefix);
-    if (header_size > detail::kMaxJsonBytes) {
-      throw ResourceLimitError(
-          "package: safetensors header exceeds size limit");
-    }
-    if (header_size > *tensor_size - prefix.size()) {
-      throw std::runtime_error(
-          "package: safetensors header exceeds its zip member");
-    }
-    std::vector<uint8_t> header(header_size);
-    zip_->read_into(kSafeTensorsEntry, prefix.size(), MutableByteSpan(header));
-    tensor_data_offset_ = prefix.size() + header_size;
-    tensors_ = SafeTensorsReader::open_header(
-        ByteSpan(header), *tensor_size - tensor_data_offset_);
+    auto [index, data_offset] =
+        read_safetensors_index(*zip_, kSafeTensorsEntry, *tensor_size);
+    tensors_ = std::move(index);
+    tensor_data_offset_ = data_offset;
   }
 
   const std::optional<size_t> aliases_size = zip_->member_size(kAliasesEntry);
@@ -218,6 +256,7 @@ void Package::load_metadata() {
     aliases_ = parse_aliases(ByteSpan(aliases), *tensors_);
   }
 
+  Json metadata_values = Json::object();
   const std::optional<size_t> metadata_size = zip_->member_size(kMetadataEntry);
   if (metadata_size) {
     if (*metadata_size > detail::kMaxJsonBytes) {
@@ -225,42 +264,102 @@ void Package::load_metadata() {
     }
     const std::vector<uint8_t> metadata = zip_->read(kMetadataEntry);
     metadata_.assign(metadata.begin(), metadata.end());
-    parse_metadata(metadata_);
+    metadata_values = parse_metadata(metadata_);
+  }
+
+  const std::optional<size_t> metadata_tensors_size =
+      zip_->member_size(kMetadataTensorsEntry);
+  if (metadata_tensors_size) {
+    auto [index, data_offset] = read_safetensors_index(
+        *zip_, kMetadataTensorsEntry, *metadata_tensors_size);
+    for (const std::string& name : index.names()) {
+      if (name.empty()) {
+        throw std::runtime_error(
+            "package: metadata.safetensors has an unnamed tensor");
+      }
+      if (metadata_values.contains(name)) {
+        throw std::runtime_error(
+            "package: metadata '" + name +
+            "' is in both metadata.json and metadata.safetensors");
+      }
+    }
+    metadata_tensors_ = std::move(index);
+    metadata_tensor_data_offset_ = data_offset;
   }
 }
 
 std::optional<int64_t> Package::metadata_int(const std::string& name) const {
-  if (metadata_.empty()) {
+  const std::optional<Json> value =
+      find_metadata(metadata_, metadata_tensors_, name);
+  if (!value) {
     return std::nullopt;
   }
-  const Json doc = parse_metadata(metadata_);
-  const auto found = doc.find(name);
-  if (found == doc.end()) {
-    return std::nullopt;
-  }
-  if (!is_metadata_int(*found)) {
+  if (!is_metadata_int(*value)) {
     throw std::runtime_error(
         "package: metadata '" + name + "' is not an integer");
   }
-  return found->get<int64_t>();
+  return value->get<int64_t>();
 }
 
 std::optional<std::vector<int64_t>> Package::metadata_ints(
     const std::string& name) const {
-  if (metadata_.empty()) {
+  const std::optional<Json> value =
+      find_metadata(metadata_, metadata_tensors_, name);
+  if (!value) {
     return std::nullopt;
   }
-  const Json doc = parse_metadata(metadata_);
-  const auto found = doc.find(name);
-  if (found == doc.end()) {
-    return std::nullopt;
-  }
-  if (!found->is_array() ||
-      !std::all_of(found->begin(), found->end(), is_metadata_int)) {
+  if (!value->is_array() ||
+      !std::all_of(value->begin(), value->end(), is_metadata_int)) {
     throw std::runtime_error(
         "package: metadata '" + name + "' is not a list of integers");
   }
-  return found->get<std::vector<int64_t>>();
+  return value->get<std::vector<int64_t>>();
+}
+
+std::optional<std::string> Package::metadata_string(
+    const std::string& name) const {
+  const std::optional<Json> value =
+      find_metadata(metadata_, metadata_tensors_, name);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_string()) {
+    throw std::runtime_error(
+        "package: metadata '" + name + "' is not a string");
+  }
+  return value->get<std::string>();
+}
+
+std::optional<double> Package::metadata_double(const std::string& name) const {
+  const std::optional<Json> value =
+      find_metadata(metadata_, metadata_tensors_, name);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_number()) {
+    throw std::runtime_error("package: metadata '" + name + "' is not a number");
+  }
+  return value->get<double>();
+}
+
+std::optional<MetadataTensor> Package::metadata_tensor(
+    const std::string& name) const {
+  const TensorEntry* entry =
+      metadata_tensors_ ? metadata_tensors_->find(name) : nullptr;
+  if (entry == nullptr) {
+    if (find_metadata(metadata_, metadata_tensors_, name)) {
+      throw std::runtime_error(
+          "package: metadata '" + name + "' is not a tensor");
+    }
+    return std::nullopt;
+  }
+  std::vector<uint8_t> bytes(entry->nbytes);
+  zip_->read_into(
+      kMetadataTensorsEntry,
+      metadata_tensor_data_offset_ + entry->offset,
+      MutableByteSpan(bytes));
+  return MetadataTensor{
+      entry->dtype, entry->sizes, OwnedBytes::from_vector(std::move(bytes))};
 }
 
 std::optional<ConstantInfo> Package::constant_info(
@@ -336,7 +435,8 @@ void Package::verify() const {
   if (tensors_) {
     zip_->verify(kSafeTensorsEntry);
   }
-  for (const char* member : {kAliasesEntry, kMetadataEntry}) {
+  for (const char* member :
+       {kAliasesEntry, kMetadataEntry, kMetadataTensorsEntry}) {
     if (zip_->member_size(member)) {
       zip_->verify(member);
     }
