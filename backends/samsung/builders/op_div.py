@@ -16,7 +16,7 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 @register_node_visitor
 class DivVisitor(NodeVisitor):
-    target = "aten.div.Tensor"
+    target = ["aten.div.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -6,13 +6,16 @@
 
 from typing import Dict
 
+import numpy as np
+
 import torch
 from executorch.backends.samsung.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
+from executorch.backends.samsung.builders.utils import get_map_dtype, TensorType
+from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.transforms import get_shape
 
 
@@ -40,9 +43,21 @@ class LayerNormVisitor(NodeVisitor):
         weight_node = node.args[2]
         weight_id = self.define_tensor(weight_node, enn_graph, vals_to_ids)
         all_input_tensors.append(weight_id)
-        bias_node = node.args[3]
-        bias_id = self.define_tensor(bias_node, enn_graph, vals_to_ids)
-        all_input_tensors.append(bias_id)
+        if node.args[3] is not None:
+            bias_node = node.args[3]
+            bias_id = self.define_tensor(bias_node, enn_graph, vals_to_ids)
+            all_input_tensors.append(bias_id)
+        else:
+            bias_shape = get_shape(weight_node)
+            bias_data = np.zeros(bias_shape, dtype=np.float32)
+            bias_id = enn_graph.define_tensor(
+                node.name + "_bias",
+                bias_shape,
+                get_map_dtype(torch.float32),
+                TensorType.CONSTANT,
+                data=bias_data,
+            )
+            all_input_tensors.append(bias_id)
 
         epsilon = node.args[4] if len(node.args) > 4 else 1e-5
         params = {"epsilon": epsilon}

@@ -23,6 +23,7 @@ class ReplaceOpsWithScalar(ExportPass):
         exir_ops.edge.aten.div.Scalar: exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.eq.Scalar: exir_ops.edge.aten.eq.Tensor,
     }
 
     def __init__(self):

@@ -26,23 +26,30 @@ class AnnotateScalarParametersPass(ExportPass):
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.where.self,
     }
 
     def __init__(self, edge_program: ExportedProgram):
         super().__init__()
         self.edge_program = edge_program
 
+    def _is_param(self, node: torch.fx.Node) -> bool:
+        return node.op in ("placeholder", "get_attr") and is_param_node(
+            self.edge_program, node
+        )
+
     def annotate(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
             if node.target not in self.TARGET_OPS or "quantize_attrs" not in node.meta:
                 continue
-            input0, input1 = node.all_input_nodes[0], node.all_input_nodes[1]
-            if input0.op not in ("placeholder", "get_attr") or not is_param_node(
-                self.edge_program, input0
-            ):
-                if input1.op not in ("placeholder", "get_attr") or not is_param_node(
-                    self.edge_program, input1
-                ):
+            if node.target == exir_ops.edge.aten.where.self:
+                # where.self(condition, self, other): the condition is a bool
+                # mask, so the scalar sits in one of the two value inputs.
+                input0, input1 = node.args[1], node.args[2]
+            else:
+                input0, input1 = node.all_input_nodes[0], node.all_input_nodes[1]
+            if not self._is_param(input0):
+                if not self._is_param(input1):
                     continue
                 ifm_node, param_tensor_node = input0, input1
             else:
