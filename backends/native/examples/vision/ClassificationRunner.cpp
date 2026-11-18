@@ -28,6 +28,7 @@ DEFINE_string(
     "Reference logits to compare against, raw float32.");
 DEFINE_string(categories, "", "Newline-separated class labels, for display.");
 DEFINE_string(method, "", "Method to run. Defaults to the first one.");
+DEFINE_string(dump_output, "", "Write raw float32 logits to a new file.");
 DEFINE_double(rtol, 1e-3, "Relative tolerance for the logits comparison.");
 DEFINE_double(atol, 1e-3, "Absolute tolerance for the logits comparison.");
 namespace {
@@ -57,6 +58,7 @@ void print_top5(
 
 namespace ptn {
 
+// cppcheck-suppress unusedFunction
 int run_classification(
     const std::function<std::unique_ptr<EngineHost>()>& make_host,
     const std::function<ConstantBytes(const EngineContext&)>& constant_bytes) {
@@ -156,6 +158,18 @@ int run_classification(
     if (!FLAGS_categories.empty()) {
       labels = ptn::runner_utils::read_lines(FLAGS_categories);
     }
+    const std::vector<float> reference = FLAGS_expected.empty()
+        ? std::vector<float>{}
+        : ptn::runner_utils::read_floats(FLAGS_expected);
+    if (!FLAGS_expected.empty() &&
+        !ptn::runner_utils::can_compare_floats(
+            logits.size(), reference.size(), FLAGS_rtol, FLAGS_atol)) {
+      return 2;
+    }
+    if (!FLAGS_dump_output.empty()) {
+      ptn::runner_utils::write_floats(FLAGS_dump_output, logits);
+    }
+
     print_top5(logits, labels);
     const int argmax = ptn::runner_utils::top_k(logits, 1).front();
     std::printf(
@@ -165,8 +179,6 @@ int run_classification(
       std::printf("result:    ran (no reference given)\n");
       return 0;
     }
-    const std::vector<float> reference =
-        ptn::runner_utils::read_floats(FLAGS_expected);
     const bool pass = ptn::runner_utils::compare_floats(
         logits, reference, FLAGS_rtol, FLAGS_atol);
     std::printf("result:    %s\n", pass ? "PASS" : "FAIL");
