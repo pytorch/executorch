@@ -4440,3 +4440,99 @@ class TestRefImplementations(unittest.TestCase):
         # With padding=1, output length = (3 + 2*1 - 3) / 1 + 1 = 3
         self.assertEqual(output.shape, (batch_size, length, out_channels))
         self.assertEqual(output.dtype, torch.int8)
+
+    @expand(
+        [
+            (
+                "basic_3d",
+                # input [1, 4, 8] deterministic
+                torch.arange(32, dtype=torch.float32).reshape(1, 4, 8),
+                torch.ones(8, dtype=torch.int8),
+                0.5,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                0.1,  # b_scale
+            ),
+            (
+                "basic_2d",
+                torch.arange(32, dtype=torch.float32).reshape(4, 8),
+                torch.ones(8, dtype=torch.int8),
+                0.5,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                0.1,  # b_scale
+            ),
+            (
+                "basic_4d",
+                # input [1, 2, 3, 8] deterministic — exercises 4D path
+                torch.arange(48, dtype=torch.float32).reshape(1, 2, 3, 8),
+                torch.ones(8, dtype=torch.int8),
+                1.0,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                1.0,  # b_scale
+            ),
+            (
+                "non_uniform_weight_bias",
+                # input [1, 4, 8] deterministic, non-uniform weight and bias
+                torch.arange(32, dtype=torch.float32).reshape(1, 4, 8),
+                torch.arange(-4, 4, dtype=torch.int8),  # weight varies in sign and magnitude
+                0.25,  # w_scale
+                torch.arange(8, dtype=torch.int8),  # bias varies per channel
+                0.5,  # b_scale
+            ),
+        ]
+    )
+    def test_quantized_w8a32_layernorm(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        w_scale: float,
+        bias: torch.Tensor,
+        b_scale: float,
+    ) -> None:
+        output = torch.ops.cadence.quantized_w8a32_layernorm(
+            input_tensor, weight, w_scale, bias, b_scale
+        )
+
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        mean = input_tensor.mean(dim=-1, keepdim=True)
+        var = input_tensor.var(dim=-1, unbiased=False, keepdim=True)
+        expected = (input_tensor - mean) / torch.sqrt(var + 1e-5) * (
+            weight.float() * w_scale
+        ) + bias.float() * b_scale
+        self.assertTrue(
+            torch.allclose(output, expected, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}",
+        )
+
+    @expand(
+        [
+            # weight size must match input channels.
+            (
+                "channel_mismatch",
+                torch.ones(1, 4, 8, dtype=torch.float32),
+                torch.ones(4, dtype=torch.int8),
+                torch.zeros(8, dtype=torch.int8),
+            ),
+        ]
+    )
+    def test_quantized_w8a32_layernorm_invalid_inputs(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+    ) -> None:
+        with self.assertRaises(AssertionError):
+            torch.ops.cadence.quantized_w8a32_layernorm(
+                input_tensor, weight, 1.0, bias, 1.0
+            )

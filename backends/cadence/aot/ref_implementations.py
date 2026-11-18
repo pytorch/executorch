@@ -1723,6 +1723,29 @@ def quantized_w8a32_transpose_conv2d(
     return output.permute(0, 2, 1).unsqueeze(1)
 
 
+@impl_tracked(m, "quantized_w8a32_layernorm")
+def quantized_w8a32_layernorm(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    assert input.dtype == torch.float32
+    assert len(weight.shape) == 1
+    assert len(bias.shape) == 1
+
+    channels = input.shape[-1]
+    assert weight.shape[0] == channels
+    assert bias.shape[0] == channels
+
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+    return F.layer_norm(input, [channels], weight=dequant_weight, bias=dequant_bias)
+
+
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
 def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,

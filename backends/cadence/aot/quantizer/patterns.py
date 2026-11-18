@@ -1779,6 +1779,74 @@ class MixedW8A32Conv2dPattern(MixedW8A32TransposeConv2dPattern):
         return torch.ops.cadence.quantized_w8a32_conv2d.default
 
 
+class MixedW8A32LayerNormPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.layer_norm.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        layer_norm_node = fused_partition[0].nodes[-1]
+
+        if len(layer_norm_node.args) < 4:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        if layer_norm_node.args[2] is None or layer_norm_node.args[3] is None:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        # The kernel normalizes over a SIMD-aligned last dim with the default
+        # epsilon.
+        normalized_shape = layer_norm_node.args[1]
+        if len(normalized_shape) != 1 or normalized_shape[0] % 4 != 0:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+        if layer_norm_node.kwargs or (
+            len(layer_norm_node.args) > 4 and layer_norm_node.args[4] != 1e-5
+        ):
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(layer_norm_node, 2)],
+                biases=[(layer_norm_node, 3)],
+                output=[],
+                others=[(layer_norm_node, 0)],
+            ),
+            layer_norm_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_layernorm.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.args) < 4:
+            return None
+        _arg2 = anchor_node.args[2]
+        dq_weight = (
+            _arg2
+            if isinstance(_arg2, fx.Node) and _arg2.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg3 = anchor_node.args[3]
+        dq_bias = (
+            _arg3
+            if isinstance(_arg3, fx.Node) and _arg3.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_weight is None or dq_bias is None:
+            return None
+        args = (
+            anchor_node.args[0],
+            get_arg(dq_weight, "input", fx.Node),
+            get_arg(dq_weight, "scale", float),
+            get_arg(dq_bias, "input", fx.Node),
+            get_arg(dq_bias, "scale", float),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
+
+
 class RmsNormPattern(QuantizationPattern):
     """Pattern that preserves rms_norm from decomposition without matching anything."""
 
