@@ -393,6 +393,72 @@ def _offer_only_cpp_callable_conv_choices() -> typing.ContextManager[None]:
     return _CPP_CALLABLE_CONV_CHOICES.scope()
 
 
+_CONTIGUITY_HINT_CONDITIONS = {
+    "(M >= BLOCK_M and K > 1)": "(M % BLOCK_M == 0 and K > 1)",
+    "(N >= BLOCK_N and K > 1)": "(N % BLOCK_N == 0 and K > 1)",
+}
+
+
+def _install_full_block_contiguity_hints(active):
+    import hashlib
+    import pathlib
+
+    from torch._inductor import select_algorithm
+    from torch._inductor.kernel import bmm, mm  # noqa: F401 (registers templates)
+
+    templates_dir = pathlib.Path(mm.__file__).parent / "templates"
+    sources = {
+        hashlib.sha256(source.encode("utf-8")).hexdigest(): source
+        for source in (path.read_text() for path in templates_dir.glob("*.jinja"))
+    }
+    replacements = {}
+    for template in select_algorithm.TritonTemplate.all_templates.values():
+        source = patched = sources.get(template.src_hash, "")
+        for condition, full_blocks in _CONTIGUITY_HINT_CONDITIONS.items():
+            patched = patched.replace(condition, full_blocks)
+        if patched != source:
+            replacements[id(template.template)] = template._template_from_string(
+                patched
+            )
+
+    original = select_algorithm.TritonTemplateKernel.render
+
+    def render(self, template, kwargs, *args, **render_kwargs):
+        if active():
+            template = replacements.get(id(template), template)
+        return original(self, template, kwargs, *args, **render_kwargs)
+
+    select_algorithm.TritonTemplateKernel.render = render
+
+    def remove() -> None:
+        select_algorithm.TritonTemplateKernel.render = original
+
+    return remove
+
+
+_FULL_BLOCK_CONTIGUITY_HINTS = _CompilePatch(_install_full_block_contiguity_hints)
+
+
+def _hint_matmul_contiguity_only_for_full_blocks() -> typing.ContextManager[None]:
+    """Claim that a matmul template's rows (or columns) are contiguous only
+    when its block size divides M (or N).
+
+    Inductor's mm and bmm templates hint that each block of ``BLOCK_M`` row
+    indices ``rm % M`` is contiguous, which is false in the last block when
+    ``BLOCK_M`` does not divide M. The template's own loads never vectorize
+    along M, so it is harmless there. A fused prologue, though, can read the
+    first operand from a buffer contiguous along M, such as a LayerNorm of
+    channel-first features seen as tokens; Triton then vectorizes those loads
+    across the wrap and the kernel faults with a misaligned address.
+
+    Only threads inside this context render the templates with the change.
+
+    TODO: remove once Inductor's matmul templates hint only contiguity that
+    holds.
+    """
+    return _FULL_BLOCK_CONTIGUITY_HINTS.scope()
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -1556,6 +1622,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 stack.enter_context(_link_libraries_as_needed())
                 stack.enter_context(_pass_float_scalars_to_triton_as_floats())
                 stack.enter_context(_offer_only_cpp_callable_conv_choices())
+                stack.enter_context(_hint_matmul_contiguity_only_for_full_blocks())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
