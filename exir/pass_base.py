@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+import copy
 import operator
 import traceback
 from abc import ABC, abstractmethod
@@ -28,6 +29,10 @@ from typing import (
 
 import torch
 from executorch.exir import memory
+from executorch.exir._node_provenance import (
+    _snapshot_node_sources,
+    freeze_node_provenance,
+)
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -508,6 +513,7 @@ class _ExportPassBase(PassBase):
             super().__init__(gm)
             self.callback = callback
             self.node: torch.fx.Node = next(iter(gm.graph.nodes))
+            self.provenance_snapshots: Dict[int, fx_traceback.NodeSource] = {}
 
         def placeholder(  # pyre-fixme[14]
             self,
@@ -602,10 +608,19 @@ class _ExportPassBase(PassBase):
         ) -> None:
             raise ExportPassBaseError("call_method is not supported.")
 
-        def run_node(self, n: torch.fx.Node) -> Argument:
-            self.node = n
-            self.callback.node_debug_str = n.format_node()
-            return super().run_node(n)
+        def run_node(self, node: torch.fx.Node) -> Argument:
+            replay_node = node
+            if sources := node.meta.get("from_node"):
+                frozen_sources = _snapshot_node_sources(
+                    sources, self.provenance_snapshots
+                )
+                if frozen_sources is not sources:
+                    replay_node = copy.copy(node)
+                    replay_node.meta = node.meta.copy()
+                    replay_node.meta["from_node"] = frozen_sources
+            self.node = replay_node
+            self.callback.node_debug_str = node.format_node()
+            return super().run_node(replay_node)
 
     def __init__(self) -> None:
         self.interpreter = torch.fx.Interpreter(
@@ -925,6 +940,7 @@ class _ExportPassBase(PassBase):
         with fx_traceback.preserve_node_meta():
             interpreter.run(*inputs_data)
 
+        freeze_node_provenance(self.tracer.graph)
         new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
         self._validate_symbolic_input_snapshots(graph_module, new_graph_module)
 

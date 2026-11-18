@@ -272,6 +272,7 @@ def define_common_targets(is_fbcode = False):
     python_unittest(
         name = "pass_infra",
         srcs = [
+            "test_node_provenance.py",
             "test_pass_infra.py",
         ],
         deps = [
