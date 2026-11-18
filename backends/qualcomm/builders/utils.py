@@ -7,6 +7,11 @@
 from typing import Any, Dict, Optional
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
+)
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -180,17 +185,26 @@ def is_constant(
 
 
 def deduce_dtype(
-    tensor: torch.Tensor, quant_infos: Optional[Dict] = None
+    tensor: Optional[torch.Tensor], quant_infos: Optional[Dict] = None
 ) -> torch.dtype:
     if quant_infos:
-        quant_range = quant_infos["quant_max"] - quant_infos["quant_min"]
-        unsigned = quant_infos["quant_min"] >= 0
+        quant_min = quant_infos[QCOM_QUANT_MIN]
+        quant_max = quant_infos[QCOM_QUANT_MAX]
+        quant_range = quant_max - quant_min
+        unsigned = quant_min >= 0
         if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
             return torch.uint8 if unsigned else torch.int8
 
         elif quant_range <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min:
             return torch.uint16 if unsigned else torch.int16
 
-        return quant_infos["dtype"]
+        if quant_infos.get(QCOM_DTYPE) is None:
+            raise ValueError(
+                f"quant_infos spans a range wider than int16 but has no '{QCOM_DTYPE}' "
+                "key to fall back on"
+            )
+        return quant_infos[QCOM_DTYPE]
 
+    if tensor is None:
+        raise ValueError("deduce_dtype requires either quant_infos or tensor")
     return tensor.dtype

@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, Dict, List
+import logging
+from typing import Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -12,11 +13,13 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
     q_ops,
 )
-from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.builders.utils import deduce_dtype, get_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
     QCOM_SCALE,
     QCOM_SCALES,
 )
@@ -24,7 +27,33 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
 
 
-def _create_q_or_dq_node(
+def _normalize_dtype(quant_attrs: Optional[Dict] = None) -> Optional[Dict]:
+    # Containers like dtype=torch.int32 are sometimes used for ranges PyTorch
+    # has no native dtype for at annotation time (e.g. uint16). Deduce the
+    # dtype from quant_min/quant_max, the same way node_visitor.py's
+    # get_data_type() does for every other quantized tensor, and correct the
+    # declared dtype if it disagrees.
+    deduced_dtype = deduce_dtype(None, quant_attrs)
+    quant_min = quant_attrs.get(QCOM_QUANT_MIN)
+    quant_max = quant_attrs.get(QCOM_QUANT_MAX)
+    if deduced_dtype == quant_attrs.get(QCOM_DTYPE):
+        logging.debug(
+            f"_normalize_dtype: declared dtype {quant_attrs.get(QCOM_DTYPE)} "
+            f"already matches deduced dtype for quant_min={quant_min}, "
+            f"quant_max={quant_max}"
+        )
+        return quant_attrs
+    fixed = dict(quant_attrs)
+    fixed[QCOM_DTYPE] = deduced_dtype
+    logging.debug(
+        f"_normalize_dtype: correcting declared dtype {quant_attrs.get(QCOM_DTYPE)} "
+        f"to deduced dtype {deduced_dtype} for quant_min={quant_min}, "
+        f"quant_max={quant_max}"
+    )
+    return fixed
+
+
+def _create_q_or_dq_node(  # noqa: C901
     graph_module: torch.fx.GraphModule,
     node: torch.fx.node,
     target: torch.fx.node.Target,
@@ -58,8 +87,22 @@ def _create_q_or_dq_node(
 
     # check if there has a specified quant_attrs
     # if not, use the existent info. from current node
+    quant_attrs_from_node_meta = quant_attrs is None
     if quant_attrs is None:
         quant_attrs = node.meta.get(QCOM_QUANT_ATTRS)
+    if target in q_ops and pop_quant_attrs and quant_attrs_from_node_meta:
+        # The double-processing check only makes sense when quant_attrs was
+        # sourced from node.meta above: an explicitly-supplied quant_attrs is
+        # independent of node.meta, so node.meta already lacking
+        # QCOM_QUANT_ATTRS there is expected, not evidence of double-processing.
+        # Checked here, before create_args() below indexes into quant_attrs,
+        # so a missing QCOM_QUANT_ATTRS raises this message instead of an
+        # opaque TypeError from subscripting quant_attrs=None.
+        assert (
+            QCOM_QUANT_ATTRS in node.meta
+        ), f"{node} is being double-processed: {QCOM_QUANT_ATTRS} already popped"
+
+    quant_attrs = _normalize_dtype(quant_attrs)
 
     inserted_node = graph_module.graph.create_node(
         "call_function",
@@ -68,11 +111,12 @@ def _create_q_or_dq_node(
     )
     meta_val = node.meta["val"]
     if target in q_ops:
-        inserted_node.meta[QCOM_QUANT_ATTRS] = (
-            node.meta.pop(QCOM_QUANT_ATTRS)
-            if pop_quant_attrs
-            else node.meta.get(QCOM_QUANT_ATTRS)
-        )
+        if pop_quant_attrs:
+            if quant_attrs_from_node_meta:
+                node.meta.pop(QCOM_QUANT_ATTRS)
+            else:
+                node.meta.pop(QCOM_QUANT_ATTRS, None)
+        inserted_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         meta_val = meta_val.to(quant_attrs["dtype"])
 
     inserted_node.meta["val"] = meta_val

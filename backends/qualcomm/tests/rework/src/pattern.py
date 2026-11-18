@@ -4287,6 +4287,51 @@ class InsertIOQDQ:
             case _:
                 raise AssertionError(f"unhandled backend_type: {backend_type}")
 
+    @staticmethod
+    @unpack_pass_fixtures
+    def test_wide_activation_container_dtype_normalized(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+        # use_16a8w declares activation boundaries with a torch.int32 container
+        # holding a uint16 range (PyTorch has no native uint16). InsertIOQDQ
+        # (shared by HTP/GPU) deduces/corrects that container to uint16, same
+        # as LpaiPartitionFallbackSupport's boundary Q/DQ insertion.
+        wide_quantizer = make_quantizer(
+            backend=backend_type, quant_dtype=QuantDtype.use_16a8w
+        )
+        module = InsertIOQDQ._Basic()
+        inputs = (torch.randn(1, 4),)
+        target_pass = _passes.InsertIOQDQ
+        gm = pass_pipeline.lower_preprocess_gm(
+            module=module,
+            sample_input=inputs,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=target_pass,
+            quantizer=wide_quantizer,
+        )
+        q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+        dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        assertions.assert_target_count(gm, q_op, 1)
+        assertions.assert_target_count(gm, dq_op, 1)
+        # Q's output *is* the quantized value, so its dtype must normalize to uint16.
+        assertions.assert_target_dtype(gm, q_op, torch.uint16)
+        # DQ's output is always the dequantized float value; the declared
+        # container dtype instead lives in its "dtype" schema argument.
+        dq_node = next(
+            n for n in gm.graph.nodes if n.op == "call_function" and n.target == dq_op
+        )
+        dtype_idx = [a.name for a in dq_op._schema.arguments].index("dtype")
+        assert (
+            dq_node.args[dtype_idx] == torch.uint16
+        ), f"{dq_node} expected dtype arg torch.uint16, got {dq_node.args[dtype_idx]}"
+
 
 class InsertRequantize:
     @staticmethod
@@ -4698,6 +4743,224 @@ class LpaiPartitionFallbackSupport:
                     assertions.assert_meta_key_on_named_node(
                         gm, dq_out.name, QCOM_BYPASS_NODE
                     )
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test_16a8w_normalizes_container_dtype(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+        # use_16a8w declares activation boundaries with a torch.int32 container
+        # holding a uint16 range (PyTorch has no native uint16).
+        # LpaiPartitionFallbackSupport's boundary Q/DQ insertion must
+        # deduce/correct that container to uint16, same as InsertIOQDQ
+        # (HTP/GPU, see test_wide_activation_container_dtype_normalized).
+        wide_quantizer = make_quantizer(
+            backend=backend_type, quant_dtype=QuantDtype.use_16a8w
+        )
+        module = SimpleModel()
+        inputs = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        target_pass = _passes.LpaiPartitionFallbackSupport
+
+        gm = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=inputs,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=target_pass,
+            quantizer=wide_quantizer,
+            skip_node_id_set=LpaiPartitionFallbackSupport._SKIP_NODE_ID_SET,
+        ).graph_module
+
+        def assert_dq_dtype_arg_normalized(dq):
+            # dq.meta["val"] is only a copy of its input Q node's meta["val"]
+            # (see insert_dequant_node -> _create_q_or_dq_node, which only
+            # recomputes meta["val"] for a q_ops target); it doesn't reflect
+            # anything about this dq node itself. The CPU dequantize kernel
+            # asserts on the declared "dtype" schema argument instead, so
+            # that's the signal to check here (same as InsertIOQDQ's
+            # test_wide_activation_container_dtype_normalized).
+            dtype_idx = [a.name for a in dq.target._schema.arguments].index("dtype")
+            assert dq.args[dtype_idx] == torch.uint16, (
+                f"expected {dq.name}'s int32-declared uint16-range boundary "
+                f"to normalize to torch.uint16, got {dq.args[dtype_idx]}"
+            )
+
+        for name in LpaiPartitionFallbackSupport._SKIP_NODE_ID_SET:
+            fallback_node = next(n for n in gm.graph.nodes if n.name == name)
+            input_dqs = [
+                i
+                for i in fallback_node.all_input_nodes
+                if i.op == "call_function" and i.target in dq_ops
+            ]
+            assert input_dqs, f"expected DQ inputs feeding {name}, found none"
+            for dq in input_dqs:
+                assert_dq_dtype_arg_normalized(dq)
+                q = dq.args[0]
+                assert q.meta["val"].dtype == torch.uint16, (
+                    f"expected {q.name}'s int32-declared uint16-range "
+                    f"boundary to normalize to torch.uint16, got "
+                    f"{q.meta['val'].dtype}"
+                )
+
+        # preserve_io_qdq's output-boundary DQ (dq2, fed straight into the
+        # graph's output) -- this is where the original accuracy bug was
+        # found; the loop above only covers DQs feeding internal fallback
+        # nodes, not this one.
+        output_dqs = [
+            n
+            for n in gm.graph.output_node().all_input_nodes
+            if n.op == "call_function" and n.target in dq_ops
+        ]
+        assert output_dqs, "expected a DQ feeding the graph output, found none"
+        for dq in output_dqs:
+            assert_dq_dtype_arg_normalized(dq)
+
+
+class NormalizeDtype:
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm._passes.utils import _normalize_dtype
+        from executorch.backends.qualcomm.utils.constants import (
+            QCOM_DTYPE,
+            QCOM_QUANT_MAX,
+            QCOM_QUANT_MIN,
+        )
+
+        corrected_cases = [
+            (
+                "unsigned_full_uint16_range_deduces_uint16",
+                {QCOM_QUANT_MIN: 0, QCOM_QUANT_MAX: 65535, QCOM_DTYPE: torch.int32},
+                torch.uint16,
+            ),
+            (
+                "signed_int8_range_deduces_int8",
+                {QCOM_QUANT_MIN: -128, QCOM_QUANT_MAX: 127, QCOM_DTYPE: torch.int32},
+                torch.int8,
+            ),
+            (
+                "signed_int16_range_deduces_int16",
+                {
+                    QCOM_QUANT_MIN: -32768,
+                    QCOM_QUANT_MAX: 32767,
+                    QCOM_DTYPE: torch.int32,
+                },
+                torch.int16,
+            ),
+            (
+                "unsigned_4bit_range_deduces_uint8",
+                {QCOM_QUANT_MIN: 0, QCOM_QUANT_MAX: 15, QCOM_DTYPE: torch.int32},
+                torch.uint8,
+            ),
+            (
+                "signed_4bit_range_deduces_int8",
+                {QCOM_QUANT_MIN: -8, QCOM_QUANT_MAX: 7, QCOM_DTYPE: torch.int32},
+                torch.int8,
+            ),
+        ]
+        for label, quant_attrs, expected_dtype in corrected_cases:
+            with subtests.test(msg=label):
+                normalized = _normalize_dtype(quant_attrs)
+                assert normalized[QCOM_DTYPE] == expected_dtype
+                assert normalized is not quant_attrs
+
+        with subtests.test(msg="full_int32_bias_range_keeps_declared_dtype"):
+            quant_attrs = {
+                QCOM_QUANT_MIN: torch.iinfo(torch.int32).min,
+                QCOM_QUANT_MAX: torch.iinfo(torch.int32).max,
+                QCOM_DTYPE: torch.int32,
+            }
+            normalized = _normalize_dtype(quant_attrs)
+            assert normalized is quant_attrs
+            assert normalized[QCOM_DTYPE] == torch.int32
+
+
+class DeduceDtype:
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm.builders.utils import deduce_dtype
+        from executorch.backends.qualcomm.utils.constants import (
+            QCOM_DTYPE,
+            QCOM_QUANT_MAX,
+            QCOM_QUANT_MIN,
+        )
+
+        deduced_cases = [
+            (
+                "unsigned_full_uint16_range_deduces_uint16",
+                {QCOM_QUANT_MIN: 0, QCOM_QUANT_MAX: 65535},
+                torch.uint16,
+            ),
+            (
+                "signed_int8_range_deduces_int8",
+                {QCOM_QUANT_MIN: -128, QCOM_QUANT_MAX: 127},
+                torch.int8,
+            ),
+            (
+                "signed_int16_range_deduces_int16",
+                {QCOM_QUANT_MIN: -32768, QCOM_QUANT_MAX: 32767},
+                torch.int16,
+            ),
+            (
+                "unsigned_4bit_range_deduces_uint8",
+                {QCOM_QUANT_MIN: 0, QCOM_QUANT_MAX: 15},
+                torch.uint8,
+            ),
+            (
+                "signed_4bit_range_deduces_int8",
+                {QCOM_QUANT_MIN: -8, QCOM_QUANT_MAX: 7},
+                torch.int8,
+            ),
+        ]
+        for label, quant_infos, expected_dtype in deduced_cases:
+            with subtests.test(msg=label):
+                assert deduce_dtype(None, quant_infos) == expected_dtype
+
+        with subtests.test(msg="wide_range_falls_back_to_dtype_key"):
+            quant_infos = {
+                QCOM_QUANT_MIN: torch.iinfo(torch.int32).min,
+                QCOM_QUANT_MAX: torch.iinfo(torch.int32).max,
+                QCOM_DTYPE: torch.int32,
+            }
+            assert deduce_dtype(None, quant_infos) == torch.int32
+
+        with subtests.test(msg="wide_range_without_dtype_key_raises_value_error"):
+            quant_infos = {
+                QCOM_QUANT_MIN: torch.iinfo(torch.int32).min,
+                QCOM_QUANT_MAX: torch.iinfo(torch.int32).max,
+            }
+            with pytest.raises(ValueError):
+                deduce_dtype(None, quant_infos)
+
+        with subtests.test(msg="quant_infos_takes_precedence_over_tensor"):
+            quant_infos = {QCOM_QUANT_MIN: -128, QCOM_QUANT_MAX: 127}
+            tensor = torch.zeros(1, dtype=torch.float32)
+            assert deduce_dtype(tensor, quant_infos) == torch.int8
+
+        with subtests.test(msg="falls_back_to_tensor_dtype_when_quant_infos_is_none"):
+            tensor = torch.zeros(1, dtype=torch.float32)
+            assert deduce_dtype(tensor, None) == torch.float32
+
+        with subtests.test(msg="falls_back_to_tensor_dtype_when_quant_infos_is_empty"):
+            tensor = torch.zeros(1, dtype=torch.float32)
+            assert deduce_dtype(tensor, {}) == torch.float32
+
+        with subtests.test(msg="no_quant_infos_or_tensor_raises_value_error"):
+            with pytest.raises(ValueError):
+                deduce_dtype(None, None)
+
+        with subtests.test(msg="missing_quant_min_raises_key_error"):
+            with pytest.raises(KeyError):
+                deduce_dtype(None, {QCOM_QUANT_MAX: 127})
+
+        with subtests.test(msg="missing_quant_max_raises_key_error"):
+            with pytest.raises(KeyError):
+                deduce_dtype(None, {QCOM_QUANT_MIN: -128})
 
 
 class RecomposeHadamard:
