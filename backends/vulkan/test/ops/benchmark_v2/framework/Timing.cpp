@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -27,6 +28,19 @@ using Clock = std::chrono::steady_clock;
 Report read_gpu_clock(GpuClock* clock) {
   const auto frequency = clock ? clock->read_mhz() : std::nullopt;
   return frequency ? Report(*frequency) : Report();
+}
+
+double median(std::vector<double> values) {
+  if (values.empty()) {
+    return std::nan("");
+  }
+  const size_t mid = values.size() / 2;
+  std::nth_element(values.begin(), values.begin() + mid, values.end());
+  const double upper = values[mid];
+  if (values.size() % 2 == 1) {
+    return upper;
+  }
+  return (*std::max_element(values.begin(), values.begin() + mid) + upper) / 2;
 }
 
 int64_t monotonic_ns(Clock::time_point time) {
@@ -44,6 +58,7 @@ Report profile_operator_shaders(
     uint32_t query_limit,
     uint32_t warmup,
     uint32_t runs,
+    double unprofiled_operator_us,
     GpuClock* gpu_clock) {
   auto& context = *graph.context();
   context.flush();
@@ -91,7 +106,9 @@ Report profile_operator_shaders(
         shaders_per_invocation,
         {std::nullopt, std::nullopt, {"Shader binding metadata unavailable"}});
   }
-  if (shaders_per_invocation > query_limit / 2) {
+  // Each dispatch records previous work, barrier, and shader execution finish.
+  constexpr uint32_t kQueriesPerDispatch = 3;
+  if (shaders_per_invocation > query_limit / kQueriesPerDispatch) {
     throw UnsupportedRoute(
         "Operator dispatch chain exceeds timestamp query capacity");
   }
@@ -99,13 +116,15 @@ Report profile_operator_shaders(
       ? 1u
       : std::min(
             count,
-            static_cast<uint32_t>(query_limit / (2 * shaders_per_invocation)));
-  if (count > 1) {
-    context.flush();
-    context.set_cmd(true);
-    context.cmd_reset_querypool();
-    encode_batch(count);
-  }
+            static_cast<uint32_t>(
+                query_limit / (kQueriesPerDispatch * shaders_per_invocation)));
+  // Re-record the batch inside a timestamp pair to measure profiling overhead.
+  context.flush();
+  context.set_cmd(true);
+  context.cmd_reset_querypool();
+  timestamps.begin(context.extract_cmd());
+  encode_batch(count);
+  timestamps.end(context.extract_cmd());
   vkapi::VulkanFence fence(context.device());
   auto replay = [&]() {
     context.submit_cmd_to_gpu(fence.get_submit_handle());
@@ -117,14 +136,22 @@ Report profile_operator_shaders(
   Report dispatches = Report::array();
   Report clock_samples = Report::array();
   std::vector<std::vector<double>> samples;
+  std::vector<std::vector<double>> barrier_samples;
+  std::vector<std::vector<double>> gap_samples;
+  std::vector<double> profiled_operator_us;
+  size_t order_violations = 0;
   for (uint32_t i = 0; i < runs; ++i) {
     const Report clock_start = read_gpu_clock(gpu_clock);
     replay();
     if (gpu_clock) {
       clock_samples.push_back({clock_start, read_gpu_clock(gpu_clock)});
     }
+    profiled_operator_us.push_back(timestamps.elapsed_us() / count);
     const auto shaders = context.querypool().get_shader_timestamp_ticks();
+    order_violations += vkapi::count_order_violations(shaders);
     std::vector<double> durations;
+    std::vector<double> barriers;
+    std::vector<double> gaps;
     for (size_t j = 0; j < shaders.size(); ++j) {
       const auto& shader = shaders[j];
       if (i == 0 && j < shaders_per_invocation) {
@@ -136,15 +163,35 @@ Report profile_operator_shaders(
              {"lwg_size",
               {{"method", "operator"}, {"value", shader.metadata.lwg}}}});
       }
-      durations.push_back(
-          timestamps.elapsed_us(shader.start_ticks, shader.end_ticks));
+      durations.push_back(timestamps.elapsed_us(
+          shader.barrier_finish_ticks, shader.shader_exec_finish_ticks));
+      barriers.push_back(timestamps.elapsed_us(
+          shader.previous_work_finish_ticks, shader.barrier_finish_ticks));
+      // The batch's first dispatch has no preceding dispatch.
+      gaps.push_back(
+          j == 0 ? std::nan("")
+                 : timestamps.elapsed_us(
+                       shaders[j - 1].shader_exec_finish_ticks,
+                       shader.previous_work_finish_ticks));
     }
     samples.push_back(std::move(durations));
+    barrier_samples.push_back(std::move(barriers));
+    gap_samples.push_back(std::move(gaps));
   }
   Report result = {
       {"shader_profile_invocations_per_batch", count},
+      {"shader_profile_order_violations", order_violations},
+      {"shader_profile_overhead_ratio",
+       median(profiled_operator_us) / unprofiled_operator_us},
       {"shader_breakdown",
-       shader_breakdown_report(dispatches, samples, count, spec, work)}};
+       shader_breakdown_report(
+           dispatches,
+           samples,
+           count,
+           spec,
+           work,
+           barrier_samples,
+           gap_samples)}};
   if (gpu_clock) {
     result["shader_profile_batch_observed_gpu_clock_freq_MHz"] =
         std::move(clock_samples);
@@ -298,6 +345,7 @@ Report measure(
         graph.graphconfig().context_config.query_pool_config.max_query_count,
         warmup,
         runs,
+        median(gpu_samples) / count,
         gpu_clock));
   }
   return result;
