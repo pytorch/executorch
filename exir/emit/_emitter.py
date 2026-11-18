@@ -33,7 +33,7 @@ import hashlib
 import operator
 import typing
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import executorch.exir.memory as memory
@@ -100,6 +100,20 @@ from torch.utils import _pytree as pytree
 from typing_extensions import TypeAlias
 
 
+def _normalize_constant_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
+    if not (
+        tensor.is_contiguous()
+        or tensor.is_contiguous(memory_format=torch.channels_last)
+    ):
+        tensor = tensor.contiguous()
+
+    # Weights cannot be views during emission or serialization
+    if tensor.nbytes != tensor.untyped_storage().nbytes():
+        tensor = tensor.clone()
+    return tensor
+
+
 @dataclass
 class _ProgramState:
     """State shared between all methods of a program and the graph module it represents.
@@ -133,6 +147,11 @@ class _ProgramState:
     # Each constant_tag groups a set of constants together.
     # {constant_tag: {fqn: index into external_constant_buffer}}
     external_constant_map: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    # {fqn: (first method, (buffer index, dtype, shape, dim order))}
+    external_constant_owners: Dict[str, Tuple[str, Tuple[object, ...]]] = field(
+        default_factory=dict
+    )
+    method_constant_names: Dict[Tuple[str, str], str] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +168,7 @@ class _EmitterState:
     operator_cache: Dict[Tuple[str, str], int]
     emit_stacktrace: bool
     emit_mutable_buffer_names: bool
+    method_name: str = ""
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
     # Only literal arguments with no schema aliasing enter this per-plan pool.
@@ -391,12 +411,26 @@ class _Emitter(torch.fx.Interpreter):
         fqn: str,
         buffer_idx: int,
         constant_tag: str,
+        spec: TensorSpec,
     ) -> None:
         """
         Saves external constant to the map.
         """
         # buffer data should be in the external_constant_buffer already.
         assert buffer_idx < len(self.program_state.external_constant_buffer)
+        method = self.emitter_state.method_name
+        entry = (buffer_idx, spec.dtype, tuple(spec.shape), tuple(spec.dim_order))
+        owner, existing = self.program_state.external_constant_owners.setdefault(
+            fqn, (method, entry)
+        )
+        if existing != entry:
+            raise ExportError(
+                ExportErrorType.VIOLATION_OF_SPEC,
+                f"External constant '{fqn}' differs between methods '{owner}' and '{method}'. "
+                "Parameters and buffers keep their names in the weights file, so give "
+                "differing ones distinct names, e.g. by wrapping each method's model "
+                "under a different attribute name.",
+            )
         if constant_tag not in self.program_state.external_constant_map:
             self.program_state.external_constant_map[constant_tag] = {}
         self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
@@ -433,7 +467,10 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.external_constant_hash[hashed] = buffer_idx
             self.program_state.external_constant_buffer.append(buffer_data)
             self._save_to_external_constant_map(
-                spec.extra_tensor_info.fully_qualified_name, buffer_idx, constant_tag
+                spec.extra_tensor_info.fully_qualified_name,
+                buffer_idx,
+                constant_tag,
+                spec,
             )
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
@@ -520,6 +557,7 @@ class _Emitter(torch.fx.Interpreter):
                         spec.extra_tensor_info.fully_qualified_name,
                         buffer_idx,
                         constant_tag,
+                        spec,
                     )
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
@@ -2087,13 +2125,25 @@ class _TopLevelEmitter(_Emitter):
                 assert (
                     fqn is not None
                 ), "constant tagged tensors require a fully qualified name"
+                external_fqn = fqn
+                if (
+                    target
+                    in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+                ):
+                    external_fqn = self.program_state.method_constant_names[
+                        (self.name, fqn)
+                    ]
                 if spec.extra_tensor_info is None:
                     spec.extra_tensor_info = ExtraTensorInfo(
-                        fully_qualified_name=fqn, location=TensorDataLocation.EXTERNAL
+                        fully_qualified_name=external_fqn,
+                        location=TensorDataLocation.EXTERNAL,
                     )
                 else:
-                    spec.extra_tensor_info.fully_qualified_name = fqn
-                    spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
+                    spec.extra_tensor_info = replace(
+                        spec.extra_tensor_info,
+                        fully_qualified_name=external_fqn,
+                        location=TensorDataLocation.EXTERNAL,
+                    )
 
             if is_mutable_buffer:
                 # Emit names if we are supposed to.
@@ -2140,17 +2190,7 @@ class _TopLevelEmitter(_Emitter):
 
             # assign the storage of the placeholder spec to the storage of the real tensor if there is one
             if real_tensor is not None:
-                # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
-                if not (
-                    real_tensor.is_contiguous()
-                    or real_tensor.is_contiguous(memory_format=torch.channels_last)
-                ):
-                    real_tensor = real_tensor.contiguous()
-
-                # Weights cannot be views during emission or serialization
-                if real_tensor.nbytes != real_tensor.untyped_storage().nbytes():
-                    real_tensor = real_tensor.clone()
-
+                real_tensor = _normalize_constant_tensor(real_tensor)
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
                 spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))

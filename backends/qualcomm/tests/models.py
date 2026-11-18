@@ -400,6 +400,17 @@ class CastToLong(torch.nn.Module):
         return x.to(torch.long)
 
 
+class CastIntToFloat(torch.nn.Module):
+    def __init__(self, add_one=True):
+        super().__init__()
+        self.add_one = add_one
+
+    def forward(self, x, y):
+        if self.add_one:
+            x = x + 1
+        return y + x.float()
+
+
 class CastMultiUsers(torch.nn.Module):
     def __init__(self):
         super().__init__()

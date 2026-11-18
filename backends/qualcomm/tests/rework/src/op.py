@@ -962,10 +962,11 @@ class Cast(torch.nn.Module):
         inputs = [
             (torch.randn(1, 2, 3, 4),),
             (torch.randint(-10, 10, (1, 2, 3, 4)),),
+            (torch.randint(0, 100, (1, 2, 3, 4), dtype=torch.uint8),),
         ]
-        dtypes = [torch.long, torch.float]
+        dtypes = [torch.long, torch.float, torch.float]
         for input, dtype in zip(inputs, dtypes):
-            with subtests.test(msg=f"to dtype:{dtype}"):
+            with subtests.test(msg=f"{input[0].dtype} to dtype:{dtype}"):
                 with expected as metrics:
                     export_and_verify(
                         module=__class__(dtype=dtype),

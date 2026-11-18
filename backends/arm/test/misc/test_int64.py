@@ -151,9 +151,9 @@ class Int64Constant(torch.nn.Module):
 
 
 # A listed operator delegates when every operand casts to int64; an unlisted
-# operator or an operand narrower than int32 falls back instead. to_edge widens
-# the operands of some operators, such as cat, before partitioning. The widening
-# cast delegates from int32 or bool and stays on the CPU from int8.
+# operator or a uint8 operand falls back instead. to_edge widens the operands of
+# some operators, such as cat, before partitioning. The widening cast delegates
+# from bool, int8, int16 and int32.
 int64_extension_partition_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
     "pad": (lambda x: torch.nn.functional.pad(x, (1, 1)), (_WIDE,), 1),
@@ -163,7 +163,13 @@ int64_extension_partition_suite = {
     "cat_narrow_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _NARROW), 1),
     "or_narrow": (torch.bitwise_or, (_WIDE, _NARROW), 1),
     "cat_byte_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
-    "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 0),
+    "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 1),
+    "or_short": (torch.bitwise_or, (_WIDE, _BYTES.to(torch.int16)), 1),
+    "where_byte_zero_dim": (
+        torch.where,
+        (_COND, _BYTES, torch.tensor(2**40 + 7)),
+        1,
+    ),
     "eq_bool": (lambda x, y: x == y, (_WIDE, _FLAGS), 1),
     "cat_bool_promoted": (lambda x, y: torch.cat([x, y]), (_FLAGS, _WIDE), 1),
     "or_bool": (torch.bitwise_or, (_FLAGS, _WIDE), 1),
@@ -174,6 +180,15 @@ int64_extension_partition_suite = {
         1,
     ),
     "gt_buffer_narrow": (Int64Buffer(lambda wide, x: x > wide), (_NARROW,), 1),
+    "gt_wide_buffer_byte": (Int64Buffer(lambda wide, x: x > wide), (_BYTES,), 1),
+    "any_buffer": (
+        Int64Buffer(
+            lambda flags, x: flags.any(dim=(0,)) | (x > 0).any(),
+            torch.tensor([0, 3, 0, 1]),
+        ),
+        (_BYTES,),
+        1,
+    ),
     "gt_small_buffer_byte": (
         Int64Buffer(lambda small, x: x > small, torch.tensor([10, 20, 1, 2])),
         (_BYTES,),
@@ -228,14 +243,14 @@ int64_extension_partition_suite = {
         (_WIDE, _WIDE_2),
         1,
     ),
-    "where_scalar_tensor": (torch.where, (_COND, _NARROW, torch.tensor(2**40)), 0),
+    "where_scalar_tensor": (torch.where, (_COND, _NARROW, torch.tensor(2**40)), 1),
     "where_scalar_buffer": (
         Int64Buffer(
             lambda value, cond, x: torch.where(cond, x, value),
             torch.tensor(2**40 + 7),
         ),
         (_COND, _NARROW),
-        0,
+        1,
     ),
     "lt_float": (lambda x: x < 0.5, (torch.tensor([-1, 0, 1]),), 0),
     "strided_slice": (lambda x: x[::2], (torch.arange(5) * 2**33,), 1),
@@ -272,7 +287,7 @@ def test_int64_extension_partition_tosa_INT(test_data: Tuple):
 
 @common.parametrize(
     "test_data",
-    {"narrow": (_NARROW, 0), "bool": (_FLAGS, 0), "byte": (_BYTES, 1)},
+    {"narrow": (_NARROW, 0), "bool": (_FLAGS, 0), "byte": (_BYTES, 0)},
 )
 def test_int64_extension_widening_cast_placement_tosa_INT(test_data: Tuple):
     narrow, cpu_casts = test_data

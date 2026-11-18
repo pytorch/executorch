@@ -8,6 +8,7 @@
 the calls of one sample when its shapes are dynamic."""
 
 import inspect
+import unittest
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
@@ -109,22 +110,28 @@ class _SuiteRunner:
         self.calls.append((model, tuple(inputs)))
 
 
+def _suite_run(test: Callable, seed: int) -> list[tuple[torch.nn.Module, Inputs]]:
+    torch.manual_seed(seed)
+    runner = _SuiteRunner()
+    if "dtype" in inspect.signature(test).parameters:
+        test(runner, torch.float32)
+    else:
+        test(runner)
+    return runner.calls
+
+
 def suite_cases(module: ModuleType, samples: int) -> list[Case]:
     """One case per model a backend test suite operator module lowers, with
-    inputs from up to `samples` runs under different seeds."""
+    inputs from up to `samples` runs under different seeds. Skipped tests lower
+    none."""
     cases = []
     for test_name, test in sorted(vars(module).items()):
         if not test_name.startswith("test_"):
             continue
-        runs = []
-        for seed in range(samples):
-            torch.manual_seed(seed)
-            runner = _SuiteRunner()
-            if "dtype" in inspect.signature(test).parameters:
-                test(runner, torch.float32)
-            else:
-                test(runner)
-            runs.append(runner.calls)
+        try:
+            runs = [_suite_run(test, seed) for seed in range(samples)]
+        except unittest.SkipTest:
+            continue
         lowered = [[(type(m), [x.shape for x in xs]) for m, xs in run] for run in runs]
         if any(seed_lowered != lowered[0] for seed_lowered in lowered):
             raise ValueError(f"{test_name} lowers different models across seeds")

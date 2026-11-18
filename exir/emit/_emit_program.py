@@ -5,20 +5,24 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+import ctypes
+import hashlib
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.fx
 from executorch.exir.emit._emitter import (
     _DelegateDebugIdentifierMap,
     _EmitterState,
+    _normalize_constant_tensor,
     _ProgramState,
     _TopLevelEmitter,
 )
 from executorch.exir.error import ExportError, ExportErrorType
 
 from executorch.exir.schema import Buffer, Program, SubsegmentOffsets
+from executorch.exir.tensor import dim_order_from_stride
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.utils import _pytree as pytree
@@ -115,11 +119,84 @@ def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int
     return training_metadata
 
 
+def _external_constant_fingerprint(
+    tensor: torch.Tensor,
+) -> Tuple[torch.dtype, Tuple[int, ...], Tuple[int, ...], bytes]:
+    tensor = _normalize_constant_tensor(tensor.detach())
+    storage = tensor.untyped_storage()
+    data = (
+        (ctypes.c_char * storage.nbytes()).from_address(storage.data_ptr())
+        if tensor.numel()
+        else b""
+    )
+    return (
+        tensor.dtype,
+        tuple(tensor.shape),
+        tuple(
+            int(dim)
+            for dim in dim_order_from_stride(tensor.stride(), tuple(tensor.shape))
+        ),
+        hashlib.sha256(data).digest(),
+    )
+
+
+def _external_constants_match(tensors: List[torch.Tensor]) -> bool:
+    first = tensors[0]
+    if all(tensor is first for tensor in tensors):
+        return True
+    # Leave non-host-readable storage to the emitter's device validation.
+    if any(
+        tensor.untyped_storage().device.type != "cpu" and tensor.numel()
+        for tensor in tensors
+    ):
+        return False
+    fingerprint = _external_constant_fingerprint(first)
+    return all(
+        tensor is first or _external_constant_fingerprint(tensor) == fingerprint
+        for tensor in tensors[1:]
+    )
+
+
+def _plan_external_constant_names(
+    methods: Dict[str, ExportedProgram], reserved_names: Set[str]
+) -> Dict[Tuple[str, str], str]:
+    constants: Dict[str, Dict[str, torch.Tensor]] = {}
+    for method, program in sorted(methods.items()):
+        lifted = program.graph_signature.inputs_to_lifted_tensor_constants
+        for node in program.graph.find_nodes(op="placeholder"):
+            fqn = lifted.get(node.target)
+            if fqn is not None and node.meta.get("constant_tag") is not None:
+                constants.setdefault(fqn, {})[method] = program.constants[fqn]
+
+    conflicts = {
+        fqn
+        for fqn, tensors in constants.items()
+        if fqn in reserved_names
+        or not _external_constants_match(list(tensors.values()))
+    }
+    taken = reserved_names | (constants.keys() - conflicts)
+    names: Dict[Tuple[str, str], str] = {}
+    for fqn, tensors in sorted(constants.items()):
+        for method in sorted(tensors):
+            name = fqn
+            if fqn in conflicts:
+                prefix = f"{method}/{fqn}"
+                name = prefix
+                suffix = 0
+                while name in taken:
+                    suffix += 1
+                    name = f"{prefix}.{suffix}"
+                taken.add(name)
+            names[(method, fqn)] = name
+    return names
+
+
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
     emit_mutable_buffer_names: bool = False,
+    reserved_external_names: Optional[Set[str]] = None,
 ) -> EmitterOutput:
     """
     Given a exported program, it returns the program in the format
@@ -131,6 +208,8 @@ def emit_program(
             ExportedPrograms.
         emit_stacktrace: Flag to enable emission of a stacktrace for each
            instruction for debugging purposes
+        reserved_external_names: Names already used by delegate data, which
+           must not be reused for method-local constants.
 
     Return:
         The program in a Python class which mimics the flatbuffer schema
@@ -154,7 +233,14 @@ def emit_program(
     debug_handle_map = {}
     method_to_delegate_debug_id_map = {}
     instruction_id_to_num_outs_map = {}
-    program_state = _ProgramState()
+    reserved_names = set(reserved_external_names or ())
+    for exported_program in methods.values():
+        signature = exported_program.graph_signature
+        reserved_names.update(signature.inputs_to_parameters.values())
+        reserved_names.update(signature.inputs_to_buffers.values())
+    program_state = _ProgramState(
+        method_constant_names=_plan_external_constant_names(methods, reserved_names)
+    )
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
@@ -166,6 +252,7 @@ def emit_program(
             operator_cache={},
             emit_stacktrace=emit_stacktrace,
             emit_mutable_buffer_names=emit_mutable_buffer_names,
+            method_name=name,
         )
 
         gm = _remove_non_user_outputs(exported_program)

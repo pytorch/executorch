@@ -203,6 +203,17 @@ void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       approximate == "tanh" ? UnaryOpType::kGelu : UnaryOpType::kGeluErf);
 }
 
+// The shader computes x > 0 ? scale * x : alpha * scale * (exp(x) - 1).
+void elu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  VK_CHECK_COND(
+      graph.extract_scalar<float>(args[3]) == 1.0f,
+      "elu: input_scale other than 1 (e.g. celu with alpha != 1) is not supported");
+  const float alpha = graph.extract_scalar<float>(args[1]);
+  const float scale = graph.extract_scalar<float>(args[2]);
+  return add_unary_op_node(
+      graph, args[0], alpha * scale, scale, args[4], UnaryOpType::kElu);
+}
+
 DEFINE_ACTIVATION_FN(abs, kAbs);
 DEFINE_ACTIVATION_FN(cos, kCos);
 DEFINE_ACTIVATION_FN(exp, kExp);
@@ -229,6 +240,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
   VK_REGISTER_OP(aten.cos.default, cos);
+  VK_REGISTER_OP(aten.elu.default, elu);
   VK_REGISTER_OP(aten.exp.default, exp);
   VK_REGISTER_OP(aten.gelu.default, gelu);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);

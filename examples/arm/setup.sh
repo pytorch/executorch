@@ -231,7 +231,7 @@ function add_target_toolchain() {
     fi
 
     local selected_toolchain
-    for selected_toolchain in "${target_toolchains[@]}"; do
+    for selected_toolchain in ${target_toolchains[@]+"${target_toolchains[@]}"}; do
         if [[ "${selected_toolchain}" == "${toolchain}" ]]; then
             return
         fi

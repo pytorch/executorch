@@ -84,6 +84,27 @@ class TestSoftmax(unittest.TestCase):
         inputs = (torch.rand((3, 5, 7)),)
         self._test_softmax(inputs)
 
+    def test_fp32_softmax_last_dim_after_conv(self):
+        # The conv output is NHWC inside the delegate, where the last dim is C.
+        class ConvSoftmax(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 4, 3, padding=1)
+
+            def forward(self, x):
+                return torch.softmax(self.conv(x), dim=-1)
+
+        (
+            Tester(ConvSoftmax().eval(), (torch.randn(1, 3, 4, 5),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_softmax_unsupported(self):
         inputs = (torch.rand((3, 5, 7)),)
 

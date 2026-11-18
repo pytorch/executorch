@@ -14,6 +14,7 @@ from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.quantizer.arm_quantizer import _TOSAQuantizerV2
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    DType,
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
@@ -173,6 +174,7 @@ def test_mv2_vgf_quant(per_channel_quantization):
         atol=0.25,
         qtol=1,
         quantize=True,
+        forbidden_tosa_dtypes=[DType.FP16],
     )
     pipeline.run()
 
