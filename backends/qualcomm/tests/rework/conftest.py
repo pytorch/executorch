@@ -6,10 +6,13 @@
 
 import collections
 import itertools
+import json
 import logging
 import os
 import random
 import re
+import select
+import socket
 import subprocess
 import tempfile
 import time
@@ -20,6 +23,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
+from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -271,7 +275,9 @@ def qnn_config(global_setup, request):
     # generate QnnConfig for on-device test
     config = None
     try:
-        config = QnnConfig.load_config(request.config.option)
+        config = QnnConfig.load_config(
+            request.config.option.config_file or request.config.option
+        )
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.warning(
@@ -651,7 +657,8 @@ def _validate_htp_test_path(path: Path, soc_model: str | None) -> None:
         raise pytest.UsageError(
             f"--soc_model {soc_model} resolves to HTP v{actual_arch.value}, but "
             f"{path} targets HTP v{expected_arch.value}. Select the v{actual_arch.value} "
-            f"test path or use an HTP v{expected_arch.value} SoC."
+            f"test path or use an HTP v{expected_arch.value} SoC. Run one "
+            f"<backend>/<suite>/vNN directory per session."
         )
 
 
@@ -677,13 +684,31 @@ def _validate_lpai_test_path(path: Path, soc_model: str | None) -> None:
             f"--soc_model {soc_model} resolves to LPAI v{actual_version.value}, but "
             f"{path} targets LPAI v{expected_version.value}. Select the "
             f"v{actual_version.value} test path or use an LPAI "
-            f"v{expected_version.value} SoC."
+            f"v{expected_version.value} SoC. Run one <backend>/<suite>/vNN "
+            f"directory per session."
         )
 
 
+def _get_target_soc_model(config) -> str | None:
+    if config_file := config.getoption("config_file"):
+        with open(config_file) as f:
+            return json.load(f).get("soc_model")
+    return config.getoption("soc_model")
+
+
+# Tests are laid out as <backend>/<suite>/vNN so CI can shard one job per
+# backend and hardware version and run them in parallel. A session must target
+# a single vNN directory matching the SoC; collecting from a parent directory
+# would pull in other hardware versions and is rejected here.
 def pytest_collect_file(file_path, parent):
     path = Path(file_path)
-    soc_model = parent.config.getoption("soc_model")
+    soc_model = _get_target_soc_model(parent.config)
+    if soc_model is None and (
+        _get_htp_arch_from_path(path) or _get_lpai_hardware_version_from_path(path)
+    ):
+        raise pytest.UsageError(
+            f"{path} is hardware-version specific; pass --soc_model or --config_file."
+        )
     _validate_htp_test_path(path, soc_model)
     _validate_lpai_test_path(path, soc_model)
 
@@ -702,7 +727,7 @@ def get_ipc(qnn_config):
     return ip, port
 
 
-def add_default_cmds(cmds: List, qnn_config) -> None:
+def add_default_cmds(cmds: List, qnn_config, with_run_mode: bool = True) -> None:
     ip, port = get_ipc(qnn_config)
     cmds.extend(
         [
@@ -720,31 +745,77 @@ def add_default_cmds(cmds: List, qnn_config) -> None:
             get_backend_str(qnn_config),
         ]
     )
-    if qnn_config.compile_only:
-        cmds.extend(["--compile_only"])
-    elif qnn_config.device:
-        cmds.extend(["--device", qnn_config.device])
+    if with_run_mode:
+        if qnn_config.compile_only:
+            cmds.extend(["--compile_only"])
+        elif qnn_config.device:
+            cmds.extend(["--device", qnn_config.device])
+            if qnn_config.host:
+                cmds.extend(["--host", qnn_config.host])
 
-    if qnn_config.host:
-        cmds.extend(["--host", qnn_config.host])
-    elif qnn_config.enable_x86_64:
+        if qnn_config.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", qnn_config.pre_gen_pte])
+
+    if qnn_config.enable_x86_64:
         cmds.extend(["--enable_x86_64"])
 
-    if getattr(qnn_config, "online_prepare", False):
+    if qnn_config.online_prepare:
         cmds.extend(["--online_prepare"])
 
-    if getattr(qnn_config, "shared_buffer", False):
+    if qnn_config.shared_buffer:
         cmds.extend(["--shared_buffer"])
 
-    if qnn_config.pre_gen_pte:
-        cmds.extend(["--pre_gen_pte", qnn_config.pre_gen_pte])
+
+_PATH_OPTIONS = {
+    "executorch_root",
+    "artifact_dir",
+    "image_dataset",
+    "sentence_dataset",
+    "qa_dataset",
+    "pretrained_weight",
+    "oss_repo",
+    "llama_artifacts",
+}
 
 
 def require_paths(paths: dict) -> None:
     """Fail loudly when a provided path does not exist on disk."""
     for name, path in paths.items():
-        if not path or not os.path.exists(path):
-            pytest.fail(f"Required artifact not found: {name}")
+        if not os.path.exists(path):
+            pytest.fail(f"Required artifact not found: {name} ({path})")
+
+
+def require_options(request, option_names: List[str] = None):
+    """
+    Skip if any option is not provided; fail if a provided path does not exist.
+    executorch_root and artifact_dir are always required for e2e tests.
+    """
+    names = ["executorch_root", "artifact_dir"] + (option_names or [])
+    options = {n: request.config.getoption(n) for n in names}
+    if missing := [n for n, v in options.items() if not v]:
+        pytest.skip(f"missing required options: {', '.join(f'--{n}' for n in missing)}")
+    require_paths({n: v for n, v in options.items() if n in _PATH_OPTIONS})
+    return *options.values(), request.getfixturevalue("qnn_config")
+
+
+def run_example(cmds: List[str], qnn_config) -> dict:
+    """Run an example script and receive its result over IPC."""
+    with socket.create_server(get_ipc(qnn_config)) as server:
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        # fail instead of blocking forever when the script exits before reporting
+        while not select.select([server], [], [], 1)[0]:
+            if p.poll() is not None and not select.select([server], [], [], 0)[0]:
+                pytest.fail(
+                    f"{cmds[1]} exited with code {p.returncode} before reporting results"
+                )
+        sock, _ = server.accept()
+        with Connection(sock.detach()) as conn:
+            msg = json.loads(conn.recv())
+        p.communicate()
+
+    if "Error" in msg:
+        pytest.fail(msg["Error"])
+    return msg
 
 
 def pytest_addoption(parser):

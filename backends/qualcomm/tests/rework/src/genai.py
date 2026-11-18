@@ -4,19 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
+import itertools
 import logging
-import subprocess
-from dataclasses import dataclass, replace
-from multiprocessing.connection import Listener
+from dataclasses import dataclass
 from typing import List
 
 import pytest
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     add_default_cmds,
-    get_ipc,
+    require_options,
     require_paths,
+    run_example,
 )
 from executorch.backends.qualcomm.tests.rework.src.e2e_metrics import (
     assert_metric,
@@ -25,48 +24,40 @@ from executorch.backends.qualcomm.tests.rework.src.e2e_metrics import (
 )
 
 # ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _require(request, artifact_names: list[str] = None):
-    """Skip if any artifact is None; fail loudly if the path doesn't exist."""
-    # executorch_root + artifact_dir are always required for e2e tests."""
-    qnn_config = request.getfixturevalue("qnn_config")
-    options = {
-        n: request.config.getoption(n)
-        for n in ["executorch_root", "artifact_dir"]
-        + (artifact_names if artifact_names else [])
-    }
-    # extend this if the option needs no path validation
-    keys_to_remove = ["model_name", "static_llm_eval_method", "use_fp16"]
-    if request.config.getoption("model_name") not in _LLAMA_MODELS:
-        keys_to_remove.append("llama_artifacts")
-    require_paths({k: v for k, v in options.items() if k not in keys_to_remove})
-    return *options.values(), qnn_config
-
-
-def _run(cmds, qnn_config):
-    ip, port = get_ipc(qnn_config)
-    p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-    with Listener((ip, port)) as listener:
-        conn = listener.accept()
-        p.communicate()
-        return json.loads(conn.recv())
-
-
-def _check(msg):
-    if "Error" in msg:
-        pytest.fail(msg["Error"])
-    return msg
-
-
-# ---------------------------------------------------------------------------
 # LLM models
 # ---------------------------------------------------------------------------
 
 
 _LLAMA_MODELS = {"llama3_2-1b_instruct", "llama3_2-3b_instruct"}
+
+_HF_CAUSAL_LM_GOLDEN = {
+    "llama3_2-1b": "Simply put, the theory of relativity states that the speed of light",
+    "qwen2_5-0_5b": "Simply put, the theory of relativity states that the laws of physics",
+    "qwen3-0_6b": "Simply put, the theory of relativity states that the laws of physics",
+    "smollm2_135m": "Simply put, the theory of relativity states that the speed of light",
+    "granite-3_3-2b": "Simply put, the theory of relativity states that the laws of physics",
+}
+
+
+def _require_static_llm(request):
+    root, artifact, model_name, qnn_config = require_options(request, ["model_name"])
+    if model_name not in LLM_MODELS:
+        pytest.skip(f"{model_name} is not a static LLM model")
+    return root, artifact, model_name, qnn_config
+
+
+def _llama_checkpoint_cmds(request, model_name: str) -> List[str]:
+    if model_name not in _LLAMA_MODELS:
+        return []
+    if not (llama_artifacts := request.config.getoption("llama_artifacts")):
+        pytest.skip("missing required options: --llama_artifacts")
+    files = {
+        "--checkpoint": f"{llama_artifacts}/consolidated.00.pth",
+        "--params": f"{llama_artifacts}/params.json",
+        "--tokenizer_model": f"{llama_artifacts}/tokenizer.model",
+    }
+    require_paths(files)
+    return list(itertools.chain.from_iterable(files.items()))
 
 
 # ---------------------------------------------------------------------------
@@ -121,31 +112,9 @@ VLM_SPECS = {
 class StaticLLM:
     @staticmethod
     def test(request):  # noqa: C901
-        (
-            root,
-            artifact,
-            model_name,
-            static_llm_eval_method,
-            llama_artifacts,
-            qnn_config,
-        ) = _require(
-            request, ["model_name", "static_llm_eval_method", "llama_artifacts"]
-        )
-        assert (
-            model_name in LLM_MODELS
-        ), f"Unable to find {model_name} under LLM_MODELS."
-
-        is_llama_model = model_name in _LLAMA_MODELS
-        if is_llama_model:
-            if not llama_artifacts:
-                pytest.skip("missing required arg: --llama_artifacts")
-            require_paths(
-                {
-                    "checkpoint": f"{llama_artifacts}/consolidated.00.pth",
-                    "params": f"{llama_artifacts}/params.json",
-                    "tokenizer": f"{llama_artifacts}/tokenizer.model",
-                }
-            )
+        root, artifact, model_name, qnn_config = _require_static_llm(request)
+        static_llm_eval_method = request.config.getoption("static_llm_eval_method")
+        llama_cmds = _llama_checkpoint_cmds(request, model_name)
 
         prompt = (
             "I would like to learn python, could you teach me with a simple example?"
@@ -223,24 +192,13 @@ class StaticLLM:
                 )
                 cmds.extend(["--calib_tasks", "wikitext", "--calib_limit", "1"])
 
-        if is_llama_model:
-            cmds.extend(
-                [
-                    "--checkpoint",
-                    f"{llama_artifacts}/consolidated.00.pth",
-                    "--params",
-                    f"{llama_artifacts}/params.json",
-                    "--tokenizer_model",
-                    f"{llama_artifacts}/tokenizer.model",
-                ]
-            )
-
+        cmds.extend(llama_cmds)
         if model_name == "gemma4-e2b":
             cmds.extend(["--embedding-quantize", "4,32"])
 
         add_default_cmds(cmds, qnn_config)
 
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         logging.info(f"Model Name: {model_name}\nTarget Device: {qnn_config.soc_model}")
         logging.info(f"Eval Result: {msg}")
 
@@ -270,28 +228,12 @@ class StaticLLM:
 
 
 class StaticLLMEvalLimit:
+    # Verify calib and eval are truly separate: compile once with a fixed
+    # calib, then eval the same pte with different eval limit.
     @staticmethod
     def test(request):
-        root, artifact, model_name, llama_artifacts, qnn_config = _require(
-            request, ["model_name", "llama_artifacts"]
-        )
-        assert (
-            model_name in LLM_MODELS
-        ), f"Unable to find {model_name} under LLM_MODELS."
-
-        is_llama_model = model_name in _LLAMA_MODELS
-        if is_llama_model:
-            if not llama_artifacts:
-                pytest.skip("missing required arg: --llama_artifacts")
-            require_paths(
-                {
-                    "checkpoint": f"{llama_artifacts}/consolidated.00.pth",
-                    "params": f"{llama_artifacts}/params.json",
-                    "tokenizer": f"{llama_artifacts}/tokenizer.model",
-                }
-            )
-
-        command_config = replace(qnn_config, compile_only=False, pre_gen_pte=None)
+        root, artifact, model_name, qnn_config = _require_static_llm(request)
+        llama_cmds = _llama_checkpoint_cmds(request, model_name)
 
         def run_llama(extra_cmds: List[str]):
             cmds = [
@@ -313,38 +255,26 @@ class StaticLLMEvalLimit:
                 "1024",
                 "--max_context_len",
                 "1024",
+                *llama_cmds,
+                *extra_cmds,
             ]
-            cmds.extend(extra_cmds)
-            add_default_cmds(cmds, command_config)
+            # compile / run mode is decided by extra_cmds instead of qnn_config
+            add_default_cmds(cmds, qnn_config, with_run_mode=False)
+            return run_example(cmds, qnn_config)
 
-            msg = _check(_run(cmds, qnn_config))
-            return msg
-
-        extra_cmds = [
+        compile_cmds = [
             "--compile_only",
             "--calib_tasks",
             "wikitext",
             "--calib_limit",
             "1",
         ]
-        extra_cmds_for_llama = [
-            "--checkpoint",
-            f"{llama_artifacts}/consolidated.00.pth",
-            "--params",
-            f"{llama_artifacts}/params.json",
-            "--tokenizer_model",
-            f"{llama_artifacts}/tokenizer.model",
-        ]
-        if is_llama_model:
-            extra_cmds.extend(extra_cmds_for_llama)
-
         if model_name == "gemma4-e2b":
-            extra_cmds.extend(["--embedding-quantize", "4,32"])
-
-        run_llama(extra_cmds)
+            compile_cmds.extend(["--embedding-quantize", "4,32"])
+        run_llama(compile_cmds)
 
         def eval_ppl(eval_limit: int) -> float:
-            extra = [
+            eval_cmds = [
                 "--pre_gen_pte",
                 artifact,
                 "--eval_methods",
@@ -354,11 +284,9 @@ class StaticLLMEvalLimit:
                 "--eval_limit",
                 str(eval_limit),
             ]
-            if is_llama_model:
-                extra.extend(extra_cmds_for_llama)
             if qnn_config.device:
-                extra.extend(["--device", qnn_config.device])
-            return run_llama(extra)["wiki_ppl"]
+                eval_cmds.extend(["--device", qnn_config.device])
+            return run_llama(eval_cmds)["wiki_ppl"]
 
         ppl_1 = eval_ppl(1)
         ppl_3 = eval_ppl(3)
@@ -369,7 +297,7 @@ class StaticLLMEvalLimit:
 class Codegen2:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         prompt = "def hello_world():"
         cmds = [
             "python",
@@ -396,7 +324,7 @@ class Codegen2:
             "1",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         golden_start_with = "def hello_world():"
         if not qnn_config.compile_only:
             assert msg["result"][0].startswith(
@@ -413,7 +341,7 @@ class Codegen2:
 class LlamaStories260K:
     @staticmethod
     def test(request):
-        root, artifact, llama_artifacts, qnn_config = _require(
+        root, artifact, llama_artifacts, qnn_config = require_options(
             request, ["llama_artifacts"]
         )
         require_paths(
@@ -460,7 +388,7 @@ class LlamaStories260K:
             "1",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         golden_start_with = "Once upon a time,"
         if not qnn_config.compile_only:
             assert msg["result"][0].startswith(
@@ -480,9 +408,10 @@ class LlamaStories260K:
 class LlamaStories110M:
     @staticmethod
     def test(request):
-        root, artifact, llama_artifacts, use_fp16, qnn_config = _require(
-            request, ["llama_artifacts", "use_fp16"]
+        root, artifact, llama_artifacts, qnn_config = require_options(
+            request, ["llama_artifacts"]
         )
+        use_fp16 = request.config.getoption("use_fp16")
         require_paths(
             {
                 "checkpoint": f"{llama_artifacts}/stories110M.pt",
@@ -529,7 +458,7 @@ class LlamaStories110M:
         if use_fp16:
             cmds.append("--use_fp16")
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         golden_start_with = "Once upon a time,"
         if not qnn_config.compile_only:
             assert msg["result"][0].startswith(
@@ -552,7 +481,7 @@ class LlamaStories110M:
 class AttentionSink:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         model_name = "smollm2_135m"
         prompt = (
             "I would like to learn python, could you teach me with a simple example?"
@@ -590,7 +519,7 @@ class AttentionSink:
             "4,32",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         if not qnn_config.compile_only:
             assert_metric(
                 "attention_sink",
@@ -602,20 +531,22 @@ class AttentionSink:
 
 
 class HFCausalLM:
+    # This is the Hugging Face transformers flow, not the static llm flow.
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
-        prompt = "My favourite condiment is "
+        root, artifact, model_name, qnn_config = require_options(
+            request, ["model_name"]
+        )
+        if model_name not in _HF_CAUSAL_LM_GOLDEN:
+            pytest.skip(f"{model_name} is not supported by hf_causal_lm")
+        prompt = "Simply put, the theory of relativity states that"
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2_5-0_5b",
-            "--ptq",
-            "16a8w",
-            "--enable_spinquant_r3",
+            model_name,
             "--max_seq_len",
             "128",
             "--artifact",
@@ -624,8 +555,8 @@ class HFCausalLM:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
-        golden_start_with = "My favourite condiment is iced tea."
+        msg = run_example(cmds, qnn_config)
+        golden_start_with = _HF_CAUSAL_LM_GOLDEN[model_name]
         if not qnn_config.compile_only:
             assert msg["result"][0].startswith(
                 golden_start_with
@@ -635,7 +566,7 @@ class HFCausalLM:
 class StaticLLMQAT:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         if qnn_config.compile_only:
             pytest.skip("tasks_eval requires on-device inference")
 
@@ -681,7 +612,7 @@ class StaticLLMQAT:
             if extra_args:
                 cmds.extend(extra_args)
             add_default_cmds(cmds, qnn_config)
-            msg = _check(_run(cmds, qnn_config))
+            msg = run_example(cmds, qnn_config)
             return msg["wiki_ppl"]
 
         ptq_ppl = run_eval(
@@ -703,8 +634,11 @@ class StaticLLMQAT:
 class StaticASR:
     @staticmethod
     def test(request):
-        root, artifact, model_name, qnn_config = _require(request, ["model_name"])
-
+        root, artifact, model_name, qnn_config = require_options(
+            request, ["model_name"]
+        )
+        if model_name not in ALM_SPECS:
+            pytest.skip(f"{model_name} is not an ASR model")
         if qnn_config.enable_x86_64:
             pytest.skip(
                 "Skipping the check for the static ASR model on x86 due to long execution time."
@@ -732,11 +666,11 @@ class StaticASR:
             "--max_seq_len",
             str(alm_specs.max_seq_len),
             "--calib_samples",
-            "./examples/qualcomm/oss_scripts/llama/assets/samples/audio.json",
+            f"{root}/examples/qualcomm/oss_scripts/llama/assets/samples/audio.json",
         ]
         add_default_cmds(cmds, qnn_config)
 
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
 
         if not qnn_config.compile_only:
             model_out = msg["result"][0]
@@ -772,7 +706,11 @@ class StaticASR:
 class StaticVLM:
     @staticmethod
     def test(request):
-        root, artifact, model_name, qnn_config = _require(request, ["model_name"])
+        root, artifact, model_name, qnn_config = require_options(
+            request, ["model_name"]
+        )
+        if model_name not in VLM_SPECS:
+            pytest.skip(f"{model_name} is not a VLM model")
 
         vlm_specs: VLMSpecs = VLM_SPECS[model_name]
         prompt = "Can you describe this image?"
@@ -796,11 +734,11 @@ class StaticVLM:
             "--max_seq_len",
             str(vlm_specs.max_seq_len),
             "--calib_samples",
-            "./examples/qualcomm/oss_scripts/llama/assets/samples/vision.json",
+            f"{root}/examples/qualcomm/oss_scripts/llama/assets/samples/vision.json",
         ]
         add_default_cmds(cmds, qnn_config)
 
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
 
         if not qnn_config.compile_only:
             model_out = msg["result"][0]

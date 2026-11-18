@@ -24,6 +24,12 @@ class ExecutionTarget:
 
 
 @dataclass(frozen=True)
+class SocTarget:
+    backend: QnnExecuTorchBackendType
+    soc_model: QcomChipset
+
+
+@dataclass(frozen=True)
 class MetricConstraint:
     operator: Callable[[float, float], bool]
     expected: float
@@ -50,6 +56,7 @@ class MetricProfile:
     shared: Mapping[str, MetricConstraint]
     by_backend: Mapping[QnnExecuTorchBackendType, Mapping[str, MetricConstraint]]
     by_target: Mapping[ExecutionTarget, Mapping[str, MetricConstraint]]
+    by_soc: Mapping[SocTarget, Mapping[str, MetricConstraint]]
 
 
 def _profile(
@@ -58,13 +65,20 @@ def _profile(
         Mapping[QnnExecuTorchBackendType, Mapping[str, MetricConstraint]] | None
     ) = None,
     by_target: Mapping[ExecutionTarget, Mapping[str, MetricConstraint]] | None = None,
+    by_soc: Mapping[SocTarget, Mapping[str, MetricConstraint]] | None = None,
 ) -> MetricProfile:
-    return MetricProfile(shared, by_backend or {}, by_target or {})
+    return MetricProfile(shared, by_backend or {}, by_target or {}, by_soc or {})
 
 
-# TODO: extend targets for coverage
-HTP_V75 = ExecutionTarget(QnnExecuTorchBackendType.kHtpBackend, HtpArch.V75)
-HTP_V79 = ExecutionTarget(QnnExecuTorchBackendType.kHtpBackend, HtpArch.V79)
+def _htp_inference_speed(
+    sm8650: float, sm8750: float
+) -> Mapping[SocTarget, Mapping[str, MetricConstraint]]:
+    return {
+        SocTarget(QnnExecuTorchBackendType.kHtpBackend, soc): {
+            "inference_speed": minimum(speed)
+        }
+        for soc, speed in ((QcomChipset.SM8650, sm8650), (QcomChipset.SM8750, sm8750))
+    }
 
 
 # TODO: use by_target for fine-grained validation
@@ -132,10 +146,7 @@ METRIC_PROFILES = {
             "tok_embedding_pte_size": maximum(240_000_000),
             "pte_size": maximum(3_000_000_000),
         },
-        by_target={
-            HTP_V75: {"inference_speed": minimum(5)},
-            HTP_V79: {"inference_speed": minimum(8)},
-        },
+        by_soc=_htp_inference_speed(sm8650=5, sm8750=8),
     ),
     "vlm:smolvlm_500m_instruct": _profile(
         {
@@ -143,10 +154,7 @@ METRIC_PROFILES = {
             "tok_embedding_pte_size": maximum(100_000_000),
             "pte_size": maximum(400_000_000),
         },
-        by_target={
-            HTP_V75: {"inference_speed": minimum(50)},
-            HTP_V79: {"inference_speed": minimum(55)},
-        },
+        by_soc=_htp_inference_speed(sm8650=50, sm8750=55),
     ),
     "vlm:internvl3_1b": _profile(
         {
@@ -154,18 +162,15 @@ METRIC_PROFILES = {
             "tok_embedding_pte_size": maximum(300_000_000),
             "pte_size": maximum(550_000_000),
         },
-        by_target={
-            HTP_V75: {"inference_speed": minimum(11)},
-            HTP_V79: {"inference_speed": minimum(13)},
-        },
+        by_soc=_htp_inference_speed(sm8650=11, sm8750=13),
     ),
 }
 
 
 @dataclass(frozen=True)
 class LlmMetricValues:
-    v75_inference_speed: float
-    v79_inference_speed: float
+    sm8650_inference_speed: float
+    sm8750_inference_speed: float
     pte_size: float
     wiki_ppl: float | None = None
     hellaswag_acc_norm: float | None = None
@@ -206,10 +211,9 @@ for _model, _metrics in _LLM_METRICS.items():
         _shared["sqnr"] = minimum(_metrics.sqnr)
     METRIC_PROFILES[f"llm:{_model}"] = _profile(
         _shared,
-        by_target={
-            HTP_V75: {"inference_speed": minimum(_metrics.v75_inference_speed)},
-            HTP_V79: {"inference_speed": minimum(_metrics.v79_inference_speed)},
-        },
+        by_soc=_htp_inference_speed(
+            _metrics.sm8650_inference_speed, _metrics.sm8750_inference_speed
+        ),
     )
 
 LLM_MODELS = frozenset(_LLM_METRICS)
@@ -246,6 +250,9 @@ def get_metric_constraints(workload: str, qnn_config) -> Mapping[str, MetricCons
         profile.shared
         | profile.by_backend.get(target.backend, {})
         | profile.by_target.get(target, {})
+        | profile.by_soc.get(
+            SocTarget(target.backend, QcomChipset[qnn_config.soc_model]), {}
+        )
     )
 
 
@@ -257,8 +264,7 @@ def get_metric_constraint(
 
 def assert_metric(workload: str, metric: str, actual: float, qnn_config) -> None:
     constraint = get_metric_constraint(workload, metric, qnn_config)
-    if constraint is None:
-        return
+    assert constraint is not None, f"{workload}: no constraint for metric {metric}"
     target = resolve_execution_target(qnn_config)
     constraint.assert_value(actual, f"{workload}.{metric} on {target}")
 

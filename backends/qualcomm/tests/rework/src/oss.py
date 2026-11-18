@@ -4,10 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
 import subprocess
 import tempfile
-from multiprocessing.connection import Listener
 from pathlib import Path
 
 import pytest
@@ -17,48 +15,13 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.tests.rework.conftest import (
     add_default_cmds,
-    get_ipc,
-    require_paths,
+    require_options,
+    run_example,
 )
 from executorch.backends.qualcomm.tests.rework.src.e2e_metrics import (
     assert_metric,
     assert_metrics,
 )
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _require(request, artifact_names: list[str] = None):
-    """Skip if any artifact is None; fail loudly if the path doesn't exist."""
-    # executorch_root + artifact_dir are always required for e2e tests."""
-    qnn_config = request.getfixturevalue("qnn_config")
-    options = {
-        n: request.config.getoption(n)
-        for n in ["executorch_root", "artifact_dir"]
-        + (artifact_names if artifact_names else [])
-    }
-    # extend this if the option needs no path validation
-    keys_to_remove = ["model_name"]
-    require_paths({k: v for k, v in options.items() if k not in keys_to_remove})
-    return *options.values(), qnn_config
-
-
-def _run(cmds, qnn_config):
-    ip, port = get_ipc(qnn_config)
-    p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-    with Listener((ip, port)) as listener:
-        conn = listener.accept()
-        p.communicate()
-        return json.loads(conn.recv())
-
-
-def _check(msg):
-    if "Error" in msg:
-        pytest.fail(msg["Error"])
-    return msg
-
 
 # ---------------------------------------------------------------------------
 # TestExampleScript (examples/qualcomm/scripts/)
@@ -68,7 +31,9 @@ def _check(msg):
 class MobileNetV2:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/mobilenet_v2.py",
@@ -80,14 +45,16 @@ class MobileNetV2:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("mobilenet_v2", msg, qnn_config)
 
 
 class MobileNetV3:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/mobilenet_v3.py",
@@ -99,14 +66,16 @@ class MobileNetV3:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("mobilenet_v3", msg, qnn_config)
 
 
 class InceptionV3:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/inception_v3.py",
@@ -118,14 +87,16 @@ class InceptionV3:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("inception_v3", msg, qnn_config)
 
 
 class InceptionV4:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/inception_v4.py",
@@ -137,14 +108,16 @@ class InceptionV4:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("inception_v4", msg, qnn_config)
 
 
 class Vit:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/torchvision_vit.py",
@@ -156,14 +129,14 @@ class Vit:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("vit", msg, qnn_config)
 
 
 class Edsr:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/edsr.py",
@@ -174,14 +147,14 @@ class Edsr:
             "--default_dataset",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("edsr", msg, qnn_config)
 
 
 class DeepLabV3:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         cmds = [
             "python",
             f"{root}/examples/qualcomm/scripts/deeplab_v3.py",
@@ -191,14 +164,14 @@ class DeepLabV3:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("deeplab_v3", msg, qnn_config)
 
 
 class MobileBert:
     @staticmethod
     def test(request):
-        root, artifact, pretrained_weight, qnn_config = _require(
+        root, artifact, pretrained_weight, qnn_config = require_options(
             request, ["pretrained_weight"]
         )
         cmds = [
@@ -213,7 +186,7 @@ class MobileBert:
             "--use_fp16",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         cpu, htp = msg["CPU"], msg["HTP"]
         for k, v in cpu.items():
             assert_metric(
@@ -224,7 +197,7 @@ class MobileBert:
 class PtqMobileBert:
     @staticmethod
     def test(request):
-        root, artifact, pretrained_weight, qnn_config = _require(
+        root, artifact, pretrained_weight, qnn_config = require_options(
             request, ["pretrained_weight"]
         )
         cmds = [
@@ -240,7 +213,7 @@ class PtqMobileBert:
             "16a16w",
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         cpu, htp = msg["CPU"], msg["HTP"]
         for k, v in cpu.items():
             assert_metric(
@@ -251,7 +224,7 @@ class PtqMobileBert:
 class Wav2Letter:
     @staticmethod
     def test(request):
-        root, artifact, pretrained_weight, qnn_config = _require(
+        root, artifact, pretrained_weight, qnn_config = require_options(
             request, ["pretrained_weight"]
         )
         cmds = [
@@ -265,14 +238,16 @@ class Wav2Letter:
             pretrained_weight,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("wav2letter", msg, qnn_config)
 
 
 class ExportExample:
     @staticmethod
     def test(request):
-        root, artifact, model_name, qnn_config = _require(request, ["model_name"])
+        root, artifact, model_name, qnn_config = require_options(
+            request, ["model_name"]
+        )
         with tempfile.TemporaryDirectory() as tmp_dir:
             cmds = [
                 "python",
@@ -300,7 +275,7 @@ class ExportExample:
 class Albert:
     @staticmethod
     def test(request):
-        root, artifact, sentence_dataset, qnn_config = _require(
+        root, artifact, sentence_dataset, qnn_config = require_options(
             request, ["sentence_dataset"]
         )
         cmds = [
@@ -314,14 +289,14 @@ class Albert:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("albert", msg, qnn_config)
 
 
 class Bert:
     @staticmethod
     def test(request):
-        root, artifact, sentence_dataset, qnn_config = _require(
+        root, artifact, sentence_dataset, qnn_config = require_options(
             request, ["sentence_dataset"]
         )
         cmds = [
@@ -335,14 +310,16 @@ class Bert:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("bert", msg, qnn_config)
 
 
 class ConvFormer:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/conv_former.py",
@@ -354,14 +331,16 @@ class ConvFormer:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("conv_former", msg, qnn_config)
 
 
 class ConvNextSmall:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/convnext_small.py",
@@ -373,14 +352,16 @@ class ConvNextSmall:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("convnext_small", msg, qnn_config)
 
 
 class Cvt:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/cvt.py",
@@ -392,14 +373,16 @@ class Cvt:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("cvt", msg, qnn_config)
 
 
 class Deit:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/deit.py",
@@ -411,14 +394,16 @@ class Deit:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("deit", msg, qnn_config)
 
 
 class DepthAnythingV2Small:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/depthanything_v2_small.py",
@@ -430,14 +415,16 @@ class DepthAnythingV2Small:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("depthanything_v2_small", msg, qnn_config)
 
 
 class DinoV2:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/dino_v2.py",
@@ -449,14 +436,14 @@ class DinoV2:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("dino_v2", msg, qnn_config)
 
 
 class Distilbert:
     @staticmethod
     def test(request):
-        root, artifact, sentence_dataset, qnn_config = _require(
+        root, artifact, sentence_dataset, qnn_config = require_options(
             request, ["sentence_dataset"]
         )
         cmds = [
@@ -470,14 +457,14 @@ class Distilbert:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("distilbert", msg, qnn_config)
 
 
 class Dit:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/dit.py",
@@ -487,14 +474,16 @@ class Dit:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("dit", msg, qnn_config)
 
 
 class EfficientNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/efficientnet.py",
@@ -506,7 +495,7 @@ class EfficientNet:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("efficientnet", msg, qnn_config)
 
 
@@ -514,7 +503,7 @@ class EfficientSAM:
     @staticmethod
     def test(request):
         root, artifact, image_dataset, pretrained_weight, oss_repo, qnn_config = (
-            _require(request, ["image_dataset", "pretrained_weight", "oss_repo"])
+            require_options(request, ["image_dataset", "pretrained_weight", "oss_repo"])
         )
         if qnn_config.backend == QnnExecuTorchBackendType.kHtpBackend:
             pytest.skip("Bad accuracy, need investigation")
@@ -533,14 +522,14 @@ class EfficientSAM:
             pretrained_weight,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("efficient_sam", msg, qnn_config)
 
 
 class Esrgan:
     @staticmethod
     def test(request):
-        root, artifact, oss_repo, qnn_config = _require(request, ["oss_repo"])
+        root, artifact, oss_repo, qnn_config = require_options(request, ["oss_repo"])
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/esrgan.py",
@@ -553,14 +542,14 @@ class Esrgan:
             oss_repo,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("esrgan", msg, qnn_config)
 
 
 class Eurobert:
     @staticmethod
     def test(request):
-        root, artifact, sentence_dataset, qnn_config = _require(
+        root, artifact, sentence_dataset, qnn_config = require_options(
             request, ["sentence_dataset"]
         )
         cmds = [
@@ -574,7 +563,7 @@ class Eurobert:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("eurobert", msg, qnn_config)
 
 
@@ -582,7 +571,7 @@ class FastVit:
     @staticmethod
     def test(request):
         root, artifact, image_dataset, pretrained_weight, oss_repo, qnn_config = (
-            _require(request, ["image_dataset", "pretrained_weight", "oss_repo"])
+            require_options(request, ["image_dataset", "pretrained_weight", "oss_repo"])
         )
         cmds = [
             "python",
@@ -599,14 +588,16 @@ class FastVit:
             pretrained_weight,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("fastvit", msg, qnn_config)
 
 
 class FbNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/fbnet.py",
@@ -618,14 +609,16 @@ class FbNet:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("fbnet", msg, qnn_config)
 
 
 class FocalNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/focalnet.py",
@@ -637,14 +630,16 @@ class FocalNet:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("focalnet", msg, qnn_config)
 
 
 class GMLP:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/gMLP_image_classification.py",
@@ -656,14 +651,16 @@ class GMLP:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("gmlp", msg, qnn_config)
 
 
 class MaxVitT:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/maxvit_t.py",
@@ -675,14 +672,18 @@ class MaxVitT:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("maxvit_t", msg, qnn_config)
 
 
 class MobileViTV2:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
+        if qnn_config.backend == QnnExecuTorchBackendType.kHtpBackend:
+            pytest.skip("Only outputs good accuracy in QNN 2.29")
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/mobilevit_v2.py",
@@ -694,14 +695,16 @@ class MobileViTV2:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("mobilevit_v2", msg, qnn_config)
 
 
 class MobileViTV1:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/mobilevit_v1.py",
@@ -713,14 +716,16 @@ class MobileViTV1:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("mobilevit_v1", msg, qnn_config)
 
 
 class Pvt:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/pvt.py",
@@ -732,14 +737,16 @@ class Pvt:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("pvt", msg, qnn_config)
 
 
 class RegNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/regnet.py",
@@ -752,14 +759,16 @@ class RegNet:
         ]
         add_default_cmds(cmds, qnn_config)
         for weight in ["regnet_y_400mf", "regnet_x_400mf"]:
-            msg = _check(_run(cmds + ["--weights", weight], qnn_config))
+            msg = run_example(cmds + ["--weights", weight], qnn_config)
             assert_metrics("regnet", msg, qnn_config)
 
 
 class RetinaNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/retinanet.py",
@@ -771,14 +780,14 @@ class RetinaNet:
             image_dataset,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("retinanet", msg, qnn_config)
 
 
 class Roberta:
     @staticmethod
     def test(request):
-        root, artifact, sentence_dataset, qnn_config = _require(
+        root, artifact, sentence_dataset, qnn_config = require_options(
             request, ["sentence_dataset"]
         )
         cmds = [
@@ -792,14 +801,16 @@ class Roberta:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("roberta", msg, qnn_config)
 
 
 class SqueezeNet:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/squeezenet.py",
@@ -811,14 +822,14 @@ class SqueezeNet:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("squeezenet", msg, qnn_config)
 
 
 class Ssd300Vgg16:
     @staticmethod
     def test(request):
-        root, artifact, pretrained_weight, oss_repo, qnn_config = _require(
+        root, artifact, pretrained_weight, oss_repo, qnn_config = require_options(
             request, ["pretrained_weight", "oss_repo"]
         )
         cmds = [
@@ -834,14 +845,16 @@ class Ssd300Vgg16:
             pretrained_weight,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("ssd300_vgg16", msg, qnn_config)
 
 
 class SwinTransformer:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/swin_transformer.py",
@@ -853,14 +866,16 @@ class SwinTransformer:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("swin_transformer", msg, qnn_config)
 
 
 class SwinV2T:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/swin_v2_t.py",
@@ -872,14 +887,16 @@ class SwinV2T:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("swin_v2_t", msg, qnn_config)
 
 
 class T5:
     @staticmethod
     def test(request):
-        root, artifact, qa_dataset, qnn_config = _require(request, ["qa_dataset"])
+        root, artifact, qa_dataset, qnn_config = require_options(
+            request, ["qa_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/t5/t5.py",
@@ -891,14 +908,16 @@ class T5:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("t5", msg, qnn_config)
 
 
 class VitB16:
     @staticmethod
     def test(request):
-        root, artifact, image_dataset, qnn_config = _require(request, ["image_dataset"])
+        root, artifact, image_dataset, qnn_config = require_options(
+            request, ["image_dataset"]
+        )
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/vit_b_16.py",
@@ -910,14 +929,14 @@ class VitB16:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("vit_b_16", msg, qnn_config)
 
 
 class Whisper:
     @staticmethod
     def test(request):
-        root, artifact, qnn_config = _require(request)
+        root, artifact, qnn_config = require_options(request)
         cmds = [
             "python",
             f"{root}/examples/qualcomm/oss_scripts/whisper/whisper.py",
@@ -927,5 +946,5 @@ class Whisper:
             qnn_config.build_folder,
         ]
         add_default_cmds(cmds, qnn_config)
-        msg = _check(_run(cmds, qnn_config))
+        msg = run_example(cmds, qnn_config)
         assert_metrics("whisper", msg, qnn_config)
