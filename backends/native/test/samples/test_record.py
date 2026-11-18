@@ -59,6 +59,19 @@ class RecordTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             suite_cases(module, samples=2)
 
+    def test_suite_cases_skips_skipped_tests(self) -> None:
+        module = ModuleType("suite")
+        module.test_lowered = lambda runner: runner.lower_and_run_model(
+            torch.nn.Identity(), (torch.randn(2),)
+        )
+
+        def test_skipped(runner) -> None:
+            raise unittest.SkipTest("unsupported")
+
+        module.test_skipped = test_skipped
+        cases = suite_cases(module, samples=1)
+        self.assertEqual([c.name for c in cases], ["lowered_0"])
+
     def test_suite_cases_raises_when_no_test_lowers_a_model(self) -> None:
         with self.assertRaises(ValueError):
             suite_cases(ModuleType("suite"), samples=1)

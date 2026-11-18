@@ -67,6 +67,7 @@ QNN_16A16W_TEST_FLOW = _create_qnn_flow(
     quantize=True,
     quant_dtype=QuantDtype.use_16a16w,
     use_fp16=False,
+    per_channel_conv=False,
     xfail_patterns=_QNN_CONV3D_LOWERING_XFAILS,
 )
 QNN_16A8W_TEST_FLOW = _create_qnn_flow(

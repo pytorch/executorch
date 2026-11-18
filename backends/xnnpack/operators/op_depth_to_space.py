@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib
 from typing import cast, Dict
 
-import executorch.backends.xnnpack.custom_ops_lib  # noqa: F401  registers et_xnnpack ops
 import torch
 from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
@@ -19,6 +19,10 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNode,
 )
 from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+
+# Registers the et_xnnpack ops. A bare `import` would stay deferred under lazy
+# imports, leaving the ops unregistered when they are looked up below.
+importlib.import_module("executorch.backends.xnnpack.custom_ops_lib")
 
 
 @register_node_visitor
