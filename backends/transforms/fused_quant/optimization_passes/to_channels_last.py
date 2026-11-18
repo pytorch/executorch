@@ -23,10 +23,30 @@ from torch import fx
 from torch._export.utils import _detect_fake_mode_from_gm
 
 
+def _view(graph: fx.Graph, tensor: fx.Node, shape: list[int]) -> fx.Node:
+    view = graph.call_function(
+        exir_ops.edge.aten.view_copy.default,
+        args=(tensor, shape),
+    )
+    view.meta["val"] = tensor.meta["val"].view(shape)
+    return view
+
+
+def _add_batch_dim(graph: fx.Graph, tensor: fx.Node) -> fx.Node:
+    return _view(graph, tensor, [1, *tensor.meta["val"].shape])
+
+
+def _remove_batch_dim(graph: fx.Graph, tensor: fx.Node, source: fx.Node) -> fx.Node:
+    view = _view(graph, tensor, list(tensor.meta["val"].shape[1:]))
+    view.meta = source.meta.copy()
+    return view
+
+
 def _permute_qparams(
     node: fx.Node,
     prefix: str,
     dims: list[int],
+    add_batch_dim: bool = False,
 ) -> list[fx.node.Argument]:
     qparams = get_qparams_from_node(node, prefix)
     if qparams is None or qparams.is_per_tensor():
@@ -35,6 +55,8 @@ def _permute_qparams(
     graph = node.graph
     permuted: list[fx.Node] = []
     for value in (qparams.scale, qparams.zero_point):
+        if add_batch_dim:
+            value = _add_batch_dim(graph, value)
         value_permuted = graph.call_function(
             exir_ops.edge.aten.permute_copy.default,
             args=(value, dims),
@@ -152,6 +174,7 @@ def _convert_max_pool2d_with_indices_to_channels_last(node: fx.Node) -> None:
     inp = get_arg(node, "inp", fx.Node)
     nchw_to_nhwc = [0, 2, 3, 1]
     nhwc_to_nchw = [0, 3, 1, 2]
+    unbatched = inp.meta["val"].dim() == 3
     users = list(node.users)
     if any(
         user.target != operator.getitem or user.args[1] not in (0, 1) for user in users
@@ -162,6 +185,8 @@ def _convert_max_pool2d_with_indices_to_channels_last(node: fx.Node) -> None:
         )
 
     with graph.inserting_before(node):
+        if unbatched:
+            inp = _add_batch_dim(graph, inp)
         inp_nhwc = graph.call_function(
             exir_ops.edge.aten.permute_copy.default,
             args=(inp, nchw_to_nhwc),
@@ -170,8 +195,8 @@ def _convert_max_pool2d_with_indices_to_channels_last(node: fx.Node) -> None:
 
         new_args: tuple[fx.node.Argument, ...] = (
             inp_nhwc,
-            *_permute_qparams(node, "inp", nchw_to_nhwc),
-            *_permute_qparams(node, "out", nchw_to_nhwc),
+            *_permute_qparams(node, "inp", nchw_to_nhwc, unbatched),
+            *_permute_qparams(node, "out", nchw_to_nhwc, unbatched),
             get_arg(node, "kernel_size", list[int]),
             get_arg(node, "stride", list[int]),
             get_arg(node, "padding", list[int]),
@@ -183,6 +208,8 @@ def _convert_max_pool2d_with_indices_to_channels_last(node: fx.Node) -> None:
             args=new_args,
         )
         node_values = cast(tuple[torch.Tensor, torch.Tensor], node.meta["val"])
+        if unbatched:
+            node_values = (node_values[0].unsqueeze(0), node_values[1].unsqueeze(0))
         pool_channels_last.meta["val"] = tuple(
             value.permute(*nchw_to_nhwc) for value in node_values
         )
@@ -202,6 +229,8 @@ def _convert_max_pool2d_with_indices_to_channels_last(node: fx.Node) -> None:
             )
             output_nchw.meta = user.meta.copy()
             output_nchw.meta["val"] = node_values[output_index]
+            if unbatched:
+                output_nchw = _remove_batch_dim(graph, output_nchw, user)
             user.replace_all_uses_with(output_nchw)
             graph.erase_node(user)
 
@@ -213,8 +242,11 @@ def _convert_avg_pool2d_to_channels_last(node: fx.Node) -> None:
     inp = get_arg(node, "inp", fx.Node)
     nchw_to_nhwc = [0, 2, 3, 1]
     nhwc_to_nchw = [0, 3, 1, 2]
+    unbatched = inp.meta["val"].dim() == 3
 
     with graph.inserting_before(node):
+        if unbatched:
+            inp = _add_batch_dim(graph, inp)
         inp_nhwc = graph.call_function(
             exir_ops.edge.aten.permute_copy.default,
             args=(inp, nchw_to_nhwc),
@@ -223,8 +255,8 @@ def _convert_avg_pool2d_to_channels_last(node: fx.Node) -> None:
 
         new_args: tuple[fx.node.Argument, ...] = (
             inp_nhwc,
-            *_permute_qparams(node, "inp", nchw_to_nhwc),
-            *_permute_qparams(node, "out", nchw_to_nhwc),
+            *_permute_qparams(node, "inp", nchw_to_nhwc, unbatched),
+            *_permute_qparams(node, "out", nchw_to_nhwc, unbatched),
             get_arg(node, "kernel_size", list[int]),
             get_arg(node, "stride", list[int]),
             get_arg(node, "padding", list[int]),
@@ -236,13 +268,19 @@ def _convert_avg_pool2d_to_channels_last(node: fx.Node) -> None:
             exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
             args=new_args,
         )
-        pool_channels_last.meta["val"] = node.meta["val"].permute(*nchw_to_nhwc)
+        node_val = node.meta["val"]
+        if unbatched:
+            node_val = node_val.unsqueeze(0)
+        pool_channels_last.meta["val"] = node_val.permute(*nchw_to_nhwc)
 
         output_nchw = graph.call_function(
             exir_ops.edge.aten.permute_copy.default,
             args=(pool_channels_last, nhwc_to_nchw),
         )
         output_nchw.meta = node.meta.copy()
+        output_nchw.meta["val"] = node_val
+        if unbatched:
+            output_nchw = _remove_batch_dim(graph, output_nchw, node)
 
     node.replace_all_uses_with(output_nchw)
     graph.erase_node(node)
@@ -263,6 +301,9 @@ class ToChannelsLast(ExportPass):
             -> getitem per live output -> permute (NHWC->NCHW)
         permute (NCHW->NHWC) -> fused_quant.avg_pool2d_channels_last
             -> permute (NHWC->NCHW)
+
+    Unbatched pool inputs are viewed as a batch of 1 so the channels-last ops
+    always see a leading batch dimension.
 
     For most backends, NHWC layout is more efficient than NCHW layout, so this optimization
     is applied in the fused_quant IR.
