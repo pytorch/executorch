@@ -580,6 +580,94 @@ TEST_F(XNNLayoutTest, DecomposedHardswishStaysInOneRegion) {
   check({binary("torch.ops.aten.div.Tensor", product, six, shape)});
 }
 
+TEST_F(XNNLayoutTest, GlobalAveragePoolMatchesReferenceAndRebinds) {
+  const auto input = tensor({2, 3, 5, 7}, ptn::ValueRole::UserInput);
+  const auto output = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{input},
+       ptn::IntListArg{{5, 7}, {}},
+       ptn::IntListArg{{}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::NoneArg{}},
+      {2, 3, 1, 1});
+  check({output});
+}
+
+TEST_F(XNNLayoutTest, AveragePoolPaddingAndCeilModeMatchReference) {
+  struct Case {
+    std::vector<int64_t> input, kernel, stride, padding, output;
+    bool ceil_mode;
+  };
+  const Case cases[] = {
+      {{2, 3, 5, 7}, {2, 3}, {2, 2}, {0, 0}, {2, 3, 2, 3}, false},
+      {{1, 2, 6, 6}, {3}, {2}, {1}, {1, 2, 3, 3}, false},
+      {{1, 3, 4, 4}, {3, 3}, {2, 2}, {1, 1}, {1, 3, 3, 3}, true},
+      {{1, 2, 3, 3}, {2, 2}, {2, 2}, {1, 1}, {1, 2, 2, 2}, true},
+      {{1, 2, 5, 7}, {2, 3}, {2, 3}, {0, 0}, {1, 2, 3, 3}, true},
+      {{1, 3, 8, 8}, {2}, {3}, {0}, {1, 3, 3, 3}, false},
+      {{1, 2, 7, 5}, {1, 1}, {1, 1}, {0}, {1, 2, 7, 5}, false},
+      {{1, 2, 1, 1}, {3, 3}, {1, 1}, {1, 1}, {1, 2, 1, 1}, false},
+      {{2, 2, 6, 8}, {2, 2}, {}, {0}, {2, 2, 3, 4}, false},
+      {{1, 3, 5, 5}, {3, 3}, {2, 2}, {1, 1}, {1, 3, 3, 3}, true},
+      {{1, 2, 4, 5}, {3, 2}, {2, 2}, {1, 0}, {1, 2, 3, 3}, true},
+  };
+  for (const auto& test : cases) {
+    SCOPED_TRACE(&test - cases);
+    for (const bool count_include_pad : {false, true}) {
+      SCOPED_TRACE(count_include_pad);
+      graph = {};
+      buffers.clear();
+      const auto input = tensor(test.input, ptn::ValueRole::UserInput);
+      const auto output = operation(
+          "torch.ops.aten.avg_pool2d.default",
+          {ptn::TensorArg{input},
+           ptn::IntListArg{test.kernel, {}},
+           ptn::IntListArg{test.stride, {}},
+           ptn::IntListArg{test.padding, {}},
+           ptn::BoolArg{test.ceil_mode},
+           ptn::BoolArg{count_include_pad},
+           ptn::NoneArg{}},
+          test.output);
+      check({output});
+    }
+  }
+}
+
+TEST_F(XNNLayoutTest, AveragePoolKeepsConvolutionAndFanoutInOneRegion) {
+  const auto input = tensor({1, 3, 5, 7}, ptn::ValueRole::UserInput);
+  const auto weight = tensor({4, 3, 3, 3}, ptn::ValueRole::Parameter);
+  const auto bias = tensor({4}, ptn::ValueRole::Parameter);
+  const auto conv = convolution(input, weight, bias);
+  const auto pooled = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{conv},
+       ptn::IntListArg{{5, 7}, {}},
+       ptn::IntListArg{{}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::NoneArg{}},
+      {1, 4, 1, 1});
+  check({conv, pooled, activation("torch.ops.aten.relu.default", pooled)});
+}
+
+TEST_F(XNNLayoutTest, AveragePoolDivisorOverrideUsesReference) {
+  const auto input = tensor({1, 2, 4, 4}, ptn::ValueRole::UserInput);
+  const auto output = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{input},
+       ptn::IntListArg{{2, 2}, {}},
+       ptn::IntListArg{{2, 2}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::IntArg{3}},
+      {1, 2, 2, 2});
+  check({output}, {"Reference"});
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
