@@ -41,6 +41,7 @@
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/backends/aoti/temp_library.h>
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
