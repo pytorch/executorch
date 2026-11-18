@@ -1696,6 +1696,89 @@ class MixedW8A32TransposeConv2dPattern(QuantizationPattern):
         return output
 
 
+class MixedW8A32Conv2dPattern(MixedW8A32TransposeConv2dPattern):
+    # [OC, IC, 1, kW] -> [OC, 1, kW, IC].
+    weight_perm: List[int] = [0, 2, 3, 1]
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv2d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        conv_layer = fused_partition[0].nodes[-1]
+
+        if (
+            len(conv_layer.args) < 3
+            or conv_layer.args[2] is None
+            or len(conv_layer.kwargs) > 0
+        ):
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        # Stride defaults to [1, 1] when omitted (PyTorch conv2d default)
+        if len(conv_layer.args) > 3:
+            stride = conv_layer.args[3]
+            if isinstance(stride, (list, tuple)):
+                if len(stride) != 2:
+                    return (PartitionAnchors(empty=True), conv_layer)
+                s_h, s_w = stride[0], stride[1]
+            else:
+                s_h = s_w = stride
+        else:
+            s_h = s_w = 1
+
+        if s_h != 1 or not isinstance(s_w, int) or s_w < 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        if len(conv_layer.args) > 4:
+            padding = conv_layer.args[4]
+            if padding != [0, 0] and padding != 0:
+                return (PartitionAnchors(empty=True), conv_layer)
+        if len(conv_layer.args) > 5:
+            dilation = conv_layer.args[5]
+            if dilation != [1, 1] and dilation != 1:
+                return (PartitionAnchors(empty=True), conv_layer)
+        if len(conv_layer.args) > 6:
+            groups = conv_layer.args[6]
+            if groups != 1:
+                return (PartitionAnchors(empty=True), conv_layer)
+
+        cnn_weights = conv_layer.args[1]
+        if "tensor_meta" not in cnn_weights.meta:
+            return (PartitionAnchors(empty=True), conv_layer)
+        cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
+        # OC must be a multiple of 4 (SIMD).
+        if cnn_weights_shape[0] % 4 != 0:
+            return (PartitionAnchors(empty=True), conv_layer)
+        # IC must be a multiple of 4 (SIMD).
+        if cnn_weights_shape[1] % 4 != 0:
+            return (PartitionAnchors(empty=True), conv_layer)
+        if cnn_weights_shape[2] != 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        # The kernel runs a single [1, C, 1, W] frame.
+        inputs = conv_layer.args[0]
+        if "tensor_meta" not in inputs.meta:
+            return (PartitionAnchors(empty=True), conv_layer)
+        inputs_shape = inputs.meta["tensor_meta"].shape
+        if inputs_shape[0] != 1 or inputs_shape[2] != 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(conv_layer, 1)],
+                biases=[(conv_layer, 2)],
+                output=[],
+                others=[(conv_layer, 0)],
+            ),
+            conv_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_conv2d.default
+
+
 class RmsNormPattern(QuantizationPattern):
     """Pattern that preserves rms_norm from decomposition without matching anything."""
 

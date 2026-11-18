@@ -33,6 +33,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     MaxPool2dPattern,
     MaxPool2dWithoutIndicesPattern,
     MixedW8A32ConvPattern,
+    MixedW8A32Conv2dPattern,
     MixedW8A32GruPattern,
     MixedW8A32LinearPattern,
     MixedW8A32TransposeConv2dPattern,
@@ -506,6 +507,9 @@ class CadenceW8A32MixedQuantizer(CadenceQuantizer):
         )
         quantizers.append(
             CadenceAtenQuantizer(MixedW8A32ConvPattern(), qconfig_A32W8sym_127)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32Conv2dPattern(), qconfig_A32W8sym_127)
         )
         quantizers.append(
             CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym_127)
