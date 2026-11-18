@@ -48,6 +48,9 @@ struct PhysicalDevice final {
 #ifdef VK_KHR_shader_float16_int8
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_bfloat16
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR shader_bfloat16_features;
+#endif /* VK_KHR_shader_bfloat16 */
 #ifdef VK_KHR_shader_integer_dot_product
   VkPhysicalDeviceShaderIntegerDotProductFeatures
       shader_int_dot_product_features;

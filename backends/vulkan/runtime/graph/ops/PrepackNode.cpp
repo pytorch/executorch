@@ -78,6 +78,11 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
       const uint16_t* casted_data =
           reinterpret_cast<const uint16_t*>(tref->data);
       staging.cast_half_to_float_and_copy_from(casted_data, numel);
+    } else if (
+        tref_dtype == vkapi::kBFloat16 && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data =
+          reinterpret_cast<const uint16_t*>(tref->data);
+      staging.cast_bfloat16_to_float_and_copy_from(casted_data, numel);
     } else if (tref_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
       const int64_t* casted_data = reinterpret_cast<const int64_t*>(tref->data);
       staging.cast_and_copy_from<int64_t, int32_t>(casted_data, numel);

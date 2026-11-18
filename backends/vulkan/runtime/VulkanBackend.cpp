@@ -96,6 +96,8 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kLong;
     case vkgraph::VkDataType::FLOAT16:
       return vkapi::kHalf;
+    case vkgraph::VkDataType::BFLOAT16:
+      return vkapi::kBFloat16;
     case vkgraph::VkDataType::FLOAT32:
       return vkapi::kFloat;
     case vkgraph::VkDataType::FLOAT64:
@@ -118,6 +120,8 @@ vkapi::ScalarType equivalent_scalar_type(
       return vkapi::kLong;
     case executorch::runtime::etensor::ScalarType::Half:
       return vkapi::kHalf;
+    case executorch::runtime::etensor::ScalarType::BFloat16:
+      return vkapi::kBFloat16;
     case executorch::runtime::etensor::ScalarType::Float:
       return vkapi::kFloat;
     case executorch::runtime::etensor::ScalarType::Double:

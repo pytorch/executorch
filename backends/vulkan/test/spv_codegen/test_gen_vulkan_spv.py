@@ -40,6 +40,67 @@ class TestF16ImageStores(unittest.TestCase):
                 self.assertNotIn("round_to_f16", declaration)
 
 
+class TestBFloat16Conversions(unittest.TestCase):
+    def test_bfloat16_constructors_round(self) -> None:
+        for declaration in (
+            gen_vulkan_spv.define_explicit_type_extensions("bfloat16"),
+            gen_vulkan_spv.define_required_extensions("buffer", "bfloat16"),
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(
+                    "#define bf16vec4(v) bf16vec4(round_to_bf16(v))", declaration
+                )
+                self.assertIn(
+                    "#define bfloat16_t(v) bfloat16_t(round_to_bf16(v))", declaration
+                )
+
+    def test_texture_storage_omits_bfloat16(self) -> None:
+        self.assertNotIn(
+            "bfloat16",
+            gen_vulkan_spv.define_required_extensions("texture3d", "bfloat16"),
+        )
+
+    def test_half_and_bfloat16_promote_to_float(self) -> None:
+        self.assertEqual(
+            gen_vulkan_spv.get_higher_precision_dtype("half", "bfloat16"), "float"
+        )
+        self.assertEqual(
+            gen_vulkan_spv.get_higher_precision_dtype("bfloat16", "half"), "float"
+        )
+
+    def test_bfloat16_variants_require_buffer_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_root = Path(temp_dir)
+            (source_root / "kernel.glsl").write_text("#version 450\nvoid main() {}\n")
+            (source_root / "kernel.yaml").write_text(
+                "kernel:\n"
+                "  parameter_names_with_default_values:\n"
+                "    DTYPE: float\n"
+                "    STORAGE: buffer\n"
+                "    WEIGHT_STORAGE: buffer\n"
+                "  generate_variant_forall:\n"
+                "    WEIGHT_STORAGE:\n"
+                "      - VALUE: texture2d\n"
+                "      - VALUE: buffer\n"
+                "    DTYPE:\n"
+                "      - VALUE: float\n"
+                "      - VALUE: bfloat16\n"
+                "  shader_variants:\n"
+                "    - NAME: kernel\n"
+            )
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=None
+            )
+            self.assertEqual(
+                set(generator.output_file_map),
+                {
+                    "kernel_texture2d_float",
+                    "kernel_buffer_float",
+                    "kernel_buffer_bfloat16",
+                },
+            )
+
+
 class TestNestedShaderSources(unittest.TestCase):
     def _write_fake_compiler(
         self, directory: Path, assertions: str = ""
