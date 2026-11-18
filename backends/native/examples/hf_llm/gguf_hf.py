@@ -16,6 +16,7 @@ rows or touch only unquantized norms, so quantized GGUF blocks stay byte-exact.
 
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 import gguf
@@ -107,11 +108,15 @@ _ARCHITECTURES: dict[str, tuple[frozenset[str], Callable[..., Convert] | None]] 
 }
 
 
-def gguf_to_hf(model: torch.nn.Module, architecture: str) -> tuple[KeyMap, Convert]:
+def gguf_to_hf(
+    model: torch.nn.Module, architecture: str, truncated: bool = False
+) -> tuple[KeyMap, Convert]:
     """Return the ``key_map`` and ``convert`` that load a GGUF file of
     ``architecture`` into ``model``, a Hugging Face model.
 
-    The key map raises for a GGUF tensor that names no parameter of ``model``.
+    The key map raises for a GGUF tensor that names no parameter of ``model``,
+    unless ``truncated``: a model built with fewer layers than the file holds
+    then skips the blocks past its last layer.
     """
     if architecture not in _ARCHITECTURES:
         raise ValueError(
@@ -136,6 +141,9 @@ def gguf_to_hf(model: torch.nn.Module, architecture: str) -> tuple[KeyMap, Conve
         if name in names:
             return names[name]
         if name in _DERIVED:
+            return None
+        block = re.match(r"blk\.(\d+)\.", name)
+        if truncated and block and int(block[1]) >= config.num_hidden_layers:
             return None
         raise ValueError(
             f"GGUF tensor {name!r} maps to no {config.model_type} parameter"

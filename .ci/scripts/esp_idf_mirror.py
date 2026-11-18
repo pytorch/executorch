@@ -68,7 +68,7 @@ def main() -> None:
             {
                 "spec": requirement.version_spec,
                 "source": requirement.source.type,
-                "registry_url": None,
+                "registry_url": requirement.registry_url,
                 "is_public": requirement.is_public,
                 "require": requirement.is_required,
                 "name": None if is_idf else name,

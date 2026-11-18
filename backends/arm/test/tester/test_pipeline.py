@@ -6,7 +6,9 @@
 import copy
 import logging
 import os
+import tempfile
 import warnings as _warnings
+from pathlib import Path
 
 from typing import (
     Any,
@@ -26,6 +28,7 @@ from typing import (
 import executorch.backends.arm.test.tester.arm_tester as arm_tester_module
 
 import torch
+import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 
@@ -66,7 +69,9 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
+DType = ts.DType
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=Tuple[Any, ...])
 """Generic type used for test data in the pipeline.
@@ -1391,6 +1396,9 @@ class VgfPipeline(BasePipeline, Generic[T]):
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
        n_expected_delegates: Number of delegate calls expected after
        partitioning.
+       forbidden_tosa_dtypes: TOSA DType values to reject in emitted flatbuffers,
+           e.g. [DType.FP32, DType.FP16]. Import DType from this module.
+           Defaults to None, which disables the check.
 
     """
 
@@ -1424,9 +1432,13 @@ class VgfPipeline(BasePipeline, Generic[T]):
         n_expected_delegates: int = 1,
         is_qat: bool = False,
         compare_outputs: bool = True,
+        forbidden_tosa_dtypes: list[int] | None = None,
     ):
         if is_qat and not quantize:
             raise ValueError("QAT requires quantize=True.")
+
+        self.forbidden_tosa_dtypes = forbidden_tosa_dtypes or []
+        custom_path = self._configure_tosa_dtype_check(custom_path)
 
         if tosa_spec is None:
             if tosa_version is None:
@@ -1470,6 +1482,8 @@ class VgfPipeline(BasePipeline, Generic[T]):
             if use_to_edge_transform_and_lower
             else "partition"
         )
+
+        self._add_tosa_dtype_check_stage(remove_torch_quant_nodes_stage)
 
         if quantize:
             quantizer = VgfQuantizer(compile_spec)
@@ -1545,6 +1559,70 @@ class VgfPipeline(BasePipeline, Generic[T]):
                 compare_outputs=compare_outputs,
             )
         self.run_on_vulkan_runtime = run_on_vulkan_runtime
+
+    def _configure_tosa_dtype_check(self, custom_path: str | None) -> str | None:
+        """Configure a private directory for the optional TOSA dtype check."""
+        self._tosa_dtype_artifact_path: Path | None = None
+        self._tosa_dtype_temporary_directory: tempfile.TemporaryDirectory | None = None
+        if not self.forbidden_tosa_dtypes:
+            return custom_path
+
+        artifact_parent = custom_path or common.maybe_get_tosa_artifact_path(
+            allow_unresolved=True
+        )
+        if artifact_parent is None:
+            self._tosa_dtype_temporary_directory = tempfile.TemporaryDirectory(
+                prefix="vgf_dtype_check_"
+            )
+            self._tosa_dtype_artifact_path = Path(
+                self._tosa_dtype_temporary_directory.name
+            )
+        else:
+            Path(artifact_parent).mkdir(parents=True, exist_ok=True)
+            self._tosa_dtype_artifact_path = Path(
+                tempfile.mkdtemp(prefix="vgf_dtype_check_", dir=artifact_parent)
+            )
+        return str(self._tosa_dtype_artifact_path)
+
+    def _add_tosa_dtype_check_stage(self, stage_id: str) -> None:
+        """Validate datatypes and add the check after lowering."""
+        for dtype in self.forbidden_tosa_dtypes:
+            if dtype not in range(len(ts.DTypeNames)):
+                raise ValueError(f"Expected a TOSA DType value, got {dtype!r}.")
+        if self.forbidden_tosa_dtypes:
+            self.add_stage_after(stage_id, self._assert_no_forbidden_tosa_dtypes)
+
+    def _assert_no_forbidden_tosa_dtypes(self) -> None:
+        """Reject forbidden tensor datatypes in all emitted TOSA flatbuffers."""
+        if self._tosa_dtype_artifact_path is None:
+            raise RuntimeError("No TOSA artifact directory configured for dtype check.")
+
+        tosa_paths = sorted(self._tosa_dtype_artifact_path.glob("*.tosa"))
+        if not tosa_paths:
+            raise AssertionError(
+                f"No TOSA flatbuffers found in {self._tosa_dtype_artifact_path}."
+            )
+
+        forbidden_tensors = []
+        for tosa_path in tosa_paths:
+            tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_path.read_bytes(), 0)
+            for region_index in range(tosa_graph.RegionsLength()):
+                region = tosa_graph.Regions(region_index)
+                for block_index in range(region.BlocksLength()):
+                    block = region.Blocks(block_index)
+                    for tensor_index in range(block.TensorsLength()):
+                        tensor = block.Tensors(tensor_index)
+                        if tensor.Type() in self.forbidden_tosa_dtypes:
+                            forbidden_tensors.append(
+                                f"{tosa_path.name}: {tensor.Name().decode()} "
+                                f"({ts.DTypeNames[tensor.Type()]})"
+                            )
+
+        if forbidden_tensors:
+            raise AssertionError(
+                "VGF TOSA artifacts contain forbidden tensor datatypes:\n"
+                + "\n".join(forbidden_tensors)
+            )
 
 
 class VgfPipelineFP8(VgfPipeline[T]):

@@ -9,8 +9,9 @@ import torch
 
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckResolvedTensorShapes,
+    tosa_support_factory,
 )
-from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.partitioner import CustomOpSupported, TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
 from executorch.backends.arm.vgf.backend import MUTABLE_BUFFER_OWNERSHIP_KEY
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -19,7 +20,7 @@ from executorch.exir.backend.utils import tag_mutated_buffer, WhyNoPartitionRepo
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
-from torch.fx.passes.operator_support import chain, OperatorSupportBase
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 @final
@@ -28,7 +29,8 @@ class VgfPartitioner(TOSAPartitioner):
 
     Args:
         compile_spec: The Vgf compilation specification.
-        additional_checks: Optional sequence of additional operator support checks.
+        additional_checks: Optional sequence of additional operator support
+            checks.
 
     """
 
@@ -37,7 +39,6 @@ class VgfPartitioner(TOSAPartitioner):
         compile_spec: VgfCompileSpec,
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     ) -> None:
-        # Override the delegation spec for Vgf
         self.delegation_spec = DelegationSpec(
             VgfBackend.__name__, compile_spec._to_list()
         )
@@ -56,7 +57,8 @@ class VgfPartitioner(TOSAPartitioner):
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
     ) -> OperatorSupportBase:
-        return chain(
+        additional_checks = list(self.additional_checks or ())
+        additional_checks.append(
             CheckResolvedTensorShapes(
                 reporter,
                 targets=(
@@ -64,8 +66,22 @@ class VgfPartitioner(TOSAPartitioner):
                     exir_ops.edge.aten.permute_copy.default,
                 ),
                 reject_symbolic_scalars=True,
-            ),
-            super()._create_operator_support(containing_program, reporter),
+            )
+        )
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
+        positive_overrides = (
+            [CustomOpSupported(self._custom_partition_ops)]
+            if self._custom_partition_ops
+            else None
+        )
+        return tosa_support_factory(
+            self.tosa_spec,
+            containing_program,
+            reporter,
+            additional_checks=additional_checks,
+            additional_positive_overrides=positive_overrides,
         )
 
     def _validate_mutable_buffers(self, exported_program: ExportedProgram) -> None:

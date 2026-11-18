@@ -321,3 +321,50 @@ TEST_F(OpAminOutTest, InfinityAndNANTest) {
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+
+TEST_F(OpAminOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  Tensor out = tf.zeros({0});
+  op_amin_out(tf.zeros({0, 5}), dim_list, /*keepdim=*/false, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({0}));
+
+  out = tf.zeros({0, 1});
+  op_amin_out(tf.zeros({0, 5}), dim_list, /*keepdim=*/true, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({0, 1}));
+}
+
+TEST_F(OpAminOutTest, EmptyInputEmptyReducedDimDies) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  Tensor out = tf.zeros({5});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amin_out(tf.zeros({5, 0}), dim_list, /*keepdim=*/false, out));
+}
+
+TEST_F(OpAminOutTest, EmptyInputEmptyReducedAndKeptDimsDies) {
+  TensorFactory<ScalarType::Float> tf;
+  int64_t dims[1] = {1};
+  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+
+  // The output is empty too, but ATen still rejects the empty reduced dim.
+  Tensor out = tf.zeros({0});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amin_out(tf.zeros({0, 0}), dim_list, /*keepdim=*/false, out));
+}
+
+TEST_F(OpAminOutTest, EmptyInputReduceAllDies) {
+  TensorFactory<ScalarType::Float> tf;
+  ArrayRef<int64_t> empty_dim_list{ArrayRef<int64_t>{}};
+
+  Tensor out = tf.zeros({});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_amin_out(tf.zeros({0, 5}), empty_dim_list, /*keepdim=*/false, out));
+}

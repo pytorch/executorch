@@ -37,6 +37,22 @@ def define_common_targets(is_fbcode = False):
     )
 
     cpp_unittest(
+        name = "test_common_shims_slim_link",
+        srcs = [
+            "test_common_shims_slim_link.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti:common_shims_slim",
+        ],
+        # Static linking drops archive members nothing references, and
+        # --export-dynamic lets dlsym(RTLD_DEFAULT) see the members that stay.
+        overridden_link_style = "static",
+        linker_flags = [
+            "--export-dynamic",
+        ],
+    )
+
+    cpp_unittest(
         name = "test_common_shims_slim",
         srcs = [
             "test_common_shims_slim.cpp",

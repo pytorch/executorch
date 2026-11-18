@@ -88,6 +88,38 @@ struct RowIndexCheck {
   int64_t rows = 0;
 };
 
+// The off-graph KV cache as one graph sees it.
+struct OffGraphCacheBinding {
+  struct Layer {
+    // K and V storage, ggml [head_dim, rows, n_kv_heads].
+    ggml_tensor* k = nullptr;
+    ggml_tensor* v = nullptr;
+    // Sliding window of a ring layer, which attends all its rows; 0 for a
+    // flat layer.
+    int window = 0;
+  };
+  std::vector<Layer> layers;
+  // Rows a flat layer's attention reads, a prefix of its storage.
+  int64_t keys = 0;
+};
+
+// Uploads of a graph's off-graph attention, which the executor fills from the
+// cache's plan before every run. Layers with the same window share them.
+struct OffGraphUploads {
+  struct Group {
+    int window = 0;
+    // A layer with this window, whose plan fills the uploads.
+    int layer = 0;
+    // I32 [tokens]: the cache row each token writes.
+    size_t rows = 0;
+    // F16 [tokens, keys]: additive mask of the rows each token attends.
+    size_t mask = 0;
+    int64_t keys = 0;
+  };
+  int64_t tokens = 0;
+  std::vector<Group> groups;
+};
+
 struct GraphInstance {
   ggml_context_ptr context;
   ggml_cgraph* graph = nullptr;
@@ -95,6 +127,7 @@ struct GraphInstance {
   std::vector<TensorRef> outputs;
   // Input-driven row indices, rechecked on every replay.
   std::vector<RowIndexCheck> row_index_checks;
+  std::optional<OffGraphUploads> offgraph;
 };
 
 // Inference batch norm is the per-channel map x * scale + shift of its
@@ -132,11 +165,13 @@ class GraphBuilder {
       const std::vector<InputSlot>& inputs,
       const std::vector<OutputSlot>& outputs,
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+      const std::unordered_map<ValueId, ggml_tensor*>& row_scales,
       const std::unordered_map<ValueId, std::vector<uint8_t>>&
           rope_factor_bytes,
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
-      size_t graph_size);
+      size_t graph_size,
+      const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
 
@@ -224,6 +259,7 @@ class GraphBuilder {
   void lower_unary(const Node& node, Unary fn);
   void lower_sqrt(const Node& node);
   void lower_hardtanh(const Node& node);
+  void lower_elu(const Node& node);
   std::array<int, 2> pair_arg(
       const Node& node,
       std::string_view name,
@@ -275,6 +311,7 @@ class GraphBuilder {
   void lower_index_put(const Node& node);
   ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys);
   void lower_sdpa(const Node& node);
+  void lower_update_and_attend(const Node& node);
   void lower_sym_size(const Node& node);
   int64_t symbolic_operand(const Argument& arg) const;
   void lower_symbolic(const Node& node, const std::string& key);
@@ -283,11 +320,13 @@ class GraphBuilder {
   const std::vector<InputSlot>& inputs_;
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
+  const std::unordered_map<ValueId, ggml_tensor*>& row_scales_;
   const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
   const FoldedBatchNorms& batch_norms_;
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
+  const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
   std::map<std::pair<ValueId, int64_t>, ggml_tensor*> attention_masks_;

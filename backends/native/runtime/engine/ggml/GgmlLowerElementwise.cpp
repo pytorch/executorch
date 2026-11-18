@@ -225,6 +225,19 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
+// ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x), and
+// ggml's x > 0 ? x : expm1(x).
+void GraphBuilder::lower_elu(const Node& node) {
+  for (const auto& [name, index] :
+       {std::pair{"alpha", 1}, {"scale", 2}, {"input_scale", 3}}) {
+    if (float_arg(node, name, index, 1.0, true) != 1.0) {
+      throw std::runtime_error(
+          "ggml: elu supports only alpha, scale and input_scale 1");
+    }
+  }
+  lower_unary(node, ggml_elu);
+}
+
 // Reduces a run of trailing dimensions, which ggml sees as one row.
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,

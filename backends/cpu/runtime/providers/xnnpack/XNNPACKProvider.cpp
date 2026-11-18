@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
+#include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKPasses.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
 #include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
@@ -29,6 +30,8 @@ namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
 using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
+using xnnpack::clamp_bound;
+using xnnpack::literal_scalar;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -214,6 +217,64 @@ std::optional<MaxPool2d> parse_max_pool2d(const Kernel& node) {
   return parsed;
 }
 
+struct AvgPool2d {
+  ptn::ValueId input;
+  ptn::ValueId output;
+  int64_t kh, kw, sh, sw, ph, pw;
+  bool ceil_mode;
+  bool count_include_pad;
+};
+
+std::optional<AvgPool2d> parse_avg_pool2d(const Kernel& node) {
+  if (node.inputs.size() != 7 || node.outputs.size() != 1 ||
+      node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+      std::any_of(node.inputs.begin(), node.inputs.end(), [](const auto& in) {
+        return in.mutated;
+      })) {
+    return std::nullopt;
+  }
+  const auto& input = arg(node, 0);
+  const auto* kernel = static_pool_list(arg(node, 1));
+  const auto* stride = static_pool_list(arg(node, 2));
+  const auto* padding = static_pool_list(arg(node, 3));
+  const auto& ceil = arg(node, 4);
+  const auto& include_pad = arg(node, 5);
+  if (input.kind() != ptn::ArgKind::Tensor || !kernel || !stride || !padding ||
+      ceil.kind() != ptn::ArgKind::Bool || ceil.as_bool().id != ptn::kInvalid ||
+      include_pad.kind() != ptn::ArgKind::Bool ||
+      include_pad.as_bool().id != ptn::kInvalid ||
+      arg(node, 6).kind() != ptn::ArgKind::None) {
+    return std::nullopt;
+  }
+  AvgPool2d parsed;
+  parsed.input = input.as_tensor().id;
+  parsed.output = node.outputs[0].value_id;
+  if (!pool_pair(*kernel, 0, parsed.kh, parsed.kw) || parsed.kh < 1 ||
+      parsed.kw < 1) {
+    return std::nullopt;
+  }
+  if (stride->empty()) {
+    parsed.sh = parsed.kh;
+    parsed.sw = parsed.kw;
+  } else if (
+      !pool_pair(*stride, 0, parsed.sh, parsed.sw) || parsed.sh < 1 ||
+      parsed.sw < 1) {
+    return std::nullopt;
+  }
+  if (padding->empty() || !pool_pair(*padding, 0, parsed.ph, parsed.pw) ||
+      parsed.ph < 0 || parsed.pw < 0 || parsed.ph > parsed.kh / 2 ||
+      parsed.pw > parsed.kw / 2) {
+    return std::nullopt;
+  }
+  constexpr auto limit = std::numeric_limits<uint32_t>::max();
+  if (parsed.kh > limit / parsed.kw || parsed.sh > limit || parsed.sw > limit) {
+    return std::nullopt;
+  }
+  parsed.ceil_mode = ceil.as_bool().value;
+  parsed.count_include_pad = include_pad.as_bool().value;
+  return parsed;
+}
+
 class XNNExecutable;
 
 struct XNNOp {
@@ -296,8 +357,21 @@ class XNNExecutable final : public Executable {
         region.inputs.begin(), region.inputs.end());
     std::unordered_set<ptn::ValueId> outputs(
         region.outputs.begin(), region.outputs.end());
+    const auto hardswish_chains = xnnpack::find_hardswish_chains(
+        region, context_.graph, context_.buffers);
+    std::unordered_map<KernelId, const xnnpack::HardswishChain*> recomposed;
     std::unordered_set<ptn::ValueId> used;
+    for (const auto& chain : hardswish_chains) {
+      for (auto id : chain.nodes) {
+        recomposed.emplace(id, &chain);
+      }
+      used.insert(chain.input);
+      used.insert(chain.output);
+    }
     for (auto id : region.nodes) {
+      if (recomposed.count(id)) {
+        continue;
+      }
       const auto& node = context_.graph.node(id);
       for (auto value : node.input_value_ids()) {
         used.insert(value);
@@ -345,7 +419,13 @@ class XNNExecutable final : public Executable {
       }
     }
     for (auto id : region.nodes) {
-      const auto error = define(context_.graph.node(id));
+      const auto chain = recomposed.find(id);
+      if (chain != recomposed.end() && chain->second->nodes.back() != id) {
+        continue;
+      }
+      const auto error = chain == recomposed.end()
+          ? define(context_.graph.node(id))
+          : hardswish(*chain->second);
       if (error != Error::Ok) {
         ET_LOG(
             Error,
@@ -370,6 +450,8 @@ class XNNExecutable final : public Executable {
         context_.execution.threadpool,
         runtime_flags,
         &runtime_));
+    CPU_XNN_CHECK(xnn_delete_subgraph(subgraph_));
+    subgraph_ = nullptr;
     if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
       profiling_ = check_profiling(
           profiler_.initialize(runtime_, &state_.operator_counts),
@@ -800,8 +882,18 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
+  Error hardswish(const xnnpack::HardswishChain& chain) {
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_, xnn_unary_hardswish, nullptr, chain.input, chain.output, 0));
+    return Error::Ok;
+  }
+
   static bool supports_activation(const Kernel& node, const ptn::Graph& graph) {
-    if (node.inputs.size() != 1 || node.outputs.size() != 1 ||
+    return node.inputs.size() == 1 && elementwise_unary(node, graph);
+  }
+
+  static bool elementwise_unary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 ||
         arg(node, 0).kind() != ptn::ArgKind::Tensor ||
         node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
         !fp32(node, graph)) {
@@ -844,6 +936,119 @@ class XNNExecutable final : public Executable {
     return constant(bias) &&
         (shape.empty() ||
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
+  }
+
+  static bool supports_avg_pool(const Kernel& node, const ptn::Graph& graph) {
+    const auto parsed = parse_avg_pool2d(node);
+    if (!parsed) {
+      return false;
+    }
+    const auto& input = graph.value(parsed->input).tensor_meta();
+    const auto& output = graph.value(parsed->output).tensor_meta();
+    if (input.dtype != ptn::ScalarType::Float ||
+        output.dtype != ptn::ScalarType::Float || input.quant || output.quant ||
+        input.sizes.size() != 4 || output.sizes.size() != 4 ||
+        input.sizes[0] != output.sizes[0] ||
+        input.sizes[1] != output.sizes[1]) {
+      return false;
+    }
+    for (const auto& [axis, kernel, stride, padding] :
+         {std::array<int64_t, 4>{2, parsed->kh, parsed->sh, parsed->ph},
+          std::array<int64_t, 4>{3, parsed->kw, parsed->sw, parsed->pw}}) {
+      const auto size = input.sizes[axis];
+      if (size > std::numeric_limits<uint32_t>::max() ||
+          size + 2 * padding < kernel ||
+          output.sizes[axis] !=
+              pooling_output_size(
+                  size, kernel, stride, padding, 1, parsed->ceil_mode) ||
+          (parsed->ceil_mode &&
+           padding + ceil_pad_amount(size, kernel, stride, padding, 1) >
+               std::numeric_limits<uint32_t>::max())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Error avg_pool(const Kernel& node) {
+    const auto parsed = parse_avg_pool2d(node);
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed, InvalidProgram, "XNNPACK avg_pool2d schema mismatch");
+    const auto input = parsed->input;
+    const auto output = parsed->output;
+    const auto in = dimensions(input);
+    const auto out = dimensions(output);
+    if (parsed->ph == 0 && parsed->pw == 0 &&
+        static_cast<size_t>(parsed->kh) == in[2] &&
+        static_cast<size_t>(parsed->kw) == in[3]) {
+      const int64_t axes[] = {2, 3};
+      CPU_XNN_CHECK(xnn_define_static_reduce_v2(
+          subgraph_,
+          xnn_reduce_mean,
+          2,
+          axes,
+          input,
+          output,
+          XNN_FLAG_KEEP_DIMS));
+      return Error::Ok;
+    }
+    uint32_t nhwc_in, nhwc_out;
+    auto error = tensor({in[0], in[2], in[3], in[1]}, nhwc_in);
+    if (error != Error::Ok) {
+      return error;
+    }
+    error = tensor({out[0], out[2], out[3], out[1]}, nhwc_out);
+    if (error != Error::Ok) {
+      return error;
+    }
+    const size_t to_nhwc[] = {0, 2, 3, 1};
+    const size_t to_nchw[] = {0, 3, 1, 2};
+    CPU_XNN_CHECK(
+        xnn_define_static_transpose(subgraph_, 4, to_nhwc, input, nhwc_in, 0));
+    int64_t top = parsed->ph, left = parsed->pw;
+    int64_t bottom = top, right = left;
+    if (parsed->ceil_mode) {
+      bottom += ceil_pad_amount(in[2], parsed->kh, parsed->sh, top, 1);
+      right += ceil_pad_amount(in[3], parsed->kw, parsed->sw, left, 1);
+    }
+    if (parsed->count_include_pad && (top != 0 || left != 0)) {
+      // XNNPACK excludes implicit padding from the divisor. Materialize only
+      // declared padding; ceil-mode overhang must still be excluded.
+      const size_t pads[] = {
+          0, static_cast<size_t>(top), static_cast<size_t>(left), 0};
+      uint32_t padded_input;
+      error = tensor(
+          {in[0], in[2] + 2 * pads[1], in[3] + 2 * pads[2], in[1]},
+          padded_input);
+      if (error != Error::Ok) {
+        return error;
+      }
+      CPU_XNN_CHECK(xnn_define_static_constant_pad_v2(
+          subgraph_, 4, pads, pads, 0.0f, nhwc_in, padded_input, 0));
+      nhwc_in = padded_input;
+      bottom -= top;
+      right -= left;
+      top = left = 0;
+    }
+    const auto infinity = std::numeric_limits<float>::infinity();
+    CPU_XNN_CHECK(xnn_define_average_pooling_2d(
+        subgraph_,
+        static_cast<uint32_t>(top),
+        static_cast<uint32_t>(right),
+        static_cast<uint32_t>(bottom),
+        static_cast<uint32_t>(left),
+        static_cast<uint32_t>(parsed->kh),
+        static_cast<uint32_t>(parsed->kw),
+        static_cast<uint32_t>(parsed->sh),
+        static_cast<uint32_t>(parsed->sw),
+        -infinity,
+        infinity,
+        nhwc_in,
+        nhwc_out,
+        0));
+    CPU_XNN_CHECK(xnn_define_static_transpose(
+        subgraph_, 4, to_nchw, nhwc_out, output, 0));
+    return Error::Ok;
   }
 
   static bool supports_max_pool(const Kernel& node, const ptn::Graph& graph) {
@@ -1063,18 +1268,44 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  static bool supports_add(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 3 &&
-        node.outputs.size() == 1 &&
-        ((arg(node, 2).kind() == ptn::ArgKind::Int &&
-          arg(node, 2).as_int().value == 1) ||
-         (arg(node, 2).kind() == ptn::ArgKind::Float &&
-          arg(node, 2).as_float().value == 1));
+  static bool supports_clamp(const Kernel& node, const ptn::Graph& graph) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    float min = 0;
+    float max = 0;
+    return node.inputs.size() == 3 && elementwise_unary(node, graph) &&
+        (arg(node, 1).kind() != ptn::ArgKind::None ||
+         arg(node, 2).kind() != ptn::ArgKind::None) &&
+        clamp_bound(arg(node, 1), -infinity, min) &&
+        clamp_bound(arg(node, 2), infinity, max) && min <= max;
   }
 
-  static bool supports_mul(const Kernel& node, const ptn::Graph& graph) {
-    return fp32(node, graph) && node.inputs.size() == 2 &&
-        node.outputs.size() == 1;
+  Error clamp(const Kernel& node) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    xnn_unary_params params{};
+    clamp_bound(arg(node, 1), -infinity, params.clamp.min);
+    clamp_bound(arg(node, 2), infinity, params.clamp.max);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_clamp,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
+  static bool supports_binary(const Kernel& node, const ptn::Graph& graph) {
+    if (node.outputs.size() != 1 || node.inputs.size() < 2 ||
+        node.inputs.size() > 3 || arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        arg(node, 1).kind() != ptn::ArgKind::Tensor || !fp32(node, graph)) {
+      return false;
+    }
+    if (node.inputs.size() == 2) {
+      return true;
+    }
+    const auto& alpha = arg(node, 2);
+    return (alpha.kind() == ptn::ArgKind::Int && alpha.as_int().value == 1) ||
+        (alpha.kind() == ptn::ArgKind::Float && alpha.as_float().value == 1);
   }
 
   template <xnn_binary_operator Operator>
@@ -1086,6 +1317,33 @@ class XNNExecutable final : public Executable {
         arg(node, 0).as_tensor().id,
         arg(node, 1).as_tensor().id,
         node.outputs.at(0).value_id,
+        0));
+    return Error::Ok;
+  }
+
+  // ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x),
+  // and XNNPACK's x > 0 ? x : alpha * expm1(x). XNNPACK's x86 kernels
+  // mishandle an infinite, zero or subnormal alpha.
+  static bool supports_elu(const Kernel& node, const ptn::Graph& graph) {
+    float alpha = 0;
+    float scale = 0;
+    float input_scale = 0;
+    return node.inputs.size() == 4 && elementwise_unary(node, graph) &&
+        literal_scalar(arg(node, 1), alpha) && std::isnormal(alpha) &&
+        alpha > 0 && literal_scalar(arg(node, 2), scale) &&
+        literal_scalar(arg(node, 3), input_scale) && scale == 1 &&
+        input_scale == 1;
+  }
+
+  Error elu(const Kernel& node) {
+    xnn_unary_params params{};
+    literal_scalar(arg(node, 1), params.elu.alpha);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_elu,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
         0));
     return Error::Ok;
   }
@@ -1215,18 +1473,26 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 15> kOps{{
+  static constexpr std::array<XNNOp, 18> kOps{{
       {"torch.ops.aten.add.Tensor",
-       &E::supports_add,
+       &E::supports_binary,
        &E::binary<xnn_binary_add>},
       {"torch.ops.aten.as_strided_copy.default",
        &E::supports_as_strided,
        &E::static_reshape},
       {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
+      {"torch.ops.aten.avg_pool2d.default",
+       &E::supports_avg_pool,
+       &E::avg_pool},
       {"torch.ops.aten.bmm.default", &E::supports_bmm, &E::bmm},
+      {"torch.ops.aten.clamp.default", &E::supports_clamp, &E::clamp},
       {"torch.ops.aten.convolution.default",
        &E::supports_convolution,
        &E::convolution},
+      {"torch.ops.aten.div.Tensor",
+       &E::supports_binary,
+       &E::binary<xnn_binary_divide>},
+      {"torch.ops.aten.elu.default", &E::supports_elu, &E::elu},
       {"torch.ops.aten.gelu.default",
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
@@ -1236,7 +1502,7 @@ const XNNOp* find_op(std::string_view target) {
        &E::max_pool},
       {"torch.ops.aten.mean.dim", &E::supports_mean, &E::mean},
       {"torch.ops.aten.mul.Tensor",
-       &E::supports_mul,
+       &E::supports_binary,
        &E::binary<xnn_binary_multiply>},
       {"torch.ops.aten.native_layer_norm.default",
        &E::supports_layer_norm,

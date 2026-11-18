@@ -13,10 +13,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 REUSABLE = "./.github/workflows/_unittest.yml"
+BACKEND = "./.github/workflows/_test_backend.yml"
+CLANG12 = "ci-image:executorch-ubuntu-22.04-clang12"
 
 
 def load_workflow(name):
-    return yaml.safe_load((WORKFLOWS / name).read_text())
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
 class TorchciWorkflowTest(unittest.TestCase):
@@ -34,8 +36,49 @@ class TorchciWorkflowTest(unittest.TestCase):
         )
         for platform in ("macos", "windows"):
             self.assertNotIn("upload-test-run-reports", jobs[platform]["with"])
-        for job in load_workflow("_test_backend.yml")["jobs"].values():
-            self.assertNotIn("upload-test-run-reports", job.get("with", {}))
+
+    def test_backend_reporting_is_off_by_default_and_linux_only(self):
+        workflow = load_workflow("_test_backend.yml")
+        triggers = workflow.get("on", workflow.get(True))
+        report_input = triggers["workflow_call"]["inputs"]["upload-test-run-reports"]
+        self.assertEqual(report_input["type"], "boolean")
+        self.assertIs(report_input["default"], False)
+        for name, job in workflow["jobs"].items():
+            with self.subTest(job=name):
+                if name == "test-backend-linux":
+                    self.assertEqual(
+                        job["with"]["upload-test-run-reports"],
+                        "${{ inputs.upload-test-run-reports }}",
+                    )
+                else:
+                    self.assertNotIn("upload-test-run-reports", job.get("with", {}))
+
+    def test_only_clang12_backend_suites_opt_in(self):
+        # These run on the clang12 image, whose torch carries the reporter.
+        opted = {
+            ("test-backend-xnnpack.yml", "test-xnnpack"),
+            ("test-backend-vulkan.yml", "test-vulkan"),
+            ("test-backend-webgpu.yml", "test-webgpu"),
+            ("test-backend-qnn.yml", "test-qnn"),
+            ("test-backend-openvino.yml", "test-openvino"),
+            ("test-backend-nxp.yml", "test-nxp"),
+        }
+        callers = {}
+        for path in WORKFLOWS.glob("*.yml"):
+            for name, job in load_workflow(path.name).get("jobs", {}).items():
+                if job.get("uses") == BACKEND:
+                    callers[(path.name, name)] = job
+        self.assertLessEqual(opted, set(callers))
+        for key, job in callers.items():
+            with self.subTest(caller=key):
+                self.assertEqual(
+                    job["with"].get("upload-test-run-reports", False), key in opted
+                )
+                if key in opted:
+                    self.assertEqual(job["with"].get("docker-image", CLANG12), CLANG12)
+                    self.assertEqual(
+                        job["permissions"], {"id-token": "write", "contents": "read"}
+                    )
 
     def test_linux_does_not_lower_the_callers_actions_permission(self):
         workflow = load_workflow("_unittest.yml")
