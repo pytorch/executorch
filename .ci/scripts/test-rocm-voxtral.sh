@@ -35,10 +35,9 @@ export HF_TOKEN
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
+from install_requirements import ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
