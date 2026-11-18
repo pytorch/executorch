@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import io
 import math
 import operator
 from typing import TYPE_CHECKING
@@ -38,6 +39,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
 )
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -4909,6 +4911,113 @@ class RecomposePixelUnshuffle:
 
 
 class RecomposeRmsNorm:
+    class _SavedRmsNorm(torch.nn.Module):
+        def __init__(
+            self,
+            square=2.0,
+            persistent=True,
+            eps=9.765625e-10,
+            mutate=None,
+            keepdim=True,
+            cast_dtype=None,
+            detach_exponent=False,
+            weight_dtype=torch.float32,
+        ):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(8, dtype=weight_dtype))
+            self.mutate = mutate
+            self.keepdim = keepdim
+            self.cast_dtype = cast_dtype
+            self.detach_exponent = detach_exponent
+            if isinstance(square, torch.nn.Parameter):
+                self.square = square
+            else:
+                self.register_buffer(
+                    "square", torch.as_tensor(square), persistent=persistent
+                )
+            self.register_buffer("eps", torch.as_tensor(eps), persistent=persistent)
+            if mutate == "buffer":
+                self.register_buffer("alias", self.square.view(()))
+
+        def forward(self, x):
+            if self.cast_dtype is not None:
+                x = x.float()
+            square, eps = self.square, self.eps
+            if self.mutate == "literal":
+                square, eps = 2, torch.tensor(1e-6)
+                eps.view(()).add_(0.1)
+            elif self.mutate == "buffer":
+                self.alias.add_(2.0)
+            if self.detach_exponent:
+                square = square.detach()
+            statistic = x.pow(square).mean(-1, keepdim=self.keepdim)
+            norm = x * torch.rsqrt(statistic + eps)
+            if self.cast_dtype is not None:
+                norm = norm.to(self.cast_dtype)
+            output = norm * self.weight
+            if self.mutate == "epsilon":
+                self.eps.add_(0.1)
+            return output
+
+    @staticmethod
+    def _test_saved(options, expected_count, form, assertions):
+        model = RecomposeRmsNorm._SavedRmsNorm(**options)
+        inputs = (torch.rand(2, 4, 8) + 0.5 if model.keepdim else torch.zeros(8),)
+        if model.cast_dtype is not None:
+            inputs = (inputs[0].half(),)
+        archive = io.BytesIO()
+        torch.export.save(torch.export.export(model, inputs), archive)
+        archive.seek(0)
+        source = torch.export.load(archive)
+        if form == "joint":
+            # ODL joint graphs use state names; Edge re-export adds p_/b_ prefixes.
+            for node, spec in zip(
+                source.graph.find_nodes(op="placeholder"),
+                source.graph_signature.input_specs,
+            ):
+                if spec.target is not None:
+                    node.name = node.target = spec.target.replace(".", "_")
+                    spec.arg.name = node.name
+            source.graph_module.recompile()
+        edge = form in {"edge", "joint"}
+        program = (
+            to_edge(
+                source, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+            ).exported_program()
+            if edge
+            else source
+        )
+        for node in program.graph.nodes:
+            if program.graph_signature.inputs_to_buffers.get(node.name) in {
+                "square",
+                "eps",
+                "alias",
+            }:
+                assert node.meta["val"].constant is None
+        gm = program.module() if form == "get_attr" else program.graph_module
+        binding = None if form == "get_attr" else source if form == "joint" else program
+        _passes.RecomposeRmsNorm(
+            quantization_capture=not edge, edge_program=binding
+        ).call(gm)
+        gm.graph.lint()
+        target = (
+            exir_ops.edge.aten.rms_norm.default
+            if edge
+            else torch.ops.aten.rms_norm.default
+        )
+        assertions.assert_target_count(gm, target, expected_count)
+        actual = gm if form == "get_attr" else program.module()
+        for _ in range(2 if options.get("mutate") == "epsilon" else 1):
+            torch.testing.assert_close(actual(*inputs), model(*inputs))
+        if expected_count:
+            rms = next(node for node in gm.graph.nodes if node.target == target)
+            assert rms.args[3] == model.eps.item()
+        if form == "edge" and not options:
+            x = inputs[0].detach().requires_grad_()
+            actual_grad = torch.autograd.grad(actual(x).sum(), x)[0]
+            expected_grad = torch.autograd.grad(model(x).sum(), x)[0]
+            torch.testing.assert_close(actual_grad, expected_grad)
+
     class _RmsNorm(torch.nn.Module):
         def __init__(
             self,
@@ -4917,6 +5026,7 @@ class RecomposeRmsNorm:
             square_exponent: int = 2,
             reduction_dim: int = -1,
             keepdim: bool = True,
+            tensor_eps: bool = False,
         ):
             super().__init__()
             self.weight = torch.nn.Parameter(torch.ones(dim))
@@ -4924,13 +5034,14 @@ class RecomposeRmsNorm:
             self.square_exponent = square_exponent
             self.reduction_dim = reduction_dim
             self.keepdim = keepdim
+            self.tensor_eps = tensor_eps
 
         def forward(self, x):
             norm = x * torch.rsqrt(
                 x.pow(self.square_exponent).mean(
                     self.reduction_dim, keepdim=self.keepdim
                 )
-                + self.eps
+                + (torch.tensor([self.eps]) if self.tensor_eps else self.eps)
             )
             return norm * self.weight
 
@@ -5048,6 +5159,7 @@ class RecomposeRmsNorm:
         backend_type: QnnExecuTorchBackendType,
         assertions: Assertions,
         pass_pipeline: PassPipeline,
+        subtests,
     ):
         dim = 16
         gm = pass_pipeline.lower_annotation_gm(
@@ -5073,6 +5185,44 @@ class RecomposeRmsNorm:
         )
         assert rms_norm.args[2].op == "get_attr"
 
+        for name, model, shape in (
+            (
+                "rank_one_all_dims",
+                RecomposeRmsNorm._RmsNorm(8, reduction_dim=None, keepdim=False),
+                (8,),
+            ),
+            (
+                "rank_one_empty_dims",
+                RecomposeRmsNorm._RmsNorm(8, reduction_dim=[], keepdim=False),
+                (8,),
+            ),
+            ("identity_casts", RecomposeRmsNorm._Fp32RmsNorm(8), (2, 4, 8)),
+            (
+                "rank_one_known_tensor_epsilon",
+                RecomposeRmsNorm._RmsNorm(8, keepdim=False, tensor_eps=True),
+                (8,),
+            ),
+        ):
+            with subtests.test(msg=name):
+                inputs = (torch.rand(shape) + 0.5,)
+                program = torch.export.export(model, inputs)
+                if model.tensor_eps:
+                    # Preserve the legacy case where export retained scalar metadata.
+                    add = next(
+                        node
+                        for node in program.graph.nodes
+                        if node.target
+                        in {torch.ops.aten.add.Tensor, exir_ops.edge.aten.add.Tensor}
+                    )
+                    add.args[1].meta["val"].constant = torch.tensor([model.eps])
+                _passes.RecomposeRmsNorm(
+                    quantization_capture=True, edge_program=program
+                ).call(program.graph_module)
+                assertions.assert_target_count(
+                    program.graph_module, torch.ops.aten.rms_norm.default, 1
+                )
+                torch.testing.assert_close(program.module()(*inputs), model(*inputs))
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -5083,6 +5233,60 @@ class RecomposeRmsNorm:
         pass_pipeline: PassPipeline,
         subtests,
     ):
+        for name, options, expected_count, form in (
+            ("saved_buffers_aten", {}, 1, "aten"),
+            ("saved_buffers_edge", {}, 1, "edge"),
+            ("detached_buffer_exponent", {"detach_exponent": True}, 1, "edge"),
+            ("one_element_buffer_exponent", {"square": [2.0]}, 1, "edge"),
+            ("identity_cast_fp16_aten", {"cast_dtype": torch.float32}, 0, "aten"),
+            ("identity_cast_fp16_edge", {"cast_dtype": torch.float32}, 0, "edge"),
+            (
+                "promoted_weight_output",
+                {"cast_dtype": torch.float16},
+                0,
+                "aten",
+            ),
+            (
+                "matching_weight_output",
+                {
+                    "cast_dtype": torch.float16,
+                    "weight_dtype": torch.float16,
+                },
+                1,
+                "aten",
+            ),
+            ("renamed_joint_inputs", {}, 1, "joint"),
+            ("buffer_get_attr", {}, 1, "get_attr"),
+            ("nonpersistent_buffers", {"persistent": False}, 1, "edge"),
+            ("wrong_buffer_exponent", {"square": [4.0]}, 0, "edge"),
+            (
+                "trainable_exponent",
+                {
+                    "square": torch.nn.Parameter(torch.tensor(2.0)),
+                    "detach_exponent": True,
+                },
+                0,
+                "edge",
+            ),
+            ("broadcast_epsilon", {"eps": torch.ones(1, 1, 1, 1)}, 0, "edge"),
+            (
+                "aliased_buffer_mutation",
+                {"mutate": "buffer", "detach_exponent": True},
+                0,
+                "aten",
+            ),
+            ("aliased_literal_mutation", {"mutate": "literal"}, 0, "aten"),
+            ("mutated_epsilon_stale_signature", {"mutate": "epsilon"}, 0, "joint"),
+            (
+                "promoted_epsilon_dtype",
+                {"eps": torch.tensor(1e-50, dtype=torch.float64), "keepdim": False},
+                0,
+                "aten",
+            ),
+        ):
+            with subtests.test(msg=name):
+                RecomposeRmsNorm._test_saved(options, expected_count, form, assertions)
+
         dim = 16
         inputs = (torch.randn(1, 4, 8, dim),)
         for name, module in (

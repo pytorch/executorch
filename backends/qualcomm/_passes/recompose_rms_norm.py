@@ -6,23 +6,28 @@
 import logging
 import math
 import numbers
+import operator
 
 import torch
 from executorch.backends.qualcomm._passes.utils import copy_meta, find_patterns
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+from torch._functorch._aot_autograd.descriptors import BufferAOTInput, ParamAOTInput
 from torch._subclasses.fake_tensor import FakeTensor
 
 logger = logging.getLogger(__name__)
 
 # Export wraps lifted scalar tensor constants before they reach Tensor_Tensor ops.
 SCALAR_WRAPPER_TARGETS = {
+    exir_ops.edge.aten.alias_copy.default,
     exir_ops.edge.aten.detach.default,
     exir_ops.edge.aten.detach_.default,
     exir_ops.edge.aten.lift_fresh_copy.default,
+    torch.ops.aten.alias_copy.default,
     torch.ops.aten.detach.default,
     torch.ops.aten.detach_.default,
     torch.ops.aten.lift_fresh_copy.default,
@@ -147,12 +152,6 @@ def _get_scalar(value, lifted_tensor_constants=None):
     return None
 
 
-def _is_pow_with_exponent(node, exponent, lifted_tensor_constants=None):
-    return _is_pow(node) and (
-        _get_scalar(node.args[1], lifted_tensor_constants) == exponent
-    )
-
-
 class RecomposeRmsNorm(ExportPass):
     """
     Merge decomposed operators back to one super node.
@@ -164,6 +163,7 @@ class RecomposeRmsNorm(ExportPass):
         self.quantization_capture = quantization_capture
         self.edge_program = edge_program
         self.lifted_tensor_constants = {}
+        self.allow_buffer_scalars = False
         if edge_program is not None:
             # FP export keeps lifted tensor literals in ExportedProgram.constants,
             # rather than attaching them to the placeholder's FakeTensor metadata.
@@ -177,16 +177,46 @@ class RecomposeRmsNorm(ExportPass):
         if quantization_capture:
             self.rms_norm_target = torch.ops.aten.rms_norm.default
 
-    def _get_rms_norm_epsilon(self, add, mean):
-        if len(add.args) < 2:
+    def _get_rms_scalar(self, operand, *, exponent=False):
+        while _is_node(operand) and operand.target in SCALAR_WRAPPER_TARGETS:
+            operand = operand.args[0]
+        if not _is_node(operand):
+            return _get_scalar(operand)
+        descriptor = operand.meta.get("desc")
+        if not self.allow_buffer_scalars or isinstance(descriptor, ParamAOTInput):
             return None
-        if add.args[0] is mean:
-            eps_arg = add.args[1]
-        elif add.args[1] is mean:
-            eps_arg = add.args[0]
+        if operand.op == "placeholder" and self.edge_program is not None:
+            signature = self.edge_program.graph_signature
+            if (
+                operand.name in signature.user_inputs
+                or operand.name in signature.inputs_to_parameters
+            ):
+                return None
+        scalar = _get_scalar(operand, self.lifted_tensor_constants)
+        if scalar is not None:
+            return scalar
+        if operand.op == "placeholder" and self.edge_program is not None:
+            target = self.edge_program.graph_signature.inputs_to_buffers.get(
+                operand.name,
+                descriptor.target if isinstance(descriptor, BufferAOTInput) else None,
+            )
+            value = self.edge_program.state_dict.get(
+                target, self.edge_program.constants.get(target)
+            )
+        elif operand.op == "get_attr":
+            try:
+                value = operand.graph.owning_module.get_buffer(operand.target)
+            except AttributeError:
+                return None
         else:
             return None
-        return _get_scalar(eps_arg, self.lifted_tensor_constants)
+        if (
+            isinstance(value, torch.Tensor)
+            and value.dim() <= (1 if exponent else 0)
+            and not value.requires_grad
+        ):
+            return _get_scalar(value)
+        return None
 
     def _is_fp32_upcast(self, node):
         if not _is_cast_wrapper(node):
@@ -212,13 +242,13 @@ class RecomposeRmsNorm(ExportPass):
         return None
 
     def _is_known_output_cast_path(self, path, square):
-        if not path:
-            return True
         normalized_input = square.args[0]
         if not self._is_fp32_upcast(normalized_input):
-            return False
+            return all(
+                _tensor_dtype(node.args[0]) == _tensor_dtype(node) for node in path
+            )
         input_dtype = _tensor_dtype(normalized_input.args[0])
-        if _tensor_dtype(path[0]) != input_dtype:
+        if not path or _tensor_dtype(path[0]) != input_dtype:
             return False
         return all(
             _tensor_dtype(node.args[0]) in {torch.float32, input_dtype}
@@ -236,29 +266,34 @@ class RecomposeRmsNorm(ExportPass):
             mean.args[2] if len(mean.args) > 2 else mean.kwargs.get("keepdim", False)
         )
         if isinstance(dim, int):
-            dims = [dim]
-        elif isinstance(dim, (list, tuple)):
-            dims = list(dim)
-        else:
+            dim = [dim]
+        elif dim is None or dim == [] or dim == ():
+            dim = range(input_val.dim())
+        elif not isinstance(dim, (list, tuple)):
             return False
-        if len(dims) != 1 or keepdim is not True:
-            return False
-        if dims[0] == -1:
-            return True
-        return dims[0] == input_val.dim() - 1
+        return (
+            len(dim) == 1
+            and dim[0] in (-1, input_val.dim() - 1)
+            and (keepdim is True or input_val.dim() == 1)
+        )
 
     def _validate_rms_norm(self, pattern):
         last_mul, _, outer_mul, inverse_sqrt, add, mean, square = pattern
         if not (
             _is_rsqrt(inverse_sqrt)
-            or _is_pow_with_exponent(inverse_sqrt, -0.5, self.lifted_tensor_constants)
+            or (
+                _is_pow(inverse_sqrt)
+                and self._get_rms_scalar(inverse_sqrt.args[1], exponent=True) == -0.5
+            )
         ):
             return None
 
         if _is_mul(square):
             if len(square.args) != 2 or square.args[0] is not square.args[1]:
                 return None
-        elif not _is_pow_with_exponent(square, 2, self.lifted_tensor_constants):
+        elif not (
+            _is_pow(square) and self._get_rms_scalar(square.args[1], exponent=True) == 2
+        ):
             return None
 
         outer_inputs = [arg for arg in outer_mul.args if arg is not inverse_sqrt]
@@ -273,11 +308,19 @@ class RecomposeRmsNorm(ExportPass):
 
         if not self._is_last_dim_reduction(mean, square.args[0]):
             return None
+        if any(
+            _tensor_dtype(node) != _tensor_dtype(square.args[0])
+            for node in (square, mean, add, inverse_sqrt)
+        ):
+            return None
         alpha = add.kwargs.get("alpha", add.args[2] if len(add.args) > 2 else 1)
         if alpha != 1:
             return None
 
-        eps = self._get_rms_norm_epsilon(add, mean)
+        if len(add.args) < 2 or mean not in add.args[:2]:
+            return None
+        eps_arg = add.args[1] if add.args[0] is mean else add.args[0]
+        eps = self._get_rms_scalar(eps_arg)
         if eps is None or not math.isfinite(eps) or eps < 0:
             return None
         return eps
@@ -301,8 +344,13 @@ class RecomposeRmsNorm(ExportPass):
 
     def _is_static_weight(self, node):
         source = node.args[0] if _is_dq(node) else node
-        return _is_get_attr(source) or (
-            self.edge_program is not None and is_parameter(source, self.edge_program)
+        return (
+            _is_get_attr(source)
+            or isinstance(source.meta.get("desc"), (ParamAOTInput, BufferAOTInput))
+            or (
+                self.edge_program is not None
+                and is_parameter(source, self.edge_program)
+            )
         )
 
     def _get_static_weight(self, node):
@@ -343,6 +391,25 @@ class RecomposeRmsNorm(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
+        graphs = (
+            (graph,) if self.edge_program is None else (graph, self.edge_program.graph)
+        )
+        # State lookup is limited to functional graphs: a write can also change
+        # an alias. Check the original graph too: Edge lifts writes into outputs.
+        self.allow_buffer_scalars = not (
+            self.edge_program is not None
+            and self.edge_program.graph_signature.buffers_to_mutate
+        ) and all(
+            node.target in SCALAR_WRAPPER_TARGETS
+            or node.target is operator.getitem
+            or (
+                isinstance(node.target, (torch._ops.OpOverload, EdgeOpOverload))
+                and not node.target._schema.is_mutable
+            )
+            for source_graph in graphs
+            for node in source_graph.nodes
+            if node.op not in {"placeholder", "get_attr", "output"}
+        )
 
         # Root Mean Square normalization math equivalent implementation
         patterns = [
@@ -372,6 +439,8 @@ class RecomposeRmsNorm(ExportPass):
                 if self._is_fp32_upcast(normalized_input)
                 else normalized_input
             )
+            if _tensor_dtype(last_mul_node) != _tensor_dtype(input_node):
+                continue
             gamma_node, gamma_shape = self._get_rms_norm_weight(
                 last_mul_node, outer_mul, input_node
             )
