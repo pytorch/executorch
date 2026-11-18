@@ -314,6 +314,12 @@ W8A32_ANNOTATION_TEST_CASES: list[
         CadenceW8A32MixedQuantizer(),
         [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
     ),
+    (
+        "w8a32_conv2d",
+        lambda self: self._build_w8a32_conv2d_graph(),
+        CadenceW8A32MixedQuantizer(),
+        [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
+    ),
 ]
 
 # Derive the set of tested quantizer classes from the test cases.
@@ -853,6 +859,66 @@ class QuantizerAnnotationTest(unittest.TestCase):
             *self._build_w8a32_transpose_conv2d_graph(with_bias=False)
         )
 
+    def _build_w8a32_conv2d_graph(
+        self,
+        x_shape: tuple[int, ...] = (1, 4, 1, 8),
+        weight_shape: tuple[int, ...] = (8, 4, 1, 3),
+        with_bias: bool = True,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with conv2d(input, weight, bias, stride)."""
+        builder = GraphBuilder()
+        # MixedW8A32Conv2dPattern needs a [1, C, 1, W] input, channels % 4 == 0,
+        # kH == 1 and H stride 1.
+        x = builder.placeholder("x", torch.randn(x_shape))
+        # Weight shape: (out_channels, in_channels, kH, kW)
+        weight = builder.placeholder("weight", torch.randn(weight_shape))
+        bias = (
+            builder.placeholder("bias", torch.randn(weight_shape[0]))
+            if with_bias
+            else None
+        )
+        conv2d = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(x, weight, bias, [1, 2]),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        builder.output([conv2d])
+        gm = builder.get_graph_module()
+
+        conv2d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv2d.default,
+        )
+        self.assertEqual(len(conv2d_nodes), 1, "Should find exactly one conv2d node")
+        return gm, conv2d_nodes[0]
+
+    @parameterized.expand(
+        [
+            ("ic_not_aligned", (1, 6, 1, 8), (8, 6, 1, 3)),
+            ("oc_not_aligned", (1, 4, 1, 8), (6, 4, 1, 3)),
+            ("batch_2", (2, 4, 1, 8), (8, 4, 1, 3)),
+            ("height_2", (1, 4, 2, 8), (8, 4, 1, 3)),
+        ]
+    )
+    def test_w8a32_conv2d_unsupported_shape_stays_fp32(
+        self, name: str, x_shape: tuple[int, ...], weight_shape: tuple[int, ...]
+    ) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_conv2d_graph(x_shape, weight_shape)
+        )
+
+    def test_w8a32_conv2d_without_bias_stays_fp32(self) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_conv2d_graph(with_bias=False)
+        )
+
+    def test_w8a32_conv2d_without_tensor_meta_stays_fp32(self) -> None:
+        gm, node = self._build_w8a32_conv2d_graph()
+        CadenceW8A32MixedQuantizer().annotate(gm)
+        self.assertNotIn(Q_ANNOTATION_KEY, node.meta)
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -1113,6 +1179,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv1d.default,
             torch.ops.aten.gru.input,
             torch.ops.aten.conv_transpose2d.input,
+            torch.ops.aten.conv2d.default,
         ]
         self.assertCountEqual(actual, expected)
 
@@ -1153,6 +1220,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv1d.default,
             torch.ops.aten.gru.input,
             torch.ops.aten.conv_transpose2d.input,
+            torch.ops.aten.conv2d.default,
             torch.ops.aten.addmm.default,
         ]
         self.assertCountEqual(actual, expected)

@@ -1533,6 +1533,46 @@ def quantized_w8a32_conv(
     return output
 
 
+@impl_tracked(m, "quantized_w8a32_conv2d")
+def quantized_w8a32_conv2d(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    assert src.dtype == torch.float32
+    # src: [N, H=1, W, C] (NHWC format)
+    # weight: [OC, H=1, K, IC] (OHWI format)
+    assert len(src.shape) == 4
+    assert len(weight.shape) == 4
+    out_channels = weight.shape[0]
+    in_channels = weight.shape[3]
+    assert (out_channels % 4) == 0, "out_channels must be multiple of 4 for SIMD"
+    assert (in_channels % 4) == 0, "in_channels must be multiple of 4 for SIMD"
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+    # Squeeze H dim: [N, 1, W, C] -> [N, W, C], then permute to NCL: [N, C, W]
+    src_ncl = src.squeeze(1).permute(0, 2, 1)
+    # Squeeze H dim: [OC, 1, K, IC] -> [OC, K, IC], then permute to OIK: [OC, IC, K]
+    weight_oik = dequant_weight.squeeze(1).permute(0, 2, 1)
+    output = F.conv1d(
+        src_ncl,
+        weight_oik,
+        bias=dequant_bias,
+        stride=stride_w,
+        padding=0,
+        dilation=1,
+        groups=1,
+    )
+    # output is [N, OC, out_W] in NCL format
+    # Permute to NWC: [N, out_W, OC], then unsqueeze H dim: [N, 1, out_W, OC]
+    return output.permute(0, 2, 1).unsqueeze(1)
+
+
 @impl_tracked(m, "quantized_w8a32_linear")
 def quantized_w8a32_linear(
     src: torch.Tensor,
