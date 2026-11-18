@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-$IS_FLOAT = DTYPE in ["half", "float"]
+$IS_FLOAT = DTYPE in ["half", "bfloat16", "float"]
 // Comparison ops output booleans, stored as uint8.
 $OUT_DTYPE = "uint8" if IS_COMPARISON_OP else DTYPE
 

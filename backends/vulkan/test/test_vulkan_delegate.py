@@ -350,6 +350,31 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(add_int_module, sample_inputs)
 
+    def test_vulkan_backend_bfloat16_elementwise(self):
+        class Bfloat16Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.rand(size=(3, 17), dtype=torch.bfloat16)
+
+            def forward(self, x, y):
+                z = torch.sigmoid(x * self.weight) - torch.tanh(x / (y.abs() + 1))
+                z = torch.clamp(z, -0.75, 0.75) + torch.relu(y) * 2
+                return torch.pow(z, 2.0)
+
+        model = Bfloat16Module().eval()
+        sample_inputs = (
+            torch.randn(size=(2, 3, 17), dtype=torch.bfloat16),
+            torch.randn(size=(2, 1, 17), dtype=torch.bfloat16),
+        )
+        et_program = lower_module(model, sample_inputs).to_executorch()
+        self.check_vk_delegation(et_program)
+        self.assertEqual(
+            len(et_program.executorch_program.execution_plan[0].operators), 0
+        )
+        self.run_delegated_model_and_check_output(
+            et_program, model, sample_inputs, atol=2e-2, rtol=2e-2
+        )
+
     def test_vulkan_backend_bfloat16_casts(self):
         class Bfloat16CastModule(torch.nn.Module):
             def forward(self, x, i):

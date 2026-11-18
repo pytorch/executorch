@@ -241,7 +241,7 @@ def register_copy_op():
 def register_unaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_T,
+        inputs_dtypes=utils.FP_BF16_T,
         supports_resize=True,
     )
 
@@ -250,7 +250,7 @@ def register_unaryop_cpp_ops():
 def register_clamp():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_BF16_INT_T,
         supports_resize=True,
     )
 
@@ -273,7 +273,7 @@ def register_clamp():
 def register_binaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_BF16_INT_T,
         supports_resize=True,
         supports_highdim=True,
     )
@@ -291,7 +291,7 @@ def _check_div_rounding_mode_is_floor(node: torch.fx.Node) -> bool:
 def register_div_tensor_mode():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_T,
+        inputs_dtypes=utils.FP_BF16_INT_T,
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=_check_div_rounding_mode_is_floor,
@@ -374,7 +374,7 @@ def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
 def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_T,
+        inputs_dtypes=utils.FP_BF16_T,
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(

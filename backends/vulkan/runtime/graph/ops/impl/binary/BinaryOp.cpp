@@ -72,13 +72,20 @@ void add_binary_op_node(
     VK_CHECK_COND(graph.has_standard_axis_map(out));
   }
 
+  const bool is_comparison =
+      op_type >= BinaryOpType::kEq && op_type <= BinaryOpType::kGe;
+  // Buffers have no format conversion, so a dtype mismatch would reinterpret
+  // the bytes.
+  if (graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.dtype_of(arg2) == graph.dtype_of(arg1));
+    VK_CHECK_COND(is_comparison || graph.dtype_of(out) == graph.dtype_of(arg1));
+  }
+
   float alpha_val = 1.0f;
   if (is_valid(alpha)) {
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  const bool is_comparison =
-      op_type >= BinaryOpType::kEq && op_type <= BinaryOpType::kGe;
   std::string kernel_name(is_comparison ? "binary_cmp" : "binary_op");
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));

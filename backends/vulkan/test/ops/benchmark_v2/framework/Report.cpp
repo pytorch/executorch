@@ -160,6 +160,8 @@ std::string compact_tensor(const Report& tensor) {
     suffix = "f32";
   } else if (dtype == "float16") {
     suffix = "f16";
+  } else if (dtype == "bfloat16") {
+    suffix = "bf16";
   } else if (dtype == "int32") {
     suffix = "i32";
   } else if (dtype == "int8") {
