@@ -214,7 +214,11 @@ VkDevice create_logical_device(
 
 #ifdef VK_KHR_vulkan_memory_model
   VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR};
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR,
+      nullptr,
+      VK_FALSE,
+      VK_FALSE,
+      VK_FALSE};
   for (const char* extension : enabled_device_extensions) {
     if (std::strcmp(extension, VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME) ==
         0) {

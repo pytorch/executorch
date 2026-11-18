@@ -52,7 +52,11 @@ PhysicalDevice::PhysicalDevice(
       memory_properties{},
 #ifdef VK_KHR_vulkan_memory_model
       vulkan_memory_model_features{
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR},
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR,
+          nullptr,
+          VK_FALSE,
+          VK_FALSE,
+          VK_FALSE},
 #endif /* VK_KHR_vulkan_memory_model */
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
@@ -404,8 +408,9 @@ void PhysicalDevice::query_extensions_vk_1_1() {
 #ifdef VK_KHR_driver_properties
   // The runtime requests Vulkan 1.1, so the struct needs the extension even
   // on a 1.2+ device (VUID-VkPhysicalDeviceProperties2-pNext-pNext).
-  VkPhysicalDeviceDriverPropertiesKHR driver_properties{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR};
+  VkPhysicalDeviceDriverPropertiesKHR driver_properties{};
+  driver_properties.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR;
   std::vector<const char*> driver_properties_extensions;
   find_requested_device_extensions(
       handle,

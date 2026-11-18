@@ -131,8 +131,6 @@ uint64_t workgroup_bytes(const vkapi::ShaderInfo& shader) {
   return total;
 }
 
-} // namespace
-
 // operator_dynamic_resize, plus the kernel each step dispatches on this
 // device. A step's "expected_kernels" maps a family name (CoopmatFamily.h) to
 // the prefix of the kernel it must dispatch; a family without an entry, and
@@ -297,7 +295,7 @@ Json check_wmma_memory_model_gate(const Json& spec, ComputeGraph& graph) {
     }
   };
   Json upstream = Json::object();
-  for (const std::string& name :
+  for (const std::string name :
        spec.at("parameters").at("memory_model_shaders")) {
     upstream[name] = passes_gate(name) ? "accepted" : "rejected";
   }
@@ -339,5 +337,7 @@ REGISTER_CASE_CHECKS {
       wmma_family_shared_memory, check_wmma_family_shared_memory);
   REGISTER_CASE_CHECK(wmma_memory_model_gate, check_wmma_memory_model_gate);
 }
+
+} // namespace
 
 } // namespace vkcompute::shader_profiling

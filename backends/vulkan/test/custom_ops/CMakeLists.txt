@@ -49,5 +49,10 @@ target_compile_definitions(
   vulkan_coopmat_family_test
   PRIVATE COOPMAT_FAMILY_TEST_GLSL_DIR="${VULKAN_OPS_PATH}/glsl"
 )
+target_compile_options(
+  vulkan_coopmat_family_test
+  PRIVATE "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wswitch>"
+          "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror=switch>"
+)
 target_link_libraries(vulkan_coopmat_family_test PRIVATE GTest::gtest_main)
 add_test(vulkan_coopmat_family_test vulkan_coopmat_family_test)
