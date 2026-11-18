@@ -1145,7 +1145,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->context()->querypool().extract_results();
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
-      std::string event_name = "{" + r.kernel_name +
+      const std::string dispatch_fields =
           ", \"dispatch_id\": " + std::to_string(r.dispatch_id) +
           ", \"global_workgroup\": [" + std::to_string(r.metadata.gwg[0]) +
           ", " + std::to_string(r.metadata.gwg[1]) + ", " +
@@ -1153,12 +1153,24 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
           std::to_string(r.metadata.lwg[0]) + ", " +
           std::to_string(r.metadata.lwg[1]) + ", " +
           std::to_string(r.metadata.lwg[2]) + "]}";
+      const std::string event_name = "{" + r.kernel_name + dispatch_fields;
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
           /* delegate_debug_id = */ -1,
-          r.start_time_ns,
-          r.end_time_ns);
+          r.barrier_finish_ns,
+          r.shader_exec_finish_ns);
+      // The barrier makes earlier writes visible to this dispatch. Its event
+      // nests the dispatch's fields so tools grouping by kernel_name do not
+      // count barrier time as shader time.
+      const std::string barrier_event_name =
+          "{\"ETVK_BARRIER\": {" + r.kernel_name + "}" + dispatch_fields;
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          barrier_event_name.c_str(),
+          /* delegate_debug_id = */ -1,
+          r.previous_work_finish_ns,
+          r.barrier_finish_ns);
     }
 #endif // ET_EVENT_TRACER_ENABLED
 

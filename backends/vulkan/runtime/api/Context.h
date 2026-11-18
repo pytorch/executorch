@@ -79,6 +79,9 @@ class Context final {
   // Misc
   VkImageTiling preferred_image_tiling_;
 
+  // Widens a dispatch's barrier to a full barrier while shaders are profiled.
+  void serialize_if_profiling(vkapi::PipelineBarrier& pipeline_barrier);
+
  public:
   // Adapter access
 
@@ -146,29 +149,37 @@ class Context final {
   }
 
   /*
-   * Encodes a vkResetQueryPool command to the current command buffer, and reset
-   * the internal state of the querypool. If the querypool is not initialized
-   * this function is a no-op.
+   * Starts a new timestamp capture in the current command buffer: clears the
+   * querypool's recorded entries. Each profiled dispatch resets the queries it
+   * uses when it records them. If the querypool is not initialized this
+   * function is a no-op.
    */
   void cmd_reset_querypool();
 
   /*
-   * Encodes a vkCmdWriteTimestamp command to the current command buffer and
-   * record some metadata about the shader that will be dispatched. If the
-   * querypool is not initialized this function is a no-op.
+   * Opens a profiling entry for the shader about to be dispatched and encodes a
+   * timestamp marking when all previously recorded work has finished. Call
+   * before the dispatch's barrier is recorded. If the querypool is not
+   * initialized this function is a no-op.
    */
-  void report_shader_dispatch_start(
+  void report_previous_work_finish(
       const std::string& shader_name,
       const GlobalWorkGrid& gwg,
       const LocalWorkGroup& lwg,
       const uint32_t dispatch_id = UINT32_MAX);
 
   /*
-   * Encodes a vkCmdWriteTimstamp command to the current command buffer to
-   * record when the last shader that was dispatched has completed execution.
-   * If the querypool is not initialized this function is a no-op.
+   * Encodes a timestamp marking when the open entry's pipeline barrier has
+   * finished. If the querypool is not initialized this function is a no-op.
    */
-  void report_shader_dispatch_end();
+  void report_barrier_finish();
+
+  /*
+   * Encodes a timestamp marking when the dispatched shader has finished
+   * executing, and closes the profiling entry. If the querypool is not
+   * initialized this function is a no-op.
+   */
+  void report_shader_exec_finish();
 
   // Memory Management
 
@@ -380,7 +391,7 @@ inline bool Context::submit_compute_job(
   const LocalWorkGroup& dispatch_lwg =
       gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg;
 
-  report_shader_dispatch_start(
+  report_previous_work_finish(
       shader.kernel_name, gwg, dispatch_lwg, dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
@@ -398,7 +409,7 @@ inline bool Context::submit_compute_job(
   register_shader_dispatch(
       descriptor_set, pipeline_barrier, shader, gwg, dispatch_lwg);
 
-  report_shader_dispatch_end();
+  report_shader_exec_finish();
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||

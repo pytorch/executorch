@@ -590,7 +590,7 @@ submissions.
 | --- | --- | --- |
 | Wall time | Host monotonic clock from command-buffer submission through fence completion, without timestamp queries. Includes host submission overhead, queue/fence waiting, and GPU execution. | `wall_time_batch_us` contains batch totals. Dividing each total by the repetition count gives `wall_time_shader_us` or `wall_time_operator_us`. |
 | Whole-batch GPU timestamps | One timestamp pair brackets the entire repeated dispatch chain, including GPU dependency barriers and inter-dispatch gaps. | `gpu_timestamp_batch_us` describes batch totals. Dividing each total by the repetition count gives `gpu_timestamp_shader_us` or `gpu_timestamp_operator_us`. These are two views of the same capture. |
-| Per-dispatch GPU timestamps | Operator-only profiling pass with a timestamp pair around each executed shader, including its associated barriers. | `shader_breakdown[].gpu_timestamp_shader_us` describes each dispatch position, averaged across that profiling batch's operator repetitions. |
+| Per-dispatch GPU timestamps | Operator-only profiling pass with three timestamps per executed shader; see [Measurement boundaries and shader breakdowns](#measurement-boundaries-and-shader-breakdowns). | `shader_breakdown[].gpu_timestamp_shader_us`, `gpu_timestamp_barrier_us`, and `gpu_timestamp_gap_us` describe each dispatch position, averaged across that profiling batch's operator repetitions. |
 
 Pass selection depends on case type and timestamp support:
 
@@ -733,21 +733,49 @@ run within that definition.
 
 When GPU timestamps are available, operator reports also include `shader_breakdown`.
 Each entry describes an actual dispatch in execution order: `dispatch_index`,
-runtime-selected `shader_name`, resolved GWG/LWG, and `gpu_timestamp_shader_us`
-statistics. Repeated shader names remain separate entries; skipped nodes are
+runtime-selected `shader_name`, resolved GWG/LWG, and timing statistics.
+Repeated shader names remain separate entries; skipped nodes are
 omitted. Table output shows these shaders indented below their operator.
 
 The breakdown uses a separate profiling pass with the calibrated invocation count,
 capped by timestamp query-pool capacity. `shader_profile_invocations_per_batch`
 reports that count. Warmup and benchmark run counts are the same as the aggregate
-timing passes. Each shader sample averages that dispatch position over the batch
-and includes its dependency barrier.
-Per-dispatch timestamp overhead and inter-dispatch gaps mean the sum need not
-match the separately measured operator latency. The passes can also run under
-different GPU clock/cache conditions, and their repetition counts may differ.
-For small workloads, per-dispatch timestamps can substantially increase measured
-latency. Compare the batch GPU timestamps and query-free wall measurements
-when evaluating that overhead.
+timing passes. Each sample averages that dispatch position over the batch.
+
+The profiling pass records three bottom-of-pipe timestamps per dispatch. Each
+marks when all previously recorded GPU work had finished:
+
+```
+TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(shader exec finish)
+◄──────── gpu_timestamp_barrier_us ────────►◄──────── gpu_timestamp_shader_us ────────►
+```
+
+- `gpu_timestamp_shader_us`: launch, execution, and drain of the dispatch.
+- `gpu_timestamp_barrier_us`: the dispatch's dependency barrier, including cache
+  maintenance that makes earlier writes visible. Its cost depends on the
+  preceding work, not on this shader. Whether the barrier finish timestamp waits
+  for cache maintenance is driver-dependent.
+- `gpu_timestamp_gap_us`: from the preceding dispatch's shader execution finish
+  to this dispatch's previous work finish; omitted for a batch's first dispatch.
+  Near zero unless other GPU work runs in between. For an operator's first
+  dispatch, it contains the full barrier between repetitions, which also makes
+  the previous repetition's writes visible; that dispatch's
+  `gpu_timestamp_barrier_us` therefore understates the barrier cost it would
+  pay after a different producer.
+
+While shaders are profiled, every dispatch's barrier is widened to a full
+pipeline barrier, so profiled dispatches never overlap. The report adds
+`shader_profile_order_violations`, the number of out-of-order timestamps (always
+0 when serialization holds), and `shader_profile_overhead_ratio`, the profiled
+batch's per-invocation latency divided by the unprofiled
+`gpu_timestamp_operator_us` median. A ratio well above 1 means timestamps and
+serialization change execution, and the breakdown misrepresents the unprofiled
+operator. Use `gpu_timestamp_operator_us` for latency comparisons and the
+breakdown for attribution.
+
+The sum of shader, barrier, and gap times need not match the separately
+measured operator latency: the passes can run under different GPU clock and
+cache conditions, and their repetition counts may differ.
 Prepacking remains outside timing.
 Breakdowns are omitted when timestamps are unavailable, including on this
 repository's SwiftShader build.
