@@ -125,7 +125,10 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
-        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core import (
+            implicit_gemm,
+            winograd,
+        )
         from executorch.backends.cuda.triton.kernels.conv.core.common import (
             ConvCall,
             ConvParams,
@@ -162,9 +165,17 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         if output_strides is not None:
             self.assertEqual(layout[1], tuple(output_strides))
         schedules = ["igemm_ffma"] + (["igemm_tc"] if self.tensor_cores else [])
-        for (schedule, _), configs in implicit_gemm.CONFIGS.items():
-            if schedule not in schedules:
-                continue
+        # Split-K runs where the output tiles alone do not fill the GPU.
+        if implicit_gemm.schedule_supports("igemm_ffma_splitk", call) is None:
+            schedules.append("igemm_ffma_splitk")
+        candidates = [
+            (schedule, configs)
+            for (schedule, _), configs in implicit_gemm.CONFIGS.items()
+            if schedule in schedules
+        ]
+        if implicit_gemm.schedule_supports("winograd_f4", call) is None:
+            candidates.append(("winograd_f4", winograd.CONFIGS))
+        for schedule, configs in candidates:
             with tf32:
                 self.assertIsNone(implicit_gemm.schedule_supports(schedule, call))
             tolerance = _TOLERANCE[x.dtype]
@@ -372,6 +383,122 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 output_strides=(256, 1, 16),
                 output_padding=(0,),
             )
+
+    def test_split_k(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        # Few output tiles over a deep reduction: 3x3 convolutions at low
+        # resolution, a strided one, and an odd-sized one with few channels.
+        geometries = (
+            ((5, 512, 3, 3), 512, (3, 3), (1, 1), (1, 1)),
+            ((2, 256, 6, 6), 512, (3, 3), (2, 2), (1, 1)),
+            ((1, 24, 9, 7), 40, (3, 5), (1, 2), (2, 1)),
+        )
+        cases = itertools.product(
+            enumerate(geometries),
+            (torch.float32, torch.float16, torch.bfloat16),
+            ("contiguous", "channels_last"),
+        )
+        for (i, (shape, c_out, kernel, stride, padding)), dtype, layout in cases:
+            if not _swept(i, dtype == torch.float32 and layout == "contiguous"):
+                continue
+            x, w, b = self.tensors(shape, c_out, kernel, dtype=dtype)
+            if layout == "channels_last":
+                x = _channels_last(x)
+            call = ConvCall(
+                x,
+                w,
+                b,
+                ConvParams(stride, padding, padding, (1, 1), False, (0, 0), 1),
+            )
+            self.assertGreater(implicit_gemm._split_k(call), 1)
+            with self.subTest(shape=shape, dtype=dtype, layout=layout):
+                self.check(x, w, b, stride, padding, padding)
+        x, w, b = self.tensors((5, 512, 3, 3), 512, (3, 3))
+        with self.subTest(every_config=True):
+            self.check(x, w, b, (1, 1), (1, 1), (1, 1), True)
+        with self.subTest(output_strides=True):
+            self.check(
+                x, w, b, (1, 1), (1, 1), (1, 1), output_strides=(4608, 1, 1536, 512)
+            )
+
+    def test_winograd(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        params = ConvParams((1, 1), (1, 1), (1, 1), (1, 1), False, (0, 0), 1)
+        # Sizes that are not multiples of the 4x4 output tile, a deep reduction,
+        # few channels and a single pixel.
+        geometries = (
+            ((2, 64, 30, 41), 96),
+            ((1, 512, 15, 20), 512),
+            ((3, 5, 6, 7), 9),
+            ((1, 16, 1, 1), 8),
+        )
+        for (i, (shape, c_out)), layout, bias in itertools.product(
+            enumerate(geometries), ("contiguous", "channels_last"), (True, False)
+        ):
+            if not _swept(i, layout == "contiguous" and bias):
+                continue
+            x, w, b = self.tensors(shape, c_out, (3, 3), bias=bias)
+            if layout == "channels_last":
+                x = _channels_last(x)
+            call = ConvCall(x, w, b, params)
+            self.assertIsNone(implicit_gemm.schedule_supports("winograd_f4", call))
+            with self.subTest(shape=shape, layout=layout, bias=bias):
+                self.check(x, w, b, (1, 1), (1, 1), (1, 1))
+        x, w, b = self.tensors((2, 24, 13, 10), 40, (3, 3))
+        with self.subTest(every_config=True):
+            self.check(x, w, b, (1, 1), (1, 1), (1, 1), True)
+        for order in ((0, 2, 3, 1), (1, 0, 2, 3), (2, 3, 1, 0)):
+            strides = _dense_strides((2, 40, 13, 10), order)
+            with self.subTest(output_strides=strides):
+                self.check(x, w, b, (1, 1), (1, 1), (1, 1), output_strides=strides)
+
+    def test_winograd_needs_a_dense_fp32_3x3_stride_1_call(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        x, w, b = self.tensors((1, 8, 10, 10), 8, (3, 3))
+        dense = ConvParams((1, 1), (1, 1), (1, 1), (1, 1), False, (0, 0), 1)
+        for name, call in (
+            ("bf16", ConvCall(x.bfloat16(), w.bfloat16(), b.bfloat16(), dense)),
+            ("stride 2", ConvCall(x, w, b, dataclasses.replace(dense, stride=(2, 2)))),
+            (
+                "padding 0",
+                ConvCall(
+                    x,
+                    w,
+                    b,
+                    dataclasses.replace(
+                        dense, padding_before=(0, 0), padding_after=(0, 0)
+                    ),
+                ),
+            ),
+            (
+                "dilation 2",
+                ConvCall(x, w, b, dataclasses.replace(dense, dilation=(2, 2))),
+            ),
+            (
+                "groups 2",
+                ConvCall(x, w[:, :4], b, dataclasses.replace(dense, groups=2)),
+            ),
+            ("5x5", ConvCall(x, self.tensors((1, 8, 1, 1), 8, (5, 5))[1], b, dense)),
+        ):
+            with self.subTest(name):
+                self.assertIsNotNone(
+                    implicit_gemm.schedule_supports("winograd_f4", call)
+                )
 
     def test_sliced_inputs_with_storage_offset(self):
         base = torch.randn(2, 20, 15, 18, device="cuda")

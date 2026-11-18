@@ -27,7 +27,7 @@ A transposed convolution is the same GEMM over its output pixels: output index
 when that is an integer inside the input, and its ``[C_in, C_out, ...]``
 weight is read with its first two strides swapped.
 
-Two schedules write the same output layout, accumulating in FP32 and adding
+Three schedules write the same output layout, accumulating in FP32 and adding
 the bias in FP32 before the single store:
 
 - ``igemm_ffma``: FP32 FMA on operands converted to FP32. The base schedule,
@@ -37,6 +37,12 @@ the bias in FP32 before the single store:
   GPU. For a channel-first output it accumulates the
   transposed tile (output channels by pixels), whose rows are contiguous in
   memory, so its store is coalesced.
+- ``igemm_ffma_splitk``: ``igemm_ffma`` with the reduction split over a second
+  grid axis into FP32 partial sums, which ``_reduce_split_k`` adds in a fixed
+  order before the store; for outputs with too few tiles to fill the GPU.
+
+Strict-FP32 3x3 stride-1 calls also time ``winograd_f4`` (``winograd.py``),
+which writes the same output layout from a Winograd F(4x4, 3x3) computation.
 """
 
 from __future__ import annotations
@@ -53,6 +59,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     autotune_launch_param,
     InvalidLaunchParam,
 )
+from executorch.backends.cuda.triton.kernels.conv.core import winograd
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     conv_allows_tf32,
     ConvCall,
@@ -65,13 +72,23 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
 from executorch.backends.cuda.triton.routing import device_supports
 from torch.library import wrap_triton
 
-SCHEDULES = (Schedule("igemm_ffma", 0), Schedule("igemm_tc", 80))
+SCHEDULES = (
+    Schedule("igemm_ffma", 0),
+    Schedule("igemm_tc", 80),
+    Schedule("igemm_ffma_splitk", 0),
+    Schedule("winograd_f4", 0),
+)
 TAP_MAJOR_MIN_CHANNELS = 16
 # Output pixels per image from which an output with dense spatial dims is
 # tiled per image (always for one image): the partial last tile of each image
 # wastes at most 1/8 of a 128-row tile.
 PIXEL_TILES_MIN_PIXELS = 1024
 _INT32_MAX = 2**31 - 1
+# Split-K: enough splits to give every SM this many tiles of 64x64 outputs,
+# at most MAX_SPLIT_K, each with at least SPLIT_K_MIN_BLOCKS blocks of 32 of K.
+SPLIT_K_WAVES = 2
+MAX_SPLIT_K = 32
+SPLIT_K_MIN_BLOCKS = 4
 
 
 def _output_size(call: ConvCall) -> list[int]:
@@ -193,6 +210,159 @@ ROUTED_FAMILIES = (
 )
 
 
+# Dense 3x3 stage convolutions of convolutional backbones in strict FP32:
+# (kernel, stride, padding, C_out / C_in, smallest and largest C_in). The
+# benchmark's ``stage_boundary`` suite measures ``stage_boundary_calls()``,
+# every corner of these limits.
+STAGE_GEOMETRIES = (
+    ((3, 3), (1, 1), (1, 1), 1, 64, 512),
+    ((3, 3), (2, 2), (1, 1), 2, 64, 256),
+)
+MAX_STAGE_BATCH = 8
+MAX_STAGE_EXTENT = 160
+MAX_STAGE_INPUT_PIXELS = 120 * 160
+# Larger outputs fill the GPU without splitting K, where the FFMA schedules are
+# no faster than Inductor's template.
+MAX_STAGE_OUTPUT_ELEMENTS = 160 * 1024
+STAGE_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
+
+
+def _within_stage_limits(x: torch.Tensor) -> bool:
+    n, _, *extent = x.shape
+    return (
+        n <= MAX_STAGE_BATCH
+        and max(extent) <= MAX_STAGE_EXTENT
+        and n * math.prod(extent) <= MAX_STAGE_INPUT_PIXELS
+    )
+
+
+def _stage_reason(call: ConvCall) -> Optional[str]:
+    """Why ``call`` is outside the benchmarked stage range, or None."""
+    x, w, p = call.input, call.weight, call.params
+    channels = x.shape[1]
+    geometry = next(
+        (
+            g
+            for g in STAGE_GEOMETRIES
+            if (tuple(w.shape[2:]), p.stride, p.padding_before, p.padding_after)
+            == g[:3] + g[2:3]
+            and w.shape[0] == g[3] * channels
+        ),
+        None,
+    )
+    if geometry is None or not geometry[4] <= channels <= geometry[5]:
+        return f"implicit GEMM: {channels} input channels are not benchmarked faster"
+    if x.dtype != torch.float32 or conv_allows_tf32():
+        return f"implicit GEMM: {x.dtype} stage convolutions are not benchmarked"
+    if (
+        not _within_stage_limits(x)
+        or x.shape[0] * math.prod(_output_size(call)) * w.shape[0]
+        > MAX_STAGE_OUTPUT_ELEMENTS
+    ):
+        return (
+            f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
+            "stage range"
+        )
+    reason = unbenchmarked_layout(call, STAGE_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def _stage_outputs(extent, kernel, stride, padding, out_channels) -> int:
+    return _outputs(1, extent, kernel, stride, padding) * out_channels
+
+
+def stage_boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) of every stage geometry at
+    every corner of its limits: the fewest and most input channels; each
+    spatial dimension at its smallest (3) or largest extent, the largest
+    reduced until one image fits ``MAX_STAGE_INPUT_PIXELS`` and
+    ``MAX_STAGE_OUTPUT_ELEMENTS``; one image and the most images that fit."""
+    calls = []
+    for kernel, stride, padding, multiplier, *channel_range in STAGE_GEOMETRIES:
+        for channels, extent in itertools.product(
+            channel_range, itertools.product((3, MAX_STAGE_EXTENT), repeat=2)
+        ):
+            out_channels = multiplier * channels
+            geometry = (kernel, stride, padding, out_channels)
+            extent = list(extent)
+            while (
+                math.prod(extent) > MAX_STAGE_INPUT_PIXELS
+                or _stage_outputs(extent, *geometry) > MAX_STAGE_OUTPUT_ELEMENTS
+            ):
+                i = max(range(2), key=lambda d: extent[d])
+                extent[i] -= 1
+            most = min(
+                MAX_STAGE_BATCH,
+                MAX_STAGE_INPUT_PIXELS // math.prod(extent),
+                MAX_STAGE_OUTPUT_ELEMENTS // _stage_outputs(extent, *geometry),
+            )
+            for batch in sorted({1, most}):
+                calls.append(
+                    ((batch, channels, *extent), out_channels, kernel, stride, padding)
+                )
+    return calls
+
+
+# Strict-FP32 3x3 stride-1 convolutions with input and output channels in
+# WINOGRAD_CHANNELS, within the stage batch, extent and input-pixel limits, at
+# any output size: ``winograd_f4`` does a quarter of the multiplies of a direct
+# convolution such as Inductor's template. The benchmark's
+# ``winograd_boundary`` suite measures ``winograd_boundary_calls()``, every
+# corner of these limits.
+WINOGRAD_CHANNELS = (64, 512)
+
+
+def _winograd_reason(call: ConvCall) -> Optional[str]:
+    """Why ``call`` is outside the benchmarked Winograd range, or None."""
+    x, w = call.input, call.weight
+    reason = winograd.reason(call)
+    if reason is not None:
+        return f"implicit GEMM: {reason}"
+    fewest, most = WINOGRAD_CHANNELS
+    if not (fewest <= x.shape[1] <= most and fewest <= w.shape[0] <= most):
+        return (
+            f"implicit GEMM: {x.shape[1]} to {w.shape[0]} channels are not "
+            "benchmarked faster with winograd_f4"
+        )
+    if conv_allows_tf32():
+        return "implicit GEMM: winograd_f4 is not benchmarked against TF32"
+    if not _within_stage_limits(x):
+        return (
+            f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
+            "winograd_f4 range"
+        )
+    reason = unbenchmarked_layout(call, STAGE_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def winograd_boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) at every corner of the
+    Winograd range: the fewest and most input and output channels; each
+    spatial dimension at its smallest (3) or largest extent, the largest
+    reduced until one image fits ``MAX_STAGE_INPUT_PIXELS``; one image and the
+    most images that fit."""
+    calls = []
+    for channels, out_channels, extent in itertools.product(
+        WINOGRAD_CHANNELS,
+        WINOGRAD_CHANNELS,
+        itertools.product((3, MAX_STAGE_EXTENT), repeat=2),
+    ):
+        extent = list(extent)
+        while math.prod(extent) > MAX_STAGE_INPUT_PIXELS:
+            i = max(range(2), key=lambda d: extent[d])
+            extent[i] -= 1
+        most = min(MAX_STAGE_BATCH, MAX_STAGE_INPUT_PIXELS // math.prod(extent))
+        for batch in sorted({1, most}):
+            calls.append(
+                ((batch, channels, *extent), out_channels, (3, 3), (1, 1), (1, 1))
+            )
+    return calls
+
+
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -215,7 +385,9 @@ def worth_routing(call: ConvCall) -> Optional[str]:
             "is not benchmarked"
         )
     if x.shape[1] != ROUTED_CHANNELS:
-        return f"implicit GEMM: {x.shape[1]} input channels are not benchmarked faster"
+        if _winograd_reason(call) is None:
+            return None
+        return _stage_reason(call)
     reason = unbenchmarked_layout(call, ROUTED_LAYOUTS)
     if reason is not None:
         return f"implicit GEMM: {reason}"
@@ -320,7 +492,24 @@ def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
         and not conv_allows_tf32()
     ):
         return "igemm_tc needs TF32 for FP32 operands, which is not allowed"
+    if name == "winograd_f4":
+        return winograd.reason(call)
+    if name == "igemm_ffma_splitk" and _split_k(call) == 1:
+        return "igemm_ffma_splitk: the output tiles fill the GPU without splitting K"
     return None
+
+
+def _split_k(call: ConvCall) -> int:
+    """How many ways ``igemm_ffma_splitk`` splits the reduction of ``call``."""
+    x, w = call.input, call.weight
+    rows = x.shape[0] * math.prod(_output_size(call))
+    tiles = triton.cdiv(rows, 64) * triton.cdiv(_out_channels(call), 64)
+    sms = torch.cuda.get_device_properties(x.device).multi_processor_count
+    k_blocks = triton.cdiv(x.shape[1] * math.prod(w.shape[2:]), 32)
+    split = min(
+        SPLIT_K_WAVES * sms // tiles, MAX_SPLIT_K, k_blocks // SPLIT_K_MIN_BLOCKS
+    )
+    return max(split, 1)
 
 
 @triton.jit
@@ -382,11 +571,65 @@ def _store(
 
 
 @triton.jit
-def _kernel(
+def _k_range(BLOCKS: tl.constexpr, SPLIT_K: tl.constexpr):
+    """The blocks of K this program reduces: all, or its share of a split."""
+    if SPLIT_K == 1:
+        return 0, BLOCKS
+    per_split: tl.constexpr = (BLOCKS + SPLIT_K - 1) // SPLIT_K
+    first = tl.program_id(1) * per_split
+    return first, tl.minimum(first + per_split, BLOCKS)
+
+
+@triton.jit
+def _reduce_split_k(
+    partial_ptr,
+    b_ptr,
+    out_ptr,
+    ROWS: tl.constexpr,
+    CO: tl.constexpr,
+    OD: tl.constexpr,
+    OH: tl.constexpr,
+    OW: tl.constexpr,
+    SO_N: tl.constexpr,
+    SO_C: tl.constexpr,
+    SO_D: tl.constexpr,
+    SO_H: tl.constexpr,
+    SO_W: tl.constexpr,
+    HAS_BIAS: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """Sums the split-K partials in a fixed order, then stores like the kernel."""
+    rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
+    m_mask = rows < ROWS
+    n_mask = offs_n < CO
+    mask = m_mask[:, None] & n_mask[None, :]
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for split in range(SPLIT_K):
+        acc += tl.load(
+            partial_ptr + (split * ROWS + rows)[:, None] * CO + offs_n[None, :],
+            mask=mask,
+            other=0.0,
+        )
+    PIXELS: tl.constexpr = OD * OH * OW
+    n = rows // PIXELS
+    pixel = rows % PIXELS
+    ow = pixel % OW
+    oh = pixel // OW % OH
+    od = pixel // (OW * OH)
+    out_rows = n * SO_N + od * SO_D + oh * SO_H + ow * SO_W
+    _store(out_ptr, acc, b_ptr, out_rows, m_mask, offs_n, n_mask, SO_C, HAS_BIAS, False)
+
+
+@triton.jit
+def _kernel(  # noqa: C901
     x_ptr,
     w_ptr,
     b_ptr,
     out_ptr,
+    partial_ptr,
     N: tl.constexpr,
     C: tl.constexpr,
     D: tl.constexpr,
@@ -426,6 +669,7 @@ def _kernel(
     PIXEL_TILES: tl.constexpr,
     CHANNEL_MAJOR: tl.constexpr,
     TRANSPOSED: tl.constexpr,
+    SPLIT_K: tl.constexpr,
     TAP_MAJOR: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -482,7 +726,8 @@ def _kernel(
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     if TAP_MAJOR:
         C_BLOCKS: tl.constexpr = (C + BLOCK_K - 1) // BLOCK_K
-        for step in range(TAPS * C_BLOCKS):
+        first, last = _k_range(TAPS * C_BLOCKS, SPLIT_K)
+        for step in range(first, last):
             tap = step // C_BLOCKS
             c = (step % C_BLOCKS) * BLOCK_K + tl.arange(0, BLOCK_K)
             if INDEX_64:
@@ -517,8 +762,9 @@ def _kernel(
             acc = _dot(a, b, acc, FFMA, CHANNEL_MAJOR)
     else:
         K: tl.constexpr = C * TAPS
-        for k0 in range(0, K, BLOCK_K):
-            k = k0 + tl.arange(0, BLOCK_K)
+        first, last = _k_range((K + BLOCK_K - 1) // BLOCK_K, SPLIT_K)
+        for k_block in range(first, last):
+            k = k_block * BLOCK_K + tl.arange(0, BLOCK_K)
             if INDEX_64:
                 k = k.to(tl.int64)
             c = k // TAPS
@@ -554,6 +800,15 @@ def _kernel(
                 other=0.0,
             )
             acc = _dot(a, b, acc, FFMA, CHANNEL_MAJOR)
+    if SPLIT_K > 1:
+        # FP32 partial sums [SPLIT_K, N * PIXELS, CO]; _reduce_split_k adds them.
+        rows = (tl.program_id(1) * N + n) * PIXELS + pixel
+        tl.store(
+            partial_ptr + rows[:, None] * CO + offs_n[None, :],
+            acc,
+            mask=m_mask[:, None] & n_mask[None, :],
+        )
+        return
     if PIXEL_TILES:
         out_rows = n * SO_N + pixel
     else:
@@ -591,6 +846,9 @@ def _configs(tiles, tap_major: bool) -> list[triton.Config]:
 
 # (BLOCK_M, BLOCK_N, BLOCK_K, num_warps, num_stages)
 _FFMA_TILES = (
+    (256, 32, 16, 4, 3),
+    (128, 32, 16, 4, 2),
+    (64, 32, 16, 4, 3),
     (64, 64, 16, 4, 3),
     (128, 64, 16, 8, 3),
     (64, 128, 16, 8, 3),
@@ -611,7 +869,11 @@ _TC_TILES = (
 )
 CONFIGS = {
     (schedule, tap_major): _configs(tiles, tap_major)
-    for schedule, tiles in (("igemm_ffma", _FFMA_TILES), ("igemm_tc", _TC_TILES))
+    for schedule, tiles in (
+        ("igemm_ffma", _FFMA_TILES),
+        ("igemm_tc", _TC_TILES),
+        ("igemm_ffma_splitk", _FFMA_TILES),
+    )
     for tap_major in (True, False)
 }
 _TUNING_KEY = [
@@ -651,6 +913,9 @@ def run_schedule(
 ) -> None:
     """Launches schedule ``name``; ``config`` replaces its autotuned config
     (and the K order, if it sets ``TAP_MAJOR``)."""
+    if name == "winograd_f4":
+        winograd.run(x, weight, bias, out, config)
+        return
     n, c = x.shape[:2]
     co = out.shape[1]
     # A transposed weight is [C_in, C_out, ...]: the kernel indexes it by
@@ -678,19 +943,25 @@ def run_schedule(
     pixel_tiles = (n == 1 or pixels >= PIXEL_TILES_MIN_PIXELS) and all(
         size == 1 or s == d for size, s, d in zip(out_size, out_strides, dense)
     )
+    split_k = 1
+    partial = out
+    if name == "igemm_ffma_splitk":
+        split_k = _split_k(ConvCall(x, weight, bias, params))
+        partial = out.new_empty((split_k, n * pixels, co), dtype=torch.float32)
 
     def grid(meta):
         if pixel_tiles:
             rows = n * triton.cdiv(pixels, meta["BLOCK_M"])
         else:
             rows = triton.cdiv(n * pixels, meta["BLOCK_M"])
-        return (rows * triton.cdiv(co, meta["BLOCK_N"]),)
+        return (rows * triton.cdiv(co, meta["BLOCK_N"]), split_k)
 
     wrap_triton(kernel)[grid](
         x,
         weight,
         x if bias is None else bias,
         out,
+        partial,
         n,
         c,
         *_as_3d(x.shape[2:], 1),
@@ -706,14 +977,33 @@ def run_schedule(
         *out.stride()[:2],
         *out_strides,
         HAS_BIAS=bias is not None,
-        FFMA=name == "igemm_ffma",
+        FFMA=name != "igemm_tc",
         INDEX_64=max(max_offset(x), max_offset(out), max_offset(weight)) > _INT32_MAX
-        or n * pixels * co > _INT32_MAX,
+        or split_k * n * pixels * co > _INT32_MAX,
         PIXEL_TILES=pixel_tiles,
         CHANNEL_MAJOR=name == "igemm_tc" and out.stride(1) != 1,
         TRANSPOSED=params.transposed,
+        SPLIT_K=split_k,
         **options,
     )
+    if split_k > 1:
+        wrap_triton(_reduce_split_k)[
+            (triton.cdiv(n * pixels, 64), triton.cdiv(co, 64))
+        ](
+            partial,
+            x if bias is None else bias,
+            out,
+            n * pixels,
+            co,
+            *out_size,
+            out.stride(0),
+            out.stride(1),
+            *out_strides,
+            HAS_BIAS=bias is not None,
+            SPLIT_K=split_k,
+            BLOCK_M=64,
+            BLOCK_N=64,
+        )
 
 
 @autotune_launch_param("schedule", tuple(s.name for s in SCHEDULES))
