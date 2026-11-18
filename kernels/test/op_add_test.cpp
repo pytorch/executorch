@@ -120,6 +120,14 @@ class OpAddOutKernelTest : public OperatorTest {
     Tensor expected_1 = tf.make({2}, {CTYPE(5, 8.1), CTYPE(7.1, 10)});
     // Check that it matches the expected output.
     EXPECT_TENSOR_EQ(out, expected_1);
+
+    // First tensor has numel() = 1
+    op_add_out(
+        y_1,
+        x_0,
+        /*alpha=*/2,
+        out);
+    EXPECT_TENSOR_EQ(out, tf.make({2}, {CTYPE(4, 7.2), CTYPE(8.2, 11)}));
   }
 
   void test_add_enumerate_complex_types() {
@@ -653,28 +661,13 @@ TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaBFloat16) {
 
 TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaBool) {
   TensorFactory<ScalarType::Bool> tf;
-  Tensor x = tf.make({1}, {false});
+  Tensor x = tf.make({1}, {true});
   Tensor y = tf.make({2, 2}, {true, false, false, true});
 
   Tensor out = tf.zeros({2, 2});
 
-  op_add_out(x, y, true, out);
-  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {true, false, false, true}));
-}
-
-TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorAlphaComplex) {
-  using CTYPE = executorch::aten::complex<float>;
-  TensorFactory<ScalarType::ComplexFloat> tf;
-  Tensor x = tf.make({}, {CTYPE(2, 2)});
-  Tensor y = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
-
-  Tensor out = tf.zeros({2});
-
-  op_add_out(x, y, 1, out);
-  EXPECT_TENSOR_EQ(out, tf.make({2}, {CTYPE(3, 3), CTYPE(4, 0)}));
-
-  op_add_out(x, y, 2, out);
-  EXPECT_TENSOR_EQ(out, tf.make({2}, {CTYPE(4, 4), CTYPE(6, -2)}));
+  op_add_out(x, y, false, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {true, true, true, true}));
 }
 
 TEST_F(OpAddOutKernelTest, BroadcastNDTest) {

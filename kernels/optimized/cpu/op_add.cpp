@@ -54,8 +54,6 @@ Tensor& opt_add_out(
   ET_DEFINE_OPERATOR_NAME(op_name, "add.out");
 
   if (a.numel() == 1 || b.numel() == 1) {
-    // alpha scales b, so a one-element a is only handled by swapping a and b
-    // when alpha is 1.
     const bool a_is_scalar = a.numel() == 1 && b.numel() != 1;
     const Tensor& tensor = a_is_scalar ? b : a;
     const Tensor& scalar = a_is_scalar ? a : b;
@@ -72,7 +70,7 @@ Tensor& opt_add_out(
         CTYPE scalar_val = *scalar.const_data_ptr<CTYPE>();
 
         using Vec = at::vec::Vectorized<CTYPE>;
-        if (a_is_scalar && alpha_val != CTYPE(1)) {
+        if (a_is_scalar) {
           at::vec::map<CTYPE>(
               [alpha_val, scalar_val](Vec x) {
                 return Vec(scalar_val) + Vec(alpha_val) * x;
@@ -101,6 +99,8 @@ Tensor& opt_add_out(
         CTYPE scalar_val = *scalar.const_data_ptr<CTYPE>();
 
         using Vec = at::vec::Vectorized<CTYPE>;
+        // For real types b + 1 * a equals a + b, so alpha == 1 keeps the
+        // cheaper path below.
         if (a_is_scalar && alpha_val != CTYPE(1)) {
           at::vec::map<CTYPE>(
               [alpha_val, scalar_val](Vec x) {
