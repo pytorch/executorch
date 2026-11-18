@@ -187,6 +187,7 @@ fbcode_target(
         "triton/kernels/conv/core/common.py",
         "triton/kernels/conv/core/direct.py",
         "triton/kernels/conv/core/implicit_gemm.py",
+        "triton/kernels/conv/core/weight_stream.py",
         "triton/kernels/conv/core/winograd.py",
         "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
