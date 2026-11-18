@@ -336,8 +336,13 @@ class DecomposeNumericsTest(unittest.TestCase):
         reference = program.module()(*user_inputs)
         # The documented fallback: channels-last ops go back to channels-first
         # before decomposition, which only knows the ATen layouts.
+        # Linear's core ATen decomposition accumulates in a different order, so
+        # it is kept whole to compare the q/dq around it exactly.
         decomposed = ExportedProgramPassManager(
-            [ToChannelsFirst(), DecomposeFusedQuant()]
+            [
+                ToChannelsFirst(),
+                DecomposeFusedQuant(keep_whole=[torch.ops.aten.linear.default]),
+            ]
         )(program).exported_program
 
         self.assertFalse(
