@@ -62,32 +62,41 @@ void scale_slices(void* data, size_t count, const std::vector<float>& scales) {
   }
 }
 
-// An attention mask written as a comparison between a per-key index and
-// per-query positions, both small integer functions of the graph inputs (the
-// causal mask of a static KV cache, for instance), attends only keys below a
-// host-computable extent: past it every query is masked. Attention, and the
-// mask, can then cover just that key prefix exactly. Extents round up to a
-// bucket so replays keep reusing one graph while the prefix grows.
+// An attention mask written as comparisons between a per-key index and
+// per-query positions, both small integer functions of the graph inputs, and
+// anded together as a product of bools (the causal or sliding-window mask of a
+// static KV cache, for instance), attends only keys below a host-computable
+// extent: past it every query is masked. Attention, and the mask, can then
+// cover just that key prefix exactly. Extents round up to a bucket so replays
+// keep reusing one graph while the prefix grows.
 constexpr int64_t kKeyExtentBucket = 256;
 
-struct MaskExtent {
+struct KeyCompare {
   std::string compare; // le or lt
   bool key_lhs = true;
   ValueId key_operand = kInvalid;
   ValueId query_operand = kInvalid;
+};
+
+// Masks that share values, which are computed over one key prefix: the
+// largest that any of the masks attends.
+struct MaskExtent {
   int64_t keys = 0;
-  // The SDPA mask, then each value up to and including the compare output.
+  // Each SDPA mask as the comparisons it ands together.
+  std::vector<std::vector<KeyCompare>> masks;
+  // The masks and every value they are computed from over the key axis.
   std::vector<ValueId> chain;
 };
 
 // The bucketed prefix of keys that some query attends.
 int64_t attended_key_extent(
-    const MaskExtent& mask,
+    const KeyCompare& mask,
+    int64_t keys,
     const HostInts& key_index,
     const HostInts& query) {
-  if (key_index.data.size() != static_cast<size_t>(mask.keys) ||
+  if (key_index.data.size() != static_cast<size_t>(keys) ||
       query.data.empty()) {
-    return mask.keys;
+    return keys;
   }
   // Key j is attended by some query iff compare(key[j], query) holds for
   // the extreme query value; compare(query, key) is the mirrored
@@ -101,14 +110,14 @@ int64_t attended_key_extent(
     return mask.key_lhs ? key < hi : key > lo;
   };
   int64_t last = -1;
-  for (int64_t j = mask.keys - 1; j >= 0 && last < 0; --j) {
+  for (int64_t j = keys - 1; j >= 0 && last < 0; --j) {
     if (attended(key_index.data[static_cast<size_t>(j)])) {
       last = j;
     }
   }
   const int64_t needed = std::max<int64_t>(last + 1, 1);
   return std::min(
-      mask.keys,
+      keys,
       (needed + kKeyExtentBucket - 1) / kKeyExtentBucket * kKeyExtentBucket);
 }
 
@@ -1112,116 +1121,137 @@ class GgmlExecutable final : public EngineExecutable {
     return meta.sizes[i];
   }
 
-  // Matches mask = wrappers(compare(key_index, query)) with key_index varying
-  // only along the last (key) axis and query constant along it. Every value
-  // in the chain must feed nothing but the next wrapper, or SDPA masks.
-  std::optional<MaskExtent> match_mask_extent(ValueId mask_id, int64_t keys)
-      const {
+  // Matches mask = wrappers(compare(key_index, query)), or a product of such
+  // boolean masks, with key_index varying only along the last (key) axis and
+  // query constant along it. Appends the comparisons the mask ands together
+  // to `compares`, and the values computed over the key axis to out.chain.
+  bool match_mask_extent(
+      ValueId id,
+      MaskExtent& out,
+      std::vector<KeyCompare>& compares,
+      size_t depth = 0) const {
     const Graph& graph = method_.graph;
+    const Value& value = graph.value(id);
     // A boolean mask, where true means attend; additive masks never match.
-    if (!graph.value(mask_id).is_tensor() ||
-        graph.value(mask_id).tensor_meta().dtype != ScalarType::Bool) {
-      return std::nullopt;
+    if (depth >= 16 || !value.is_tensor() ||
+        value.tensor_meta().dtype != ScalarType::Bool ||
+        static_dim(value.tensor_meta(), value.tensor_meta().ndim() - 1) !=
+            out.keys ||
+        std::ranges::find(graph.output_ids, id) != graph.output_ids.end()) {
+      return false;
     }
-    MaskExtent out;
-    out.keys = keys;
-    ValueId id = mask_id;
-    for (size_t depth = 0; depth < 16; ++depth) {
-      const Value& value = graph.value(id);
-      if (!value.is_tensor() ||
-          static_dim(value.tensor_meta(), value.tensor_meta().ndim() - 1) !=
-              keys ||
-          std::ranges::find(graph.output_ids, id) != graph.output_ids.end()) {
-        return std::nullopt;
-      }
+    if (std::ranges::find(out.chain, id) == out.chain.end()) {
       out.chain.push_back(id);
-      const NodeId producer = value.producer_id;
-      if (!valid(producer) || !graph.node(producer).is_call()) {
-        return std::nullopt;
+    }
+    const NodeId producer = value.producer_id;
+    if (!valid(producer) || !graph.node(producer).is_call()) {
+      return false;
+    }
+    const Node& node = graph.node(producer);
+    const std::string op = op_key(node.target);
+    const NamedArgument* self = find_arg(node, "self", 0);
+    if (self == nullptr || self->arg.kind() != ArgKind::Tensor) {
+      return false;
+    }
+    const NamedArgument* other = find_arg(node, "other", 1);
+    const bool other_tensor =
+        other != nullptr && other->arg.kind() == ArgKind::Tensor;
+    if (op == "aten.le.Tensor" || op == "aten.lt.Tensor") {
+      if (!other_tensor) {
+        return false;
       }
-      const Node& node = graph.node(producer);
-      const std::string op = op_key(node.target);
-      const NamedArgument* self = find_arg(node, "self", 0);
-      if (self == nullptr || self->arg.kind() != ArgKind::Tensor) {
-        return std::nullopt;
-      }
-      if (op == "aten.le.Tensor" || op == "aten.lt.Tensor") {
-        const NamedArgument* other = find_arg(node, "other", 1);
-        if (other == nullptr || other->arg.kind() != ArgKind::Tensor) {
-          return std::nullopt;
-        }
-        const auto is_key = [&](ValueId operand) {
-          const TensorMeta& meta = graph.value(operand).tensor_meta();
-          for (size_t i = 0; i + 1 < meta.ndim(); ++i) {
-            if (static_dim(meta, i) != 1) {
-              return false;
-            }
+      const auto is_key = [&](ValueId operand) {
+        const TensorMeta& meta = graph.value(operand).tensor_meta();
+        for (size_t i = 0; i + 1 < meta.ndim(); ++i) {
+          if (static_dim(meta, i) != 1) {
+            return false;
           }
-          return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == keys;
-        };
-        const auto is_query = [&](ValueId operand) {
-          const TensorMeta& meta = graph.value(operand).tensor_meta();
-          return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == 1;
-        };
-        const ValueId a = self->arg.as_tensor().id;
-        const ValueId b = other->arg.as_tensor().id;
-        out.compare = op.substr(5, 2);
-        if (is_key(a) && is_query(b)) {
-          out.key_operand = a;
-          out.query_operand = b;
-        } else if (is_key(b) && is_query(a)) {
-          out.key_lhs = false;
-          out.key_operand = b;
-          out.query_operand = a;
-        } else {
-          return std::nullopt;
         }
-        break;
+        return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == out.keys;
+      };
+      const auto is_query = [&](ValueId operand) {
+        const TensorMeta& meta = graph.value(operand).tensor_meta();
+        return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == 1;
+      };
+      const ValueId a = self->arg.as_tensor().id;
+      const ValueId b = other->arg.as_tensor().id;
+      KeyCompare compare{.compare = op.substr(5, 2)};
+      if (is_key(a) && is_query(b)) {
+        compare.key_operand = a;
+        compare.query_operand = b;
+      } else if (is_key(b) && is_query(a)) {
+        compare.key_lhs = false;
+        compare.key_operand = b;
+        compare.query_operand = a;
+      } else {
+        return false;
       }
-      if (op == "aten.expand.default" || op == "aten.expand_copy.default") {
-        // The target size of the key axis is rewritten with the extent.
-        const NamedArgument* size = find_arg(node, "size", 1);
-        if (size == nullptr || size->arg.kind() != ArgKind::IntList) {
-          return std::nullopt;
-        }
-        const IntListArg& list = size->arg.as_int_list();
-        if (list.values.empty() ||
-            (!list.ids.empty() && valid(list.ids.back())) ||
-            (list.values.back() != -1 && list.values.back() != keys)) {
-          return std::nullopt;
-        }
-      } else if (
-          op != "aten.unsqueeze.default" &&
-          op != "aten.unsqueeze_copy.default" && op != "aten.alias.default" &&
-          op != "aten.clone.default") {
-        return std::nullopt;
+      compares.push_back(std::move(compare));
+      return true;
+    }
+    if (op == "aten.mul.Tensor") {
+      // A product of bools is their logical and.
+      return other_tensor &&
+          match_mask_extent(
+                 self->arg.as_tensor().id, out, compares, depth + 1) &&
+          match_mask_extent(
+                 other->arg.as_tensor().id, out, compares, depth + 1);
+    }
+    if (op == "aten.expand.default" || op == "aten.expand_copy.default") {
+      // The target size of the key axis is rewritten with the extent.
+      const NamedArgument* size = find_arg(node, "size", 1);
+      if (size == nullptr || size->arg.kind() != ArgKind::IntList) {
+        return false;
       }
-      id = self->arg.as_tensor().id;
+      const IntListArg& list = size->arg.as_int_list();
+      if (list.values.empty() ||
+          (!list.ids.empty() && valid(list.ids.back())) ||
+          (list.values.back() != -1 && list.values.back() != out.keys)) {
+        return false;
+      }
+    } else if (
+        op != "aten.unsqueeze.default" && op != "aten.unsqueeze_copy.default" &&
+        op != "aten.alias.default" && op != "aten.clone.default") {
+      return false;
     }
-    if (out.compare.empty()) {
-      return std::nullopt;
-    }
-    for (size_t i = 0; i < out.chain.size(); ++i) {
-      for (const NodeId consumer : graph.value(out.chain[i]).consumer_ids) {
+    return match_mask_extent(
+        self->arg.as_tensor().id, out, compares, depth + 1);
+  }
+
+  // Every value in the chain feeds nothing but the producer of another one,
+  // or SDPA masks over the same keys.
+  bool feeds_only_masks(const MaskExtent& extent) const {
+    const Graph& graph = method_.graph;
+    for (const ValueId id : extent.chain) {
+      for (const NodeId consumer : graph.value(id).consumer_ids) {
         const Node& node = graph.node(consumer);
-        const bool next_wrapper =
-            i > 0 && graph.value(out.chain[i - 1]).producer_id == consumer;
+        const bool in_chain =
+            std::ranges::any_of(output_ids(node), [&](ValueId output) {
+              return std::ranges::find(extent.chain, output) !=
+                  extent.chain.end();
+            });
         const NamedArgument* mask = find_arg(node, "attn_mask", 3);
-        const bool sdpa_mask = i == 0 && node.is_call() &&
+        const NamedArgument* key = find_arg(node, "key", 1);
+        const bool sdpa_mask = node.is_call() &&
             op_key(node.target) ==
                 "aten.scaled_dot_product_attention.default" &&
             mask != nullptr && mask->arg.kind() == ArgKind::Tensor &&
-            mask->arg.as_tensor().id == out.chain[i];
-        if (!next_wrapper && !sdpa_mask) {
-          return std::nullopt;
+            mask->arg.as_tensor().id == id && key != nullptr &&
+            key->arg.kind() == ArgKind::Tensor &&
+            static_dim(graph.value(key->arg.as_tensor().id).tensor_meta(), 2) ==
+                extent.keys;
+        if (!in_chain && !sdpa_mask) {
+          return false;
         }
       }
     }
-    return out;
+    return true;
   }
 
   void index_mask_extents() {
-    std::unordered_map<ValueId, std::optional<MaskExtent>> by_mask;
+    // Masks in schedule order, with the keys every attention reading them
+    // covers.
+    std::vector<std::pair<ValueId, std::optional<int64_t>>> masks;
     for (const NodeId id : method_.graph.schedule) {
       const Node& node = method_.graph.node(id);
       if (!node.is_call() ||
@@ -1237,21 +1267,53 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& key_meta =
           method_.graph.value(key->arg.as_tensor().id).tensor_meta();
-      const std::optional<int64_t> keys = static_dim(key_meta, 2);
+      const std::optional<int64_t> keys =
+          key_meta.ndim() == 4 ? static_dim(key_meta, 2) : std::nullopt;
       const ValueId mask_id = mask->arg.as_tensor().id;
-      auto [it, inserted] = by_mask.try_emplace(mask_id);
-      if (inserted) {
-        if (key_meta.ndim() == 4 && keys) {
-          it->second = match_mask_extent(mask_id, *keys);
-        }
-      } else if (it->second && it->second->keys != keys) {
-        // Every attention reading this mask must cover the same keys.
-        it->second.reset();
+      const auto found = std::ranges::find(
+          masks, mask_id, &std::pair<ValueId, std::optional<int64_t>>::first);
+      if (found == masks.end()) {
+        masks.emplace_back(mask_id, keys);
+      } else if (found->second != keys) {
+        found->second.reset();
       }
     }
-    for (auto& [mask_id, extent] : by_mask) {
-      if (extent) {
-        mask_extents_.push_back(std::move(*extent));
+    // Masks that share a value are computed over one prefix.
+    std::vector<std::optional<MaskExtent>> groups;
+    for (const auto& [mask_id, keys] : masks) {
+      if (!keys) {
+        continue;
+      }
+      MaskExtent extent;
+      extent.keys = *keys;
+      std::vector<KeyCompare> compares;
+      if (!match_mask_extent(mask_id, extent, compares)) {
+        continue;
+      }
+      extent.masks.push_back(std::move(compares));
+      // Every chain value ends in its group's keys, so groups that share a
+      // value agree on them.
+      for (std::optional<MaskExtent>& group : groups) {
+        if (!group || std::ranges::none_of(group->chain, [&](ValueId id) {
+              return std::ranges::find(extent.chain, id) != extent.chain.end();
+            })) {
+          continue;
+        }
+        for (std::vector<KeyCompare>& mask : group->masks) {
+          extent.masks.push_back(std::move(mask));
+        }
+        for (const ValueId id : group->chain) {
+          if (std::ranges::find(extent.chain, id) == extent.chain.end()) {
+            extent.chain.push_back(id);
+          }
+        }
+        group.reset();
+      }
+      groups.emplace_back(std::move(extent));
+    }
+    for (std::optional<MaskExtent>& group : groups) {
+      if (group && feeds_only_masks(*group)) {
+        mask_extents_.push_back(std::move(*group));
       }
     }
   }
@@ -1272,18 +1334,29 @@ class GgmlExecutable final : public EngineExecutable {
         [this](ValueId id) { return host_constant(id); },
         host_static_values_);
     std::vector<int64_t> out;
-    for (const MaskExtent& mask : mask_extents_) {
-      const HostInts* key_index = host.tensor(mask.key_operand);
-      const HostInts* query = host.tensor(mask.query_operand);
-      out.push_back(
-          key_index != nullptr && query != nullptr
-              ? attended_key_extent(mask, *key_index, *query)
-              : mask.keys);
+    for (const MaskExtent& extent : mask_extents_) {
+      // A mask attends the keys its every comparison attends.
+      int64_t widest = 0;
+      for (const std::vector<KeyCompare>& mask : extent.masks) {
+        int64_t attended = extent.keys;
+        for (const KeyCompare& compare : mask) {
+          const HostInts* key_index = host.tensor(compare.key_operand);
+          const HostInts* query = host.tensor(compare.query_operand);
+          if (key_index != nullptr && query != nullptr) {
+            attended = std::min(
+                attended,
+                attended_key_extent(compare, extent.keys, *key_index, *query));
+          }
+        }
+        widest = std::max(widest, attended);
+      }
+      out.push_back(widest);
     }
     return out;
   }
 
-  // Small integer constants, e.g. a key offset, read once from the package.
+  // Small integer constants, e.g. a key offset or the key positions of a
+  // static KV cache, read once from the package.
   std::optional<HostInts> host_constant(ValueId id) {
     if (const auto found = host_constants_.find(id);
         found != host_constants_.end()) {
@@ -1299,7 +1372,7 @@ class GgmlExecutable final : public EngineExecutable {
         ? &method_.graph.value(id).tensor_meta()
         : nullptr;
     if (binding != method_.data_bindings.end() && meta != nullptr &&
-        !meta->quant && checked_numel(meta->sizes) <= 64 &&
+        !meta->quant && checked_numel(meta->sizes) <= kHostEvalMaxElements &&
         (meta->dtype == ScalarType::Long || meta->dtype == ScalarType::Int)) {
       if (const std::optional<OwnedBytes> bytes = read_constant(binding->key)) {
         out = HostInts{meta->sizes, {}};
