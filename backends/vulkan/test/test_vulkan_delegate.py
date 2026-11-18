@@ -1222,6 +1222,17 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_rms_norm(self):
+        # nn.RMSNorm fuses into et_vk.rms_norm; in fp16 its decomposition casts
+        # the weight to fp32, which must not reach the op as a runtime tensor.
+        for dtype, atol in ((torch.float32, 1e-3), (torch.float16, 2e-2)):
+            with self.subTest(dtype=dtype):
+                self.lower_module_and_test_output(
+                    torch.nn.RMSNorm(64, eps=1e-6).to(dtype),
+                    (torch.randn(size=(3, 7, 64), dtype=dtype),),
+                    atol=atol,
+                )
+
     def test_vulkan_backend_batch_norm(self):
         class BatchNormModule(torch.nn.Module):
             def __init__(self):
