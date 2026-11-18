@@ -138,6 +138,9 @@ class ExportHfLlmTest(unittest.TestCase):
                     weight.uniform_(-0.5, 0.5)
                 torch.manual_seed(2)
                 loaded = _tiny(arch, tie)
+                # Newer transformers' sdpa rejects Gemma 2's attention softcap.
+                for model in (reference, loaded):
+                    model.config._attn_implementation = "eager"
                 pairs = _as_gguf_tensors(reference, arch)
 
                 load_gguf(loaded, "model.gguf", arch, lambda _, p=pairs: iter(p))
