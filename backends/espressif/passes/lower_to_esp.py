@@ -60,9 +60,6 @@ def _mul_multiplier(
 def _add_multipliers(
     input1: _QParams, input2: _QParams, output: _QParams
 ) -> tuple[int, ...] | None:
-    # Portable float32 quantization multiplies by the reciprocal output scale.
-    if not math.isfinite(c_float(1.0 / output.scale).value):
-        return None
     left_shift = 20
     twice_max_scale = 2 * max(input1.scale, input2.scale)
     rescales = (
@@ -98,10 +95,13 @@ def _binary_kernel_args(inputs, params, output_value, rescale_fn) -> tuple | Non
         for value in values
     ) or not all(value.shape == values[0].shape for value in values[1:]):
         return None
+    input1, input2, output = params
+    # Portable float32 quantization multiplies by the reciprocal output scale.
+    if not math.isfinite(c_float(1.0 / output.scale).value):
+        return None
     rescale = rescale_fn(*params)
     if rescale is None:
         return None
-    input1, input2, output = params
     return (
         inputs[0],
         inputs[1],

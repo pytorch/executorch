@@ -212,9 +212,10 @@ def test_float32_range_limits(multiply_program, scales, zero_point, supported):
     "target, input_scale, output_scale, values, expected_values",
     [
         (_FUSED_MUL, 1e19, 1e38, [1.0, 2.0, 10.0], [1.0, 127.0, 127.0]),
+        (_FUSED_MUL, 1e-20, 1e-40, [1.0, 2.0, 10.0], [127.0, 127.0, 127.0]),
         (_FUSED_ADD, 2e36, 4e36, [1.0, 10.0, 100.0], [1.0, 10.0, 127.0]),
     ],
-    ids=["mul", "add"],
+    ids=["mul_product", "mul_reciprocal", "add"],
 )
 def test_float32_overflow_preserves_portable_results(
     exported_programs, target, input_scale, output_scale, values, expected_values
@@ -245,6 +246,15 @@ def test_float32_overflow_preserves_portable_results(
     torch.testing.assert_close(
         lowered.module()(inputs, inputs), expected, atol=0, rtol=0
     )
+
+
+@pytest.mark.parametrize("output_scale, supported", [(1e-38, True), (1e-40, False)])
+def test_output_scale_reciprocal_limits(binary_program, output_scale, supported):
+    input_scale = 1e-20 if _binary_node(binary_program).target == _FUSED_MUL else 1e-40
+    for prefix in ("inp", "other"):
+        _set_qparams(binary_program, prefix, input_scale, 0)
+    _set_qparams(binary_program, "out", output_scale, 0)
+    assert LowerToEsp()(binary_program).modified == supported
 
 
 @pytest.mark.parametrize("prefix", ["inp", "other", "out"])
@@ -362,8 +372,6 @@ def test_add_folding_and_replacement(add_program):
         ((1, 2**-31, 1), False),
         ((1e-200, 1e-200, 1), False),
         ((1e200, 1e200, 1), False),
-        ((1e-40, 1e-40, 1e-40), False),
-        ((1e-200, 1e-200, 1e-200), False),
     ],
 )
 def test_add_rescale_limits(scales, supported):
