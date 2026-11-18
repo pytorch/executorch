@@ -439,6 +439,100 @@ def conv3d_boundary_calls() -> (
     return calls
 
 
+# Strict-FP32 1-D convolutions with few output rows (batch times output
+# length): kernel 5 or 3 with stride 1 and "same" padding, kernel 3 with
+# stride 2 and padding 1, and transposed kernel 4 with stride 2 and padding 1,
+# with CONV1D_IN_CHANNELS input and CONV1D_OUT_CHANNELS output channels and
+# CONV1D_ROWS output rows, in contiguous layouts. Such a call reads each weight
+# for a few outputs, so it is bound by streaming the weights, which the
+# split-K schedule spreads over the GPU and Inductor's template, with its few
+# output tiles, does not; fewer input channels or rows leave too little weight
+# traffic to hide the launch of the reduction. The benchmark's
+# ``conv1d_boundary`` suite measures ``conv1d_boundary_calls()``.
+CONV1D_GEOMETRIES = (
+    # (kernel, stride, padding, transposed)
+    (5, 1, 2, False),
+    (3, 1, 1, False),
+    (3, 2, 1, False),
+    (4, 2, 1, True),
+)
+CONV1D_IN_CHANNELS = (512, 4096)
+CONV1D_OUT_CHANNELS = (64, 2048)
+CONV1D_ROWS = (4, 64)
+CONV1D_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
+
+
+def _in_conv1d_geometry(call: ConvCall) -> bool:
+    p = call.params
+    return (
+        p.rank == 1
+        and p.padding_after == p.padding_before
+        and p.output_padding == (0,)
+        and (call.weight.shape[2], *p.stride, *p.padding_before, p.transposed)
+        in CONV1D_GEOMETRIES
+    )
+
+
+def _conv1d_reason(call: ConvCall) -> Optional[str]:
+    """Why ``call`` is outside the benchmarked 1-D range, or None."""
+    x = call.input
+    if not _in_conv1d_geometry(call):
+        return "implicit GEMM: not a benchmarked 1-D geometry"
+    if x.dtype != torch.float32 or conv_allows_tf32():
+        return "implicit GEMM: only strict-FP32 1-D convolutions are benchmarked"
+    out_channels = _out_channels(call)
+    if not (
+        CONV1D_IN_CHANNELS[0] <= x.shape[1] <= CONV1D_IN_CHANNELS[1]
+        and CONV1D_OUT_CHANNELS[0] <= out_channels <= CONV1D_OUT_CHANNELS[1]
+    ):
+        return (
+            f"implicit GEMM: {x.shape[1]} to {out_channels} channels are not "
+            "benchmarked faster in 1-D"
+        )
+    rows = x.shape[0] * _output_size(call)[0]
+    if not CONV1D_ROWS[0] <= rows <= CONV1D_ROWS[1]:
+        return f"implicit GEMM: {rows} 1-D output rows are not benchmarked faster"
+    reason = unbenchmarked_layout(call, CONV1D_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def _conv1d_outputs(length, kernel, stride, padding, transposed) -> int:
+    if transposed:
+        return (length - 1) * stride - 2 * padding + kernel
+    return (length + 2 * padding - kernel) // stride + 1
+
+
+def conv1d_boundary_calls() -> list[
+    tuple[
+        tuple[int, ...],
+        int,
+        tuple[int, ...],
+        tuple[int, ...],
+        tuple[int, ...],
+        bool,
+    ]
+]:
+    """(input shape, C_out, kernel, stride, padding, transposed) of each 1-D
+    geometry with the fewest and most input and output channels, and the fewest
+    and most ``CONV1D_ROWS`` output rows: from one image of the longest input
+    with at most that many outputs, and from images of length 1."""
+    calls = []
+    for geometry, channels, out_channels in itertools.product(
+        CONV1D_GEOMETRIES, CONV1D_IN_CHANNELS, CONV1D_OUT_CHANNELS
+    ):
+        kernel, stride, padding, transposed = geometry
+        for rows in CONV1D_ROWS:
+            length = 1
+            while _conv1d_outputs(length + 1, *geometry) <= rows:
+                length += 1
+            images = rows // _conv1d_outputs(1, *geometry)
+            for shape in ((1, channels, length), (images, channels, 1)):
+                calls.append(
+                    (shape, out_channels, (kernel,), (stride,), (padding,), transposed)
+                )
+    return list(dict.fromkeys(calls))
+
+
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -450,6 +544,8 @@ def _family(call: ConvCall) -> Optional[RoutedFamily]:
 def worth_routing(call: ConvCall) -> Optional[str]:
     """Why a call ``supports`` accepts is left to the regular lowering, or None."""
     x, w, p = call.input, call.weight, call.params
+    if _in_conv1d_geometry(call):
+        return _conv1d_reason(call)
     if p.transposed:
         return "implicit GEMM: a transposed convolution is not benchmarked faster"
     if all(k == 1 for k in w.shape[2:]):

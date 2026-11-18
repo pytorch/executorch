@@ -535,6 +535,27 @@ def corner_cases(label, calls, precision):
     ]
 
 
+def conv1d_corner_cases(precision):
+    """``implicit_gemm.conv1d_boundary_calls()``, forward and transposed."""
+    return [
+        Case(
+            "conv1d boundary",
+            shape,
+            out_channels,
+            kernel,
+            stride,
+            padding,
+            padding,
+            True,
+            precision,
+            transposed=transposed,
+        )
+        for shape, out_channels, kernel, stride, padding, transposed in (
+            implicit_gemm.conv1d_boundary_calls()
+        )
+    ]
+
+
 _CALLS_PER_GRAPH = 10
 _REPLAYS = 20
 
@@ -760,6 +781,7 @@ def main():
             "stage_boundary",
             "winograd_boundary",
             "conv3d_boundary",
+            "conv1d_boundary",
         ],
     )
     parser.add_argument(
@@ -797,6 +819,7 @@ def main():
         "conv3d_boundary": lambda: corner_cases(
             "conv3d boundary", implicit_gemm.conv3d_boundary_calls(), args.precision
         ),
+        "conv1d_boundary": lambda: conv1d_corner_cases(args.precision),
     }[args.suite]()
     index, count = map(int, args.shard.split("/"))
     l2_bytes = torch.cuda.get_device_properties(0).L2_cache_size
