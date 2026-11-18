@@ -287,6 +287,9 @@ test_run_ethos_u55() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
+    # Verify the runner links and runs without ethosu_execution_stats.
+    examples/arm/run.sh --et_build_root=arm_test/test_run_no_stats --target=ethos-u55-128 --model_name=add --extra_build_flags="-DEXECUTORCH_ARM_ETHOSU_PMU_STATS=OFF"
+
     echo "${TEST_SUITE_NAME}: Test target Ethos-U65"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py --bundleio
@@ -336,6 +339,52 @@ test_minimal_classic_ml_ethos_u55() {
     local fvp_status="${PIPESTATUS[0]}"
     [[ "${fvp_status}" -eq 0 ]]
     grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pmu_counters_example_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test PMU collection example on Ethos-U55"
+
+    local build_dir="${et_root_dir}/arm_test/pmu_counters_example_ethos_u55"
+    local pte_path="${build_dir}/mv2.pte"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=mv2 \
+        --target=ethos-u55-128 \
+        --delegate \
+        --quantize \
+        --output="${pte_path}"
+
+    cmake \
+        -S examples/arm/pmu_counters_example_ethos_u \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}"
+    cmake --build "${build_dir}" --target arm_pmu_runner -j"$(nproc)"
+
+    (
+        set -o pipefail
+        cd "${build_dir}"
+        export PYTHONPATH="${et_root_dir}${PYTHONPATH:+:${PYTHONPATH}}"
+        "${et_root_dir}/backends/arm/scripts/run_fvp.sh" \
+            --elf="${build_dir}/arm_pmu_runner" \
+            --target=ethos-u55-128 | tee run_fvp.log
+        grep -Fq "Model executed successfully." run_fvp.log
+        grep -Eq '^  cycles: [0-9]+ overflow=[01]$' run_fvp.log
+        grep -Eq '^  event 97: [0-9]+ overflow=[01]$' run_fvp.log
+        grep -Eq '^  event 112: [0-9]+ overflow=[01]$' run_fvp.log
+        test -s etdump.bin
+
+        python3 "${et_root_dir}/examples/arm/pmu_counters_example_ethos_u/parse_etdump.py" \
+            | tee parse_etdump.log
+        grep -Fq "'ethosu_pmu':" parse_etdump.log
+        grep -Fq "EthosUPmuProfileEvent(" parse_etdump.log
+        grep -Fq "ETHOSU_PMU_MAC_ACTIVE" parse_etdump.log
+        grep -Fq "ETHOSU_PMU_NPU_IDLE" parse_etdump.log
+    )
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -415,6 +464,19 @@ test_run_ethos_u85() {
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U85)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=qops --bundleio
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_ethos_u85_clang() {
+    echo "${TEST_SUITE_NAME}: Test Clang runner on Ethos-U85"
+
+    examples/arm/run.sh \
+        --toolchain=arm-none-eabi-clang \
+        --et_build_root=arm_test/test_run_clang \
+        --target=ethos-u85-128 \
+        --model_name=qops \
+        --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -522,6 +584,7 @@ test_runtime_vgf() {
         -DEXECUTORCH_BUILD_TESTS=ON \
         -DEXECUTORCH_BUILD_VGF=ON \
         -DEXECUTORCH_BUILD_VULKAN=OFF \
+        -DEXECUTORCH_VGF_ZERO_COPY_IO=ON \
         -DPYTHON_EXECUTABLE="${python_executable}"         -DPython3_EXECUTABLE="${python_executable}"
 
     # Build the VGF tests explicitly. This makes a missing/renamed target fail

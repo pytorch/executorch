@@ -6,12 +6,23 @@
 
 #include <executorch/backends/cpu/runtime/KernelProvider.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
+#include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
 #include <cstring>
 
 namespace executorch::backends::cpu {
 using namespace executorch::runtime;
+
+ExecutionContext current_execution_context(EventTracer* tracer) {
+  ExecutionContext context;
+  context.threadpool = extension::threadpool::get_pthreadpool();
+  context.threads = context.threadpool
+      ? extension::threadpool::get_threadpool()->get_thread_count()
+      : 1;
+  context.event_tracer = tracer;
+  return context;
+}
 
 bool BufferRequirements::valid() const {
   return alignment >= kBufferAlignment && !(alignment & (alignment - 1));
@@ -91,16 +102,9 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
       value.name.c_str());
   const auto& meta = value.tensor_meta();
   ET_CHECK_OR_RETURN_ERROR(
-      (meta.dtype == ptn::ScalarType::Float ||
-       meta.dtype == ptn::ScalarType::Byte ||
-       meta.dtype == ptn::ScalarType::Char ||
-       meta.dtype == ptn::ScalarType::Short ||
-       meta.dtype == ptn::ScalarType::Int ||
-       meta.dtype == ptn::ScalarType::Long ||
-       meta.dtype == ptn::ScalarType::Bool) &&
-          meta.is_contiguous() && meta.sizes.size() <= 16,
+      meta.is_contiguous() && meta.sizes.size() <= 16,
       NotSupported,
-      "CPU static delegate requires supported dtype and contiguous rank <= 16: %s",
+      "CPU static delegate requires contiguous rank <= 16: %s",
       value.name.c_str());
   size_t elements = 1;
   for (auto dimension = meta.sizes.rbegin(); dimension != meta.sizes.rend();
@@ -114,11 +118,11 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
         value.name.c_str());
     elements *= size;
   }
-  const size_t element_size = ptn::element_size(meta.dtype);
+  const auto element_size = ptn::element_size(meta.dtype);
   ET_CHECK_OR_RETURN_ERROR(
       elements <= SIZE_MAX / element_size,
       NotSupported,
-      "CPU tensor byte size overflows: %s",
+      "CPU tensor byte size overflows size_t: %s",
       value.name.c_str());
   return elements * element_size;
 }

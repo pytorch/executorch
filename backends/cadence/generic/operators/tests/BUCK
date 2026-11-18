@@ -5,6 +5,44 @@ load("@fbsource//xplat/on_device_ai/Assistant/Jarvis/build:cxx_wrapper.bzl", "ja
 oncall("executorch")
 
 jarvis_wrapper.cxx_test(
+    name = "test_op_avg_pool2d",
+    srcs = [
+        "test_op_avg_pool2d.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_avg_pool2d",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_fully_connected",
+    srcs = [
+        "test_op_fully_connected.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_fully_connected",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
     name = "test_op_quantized_layer_norm",
     srcs = [
         "test_op_quantized_layer_norm.cpp",
@@ -56,6 +94,389 @@ jarvis_wrapper.cxx_test(
     ],
     deps = [
         "fbsource//xplat/executorch/backends/cadence/generic/operators:op_sdpa_bitwise_ring_mask_gen",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_conv1d_ncl",
+    srcs = [
+        "test_op_quantized_conv1d_ncl.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_conv1d_ncl",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_conv1d_nlc",
+    srcs = [
+        "test_op_quantized_conv1d_nlc.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_conv1d_nlc",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_conv2d",
+    srcs = [
+        "test_op_quantized_conv2d.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_conv2d",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_depthwise_conv1d_ncl",
+    srcs = [
+        "test_op_quantized_depthwise_conv1d_ncl.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_depthwise_conv1d_ncl",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_depthwise_conv1d_nlc",
+    srcs = [
+        "test_op_quantized_depthwise_conv1d_nlc.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_depthwise_conv1d_nlc",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_fully_connected",
+    srcs = [
+        "test_op_quantized_fully_connected.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_fully_connected",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_linear",
+    srcs = [
+        "test_op_quantized_linear.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_linear",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_softmax",
+    srcs = [
+        "test_op_quantized_softmax.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_softmax",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_quantized_linear_packed",
+    srcs = [
+        "test_quantized_linear_packed.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_fully_connected",
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_fully_connected_packed",
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:quantized_linear",
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:quantized_linear_packed",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_im2row",
+    srcs = [
+        "test_op_im2row.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_im2row",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_add",
+    srcs = [
+        "test_op_quantized_add.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_add",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_matmul",
+    srcs = [
+        "test_op_quantized_matmul.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_matmul",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_max_pool2d",
+    srcs = [
+        "test_op_quantized_max_pool2d.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_max_pool2d",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_mul",
+    srcs = [
+        "test_op_quantized_mul.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_mul",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_linalg_svd",
+    srcs = [
+        "test_op_linalg_svd.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_linalg_svd",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_quantized_embedding_byte",
+    srcs = [
+        "test_op_quantized_embedding_byte.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_quantized_embedding_byte",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_roi_align_box_processor",
+    srcs = [
+        "test_op_roi_align_box_processor.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_roi_align_box_processor",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_rope",
+    srcs = [
+        "test_op_rope.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_rope",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_sdpa_bitwise_causal_mask_gen",
+    srcs = [
+        "test_op_sdpa_bitwise_causal_mask_gen.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_sdpa_bitwise_causal_mask_gen",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_where_scalar",
+    srcs = [
+        "test_op_where_scalar.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_where_scalar",
         "fbsource//xplat/executorch/kernels/test:gtest_utils",
         "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],

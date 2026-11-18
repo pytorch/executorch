@@ -10,6 +10,7 @@
  * appropriate vulkan structures.
  */
 
+#include <executorch/backends/arm/runtime/VGFCommandStream.h>
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFMutableAlias.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
@@ -820,6 +821,13 @@ bool VgfRepr::map_persistent_io_memory() {
   unmap_persistent_io_memory();
 
   for (auto& io : IOs) {
+    // Cache maintenance cannot infer coherency from missing metadata.
+    if (!io.memory_properties_known ||
+        (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+      ET_LOG(Error, "VGF IO has unknown or non-host-visible memory properties");
+      unmap_persistent_io_memory();
+      return false;
+    }
     if (io.memory == VK_NULL_HANDLE) {
       ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
       unmap_persistent_io_memory();
@@ -831,7 +839,8 @@ bool VgfRepr::map_persistent_io_memory() {
     // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
     // mapped more than once at the same time, so map each unique memory once
     // and share the returned pointer across aliased IO entries.
-    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    // IO memory is HOST_VISIBLE. Boundary tensors may intentionally use
+    // non-coherent memory; execute() performs explicit cache maintenance.
     bool found_existing_mapping = false;
     auto mapped_memory_it = std::find_if(
         persistent_mapped_memories.begin(),
@@ -883,6 +892,157 @@ void VgfRepr::unmap_persistent_io_memory() {
   }
 }
 
+executorch::runtime::Error VgfRepr::get_owned_mapped_boundary_buffer(
+    bool input,
+    size_t argument_index,
+    VgfMappedBoundaryBuffer* buffer) const {
+  if (buffer == nullptr) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+  *buffer = {};
+
+  const auto& mapping = input ? model_input_io_index : model_output_io_index;
+  const size_t argument_count = input ? model_input_count : model_output_count;
+  if (argument_index >= argument_count || argument_index >= mapping.size()) {
+    return executorch::runtime::Error::InvalidArgument;
+  }
+
+  const int mapped_io_index = mapping[argument_index];
+  if (mapped_io_index < 0) {
+    return executorch::runtime::Error::NotFound;
+  }
+  const size_t io_index = static_cast<size_t>(mapped_io_index);
+  if (io_index >= IOs.size()) {
+    return executorch::runtime::Error::Internal;
+  }
+
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr ||
+      io.memory == VK_NULL_HANDLE || !io.memory_properties_known) {
+    return executorch::runtime::Error::NotSupported;
+  }
+  if (io.memory_allocation_size > std::numeric_limits<size_t>::max()) {
+    return executorch::runtime::Error::NotSupported;
+  }
+
+  *buffer = VgfMappedBoundaryBuffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = static_cast<size_t>(io.memory_allocation_size),
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return executorch::runtime::Error::Ok;
+}
+
+bool VgfRepr::is_owned_mapped_io_pointer(
+    size_t io_index,
+    const void* pointer,
+    size_t logical_nbytes) const {
+  if (io_index >= IOs.size()) {
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.owned_mapped_boundary_eligible || io.persistent_memory == nullptr) {
+    return false;
+  }
+  const VgfMappedBoundaryBuffer buffer{
+      .data = io.persistent_memory,
+      .logical_nbytes = io.allocation_size,
+      .capacity_nbytes = io.allocation_size,
+      .host_coherent = (io.memory_property_flags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+      .generation = 0,
+  };
+  return vgf_owned_mapped_buffer_matches(buffer, pointer, logical_nbytes);
+}
+
+bool VgfRepr::flush_io_host_writes(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host flush", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot flush",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(Error, "VGF IO %zu is not flushable host-visible memory", io_index);
+    return false;
+  }
+
+  // Each direct boundary allocation is isolated and mapped from offset zero.
+  // VK_WHOLE_SIZE avoids sub-range/nonCoherentAtomSize alignment hazards.
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkFlushMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to flush non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
+bool VgfRepr::invalidate_io_host_reads(size_t io_index) {
+  if (io_index >= IOs.size()) {
+    ET_LOG(Error, "Invalid VGF IO index %zu for host invalidate", io_index);
+    return false;
+  }
+  const IO& io = IOs[io_index];
+  if (!io.memory_properties_known) {
+    ET_LOG(
+        Error,
+        "VGF IO %zu has unknown memory properties; cannot invalidate",
+        io_index);
+    return false;
+  }
+  if ((io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+    return true;
+  }
+  if (io.memory == VK_NULL_HANDLE ||
+      (io.memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+    ET_LOG(
+        Error, "VGF IO %zu is not invalidatable host-visible memory", io_index);
+    return false;
+  }
+
+  const VkMappedMemoryRange range{
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .pNext = nullptr,
+      .memory = io.memory,
+      .offset = 0,
+      .size = VK_WHOLE_SIZE,
+  };
+  const VkResult result = vkInvalidateMappedMemoryRanges(vk_device, 1, &range);
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Error,
+        "Failed to invalidate non-coherent VGF IO %zu, error %d",
+        io_index,
+        result);
+    return false;
+  }
+  return true;
+}
+
 VkResult allocate_memory(
     VkPhysicalDevice physical,
     VkDevice device,
@@ -911,6 +1071,74 @@ VkResult allocate_memory(
     *memory_type_index_out = memory_index;
   }
   return result;
+}
+
+static VkMemoryPropertyFlags memory_type_property_flags(
+    VkPhysicalDevice physical,
+    uint32_t memory_type_index) {
+  VkPhysicalDeviceMemoryProperties properties{};
+  vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+  if (memory_type_index >= properties.memoryTypeCount) {
+    return 0;
+  }
+  return properties.memoryTypes[memory_type_index].propertyFlags;
+}
+
+// Boundary tensors are already VGF-owned, so they do not need an external-host
+// compatible memory type. Prefer the historical coherent/device-local choice,
+// but when zero-copy is built allow any tensor-compatible HOST_VISIBLE type and
+// perform explicit flush/invalidate for non-coherent memory.
+static VkResult allocate_boundary_host_visible_memory(
+    VkPhysicalDevice physical,
+    VkDevice device,
+    const VkMemoryRequirements2& memory_requirements,
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out,
+    VkMemoryPropertyFlags* memory_property_flags_out) {
+  constexpr VkMemoryPropertyFlags candidates[] = {
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+  };
+
+  for (const VkMemoryPropertyFlags aims : candidates) {
+    uint32_t memory_index = 0;
+    if (!find_memory_index(
+            physical, memory_requirements, aims, &memory_index)) {
+      continue;
+    }
+
+    const VkMemoryAllocateInfo allocate_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = memory_requirements.memoryRequirements.size,
+        .memoryTypeIndex = memory_index,
+    };
+    const VkResult result =
+        vkAllocateMemory(device, &allocate_info, nullptr, memory);
+    if (result != VK_SUCCESS) {
+      return result;
+    }
+
+    if (memory_type_index_out != nullptr) {
+      *memory_type_index_out = memory_index;
+    }
+    if (memory_property_flags_out != nullptr) {
+      *memory_property_flags_out =
+          memory_type_property_flags(physical, memory_index);
+    }
+    return VK_SUCCESS;
+  }
+
+  ET_LOG(
+      Error,
+      "Failed to find tensor-compatible DEVICE_LOCAL|HOST_VISIBLE memory for "
+      "VGF boundary");
+  return VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
 VkResult create_tensor_unbound(
@@ -1014,8 +1242,37 @@ static void cache_external_tensor_host_allocation_capabilities(
 
   vkGetPhysicalDeviceExternalTensorPropertiesARM(
       physical_device, &external_tensor_info, &external_tensor_properties);
-  vgf_cache_external_tensor_properties(
-      metadata, external_tensor_properties.externalMemoryProperties);
+
+  const auto& external_memory_properties =
+      external_tensor_properties.externalMemoryProperties;
+  const bool external_importable =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
+  const bool host_allocation_compatible =
+      (external_memory_properties.compatibleHandleTypes &
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT) != 0;
+  const bool dedicated_only =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0;
+
+  ET_LOG(
+      Info,
+      "VGF external tensor properties: resource=%u format=%u tiling=%u "
+      "usage=0x%x features=0x%x compatible_handle_types=0x%x "
+      "importable=%d host_allocation_compatible=%d dedicated_only=%d",
+      resource_index,
+      static_cast<unsigned int>(tensor_description.format),
+      static_cast<unsigned int>(tensor_description.tiling),
+      static_cast<unsigned int>(tensor_description.usage),
+      static_cast<unsigned int>(
+          external_memory_properties.externalMemoryFeatures),
+      static_cast<unsigned int>(
+          external_memory_properties.compatibleHandleTypes),
+      static_cast<int>(external_importable),
+      static_cast<int>(host_allocation_compatible),
+      static_cast<int>(dedicated_only));
+
+  vgf_cache_external_tensor_properties(metadata, external_memory_properties);
 
   if (metadata->external_tensor_requires_dedicated_allocation) {
     ET_LOG(
@@ -1181,7 +1438,8 @@ VkResult allocate_buffer(
     VkDeviceSize size,
     VkBufferUsageFlags usage,
     VkBuffer* buffer,
-    VkDeviceMemory* memory) {
+    VkDeviceMemory* memory,
+    uint32_t* memory_type_index_out = nullptr) {
   VkBufferCreateInfo buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = nullptr,
@@ -1235,6 +1493,9 @@ VkResult allocate_buffer(
     return result;
   }
 
+  if (memory_type_index_out != nullptr) {
+    *memory_type_index_out = memory_index;
+  }
   return VK_SUCCESS;
 }
 
@@ -2255,6 +2516,11 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory tensor_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t tensor_memory_type_index = UINT32_MAX;
+            VkMemoryPropertyFlags tensor_memory_property_flags = 0;
+            bool tensor_memory_properties_known = false;
+            VkDeviceSize tensor_memory_allocation_size =
+                tensor_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2265,17 +2531,44 @@ bool VgfRepr::process_vgf(
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 return false;
               }
+              // The alias group owns the VkDeviceMemory and selected its type.
+              // The current IO must use that same type for cache maintenance.
+              tensor_memory_type_index = alias_backing->memory_type_index;
+              tensor_memory_allocation_size = alias_backing->allocation_size;
+              tensor_memory_property_flags = memory_type_property_flags(
+                  vk_physical, tensor_memory_type_index);
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             } else {
-              const VkMemoryPropertyFlags aims =
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-              result = allocate_memory(
-                  vk_physical,
-                  vk_device,
-                  tensor_memory_requirements,
-                  aims,
-                  &tensor_memory);
+              if (vgf_zero_copy_io_build_enabled()) {
+                result = allocate_boundary_host_visible_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    &tensor_memory,
+                    &tensor_memory_type_index,
+                    &tensor_memory_property_flags);
+              } else {
+                // Preserve the historical allocation contract when the
+                // optimization is not compiled in.
+                const VkMemoryPropertyFlags aims =
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                result = allocate_memory(
+                    vk_physical,
+                    vk_device,
+                    tensor_memory_requirements,
+                    aims,
+                    &tensor_memory,
+                    &tensor_memory_type_index);
+                if (result == VK_SUCCESS) {
+                  tensor_memory_property_flags = memory_type_property_flags(
+                      vk_physical, tensor_memory_type_index);
+                }
+              }
               if (result != VK_SUCCESS) {
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 ET_LOG(
@@ -2284,6 +2577,20 @@ bool VgfRepr::process_vgf(
                     i);
                 return false;
               }
+              tensor_memory_properties_known =
+                  tensor_memory_type_index != UINT32_MAX &&
+                  (tensor_memory_property_flags &
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+              ET_LOG(
+                  Debug,
+                  "VGF boundary tensor resource=%d memory_type=%u flags=0x%x "
+                  "coherent=%d",
+                  i,
+                  tensor_memory_type_index,
+                  static_cast<unsigned int>(tensor_memory_property_flags),
+                  static_cast<int>(
+                      (tensor_memory_property_flags &
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0));
             }
             result = bind_tensor_memory_and_create_view(
                 vk_device,
@@ -2319,6 +2626,21 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+
+            // Only isolated tensor allocations are exposed for direct
+            // Method-boundary binding. Alias/image-backed resources keep
+            // the existing import/copy behavior.
+            IO& boundary_io = IOs.back();
+            boundary_io.memory_allocation_size = tensor_memory_allocation_size;
+            boundary_io.memory_type_index = tensor_memory_type_index;
+            boundary_io.memory_property_flags = tensor_memory_property_flags;
+            boundary_io.memory_properties_known =
+                tensor_memory_properties_known;
+            boundary_io.owned_mapped_boundary_eligible = owns_memory &&
+                !uses_alias_group && !image_aliasing &&
+                tensor_memory_properties_known &&
+                (tensor_memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
 
             auto zero_copy_metadata = make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
@@ -2370,6 +2692,9 @@ bool VgfRepr::process_vgf(
             }
             VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
             bool owns_memory = true;
+            uint32_t buffer_memory_type_index = UINT32_MAX;
+            VkDeviceSize buffer_memory_allocation_size =
+                buffer_memory_requirements.memoryRequirements.size;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
               if (!prepare_alias_memory(
@@ -2380,6 +2705,8 @@ bool VgfRepr::process_vgf(
                 destroy_buffer(vk_device, buffer);
                 return false;
               }
+              buffer_memory_type_index = alias_backing->memory_type_index;
+              buffer_memory_allocation_size = alias_backing->allocation_size;
             } else {
               const VkMemoryPropertyFlags aims =
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -2390,7 +2717,8 @@ bool VgfRepr::process_vgf(
                   vk_device,
                   buffer_memory_requirements,
                   aims,
-                  &buffer_memory);
+                  &buffer_memory,
+                  &buffer_memory_type_index);
               if (result != VK_SUCCESS) {
                 destroy_buffer(vk_device, buffer);
                 ET_LOG(
@@ -2430,6 +2758,17 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            IO& boundary_buffer_io = IOs.back();
+            boundary_buffer_io.memory_allocation_size =
+                buffer_memory_allocation_size;
+            boundary_buffer_io.memory_type_index = buffer_memory_type_index;
+            boundary_buffer_io.memory_property_flags =
+                memory_type_property_flags(
+                    vk_physical, buffer_memory_type_index);
+            boundary_buffer_io.memory_properties_known =
+                buffer_memory_type_index != UINT32_MAX &&
+                (boundary_buffer_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
@@ -2615,6 +2954,7 @@ bool VgfRepr::process_vgf(
             }
             VkBuffer staging_buffer = VK_NULL_HANDLE;
             VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+            uint32_t staging_memory_type_index = UINT32_MAX;
             result = allocate_buffer(
                 vk_physical,
                 vk_device,
@@ -2622,7 +2962,8 @@ bool VgfRepr::process_vgf(
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 &staging_buffer,
-                &staging_memory);
+                &staging_memory,
+                &staging_memory_type_index);
             if (result != VK_SUCCESS) {
               ET_LOG(
                   Error,
@@ -2656,6 +2997,14 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            IO& staging_io = IOs.back();
+            staging_io.memory_type_index = staging_memory_type_index;
+            staging_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, staging_memory_type_index);
+            staging_io.memory_properties_known =
+                staging_memory_type_index != UINT32_MAX &&
+                (staging_io.memory_property_flags &
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
             zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
                 /*is_model_boundary_resource=*/true,
                 is_in,
@@ -4295,12 +4644,11 @@ VgfZeroCopyImportResult VgfRepr::try_import_zero_copy_candidate(
   auto result = zero_copy_import_manager_.try_import_candidate(
       io_index, host_pointer, logical_nbytes, zero_copy_io_metadata[io_index]);
 
-  // TODO:
-  // The VGFBackend::execute() does not have import consumer yet, so the import
-  // wrapper owns the selection policy. Select every accepted import, including
-  // the first import and cache hits. On rejection, restore the owned view
-  // before the next graph dispatch. The actual descriptor write stays deferred
-  // until flush_boundary_bindings().
+  // Accepted imports select the imported view for the current synchronous
+  // execution. Rejections restore the owned view. VGFBackend::execute()
+  // releases all host imports again before returning to the caller; cache hits
+  // therefore never extend the lifetime of caller-owned EValue storage across
+  // executions.
   if (io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].owned_view != VK_NULL_HANDLE) {
     const auto* slot =
@@ -4365,6 +4713,84 @@ bool VgfRepr::activate_owned_binding(size_t io_index) {
 bool VgfRepr::is_import_active(size_t io_index) const {
   return io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].import_active;
+}
+
+bool VgfRepr::release_execution_zero_copy_imports() {
+  bool has_imported_slot = false;
+  for (size_t io_index = 0; io_index < zero_copy_import_manager_.slot_count();
+       ++io_index) {
+    const auto* slot = zero_copy_import_manager_.slot(io_index);
+    if (slot != nullptr && slot->valid()) {
+      has_imported_slot = true;
+      break;
+    }
+  }
+
+  if (!has_imported_slot) {
+    return true;
+  }
+
+  // Never return to the ExecuTorch caller while submitted work might still
+  // reference imported EValue storage. execute_vgf() normally waits on its
+  // fence, but a failed wait can leave a submission outstanding.
+  if (execute_submission_pending_) {
+    const VkResult wait_result = vkQueueWaitIdle(vk_queue);
+
+    // Device loss is terminal for this representation, but Vulkan permits its
+    // child objects to be destroyed. free_vgf() synchronously ends every
+    // imported VkDeviceMemory lifetime before caller-owned storage can expire.
+    if (wait_result == VK_ERROR_DEVICE_LOST) {
+      ET_LOG(
+          Error,
+          "VGF device lost while draining zero-copy execution; tearing down "
+          "the VGF representation before returning to the caller");
+      invalidate_execution_state();
+      return false;
+    }
+
+    // Any other failure leaves completion unknown. There is no safe way to
+    // return control while Vulkan may still reference caller-owned memory, so
+    // use a fail-stop path rather than leaking the lifetime obligation across
+    // BackendInterface::execute().
+    ET_CHECK_MSG(
+        wait_result == VK_SUCCESS,
+        "Cannot establish VGF queue completion while caller-owned zero-copy "
+        "memory is imported (vkQueueWaitIdle=%d)",
+        static_cast<int>(wait_result));
+    execute_submission_pending_ = false;
+  }
+
+  // From this point no submitted work can reference the imported resources.
+  // Prefer restoring the reusable owned binding state. If that cannot be done,
+  // synchronously tear down the whole representation; free_vgf() releases the
+  // imports before this function returns.
+  for (size_t io_index = 0; io_index < zero_copy_binding_states_.size();
+       ++io_index) {
+    if (!zero_copy_binding_states_[io_index].import_active) {
+      continue;
+    }
+    if (!activate_owned_binding(io_index)) {
+      ET_LOG(
+          Error,
+          "Failed to restore owned VGF boundary binding for IO %zu; tearing "
+          "down the VGF representation to end caller-owned import lifetime",
+          io_index);
+      invalidate_execution_state();
+      return false;
+    }
+  }
+
+  if (!flush_boundary_bindings()) {
+    ET_LOG(
+        Error,
+        "Failed to restore owned VGF boundary descriptors; tearing down the "
+        "VGF representation to end caller-owned import lifetime");
+    invalidate_execution_state();
+    return false;
+  }
+
+  zero_copy_import_manager_.release_all();
+  return true;
 }
 
 bool VgfRepr::flush_boundary_bindings(
@@ -4816,12 +5242,112 @@ bool VgfRepr::record_execute_command_buffer(VkCommandBuffer command_buffer) {
   return true;
 }
 
+// VGF_FUSED_MAIN_BEGIN (opt-in real producer/consumer commands)
+namespace {
+thread_local VgfFusedCommandStreamRequest* active_vgf_fused_stream = nullptr;
+} // namespace
+
+// cppcheck-suppress unusedFunction
+bool vgf_try_register_fused_command_stream(
+    VgfFusedCommandStreamRequest* request) noexcept {
+  if (request == nullptr || active_vgf_fused_stream != nullptr ||
+      request->attempted || request->submitted || request->completed) {
+    return false;
+  }
+  active_vgf_fused_stream = request;
+  return true;
+}
+
+// cppcheck-suppress unusedFunction
+void vgf_unregister_fused_command_stream(
+    const VgfFusedCommandStreamRequest* request) noexcept {
+  if (active_vgf_fused_stream == request) {
+    active_vgf_fused_stream = nullptr;
+  }
+}
+
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
+  if (!execution_valid_) {
+    ET_LOG(
+        Error,
+        "VGF representation is invalid after terminal teardown and cannot be executed");
+    return false;
+  }
+
   ET_LOG(Debug, "Executing vgf");
 
   if (!flush_boundary_bindings(event_tracer)) {
     ET_LOG(Error, "Failed to refresh VGF boundary descriptor bindings");
     return false;
+  }
+
+  // Optional application command stream. The callback sees this VGF
+  // representation's actual VkDevice and family so it can record its own
+  // commands even when the generic shared-Vulkan-context bridge is absent.
+  // It is called under VGFBackend's mutex, and MUST NOT re-enter ExecuTorch.
+  VgfFusedCommandStreamRequest* fused = active_vgf_fused_stream;
+  std::array<VkCommandBuffer, 3> fused_commands{};
+  if (fused != nullptr) {
+    if (fused->attempted || fused->submitted || fused->completed ||
+        (fused->expected_device != VK_NULL_HANDLE &&
+         fused->expected_device != vk_device) ||
+        (fused->expected_queue_family_index != UINT32_MAX &&
+         fused->expected_queue_family_index != vk_queue_family_index) ||
+        (fused->prepare == nullptr &&
+         (fused->expected_device == VK_NULL_HANDLE ||
+          fused->expected_queue_family_index == UINT32_MAX))) {
+      ET_LOG(Error, "Invalid or reused VGF fused command-stream request");
+      return false;
+    }
+    // Fail closed even if the main-branch queue picker has moved into another
+    // translation unit and could not be changed by the installer.
+    // This check is active only when the strict graphics queue mode is set.
+    const char* graphics_required =
+        std::getenv("EXECUTORCH_VGF_FUSED_REQUIRE_GRAPHICS_QUEUE");
+    if (graphics_required != nullptr && graphics_required[0] == '1' &&
+        graphics_required[1] == '\0') {
+      uint32_t family_count = 0;
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, nullptr);
+      if (vk_queue_family_index >= family_count) {
+        ET_LOG(Error, "Invalid VGF fused graphics queue family index");
+        return false;
+      }
+      std::vector<VkQueueFamilyProperties> families(family_count);
+      vkGetPhysicalDeviceQueueFamilyProperties(
+          vk_physical, &family_count, families.data());
+      constexpr VkQueueFlags required = VK_QUEUE_GRAPHICS_BIT |
+          VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+      if ((families[vk_queue_family_index].queueFlags & required) != required) {
+        ET_LOG(
+            Error,
+            "VGF fused stream needs graphics+compute+data graph queue; "
+            "selected family %u cannot run the requested commands",
+            vk_queue_family_index);
+        return false;
+      }
+    }
+    fused->attempted = true;
+    if (fused->prepare != nullptr) {
+      const VgfFusedDeviceContext context{
+          vk_physical, vk_device, vk_queue_family_index};
+      if (!fused->prepare(
+              fused->user_data, context, &fused->producer, &fused->consumer)) {
+        ET_LOG(Error, "VGF fused command recording callback failed");
+        return false;
+      }
+    }
+    if (fused->producer == VK_NULL_HANDLE ||
+        fused->consumer == VK_NULL_HANDLE ||
+        fused->producer == fused->consumer ||
+        fused->producer == vk_execute_cmd ||
+        fused->consumer == vk_execute_cmd) {
+      ET_LOG(Error, "VGF fused stream requires two distinct primary commands");
+      return false;
+    }
+    // The caller guarantees both commands were recorded on vk_device for
+    // vk_queue_family_index, and supplies Vulkan memory/layout barriers.
+    fused_commands = {fused->producer, vk_execute_cmd, fused->consumer};
   }
 
   VkSubmitInfo submit{
@@ -4830,8 +5356,9 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
       .waitSemaphoreCount = 0,
       .pWaitSemaphores = nullptr,
       .pWaitDstStageMask = nullptr,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &vk_execute_cmd,
+      .commandBufferCount = fused != nullptr ? 3u : 1u,
+      .pCommandBuffers =
+          fused != nullptr ? fused_commands.data() : &vk_execute_cmd,
       .signalSemaphoreCount = 0,
       .pSignalSemaphores = nullptr,
   };
@@ -4855,6 +5382,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
     // Submit + fence wait only; reset is above.
     VGF_STATS_TIME(submit_wait_ns);
     result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    if (fused != nullptr) {
+      fused->submit_result = result;
+      fused->submitted = result == VK_SUCCESS;
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
       return false;
@@ -4867,6 +5398,10 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
         &vk_execute_fence,
         VK_TRUE,
         std::numeric_limits<uint64_t>::max());
+    if (fused != nullptr) {
+      fused->wait_result = result;
+      fused->completed = result == VK_SUCCESS;
+    }
     if (result == VK_SUCCESS) {
       execute_submission_pending_ = false;
     }
@@ -4931,6 +5466,18 @@ std::string VgfRepr::collect_neural_statistics_metadata() const {
 
   return collect_vgf_neural_statistics_metadata(
       vk_device, get_neural_statistics_segment_contexts(), metadata_context);
+}
+
+void VgfRepr::invalidate_execution_state() {
+  if (!execution_valid_) {
+    return;
+  }
+
+  // Mark terminal state before freeing Vulkan resources. The runtime still
+  // owns the DelegateHandle and may later call destroy(), but no subsequent
+  // execute is allowed to observe or reuse this torn-down representation.
+  execution_valid_ = false;
+  free_vgf();
 }
 
 void VgfRepr::free_vgf() {

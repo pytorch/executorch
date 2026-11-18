@@ -58,6 +58,7 @@ add_executable(
   ${SdkRootDirPath}/examples/eiq_examples/executorch_cifarnet/main.cpp
   ${SdkRootDirPath}/examples/eiq_examples/executorch_cifarnet/RegisterKernels.cpp
   ${SdkRootDirPath}/examples/eiq_examples/common/timer.c
+  ${SdkRootDirPath}/examples/eiq_examples/common/sys_info/sys_info.c
   ${SdkRootDirPath}/devices/RT/RT700/MIMXRT798S/startup_MIMXRT798S_cm33_core0.c
   ${EXECUTORCH_ROOT_DIR}/backends/nxp/runtime/NeutronBackend.cpp
   ${SdkRootDirPath}/middleware/tfm/tf-m/platform/ext/common/syscalls_stub.c
@@ -81,6 +82,13 @@ add_executable(
   ${SdkRootDirPath}/components/pmic/pca9422/fsl_pca9422.c
   # Debug console (provides DbgConsole_Init/Printf).
   ${SdkRootDirPath}/components/debug_console_lite/fsl_debug_console.c
+)
+
+# sys_info.c needs the version macro supplied by the SDK's normal build system.
+include(${SdkRootDirPath}/cmake/extension/mcux_version.cmake)
+target_compile_definitions(
+  ${MCUX_SDK_PROJECT_NAME}
+  PRIVATE "MCUXSDK_VERSION_FULL_STR=\"${MCUXSDK_VERSION_FULL}\""
 )
 
 target_include_directories(

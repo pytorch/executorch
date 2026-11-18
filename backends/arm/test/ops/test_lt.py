@@ -75,11 +75,33 @@ test_data_tensor = {
 test_data_tensor_mixed = {
     "lt_tensor_float_int": lambda: LessThan(
         torch.tensor([-1.5, -0.25, 0.25, 1.5]),
-        torch.tensor([-2, 0, 1, 2], dtype=torch.int32),
+        torch.tensor([-2, 0, 1, 2], dtype=torch.int16),
     ),
     "lt_tensor_int_float": lambda: LessThan(
+        torch.tensor([-2, 0, 1, 2], dtype=torch.int16),
+        torch.tensor([-1.5, -0.25, 0.25, 1.5]),
+    ),
+    "lt_tensor_float_int32": lambda: LessThan(
+        torch.tensor([-1.5, -0.25, 0.25, 1.5]),
+        torch.tensor([-2, 0, 1, 2], dtype=torch.int32),
+    ),
+    "lt_tensor_int32_float": lambda: LessThan(
         torch.tensor([-2, 0, 1, 2], dtype=torch.int32),
         torch.tensor([-1.5, -0.25, 0.25, 1.5]),
+    ),
+}
+test_data_tensor_int = {
+    "lt_int8": lambda: LessThan(
+        torch.tensor([-128, -1, 0, 127], dtype=torch.int8),
+        torch.tensor([-127, -1, 1, 127], dtype=torch.int8),
+    ),
+    "lt_int8_int16": lambda: LessThan(
+        torch.tensor([-128, -1, 0, 127], dtype=torch.int8),
+        torch.tensor([-127, -1, 1, 127], dtype=torch.int16),
+    ),
+    "lt_int16": lambda: LessThan(
+        torch.tensor([-32768, -129, 128, 32767], dtype=torch.int16),
+        torch.tensor([-32767, -129, 129, 32767], dtype=torch.int16),
     ),
 }
 test_data_tensor_fp16 = {
@@ -109,7 +131,9 @@ test_data_scalar_fp16 = {
 }
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_fp16 | test_data_tensor_mixed
+)
 def test_lt_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -131,7 +155,7 @@ def test_lt_scalar_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_int)
 def test_lt_tensor_tosa_INT(test_module):
     pipeline = TosaPipelineINT[input_t](
         test_module(),
@@ -151,6 +175,20 @@ def test_lt_tensor_tosa_INT_mixed_not_delegated(test_module):
         test_module().get_inputs(),
         {LessThan.exir_op: 1},
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor_mixed)
+def test_lt_tensor_tosa_INT_FP_mixed(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        tosa_extensions=["FP"],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -295,7 +333,9 @@ def test_lt_scalar_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_fp16 | test_data_tensor_mixed
+)
 @common.SkipIfNoModelConverter
 def test_lt_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
@@ -321,7 +361,10 @@ def test_lt_scalar_vgf_no_quant(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize(
+    "test_module",
+    test_data_tensor | test_data_tensor_mixed,
+)
 @common.SkipIfNoModelConverter
 def test_lt_tensor_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](

@@ -2004,56 +2004,6 @@ class DecomposeFill:
         )
 
 
-class DecomposeFloorDivide:
-    class _IntDiv(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.floor_divide(x, y)
-
-    class _FloatDiv(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.floor_divide(x, y)
-
-    @staticmethod
-    @unpack_pass_fixtures
-    def test(
-        subtests,
-        quantizer,
-        compile_spec,
-        backend_type: QnnExecuTorchBackendType,
-        assertions: Assertions,
-        pass_pipeline: PassPipeline,
-    ):
-        _ = compile_spec
-        target_pass = _passes.DecomposeFloorDivide
-
-        # Integer inputs: pass fires — floor_divide decomposed into div + floor
-        with subtests.test(msg="int"):
-            gm = pass_pipeline.lower_export_gm(
-                module=DecomposeFloorDivide._IntDiv(),
-                sample_input=(
-                    torch.randint(1, 10, (3, 4), dtype=torch.int32),
-                    torch.randint(1, 5, (3, 4), dtype=torch.int32),
-                ),
-                target_pass=target_pass,
-                backend_type=backend_type,
-                quantizer=quantizer,
-            )
-            assertions.assert_no_target(gm, torch.ops.aten.floor_divide.default)
-            assertions.assert_target_count(gm, torch.ops.aten.floor.default, 1)
-
-        # Float inputs: pass does not fire — floor_divide preserved as-is
-        with subtests.test(msg="float"):
-            gm = pass_pipeline.lower_export_gm(
-                module=DecomposeFloorDivide._FloatDiv(),
-                sample_input=(torch.randn(3, 4), torch.rand(3, 4) + 0.1),
-                target_pass=target_pass,
-                backend_type=backend_type,
-                quantizer=quantizer,
-            )
-            assertions.assert_target_count(gm, torch.ops.aten.floor_divide.default, 1)
-            assertions.assert_no_target(gm, torch.ops.aten.floor.default)
-
-
 class DecomposeGlu:
     class _Basic(torch.nn.Module):
         def forward(self, x):
@@ -4238,6 +4188,52 @@ class I64toI32:
         )
 
 
+class InsertCastForFpActQuantizedWeight:
+    class _Conv2d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            # 3x3: the HTP rejects it under fp16a8w, so it must stay valid on CPU
+            self.conv = torch.nn.Conv2d(8, 16, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+        module = InsertCastForFpActQuantizedWeight._Conv2d()
+        bias = module.conv.bias.detach().to(torch.float16)
+        ep = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=(torch.randn(1, 8, 16, 16),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.InsertCastForFpActQuantizedWeight,
+            quantizer=make_quantizer(
+                quant_dtype=QuantDtype.use_fp16a8w, backend=backend_type
+            ),
+        )
+        (conv,) = [
+            n
+            for n in ep.graph.nodes
+            if n.target == exir_ops.edge.aten.convolution.default
+        ]
+        weight_dq, bias_node = conv.args[1], conv.args[2]
+        assert weight_dq.target in dq_ops
+        assert weight_dq.kwargs.get("out_dtype") == torch.float16
+        assert weight_dq.meta["val"].dtype == torch.float16
+        assert bias_node.meta["val"].dtype == torch.float16
+        bias_name = ep.graph_signature.inputs_to_buffers[bias_node.name]
+        assert torch.equal(ep.state_dict[bias_name], bias)
+
+
 class InsertIOQDQ:
     class _Basic(torch.nn.Module):
         def __init__(self):
@@ -4393,6 +4389,29 @@ class LayoutTransform:
         def forward(self, x):
             return self.relu(self.conv(x))
 
+    class _ConvBackward(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(
+                torch.randn(4, 3, 3, 3), requires_grad=False
+            )
+
+        def forward(self, grad_output, x):
+            grad_input, grad_weight, _ = torch.ops.aten.convolution_backward.default(
+                grad_output,
+                x,
+                self.weight,
+                None,
+                [2, 2],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+                [True, True, False],
+            )
+            return grad_input.flatten(1), grad_weight.flatten(1)
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -4439,6 +4458,39 @@ class LayoutTransform:
             assertions.assert_target_count(gm, permute, 2)
             assertions.assert_meta_key_on_targets(gm, permute, QCOM_INSERTED_PERMUTE)
 
+        with subtests.test(msg="conv_backward_tuple_outputs"):
+            gm = pass_pipeline.lower_preprocess_gm(
+                module=LayoutTransform._ConvBackward(),
+                sample_input=(torch.randn(1, 4, 4, 4), torch.randn(1, 3, 8, 8)),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            )
+            conv_backward = next(
+                node
+                for node in gm.graph.nodes
+                if node.target == exir_ops.edge.aten.convolution_backward.default
+            )
+            getitems = [
+                node
+                for node in conv_backward.users
+                if node.target is operator.getitem and node.args[1] in (0, 1)
+            ]
+            permutes = [
+                node
+                for node in gm.graph.nodes
+                if node.target == exir_ops.edge.aten.permute_copy.default
+            ]
+            assert len(getitems) == 2
+            assert all(
+                any(permute_node.args[0] is getitem for permute_node in permutes)
+                for getitem in getitems
+            )
+            assert not any(
+                permute_node.args[0] is conv_backward for permute_node in permutes
+            )
+
 
 class LiftConstantScalarOperands:
     class _Pow(torch.nn.Module):
@@ -4463,6 +4515,14 @@ class LiftConstantScalarOperands:
                 y = x + 1
             return y * 2
 
+    class _IntFloorDivScalar(torch.nn.Module):
+        def __init__(self, divisor):
+            super().__init__()
+            self.divisor = divisor
+
+        def forward(self, x):
+            return x // self.divisor
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -4479,7 +4539,7 @@ class LiftConstantScalarOperands:
         # Mirror production stage selection: the annotation pipeline only runs
         # under prepare_pt2e (quantizer present). Without a quantizer (GPU,
         # htp_fp16) this pass runs in the export pipeline instead.
-        def lower(module):
+        def lower(module, inputs=inputs):
             if quantizer is None:
                 return pass_pipeline.lower_export_gm(
                     module=module,
@@ -4531,6 +4591,28 @@ class LiftConstantScalarOperands:
                     f"lifted scalar {n.name} expected float32, "
                     f"got {n.meta['val'].dtype} (use_self_dtype broken?)"
                 )
+
+        # Python scalar divisor, as in `indices // num_classes`
+        int_inputs = (torch.randint(-10, 10, (3, 4), dtype=torch.int32),)
+        for divisor in (3, -4):
+            with subtests.test(msg=f"int_floor_divide_scalar_{divisor}"):
+                module = LiftConstantScalarOperands._IntFloorDivScalar(divisor)
+                gm = lower(module, int_inputs)
+                floor_divide = next(
+                    n
+                    for n in gm.graph.nodes
+                    if n.op == "call_function"
+                    and n.target is torch.ops.aten.floor_divide.default
+                )
+                lifted = floor_divide.args[1]
+                assert (
+                    isinstance(lifted, torch.fx.Node) and lifted.op == "get_attr"
+                ), f"divisor should be a lifted get_attr, got {lifted}"
+                constant = getattr(gm, lifted.target)
+                assert constant.dtype == torch.int32 and constant.item() == divisor
+                output = gm(*int_inputs)
+                output = output[0] if isinstance(output, (tuple, list)) else output
+                torch.testing.assert_close(output, module(*int_inputs))
 
         with subtests.test(msg="skip_higher_order_ops"):
             # The pass reads node.target._schema; a higher-order op has none, so it
@@ -5000,7 +5082,7 @@ class Remove0DTensor:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        inputs = (torch.randn(4), torch.randn(3, 4))
+        inputs = (torch.randn(1), torch.randn(3, 4))
         gm = pass_pipeline.lower_edge_ep(
             module=Remove0DTensor._ZeroDim(),
             sample_input=inputs,

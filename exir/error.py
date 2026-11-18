@@ -1,11 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 from enum import Enum
+from typing import Any
 
 
 class ExportErrorType(Enum):
@@ -21,15 +23,22 @@ class ExportErrorType(Enum):
     UNINITIALIZED = 6  # User is usingan API without proper initialization step.
 
 
-def internal_assert(pred: bool, assert_msg: str) -> None:
+def internal_assert(pred: bool, assert_msg: str, *args: Any) -> None:
     """
     This is exir's custom assert method. It internally just throws InternalError.
     Note that the sole purpose is to throw our own error while maintaining similar syntax
     as python assert.
+
+    Additional arguments use logging-style percent formatting only on failure.
+
+    For example, pass values as args to avoid materializing the message string
+    unless the assertion fails::
+
+        internal_assert(node.op == "call_function", "Unexpected node: %s", node)
     """
 
     if not pred:
-        raise InternalError(assert_msg)
+        raise InternalError(assert_msg % args if args else assert_msg)
 
 
 class InternalError(Exception):

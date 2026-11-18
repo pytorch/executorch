@@ -547,27 +547,6 @@ lib.define(
     "sdpa_bitwise_ring_mask_gen.out(Tensor positions, int sliding_window, int cache_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Load/store with iDMA. These only exist before memory planning.
-# Post memory planning, we check that outputs/inputs for the load/store are in
-# DTCM and replace idma_load/idma_store with idma_copy.
-lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
-# Non-blocking iDMA copy.
-lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
-lib.define(
-    "idma_copy.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-# iDMA wait.
-lib.define("idma_wait(Tensor src, int task_num=0) -> Tensor")
-lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tensor(a!)")
-
 # ------------------------------------ #
 #   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
@@ -2725,7 +2704,7 @@ def fully_connected_meta(
     torch._check(
         src.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
     )
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2750,11 +2729,10 @@ def quantized_fully_connected_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2776,11 +2754,10 @@ def quantized_fully_connected_per_tensor_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2804,7 +2781,7 @@ def quantized_fully_connected_packed_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, packed_row_bytes], so out_dim is still
     # size(0) - that is what packing per row buys us - but in_dim is an
@@ -2833,11 +2810,10 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     )
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2863,11 +2839,10 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     )
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -3289,45 +3264,6 @@ def quantized_rope_rotate_stacked_halves_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
-
-
-@register_fake("cadence::idma_copy")
-def copy_idma_copy_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_wait")
-def copy_idma_wait_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-) -> torch.Tensor:
-    return src.new_empty(*src.shape, dtype=src.dtype)
-
-
-@register_fake("cadence::idma_load")
-def idma_load_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
-
-
-@register_fake("cadence::idma_store")
-def idma_store_impl(
-    src: torch.Tensor,
-    task_num: int = 0,
-    channel: int = 0,
-) -> torch.Tensor:
-    res = copy_idma_copy_impl(src, task_num, channel)
-    assert isinstance(res, torch.Tensor)
-    return res
 
 
 @register_fake("cadence::roi_align_box_processor")

@@ -22,6 +22,8 @@ rewriting the payload of a real export into the older shape in place.
 import os
 import tempfile
 import unittest
+from typing import Optional
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -51,17 +53,28 @@ class ModuleWithConstants(torch.nn.Module):
     "loads through the Python runtime, which the ROCm build does not include",
 )
 class TestMissingWeightsBlob(unittest.TestCase):
-    def _lower(self, outdir: str) -> str:
-        torch.manual_seed(0)
-        module = ModuleWithConstants().eval().cuda()
+    def _lower(
+        self,
+        outdir: str,
+        seed: int = 0,
+        name: str = "model.pte",
+        data_name: Optional[str] = None,
+        module: Optional[torch.nn.Module] = None,
+    ) -> str:
+        torch.manual_seed(seed)
+        if module is None:
+            module = ModuleWithConstants()
+        module = module.eval().cuda()
         inputs = (torch.randn(4, 64, device="cuda"),)
         exported = export(module, inputs)
-        spec = CudaBackend.generate_method_name_compile_spec("forward")
+        specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+        if data_name is not None:
+            specs.append(CudaBackend.generate_data_name_compile_spec(data_name))
         lowered = to_edge_transform_and_lower(
-            exported, partitioner=[CudaPartitioner([spec])]
+            exported, partitioner=[CudaPartitioner(specs)]
         )
         program = lowered.to_executorch()
-        path = os.path.join(outdir, "model.pte")
+        path = os.path.join(outdir, name)
         with open(path, "wb") as f:
             program.write_to_file(f)
         program.write_tensor_data_to_file(outdir)
@@ -155,10 +168,96 @@ class TestMissingWeightsBlob(unittest.TestCase):
             # exception carries only the method name and the error number, so the
             # cause is asserted through the rewrite check above rather than here.
             program = Runtime.get().load_program(path)
+            # The failed load leaves no handle to destroy, so it has to remove the
+            # library it wrote itself. An empty temporary directory shows that.
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                os.environ, {"TMPDIR": tmp}
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, r"Failed to load method forward, error: 0x:?20"
+                ):
+                    program.load_method("forward")
+                self.assertEqual(os.listdir(tmp), [])
+
+    def test_load_fails_with_another_programs_blob(self) -> None:
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            first = self._lower(outdir, seed=0, name="first.pte")
+            # Same module with other weights, written to the same blob file name.
+            second = self._lower(outdir, seed=1, name="second.pte")
+            (blob,) = [f for f in os.listdir(outdir) if f.endswith(".ptd")]
+            blob = os.path.join(outdir, blob)
+            # The blob belongs to the second program, which loads with it.
+            Runtime.get().load_program(second, data_path=blob).load_method("forward")
+            program = Runtime.get().load_program(first, data_path=blob)
             with self.assertRaisesRegex(
                 RuntimeError, r"Failed to load method forward, error: 0x:?20"
             ):
                 program.load_method("forward")
+
+    def test_programs_with_their_own_data_names_share_a_folder(self) -> None:
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            for seed, name in ((0, "first"), (1, "second")):
+                self._lower(outdir, seed=seed, name=f"{name}.pte", data_name=name)
+            # A program with no constants still writes a data file.
+            self._lower(
+                outdir, name="third.pte", data_name="third", module=torch.nn.ReLU()
+            )
+            self.assertEqual(
+                sorted(f for f in os.listdir(outdir) if f.endswith(".ptd")),
+                ["first.ptd", "second.ptd", "third.ptd"],
+            )
+            for seed, name in ((0, "first"), (1, "second")):
+                # The same draws _lower made, so the same weights and input.
+                torch.manual_seed(seed)
+                module = ModuleWithConstants().eval().cuda()
+                value = torch.randn(4, 64, device="cuda")
+                method = (
+                    Runtime.get()
+                    .load_program(
+                        os.path.join(outdir, f"{name}.pte"),
+                        data_path=os.path.join(outdir, f"{name}.ptd"),
+                    )
+                    .load_method("forward")
+                )
+                out = method.execute([value.cpu()])
+                torch.testing.assert_close(
+                    (out[0] if isinstance(out, (list, tuple)) else out).cpu(),
+                    module(value).cpu(),
+                )
+
+    def test_float64_weight_loads(self) -> None:
+        """The weight cache must accept a float64 weight the export wrote."""
+
+        class Float64Scale(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "scale", torch.linspace(1.0, 2.0, 64, dtype=torch.float64)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.to(torch.float64) * self.scale).to(x.dtype)
+
+        from executorch.runtime import Runtime
+
+        with tempfile.TemporaryDirectory() as outdir:
+            module = Float64Scale()
+            path = self._lower(outdir, module=module)
+            (blob,) = [f for f in os.listdir(outdir) if f.endswith(".ptd")]
+            method = (
+                Runtime.get()
+                .load_program(path, data_path=os.path.join(outdir, blob))
+                .load_method("forward")
+            )
+            # The same draw _lower made for its example input.
+            torch.manual_seed(0)
+            value = torch.randn(4, 64, device="cuda")
+            out = method.execute([value.cpu()])
+            torch.testing.assert_close(out[0].cpu(), module(value).cpu())
 
     def test_load_succeeds_when_the_model_has_no_constants(self) -> None:
         """A model with nothing to bind still loads without its weights blob.

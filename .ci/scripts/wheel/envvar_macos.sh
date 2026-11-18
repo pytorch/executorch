@@ -14,3 +14,8 @@ source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 # Apple SDK Objective-C framework headers (e.g. NSIntegerMax in NSObjCRuntime.h).
 export CC=/usr/bin/clang
 export CXX=/usr/bin/clang++
+
+# Pin Xcode so a runner image update cannot change the wheel unnoticed. Its SDK
+# decides which Core ML code is built in. 16.4 is the macOS 15 image's default. The
+# 26.0.1 pins in other workflows build PyTorch from source, which this build does not.
+export DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer

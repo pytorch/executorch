@@ -158,30 +158,6 @@ inline runtime::Result<int64_t> read_offgraph_kv_step_width(
   return width;
 }
 
-// Whether the program's constants include off-graph KV storage, which only a
-// runtime cache can supply. Read from the program itself, so it holds whether
-// or not the caller passed a cache.
-inline runtime::Result<bool> requires_offgraph_kv_storage(
-    const CudaDelegateHandle& handle) {
-  if (!handle.get_num_constants || !handle.get_constant_original_fqn) {
-    return false;
-  }
-  size_t count = 0;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      handle.get_num_constants(handle.container_handle, &count));
-  for (size_t index = 0; index < count; ++index) {
-    const char* fqn = nullptr;
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        handle.get_constant_original_fqn(handle.container_handle, index, &fqn));
-    if (fqn != nullptr &&
-        std::string_view(fqn).substr(0, kOffGraphKVFqnPrefix.size()) ==
-            kOffGraphKVFqnPrefix) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // Load time. Resolves the cache the runner published under `cache_key` and
 // associates it with `handle` if the program carries off-graph storage; a
 // program that does not (an embedding or vision pass) is left without one.
@@ -198,8 +174,8 @@ runtime::Error attach_offgraph_kv_cache(
 // invalid, so CacheFactory reports the failure instead of the cache asserting
 // during construction.
 //
-// Flat layers start at cfg.initial_capacity rows and grow geometrically up to
-// cfg.capacity; ring layers hold window + max_write - 1 rows from the start.
+// Every layer starts at cfg.initial_capacity rows and grows geometrically: a
+// flat layer up to cfg.capacity, a ring layer up to window + max_write - 1.
 // cfg.kv_dtype is an ExecuTorch ScalarType; the slim enum the storage uses
 // shares its numbering, and unsupported values are rejected here.
 std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
@@ -214,6 +190,26 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
 // match the export exactly. Pools start at cfg.initial_capacity rows and grow
 // geometrically up to cfg.capacity.
 std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg);
+
+// Segments of a batched-sequence step: runs of one sequence's query rows. The
+// program declares its seq_info buffer [segments, 4] from the same rule.
+inline int batched_sequence_max_segments(int max_seqs) {
+  return 2 * max_seqs;
+}
+
+// Builder for cache::kind::kBatchedSequence: many sequences, each with a
+// private history in its own column, for a program lowered in the
+// batched-sequence layout.
+//
+// cfg.capacity is one sequence's capacity (the program's maximum_capacity),
+// cfg.max_seqs its sequence columns and cfg.max_write its widest step; all
+// fix shapes the program declared, so they must match the export exactly.
+// Every layer starts at cfg.initial_capacity rows and grows geometrically: a
+// flat layer to cfg.capacity, a ring layer to min(capacity, window +
+// max_write - 1).
+std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);
 

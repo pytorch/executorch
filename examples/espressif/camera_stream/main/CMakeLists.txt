@@ -10,15 +10,15 @@ get_filename_component(
   camera_et_root "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE
 )
 
-# The ExecuTorch platform layer is shared with the executor runner example.
-# WHOLE_ARCHIVE keeps it over the runtime's weak defaults.
+# The ExecuTorch platform layer is the shared ESP-IDF PAL. WHOLE_ARCHIVE keeps
+# it over the runtime's weak defaults.
 idf_component_register(
   SRCS
   "main.cpp"
   "camera_stream.cpp"
   "et_model.cpp"
   "model_data.S"
-  "${camera_et_root}/examples/espressif/executor_runner/esp_pal.cpp"
+  "${camera_et_root}/examples/espressif/platform/esp_pal.cpp"
   INCLUDE_DIRS
   "."
   REQUIRES
@@ -26,6 +26,8 @@ idf_component_register(
   esp32-camera
   esp_jpeg
   esp_timer
+  esp_system
+  log
   esp_rom
   esp_driver_usb_serial_jtag
   WHOLE_ARCHIVE

@@ -47,11 +47,30 @@ void GraphBuilder::lower_linear(const Node& node) {
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
-void GraphBuilder::lower_embedding(const Node& node) {
-  const TensorRef weight = tensor_arg(node, "weight", 0);
-  TensorRef indices = tensor_arg(node, "indices", 1);
-  check_row_indices(
-      require_arg(node, "indices", 1).arg.as_tensor().id, weight.sizes.at(0));
+void GraphBuilder::lower_row_gather(const Node& node) {
+  const ValueId weight_id = tensor_arg_id(node, "weight", 0);
+  const TensorRef weight = tensor(weight_id);
+  const Argument& arg = require_arg(node, "indices", 1).arg;
+  ValueId indices_id = kInvalid;
+  if (op_key(node.target) == "aten.embedding.default") {
+    indices_id = arg.as_tensor().id;
+  } else {
+    const std::vector<ValueId> ids = arg.kind() == ArgKind::TensorList
+        ? arg.as_tensor_list().ids
+        : arg.as_optional_tensor_list().ids;
+    if (ids.size() != 1 || !valid(ids.front())) {
+      throw std::runtime_error("ggml: index supports one row-index tensor");
+    }
+    indices_id = ids.front();
+  }
+  const ScalarType dtype = method_.graph.value(indices_id).tensor_meta().dtype;
+  if (weight.sizes.size() != 2 ||
+      (dtype != ScalarType::Int && dtype != ScalarType::Long)) {
+    throw std::runtime_error(
+        "ggml: row gather needs a matrix and integer indices");
+  }
+  TensorRef indices = tensor(indices_id);
+  check_row_indices(indices_id, weight.sizes[0]);
   if (indices.tensor->type != GGML_TYPE_I32) {
     indices.tensor =
         ggml_cast(instance_.context.get(), indices.tensor, GGML_TYPE_I32);
@@ -61,8 +80,18 @@ void GraphBuilder::lower_embedding(const Node& node) {
       reshape(ctx, indices.tensor, {ggml_nelements(indices.tensor)});
   std::vector<int64_t> sizes = indices.sizes;
   sizes.push_back(weight.sizes.at(1));
-  ggml_tensor* result =
-      reshape(ctx, ggml_get_rows(ctx, weight.tensor, flat), sizes);
+  ggml_tensor* rows = ggml_get_rows(ctx, weight.tensor, flat);
+  const auto found = row_scales_.find(weight_id);
+  if (found != row_scales_.end()) {
+    const int64_t groups = found->second->ne[0];
+    const int64_t count = ggml_nelements(flat);
+    rows = ggml_mul(
+        ctx,
+        ggml_reshape_3d(ctx, rows, weight.sizes[1] / groups, groups, count),
+        ggml_reshape_3d(
+            ctx, ggml_get_rows(ctx, found->second, flat), 1, groups, count));
+  }
+  ggml_tensor* result = reshape(ctx, rows, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 

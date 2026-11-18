@@ -28,13 +28,14 @@ if(ESP_PLATFORM)
   idf_component_register(
     SRCS
     "esp_executor_runner.cpp"
-    "esp_pal.cpp"
+    "../platform/esp_pal.cpp"
     "esp_perf_monitor.cpp"
     INCLUDE_DIRS
     "."
     REQUIRES
     esp_timer
     esp_system
+    log
     spiffs
     WHOLE_ARCHIVE
   )
@@ -286,7 +287,7 @@ else()
 
   add_executable(esp_executor_runner)
   target_sources(
-    esp_executor_runner PRIVATE esp_executor_runner.cpp esp_pal.cpp
+    esp_executor_runner PRIVATE esp_executor_runner.cpp ../platform/esp_pal.cpp
                                 esp_perf_monitor.cpp
   )
 

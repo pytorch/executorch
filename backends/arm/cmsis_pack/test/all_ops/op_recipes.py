@@ -752,6 +752,7 @@ for _n, _r in {
     "grid_sampler_2d": "recipe TODO (sampler grid setup)",
     "cdist_forward": "recipe TODO",
     "pdist_forward": "recipe TODO",
+    "upsample_bicubic2d_aa": "antialiased upsample; recipe TODO",
     "upsample_bilinear2d_aa": "antialiased upsample; recipe TODO",
     "view_as_real_copy": "complex dtype unsupported on target",
     "allclose": "returns scalar bool; ET out-variant shape TODO",

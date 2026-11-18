@@ -18,6 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
+    VgfPipelineFP8,
 )
 
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
@@ -42,6 +43,18 @@ test_modules = {
     "output_1x1": lambda: (AdaptiveAvgPool2d((1, 1)), (torch.rand(1, 4, 8, 8),)),
     "output_2x2": lambda: (AdaptiveAvgPool2d((2, 2)), (torch.rand(1, 4, 10, 10),)),
     "output_4x4": lambda: (AdaptiveAvgPool2d((4, 4)), (torch.rand(1, 5, 15, 15),)),
+    "grouped_height_first": lambda: (
+        AdaptiveAvgPool2d((5, 7)),
+        (torch.rand(1, 3, 17, 23),),
+    ),
+    "grouped_width_first": lambda: (
+        AdaptiveAvgPool2d((7, 5)),
+        (torch.rand(1, 3, 23, 17),),
+    ),
+    "padded_4x4_from_7x7": lambda: (
+        AdaptiveAvgPool2d((4, 4)),
+        (torch.rand(1, 3, 7, 7),),
+    ),
     "output_2x3": lambda: (AdaptiveAvgPool2d((2, 3)), (torch.rand(1, 3, 9, 13),)),
     "output_h_keep": lambda: (
         AdaptiveAvgPool2d((2, None)),
@@ -112,7 +125,7 @@ test_modules = {
     ),
 }
 
-test_modules_fp8 = {
+test_modules_fp8_no_comparing = {
     "output_2x2_fp8e4m3": lambda: (
         AdaptiveAvgPool2d((2, 2)),
         (torch.rand(1, 4, 10, 10).to(torch.float8_e4m3fn),),
@@ -139,7 +152,7 @@ def test_adaptive_avg_pool2d_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_fp8)
+@common.parametrize("test_module", test_modules_fp8_no_comparing)
 def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
     model, input_tensor, tosa_extension = test_module()
 
@@ -151,7 +164,7 @@ def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
         tosa_extensions=[tosa_extension],
         compare_tosa_ref_model_outputs=False,
     )
-    pipeline.count_tosa_ops({"AVG_POOL2D": 4})
+    pipeline.count_tosa_ops({"AVG_POOL2D": 1})
     pipeline.run()
 
 
@@ -246,6 +259,20 @@ def test_adaptive_avg_pool2d_u85_INT_a16w8(test_module):
         aten_ops=[],
         exir_ops=exir_op,
         a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_fp8_no_comparing)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_no_quant_fp8(test_module):
+    model, input_tensor, _ = test_module()
+    pipeline = VgfPipelineFP8[input_t](
+        model,
+        input_tensor,
+        aten_op=[],
+        exir_op=exir_op,
+        expect_missing_reference=True,
     )
     pipeline.run()
 

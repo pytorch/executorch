@@ -5,7 +5,10 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops._common import validate_float_dtype
+from executorch.backends.arm.tosa.dialect.ops._common import (
+    validate_float_dtype,
+    validate_int64_support,
+)
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -28,6 +31,10 @@ def _validate_integer_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
+    if dtype == torch.int64:
+        validate_int64_support(op)
+        return
+
     raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
 
 
@@ -40,6 +47,10 @@ def _validate_abs_dtype(dtype: torch.dtype) -> None:
                 f"TOSA spec {tosa_spec} doesn't support int32 for ABS",
                 op="ABS",
             )
+        return
+
+    if dtype == torch.int64:
+        validate_int64_support("ABS")
         return
 
     validate_float_dtype(dtype, "ABS")
@@ -63,7 +74,7 @@ def _validate_bool_dtype(dtype: torch.dtype, op: str) -> None:
 
 
 def _validate_negate_dtype(dtype: torch.dtype) -> None:
-    if dtype in (torch.int8, torch.int16, torch.int32):
+    if dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
         _validate_integer_dtype(dtype, "NEGATE")
         return
 
@@ -152,11 +163,19 @@ def LOGICAL_NOT(input1: torch.Tensor) -> torch.Tensor:
 
 
 @register_fake_tosa_op(
-    "NEGATE(Tensor input1) -> Tensor",
+    "NEGATE(Tensor input1, Tensor input_zp, Tensor output_zp) -> Tensor",
     DUAL_PROFILE_SPECS,
 )
-def NEGATE(input1: torch.Tensor) -> torch.Tensor:
+def NEGATE(
+    input1: torch.Tensor, input_zp: torch.Tensor, output_zp: torch.Tensor
+) -> torch.Tensor:
     _validate_negate_dtype(input1.dtype)
+    for zero_point in (input_zp, output_zp):
+        if zero_point.numel() != 1 or zero_point.dtype != input1.dtype:
+            raise TosaValueError(
+                "NEGATE zero points must be scalar tensors matching the input dtype",
+                op="NEGATE",
+            )
     return torch.empty_like(input1, dtype=input1.dtype)
 
 

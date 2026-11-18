@@ -83,7 +83,7 @@ Tensor& cat_out(
       for (size_t i = 0; i < outer; ++i) {
         for (size_t j = 0; j < ninputs; ++j) {
           if (tensors[j].numel() == 0) {
-            return;
+            continue;
           }
           size_t inner = tensors[j].size(dim) * dim_stride;
           const CTYPE* const in_ptr =
@@ -107,7 +107,7 @@ Tensor& cat_out(
             const CTYPE_IN* const in_ptr =
                 tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
 
-            if (sizeof(CTYPE_IN) == sizeof(CTYPE_OUT)) {
+            if constexpr (std::is_same_v<CTYPE_IN, CTYPE_OUT>) {
               memcpy(out_ptr, in_ptr, inner * sizeof(CTYPE_IN));
             } else {
               for (size_t k = 0; k < inner; ++k) {

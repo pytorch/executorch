@@ -1,0 +1,25 @@
+name: nxp-weekly
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/nxp-weekly.yml
+  schedule:
+    # Run once a week, Saturday at 12:00 UTC (runs on default branch: main)
+    - cron: '0 12 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mcuxpresso-test:
+    name: mcuxpresso-test
+    uses: ./.github/workflows/_test_nxp_mcuxpresso.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      # The weekly test uses the unpinned manifest revision
+      mcuxsdk-manifest-rev: main

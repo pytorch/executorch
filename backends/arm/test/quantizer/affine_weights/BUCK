@@ -1,0 +1,25 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = python_pytest,
+    name = "test_affine_weights",
+    srcs = ["test_affine_weights.py"],
+    env = {"TEST_RUNTIME_IS_NOT_OSS": "1" if not runtime.is_oss else "0"},
+    preload_deps = ["//executorch/kernels/quantized:custom_ops_generated_lib"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/operators:ops",
+        "//executorch/backends/arm/quantizer:lib",
+        "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
+        "//executorch/backends/test/harness:tester",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/tosa_tools:serializer",
+        "fbsource//third-party/tosa_tools:tosa_reference_model",
+    ],
+)

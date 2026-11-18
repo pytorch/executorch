@@ -186,10 +186,18 @@ inline void exec_take_along_axis(
     const TakeAlongAxisNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  st.set_tensor(
-      n.out,
-      take_along_axis(
-          st.const_tensor_ref(n.x), st.const_tensor_ref(n.indices), n.axis, s));
+  const auto& x = st.const_tensor_ref(n.x);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "TakeAlongAxis");
+  const int size = x.shape(axis);
+  const auto& indices = st.const_tensor_ref(n.indices);
+  // An empty axis has no position to clamp to.
+  if (size == 0 && indices.size() != 0) {
+    throw std::runtime_error("TakeAlongAxis: cannot take from an empty axis");
+  }
+  // Clamped like ScatterNode: mlx::take_along_axis would read out of range.
+  const auto clamped = clip(indices, array(-size), array(size - 1), s);
+  st.set_tensor(n.out, take_along_axis(x, clamped, axis, s));
 }
 
 inline void exec_take(const TakeNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -322,6 +330,32 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
+// Reads a 1-D int32/int64 tensor on the host. Free for a materialized input;
+// only indices computed in the graph, which can be a strided view, cost a sync.
+inline std::vector<int64_t>
+read_host_indices(array a, const char* op, StreamOrDevice s) {
+  eval(a);
+  if (!a.flags().row_contiguous) {
+    a = contiguous(a, false, s);
+    eval(a);
+  }
+  const size_t size = a.size();
+  std::vector<int64_t> values(size);
+  switch (a.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(a.data<int32_t>(), a.data<int32_t>() + size, values.begin());
+      break;
+    case ::mlx::core::int64:
+      std::copy(a.data<int64_t>(), a.data<int64_t>() + size, values.begin());
+      break;
+    default:
+      throw std::invalid_argument(
+          std::string(op) + ": indices must be int32 or int64, got " +
+          ExecutionState::dtype_str(a.dtype()));
+  }
+  return values;
+}
+
 inline void exec_update_and_attend(
     const UpdateAndAttendNode& n,
     ExecutionState& st,
@@ -342,32 +376,14 @@ inline void exec_update_and_attend(
   // bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest.
-  auto pos = st.const_tensor_ref(n.position);
-  eval(pos);
-  // The entries are read in order off the buffer, which a strided view would
-  // walk with the wrong stride.
-  if (!pos.flags().row_contiguous) {
-    throw std::runtime_error("update_and_attend: position must be contiguous");
-  }
-  const int length = static_cast<int>(pos.size());
-  std::vector<int32_t> positions(static_cast<size_t>(length));
-  switch (pos.dtype()) {
-    case ::mlx::core::int32:
-      std::copy(
-          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
-      break;
-    case ::mlx::core::int64:
-      std::transform(
-          pos.data<int64_t>(),
-          pos.data<int64_t>() + length,
-          positions.begin(),
-          [](int64_t p) { return static_cast<int32_t>(p); });
-      break;
-    default:
-      throw std::runtime_error(
-          std::string("update_and_attend: position must be int32 or int64, ") +
-          "got " + ExecutionState::dtype_str(pos.dtype()));
-  }
+  const std::vector<int64_t> host_positions = read_host_indices(
+      st.const_tensor_ref(n.position), "update_and_attend", s);
+  std::vector<int32_t> positions(host_positions.size());
+  std::transform(
+      host_positions.begin(),
+      host_positions.end(),
+      positions.begin(),
+      [](int64_t p) { return static_cast<int32_t>(p); });
   array out = st.cache->attend(
       *n.layer_id,
       positions,
@@ -898,6 +914,66 @@ inline void exec_scatter_add(
 }
 
 inline void
+exec_scatter(const ScatterNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const int rank = static_cast<int>(x.ndim());
+
+  if (n.indices.size() != n.axes.size()) {
+    throw std::runtime_error(
+        "ScatterNode: indices count (" + std::to_string(n.indices.size()) +
+        ") must match axes count (" + std::to_string(n.axes.size()) + ")");
+  }
+
+  for (auto axis : n.axes) {
+    if (axis < 0 || axis >= rank) {
+      throw std::runtime_error(
+          "ScatterNode: axis " + std::to_string(axis) +
+          " out of range for input with ndim " + std::to_string(rank));
+    }
+  }
+
+  std::vector<array> indices;
+  indices.reserve(n.indices.size());
+  size_t index_ndim = 0;
+  for (auto tid : n.indices) {
+    indices.push_back(st.const_tensor_ref(tid));
+    index_ndim = std::max(index_ndim, indices.back().ndim());
+  }
+
+  // mlx::scatter checks neither the index values nor where a slice ends, and
+  // either one out of range would write outside x. The handler always emits
+  // a slice of size 1 on each indexed axis.
+  const auto& updates = st.const_tensor_ref(n.updates);
+  for (auto axis : n.axes) {
+    const auto dim = index_ndim + static_cast<size_t>(axis);
+    if (updates.ndim() <= dim || updates.shape()[dim] != 1) {
+      throw std::runtime_error(
+          "ScatterNode: updates must have size 1 on indexed axis " +
+          std::to_string(axis));
+    }
+  }
+  // Clamped on the device: a host range check has to wait for indices that
+  // are computed on the device, which made a MoE block several times slower.
+  for (size_t i = 0; i < indices.size(); ++i) {
+    const int size = x.shape(n.axes[i]);
+    if (size == 0) {
+      // x is empty, so there is nowhere to write.
+      st.set_tensor(n.out, x);
+      return;
+    }
+    indices[i] = clip(indices[i], array(-size), array(size - 1), s);
+  }
+
+  if (n.reduce == "none") {
+    st.set_tensor(n.out, scatter(x, indices, updates, n.axes, s));
+  } else if (n.reduce == "sum") {
+    st.set_tensor(n.out, scatter_add(x, indices, updates, n.axes, s));
+  } else {
+    throw std::runtime_error("ScatterNode: unsupported reduce: " + n.reduce);
+  }
+}
+
+inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
   const int rank = static_cast<int>(x.ndim());
@@ -1211,7 +1287,8 @@ inline void exec_slice_update(
   // st.set_tensor does a std::move. Keeping for now, but should investigate and
   // possibly remove in future.
   const bool in_place = (n.out.idx == n.dst.idx);
-  array& dst = st.tensor_ref(n.dst);
+  // Only the in-place form writes dst. Otherwise dst may be a constant.
+  const array& dst = st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
 
   const int rank = static_cast<int>(dst.ndim());
@@ -1252,9 +1329,10 @@ inline void exec_slice_update(
       return;
     }
     if (n.step == 1) {
-      dst = slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
+      st.tensor_ref(n.dst) =
+          slice_update(dst, upd, to_shape(vstart), to_shape(vstop), s);
     } else {
-      dst = slice_update(
+      st.tensor_ref(n.dst) = slice_update(
           dst, upd, to_shape(vstart), to_shape(vstop), to_shape(vstrides), s);
     }
 
@@ -1306,7 +1384,11 @@ inline std::tuple<int, int, int, int> next_contiguous_run(
 // Optimizes into slice_update calls for contiguous runs
 inline void
 exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
-  array& dst = st.tensor_ref(n.dst);
+  // When out == dst, use direct assignment to preserve MLX buffer donation.
+  // Only then is dst written, so a functional update may read a constant.
+  const bool in_place = (n.out.idx == n.dst.idx);
+  const array& dst =
+      in_place ? st.tensor_ref(n.dst) : st.const_tensor_ref(n.dst);
   const array& upd = st.const_tensor_ref(n.update);
   const array& indices = st.const_tensor_ref(n.indices);
   if (indices.ndim() != 1) {
@@ -1317,26 +1399,18 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   const size_t uaxis = static_cast<size_t>(axis);
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
-  // Get indices as a vector of ints, handling negative indices
-  // Note: PyTorch uses int64 for indices, so we read as int64_t
-  eval(indices); // Ensure indices are materialized before accessing data
-  if (indices.dtype() != ::mlx::core::int64) {
-    throw std::invalid_argument(
-        std::string("IndexCopyNode: expected int64 indices, got ") +
-        ExecutionState::dtype_str(indices.dtype()));
-  }
-  std::vector<int32_t> idx_vec(indices.size());
-  auto idx_data = indices.data<int64_t>();
-  for (size_t i = 0; i < indices.size(); ++i) {
-    int64_t idx = idx_data[i];
-    if (idx < 0) {
-      idx += dst_dim;
-    }
+  // Like ATen, negative indices are rejected rather than wrapped. Export
+  // accepts int32 indices too.
+  const std::vector<int64_t> host_indices =
+      read_host_indices(indices, "IndexCopyNode", s);
+  std::vector<int32_t> idx_vec(host_indices.size());
+  for (size_t i = 0; i < host_indices.size(); ++i) {
+    const int64_t idx = host_indices[i];
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
-          "IndexCopyNode: index " + std::to_string(idx_data[i]) +
-          " out of range for axis " + std::to_string(axis) + " with size " +
-          std::to_string(dst_dim));
+          "index_copy: index " + std::to_string(idx) +
+          " is out of bounds for dimension " + std::to_string(axis) +
+          " with size " + std::to_string(dst_dim));
     }
     if (idx > std::numeric_limits<int32_t>::max()) {
       throw std::out_of_range(
@@ -1346,11 +1420,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
     idx_vec[i] = static_cast<int>(idx);
   }
 
-  // When out == dst, use direct assignment to preserve MLX buffer donation.
-  // TODO: I'm not sure if this is needed as a special case since the standard
-  // st.set_tensor does a std::move. Keeping for now, but should investigate and
-  // possibly remove in future.
-  const bool in_place = (n.out.idx == n.dst.idx);
+  // TODO: I'm not sure the in-place case is needed as a special case since the
+  // standard st.set_tensor does a std::move. Keeping for now, but should
+  // investigate and possibly remove in future.
 
   if (idx_vec.empty()) {
     if (!in_place) {
@@ -1400,8 +1472,9 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
         : slice(upd, to_shape(upd_vstart), to_shape(upd_vstop), s);
 
     if (in_place) {
-      dst = slice_update(
-          dst, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
+      array& target = st.tensor_ref(n.dst);
+      target = slice_update(
+          target, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
     } else {
       result = slice_update(
           result, upd_slice, to_shape(dst_vstart), to_shape(dst_vstop), s);
@@ -2619,6 +2692,9 @@ class Interpreter {
         break;
       case OpCode::SCATTER_ADD:
         ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER:
+        ops::exec_scatter(std::get<ScatterNode>(instr.node), st, s);
         break;
       case OpCode::GATHER_MM:
         ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import random
 import unittest
 from typing import List
@@ -15,7 +16,7 @@ from executorch.exir.backend.canonical_partitioners.group_partitioner import (
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import create_op_support, OperatorSupportBase
-from torch.fx.passes.utils.fuser_utils import validate_partition
+from torch.fx.passes.utils.fuser_utils import fuse_by_partitions, validate_partition
 
 
 class TestGroupPartitioner(unittest.TestCase):
@@ -1949,3 +1950,222 @@ class TestGroupPartitioner(unittest.TestCase):
             )
             for partition in partitioner.propose_partitions():
                 self.assertTrue(validate_partition(list(partition.nodes)))
+
+    def test_no_cycle_through_another_partition(self):
+        """
+        Test that merging stops when the merged partition and another partition
+        would depend on each other once both are fused:
+
+            x -> a -> sin -> c        (c and d are one node group)
+            x -> d -> sin -> b        (a and b would be merged)
+        """
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        add, sin = torch.ops.aten.add.Tensor, torch.ops.aten.sin.default
+        a = graph.call_function(add, (x, x))
+        c = graph.call_function(add, (graph.call_function(sin, (a,)), x))
+        d = graph.call_function(add, (x, x))
+        b = graph.call_function(add, (graph.call_function(sin, (d,)), x))
+        graph.output((b, c))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            create_op_support(lambda _, node: node.target == add),
+            node_groups=[[c, d]],
+            allows_single_node_partition=True,
+        ).propose_partitions()
+
+        self.assertCountEqual([set(p.nodes) for p in partitions], [{a}, {b}, {c, d}])
+        # Before the fix this raised "Invalid partition, found dependency cycles".
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+    def test_merge_check_through_node_groups_that_depend_on_each_other(self):
+        """
+        Test that a merge check can walk through node groups that depend on
+        each other until they are merged ({d, g} and {e, f}: d -> f, e -> g):
+
+            x -> a -> b -> c, b -> d, b -> e, c -> e      (a and c are one group)
+            d -> f, e -> f, e -> g, b -> g, f -> h, c -> h
+
+        Before the fix, a, b and c merged, but {d, g} and {e, f, h} were left
+        depending on each other and fusing raised "Invalid partition, found
+        dependency cycles".
+        """
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        add = torch.ops.aten.add.Tensor
+        a = graph.call_function(add, (x, x))
+        b = graph.call_function(add, (x, a))
+        c = graph.call_function(add, (b, b))
+        d = graph.call_function(add, (b, b))
+        e = graph.call_function(add, (c, b))
+        f = graph.call_function(add, (d, e))
+        g = graph.call_function(add, (b, e))
+        h = graph.call_function(add, (f, c))
+        graph.output((g, h))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            create_op_support(lambda _, node: node.target == add),
+            node_groups=[[a, c], [d, g], [e, f]],
+            allows_single_node_partition=True,
+        ).propose_partitions()
+
+        self.assertCountEqual(
+            [set(p.nodes) for p in partitions], [{a, b, c}, {d, e, f, g}, {h}]
+        )
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+    def test_cycle_check_through_chained_and_filtered_partitions(self):
+        """
+        Test that the path from a to b is followed through two node groups in a
+        row, so a and b are not merged:
+
+            x -> a -> sin -> c1       (c1 and d1 are one node group)
+            x -> d1 -> sin -> c2      (c2 and d2 are one node group)
+            x -> d2 -> sin -> b
+
+        and that a path through a node group that is filtered out (one add and
+        one non-compute mul) does not stop a and b from merging:
+
+            x -> a -> sin -> c        (c and m are one node group)
+            x -> m -> sin -> b
+        """
+        add, mul, sin = (
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.mul.Tensor,
+            torch.ops.aten.sin.default,
+        )
+        supported = create_op_support(lambda _, node: node.target in (add, mul))
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(add, (x, x))
+        c1 = graph.call_function(add, (graph.call_function(sin, (a,)), x))
+        d1 = graph.call_function(add, (x, x))
+        c2 = graph.call_function(add, (graph.call_function(sin, (d1,)), x))
+        d2 = graph.call_function(add, (x, x))
+        b = graph.call_function(add, (graph.call_function(sin, (d2,)), x))
+        graph.output((b, c1, c2))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            supported,
+            node_groups=[[c1, d1], [c2, d2]],
+            allows_single_node_partition=True,
+        ).propose_partitions()
+        self.assertCountEqual(
+            [set(p.nodes) for p in partitions], [{a}, {b}, {c1, d1}, {c2, d2}]
+        )
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(add, (x, x))
+        c = graph.call_function(add, (graph.call_function(sin, (a,)), x))
+        m = graph.call_function(mul, (x, x))
+        b = graph.call_function(add, (graph.call_function(sin, (m,)), x))
+        graph.output((b, c))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            supported,
+            non_compute_ops=["torch.ops.aten.mul.Tensor"],
+            node_groups=[[c, m]],
+        ).propose_partitions()
+        self.assertCountEqual([set(p.nodes) for p in partitions], [{a, b}])
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+    def test_merge_node_groups_that_already_depend_on_each_other(self):
+        """
+        Test that node groups which already depend on each other in a cycle
+        ({a, d} -> {b, e} -> {c, f} -> {a, d}) are merged until it is gone:
+
+            x -> a -> e, x -> b -> f, x -> c -> d
+        """
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        add = torch.ops.aten.add.Tensor
+        a = graph.call_function(add, (x, x))
+        b = graph.call_function(add, (x, x))
+        c = graph.call_function(add, (x, x))
+        d = graph.call_function(add, (c, x))
+        e = graph.call_function(add, (a, x))
+        f = graph.call_function(add, (b, x))
+        graph.output((d, e, f))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            create_op_support(lambda _, node: node.target == add),
+            node_groups=[[e, b], [a, d], [c, f]],
+        ).propose_partitions()
+
+        self.assertCountEqual([set(p.nodes) for p in partitions], [{a, b, c, d, e, f}])
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+    def test_filtered_node_group_merged_only_where_it_closes_a_cycle(self):
+        """
+        Test that a node group which is filtered out (one add and one getitem)
+        is merged when it already lies on a cycle with the other partition:
+
+            x -> a -> b -> c, a -> split -> getitem -> d -> f, b -> f
+            ({a, c}, {b, f} and {getitem, d} are node groups)
+
+        {a, c} and {b, f} depend on each other and only fuse together with
+        split, getitem and d. Before the fix, merging {getitem, d} was refused
+        and fusing raised "Invalid partition, found dependency cycles".
+
+        And that it is not merged otherwise:
+
+            x -> a -> a3, x -> split -> getitem -> a2 -> a3, a -> a4
+            ({a, a3} and {a4, getitem} are node groups, split is not supported)
+
+        a2 reaches {a4, getitem} only at a4, through {a, a3}, so merging them
+        would make a partition that depends on {a, a3} both ways.
+        """
+        add, split = torch.ops.aten.add.Tensor, torch.ops.aten.split.Tensor
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(add, (x, x))
+        b = graph.call_function(add, (a, x))
+        c = graph.call_function(add, (b, x))
+        s = graph.call_function(split, (a, 1))
+        getitem = graph.call_function(operator.getitem, (s, 0))
+        d = graph.call_function(add, (getitem, x))
+        f = graph.call_function(add, (d, b))
+        graph.output((c, f))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            create_op_support(
+                lambda _, node: node.target in (add, split, operator.getitem)
+            ),
+            node_groups=[[a, c], [b, f], [getitem, d]],
+        ).propose_partitions()
+        self.assertCountEqual(
+            [set(p.nodes) for p in partitions], [{a, b, c, s, getitem, d, f}]
+        )
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        a = graph.call_function(add, (x, x))
+        getitem = graph.call_function(
+            operator.getitem, (graph.call_function(split, (x, 1)), 0)
+        )
+        a2 = graph.call_function(add, (getitem, getitem))
+        a3 = graph.call_function(add, (a2, a))
+        a4 = graph.call_function(add, (a, x))
+        graph.output((a3, a4))
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        partitions = GroupBasedPartitioner(
+            graph_module,
+            create_op_support(lambda _, node: node.target in (add, operator.getitem)),
+            node_groups=[[a, a3], [a4, getitem]],
+        ).propose_partitions()
+        self.assertCountEqual([set(p.nodes) for p in partitions], [{a, a2, a3}])
+        fuse_by_partitions(graph_module, [p.nodes for p in partitions])

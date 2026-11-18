@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -144,6 +145,39 @@ TEST_F(OpViewTest, EmptyInputSupported) {
 #define TEST_ENTRY(ctype, dtype) test_empty_input<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
+}
+
+TEST_F(OpViewTest, ChannelsLastInputPreservesLogicalOrder) {
+  TensorFactory<ScalarType::Float> tf;
+  for (const auto& shape :
+       std::vector<std::vector<int32_t>>{{1, 2, 1, 3}, {1, 2, 1, 1, 3}}) {
+    Tensor input = tf.make_channels_last(shape, {0, 3, 1, 4, 2, 5});
+    Tensor out = tf.zeros({2, 3});
+    Tensor expected = tf.make({2, 3}, {0, 1, 2, 3, 4, 5});
+    const int64_t size[] = {-1, 3};
+    op_view_copy_out(input, size, out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+}
+
+TEST_F(OpViewTest, EmptyChannelsLastInput) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor input = tf.make_channels_last({1, 2, 0, 3}, {});
+  Tensor out = tf.zeros({2, 0});
+  const int64_t size[] = {2, 0};
+  op_view_copy_out(input, size, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({2, 0}));
+}
+
+TEST_F(OpViewTest, ChannelsLastInputResizesOutput) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor input = tf.make_channels_last({1, 2, 1, 3}, {0, 3, 1, 4, 2, 5});
+  Tensor out =
+      tf.zeros({4, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  Tensor expected = tf.make({2, 3}, {0, 1, 2, 3, 4, 5});
+  const int64_t size[] = {2, 3};
+  op_view_copy_out(input, size, out);
+  EXPECT_TENSOR_EQ(out, expected);
 }
 
 TEST_F(OpViewTest, InputOutputMismatchedSizesDie) {

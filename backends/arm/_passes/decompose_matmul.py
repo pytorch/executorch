@@ -34,14 +34,3 @@ class DecomposeMatmulPass(GetDecompositionPass):
     targeted_ops = [
         torch.ops.aten.matmul.default,
     ]
-
-    def _skip_pass(self, input_tensors: list) -> bool:
-        # TODO Add support for multiplication with vectors
-        if len(input_tensors) > 1:
-            if input_tensors[1].dim() == 1:
-                return True
-        else:
-            if input_tensors[0].dim() == 1:
-                return True
-
-        return False

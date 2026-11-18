@@ -137,6 +137,7 @@ class NodeVisitor:
         edge_program: torch.export.ExportedProgram,
         enable_tensor_dump,
         is_qnn_partitioner=True,
+        backend_type=None,
     ) -> None:
         # is_qnn_partitioner: True for the real qnn_partitioner / qnn_preprocess
         # flows, where external_ids is built from the program being processed so
@@ -149,6 +150,7 @@ class NodeVisitor:
         self.edge_program = edge_program
         self.enable_tensor_dump = enable_tensor_dump
         self.is_qnn_partitioner = is_qnn_partitioner
+        self.backend_type = backend_type
 
     def get_node(self, node):
         """

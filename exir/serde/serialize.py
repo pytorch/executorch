@@ -161,6 +161,11 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             # Serialize from_node as JSON since it's a complex nested structure
             meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
 
+        # Only serialized call nodes have metadata; placeholders, get_attr and
+        # getitem nodes are not serialized as nodes in the schema.
+        if "custom" in node.meta:
+            meta["custom"] = json.dumps(node.meta["custom"])
+
         return meta
 
     def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
@@ -521,6 +526,9 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if from_node_str := metadata.get("from_node"):
             res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
 
+        if "custom" in metadata:
+            res["custom"] = json.loads(metadata["custom"])
+
         return res
 
     def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
@@ -765,6 +773,19 @@ def save(
     extra_files: Optional[Dict[str, Any]] = None,
     opset_version: Optional[Dict[str, int]] = None,
 ) -> None:
+    """Save an exported program, including custom metadata on serialized call nodes.
+
+    ``node.meta["custom"]`` should contain JSON-native values: dictionaries with
+    string keys, lists, strings, numbers, booleans and None. JSON encoding turns
+    tuples into lists, non-string dictionary keys into strings and dictionary
+    subclasses into plain dictionaries. Unsupported values raise SerializeError
+    naming the node; earlier versions silently dropped custom metadata.
+
+    Placeholder, get_attr and independently annotated getitem metadata is not
+    preserved. Generated getitem nodes inherit independent copies of their
+    producer's metadata. Call nodes in lowered modules' original_module are
+    included.
+    """
     if not isinstance(ep_save, ep.ExportedProgram):
         raise TypeError(f"save() expects an ExportedProgram but got {type(ep)}")
 
