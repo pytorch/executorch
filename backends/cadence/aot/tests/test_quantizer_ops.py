@@ -326,6 +326,20 @@ W8A32_ANNOTATION_TEST_CASES: list[
         CadenceW8A32MixedQuantizer(),
         [None, qconfig_A32W8sym_127.weight, qconfig_A32W8sym_127.bias],
     ),
+    (
+        "w8a32_split_gru",
+        lambda self: self._build_w8a32_split_gru_graph(),
+        CadenceW8A32MixedQuantizer(),
+        # [inputs, hidden] + [w_i, w_h, b_i, b_h] for each of the two splits
+        [None, None]
+        + [
+            qconfig_A32W8sym_127.weight,
+            qconfig_A32W8sym_127.weight,
+            qconfig_A32W8sym_127.bias,
+            qconfig_A32W8sym_127.bias,
+        ]
+        * 2,
+    ),
 ]
 
 # Derive the set of tested quantizer classes from the test cases.
@@ -961,6 +975,65 @@ class QuantizerAnnotationTest(unittest.TestCase):
             *self._build_w8a32_layer_norm_graph(kwargs={"eps": 1e-3})
         )
 
+    def _build_w8a32_split_gru_graph(
+        self,
+        x_shape: tuple[int, ...] = (1, 1, 8),
+        hidden_size: int = 8,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with a two-split cadence::split_gru."""
+        builder = GraphBuilder()
+        # By default each split is a gru with 4 input features and 4 hidden
+        # units.
+        x = builder.placeholder("x", torch.randn(x_shape))
+        hidden = builder.placeholder("hidden", torch.randn(1, 1, hidden_size))
+        split_in, split_hidden = x_shape[-1] // 2, hidden_size // 2
+        params = [
+            builder.placeholder(f"{name}_{split}", torch.randn(shape))
+            for split in range(2)
+            for name, shape in (
+                ("w_i", (3 * split_hidden, split_in)),
+                ("w_h", (3 * split_hidden, split_hidden)),
+                ("b_i", (3 * split_hidden,)),
+                ("b_h", (3 * split_hidden,)),
+            )
+        ]
+        split_gru = builder.call_operator(
+            op=torch.ops.cadence.split_gru.default,
+            args=(x, hidden, *params),
+            meta=NodeMetadata(
+                {
+                    "source_fn_stack": [
+                        ("split_gru", torch.ops.cadence.split_gru.default)
+                    ]
+                }
+            ),
+        )
+        builder.output([split_gru])
+        gm = builder.get_graph_module()
+
+        split_gru_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.cadence.split_gru.default,
+        )
+        self.assertEqual(
+            len(split_gru_nodes), 1, "Should find exactly one split_gru node"
+        )
+        return gm, split_gru_nodes[0]
+
+    @parameterized.expand(
+        [
+            ("seq_2", (1, 2, 8), 8),
+            ("split_input_not_aligned", (1, 1, 12), 8),
+            ("split_hidden_not_aligned", (1, 1, 8), 12),
+        ]
+    )
+    def test_w8a32_split_gru_unsupported_shape_stays_fp32(
+        self, name: str, x_shape: tuple[int, ...], hidden_size: int
+    ) -> None:
+        self._assert_w8a32_leaves_fp32(
+            *self._build_w8a32_split_gru_graph(x_shape, hidden_size)
+        )
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -1223,6 +1296,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.conv2d.default,
             torch.ops.aten.layer_norm.default,
+            torch.ops.cadence.split_gru.default,
         ]
         self.assertCountEqual(actual, expected)
 
@@ -1265,6 +1339,7 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv_transpose2d.input,
             torch.ops.aten.conv2d.default,
             torch.ops.aten.layer_norm.default,
+            torch.ops.cadence.split_gru.default,
             torch.ops.aten.addmm.default,
         ]
         self.assertCountEqual(actual, expected)

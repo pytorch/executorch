@@ -4536,3 +4536,140 @@ class TestRefImplementations(unittest.TestCase):
             torch.ops.cadence.quantized_w8a32_layernorm(
                 input_tensor, weight, 1.0, bias, 1.0
             )
+
+    @expand(
+        [
+            # uniform: same weights/scales for both splits
+            (
+                "uniform_weights",
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.1,
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.05,
+                # split 0
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                # split 1: same as split 0
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+            ),
+            # non-uniform: different weights & scales per split — exercises
+            # per-split routing (split 0 must not leak into split 1's output).
+            (
+                "non_uniform_per_split",
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.1,
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.05,
+                # split 0: positive weights
+                torch.full((12, 4), 2, dtype=torch.int8),
+                0.25,
+                torch.full((12, 4), 1, dtype=torch.int8),
+                0.5,
+                torch.full((12,), 1, dtype=torch.int8),
+                0.1,
+                torch.full((12,), 2, dtype=torch.int8),
+                0.1,
+                # split 1: negative weights, different scales
+                torch.full((12, 4), -1, dtype=torch.int8),
+                0.5,
+                torch.full((12, 4), -2, dtype=torch.int8),
+                0.25,
+                torch.full((12,), -1, dtype=torch.int8),
+                0.2,
+                torch.full((12,), 0, dtype=torch.int8),
+                0.1,
+            ),
+        ]
+    )
+    def test_quantized_w8a32_split_gru(
+        self,
+        name: str,
+        inputs: torch.Tensor,
+        hidden: torch.Tensor,
+        w_i_0: torch.Tensor, w_i_0_scale: float,
+        w_h_0: torch.Tensor, w_h_0_scale: float,
+        b_i_0: torch.Tensor, b_i_0_scale: float,
+        b_h_0: torch.Tensor, b_h_0_scale: float,
+        w_i_1: torch.Tensor, w_i_1_scale: float,
+        w_h_1: torch.Tensor, w_h_1_scale: float,
+        b_i_1: torch.Tensor, b_i_1_scale: float,
+        b_h_1: torch.Tensor, b_h_1_scale: float,
+    ) -> None:
+        num_splits = 2
+        hidden_dim_per_split = hidden.shape[-1] // num_splits
+
+        output = torch.ops.cadence.quantized_w8a32_split_gru(
+            inputs, hidden,
+            w_i_0, w_i_0_scale, w_h_0, w_h_0_scale,
+            b_i_0, b_i_0_scale, b_h_0, b_h_0_scale,
+            w_i_1, w_i_1_scale, w_h_1, w_h_1_scale,
+            b_i_1, b_i_1_scale, b_h_1, b_h_1_scale,
+            num_splits,
+        )
+
+        # Oracle: one nn.GRU per split on the dequantized weights, fed the
+        # strided input features and its contiguous slice of the hidden state.
+        splits = [
+            (w_i_0, w_i_0_scale, w_h_0, w_h_0_scale),
+            (w_i_1, w_i_1_scale, w_h_1, w_h_1_scale),
+        ]
+        biases = [
+            (b_i_0, b_i_0_scale, b_h_0, b_h_0_scale),
+            (b_i_1, b_i_1_scale, b_h_1, b_h_1_scale),
+        ]
+        new_hiddens = []
+        for split in range(num_splits):
+            w_i, w_i_scale, w_h, w_h_scale = splits[split]
+            b_i, b_i_scale, b_h, b_h_scale = biases[split]
+            gru = torch.nn.GRU(w_i.shape[1], w_h.shape[1], batch_first=True)
+            start = split * hidden_dim_per_split
+            h0 = hidden[..., start : start + hidden_dim_per_split]
+            with torch.no_grad():
+                gru.weight_ih_l0.copy_(w_i.float() * w_i_scale)
+                gru.weight_hh_l0.copy_(w_h.float() * w_h_scale)
+                gru.bias_ih_l0.copy_(b_i.float() * b_i_scale)
+                gru.bias_hh_l0.copy_(b_h.float() * b_h_scale)
+                _, new_hidden = gru(inputs[..., split::num_splits], h0)
+            new_hiddens.append(new_hidden)
+        # One frame (batch 1, seq 1): the op returns the new hidden state.
+        expected = torch.cat(new_hiddens, dim=-1)
+
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected.shape,
+            f"Output shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.allclose(output, expected, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}",
+        )
+
+    def test_quantized_w8a32_split_gru_num_splits_assertion(self) -> None:
+        # Op signature only carries weights/biases for 2 splits.
+        inputs = torch.zeros((1, 1, 8), dtype=torch.float32)
+        hidden = torch.zeros((1, 1, 8), dtype=torch.float32)
+        w_i = torch.ones((12, 4), dtype=torch.int8)
+        w_h = torch.ones((12, 4), dtype=torch.int8)
+        b_i = torch.ones(12, dtype=torch.int8)
+        b_h = torch.ones(12, dtype=torch.int8)
+        with self.assertRaises(AssertionError):
+            torch.ops.cadence.quantized_w8a32_split_gru(
+                inputs, hidden,
+                w_i, 0.1, w_h, 0.1, b_i, 0.1, b_h, 0.1,
+                w_i, 0.1, w_h, 0.1, b_i, 0.1, b_h, 0.1,
+                3,  # num_splits != 2
+            )

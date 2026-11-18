@@ -1746,6 +1746,70 @@ def quantized_w8a32_layernorm(
     return F.layer_norm(input, [channels], weight=dequant_weight, bias=dequant_bias)
 
 
+@impl_tracked(m, "quantized_w8a32_split_gru")
+def quantized_w8a32_split_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor, w_i_0_scale: float,
+    w_h_0: torch.Tensor, w_h_0_scale: float,
+    b_i_0: torch.Tensor, b_i_0_scale: float,
+    b_h_0: torch.Tensor, b_h_0_scale: float,
+    w_i_1: torch.Tensor, w_i_1_scale: float,
+    w_h_1: torch.Tensor, w_h_1_scale: float,
+    b_i_1: torch.Tensor, b_i_1_scale: float,
+    b_h_1: torch.Tensor, b_h_1_scale: float,
+    num_splits: int,
+) -> torch.Tensor:
+    assert num_splits == 2
+    return split_gru(
+        inputs,
+        hidden,
+        w_i_0.float() * w_i_0_scale,
+        w_h_0.float() * w_h_0_scale,
+        b_i_0.float() * b_i_0_scale,
+        b_h_0.float() * b_h_0_scale,
+        w_i_1.float() * w_i_1_scale,
+        w_h_1.float() * w_h_1_scale,
+        b_i_1.float() * b_i_1_scale,
+        b_h_1.float() * b_h_1_scale,
+    )
+
+
+@impl_tracked(m, "split_gru")
+def split_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor,
+    w_h_0: torch.Tensor,
+    b_i_0: torch.Tensor,
+    b_h_0: torch.Tensor,
+    w_i_1: torch.Tensor,
+    w_h_1: torch.Tensor,
+    b_i_1: torch.Tensor,
+    b_h_1: torch.Tensor,
+) -> torch.Tensor:
+    # Split i is a GRU over inputs[..., i::2] and the i-th half of hidden. The
+    # new hidden state is returned broadcast to (B, S, H).
+    num_splits = 2
+    h_chunks = torch.chunk(hidden, num_splits, dim=-1)
+    weights = [(w_i_0, w_h_0, b_i_0, b_h_0), (w_i_1, w_h_1, b_i_1, b_h_1)]
+
+    new_hiddens: list[torch.Tensor] = []
+    for i, (w_i, w_h, b_i, b_h) in enumerate(weights):
+        gru = nn.GRU(w_i.shape[1], w_h.shape[1], batch_first=True)
+        with torch.no_grad():
+            gru.weight_ih_l0.copy_(w_i)
+            gru.weight_hh_l0.copy_(w_h)
+            gru.bias_ih_l0.copy_(b_i)
+            gru.bias_hh_l0.copy_(b_h)
+            _, h = gru(inputs[..., i::num_splits], h_chunks[i].contiguous())
+        new_hiddens.append(h)
+
+    new_hidden = torch.cat(new_hiddens, dim=-1)[0]  # (B, H)
+    batch, seq = inputs.shape[0], inputs.shape[1]
+    return new_hidden.unsqueeze(1).expand(batch, seq, -1).contiguous()
+
+
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
 def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,

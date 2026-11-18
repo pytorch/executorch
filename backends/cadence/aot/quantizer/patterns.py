@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Union
 
 import torch
+
+# Registers torch.ops.cadence.split_gru, used in a partition_types.
+import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 from executorch.backends.cadence.aot.compiler_utils import get_shape
 from executorch.backends.cadence.aot.pass_utils import get_arg, replace_with_op
 from executorch.backends.cadence.aot.quantizer.pattern_utils import (
@@ -1842,6 +1845,56 @@ class MixedW8A32LayerNormPattern(QuantizationPattern):
             get_arg(dq_bias, "input", fx.Node),
             get_arg(dq_bias, "scale", float),
         )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
+
+
+class MixedW8A32SplitGruPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.cadence.split_gru.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        node = fused_partition[0].nodes[-1]
+        # split_gru positional args:
+        #   0: inputs        1: hidden
+        #   2: w_i_0         3: w_h_0    4: b_i_0   5: b_h_0
+        #   6: w_i_1         7: w_h_1    8: b_i_1   9: b_h_1
+        # The kernel runs a single frame (batch 1, seq 1), and the input and
+        # hidden sizes of each of the 2 splits must be multiples of 4 (SIMD).
+        for idx in (0, 1):
+            tensor_meta = node.args[idx].meta.get("tensor_meta", None)
+            if tensor_meta is None or tensor_meta.shape[-1] % 8 != 0:
+                return (PartitionAnchors(empty=True), node)
+        if any(dim != 1 for dim in node.args[0].meta["tensor_meta"].shape[:-1]):
+            return (PartitionAnchors(empty=True), node)
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(node, 2), (node, 3), (node, 6), (node, 7)],
+                biases=[(node, 4), (node, 5), (node, 8), (node, 9)],
+                output=[],
+                others=[(node, 0), (node, 1)],
+            ),
+            node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_split_gru.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        quantized_args = []
+        for dq in anchor_node.args[2:]:
+            if not isinstance(dq, fx.Node) or dq.target != DQ_PER_TENSOR:
+                return None
+            quantized_args += [
+                get_arg(dq, "input", fx.Node),
+                get_arg(dq, "scale", float),
+            ]
+        num_splits = 2
+        args = (*anchor_node.args[:2], *quantized_args, num_splits)
         return replace_with_op(
             gm, anchor_node, self.replacement_op(), args, {}, anchor_node
         )
