@@ -1770,13 +1770,15 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend. Afterwards,
             exported_program() of this EdgeProgramManager also returns the
             lowered programs. An ExportedProgram taken from this manager before
-            the call is lowered in place only for methods that fold nothing.
+            the call is lowered in place only for methods in which
+            fold_constant_transposes folds nothing.
 
         Raises:
             RuntimeError: If an earlier call on this manager folded a weight
-                transpose and this call sets fold_constant_transposes to False
-                or uses external_constants. Copy the manager before the first
-                call to lower it more than once with different settings.
+                transpose and this call leaves fold_constant_transposes off,
+                which is the default, or uses external_constants. Copy the
+                manager before the first call to lower it more than once with
+                different settings.
         """
         config = config if config else ExecutorchBackendConfig()
         # External constants are matched by name, which a fold would change.
@@ -1785,7 +1787,7 @@ class EdgeProgramManager:
             raise RuntimeError(
                 "An earlier to_executorch() call folded weight transposes in "
                 f"methods {sorted(self._folded_methods)}, so this manager cannot be "
-                "lowered again with fold_constant_transposes=False or "
+                "lowered again without fold_constant_transposes=True or with "
                 "external_constants. Copy the manager before the first call."
             )
         programs = self._edge_programs

@@ -16,7 +16,7 @@ from executorch.devtools.intermediate_output_tap._tap_pass import (
     find_tap_nodes,
     tap_intermediate_outputs_,
 )
-from executorch.exir import to_edge
+from executorch.exir import ExecutorchBackendConfig, to_edge
 from torch.export import export
 
 
@@ -124,7 +124,7 @@ class StripPassTest(unittest.TestCase):
         # The reducer nodes have no meta["val"] until to_executorch adds it.
         edge, _ = _tapped_edge(STATS)
         strip_taps_(edge)
-        edge.to_executorch()
+        edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
     def test_strip_idempotent(self):
         edge, _ = _tapped_edge(FULL_TENSOR)

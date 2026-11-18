@@ -3221,11 +3221,25 @@ class TestPasses(unittest.TestCase):
             len(buffer.storage) for buffer in et.executorch_program.constant_buffer
         )
 
+    def test_fold_constant_transposes_is_off_by_default(self) -> None:
+        model = MLP(n_layer=2).eval()
+        exported = export(model, model.get_random_inputs(), strict=True)
+
+        default = to_edge(exported).to_executorch()
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(default))
+        self.assertEqual(default.buffer, unfolded.buffer)
+
     def test_fold_constant_transposes_folds_linear_weight(self) -> None:
         model = MLP(n_layer=2).eval()
         exported = export(model, model.get_random_inputs(), strict=True)
 
-        folded = to_edge(exported).to_executorch()
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
         self.assertNotIn("aten::permute_copy", self._operator_names(folded))
 
         unfolded = to_edge(exported).to_executorch(
@@ -3269,7 +3283,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported, compile_config=compile_config).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported, compile_config=compile_config).to_executorch()
+        folded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::t_copy", self._operator_names(unfolded))
         self.assertIn("aten::transpose_copy", self._operator_names(unfolded))
@@ -3299,7 +3315,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(programs).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(programs).to_executorch()
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertNotIn("aten::permute_copy", self._operator_names(folded))
         self.assertEqual(self._constant_bytes(folded), self._constant_bytes(unfolded))
@@ -3324,7 +3342,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported).to_executorch()
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(folded))
         self.assertEqual(folded.buffer, unfolded.buffer)
@@ -3359,7 +3379,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(programs).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(programs).to_executorch()
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(folded))
         self.assertEqual(folded.buffer, unfolded.buffer)
@@ -3369,7 +3391,9 @@ class TestPasses(unittest.TestCase):
         exported = export(model, model.get_random_inputs(), strict=True)
 
         et = to_edge(exported).to_executorch(
-            ExecutorchBackendConfig(external_constants=True)
+            ExecutorchBackendConfig(
+                external_constants=True, fold_constant_transposes=True
+            )
         )
 
         self.assertIn("aten::permute_copy", self._operator_names(et))
@@ -3388,7 +3412,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported).to_executorch()
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(unfolded))
         self.assertNotIn("aten::permute_copy", self._operator_names(folded))
@@ -3409,7 +3435,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported).to_executorch()
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertEqual(folded.buffer, unfolded.buffer)
 
@@ -3434,7 +3462,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(programs).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(programs).to_executorch()
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertEqual(folded.buffer, unfolded.buffer)
 
@@ -3468,7 +3498,7 @@ class TestPasses(unittest.TestCase):
             edge.transform([ExportPass()]).exported_program("project").constants
         )
 
-        et = edge.to_executorch()
+        et = edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
         self.assertNotIn("aten::permute_copy", self._operator_names(et))
         for method in ("project", "add"):
@@ -3491,7 +3521,7 @@ class TestPasses(unittest.TestCase):
         x = torch.randn(2, 3, requires_grad=True) * 2
         edge = to_edge(export(torch.nn.Linear(3, 4).eval(), (x,), strict=True))
 
-        et = edge.to_executorch()
+        et = edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
         self.assertNotIn("aten::permute_copy", self._operator_names(et))
 
@@ -3505,7 +3535,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported, constant_methods=constant_methods).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported, constant_methods=constant_methods).to_executorch()
+        folded = to_edge(exported, constant_methods=constant_methods).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(folded))
         self.assertEqual(folded.buffer, unfolded.buffer)
@@ -3521,7 +3553,9 @@ class TestPasses(unittest.TestCase):
 
         exported = export(AddTransposedBuffer(), (torch.randn(3, 4),), strict=True)
 
-        et = to_edge(exported).to_executorch()
+        et = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(et))
 
@@ -3533,7 +3567,7 @@ class TestPasses(unittest.TestCase):
         edge = to_edge(export(model, (torch.ones(2, 4, device="meta"),), strict=True))
 
         with self.assertRaisesRegex(InternalError, "on device 'meta'"):
-            edge.to_executorch()
+            edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
     def test_fold_constant_transposes_ignores_non_cpu_constant_it_keeps(
         self,
@@ -3555,7 +3589,9 @@ class TestPasses(unittest.TestCase):
         ):
             edge = to_edge(programs, constant_methods=constant_methods)
             with self.assertRaisesRegex(InternalError, "on device 'meta'"):
-                edge.to_executorch()
+                edge.to_executorch(
+                    ExecutorchBackendConfig(fold_constant_transposes=True)
+                )
 
     def test_fold_constant_transposes_keeps_transpose_written_in_place(
         self,
@@ -3578,7 +3614,9 @@ class TestPasses(unittest.TestCase):
         unfolded = to_edge(exported, compile_config=compile_config).to_executorch(
             ExecutorchBackendConfig(fold_constant_transposes=False)
         )
-        folded = to_edge(exported, compile_config=compile_config).to_executorch()
+        folded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertEqual(folded.buffer, unfolded.buffer)
 
@@ -3593,7 +3631,9 @@ class TestPasses(unittest.TestCase):
 
         exported = export(ReturnTransposed().eval(), (torch.randn(2),), strict=True)
 
-        et = to_edge(exported).to_executorch()
+        et = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
 
         self.assertIn("aten::permute_copy", self._operator_names(et))
 
@@ -3610,7 +3650,7 @@ class TestPasses(unittest.TestCase):
 
         et = to_edge_transform_and_lower(
             exported, partitioner=[AddMulPartitionerDemo()]
-        ).to_executorch()
+        ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
         self.assertIn("aten::permute_copy", self._operator_names(et))
 
@@ -3632,7 +3672,7 @@ class TestPasses(unittest.TestCase):
         ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=False))
         folded = to_edge_transform_and_lower(
             exported, partitioner=[XnnpackPartitioner()]
-        ).to_executorch()
+        ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
         self.assertEqual(len(folded.executorch_program.execution_plan[0].delegates), 1)
         self.assertIn("aten::permute_copy", self._operator_names(unfolded))
@@ -3647,17 +3687,19 @@ class TestPasses(unittest.TestCase):
     ) -> None:
         model = torch.nn.Linear(4, 4).eval().requires_grad_(False)
         edge = to_edge(export(model, (torch.randn(1, 4),), strict=True))
-        edge.to_executorch()
+        edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
 
         for config in (
             ExecutorchBackendConfig(fold_constant_transposes=False),
-            ExecutorchBackendConfig(external_constants=True),
+            ExecutorchBackendConfig(
+                external_constants=True, fold_constant_transposes=True
+            ),
         ):
             with self.assertRaisesRegex(RuntimeError, "folded weight transposes"):
                 edge.to_executorch(config)
         # A manager that folded nothing can still change these settings.
         edge = to_edge(export(Mul(), Mul().get_random_inputs(), strict=True))
-        edge.to_executorch()
+        edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
         edge.to_executorch(ExecutorchBackendConfig(external_constants=True))
 
     class AddConstant(torch.nn.Module):

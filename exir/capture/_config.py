@@ -133,7 +133,7 @@ class ExecutorchBackendConfig:
     # to_executorch call has folded a transpose, calling to_executorch again on
     # the same EdgeProgramManager with this set to false, or with
     # external_constants, raises a RuntimeError. Copy the manager first.
-    fold_constant_transposes: bool = True
+    fold_constant_transposes: bool = False
 
     # Experimental: If set to true, we run a pass to reinplace ops in the graph.
     run_reinplace_pass: bool = False
