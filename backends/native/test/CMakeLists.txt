@@ -68,7 +68,10 @@ add_custom_command(
 )
 add_custom_target(native_op_samples DEPENDS ${_native_op_samples}.stamp)
 
-if(EXECUTORCH_BUILD_NATIVE_GGML OR EXECUTORCH_BUILD_NATIVE_VULKAN)
+if(EXECUTORCH_BUILD_NATIVE_GGML
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_CPU
+)
   if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
     find_package(gflags REQUIRED)
   endif()
@@ -222,6 +225,26 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   add_test(NAME native_cpu_engine_test COMMAND native_cpu_engine_test)
   target_compile_options(
     native_cpu_engine_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+
+  add_executable(native_cpu_sample_test runtime/cpu/cpu_ptn_runner.cpp)
+  target_link_libraries(
+    native_cpu_sample_test PRIVATE native_sample_test_main native_cpu_engine
+  )
+  add_dependencies(native_cpu_sample_test native_op_samples)
+  add_test(NAME native_cpu_sample_test COMMAND native_cpu_sample_test
+                                               --packages=${_native_op_samples}
+  )
+  # TODO: Enable once the CPU engine runs quantized and dynamic-shape methods.
+  set_tests_properties(native_cpu_sample_test PROPERTIES DISABLED TRUE)
+  add_test(NAME native_cpu_sample_test_static_float
+           COMMAND native_cpu_sample_test --packages=${_native_op_samples}
+                   --gtest_filter=*_float.*:-*.dynamic_*
+  )
+  target_compile_options(
+    native_cpu_sample_test
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
