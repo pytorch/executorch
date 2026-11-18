@@ -17,9 +17,9 @@ from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, bias: bool = True) -> None:
         super().__init__()
-        self.module = torch.nn.LayerNorm(10)
+        self.module = torch.nn.LayerNorm(10, bias=bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.module(x)
@@ -45,3 +45,7 @@ class TestLayerNorm(unittest.TestCase):
     def test_fp32_layer_norm(self):
         inputs = (torch.randn(1, 32, 10),)
         self._test(LayerNorm(), inputs)
+
+    def test_fp32_layer_norm_without_bias(self):
+        inputs = (torch.randn(1, 32, 10),)
+        self._test(LayerNorm(bias=False), inputs)

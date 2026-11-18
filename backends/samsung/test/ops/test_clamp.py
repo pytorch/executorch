@@ -31,16 +31,26 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, self.minimum, self.maximum)
 
 
+class ClampTensor(torch.nn.Module):
+    def __init__(self, minimum: float, maximum: float) -> None:
+        super().__init__()
+        self.register_buffer("minimum", torch.tensor(minimum))
+        self.register_buffer("maximum", torch.tensor(maximum))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.clamp(x, self.minimum, self.maximum)
+
+
 class TestClamp(unittest.TestCase):
-    def _test(self, module: torch.nn.Module, inputs):
+    def _test(self, module: torch.nn.Module, inputs, overload: str = "default"):
         tester = SamsungTester(
             module, inputs, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
         (
             tester.export()
-            .check_count({"torch.ops.aten.clamp.default": 1})
+            .check_count({f"torch.ops.aten.clamp.{overload}": 1})
             .to_edge_transform_and_lower()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
+            .check_not([f"executorch_exir_dialects_edge__ops_aten_clamp_{overload}"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs)
@@ -64,6 +74,10 @@ class TestClamp(unittest.TestCase):
     def test_fp32_clamp(self):
         inputs = (torch.randn(1, 16, 8, 8),)
         self._test(Clamp(minimum=0, maximum=2.0), inputs)
+
+    def test_fp32_clamp_tensor(self):
+        inputs = (torch.randn(1, 16, 8, 8),)
+        self._test(ClampTensor(minimum=-0.5, maximum=0.5), inputs, overload="Tensor")
 
     def test_a8w8_clamp(self):
         inputs = (torch.randn(1, 16, 8, 8),)
