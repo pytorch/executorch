@@ -41,9 +41,10 @@ bool data_is_close(
         return false;
       }
     } else {
-      auto allowed_error = atol + std::fabs(rtol * b[i]);
+      auto allowed_error = atol + std::fabs(rtol * static_cast<double>(b[i]));
       auto actual_error = std::fabs(a[i] - b[i]);
-      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+      if (!std::isfinite(actual_error) ||
+          static_cast<double>(actual_error) > allowed_error) {
         return false;
       }
     }

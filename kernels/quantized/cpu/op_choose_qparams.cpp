@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -109,7 +110,7 @@ void calculate_scale_and_zero_point(
 
   // Use double precision for intermediate computation but use single precision
   // in final number to reflect the actual number used during quantization.
-  scale = (static_cast<double>(max) - min) / (qmax - qmin);
+  scale = (static_cast<double>(max) - static_cast<double>(min)) / (qmax - qmin);
   // If scale is 0 or too small so its reciprocal is infinity, we arbitrary
   // adjust the scale to 0.1 . We want to avoid scale's reciprocal being
   // infinity because some of fbgemm code pre-computes scale's reciprocal to do
@@ -120,9 +121,9 @@ void calculate_scale_and_zero_point(
   ET_CHECK_MSG(scale > 0, "quantization scale should be > 0");
 
   // Cut off small scale
-  if (scale < SMALL_SCALE_THRESHOLD) {
+  if (scale < static_cast<double>(SMALL_SCALE_THRESHOLD)) {
     float org_scale = scale;
-    scale = SMALL_SCALE_THRESHOLD;
+    scale = static_cast<double>(SMALL_SCALE_THRESHOLD);
     // Adjust the min and max based on the new scale
     if (min == 0.0f) {
       max = SMALL_SCALE_THRESHOLD * (qmax - qmin);
@@ -143,12 +144,12 @@ void calculate_scale_and_zero_point(
   // The arithmetic error on the zero point computed from either pair
   // will be roughly machine_epsilon * (sum of absolute values of terms)
   // so we want to use the variant that adds the smaller terms.
-  double zero_point_from_min = qmin - min / static_cast<double>(scale);
-  double zero_point_from_max = qmax - max / static_cast<double>(scale);
+  double zero_point_from_min = qmin - static_cast<double>(min) / scale;
+  double zero_point_from_max = qmax - static_cast<double>(max) / scale;
   double zero_point_from_min_error =
-      std::abs(qmin) - std::abs(min / static_cast<double>(scale));
+      std::abs(qmin) - std::abs(static_cast<double>(min) / scale);
   double zero_point_from_max_error =
-      std::abs(qmax) - std::abs(max / static_cast<double>(scale));
+      std::abs(qmax) - std::abs(static_cast<double>(max) / scale);
   double initial_zero_point =
       zero_point_from_min_error < zero_point_from_max_error
       ? zero_point_from_min

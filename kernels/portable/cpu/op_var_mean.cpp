@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -37,8 +38,8 @@ void compute_var_mean(
   CTYPE_OUT* mean_data = mean_out.mutable_data_ptr<CTYPE_OUT>();
   if (num == 0 || denominator <= 0) {
     for (const auto out_ix : c10::irange(var_out.numel())) {
-      var_data[out_ix] = NAN;
-      mean_data[out_ix] = NAN;
+      var_data[out_ix] = static_cast<CTYPE_OUT>(NAN);
+      mean_data[out_ix] = static_cast<CTYPE_OUT>(NAN);
     }
   } else if (in.numel() > 0) {
     // Fast path: contiguous tensor, single innermost dim reduction, same dtype.
@@ -92,7 +93,8 @@ void compute_var_mean(
                   },
                   [](ACC outv, ACC acc) { return acc + outv; },
                   out_ix);
-              var_data[out_ix] = static_cast<CTYPE_OUT>(sum2 / denominator);
+              var_data[out_ix] = static_cast<CTYPE_OUT>(
+                  static_cast<double>(sum2) / denominator);
             }
           });
       ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");

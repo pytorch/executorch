@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -41,10 +42,10 @@ Tensor& logit_out(
           [eps](const CTYPE_IN val_in) {
             CTYPE_OUT xi = static_cast<CTYPE_OUT>(val_in);
             if (eps.has_value()) {
-              if (xi < eps.value()) {
-                xi = eps.value();
-              } else if (xi > 1 - eps.value()) {
-                xi = 1 - eps.value();
+              if (static_cast<double>(xi) < eps.value()) {
+                xi = static_cast<CTYPE_OUT>(eps.value());
+              } else if (static_cast<double>(xi) > 1 - eps.value()) {
+                xi = static_cast<CTYPE_OUT>(1 - eps.value());
               }
             }
             return static_cast<CTYPE_OUT>(

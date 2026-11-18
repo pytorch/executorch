@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <type_traits>
 
 #if defined(__aarch64__) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -99,12 +101,16 @@ T quantize_val_with_inv_scale(
     K value,
     int64_t quant_min,
     int64_t quant_max) {
-  const float scaled_value = static_cast<float>(inv_scale * value);
+  using ComputeType =
+      std::conditional_t<std::is_same_v<K, double>, double, float>;
+  const float scaled_value =
+      static_cast<float>(static_cast<ComputeType>(inv_scale) * value);
   // Map NaN to the zero point and clamp infinities before integer conversion.
   // Double precision keeps int32 bounds exactly representable while clamping.
   const double qvalue = std::isnan(scaled_value)
       ? static_cast<double>(zero_point)
-      : static_cast<double>(zero_point) + std::nearbyint(scaled_value);
+      : static_cast<double>(zero_point) +
+          static_cast<double>(std::nearbyint(scaled_value));
   const double clamped_value = std::min(
       static_cast<double>(quant_max),
       std::max(static_cast<double>(quant_min), qvalue));
@@ -320,7 +326,7 @@ Tensor& quantize_per_tensor_out(
     auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();        \
     const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>(); \
     const auto input_numel = input.numel();                        \
-    for (size_t i = 0; i < input_numel; i++) {                     \
+    for (int64_t i = 0; i < input_numel; i++) {                    \
       IN_CTYPE value = input_data_ptr[i];                          \
       out_data_ptr[i] = quantize_val<OUT_CTYPE, IN_CTYPE>(         \
           scale, zero_point, value, quant_min, quant_max);         \
@@ -667,7 +673,7 @@ Tensor& quantize_per_token_out(
     ScalarType dtype,
     Tensor& out) {
   size_t num_tokens = 1;
-  for (size_t i = 0; i < input.dim() - 1; i++) {
+  for (int64_t i = 0; i < input.dim() - 1; i++) {
     num_tokens *= input.size(i);
   }
 // This unfortunate change is needed because we compile op_quantize for aten

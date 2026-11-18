@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -49,8 +50,8 @@ Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
         apply_unary_map_fn<CTYPE_IN, CTYPE_OUT>(
             [](const CTYPE_IN val_in) -> CTYPE_OUT {
-              return sqrt(
-                  val_in.real_ * val_in.real_ + val_in.imag_ * val_in.imag_);
+              return static_cast<CTYPE_OUT>(sqrt(
+                  val_in.real_ * val_in.real_ + val_in.imag_ * val_in.imag_));
             },
             in.const_data_ptr<CTYPE_IN>(),
             out.mutable_data_ptr<CTYPE_OUT>(),
