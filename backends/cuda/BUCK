@@ -200,6 +200,7 @@ fbcode_target(
         ":autotune",
         ":triton_routing",
         "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
