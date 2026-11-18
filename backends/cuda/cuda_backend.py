@@ -7,6 +7,7 @@
 
 import contextlib
 import copy
+import dataclasses
 import functools
 import logging
 import math
@@ -57,6 +58,11 @@ from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
 )
 from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.kernels import triton_mutation_cache
+from executorch.backends.cuda.triton.measured_routing import (
+    ApplyChoicesPass,
+    MeasureChoicesPass,
+    MeasuredRoutingConfig,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -342,6 +348,121 @@ def _pass_float_scalars_to_triton_as_floats() -> typing.ContextManager[None]:
     signature (https://github.com/pytorch/pytorch/pull/201882).
     """
     return _FLOAT_KERNEL_ARGS.scope()
+
+
+def _install_cpp_callable_conv_choices(active):
+    from torch._inductor.kernel import conv
+    from torch._inductor.select_algorithm import ExternKernelCaller
+    from torch._inductor.virtualized import V
+
+    original = conv.autotune_select_algorithm
+
+    def autotune_select_algorithm(name, choices, *args, **kwargs):
+        if active() and V.graph.cpp_wrapper:
+            choices = [
+                c
+                for c in choices
+                if not (
+                    isinstance(c, ExternKernelCaller)
+                    and c.choice.cpp_kernel_name is None
+                    and not c.choice.use_fallback_kernel
+                )
+            ]
+        return original(name, choices, *args, **kwargs)
+
+    conv.autotune_select_algorithm = autotune_select_algorithm
+
+    def remove() -> None:
+        conv.autotune_select_algorithm = original
+
+    return remove
+
+
+_CPP_CALLABLE_CONV_CHOICES = _CompilePatch(_install_cpp_callable_conv_choices)
+
+
+def _offer_only_cpp_callable_conv_choices() -> typing.ContextManager[None]:
+    """Leave out the convolution autotune choices AOTInductor cannot call.
+
+    With layout optimization off, which Inductor decides for a graph with few
+    convolutions (fewer than one per 300 nodes), a 1x1 convolution is lowered
+    as a convolution and Inductor offers ``conv1x1_via_mm``, a Python function
+    with no C++ shim. The C++ wrapper cannot emit it, so the compile fails with
+    "Expected name is not None" whenever it is the fastest choice.
+
+    Only threads inside this context drop the choices.
+
+    Inductor offers Python-only extern conv choices such as ``conv1x1_via_mm``
+    under the C++ wrapper (https://github.com/pytorch/pytorch/issues/204342).
+    Remove this patch once the PyTorch version ExecuTorch pins includes the fix.
+    """
+    return _CPP_CALLABLE_CONV_CHOICES.scope()
+
+
+_CONTIGUITY_HINT_CONDITIONS = {
+    "(M >= BLOCK_M and K > 1)": "(M % BLOCK_M == 0 and K > 1)",
+    "(N >= BLOCK_N and K > 1)": "(N % BLOCK_N == 0 and K > 1)",
+}
+
+
+def _install_full_block_contiguity_hints(active):
+    import hashlib
+    import pathlib
+
+    from torch._inductor import select_algorithm
+    from torch._inductor.kernel import bmm, mm  # noqa: F401 (registers templates)
+
+    templates_dir = pathlib.Path(mm.__file__).parent / "templates"
+    sources = {
+        hashlib.sha256(source.encode("utf-8")).hexdigest(): source
+        for source in (path.read_text() for path in templates_dir.glob("*.jinja"))
+    }
+    replacements = {}
+    for template in select_algorithm.TritonTemplate.all_templates.values():
+        source = patched = sources.get(template.src_hash, "")
+        for condition, full_blocks in _CONTIGUITY_HINT_CONDITIONS.items():
+            patched = patched.replace(condition, full_blocks)
+        if patched != source:
+            replacements[id(template.template)] = template._template_from_string(
+                patched
+            )
+
+    original = select_algorithm.TritonTemplateKernel.render
+
+    def render(self, template, kwargs, *args, **render_kwargs):
+        if active():
+            template = replacements.get(id(template), template)
+        return original(self, template, kwargs, *args, **render_kwargs)
+
+    select_algorithm.TritonTemplateKernel.render = render
+
+    def remove() -> None:
+        select_algorithm.TritonTemplateKernel.render = original
+
+    return remove
+
+
+_FULL_BLOCK_CONTIGUITY_HINTS = _CompilePatch(_install_full_block_contiguity_hints)
+
+
+def _hint_matmul_contiguity_only_for_full_blocks() -> typing.ContextManager[None]:
+    """Claim that a matmul template's rows (or columns) are contiguous only
+    when its block size divides M (or N).
+
+    Inductor's mm and bmm templates hint that each block of ``BLOCK_M`` row
+    indices ``rm % M`` is contiguous, which is false in the last block when
+    ``BLOCK_M`` does not divide M. The template's own loads never vectorize
+    along M, so it is harmless there. A fused prologue, though, can read the
+    first operand from a buffer contiguous along M, such as a LayerNorm of
+    channel-first features seen as tokens; Triton then vectorizes those loads
+    across the wrap and the kernel faults with a misaligned address.
+
+    Only threads inside this context render the templates with the change.
+
+    TODO: remove once Inductor's matmul templates hint only contiguity that
+    holds.
+    """
+    return _FULL_BLOCK_CONTIGUITY_HINTS.scope()
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
@@ -650,6 +771,35 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
 
 
 CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
+MEASURED_ROUTING_COMPILE_SPEC = "measured_routing"
+MEASURED_ROUTING_MARGIN_COMPILE_SPEC = "measured_routing_margin"
+MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC = "measured_routing_cache_dir"
+
+
+def _measured_routing_config(
+    compile_specs: List[CompileSpec],
+) -> Optional[MeasuredRoutingConfig]:
+    """The measured-routing settings (ON by default), or None when it is OFF:
+    calls several implementations can run then take their static choice."""
+    enabled, config = True, MeasuredRoutingConfig()
+    for spec in compile_specs:
+        if spec.key == MEASURED_ROUTING_COMPILE_SPEC:
+            enabled = _on_off_compile_spec_value(spec)
+        elif spec.key == MEASURED_ROUTING_MARGIN_COMPILE_SPEC:
+            value = spec.value.decode("utf-8")
+            try:
+                margin = float(value)
+            except ValueError:
+                margin = math.nan
+            if not 0 <= margin <= 1:
+                raise ValueError(
+                    f"Invalid {spec.key}: {value!r}. Expected a number from 0 to 1."
+                )
+            config = dataclasses.replace(config, margin=margin)
+        elif spec.key == MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC:
+            config = dataclasses.replace(config, cache_dir=spec.value.decode("utf-8"))
+    return config if enabled else None
+
 
 # The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
 # this thread: they can be parked on the CPU when an autotune capture runs out
@@ -1293,7 +1443,9 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """
-        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass.
+        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
+        and, with measured routing on, the passes that measure the
+        implementations of the calls several can run and apply the choice.
 
         The replacement pass uses Triton kernels for the calls they support and
         leaves other calls to the regular lowering. The triton_kernel_mode
@@ -1340,7 +1492,17 @@ class CudaBackend(AotiBackend, BackendDetails):
                 passes.append(
                     LowerOffGraphKVPass(parse_offgraph_kv_manifest(spec.value))
                 )
-        passes.append(ReplaceEdgeOpWithTritonOpPass())
+        config = _measured_routing_config(compile_specs)
+        passes.append(
+            ReplaceEdgeOpWithTritonOpPass(measured_routing=config is not None)
+        )
+        if config is not None:
+            try:
+                method_name = cls.method_name_from_compile_specs(compile_specs)
+            except RuntimeError:
+                method_name = "method"
+            passes.append(MeasureChoicesPass(cls, compile_specs, config))
+            passes.append(ApplyChoicesPass(method_name, config))
         return passes
 
     @classmethod
@@ -1506,6 +1668,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # process without torch. See `_link_libraries_as_needed`.
                 stack.enter_context(_link_libraries_as_needed())
                 stack.enter_context(_pass_float_scalars_to_triton_as_floats())
+                stack.enter_context(_offer_only_cpp_callable_conv_choices())
+                stack.enter_context(_hint_matmul_contiguity_only_for_full_blocks())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
