@@ -402,6 +402,17 @@ def register_eq_scalar():
 # =============================================================================
 
 
+def _check_bfloat16_conversion(node: torch.fx.Node) -> bool:
+    """bfloat16 converts to and from float32, and from integers."""
+    in_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
+    out_dtype = node.meta["val"].dtype
+    if in_dtype == torch.bfloat16:
+        return out_dtype in {torch.bfloat16, torch.float32}
+    if out_dtype == torch.bfloat16:
+        return in_dtype in {torch.float32, torch.int32, torch.int64}
+    return True
+
+
 @update_features(exir_ops.edge.aten._to_copy.default)
 def register_to_copy():
     def pick_to_copy_storage(
@@ -416,10 +427,11 @@ def register_to_copy():
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_BOOL_T,
-        outputs_dtypes=utils.FP_INT_BOOL_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T | {torch.bfloat16},
+        outputs_dtypes=utils.FP_INT_BOOL_T | {torch.bfloat16},
         supports_resize=True,
         pick_io_storage_fn=pick_to_copy_storage,
+        are_node_inputs_supported_fn=_check_bfloat16_conversion,
     )
 
 
@@ -1327,9 +1339,10 @@ def register_view_copy():
 def register_to_dim_order_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_BUFFER,
-        inputs_dtypes=utils.FP_INT_BOOL_T,
+        inputs_dtypes=utils.FP_INT_BOOL_T | {torch.bfloat16},
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=_check_bfloat16_conversion,
     )
 
 

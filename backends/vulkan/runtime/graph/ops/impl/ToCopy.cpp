@@ -33,10 +33,18 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   const vkapi::ScalarType in_dtype = graph.dtype_of(in);
   const vkapi::ScalarType out_dtype = graph.dtype_of(out);
 
-  // Same-dtype or float<->half conversions can use BlitNode
-  if (in_dtype == out_dtype ||
-      (is_float_type(in_dtype) && is_float_type(out_dtype))) {
+  // Same-dtype or float<->half conversions of textures can use BlitNode
+  if (!graph.is_buffer_storage(out) &&
+      (in_dtype == out_dtype ||
+       (is_float_type(in_dtype) && is_float_type(out_dtype)))) {
     graph.execute_nodes().emplace_back(new BlitNode(graph, in, out));
+    return;
+  }
+
+  // Buffers cannot be blitted. On devices that store bfloat16 as fp32, bfloat16
+  // casts copy between buffers of one dtype.
+  if (in_dtype == out_dtype) {
+    add_view_copy_node(graph, in, out, {}, resize_to_copy_op_node);
     return;
   }
 
