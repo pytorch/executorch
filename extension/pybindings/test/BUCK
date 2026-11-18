@@ -104,6 +104,7 @@ fbcode_target(
     # The compiled delegate resolves aoti_torch_* shims from the executable.
     binary_linker_flags = ["-Wl,--export-dynamic"],
     keep_gpu_sections = True,
+    visibility = ["//executorch/backends/cuda/tests/..."],
     deps = [
         "//executorch/extension/pybindings:cuda_lib",
         "fbsource//third-party/pypi/numpy:numpy",
