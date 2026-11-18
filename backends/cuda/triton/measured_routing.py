@@ -34,6 +34,13 @@ that cannot load such a module (a build that links torch into its executable
 without exporting torch's C shims) measures nothing: every call takes its
 static choice, with one warning per export.
 
+With two or more calls to measure, the worker compiles them in parallel
+processes, largest first (``MeasuredRoutingConfig.workers``, default 8; 0 to
+skip), so that the measurement, one call at a time, finds their kernels
+compiled. It starts them at once, while it checks that it can measure, and
+stops them if it cannot. Those processes decide nothing: they publish no
+result and leave no autotune timings.
+
 Results are cached on disk by both calls' metadata, the precision settings,
 the GPU, driver and versions, and the backend's sources. Only outcomes that
 are properties of the call are cached (timings, kernels the runtime lacks,
@@ -63,7 +70,9 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
@@ -112,6 +121,9 @@ _PRECISION_KEYS = [("generic", "all")] + [
 class MeasuredRoutingConfig:
     margin: float = 0.15
     cache_dir: Optional[str] = None
+    # Processes that compile the uncached calls in parallel before they are
+    # measured; 0 compiles each as it is measured.
+    workers: int = 8
 
     def directory(self) -> Path:
         if self.cache_dir is not None:
@@ -558,6 +570,155 @@ def _cpp_wrapper_unavailable(device: torch.device) -> Optional[str]:
     return None
 
 
+def _module() -> str:
+    # The worker runs this module as ``python -m``, where it is ``__main__``.
+    return __spec__.name if __spec__ is not None else __name__
+
+
+@contextlib.contextmanager
+def _without_autotune_cache_writes() -> Iterator[None]:
+    """Inductor saves its autotune timings even with ``autotune_local_cache``
+    off; a warm-up process's are taken on a shared GPU and must not reach the
+    measurement."""
+    from torch._inductor.codecache import PersistentCache
+
+    update = PersistentCache.update_local_cache
+    PersistentCache.update_local_cache = lambda self, cache: None
+    try:
+        with torch._inductor.config.patch(autotune_local_cache=False):
+            yield
+    finally:
+        PersistentCache.update_local_cache = update
+
+
+def _warm_one(
+    backend: Any,
+    compile_specs: list[Any],
+    options: dict[str, Any],
+    item: dict[str, Any],
+) -> None:
+    """Compiles both implementations of one call, for their compiled kernels
+    only."""
+    device = torch.device(item["device"])
+    torch.cuda.set_device(device)
+    with backend.get_extra_aoti_compile_context_manager(
+        compile_specs
+    ), _without_autotune_cache_writes():
+        try:
+            _compile_replacement(item["spec"]["replacement"], device)
+        finally:
+            _compile_inductor(backend, options, item["spec"], device)
+
+
+def _size(spec: dict[str, Any]) -> int:
+    return sum(
+        math.prod(value["tensor"][1])
+        for value in spec["args"]
+        if isinstance(value, dict)
+    )
+
+
+class _WarmUp:
+    """Compiles each call in a process of its own, largest first, several at
+    a time, so that the measurement, one call at a time, finds the kernels
+    compiled. The processes decide nothing: they publish no result and leave
+    no autotune timings."""
+
+    def __init__(self, job: dict[str, Any], directory: Path) -> None:
+        self._job = job
+        self._directory = directory
+        self._lock = threading.Lock()
+        self._running: set[subprocess.Popen[bytes]] = set()
+        self._stopped = False
+        self._executor = ThreadPoolExecutor(1)
+        self._future = self._executor.submit(self._run)
+
+    def result(self) -> dict[str, Any]:
+        """Waits for the processes; their statistics."""
+        return self._future.result()
+
+    def stop(self) -> None:
+        """Kills the running processes and starts no more."""
+        with self._lock:
+            self._stopped = True
+            for proc in self._running:
+                proc.kill()
+        self._executor.shutdown()
+
+    def _run(self) -> dict[str, Any]:
+        from torch._inductor.async_compile import get_compile_threads
+        from torch._inductor.utils import python_subprocess_env
+
+        signatures = self._job["signatures"]
+        threads = get_compile_threads()
+        workers = min(self._job["workers"], len(signatures), threads)
+        if len(signatures) < 2 or workers < 1:
+            return {}
+        env = {
+            **python_subprocess_env(),
+            "PYTHONUNBUFFERED": "1",
+            "TORCHINDUCTOR_COMPILE_THREADS": str(max(1, threads // workers)),
+        }
+        start = time.perf_counter()
+        order = sorted(signatures, key=lambda key: -_size(signatures[key]["spec"]))
+        with ThreadPoolExecutor(workers) as pool:
+            calls = dict(pool.map(lambda key: self._compile(key, env), order))
+        return {
+            "workers": workers,
+            "wall_s": time.perf_counter() - start,
+            "calls": calls,
+        }
+
+    def _compile(self, key: str, env: dict[str, str]) -> tuple[str, dict[str, Any]]:
+        start = time.perf_counter()
+        log = self._directory / f"warm_{key}.log"
+        try:
+            proc = self._launch(key, env, log)
+        except OSError as e:
+            # The warm-up is optional: the measurement compiles what it lacks.
+            return key, {
+                "rc": None,
+                "wall_s": time.perf_counter() - start,
+                "error": f"could not start: {e!r}",
+            }
+        if proc is None:
+            return key, {"rc": None, "wall_s": 0.0, "error": "stopped"}
+        rc = _wait_for_worker(proc, log)
+        with self._lock:
+            self._running.discard(proc)
+        stats: dict[str, Any] = {"rc": rc, "wall_s": time.perf_counter() - start}
+        if rc != 0:
+            output = log.read_text(errors="replace").splitlines()
+            stats["error"] = next((x for x in reversed(output) if x.strip()), "")
+        return key, stats
+
+    def _launch(
+        self, key: str, env: dict[str, str], log: Path
+    ) -> Optional[subprocess.Popen[bytes]]:
+        """Starts the process compiling ``key``; None once stopped."""
+        path = self._directory / f"warm_{key}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    **self._job,
+                    "warm": True,
+                    "signatures": {key: self._job["signatures"][key]},
+                }
+            )
+        )
+        with open(log, "w") as f, self._lock:
+            if self._stopped:
+                return None
+            proc = subprocess.Popen(
+                [sys.executable, "-m", _module(), str(path)],
+                env=env,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+            )
+            self._running.add(proc)
+        return proc
+
+
 def _worker_main(job_path: str) -> None:
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from torch._inductor.async_compile import AsyncCompile
@@ -570,11 +731,23 @@ def _worker_main(job_path: str) -> None:
     compile_specs = [CompileSpec(k, bytes.fromhex(v)) for k, v in job["compile_specs"]]
     options = _inductor_options(backend, compile_specs)
     out = Path(job_path).parent
-    AsyncCompile.wait_process_pool_ready()
-    reason = _cpp_wrapper_unavailable(torch.device(job["device"]))
-    _publish(out / "capability.json", {"unavailable": reason})
-    if reason is not None:
+    if job.get("warm"):
+        # Compiled the same way as in the measurement, the kernels have the
+        # same cache keys.
+        AsyncCompile.wait_process_pool_ready()
+        (item,) = job["signatures"].values()
+        _warm_one(backend, compile_specs, options, item)
         return
+    warm_up = _WarmUp(job, out)
+    try:
+        AsyncCompile.wait_process_pool_ready()
+        reason = _cpp_wrapper_unavailable(torch.device(job["device"]))
+        _publish(out / "capability.json", {"unavailable": reason})
+        if reason is not None:
+            return
+        _publish(out / "warm.json", warm_up.result())
+    finally:
+        warm_up.stop()
     with backend.get_extra_aoti_compile_context_manager(compile_specs):
         for key, item in job["signatures"].items():
             device = torch.device(item["device"])
@@ -583,10 +756,11 @@ def _worker_main(job_path: str) -> None:
             _publish(out / f"{key}.json", result)
 
 
-def _progress(directory: Path) -> tuple[tuple[str, int], ...]:
-    """What a worker has written to its job directory: its results and log."""
+def _progress(written: Path) -> tuple[tuple[str, int], ...]:
+    """What a worker has written: its job directory's results and log, or one
+    log file."""
     files = []
-    for path in directory.iterdir():
+    for path in written.iterdir() if written.is_dir() else [written]:
         try:
             files.append((path.name, path.stat().st_size))
         except FileNotFoundError:
@@ -594,16 +768,17 @@ def _progress(directory: Path) -> tuple[tuple[str, int], ...]:
     return tuple(sorted(files))
 
 
-def _wait_for_worker(proc: subprocess.Popen[bytes], directory: Path) -> Optional[int]:
+def _wait_for_worker(proc: subprocess.Popen[bytes], written: Path) -> Optional[int]:
     """The worker's return code, or None after it was killed for writing
-    nothing to ``directory`` for ``_WORKER_IDLE_TIMEOUT_S``."""
-    seen, since = _progress(directory), time.monotonic()
+    nothing to ``written`` (a directory or a file) for
+    ``_WORKER_IDLE_TIMEOUT_S``."""
+    seen, since = _progress(written), time.monotonic()
     while True:
         try:
             return proc.wait(timeout=_WORKER_POLL_S)
         except subprocess.TimeoutExpired:
             pass
-        now = _progress(directory)
+        now = _progress(written)
         if now != seen:
             seen, since = now, time.monotonic()
         elif time.monotonic() - since > _WORKER_IDLE_TIMEOUT_S:
@@ -633,6 +808,7 @@ def _run_worker(
             "compile_specs": [[s.key, s.value.hex()] for s in compile_specs],
             "precision": _precision_state(),
             "margin": config.margin,
+            "workers": config.workers,
             "device": device,
             "signatures": signatures,
         }
@@ -640,7 +816,7 @@ def _run_worker(
         log = directory / "worker.log"
         with open(log, "w") as f:
             proc = subprocess.Popen(
-                [sys.executable, "-m", __name__, str(directory / "job.json")],
+                [sys.executable, "-m", _module(), str(directory / "job.json")],
                 # Unbuffered, so the log shows the worker's progress as it goes.
                 env={**python_subprocess_env(), "PYTHONUNBUFFERED": "1"},
                 stdout=f,
@@ -654,11 +830,19 @@ def _run_worker(
         else:
             last = next((line for line in reversed(output) if line.strip()), "")
             reason = f"the measurement worker failed to start (rc={rc}): {last}"
+        warm = directory / "warm.json"
+        warm = json.loads(warm.read_text()) if warm.exists() else {}
         results = {}
         for key in signatures:
             path = directory / f"{key}.json"
             if path.exists():
                 results[key] = json.loads(path.read_text())
+                if warm:
+                    results[key]["warm"] = {
+                        "workers": warm["workers"],
+                        "batch_wall_s": warm["wall_s"],
+                        **warm["calls"][key],
+                    }
         if rc != 0:
             logger.error(
                 "The measurement worker failed (rc=%s) after reporting %d of %d "
@@ -736,6 +920,7 @@ class MeasureChoicesPass(PassBase):
                 if entries[key] is None:
                     pending[key] = {"spec": spec, "device": str(device)}
         hits = {key for key, entry in entries.items() if entry is not None}
+        warm: dict[str, Optional[dict[str, Any]]] = {}
         logger.info(
             "Measuring %d calls: %d signatures, %d cached (margin %.2f, cache %s)",
             len(nodes),
@@ -762,6 +947,7 @@ class MeasureChoicesPass(PassBase):
             if unavailable is None:
                 _capable_devices.add(device)
                 for key, result in results.items():
+                    warm[key] = result.pop("warm", None)
                     if result.pop("cacheable", False):
                         _publish(cache / f"{key}.json", result)
                     entries[key] = result
@@ -784,7 +970,9 @@ class MeasureChoicesPass(PassBase):
                         "unmeasurable": unmeasurable or "the worker did not report it"
                     }
                 hit = key in hits
-            node.meta[META_KEY]["result"] = self._result(node, spec, entry, hit)
+            result = self._result(node, spec, entry, hit)
+            result["warm"] = warm.get(key)
+            node.meta[META_KEY]["result"] = result
         logger.info("Measured in %.1f s", time.perf_counter() - start)
         return PassResult(graph_module, False)
 
@@ -892,11 +1080,16 @@ class ApplyChoicesPass(PassBase):
             "config": {
                 "margin": self._config.margin,
                 "cache_dir": str(self._config.directory()),
+                "workers": self._config.workers,
             },
             "measured": len(results),
             "choices": {c: choices.count(c) for c in sorted(set(choices))},
             "outcomes": {o: outcomes.count(o) for o in sorted(set(outcomes))},
             "cache_hits": sum(r["cache_hit"] for r in results),
+            "warm_wall_s": max(
+                (r["warm"]["batch_wall_s"] for r in results if r.get("warm")),
+                default=0.0,
+            ),
             "nodes": results,
         }
         stamp = time.strftime("%Y%m%d_%H%M%S")
