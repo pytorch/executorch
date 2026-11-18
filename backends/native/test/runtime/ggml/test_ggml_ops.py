@@ -687,6 +687,37 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
 
+    def test_elu(self):
+        self._check(Lambda(F.elu), (torch.randn(2, 3, 4) * 3.0,))
+        # Eager's expm1 is within rtol of these; exp(x) - 1 is 19% off at -1e-7.
+        special = torch.tensor(
+            [[float("nan"), float("inf"), -float("inf"), 0.0, -1e-7, -1e-30]]
+        )
+        self._check(Lambda(F.elu), (special,), atol=0)
+
+    def test_elu_in_place(self):
+        # Exports as elu, not elu_, unlike ReLU6(inplace=True) in ConvBN.
+        model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.ELU(inplace=True))
+        self._check(model, (torch.randn(2, 3),), **_MATMUL_TOL)
+
+    def test_elu_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(F.elu), (torch.randn(2, 3, 4, dtype=dtype),), rtol=rtol
+                )
+
+    def test_elu_rejects_other_parameters(self):
+        for args in ((0.5, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 0.5)):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(AssertionError, "input_scale 1"):
+                    self._check(
+                        Lambda(
+                            lambda x, args=args: torch.ops.aten.elu.default(x, *args)
+                        ),
+                        (torch.randn(2, 3),),
+                    )
+
     def test_sqrt(self):
         x = torch.tensor(
             [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
@@ -1178,10 +1209,7 @@ class GgmlOpsTest(unittest.TestCase):
     def test_embedding_4bit(self):
         model = torch.nn.Embedding(10, 64)
         _quantize_8da4w(model, group_size=64)
-        # Only the Q4_0 fp16 scales round, so this fails on a nibble swap.
-        self._check(
-            model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),), atol=2e-3, rtol=1e-3
-        )
+        self._check(model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
 
     def test_embedding_4bit_rejects_asymmetric(self):
         model = torch.nn.Embedding(10, 64)

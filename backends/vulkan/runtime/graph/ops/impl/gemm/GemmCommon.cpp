@@ -36,36 +36,17 @@ ValueRef prepack_fp_linear_weight(
   int64_t K4 = utils::div_up(K, int64_t(4));
   int64_t N4 = utils::div_up(N, int64_t(4));
 
-  // Packed tensor: B*K4 rows, N4*4 vec4 elements per row (batch-stacked).
-  // Since the tensor size is in scalars and kWidthPacked packs 4 scalars per
-  // texel, we need width = N4*4*4 scalars to get N4*4 texels.
-  int64_t output_height = B * K4;
-  int64_t output_width = N4 * 4 * 4;
-
   utils::StorageType weight_storage;
   if (force_buffer) {
     weight_storage = utils::kBuffer;
   } else {
     weight_storage = utils::kTexture2D;
+    // The packed tensor is N4 * 4 texels wide and B * K4 texels high
     uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-    // output_width is in scalars; texture width in texels = output_width / 4
-    if (output_width / 4 > max_extent ||
-        static_cast<uint32_t>(output_height) > max_extent) {
+    if (N4 * 4 > max_extent || static_cast<uint32_t>(B * K4) > max_extent) {
       weight_storage = utils::kBuffer;
     }
   }
-
-  ValueRef packed_weight = graph.add_tensor(
-      {output_height, output_width},
-      graph.dtype_of(weight_data),
-      weight_storage,
-      utils::kWidthPacked);
-
-  const GlobalWorkGrid gwg(
-      {utils::safe_downcast<uint32_t>(N4),
-       utils::safe_downcast<uint32_t>(K4),
-       utils::safe_downcast<uint32_t>(B)},
-      kTiledWorkGrid);
 
   struct PackParams {
     int32_t N;
@@ -79,8 +60,44 @@ ValueRef prepack_fp_linear_weight(
       utils::safe_downcast<int32_t>(B),
       is_transposed ? 1 : 0};
 
-  std::string kernel_name = "pack_fp_linear_weight";
-  add_storage_type_suffix(kernel_name, weight_storage);
+  return prepack_fp_blocked_weight(
+      graph,
+      weight_data,
+      "pack_fp_linear_weight",
+      N,
+      K,
+      B,
+      weight_storage,
+      PushConstantDataInfo(&pack_params, sizeof(PackParams)));
+}
+
+ValueRef prepack_fp_blocked_weight(
+    ComputeGraph& graph,
+    const ValueRef weight_data,
+    std::string kernel_name,
+    const int64_t N,
+    const int64_t K,
+    const int64_t B,
+    const utils::StorageType storage,
+    const PushConstantDataInfo& params) {
+  const int64_t K4 = utils::div_up(K, int64_t(4));
+  const int64_t N4 = utils::div_up(N, int64_t(4));
+
+  // Since the tensor size is in scalars and kWidthPacked packs 4 scalars per
+  // texel, a width of N4 * 4 * 4 scalars gives N4 * 4 texels.
+  ValueRef packed_weight = graph.add_tensor(
+      {B * K4, N4 * 4 * 4},
+      graph.dtype_of(weight_data),
+      storage,
+      utils::kWidthPacked);
+
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(N4),
+       utils::safe_downcast<uint32_t>(K4),
+       utils::safe_downcast<uint32_t>(B)},
+      kTiledWorkGrid);
+
+  add_storage_type_suffix(kernel_name, storage);
   // The packed tensor's dtype, not the TensorRef's: half is aliased to float on
   // devices without fp16 buffer support, and the shader must match the texture.
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight));
@@ -95,7 +112,7 @@ ValueRef prepack_fp_linear_weight(
       packed_weight,
       {},
       {},
-      {PushConstantDataInfo(&pack_params, sizeof(PackParams))}));
+      {params}));
 
   return packed_weight;
 }

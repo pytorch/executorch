@@ -162,6 +162,18 @@ class QuantizationRecipe:
                             Each callable receives a GraphModule and must return a GraphModule.
         post_convert_passes: Optional list of callables applied to the GraphModule after convert_pt2e.
                              Each callable receives a GraphModule and must return a GraphModule.
+        preserve_ops: When set, the program captured for quantization is decomposed to
+                      core ATen, keeping these ops whole, before pre_prepare_passes and
+                      prepare_pt2e / prepare_qat_pt2e see it. Use it when the quantizer
+                      matches core ATen ops. When None (default), the capture is not
+                      decomposed.
+        qat_export_in_eval_mode: When True and is_qat=True, the model is put into eval mode before
+                             torch.export.export(). The train_fn is then responsible for calling
+                             model.train() internally after prepare_qat_pt2e. This follows the
+                             torchao-recommended QAT workflow. When False (default) and is_qat=True,
+                             the model is put into train mode before export so that batch_norm and
+                             dropout decompose with training-mode semantics at capture time.
+                             Ignored for PTQ (always eval).
     """
 
     quantizers: Optional[List[Quantizer]] = None
@@ -170,6 +182,7 @@ class QuantizationRecipe:
     dynamic_batch_size: bool = False
     calibration_inputs_fn: Optional[Callable[[], Iterable[tuple]]] = None
     train_fn: Optional[Callable[["torch.fx.GraphModule"], None]] = None
+    qat_export_in_eval_mode: bool = False
     pre_prepare_passes: Optional[
         List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
     ] = None
@@ -182,6 +195,7 @@ class QuantizationRecipe:
     post_convert_passes: Optional[
         List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
     ] = None
+    preserve_ops: Optional[List[torch._ops.OpOverload]] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
@@ -252,7 +266,9 @@ class _CombineAccumulator:
     is_qat_values: list = field(default_factory=list)
     dynamic_batch_size_values: list = field(default_factory=list)
     train_fn_values: list = field(default_factory=list)
+    qat_export_in_eval_mode_values: list = field(default_factory=list)
     calibration_inputs_fn_values: list = field(default_factory=list)
+    preserve_ops_values: list = field(default_factory=list)
     strict_values: list = field(default_factory=list)
     mode_values: list = field(default_factory=list)
     pipeline_stages_values: list = field(default_factory=list)
@@ -405,12 +421,14 @@ class ExportRecipe:
         dynamic_batch_size_values: list,
         train_fn_values: list,
         calibration_inputs_fn_values: list,
+        preserve_ops_values: list,
         all_quantizers: list,
         all_ao_quantization_configs: list,
         all_pre_prepare_passes: list,
         all_post_prepare_passes: list,
         all_pre_convert_passes: list,
         all_post_convert_passes: list,
+        qat_export_in_eval_mode_values: list,
     ) -> "Optional[QuantizationRecipe]":
         """
         Build the combined QuantizationRecipe from per-recipe collected lists.
@@ -420,6 +438,9 @@ class ExportRecipe:
         """
         # is_qat must agree: the two flows (QAT vs PTQ) are incompatible.
         cls._assert_scalar_fields_agree("is_qat", is_qat_values)
+        cls._assert_scalar_fields_agree(
+            "qat_export_in_eval_mode", qat_export_in_eval_mode_values
+        )
 
         # At most one recipe may supply a train_fn.
         non_none_train_fns = [f for f in train_fn_values if f is not None]
@@ -427,6 +448,15 @@ class ExportRecipe:
             raise ValueError(
                 "Cannot combine recipes: more than one recipe provides a train_fn."
             )
+
+        # The capture is decomposed if any recipe asks for it, keeping every op any
+        # of them keeps.
+        preserve_ops_lists = [ops for ops in preserve_ops_values if ops is not None]
+        combined_preserve_ops = (
+            list(dict.fromkeys(op for ops in preserve_ops_lists for op in ops))
+            if preserve_ops_lists
+            else None
+        )
 
         # Multiple calibration_inputs_fn values are chained into a single factory.
         non_none_calib_fns = [f for f in calibration_inputs_fn_values if f is not None]
@@ -468,6 +498,12 @@ class ExportRecipe:
             post_prepare_passes=all_post_prepare_passes or None,
             pre_convert_passes=all_pre_convert_passes or None,
             post_convert_passes=all_post_convert_passes or None,
+            preserve_ops=combined_preserve_ops,
+            qat_export_in_eval_mode=(
+                qat_export_in_eval_mode_values[0]
+                if qat_export_in_eval_mode_values
+                else False
+            ),
         )
 
     @classmethod
@@ -584,7 +620,9 @@ class ExportRecipe:
         acc.is_qat_values.append(qr.is_qat)
         acc.dynamic_batch_size_values.append(qr.dynamic_batch_size)
         acc.train_fn_values.append(qr.train_fn)
+        acc.qat_export_in_eval_mode_values.append(qr.qat_export_in_eval_mode)
         acc.calibration_inputs_fn_values.append(qr.calibration_inputs_fn)
+        acc.preserve_ops_values.append(qr.preserve_ops)
         if qr.pre_prepare_passes:
             acc.pre_prepare_passes.extend(qr.pre_prepare_passes)
         if qr.post_prepare_passes:
@@ -671,12 +709,14 @@ class ExportRecipe:
             dynamic_batch_size_values=acc.dynamic_batch_size_values,
             train_fn_values=acc.train_fn_values,
             calibration_inputs_fn_values=acc.calibration_inputs_fn_values,
+            preserve_ops_values=acc.preserve_ops_values,
             all_quantizers=acc.quantizers,
             all_ao_quantization_configs=acc.ao_quantization_configs,
             all_pre_prepare_passes=acc.pre_prepare_passes,
             all_post_prepare_passes=acc.post_prepare_passes,
             all_pre_convert_passes=acc.pre_convert_passes,
             all_post_convert_passes=acc.post_convert_passes,
+            qat_export_in_eval_mode_values=acc.qat_export_in_eval_mode_values,
         )
 
         combined_lowering_recipe = cls._combine_lowering_recipe(

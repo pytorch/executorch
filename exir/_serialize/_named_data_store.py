@@ -156,6 +156,14 @@ class NamedDataStore:
                     if data_entry is not None:
                         break
             assert data_entry is not None
+            if (
+                tensor_layout is not None
+                and data_entry.tensor_layout is not None
+                and tensor_layout != data_entry.tensor_layout
+            ):
+                raise ValueError(f"Duplicate key {key} with different tensor layouts.")
+            if data_entry.tensor_layout is None:
+                data_entry.tensor_layout = tensor_layout
             data_entry.alignment = math.lcm(data_entry.alignment, alignment)
         else:
             # Two-level dedup: cheap fingerprint rejects non-matches fast,

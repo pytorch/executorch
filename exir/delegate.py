@@ -169,3 +169,11 @@ except ImportError:
 
         root.add_module(qualname, lowered_module)
         return qualname
+
+
+import torch.fx.node  # noqa: E402
+
+# A delegate can write state it owns (a mutated buffer) or a user input it
+# mutates in place without returning anything the graph reads, so DCE must
+# keep it even when none of its outputs is used.
+torch.fx.node.has_side_effect(executorch_call_delegate)

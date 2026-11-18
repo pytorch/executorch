@@ -21,9 +21,6 @@ namespace native {
 namespace {
 
 ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
-  if (isComplexType(a_type) || isComplexType(b_type)) {
-    return promoteTypes(a_type, b_type);
-  }
   ET_CHECK(!isQIntType(a_type) && !isBitsType(a_type));
   ET_CHECK(!isQIntType(b_type) && !isBitsType(b_type));
 
@@ -63,15 +60,18 @@ Tensor& opt_div_out(
   ScalarType out_type = out.scalar_type();
 
   // Handle complex types
-  if (isComplexType(a_type) || isComplexType(b_type)) {
-    ScalarType common_type = get_common_type(a_type, b_type);
-    ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
-      const CTYPE* a_data = a.const_data_ptr<CTYPE>();
-      const CTYPE* b_data = b.const_data_ptr<CTYPE>();
-      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-      for (size_t i = 0; i < out.numel(); ++i) {
-        out_data[i] = a_data[i] / b_data[i];
-      }
+  if (isComplexType(a_type) || isComplexType(b_type) ||
+      isComplexType(out_type)) {
+    // TODO: The current support for complex dtype enforces that input and
+    // output tensors have the same dtype. Support mixed dtypes in the future.
+    ET_KERNEL_CHECK(
+        ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+    ET_SWITCH_COMPLEX_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+          [](const CTYPE val_a, const CTYPE val_b) { return val_a / val_b; },
+          a,
+          b,
+          out);
     });
     return out;
   }

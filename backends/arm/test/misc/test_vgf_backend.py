@@ -3,14 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from unittest import mock
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes import EnsureUniqueOutputNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
@@ -22,6 +25,7 @@ from executorch.backends.arm._passes.arm_pass_manager import (
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckResolvedTensorShapes,
 )
+from executorch.backends.arm.test.tester.test_pipeline import DType, VgfPipeline
 from executorch.backends.arm.vgf import backend, backend as vgf_backend, VgfCompileSpec
 from executorch.backends.arm.vgf._passes import GroupIndependentCustomShadersPass
 from executorch.backends.arm.vgf.backend import (
@@ -38,7 +42,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.exported_program import ExportedProgram
-from torch.fx import GraphModule
+from torch.fx import Graph, GraphModule
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -78,6 +82,154 @@ def _set_up_fake_vgf_preprocess(monkeypatch) -> None:
 
 def _fake_exported_program() -> ExportedProgram:
     return cast(ExportedProgram, SimpleNamespace(graph_module=None))
+
+
+def _fake_exported_program_with_tosa_custom(domain_name: str) -> ExportedProgram:
+    graph = Graph()
+    x = graph.placeholder("x")
+    custom = graph.call_function(
+        exir_ops.backend.tosa.CUSTOM.default,
+        args=([x],),
+        kwargs={
+            "operator_name": "llama.custom_sdpa",
+            "domain_name": domain_name,
+            "implementation_attrs": [],
+        },
+    )
+    output = graph.call_function(operator.getitem, args=(custom, 0))
+    graph.output(output)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+    return cast(ExportedProgram, SimpleNamespace(graph_module=graph_module))
+
+
+def _fake_exported_program_with_nested_tosa_custom(
+    domain_name: str,
+) -> ExportedProgram:
+    root_graph = Graph()
+    x = root_graph.placeholder("x")
+    root_graph.output(x)
+    graph_module = GraphModule(torch.nn.Module(), root_graph)
+
+    nested_graph = Graph()
+    nested_x = nested_graph.placeholder("x")
+    custom = nested_graph.call_function(
+        exir_ops.backend.tosa.CUSTOM.default,
+        args=([nested_x],),
+        kwargs={
+            "operator_name": "llama.custom_sdpa",
+            "domain_name": domain_name,
+            "implementation_attrs": [],
+        },
+    )
+    output = nested_graph.call_function(operator.getitem, args=(custom, 0))
+    nested_graph.output(output)
+    graph_module.add_submodule(
+        "cond_true_graph", GraphModule(torch.nn.Module(), nested_graph)
+    )
+
+    return cast(ExportedProgram, SimpleNamespace(graph_module=graph_module))
+
+
+def _tosa_flatbuffer_with_tensor(dtype: int, name: str) -> bytes:
+    tosa_graph = ts.TosaSerializer(
+        "", targetMajor=1, targetMinor=0, targetPatch=0, targetDraft=False
+    )
+    tosa_graph.addInputTensor(ts.TosaSerializerTensor(name, [1], dtype, data=None))
+    return tosa_graph.serialize()
+
+
+@pytest.mark.parametrize("dtype", [DType.FP32, DType.FP16, DType.BF16, DType.INT32])
+def test_vgf_pipeline_rejects_forbidden_tosa_dtype(dtype):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        forbidden_tosa_dtypes=[dtype],
+    )
+    assert pipeline._tosa_dtype_artifact_path is not None
+    tosa_path = pipeline._tosa_dtype_artifact_path / "output_tag0.tosa"
+    tosa_path.write_bytes(_tosa_flatbuffer_with_tensor(dtype, "forbidden_tensor"))
+
+    with pytest.raises(AssertionError) as exc_info:
+        pipeline._assert_no_forbidden_tosa_dtypes()
+
+    assert f"output_tag0.tosa: forbidden_tensor ({ts.DTypeNames[dtype]})" in str(
+        exc_info.value
+    )
+
+
+def test_vgf_pipeline_checks_all_tosa_artifacts(tmp_path):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        custom_path=str(tmp_path),
+        forbidden_tosa_dtypes=[DType.FP32, DType.FP16],
+    )
+    assert pipeline._tosa_dtype_artifact_path is not None
+    for tag, dtype in enumerate([DType.INT8, DType.FP32, DType.FP16]):
+        tosa_path = pipeline._tosa_dtype_artifact_path / f"output_tag{tag}.tosa"
+        tosa_path.write_bytes(_tosa_flatbuffer_with_tensor(dtype, f"tensor{tag}"))
+
+    with pytest.raises(AssertionError) as exc_info:
+        pipeline._assert_no_forbidden_tosa_dtypes()
+
+    assert "output_tag1.tosa: tensor1 (FP32)" in str(exc_info.value)
+    assert "output_tag2.tosa: tensor2 (FP16)" in str(exc_info.value)
+    assert "tensor0" not in str(exc_info.value)
+
+
+def test_vgf_pipeline_tosa_dtype_check_disabled_by_default(tmp_path):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        custom_path=str(tmp_path),
+    )
+
+    assert not pipeline.has_stage("_assert_no_forbidden_tosa_dtypes")
+    assert pipeline._tosa_dtype_artifact_path is None
+    assert pipeline.tester.compile_spec._get_intermediate_path() == str(tmp_path)
+
+
+@pytest.mark.parametrize("dtype", [-1, len(ts.DTypeNames), "FP32"])
+def test_vgf_pipeline_rejects_invalid_tosa_dtype(dtype):
+    with pytest.raises(ValueError, match="Expected a TOSA DType value"):
+        VgfPipeline(
+            torch.nn.Identity(),
+            (torch.rand(1),),
+            aten_op=[],
+            run_on_vulkan_runtime=False,
+            forbidden_tosa_dtypes=[dtype],
+        )
+
+
+@pytest.mark.parametrize("use_to_edge_transform_and_lower", [False, True])
+@pytest.mark.parametrize("dtype", [DType.FP32, DType.INT8])
+def test_vgf_pipeline_checks_lowered_tosa_dtype(
+    monkeypatch, use_to_edge_transform_and_lower, dtype
+):
+    monkeypatch.setattr(vgf_backend, "vgf_compile", lambda *args: b"vgf")
+    pipeline = VgfPipeline(
+        torch.nn.ReLU(),
+        (torch.randn(2, 3),),
+        aten_op="torch.ops.aten.relu.default",
+        exir_op="executorch_exir_dialects_edge__ops_aten_relu_default",
+        run_on_vulkan_runtime=False,
+        quantize=False,
+        use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+        forbidden_tosa_dtypes=[dtype],
+    )
+    pipeline.pop_stage("to_executorch")
+
+    if dtype == DType.FP32:
+        with pytest.raises(AssertionError, match="forbidden tensor datatypes"):
+            pipeline.run()
+    else:
+        pipeline.run()
 
 
 def test_vgf_preprocess_restores_pass_registry(monkeypatch) -> None:
@@ -134,6 +286,60 @@ def test_vgf_preprocess_restores_pass_registry_on_failure(monkeypatch) -> None:
         assert _registry_state() == original_registry
     finally:
         clear_registered_pass_insertions()
+
+
+def test_vgf_preprocess_rejects_unsupported_tosa_custom_domain(monkeypatch) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(
+        return_value=PreprocessResult(processed_bytes=b"should not run")
+    )
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    with pytest.raises(
+        RuntimeError,
+        match="VGF only supports tosa.CUSTOM with domain_name",
+    ):
+        vgf_backend.VgfBackend.preprocess(
+            _fake_exported_program_with_tosa_custom("com.arm.VulkanCustomOp"),
+            VgfCompileSpec()._to_list(),
+        )
+
+    tosa_preprocess.assert_called_once()
+
+
+def test_vgf_preprocess_allows_vulkan_custom_shader_domain(monkeypatch) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(return_value=PreprocessResult(processed_bytes=b"tosa"))
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    result = vgf_backend.VgfBackend.preprocess(
+        _fake_exported_program_with_tosa_custom("com.arm.VulkanCustomShader"),
+        VgfCompileSpec()._to_list(),
+    )
+
+    assert result.processed_bytes == b"vgf"
+    tosa_preprocess.assert_called_once()
+
+
+def test_vgf_preprocess_rejects_unsupported_tosa_custom_domain_in_subgraph(
+    monkeypatch,
+) -> None:
+    _set_up_fake_vgf_preprocess(monkeypatch)
+    tosa_preprocess = mock.Mock(
+        return_value=PreprocessResult(processed_bytes=b"should not run")
+    )
+    monkeypatch.setattr(vgf_backend.TOSABackend, "_preprocess", tosa_preprocess)
+
+    with pytest.raises(
+        RuntimeError,
+        match="cond_true_graph",
+    ):
+        vgf_backend.VgfBackend.preprocess(
+            _fake_exported_program_with_nested_tosa_custom("com.arm.VulkanCustomOp"),
+            VgfCompileSpec()._to_list(),
+        )
+
+    tosa_preprocess.assert_called_once()
 
 
 def test_compile_tosa_flatbuffer_does_not_emit_debug_info_by_default(

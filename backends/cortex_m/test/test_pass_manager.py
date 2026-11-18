@@ -66,9 +66,9 @@ def test_lowers_and_serializes(entry_point, use_explicit_layout):
     program = lowered.exported_program()
     program.validate()
     conv = (
-        exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+        exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
         if use_explicit_layout
-        else exir_ops.edge.cortex_m.quantized_conv2d.default
+        else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
     )
     assert sum(node.target == conv for node in program.graph.nodes) == 1
     assert all(node.op != "get_attr" for node in program.graph.nodes)

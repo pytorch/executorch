@@ -356,6 +356,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_bmm_test.cpp"
       "op_div_test.cpp"
       "op_elu_test.cpp"
+      "op_embedding_bag_test.cpp"
       "op_exp_test.cpp"
       "op_fft_c2r_test.cpp"
       "op_fft_r2c_test.cpp"
@@ -372,6 +373,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/optimized/test/complex_binary_broadcast_test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
   )
 

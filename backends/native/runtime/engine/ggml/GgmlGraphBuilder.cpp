@@ -201,18 +201,22 @@ GraphBuilder::GraphBuilder(
     const std::vector<InputSlot>& inputs,
     const std::vector<OutputSlot>& outputs,
     const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+    const std::unordered_map<ValueId, ggml_tensor*>& row_scales,
     const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes,
     const FoldedBatchNorms& batch_norms,
     std::unordered_map<ValueId, int64_t> key_extents,
-    size_t graph_size)
+    size_t graph_size,
+    const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
       outputs_(outputs),
       persistent_(persistent),
+      row_scales_(row_scales),
       rope_factor_bytes_(rope_factor_bytes),
       batch_norms_(batch_norms),
       key_extents_(std::move(key_extents)),
       graph_size_(graph_size),
+      offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
     persistent_storage_.insert(tensor);
@@ -695,6 +699,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
     lower_hardtanh(node);
+  } else if (key == "aten.elu.default") {
+    lower_elu(node);
   } else if (key == "aten.sqrt.default") {
     lower_sqrt(node);
   } else if (key == "aten.convolution.default") {
@@ -753,6 +759,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_index_put(node);
   } else if (key == "aten.scaled_dot_product_attention.default") {
     lower_sdpa(node);
+  } else if (key == "kvcache.update_and_attend.default") {
+    lower_update_and_attend(node);
   } else if (key == "aten.sym_size.int") {
     lower_sym_size(node);
   } else if (
