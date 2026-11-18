@@ -27,7 +27,7 @@ A transposed convolution is the same GEMM over its output pixels: output index
 when that is an integer inside the input, and its ``[C_in, C_out, ...]``
 weight is read with its first two strides swapped.
 
-Three schedules write the same output layout, accumulating in FP32 and adding
+Four schedules write the same output layout, accumulating in FP32 and adding
 the bias in FP32 before the single store:
 
 - ``igemm_ffma``: FP32 FMA on operands converted to FP32. The base schedule,
@@ -40,6 +40,11 @@ the bias in FP32 before the single store:
 - ``igemm_ffma_splitk``: ``igemm_ffma`` with the reduction split over a second
   grid axis into FP32 partial sums, which ``_reduce_split_k`` adds in a fixed
   order before the store; for outputs with too few tiles to fill the GPU.
+- ``igemm_tc_packed``: ``igemm_tc`` on copies of the operands with the
+  channels innermost: the input channels-last and the weight as
+  ``[taps, C_in, C_out]``, so each tap's input and weight tiles are contiguous
+  along K and along the output channels. For tap-major K orders, where the
+  native weight layout strides both tile dimensions by the tap count.
 
 Strict-FP32 3x3 stride-1 calls also time ``winograd_f4`` (``winograd.py``),
 which writes the same output layout from a Winograd F(4x4, 3x3) computation.
@@ -77,7 +82,9 @@ SCHEDULES = (
     Schedule("igemm_tc", 80),
     Schedule("igemm_ffma_splitk", 0),
     Schedule("winograd_f4", 0),
+    Schedule("igemm_tc_packed", 80),
 )
+TENSOR_CORE_SCHEDULES = frozenset({"igemm_tc", "igemm_tc_packed"})
 TAP_MAJOR_MIN_CHANNELS = 16
 # Output pixels per image from which an output with dense spatial dims is
 # tiled per image (always for one image): the partial last tile of each image
@@ -363,6 +370,75 @@ def winograd_boundary_calls() -> (
     return calls
 
 
+# Dense 3x3x3 stride-1 convolutions with padding 0 or 1 on tensor cores (FP16
+# and BF16), with CONV3D_CHANNELS input and output channels and at least
+# CONV3D_MIN_OUTPUT_PIXELS output pixels, at any larger batch and extent, with
+# contiguous input, weight and output. ``igemm_tc_packed`` reads both GEMM
+# operands along their contiguous dims, which Inductor's template does not for
+# a channel-first input, and stays compute-bound as calls grow; fewer output
+# pixels leave too few tiles to hide the operand copies. The benchmark's
+# ``conv3d_boundary`` suite measures ``conv3d_boundary_calls()``.
+CONV3D_GEOMETRIES = (
+    ((3, 3, 3), (1, 1, 1), (0, 0, 0)),
+    ((3, 3, 3), (1, 1, 1), (1, 1, 1)),
+)
+CONV3D_CHANNELS = (64, 1024)
+CONV3D_MIN_OUTPUT_PIXELS = 64
+CONV3D_DTYPES = frozenset({torch.float16, torch.bfloat16})
+CONV3D_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
+# The large extent the boundary calls measure; the range has no upper extent.
+CONV3D_LARGE_EXTENT = (18, 34, 34)
+
+
+def _in_conv3d_geometry(call: ConvCall) -> bool:
+    p = call.params
+    geometry = (tuple(call.weight.shape[2:]), p.stride, p.padding_before)
+    return (
+        p.rank == 3
+        and not p.transposed
+        and p.padding_after == p.padding_before
+        and geometry in CONV3D_GEOMETRIES
+    )
+
+
+def _conv3d_reason(call: ConvCall) -> Optional[str]:
+    """Why ``call`` is outside the benchmarked 3-D range, or None."""
+    x, w = call.input, call.weight
+    if not _in_conv3d_geometry(call):
+        return "implicit GEMM: not a benchmarked 3-D geometry"
+    if x.dtype not in CONV3D_DTYPES:
+        return f"implicit GEMM: {x.dtype} 3-D convolutions are not benchmarked"
+    fewest, most = CONV3D_CHANNELS
+    if not (fewest <= x.shape[1] <= most and fewest <= w.shape[0] <= most):
+        return (
+            f"implicit GEMM: {x.shape[1]} to {w.shape[0]} channels are not "
+            "benchmarked faster in 3-D"
+        )
+    if x.shape[0] * math.prod(_output_size(call)) < CONV3D_MIN_OUTPUT_PIXELS:
+        return "implicit GEMM: too few 3-D output pixels to be benchmarked faster"
+    reason = unbenchmarked_layout(call, CONV3D_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def conv3d_boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) of each 3-D geometry with
+    the fewest and most input and output channels, an input giving 4x4x4
+    (``CONV3D_MIN_OUTPUT_PIXELS``) output pixels and ``CONV3D_LARGE_EXTENT``,
+    and one and two images."""
+    calls = []
+    for (kernel, stride, padding), channels, out_channels in itertools.product(
+        CONV3D_GEOMETRIES, CONV3D_CHANNELS, CONV3D_CHANNELS
+    ):
+        smallest = tuple(k - 2 * p + 3 for k, p in zip(kernel, padding))
+        for extent, batch in itertools.product((smallest, CONV3D_LARGE_EXTENT), (1, 2)):
+            calls.append(
+                ((batch, channels, *extent), out_channels, kernel, stride, padding)
+            )
+    return calls
+
+
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -385,6 +461,8 @@ def worth_routing(call: ConvCall) -> Optional[str]:
             "is not benchmarked"
         )
     if x.shape[1] != ROUTED_CHANNELS:
+        if _in_conv3d_geometry(call):
+            return _conv3d_reason(call)
         if _winograd_reason(call) is None:
             return None
         return _stage_reason(call)
@@ -487,11 +565,16 @@ def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
     if not device_supports(schedule.min_capability, call.input.device):
         return f"{name} needs sm_{schedule.min_capability}"
     if (
-        name == "igemm_tc"
+        name in TENSOR_CORE_SCHEDULES
         and call.input.dtype == torch.float32
         and not conv_allows_tf32()
     ):
-        return "igemm_tc needs TF32 for FP32 operands, which is not allowed"
+        return f"{name} needs TF32 for FP32 operands, which is not allowed"
+    if name == "igemm_tc_packed" and call.input.shape[1] < TAP_MAJOR_MIN_CHANNELS:
+        return (
+            "igemm_tc_packed: the flat K order of few input channels does not "
+            "read the packed layout contiguously"
+        )
     if name == "winograd_f4":
         return winograd.reason(call)
     if name == "igemm_ffma_splitk" and _split_k(call) == 1:
@@ -857,6 +940,16 @@ _FFMA_TILES = (
     (64, 32, 32, 4, 3),
     (128, 32, 16, 4, 3),
 )
+_TC_PACKED_TILES = (
+    (128, 64, 32, 4, 4),
+    (64, 128, 32, 4, 4),
+    (128, 128, 32, 4, 3),
+    (256, 64, 32, 8, 3),
+    (64, 64, 64, 4, 3),
+    (128, 64, 64, 4, 3),
+    (128, 128, 64, 8, 3),
+    (64, 32, 64, 4, 3),
+)
 _TC_TILES = (
     (64, 64, 32, 4, 4),
     (128, 64, 32, 4, 4),
@@ -869,12 +962,13 @@ _TC_TILES = (
 )
 CONFIGS = {
     (schedule, tap_major): _configs(tiles, tap_major)
-    for schedule, tiles in (
-        ("igemm_ffma", _FFMA_TILES),
-        ("igemm_tc", _TC_TILES),
-        ("igemm_ffma_splitk", _FFMA_TILES),
+    for schedule, tiles, k_orders in (
+        ("igemm_ffma", _FFMA_TILES, (True, False)),
+        ("igemm_tc", _TC_TILES, (True, False)),
+        ("igemm_ffma_splitk", _FFMA_TILES, (True, False)),
+        ("igemm_tc_packed", _TC_PACKED_TILES, (True,)),
     )
-    for tap_major in (True, False)
+    for tap_major in k_orders
 }
 _TUNING_KEY = [
     "N",
@@ -902,6 +996,22 @@ def _as_3d(values, fill: int) -> tuple[int, ...]:
     return (fill,) * (3 - len(values)) + tuple(values)
 
 
+def _in_memory_order(t: torch.Tensor, order: tuple[int, ...]) -> torch.Tensor:
+    """``t`` stored with its dims ``order`` outermost first (copied unless it
+    already is), with its logical dim order unchanged."""
+    inverse = tuple(sorted(range(t.dim()), key=order.__getitem__))
+    return t.permute(order).contiguous().permute(inverse)
+
+
+def _packed(x: torch.Tensor, weight: torch.Tensor, transposed: bool):
+    """The ``igemm_tc_packed`` operands: the input channels-last, and the weight
+    as [taps, C_in, C_out] in memory."""
+    taps = tuple(range(2, x.dim()))
+    x = _in_memory_order(x, (0, *taps, 1))
+    weight = _in_memory_order(weight, (*taps, 0, 1) if transposed else (*taps, 1, 0))
+    return x, weight
+
+
 def run_schedule(
     name: str,
     x: torch.Tensor,
@@ -916,6 +1026,8 @@ def run_schedule(
     if name == "winograd_f4":
         winograd.run(x, weight, bias, out, config)
         return
+    if name == "igemm_tc_packed":
+        x, weight = _packed(x, weight, params.transposed)
     n, c = x.shape[:2]
     co = out.shape[1]
     # A transposed weight is [C_in, C_out, ...]: the kernel indexes it by
@@ -977,11 +1089,11 @@ def run_schedule(
         *out.stride()[:2],
         *out_strides,
         HAS_BIAS=bias is not None,
-        FFMA=name != "igemm_tc",
+        FFMA=name not in TENSOR_CORE_SCHEDULES,
         INDEX_64=max(max_offset(x), max_offset(out), max_offset(weight)) > _INT32_MAX
         or split_k * n * pixels * co > _INT32_MAX,
         PIXEL_TILES=pixel_tiles,
-        CHANNEL_MAJOR=name == "igemm_tc" and out.stride(1) != 1,
+        CHANNEL_MAJOR=name in TENSOR_CORE_SCHEDULES and out.stride(1) != 1,
         TRANSPOSED=params.transposed,
         SPLIT_K=split_k,
         **options,
