@@ -976,7 +976,7 @@ _STAGE_ROWS = (
         "64 ch 120x160",
         lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, padding=1, bias=False),
         (1, 64, 120, 160),
-        "outside the benchmarked stage range",
+        None,
     ),
     (
         "512 ch 15x20",
@@ -1038,6 +1038,30 @@ def _stage_steps_past(shape, c_out, kernel, stride, padding):
     for i, e in enumerate(extent):
         grown = [*extent[:i], e + 1, *extent[i + 1 :]]
         if e == implicit_gemm.MAX_STAGE_EXTENT or not fits(batch, grown):
+            yield (batch, channels, *grown), c_out
+
+
+def _winograd_steps_past(shape, c_out):
+    """The (input shape, C_out) one step past each Winograd limit a benchmarked
+    corner sits on."""
+    from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+    fewest, most = implicit_gemm.WINOGRAD_CHANNELS
+    batch, channels, *extent = shape
+    for edge, step in ((fewest, -1), (most, 1)):
+        if channels == edge:
+            yield (batch, channels + step, *extent), c_out
+        if c_out == edge:
+            yield shape, c_out + step
+    pixels = implicit_gemm.MAX_STAGE_INPUT_PIXELS
+    if (
+        batch == implicit_gemm.MAX_STAGE_BATCH
+        or (batch + 1) * math.prod(extent) > pixels
+    ):
+        yield (batch + 1, channels, *extent), c_out
+    for i, e in enumerate(extent):
+        grown = [*extent[:i], e + 1, *extent[i + 1 :]]
+        if e == implicit_gemm.MAX_STAGE_EXTENT or batch * math.prod(grown) > pixels:
             yield (batch, channels, *grown), c_out
 
 
@@ -1494,9 +1518,13 @@ class ImplicitGemmRoutingTest(_PassTest):
     def test_one_step_past_the_stage_calls_is_kept(self):
         """Each stage corner moved one step past a limit it sits on: one input
         channel fewer or more, an output channel count that is not the stage's,
-        one more image or pixel; another kernel, padding or precision."""
+        one more image or pixel; another kernel, padding or precision. The
+        Winograd range, which covers some of these steps, is tested alone."""
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
+        winograd_off = mock.patch.object(
+            implicit_gemm, "_winograd_reason", return_value="off"
+        )
         for call in implicit_gemm.stage_boundary_calls():
             shape, c_out, kernel, stride, padding = call
             outside = [
@@ -1523,7 +1551,7 @@ class ImplicitGemmRoutingTest(_PassTest):
                         dtype,
                         tf32,
                     ),
-                ):
+                ), winograd_off:
                     self.assertIsNotNone(
                         self.worth_routing(
                             shape_,
@@ -1565,3 +1593,68 @@ class ImplicitGemmRoutingTest(_PassTest):
                         layout=layout,
                     )
                     self.assertIn("not a benchmarked layout", reason)
+
+    def test_winograd_calls_are_routed(self):
+        # Every call the benchmark's winograd_boundary suite measures.
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for (
+            shape,
+            c_out,
+            kernel,
+            stride,
+            padding,
+        ) in implicit_gemm.winograd_boundary_calls():
+            with self.subTest(shape=shape, c_out=c_out):
+                self.assertIsNone(
+                    self.worth_routing(
+                        shape,
+                        c_out,
+                        kernel,
+                        stride,
+                        padding,
+                        padding,
+                        dtype=torch.float32,
+                        tf32=False,
+                    )
+                )
+
+    def test_one_step_past_the_winograd_calls_is_kept(self):
+        """Each Winograd corner moved one step past a limit it sits on: one
+        input or output channel fewer or more, one more image or pixel; another
+        kernel, stride, padding, precision or layout. The stage range, which
+        covers some of these steps, is tested alone."""
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        def channels_last_input(call):
+            x = call.input.contiguous(memory_format=torch.channels_last)
+            return dataclasses.replace(call, input=x)
+
+        for call in implicit_gemm.winograd_boundary_calls():
+            shape, c_out, kernel, stride, padding = call
+            outside = [
+                (*step, kernel, stride, padding, padding)
+                for step in _winograd_steps_past(shape, c_out)
+            ]
+            outside += [
+                (shape, c_out, (5, 5), stride, (2, 2), (2, 2)),
+                (shape, c_out, kernel, (2, 2), padding, padding),
+                (shape, c_out, kernel, stride, (0, 0), (0, 0)),
+                (shape, c_out, kernel, stride, padding, (2, 2)),
+            ]
+            inside = (shape, c_out, kernel, stride, padding, padding)
+            variants = [(step, torch.float32, False, None) for step in outside]
+            variants += [
+                (inside, torch.float32, True, None),
+                (inside, torch.bfloat16, False, None),
+                (inside, torch.float32, False, channels_last_input),
+            ]
+            for step, dtype, tf32, layout in variants:
+                with self.subTest(
+                    call=call, outside=step, dtype=dtype, tf32=tf32, layout=layout
+                ), mock.patch.object(
+                    implicit_gemm, "_stage_reason", return_value="off"
+                ):
+                    self.assertIsNotNone(
+                        self.worth_routing(*step, dtype=dtype, tf32=tf32, layout=layout)
+                    )
