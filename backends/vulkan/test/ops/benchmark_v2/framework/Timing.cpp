@@ -11,6 +11,9 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/Timestamps.h>
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -190,6 +193,37 @@ Report profile_operator_shaders(
 }
 
 } // namespace
+
+CacheFlush::CacheFlush(ComputeGraph& graph, uint64_t bytes)
+    : first_(graph.execute_nodes().size()) {
+  if (bytes > 0) {
+    constexpr int64_t kRowElements = 1024;
+    const int64_t rows = static_cast<int64_t>(
+        utils::div_up(bytes, uint64_t(kRowElements * sizeof(float))));
+    const std::vector<int64_t> sizes = {rows, kRowElements};
+    const ValueRef src = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+    const ValueRef dst = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
+    VK_GET_OP_FN("aten.clone.default")(graph, {src, graph.add_none(), dst});
+  }
+  end_ = graph.execute_nodes().size();
+}
+
+void CacheFlush::encode(ComputeGraph& graph) const {
+  if (first_ == end_) {
+    return;
+  }
+  api::Context& context = *graph.context();
+  vkapi::PipelineBarrier barrier = vkapi::full_pipeline_barrier();
+  context.register_barrier(barrier);
+  // Keep the copy out of per-dispatch timestamps so the breakdown lists only
+  // the measured dispatches.
+  const bool profiling = context.shader_profiling_enabled();
+  context.set_shader_profiling_enabled(false);
+  for (size_t i = first_; i < end_; ++i) {
+    graph.execute_nodes()[i]->encode(&graph);
+  }
+  context.set_shader_profiling_enabled(profiling);
+}
 
 Report measure(
     const Json& spec,

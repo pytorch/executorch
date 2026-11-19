@@ -215,6 +215,13 @@ void validate_config(const Json& spec) {
         "Use storage: constant instead of the tensor constant flag");
     validate_data_initializer(tensor, tensor_numel(tensor.at("sizes")));
   }
+  if (spec.contains("cache_flush_bytes")) {
+    const Json& bytes = spec.at("cache_flush_bytes");
+    require(
+        bytes.is_number_unsigned() && bytes.get<uint64_t>() > 0 &&
+            bytes.get<uint64_t>() <= (uint64_t(1) << 27),
+        "cache_flush_bytes must be an integer in [1, 2^27]");
+  }
   if (is_operator) {
     for (const char* key :
          {"gwg_size",
@@ -360,6 +367,12 @@ void validate_config(const Json& spec) {
       require(spec.at(key).is_boolean(), std::string(key) + " must be boolean");
     }
   }
+  // Throughput estimates would count the copy's time but not its traffic.
+  require(
+      !spec.contains("cache_flush_bytes") ||
+          (!spec.value("show_memory_throughput", false) &&
+           !spec.value("show_compute_throughput", false)),
+      "cache_flush_bytes does not support throughput estimates");
   if (spec.contains("reference")) {
     require(
         spec.at("reference").is_string() &&
