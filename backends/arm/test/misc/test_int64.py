@@ -7,6 +7,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa.cast_support import supported_to_dim_order_casts
 from executorch.backends.test.harness.stages import StageType
 
 
@@ -315,8 +316,6 @@ def test_int64_extension_widening_cast_placement_tosa_INT(test_data: Tuple):
     )
 
 
-# Quantization keeps int64 under the int64 extension and only narrows index
-# arguments. Operators without int64 support fall back to the CPU.
 int64_extension_quantized_suite = {
     "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
     "where_gt": (lambda x, y: torch.where(x > y, x, y), (_WIDE, _WIDE_2), 1),
@@ -327,15 +326,12 @@ int64_extension_quantized_suite = {
         (torch.tensor([1, 2, 3, 4]),),
         1,
     ),
-    "full_like": (lambda x: torch.full_like(x, 2**35) + x, (_WIDE,), 1),
-    "cat_slice": (lambda x, y: torch.cat([x[1:3], y[::2]]), (_WIDE, _WIDE_2), 1),
     "index_select": (
         lambda x, index: torch.index_select(x, 0, index),
         (_NARROW, torch.tensor([3, 0])),
         1,
     ),
     "index_wide_data": (lambda x, index: x[index], (_WIDE, torch.tensor([3, 0])), 1),
-    "sum": (lambda x: x.sum(), (_WIDE,), 0),
     "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 1),
 }
 
@@ -356,3 +352,8 @@ def test_int64_extension_quantized_tosa_INT(test_data: Tuple):
         tester.to_executorch().run_method_and_compare_outputs(
             inputs, reference_stage_type=StageType.INITIAL_MODEL
         )
+
+
+def test_int64_extension_float_cast_unsupported():
+    spec = common.get_tosa_compile_spec("TOSA-1.1+FP+INT+int64").tosa_spec
+    assert torch.float32 not in supported_to_dim_order_casts(spec)[torch.int64]

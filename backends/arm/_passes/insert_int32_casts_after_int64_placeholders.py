@@ -14,10 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.decompose_embedding_pass import (
     DecomposeEmbeddingPass,
 )
-from executorch.backends.arm.tosa.specification import (
-    context_supports_int64,
-    get_context_spec,
-)
+from executorch.backends.arm.tosa.specification import context_supports_int64
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import EdgeOpOverload, ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
@@ -29,8 +26,8 @@ logger = logging.getLogger(__name__)
 class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     """Insert an int64->int32 cast after each int64 placeholder.
 
-    Under PRO-INT with EXT-INT64 only int64 index arguments are cast to int32,
-    and every other int64 value keeps int64.
+    Under EXT-INT64 only index arguments and placeholders used in
+    floating-point computation are cast to int32.
 
     Note: Overflow checks are not applied in this pass. It is the user's responsibility to ensure that values fit within
     the int32 range.
@@ -49,6 +46,7 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     INDEX_ARG_POSITIONS = {
         torch.ops.aten.embedding.default: 1,
         torch.ops.aten.gather.default: 2,
+        torch.ops.aten.index_add.default: 2,
         torch.ops.aten.index.Tensor: 1,
         torch.ops.aten.index_put.default: 1,
         torch.ops.aten.index_put_.default: 1,
@@ -134,30 +132,35 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
                 modified = True
         return modified
 
+    def _int32_cast(self, graph: torch.fx.Graph, arg: torch.fx.Node):
+        if arg not in self._int32_casts:
+            with graph.inserting_after(arg):
+                self._int32_casts[arg] = create_node(
+                    graph,
+                    self._get_decomposition(graph),
+                    args=(arg,),
+                    kwargs={"dtype": torch.int32},
+                )
+        return self._int32_casts[arg]
+
     def _insert_index_i64_to_i32_casts(self, graph_module: torch.fx.GraphModule):
         modified = False
         graph = graph_module.graph
-        casts: dict[torch.fx.Node, torch.fx.Node] = {}
 
         def to_int32(arg):
             if not isinstance(arg, torch.fx.Node) or not self._is_tensor_of_dtype(
                 arg.meta.get("val"), torch.int64
             ):
                 return arg
-            if arg not in casts:
-                with graph.inserting_after(arg):
-                    casts[arg] = create_node(
-                        graph,
-                        self._get_decomposition(graph),
-                        args=(arg,),
-                        kwargs={"dtype": torch.int32},
-                    )
-            return casts[arg]
+            return self._int32_cast(graph, arg)
 
         for node in list(graph.nodes):
             if node.op != "call_function":
                 continue
-            position = self.INDEX_ARG_POSITIONS.get(node.target)
+            target = node.target
+            if isinstance(target, EdgeOpOverload):
+                target = target._op
+            position = self.INDEX_ARG_POSITIONS.get(target)
             if position is None or len(node.args) <= position:
                 continue
             index = node.args[position]
@@ -171,51 +174,41 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
                 )
                 node.update_arg(position, new_index)
                 modified = True
-        self._placeholder_casts_inserted += len(casts)
         return modified
 
     def _insert_int64_promotion_casts(self, graph_module: torch.fx.GraphModule):
-        """Cast int64 operands of operators that compute in a floating-point
-        dtype to that dtype. When the spec has no floating-point profile, cast
-        int64 operands of operators with a floating-point input to int32.
-        """
+        """Cast int64 placeholders used in floating-point computation to int32."""
         modified = False
         graph = graph_module.graph
-        to_copy_op = self._get_decomposition(graph)
-        support_float = get_context_spec().support_float()
+        cast_ops = (
+            torch.ops.aten._to_copy.default,
+            torch.ops.aten.to.dtype,
+            torch.ops.aten.to.dtype_layout,
+        )
         for node in list(graph.nodes):
-            if node.op != "call_function" or node.target in (
-                to_copy_op,
-                torch.ops.aten.to.dtype,
-                torch.ops.aten.to.dtype_layout,
-                torch.ops.aten._to_copy.default,
+            if node.op != "call_function":
+                continue
+            if node.target in cast_ops:
+                float_values = [node.meta.get("val")]
+            elif node.target in (
+                torch.ops.aten.cat.default,
+                torch.ops.aten.stack.default,
+            ) or torch.Tag.pointwise in getattr(node.target, "tags", ()):
+                float_values = [arg.meta.get("val") for arg in node.all_input_nodes]
+            else:
+                continue
+            if not any(
+                isinstance(value, FakeTensor) and value.is_floating_point()
+                for value in float_values
             ):
                 continue
-            input_dtypes = [
-                value.dtype
-                for value in (arg.meta.get("val") for arg in node.all_input_nodes)
-                if isinstance(value, FakeTensor) and value.is_floating_point()
-            ]
-            output = node.meta.get("val")
-            if not support_float:
-                cast_dtypes = [torch.int32] if input_dtypes else []
-            elif isinstance(output, FakeTensor) and output.is_floating_point():
-                cast_dtypes = [output.dtype]
-            else:
-                cast_dtypes = input_dtypes
-            if not cast_dtypes:
-                continue
             for arg in node.all_input_nodes:
-                if not self._is_tensor_of_dtype(arg.meta.get("val"), torch.int64):
+                if arg.op not in (
+                    "placeholder",
+                    "get_attr",
+                ) or not self._is_tensor_of_dtype(arg.meta.get("val"), torch.int64):
                     continue
-                with graph.inserting_before(node):
-                    cast = create_node(
-                        graph,
-                        to_copy_op,
-                        args=(arg,),
-                        kwargs={"dtype": cast_dtypes[0]},
-                    )
-                node.replace_input_with(arg, cast)
+                node.replace_input_with(arg, self._int32_cast(graph, arg))
                 modified = True
         return modified
 
@@ -223,8 +216,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
         self._placeholder_casts_inserted = 0
         modified = False
         if context_supports_int64():
+            self._int32_casts: dict[torch.fx.Node, torch.fx.Node] = {}
             modified |= self._insert_index_i64_to_i32_casts(graph_module)
             modified |= self._insert_int64_promotion_casts(graph_module)
+            self._placeholder_casts_inserted = len(self._int32_casts)
         else:
             modified |= self._insert_placeholder_i64_to_i32_casts(graph_module)
         modified |= self._insert_callsite_i32_to_i64_casts(graph_module)

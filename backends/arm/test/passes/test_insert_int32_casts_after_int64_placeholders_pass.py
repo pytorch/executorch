@@ -126,32 +126,32 @@ def reciprocal_add(x: torch.Tensor, y: torch.Tensor):
 
 
 int64_float_test_cases = {
-    "sub_tosa_FP": (torch.sub, False, [torch.float32]),
-    "sub_tosa_INT": (torch.sub, True, [torch.int32, torch.float32]),
-    "gt_tosa_FP": (torch.gt, False, [torch.float32]),
-    "gt_tosa_INT": (torch.gt, True, [torch.int32]),
-    "reciprocal_tosa_FP": (reciprocal_add, False, [torch.float32]),
-    "reciprocal_tosa_INT": (reciprocal_add, True, []),
+    "sub": (torch.sub, [torch.int32, torch.float32]),
+    "gt": (torch.gt, [torch.int32]),
+    "reciprocal": (reciprocal_add, []),
+    "index_add": (lambda x, y: y.index_add(0, x, y), [torch.int32]),
+    "mul_gt": (lambda x, y: (x * 50000) > y, []),
 }
 
 
+@pytest.mark.parametrize("profiles", (["INT"], ["FP"]))
 @pytest.mark.parametrize(
-    ("op", "quantize", "cast_dtypes"),
+    ("op", "cast_dtypes"),
     int64_float_test_cases.values(),
     ids=int64_float_test_cases.keys(),
 )
 def test_insert_int32_casts_after_int64_placeholders_int64_float_operand(
-    op, quantize, cast_dtypes
+    op, cast_dtypes, profiles
 ):
     pipeline = PassPipeline[input_t](
         Int64FloatModel(op),
         (
-            torch.tensor([1, -2, 3, 4], dtype=torch.int64),
+            torch.tensor([1, 2, 3, 0], dtype=torch.int64),
             torch.tensor([0.5, 1.5, -2.5, 3.5]),
         ),
-        quantize=quantize,
+        quantize=True,
         tosa_version="1.1",
-        tosa_extensions=["INT", "int64"],
+        tosa_extensions=profiles + ["int64"],
         pass_list=[InsertInt32CastsAfterInt64PlaceholdersPass],
     )
     pipeline.pop_stage(-1)
