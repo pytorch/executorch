@@ -40,6 +40,9 @@ the bias in FP32 before the single store:
 - ``igemm_ffma_splitk``: ``igemm_ffma`` with the reduction split over a second
   grid axis into FP32 partial sums, which ``_reduce_split_k`` adds in a fixed
   order before the store; for outputs with too few tiles to fill the GPU.
+
+Strict-FP32 3x3 stride-1 calls also time ``winograd_f4`` (``winograd.py``),
+which writes the same output layout from a Winograd F(4x4, 3x3) computation.
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     autotune_launch_param,
     InvalidLaunchParam,
 )
+from executorch.backends.cuda.triton.kernels.conv.core import winograd
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     conv_allows_tf32,
     ConvCall,
@@ -72,6 +76,7 @@ SCHEDULES = (
     Schedule("igemm_ffma", 0),
     Schedule("igemm_tc", 80),
     Schedule("igemm_ffma_splitk", 0),
+    Schedule("winograd_f4", 0),
 )
 TAP_MAJOR_MIN_CHANNELS = 16
 # Output pixels per image from which an output with dense spatial dims is
@@ -222,6 +227,15 @@ MAX_STAGE_OUTPUT_ELEMENTS = 160 * 1024
 STAGE_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
 
 
+def _within_stage_limits(x: torch.Tensor) -> bool:
+    n, _, *extent = x.shape
+    return (
+        n <= MAX_STAGE_BATCH
+        and max(extent) <= MAX_STAGE_EXTENT
+        and n * math.prod(extent) <= MAX_STAGE_INPUT_PIXELS
+    )
+
+
 def _stage_reason(call: ConvCall) -> Optional[str]:
     """Why ``call`` is outside the benchmarked stage range, or None."""
     x, w, p = call.input, call.weight, call.params
@@ -240,12 +254,10 @@ def _stage_reason(call: ConvCall) -> Optional[str]:
         return f"implicit GEMM: {channels} input channels are not benchmarked faster"
     if x.dtype != torch.float32 or conv_allows_tf32():
         return f"implicit GEMM: {x.dtype} stage convolutions are not benchmarked"
-    n, _, *extent = x.shape
     if (
-        n > MAX_STAGE_BATCH
-        or max(extent) > MAX_STAGE_EXTENT
-        or n * math.prod(extent) > MAX_STAGE_INPUT_PIXELS
-        or n * math.prod(_output_size(call)) * w.shape[0] > MAX_STAGE_OUTPUT_ELEMENTS
+        not _within_stage_limits(x)
+        or x.shape[0] * math.prod(_output_size(call)) * w.shape[0]
+        > MAX_STAGE_OUTPUT_ELEMENTS
     ):
         return (
             f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
@@ -293,6 +305,64 @@ def stage_boundary_calls() -> (
     return calls
 
 
+# Strict-FP32 3x3 stride-1 convolutions with input and output channels in
+# WINOGRAD_CHANNELS, within the stage batch, extent and input-pixel limits, at
+# any output size: ``winograd_f4`` does a quarter of the multiplies of a direct
+# convolution such as Inductor's template. The benchmark's
+# ``winograd_boundary`` suite measures ``winograd_boundary_calls()``, every
+# corner of these limits.
+WINOGRAD_CHANNELS = (64, 512)
+
+
+def _winograd_reason(call: ConvCall) -> Optional[str]:
+    """Why ``call`` is outside the benchmarked Winograd range, or None."""
+    x, w = call.input, call.weight
+    reason = winograd.reason(call)
+    if reason is not None:
+        return f"implicit GEMM: {reason}"
+    fewest, most = WINOGRAD_CHANNELS
+    if not (fewest <= x.shape[1] <= most and fewest <= w.shape[0] <= most):
+        return (
+            f"implicit GEMM: {x.shape[1]} to {w.shape[0]} channels are not "
+            "benchmarked faster with winograd_f4"
+        )
+    if conv_allows_tf32():
+        return "implicit GEMM: winograd_f4 is not benchmarked against TF32"
+    if not _within_stage_limits(x):
+        return (
+            f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
+            "winograd_f4 range"
+        )
+    reason = unbenchmarked_layout(call, STAGE_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def winograd_boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) at every corner of the
+    Winograd range: the fewest and most input and output channels; each
+    spatial dimension at its smallest (3) or largest extent, the largest
+    reduced until one image fits ``MAX_STAGE_INPUT_PIXELS``; one image and the
+    most images that fit."""
+    calls = []
+    for channels, out_channels, extent in itertools.product(
+        WINOGRAD_CHANNELS,
+        WINOGRAD_CHANNELS,
+        itertools.product((3, MAX_STAGE_EXTENT), repeat=2),
+    ):
+        extent = list(extent)
+        while math.prod(extent) > MAX_STAGE_INPUT_PIXELS:
+            i = max(range(2), key=lambda d: extent[d])
+            extent[i] -= 1
+        most = min(MAX_STAGE_BATCH, MAX_STAGE_INPUT_PIXELS // math.prod(extent))
+        for batch in sorted({1, most}):
+            calls.append(
+                ((batch, channels, *extent), out_channels, (3, 3), (1, 1), (1, 1))
+            )
+    return calls
+
+
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -315,6 +385,8 @@ def worth_routing(call: ConvCall) -> Optional[str]:
             "is not benchmarked"
         )
     if x.shape[1] != ROUTED_CHANNELS:
+        if _winograd_reason(call) is None:
+            return None
         return _stage_reason(call)
     reason = unbenchmarked_layout(call, ROUTED_LAYOUTS)
     if reason is not None:
@@ -420,6 +492,8 @@ def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
         and not conv_allows_tf32()
     ):
         return "igemm_tc needs TF32 for FP32 operands, which is not allowed"
+    if name == "winograd_f4":
+        return winograd.reason(call)
     if name == "igemm_ffma_splitk" and _split_k(call) == 1:
         return "igemm_ffma_splitk: the output tiles fill the GPU without splitting K"
     return None
@@ -839,6 +913,9 @@ def run_schedule(
 ) -> None:
     """Launches schedule ``name``; ``config`` replaces its autotuned config
     (and the K order, if it sets ``TAP_MAJOR``)."""
+    if name == "winograd_f4":
+        winograd.run(x, weight, bias, out, config)
+        return
     n, c = x.shape[:2]
     co = out.shape[1]
     # A transposed weight is [C_in, C_out, ...]: the kernel indexes it by
