@@ -62,7 +62,9 @@ constexpr uint32_t kQueriesPerDispatch = 3u;
 
 // Counts entries whose timestamps are out of order: within an entry, or between
 // an entry's shader execution finish and the next entry's previous work finish.
-// Dispatches serialized by full barriers never violate this order.
+// Every timestamp is written at the bottom of the pipe, so valid results are in
+// order even when dispatches overlap; a violation means a query was stale or
+// never written.
 size_t count_order_violations(const std::vector<ShaderTimestamp>& timestamps);
 
 struct QueryPoolConfig final {
@@ -124,6 +126,10 @@ class QueryPool final {
  private:
   size_t write_timestamp(const CommandBuffer&);
 
+  // Returns true if any entry is missing its previous work finish or shader
+  // execution finish query.
+  bool has_incomplete_entries() const;
+
   // Converts raw query results into per-dispatch timestamps. A dispatch without
   // a barrier finish timestamp reports its previous work finish instead.
   std::vector<ShaderTimestamp> to_shader_timestamps(
@@ -153,8 +159,11 @@ class QueryPool final {
   void record_barrier_finish(const CommandBuffer&);
 
   // Records the open entry's shader execution finish timestamp and closes it.
+  // No-op without an open entry.
   void record_shader_exec_finish(const CommandBuffer&);
 
+  // Converts query results into per-entry timings. Leaves all timings at zero
+  // if any entry is incomplete.
   void extract_results();
 
   std::vector<ShaderResult> get_shader_timestamp_data();
