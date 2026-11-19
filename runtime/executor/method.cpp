@@ -24,7 +24,6 @@
 #include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -1461,14 +1460,30 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx);
     // Load checked a planned input's slot against this byte count, so an
     // overflowed count could pass a slot too small for the copy below. Other
-    // inputs are not copied.
+    // inputs are not copied. Not validate_tensor(), so that builds without
+    // program verification do not link program_validation.cpp.
     const bool memory_planned = deserialization::is_memory_planned(*s_tensor);
-    ET_CHECK_OR_RETURN_ERROR(
-        !memory_planned || validate_tensor(s_tensor) == Error::Ok,
-        InvalidArgument,
-        "Input %" ET_PRIsize_t
-        " has serialized sizes whose byte count overflows",
-        input_idx);
+    if (memory_planned) {
+      ssize_t bound_numel = 1;
+      bool bound_overflow = false;
+      for (const int32_t size : *s_tensor->sizes()) {
+        bound_overflow =
+            bound_overflow ||
+            c10::mul_overflows(
+                bound_numel, static_cast<ssize_t>(size), &bound_numel);
+      }
+      size_t bound_nbytes;
+      ET_CHECK_OR_RETURN_ERROR(
+          !bound_overflow &&
+              !c10::mul_overflows(
+                  static_cast<size_t>(bound_numel),
+                  executorch::runtime::elementSize(t_dst.scalar_type()),
+                  &bound_nbytes),
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          " has serialized sizes whose byte count overflows",
+          input_idx);
+    }
 
     // For DYNAMIC_BOUND the serialized sizes are the per-dimension upper
     // bound, but numel_bound_ is initialized to their product, so the resize
