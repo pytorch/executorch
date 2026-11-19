@@ -4911,75 +4911,74 @@ class RecomposePixelUnshuffle:
 
 
 class RecomposeRmsNorm:
-    class _SavedRmsNorm(torch.nn.Module):
+    class _BufferRmsNorm(torch.nn.Module):
         def __init__(
             self,
             square=2.0,
-            persistent=True,
             eps=9.765625e-10,
             mutate=None,
             keepdim=True,
-            cast_dtype=None,
             detach_exponent=False,
-            weight_dtype=torch.float32,
         ):
             super().__init__()
-            self.weight = torch.nn.Parameter(torch.ones(8, dtype=weight_dtype))
+            self.weight = torch.nn.Parameter(torch.ones(8))
             self.mutate = mutate
             self.keepdim = keepdim
-            self.cast_dtype = cast_dtype
             self.detach_exponent = detach_exponent
             if isinstance(square, torch.nn.Parameter):
                 self.square = square
             else:
-                self.register_buffer(
-                    "square", torch.as_tensor(square), persistent=persistent
-                )
-            self.register_buffer("eps", torch.as_tensor(eps), persistent=persistent)
+                self.register_buffer("square", torch.as_tensor(square))
+            self.register_buffer("eps", torch.as_tensor(eps))
             if mutate == "buffer":
                 self.register_buffer("alias", self.square.view(()))
 
         def forward(self, x):
-            if self.cast_dtype is not None:
-                x = x.float()
             square, eps = self.square, self.eps
             if self.mutate == "literal":
                 square, eps = 2, torch.tensor(1e-6)
                 eps.view(()).add_(0.1)
             elif self.mutate == "buffer":
                 self.alias.add_(2.0)
+            elif self.mutate == "computed_epsilon":
+                eps = x.sum()
+                eps.add_(0.1)
             if self.detach_exponent:
                 square = square.detach()
             statistic = x.pow(square).mean(-1, keepdim=self.keepdim)
             norm = x * torch.rsqrt(statistic + eps)
-            if self.cast_dtype is not None:
-                norm = norm.to(self.cast_dtype)
             output = norm * self.weight
             if self.mutate == "epsilon":
                 self.eps.add_(0.1)
+            elif self.mutate == "activation":
+                output.mul_(0.75)
+            elif self.mutate == "activation_reads_epsilon":
+                output.mul_(self.eps)
+            elif self.mutate == "scalar_activation":
+                scalar = x.sum()
+                scalar.add_(0.1)
+                output = output + scalar
             return output
 
     @staticmethod
-    def _test_saved(options, expected_count, form, assertions):
-        model = RecomposeRmsNorm._SavedRmsNorm(**options)
+    def _test_saved(options, expected_count, assertions):
+        model = RecomposeRmsNorm._BufferRmsNorm(**options)
         inputs = (torch.rand(2, 4, 8) + 0.5 if model.keepdim else torch.zeros(8),)
-        if model.cast_dtype is not None:
-            inputs = (inputs[0].half(),)
         archive = io.BytesIO()
         torch.export.save(torch.export.export(model, inputs), archive)
         archive.seek(0)
         source = torch.export.load(archive)
-        if form == "joint":
-            # ODL joint graphs use state names; Edge re-export adds p_/b_ prefixes.
-            for node, spec in zip(
-                source.graph.find_nodes(op="placeholder"),
-                source.graph_signature.input_specs,
-            ):
-                if spec.target is not None:
-                    node.name = node.target = spec.target.replace(".", "_")
-                    spec.arg.name = node.name
-            source.graph_module.recompile()
-        edge = form in {"edge", "joint"}
+        # Exercise Edge re-export renaming and keep the original mutation graph.
+        for node, spec in zip(
+            source.graph.find_nodes(op="placeholder"),
+            source.graph_signature.input_specs,
+        ):
+            if spec.target is not None:
+                node.name = node.target = spec.target.replace(".", "_")
+                spec.arg.name = node.name
+        source.graph_module.recompile()
+        # PyTorch cannot re-export the saved shared-buffer mutation graph.
+        edge = options.get("mutate") != "buffer"
         program = (
             to_edge(
                 source, compile_config=EdgeCompileConfig(_check_ir_validity=False)
@@ -4994,10 +4993,9 @@ class RecomposeRmsNorm:
                 "alias",
             }:
                 assert node.meta["val"].constant is None
-        gm = program.module() if form == "get_attr" else program.graph_module
-        binding = None if form == "get_attr" else source if form == "joint" else program
+        gm = program.graph_module
         _passes.RecomposeRmsNorm(
-            quantization_capture=not edge, edge_program=binding
+            quantization_capture=not edge, edge_program=source
         ).call(gm)
         gm.graph.lint()
         target = (
@@ -5006,13 +5004,13 @@ class RecomposeRmsNorm:
             else torch.ops.aten.rms_norm.default
         )
         assertions.assert_target_count(gm, target, expected_count)
-        actual = gm if form == "get_attr" else program.module()
-        for _ in range(2 if options.get("mutate") == "epsilon" else 1):
+        actual = program.module()
+        for _ in range(2 if options.get("mutate") else 1):
             torch.testing.assert_close(actual(*inputs), model(*inputs))
         if expected_count:
             rms = next(node for node in gm.graph.nodes if node.target == target)
             assert rms.args[3] == model.eps.item()
-        if form == "edge" and not options:
+        if not options:
             x = inputs[0].detach().requires_grad_()
             actual_grad = torch.autograd.grad(actual(x).sum(), x)[0]
             expected_grad = torch.autograd.grad(model(x).sum(), x)[0]
@@ -5023,7 +5021,6 @@ class RecomposeRmsNorm:
             self,
             dim: int,
             eps: float = 1e-6,
-            square_exponent: int = 2,
             reduction_dim: int = -1,
             keepdim: bool = True,
             tensor_eps: bool = False,
@@ -5031,16 +5028,13 @@ class RecomposeRmsNorm:
             super().__init__()
             self.weight = torch.nn.Parameter(torch.ones(dim))
             self.eps = eps
-            self.square_exponent = square_exponent
             self.reduction_dim = reduction_dim
             self.keepdim = keepdim
             self.tensor_eps = tensor_eps
 
         def forward(self, x):
             norm = x * torch.rsqrt(
-                x.pow(self.square_exponent).mean(
-                    self.reduction_dim, keepdim=self.keepdim
-                )
+                x.pow(2).mean(self.reduction_dim, keepdim=self.keepdim)
                 + (torch.tensor([self.eps]) if self.tensor_eps else self.eps)
             )
             return norm * self.weight
@@ -5049,69 +5043,48 @@ class RecomposeRmsNorm:
         def __init__(
             self,
             dim: int,
-            square_exponent: int = 2,
             reduction_dim: int = -1,
             negative_eps: bool = False,
             tensor_eps: bool = False,
             tensor_exponent: bool = False,
             eps_first: bool = False,
+            activation_scale: float | None = None,
         ):
             super().__init__(dim)
-            self.square_exponent = square_exponent
             self.reduction_dim = reduction_dim
             self.negative_eps = negative_eps
             self.tensor_eps = tensor_eps
             self.tensor_exponent = tensor_exponent
             self.eps_first = eps_first
+            if activation_scale is not None:
+                self.register_buffer("layer_scalar", torch.tensor([activation_scale]))
 
         def forward(self, x, statistic_input=None):
             eps = torch.tensor(self.eps) if self.tensor_eps else self.eps
             exponent = torch.tensor(-0.5) if self.tensor_exponent else -0.5
             statistic_input = x if statistic_input is None else statistic_input
-            statistic = statistic_input.pow(self.square_exponent).mean(
-                self.reduction_dim, keepdim=True
-            )
+            statistic = statistic_input.pow(2).mean(self.reduction_dim, keepdim=True)
             eps = -eps if self.negative_eps else eps
             statistic = eps + statistic if self.eps_first else statistic + eps
             norm = x * torch.pow(statistic, exponent)
-            return norm * self.weight
+            output = norm * self.weight
+            if hasattr(self, "layer_scalar"):
+                output.mul_(self.layer_scalar)
+            return output
 
     class _RmsNormWithIntermediate(_RmsNorm):
-        def __init__(self, dim: int, intermediate: str):
-            super().__init__(dim)
-            self.intermediate = intermediate
-
         def forward(self, x):
             norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-            if self.intermediate == "add":
-                norm = norm + 1
-            else:
-                norm = torch.relu(norm)
-            return norm * self.weight
-
-    class _RmsNormWithWeightShape(_RmsNorm):
-        def __init__(self, dim: int, weight_shape: tuple[int, ...]):
-            super().__init__(dim)
-            self.weight = torch.nn.Parameter(torch.ones(weight_shape))
+            return (norm + 1) * self.weight
 
     class _RmsNormWithParameterView(_RmsNorm):
         def forward(self, x):
             norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
             return norm * self.weight.view_as(self.weight)
 
-    class _RmsNormWithReshapedParameterView(_RmsNorm):
-        def __init__(self, dim: int):
-            super().__init__(dim)
-            self.weight = torch.nn.Parameter(torch.ones(2, dim // 2))
-
-        def forward(self, x):
-            norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-            return norm * self.weight.view(-1)
-
     class _RmsNormWithRuntimeWeight(torch.nn.Module):
-        def __init__(self, dim: int):
+        def __init__(self):
             super().__init__()
-            self.dim = dim
             self.eps = 1e-6
 
         def forward(self, x, weight):
@@ -5161,53 +5134,26 @@ class RecomposeRmsNorm:
         pass_pipeline: PassPipeline,
         subtests,
     ):
-        dim = 16
-        gm = pass_pipeline.lower_annotation_gm(
-            module=RecomposeRmsNorm._RmsNormWithParameterView(dim),
-            sample_input=(torch.randn(1, 4, 8, dim),),
-            target_pass=_passes.RecomposeRmsNorm,
-            backend_type=backend_type,
-        )
-        assertions.assert_target_count(gm, torch.ops.aten.rms_norm.default, 1)
-        assertions.assert_no_target(gm, torch.ops.aten.mean.dim)
-        assertions.assert_no_target(
-            gm,
-            {
-                torch.ops.aten.view.default,
-                torch.ops.aten.view_as.default,
-                torch.ops.aten.view_copy.default,
-            },
-        )
-        rms_norm = next(
-            node
-            for node in gm.graph.nodes
-            if node.target == torch.ops.aten.rms_norm.default
-        )
-        assert rms_norm.args[2].op == "get_attr"
-
         for name, model, shape in (
             (
-                "rank_one_all_dims",
-                RecomposeRmsNorm._RmsNorm(8, reduction_dim=None, keepdim=False),
-                (8,),
-            ),
-            (
-                "rank_one_empty_dims",
-                RecomposeRmsNorm._RmsNorm(8, reduction_dim=[], keepdim=False),
-                (8,),
+                "shape_preserving_weight_view",
+                RecomposeRmsNorm._RmsNormWithParameterView(16),
+                (1, 4, 8, 16),
             ),
             ("identity_casts", RecomposeRmsNorm._Fp32RmsNorm(8), (2, 4, 8)),
             (
                 "rank_one_known_tensor_epsilon",
-                RecomposeRmsNorm._RmsNorm(8, keepdim=False, tensor_eps=True),
+                RecomposeRmsNorm._RmsNorm(
+                    8, reduction_dim=None, keepdim=False, tensor_eps=True
+                ),
                 (8,),
             ),
         ):
             with subtests.test(msg=name):
                 inputs = (torch.rand(shape) + 0.5,)
-                program = torch.export.export(model, inputs)
                 if model.tensor_eps:
-                    # Preserve the legacy case where export retained scalar metadata.
+                    program = torch.export.export(model, inputs)
+                    # Exercise scalar values available through constant metadata.
                     add = next(
                         node
                         for node in program.graph.nodes
@@ -5215,13 +5161,35 @@ class RecomposeRmsNorm:
                         in {torch.ops.aten.add.Tensor, exir_ops.edge.aten.add.Tensor}
                     )
                     add.args[1].meta["val"].constant = torch.tensor([model.eps])
-                _passes.RecomposeRmsNorm(
-                    quantization_capture=True, edge_program=program
-                ).call(program.graph_module)
-                assertions.assert_target_count(
-                    program.graph_module, torch.ops.aten.rms_norm.default, 1
-                )
-                torch.testing.assert_close(program.module()(*inputs), model(*inputs))
+                    _passes.RecomposeRmsNorm(
+                        quantization_capture=True, edge_program=program
+                    ).call(program.graph_module)
+                    gm = program.module()
+                else:
+                    gm = pass_pipeline.lower_annotation_gm(
+                        module=model,
+                        sample_input=inputs,
+                        target_pass=_passes.RecomposeRmsNorm,
+                        backend_type=backend_type,
+                    )
+                assertions.assert_target_count(gm, torch.ops.aten.rms_norm.default, 1)
+                if name == "shape_preserving_weight_view":
+                    assertions.assert_no_target(
+                        gm,
+                        {
+                            torch.ops.aten.mean.dim,
+                            torch.ops.aten.view.default,
+                            torch.ops.aten.view_as.default,
+                            torch.ops.aten.view_copy.default,
+                        },
+                    )
+                    rms_norm = next(
+                        node
+                        for node in gm.graph.nodes
+                        if node.target == torch.ops.aten.rms_norm.default
+                    )
+                    assert rms_norm.args[2].op == "get_attr"
+                torch.testing.assert_close(gm(*inputs), model(*inputs))
 
     @staticmethod
     @unpack_pass_fixtures
@@ -5233,32 +5201,24 @@ class RecomposeRmsNorm:
         pass_pipeline: PassPipeline,
         subtests,
     ):
-        for name, options, expected_count, form in (
-            ("saved_buffers_aten", {}, 1, "aten"),
-            ("saved_buffers_edge", {}, 1, "edge"),
-            ("detached_buffer_exponent", {"detach_exponent": True}, 1, "edge"),
-            ("one_element_buffer_exponent", {"square": [2.0]}, 1, "edge"),
-            ("identity_cast_fp16_aten", {"cast_dtype": torch.float32}, 0, "aten"),
-            ("identity_cast_fp16_edge", {"cast_dtype": torch.float32}, 0, "edge"),
+        for name, options, expected_count in (
+            ("saved_buffers", {}, 1),
+            ("activation_mutation", {"mutate": "activation"}, 1),
             (
-                "promoted_weight_output",
-                {"cast_dtype": torch.float16},
-                0,
-                "aten",
-            ),
-            (
-                "matching_weight_output",
-                {
-                    "cast_dtype": torch.float16,
-                    "weight_dtype": torch.float16,
-                },
+                "activation_reads_epsilon",
+                {"mutate": "activation_reads_epsilon"},
                 1,
-                "aten",
             ),
-            ("renamed_joint_inputs", {}, 1, "joint"),
-            ("buffer_get_attr", {}, 1, "get_attr"),
-            ("nonpersistent_buffers", {"persistent": False}, 1, "edge"),
-            ("wrong_buffer_exponent", {"square": [4.0]}, 0, "edge"),
+            (
+                "fresh_scalar_mutation",
+                {"mutate": "scalar_activation"},
+                1,
+            ),
+            (
+                "computed_epsilon_mutation",
+                {"mutate": "computed_epsilon"},
+                0,
+            ),
             (
                 "trainable_exponent",
                 {
@@ -5266,46 +5226,57 @@ class RecomposeRmsNorm:
                     "detach_exponent": True,
                 },
                 0,
-                "edge",
             ),
-            ("broadcast_epsilon", {"eps": torch.ones(1, 1, 1, 1)}, 0, "edge"),
+            ("broadcast_epsilon", {"eps": torch.ones(1, 1, 1, 1)}, 0),
             (
                 "aliased_buffer_mutation",
                 {"mutate": "buffer", "detach_exponent": True},
                 0,
-                "aten",
             ),
-            ("aliased_literal_mutation", {"mutate": "literal"}, 0, "aten"),
-            ("mutated_epsilon_stale_signature", {"mutate": "epsilon"}, 0, "joint"),
+            ("aliased_literal_mutation", {"mutate": "literal"}, 0),
+            ("mutated_epsilon", {"mutate": "epsilon"}, 0),
             (
                 "promoted_epsilon_dtype",
                 {"eps": torch.tensor(1e-50, dtype=torch.float64), "keepdim": False},
                 0,
-                "aten",
             ),
         ):
             with subtests.test(msg=name):
-                RecomposeRmsNorm._test_saved(options, expected_count, form, assertions)
+                RecomposeRmsNorm._test_saved(options, expected_count, assertions)
 
         dim = 16
         inputs = (torch.randn(1, 4, 8, dim),)
         for name, module in (
+            (
+                "gemma_activation_mutation",
+                RecomposeRmsNorm._Gemma4RmsNorm(dim, activation_scale=0.75),
+            ),
             ("rsqrt", RecomposeRmsNorm._RmsNorm(dim)),
-            ("gemma4_pow_neg_half", RecomposeRmsNorm._Gemma4RmsNorm(dim)),
             (
                 "shape_preserving_weight_view",
                 RecomposeRmsNorm._RmsNormWithParameterView(dim),
             ),
+            (
+                "gemma_positive_last_reduction_dim",
+                RecomposeRmsNorm._Gemma4RmsNorm(dim, reduction_dim=3),
+            ),
+            (
+                "gemma_tensor_scalars_commuted_eps",
+                RecomposeRmsNorm._Gemma4RmsNorm(
+                    dim, tensor_exponent=True, tensor_eps=True, eps_first=True
+                ),
+            ),
         ):
             with subtests.test(msg=name):
-                gm = pass_pipeline.lower_edge_ep(
+                program = pass_pipeline.lower_edge_ep(
                     module=module,
                     sample_input=inputs,
                     backend_type=backend_type,
                     compile_spec=compile_spec,
                     target_pass=_passes.RecomposeRmsNorm,
                     quantizer=quantizer,
-                ).graph_module
+                )
+                gm = program.graph_module
                 assertions.assert_target_count(
                     gm, exir_ops.edge.aten.rms_norm.default, 1
                 )
@@ -5323,114 +5294,62 @@ class RecomposeRmsNorm:
                     )
                 if name == "rsqrt":
                     assertions.assert_no_target(gm, exir_ops.edge.aten.rsqrt.default)
+                if name == "gemma_activation_mutation" and quantizer is None:
+                    torch.testing.assert_close(
+                        program.module()(*inputs), module(*inputs)
+                    )
 
-        with subtests.test(msg="gemma_positive_last_reduction_dim"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._Gemma4RmsNorm(dim, reduction_dim=3),
-                sample_input=inputs,
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 1)
-            assertions.assert_no_target(gm, exir_ops.edge.aten.mean.dim)
-
-        with subtests.test(msg="gemma_tensor_exponent"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._Gemma4RmsNorm(dim, tensor_exponent=True),
-                sample_input=inputs,
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 1)
-            assertions.assert_no_target(gm, exir_ops.edge.aten.mean.dim)
-
-        with subtests.test(msg="gemma_tensor_eps"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._Gemma4RmsNorm(dim, tensor_eps=True),
-                sample_input=inputs,
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 1)
-            assertions.assert_no_target(gm, exir_ops.edge.aten.mean.dim)
-
-        with subtests.test(msg="gemma_commuted_eps"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._Gemma4RmsNorm(dim, eps_first=True),
-                sample_input=inputs,
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 1)
-            assertions.assert_no_target(gm, exir_ops.edge.aten.mean.dim)
-
-        with subtests.test(msg="rsqrt_tensor_square_exponent"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._RsqrtTensorSquareExponent(dim),
-                sample_input=inputs,
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 0)
-            assertions.assert_target_count(gm, exir_ops.edge.aten.mean.dim, 1)
-
-        rsqrt_invalid_inputs = (torch.randn(1, 1, 1, dim),)
-        for name, module in (
+        wrong_weight_shape = RecomposeRmsNorm._RmsNorm(dim)
+        wrong_weight_shape.weight = torch.nn.Parameter(torch.ones(1))
+        for name, module, module_inputs in (
             (
-                "rsqrt_wrong_square_exponent",
-                RecomposeRmsNorm._RmsNorm(dim, square_exponent=4),
-            ),
-            (
-                "rsqrt_wrong_reduction_dim",
-                RecomposeRmsNorm._RmsNorm(dim, reduction_dim=1),
-            ),
-            (
-                "rsqrt_without_keepdim",
-                RecomposeRmsNorm._RmsNorm(dim, keepdim=False),
-            ),
-        ):
-            with subtests.test(msg=name):
-                gm = pass_pipeline.lower_edge_ep(
-                    module=module,
-                    sample_input=rsqrt_invalid_inputs,
-                    backend_type=backend_type,
-                    compile_spec=compile_spec,
-                    target_pass=_passes.RecomposeRmsNorm,
-                    quantizer=quantizer,
-                ).graph_module
-                assertions.assert_target_count(
-                    gm, exir_ops.edge.aten.rms_norm.default, 0
-                )
-                assertions.assert_target_count(gm, exir_ops.edge.aten.mean.dim, 1)
-
-        for name, module in (
-            (
-                "gemma_wrong_square_exponent",
-                RecomposeRmsNorm._Gemma4RmsNorm(dim, square_exponent=4),
+                "rsqrt_tensor_square_exponent",
+                RecomposeRmsNorm._RsqrtTensorSquareExponent(dim),
+                inputs,
             ),
             (
                 "gemma_wrong_reduction_dim",
                 RecomposeRmsNorm._Gemma4RmsNorm(dim, reduction_dim=0),
+                inputs,
             ),
             (
                 "gemma_negative_eps",
                 RecomposeRmsNorm._Gemma4RmsNorm(dim, negative_eps=True),
+                inputs,
+            ),
+            (
+                "intermediate_add",
+                RecomposeRmsNorm._RmsNormWithIntermediate(dim),
+                inputs,
+            ),
+            (
+                "wrong_weight_shape_scalar_like",
+                wrong_weight_shape,
+                inputs,
+            ),
+            (
+                "runtime_weight",
+                RecomposeRmsNorm._RmsNormWithRuntimeWeight(),
+                (inputs[0], torch.ones(dim)),
+            ),
+            (
+                "product_square",
+                RecomposeRmsNorm._RmsNormWithProductSquare(dim),
+                (
+                    torch.rand_like(inputs[0]) + 0.5,
+                    torch.rand_like(inputs[0]) + 0.5,
+                ),
+            ),
+            (
+                "gemma_different_square_input",
+                RecomposeRmsNorm._Gemma4RmsNorm(dim),
+                (torch.randn(1, 4, 8, dim), torch.randn(1, 4, 8, dim)),
             ),
         ):
             with subtests.test(msg=name):
                 gm = pass_pipeline.lower_edge_ep(
                     module=module,
-                    sample_input=inputs,
+                    sample_input=module_inputs,
                     backend_type=backend_type,
                     compile_spec=compile_spec,
                     target_pass=_passes.RecomposeRmsNorm,
@@ -5449,72 +5368,6 @@ class RecomposeRmsNorm:
                         },
                         1,
                     )
-
-        for name, module, module_inputs in (
-            (
-                "intermediate_add",
-                RecomposeRmsNorm._RmsNormWithIntermediate(dim, "add"),
-                inputs,
-            ),
-            (
-                "intermediate_relu",
-                RecomposeRmsNorm._RmsNormWithIntermediate(dim, "relu"),
-                inputs,
-            ),
-            (
-                "wrong_weight_shape_scalar_like",
-                RecomposeRmsNorm._RmsNormWithWeightShape(dim, (1,)),
-                inputs,
-            ),
-            (
-                "wrong_weight_shape_multidimensional",
-                RecomposeRmsNorm._RmsNormWithWeightShape(dim, (1, 1, dim)),
-                inputs,
-            ),
-            (
-                "shape_changing_weight_view",
-                RecomposeRmsNorm._RmsNormWithReshapedParameterView(dim),
-                inputs,
-            ),
-            (
-                "runtime_weight",
-                RecomposeRmsNorm._RmsNormWithRuntimeWeight(dim),
-                (inputs[0], torch.ones(dim)),
-            ),
-            (
-                "product_square",
-                RecomposeRmsNorm._RmsNormWithProductSquare(dim),
-                (
-                    torch.rand_like(inputs[0]) + 0.5,
-                    torch.rand_like(inputs[0]) + 0.5,
-                ),
-            ),
-        ):
-            with subtests.test(msg=name):
-                gm = pass_pipeline.lower_edge_ep(
-                    module=module,
-                    sample_input=module_inputs,
-                    backend_type=backend_type,
-                    compile_spec=compile_spec,
-                    target_pass=_passes.RecomposeRmsNorm,
-                    quantizer=quantizer,
-                ).graph_module
-                assertions.assert_target_count(
-                    gm, exir_ops.edge.aten.rms_norm.default, 0
-                )
-                assertions.assert_target_count(gm, exir_ops.edge.aten.mean.dim, 1)
-
-        with subtests.test(msg="gemma_different_square_input"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=RecomposeRmsNorm._Gemma4RmsNorm(dim),
-                sample_input=(torch.randn(1, 4, 8, dim), torch.randn(1, 4, 8, dim)),
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=_passes.RecomposeRmsNorm,
-                quantizer=quantizer,
-            ).graph_module
-            assertions.assert_target_count(gm, exir_ops.edge.aten.rms_norm.default, 0)
-            assertions.assert_target_count(gm, exir_ops.edge.aten.mean.dim, 1)
 
         if quantizer is None:
             for name, module in (

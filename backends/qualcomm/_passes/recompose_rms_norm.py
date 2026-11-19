@@ -152,6 +152,36 @@ def _get_scalar(value, lifted_tensor_constants=None):
     return None
 
 
+def _writes_only_fresh_activations(node):
+    """Recognize writes that cannot change a scalar's state or alias."""
+    schema = node.target._schema
+    for index, argument in enumerate(schema.arguments):
+        if argument.alias_info is None or not argument.alias_info.is_write:
+            continue
+        value = (
+            node.args[index]
+            if index < len(node.args)
+            else node.kwargs.get(argument.name)
+        )
+        if (
+            not _is_call(value)
+            or value.target in SCALAR_WRAPPER_TARGETS
+            or not isinstance(value.target, (torch._ops.OpOverload, EdgeOpOverload))
+        ):
+            return False
+        producer = value.target._schema
+        tensor = value.meta.get("val")
+        if (
+            producer.is_mutable
+            or len(producer.returns) != 1
+            or producer.returns[0].alias_info is not None
+            or not isinstance(tensor, FakeTensor)
+            or tensor.constant is not None
+        ):
+            return False
+    return True
+
+
 class RecomposeRmsNorm(ExportPass):
     """
     Merge decomposed operators back to one super node.
@@ -394,8 +424,9 @@ class RecomposeRmsNorm(ExportPass):
         graphs = (
             (graph,) if self.edge_program is None else (graph, self.edge_program.graph)
         )
-        # State lookup is limited to functional graphs: a write can also change
-        # an alias. Check the original graph too: Edge lifts writes into outputs.
+        # A write can change a scalar through an alias. Keep checking the
+        # original graph too, but allow writes to fresh activation results
+        # (e.g. Gemma's final hidden_states *= layer_scalar).
         self.allow_buffer_scalars = not (
             self.edge_program is not None
             and self.edge_program.graph_signature.buffers_to_mutate
@@ -404,7 +435,10 @@ class RecomposeRmsNorm(ExportPass):
             or node.target is operator.getitem
             or (
                 isinstance(node.target, (torch._ops.OpOverload, EdgeOpOverload))
-                and not node.target._schema.is_mutable
+                and (
+                    not node.target._schema.is_mutable
+                    or _writes_only_fresh_activations(node)
+                )
             )
             for source_graph in graphs
             for node in source_graph.nodes
