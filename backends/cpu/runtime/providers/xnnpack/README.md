@@ -5,6 +5,13 @@ XNNPACK subgraphs. It is the primary provider in the default CPU composition,
 with one implementation, `XNNPACK/subgraph`. Each supported target is one `kOps`
 entry that pairs its support check with its subgraph lowering.
 
+FP32 `avg_pool2d` accepts static rank-four NCHW tensors, floor or ceil mode,
+and either `count_include_pad` setting. Global pooling uses a mean reduction;
+other windows use NHWC average pooling, with declared padding materialized when
+it must count toward the divisor. Explicit divisor overrides and kernels larger
+than the padded input remain on Reference, as do unsupported tensor metadata
+and dynamic arguments.
+
 Before lowering a region, [`XNNPACKPasses`](XNNPACKPasses.h) recomposes ATen's
 decomposed `hardswish` into one `xnn_unary_hardswish` node when its
 intermediates stay inside the region.

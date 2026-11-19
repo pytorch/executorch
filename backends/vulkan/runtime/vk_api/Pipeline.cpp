@@ -17,6 +17,17 @@ namespace vkapi {
 // Utility Functions
 //
 
+PipelineBarrier full_pipeline_barrier() {
+  PipelineBarrier barrier{};
+  barrier.stage = {
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+  barrier.global_access = {
+      VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT,
+      VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+  return barrier;
+}
+
 VkAccessFlags vk_access(
     const PipelineStageFlags stage,
     const MemoryAccessFlags access) {

@@ -95,7 +95,12 @@ def test_lower_int16_rsqrt_mul_uses_explicit_zero_shift(output_dtype):
     multiplications = result.graph_module.graph.find_nodes(
         op="call_function", target=exir_ops.backend.tosa.MUL.default
     )
-    assert len(multiplications) == 2
+    assert len(multiplications) == 1
+    # rsqrt only: int8 TABLEs next to int32 ops deadlock Ethos-U55 silicon.
+    tables = result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.TABLE.default
+    )
+    assert len(tables) == 1
     shift = multiplications[0].args[2]
     assert all(node.args[2] is shift for node in multiplications)
     assert shift.target == exir_ops.backend.tosa.CONST.default

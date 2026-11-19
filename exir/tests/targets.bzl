@@ -243,6 +243,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:pass_base",
             "//executorch/exir:schema",
             "//executorch/exir:tensor",
+            "//executorch/exir/backend/test:op_partitioner_demo",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
             "//executorch/exir/emit:lib",

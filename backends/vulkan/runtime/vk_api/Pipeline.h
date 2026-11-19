@@ -127,6 +127,10 @@ enum PipelineStage : PipelineStageFlags {
   TRANSFER = 1u << 2u,
 };
 
+// A barrier that waits for all prior GPU work, including host writes, and makes
+// its writes visible to all later work.
+PipelineBarrier full_pipeline_barrier();
+
 VkAccessFlags vk_access(const PipelineStageFlags, const MemoryAccessFlags);
 VkPipelineStageFlags vk_stage(const PipelineStageFlags);
 VkImageLayout vk_layout(const PipelineStageFlags, const MemoryAccessFlags);

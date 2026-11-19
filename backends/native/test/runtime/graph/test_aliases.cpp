@@ -24,6 +24,7 @@ constexpr const char* kSlice = "torch.ops.aten.slice.Tensor";
 constexpr const char* kSqueezeDim = "torch.ops.aten.squeeze.dim";
 constexpr const char* kSqueezeDims = "torch.ops.aten.squeeze.dims";
 constexpr const char* kUnsqueeze = "torch.ops.aten.unsqueeze.default";
+constexpr const char* kAlias = "torch.ops.aten.alias.default";
 constexpr const char* kAsStrided = "torch.ops.aten.as_strided.default";
 constexpr const char* kRelu = "torch.ops.aten.relu_.default";
 constexpr const char* kSigmoid = "torch.ops.aten.sigmoid_.default";
@@ -119,6 +120,15 @@ class GraphBuilder {
         kUnsqueeze,
         {tensor(source), {.arg = IntArg{.value = 0}}},
         sizes,
+        source);
+  }
+
+  ValueId alias(const char* name, ValueId source) {
+    return call(
+        name,
+        kAlias,
+        {tensor(source)},
+        graph_.value(source).tensor_meta().sizes,
         source);
   }
 
@@ -247,7 +257,7 @@ TEST(AliasesTest, MaterializesViewsAsCopies) {
   expect_functional(graph);
 }
 
-TEST(AliasesTest, MaterializesSliceSqueezeAndUnsqueezeAsCopies) {
+TEST(AliasesTest, MaterializesSliceSqueezeUnsqueezeAndAliasAsCopies) {
   GraphBuilder builder;
   const auto x = builder.input("x", {4, 2});
   const auto tail = builder.slice_rows("tail", x, 1, 4);
@@ -255,7 +265,8 @@ TEST(AliasesTest, MaterializesSliceSqueezeAndUnsqueezeAsCopies) {
   const auto squeezed = builder.squeeze("squeezed", batched);
   const auto squeezed_dims =
       builder.squeeze("squeezed_dims", batched, /*dims=*/true);
-  auto graph = builder.finish({tail, squeezed, squeezed_dims});
+  const auto same = builder.alias("same", x);
+  auto graph = builder.finish({tail, squeezed, squeezed_dims, same});
 
   functionalize_aliases(graph);
 
@@ -267,8 +278,10 @@ TEST(AliasesTest, MaterializesSliceSqueezeAndUnsqueezeAsCopies) {
   EXPECT_EQ(
       producer(graph, squeezed_dims).target,
       "torch.ops.aten.squeeze_copy.dims");
+  EXPECT_EQ(producer(graph, same).target, "torch.ops.aten.alias_copy.default");
   EXPECT_EQ(
-      graph.output_ids, std::vector<ValueId>({tail, squeezed, squeezed_dims}));
+      graph.output_ids,
+      std::vector<ValueId>({tail, squeezed, squeezed_dims, same}));
   expect_functional(graph);
 }
 
@@ -316,13 +329,14 @@ TEST(AliasesTest, RedirectsTensorListReadsOfMutatedValue) {
 }
 
 TEST(AliasesTest, RedirectsLiveViewWithSameIndexing) {
-  for (const std::string scenario : {"view", "squeeze"}) {
+  for (const std::string scenario : {"view", "squeeze", "alias"}) {
     SCOPED_TRACE(scenario);
     GraphBuilder builder;
     const auto x = builder.input("x", {4});
     const auto sum = builder.add("sum", x, x);
-    const auto flat = scenario == "view"
-        ? builder.view("flat", sum, {4})
+    const auto flat = scenario == "view" ? builder.view("flat", sum, {4})
+        : scenario == "alias"
+        ? builder.alias("flat", sum)
         : builder.squeeze("flat", builder.unsqueeze("batched", sum));
     const auto relu = builder.in_place("relu", kRelu, sum);
     const auto reader = builder.add("reader", flat, flat);
@@ -354,13 +368,16 @@ TEST(AliasesTest, IgnoresAliasesWithoutLaterReaders) {
 }
 
 TEST(AliasesTest, RejectsMutationThroughLiveViewWithDifferentIndexing) {
-  for (const std::string scenario : {"reshape", "transpose"}) {
+  for (const std::string scenario :
+       {"reshape", "transpose", "alias_of_transpose"}) {
     SCOPED_TRACE(scenario);
     GraphBuilder builder;
     const auto x = builder.input("x", {2, 2});
     const auto sum = builder.add("sum", x, x);
     const auto alias = scenario == "reshape" ? builder.view("alias", sum, {4})
-                                             : builder.transpose("alias", sum);
+        : scenario == "transpose"
+        ? builder.transpose("alias", sum)
+        : builder.alias("alias", builder.transpose("transposed", sum));
     builder.in_place("relu", kRelu, sum);
     const auto reader = builder.add("reader", alias, alias);
     expect_failure(
@@ -401,6 +418,23 @@ TEST(AliasesTest, RejectsMutationOfSliceWithLiveBaseOrSibling) {
         builder.finish({reader}),
         "mutation through a live view is not supported");
   }
+}
+
+TEST(AliasesTest, FunctionalizesMutationOfAliasAndRedirectsBase) {
+  GraphBuilder builder;
+  const auto x = builder.input("x", {4});
+  const auto sum = builder.add("sum", x, x);
+  const auto same = builder.alias("same", sum);
+  const auto relu = builder.in_place("relu", kRelu, same);
+  const auto reader = builder.add("reader", sum, sum);
+  auto graph = builder.finish({reader});
+
+  functionalize_aliases(graph);
+
+  EXPECT_EQ(producer(graph, relu).target, "torch.ops.aten.relu.default");
+  EXPECT_EQ(producer(graph, reader).inputs[0].arg.as_tensor().id, relu);
+  EXPECT_EQ(producer(graph, reader).inputs[1].arg.as_tensor().id, relu);
+  expect_functional(graph);
 }
 
 TEST(AliasesTest, RejectsMutationOfNonIntermediateStorage) {

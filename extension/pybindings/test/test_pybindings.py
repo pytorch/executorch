@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,6 +24,12 @@ from io import StringIO
 
 import numpy as np
 import torch
+
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.core import BundledProgram
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
@@ -101,6 +108,66 @@ class PybindingsTest(unittest.TestCase):
         self.load_fn = runtime._load_for_executorch_from_buffer
         self.load_prog_fn = runtime._load_program_from_buffer
         self.runtime = runtime
+
+    def test_bundled_channels_last_input_and_output(self) -> None:
+        input_tensor = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        model = ModuleChannelsLast()
+        expected = model(input_tensor)
+        self.assertTrue(expected.is_contiguous(memory_format=torch.channels_last))
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundled_program = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward",
+                    [
+                        MethodTestCase((input_tensor,), (expected,)),
+                        MethodTestCase(
+                            (input_tensor.contiguous(),), (expected.contiguous(),)
+                        ),
+                    ],
+                )
+            ],
+        )
+        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+        for test_index in range(2):
+            output = bundled_module.verify_result_with_bundled_expected_output(
+                "forward", test_index
+            )[0]
+            self.assertEqual(output.stride(), expected.stride())
+            self.assertTrue(torch.equal(output, expected))
+
+    def test_bundled_permute_output(self) -> None:
+        class Permute(torch.nn.Module):
+            def forward(self, x):
+                return x.permute(0, 2, 3, 1)
+
+        model = Permute()
+        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 3, 4, 5)
+        expected = model(input_tensor)
+        self.assertFalse(expected.is_contiguous())
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundle = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward", [MethodTestCase((input_tensor,), (expected,))]
+                )
+            ],
+        )
+        bundled_module = self.runtime._load_bundled_program_from_buffer(
+            serialize_from_bundled_program_to_flatbuffer(bundle)
+        )
+        output = bundled_module.verify_result_with_bundled_expected_output(
+            "forward", 0
+        )[0]
+        self.assertTrue(torch.equal(output, expected))
 
     def test_e2e(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -2290,6 +2357,114 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertTrue(
             torch.equal(output.view(torch.float16), value.view(torch.float16))
         )
+
+    def test_float8_dlpack_input(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings read DLPack inputs themselves")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        for dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+            program = to_edge(export(Identity(), (value,))).to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_graph_input=False, alloc_graph_output=False
+                    )
+                )
+            )
+            method = self.load_prog_fn(program.buffer).load_method("forward")
+            # The wrapper takes no max_version, so it gets a legacy capsule; raw
+            # capsules also cover the versioned kind.
+            for kind, given in (
+                ("wrapper", DLPackOnly(value)),
+                ("legacy capsule", value.__dlpack__()),
+                ("versioned capsule", value.__dlpack__(max_version=(1, 1))),
+            ):
+                with self.subTest(dtype=dtype, input=kind):
+                    output = torch.from_dlpack(method(given)[0])
+                    self.assertEqual(output.dtype, dtype)
+                    self.assertTrue(
+                        torch.equal(output.view(torch.uint8), value.view(torch.uint8))
+                    )
+            if dtype == torch.float8_e4m3fn:
+                # exir cannot export fnuz dtypes, so their codes are checked by
+                # the dtype a float8_e4m3fn method reports when it refuses them,
+                # read from a versioned capsule.
+                for fnuz in (torch.float8_e4m3fnuz, torch.float8_e5m2fnuz):
+                    name = str(fnuz).removeprefix("torch.").capitalize()
+                    with self.subTest(dtype=fnuz):
+                        with self.assertRaisesRegex(
+                            ValueError,
+                            f"has dtype {name} but the method expects Float8_e4m3fn",
+                        ):
+                            method(value.to(fnuz).__dlpack__(max_version=(1, 1)))
+
+    def test_float8_result_round_trips_through_dlpack(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings return ExecuTorchResult outputs")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        config = ExecutorchBackendConfig(
+            memory_planning_pass=MemoryPlanningPass(
+                alloc_graph_input=False, alloc_graph_output=False
+            )
+        )
+        script = """
+import importlib
+import sys
+import torch
+
+runtime = importlib.import_module(sys.argv[1])
+native = sys.modules[runtime.ExecuTorchResult.__module__]
+assert native._tensor_output == "executorch"
+for path, dtype in zip(
+    sys.argv[2:], (torch.float8_e4m3fn, torch.float8_e5m2), strict=True
+):
+    value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+    with open(path, "rb") as source:
+        data = source.read()
+    method = runtime._load_program_from_buffer(data).load_method("forward")
+    output = method(value)[0]
+    assert isinstance(output, runtime.ExecuTorchResult), type(output)
+    tensor = torch.from_dlpack(output)
+    assert tensor.dtype == dtype, (dtype, tensor.dtype)
+    assert torch.equal(tensor.view(torch.uint8), value.view(torch.uint8)), dtype
+    roundtrip = torch.from_dlpack(method(output)[0])
+    assert roundtrip.dtype == dtype, (dtype, roundtrip.dtype)
+    assert torch.equal(roundtrip.view(torch.uint8), value.view(torch.uint8)), dtype
+print("float8 results round trip through DLPack")
+"""
+        arguments = [self.runtime.__name__]
+        with tempfile.TemporaryDirectory() as directory:
+            for dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+                name = str(dtype).removeprefix("torch.")
+                value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+                program = to_edge(export(Identity(), (value,))).to_executorch(config)
+                path = os.path.join(directory, f"{name}.pte")
+                with open(path, "wb") as source:
+                    source.write(program.buffer)
+                arguments.append(path)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [sys.executable, "-c", script, *arguments],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("float8 results round trip through DLPack", completed.stdout)
 
     def test_unsupported_buffer_format_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())

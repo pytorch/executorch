@@ -47,7 +47,7 @@ from executorch.backends.native.serialization.graph_serialize import (
     validate_program,
 )
 from executorch.backends.native.serialization.schema import OutputKind, Program
-from executorch.exir._serialize._ptn import write_ptn
+from executorch.exir._serialize._ptn import _check_metadata, MetadataValue, write_ptn
 from torch.utils import _pytree as pytree
 
 if TYPE_CHECKING:
@@ -76,10 +76,12 @@ class NativeProgramManager:
         self,
         ptg: bytes,
         constants: dict[str, torch.Tensor],
+        metadata: dict[str, MetadataValue] | None = None,
     ) -> None:
         # TODO add args help
         self._ptg = ptg
         self._constants = constants
+        self._metadata = dict(metadata or {})
 
     @property
     def methods(self) -> set[str]:
@@ -89,7 +91,13 @@ class NativeProgramManager:
     def save(self, path: str) -> None:
         """Write the program and its constants to ``path`` as a .ptn package."""
         mutable_keys = frozenset(_mutable_data_keys(deserialize_program(self._ptg)))
-        write_ptn(path, self._ptg, self._constants, mutable_keys=mutable_keys)
+        write_ptn(
+            path,
+            self._ptg,
+            self._constants,
+            mutable_keys=mutable_keys,
+            metadata=self._metadata,
+        )
 
 
 def _check_delegate_outputs(
@@ -362,6 +370,7 @@ def _normalize_programs(
 
 def to_native(
     programs: "ExportedProgram | dict[str, ExportedProgram]",
+    metadata: dict[str, MetadataValue] | None = None,
 ) -> NativeProgramManager:
     """Lower ExportedProgram(s) through the native backend.
 
@@ -376,17 +385,21 @@ def to_native(
     Nothing about lowering is configurable yet. The passes, the partitioner, and
     the edge compile config are all owned here, because correctness of the package
     depends on them. Exposing the compile config is worth reconsidering.
-    ``constant_methods`` and ETRecord are likewise deferred.
+    ETRecord is likewise deferred.
 
     Args:
         programs: The exported program(s) to lower.
+        metadata: Values a runtime reads by name, the package's counterpart to a
+            PTE's ``constant_methods``: each a bool, int, float, str, or a list
+            of those. Saved as the package's metadata.json.
 
     Returns:
         A ``NativeProgramManager``; call ``save`` to write a .ptn package.
 
     Raises:
         TypeError: If ``programs`` is not an ``ExportedProgram`` or a method-name
-            dictionary containing only ``ExportedProgram`` values.
+            dictionary containing only ``ExportedProgram`` values, or
+            ``metadata`` holds a name or value outside the types above.
         ValueError: If the method dictionary is empty, a method name is empty or
             in the reserved ``state`` namespace, a method does not fully delegate
             to the native backend, a mutable constant differs between methods,
@@ -394,6 +407,8 @@ def to_native(
             backing tensor.
     """
     method_programs = _normalize_programs(programs)
+    if metadata is not None:
+        _check_metadata(metadata, "to_native")
 
     from executorch.backends.native import get_default_compile_config
     from executorch.backends.native.partitioner import NativePartitioner
@@ -493,7 +508,9 @@ def to_native(
     constants = _merge_constants(method_constants)
     _validate_merged_program(program, constants)
 
-    return NativeProgramManager(ptg=_compile_to_bytes(program), constants=constants)
+    return NativeProgramManager(
+        ptg=_compile_to_bytes(program), constants=constants, metadata=metadata
+    )
 
 
 __all__ = ["NativeProgramManager", "to_native"]
