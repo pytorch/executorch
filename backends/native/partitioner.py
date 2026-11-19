@@ -16,7 +16,9 @@ ExecuTorch forbids a partitioner from mutating the graph module.
 import operator
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
-# Registers torch.ops.torchao.dequantize_gguf, referenced in _SUPPORTED_NON_CORE_OPS.
+# Register torch.ops.kvcache.update_and_attend and torch.ops.torchao.dequantize_gguf,
+# referenced in _SUPPORTED_NON_CORE_OPS.
+import executorch.extension.llm.cache.update_and_attend  # noqa: F401
 import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
 from executorch.backends.native.custom_ops import rope_op
@@ -50,6 +52,8 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.torchao.dequantize_affine.default,
     rope_op,
     torch.ops.aten.rms_norm.default,
+    # Attention over a runtime-owned KV cache; engines bind the cache at load.
+    torch.ops.kvcache.update_and_attend.default,
 ]
 
 # A SymInt, and any op arg that references one, is an execution-time value. An

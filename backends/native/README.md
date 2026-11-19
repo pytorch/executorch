@@ -45,6 +45,15 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.ptg` | Methods as graphs; FlatBuffer defined by `serialization/native_graph.fbs`. |
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
+| `metadata.json` | Producer-defined values by name; present only when given. |
+
+`to_native(ep, metadata={...})` writes `metadata.json`, the counterpart to a
+PTE's constant methods: a JSON object whose values are each a bool, number,
+string, or a flat list of those. Names mean nothing to the format; a runner
+reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
+`exir.native.read_metadata` reads them back in Python. LLM exports reuse the
+constant-method names in `extension/llm/export/model_metadata.py`, such as
+`get_windows` for the per-layer sliding windows of an off-graph KV cache.
 
 ## Samples (optional)
 
@@ -145,6 +154,14 @@ an engine through the interfaces in `runtime/engine/Engine.h`:
 
 An engine rejects a method whose semantics it cannot fully honor.
 
+Engines need not match eager bit for bit: accumulation precision and order,
+fused multiply-add, and the accuracy of functions such as `exp` are up to each
+engine. As a guideline, an engine should round to nearest when it narrows a
+value for storage, with ties to even between floating-point types (f32 to f16 or
+bf16), as eager does. Rounding toward zero, which some GPU APIs allow, biases
+every stored value toward zero, and the bias compounds across layers instead of
+averaging out.
+
 | Engine | Source | Notes |
 | --- | --- | --- |
 | Vulkan | `runtime/vulkan/` | Builds on the ET-VK `ComputeGraph` and shaders. |
@@ -204,9 +221,15 @@ target_link_libraries(my_app PRIVATE native_api native_vulkan_engine)
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_runtime_test` covers the shared runtime
 and API. `native_cpu_engine_test` covers the CPU engine when
 `EXECUTORCH_BUILD_NATIVE_CPU` is enabled. `native_vulkan_passes_test` covers the
-Vulkan graph rewrites without requiring a GPU. When either runner below is
+Vulkan graph rewrites without requiring a GPU. When any runner below is
 enabled, `native_runner_utils_test` covers their shared runner utilities. Run these
-with `ctest --test-dir cmake-out -R native_`.
+with `ctest --test-dir cmake-out -R native_` after `cmake --build cmake-out`.
+
+The engines' sample tests judge them on the bundled op samples. Building them runs
+the sample generator, which needs `torch`, `torchao`, `gguf` and the FACTO
+submodule at `backends/cadence/utils/FACTO`. Those with failing cases are
+disabled in CTest; run their binaries directly with
+`--packages=<build-dir>/backends/native/test/op_samples`.
 
 The `Test Native Engines` CI workflow has separate Linux jobs for the shared
 runtime, CPU, GGML, and Vulkan, with each test suite run once. To reproduce with
@@ -225,7 +248,7 @@ installed by the `Test Native Engines` workflow. The Vulkan job builds
 
 Native GGML builds the GGML subtree of the llama.cpp submodule at
 `backends/native/third-party/llama.cpp`, pinned to
-`620d2225cc436ab0b001e3200e590e3b286ef9ab`. This matches the Buck dependency
+`b1b770d90d94cad9e9ea5b993bdbc383a522fb28`. This matches the Buck dependency
 used to validate this CMake integration. The build requires `GGML_CPU=ON`
 and `GGML_BACKEND_DL=OFF`, which are the defaults.
 
@@ -310,6 +333,35 @@ and prints the selected engine and device and the top-5 logits. When
 invalid arguments, 2 for a loading or execution error, and 3 for a reference
 mismatch.
 
+## Whisper speech recognition runner
+
+`EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON` builds `run_whisper_ggml_cpu` from
+`examples/audio` with Native GGML on CPU. It requires gflags. Initialize the
+GGML submodule as described above, then:
+
+```sh
+cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE=ON -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON
+cmake --build cmake-out --target run_whisper_ggml_cpu
+cmake --install cmake-out --prefix install
+install/bin/run_whisper_ggml_cpu --cpu_threads 4 \
+  --package whisper_tiny.ptn --input input_features.bin \
+  --prompt prompt_ids.txt --expected expected_ids.txt --eos_ids 50257
+```
+
+Export the `.ptn` with
+[`export_hf_whisper.py`](examples/audio/export_hf_whisper.py); `--dump_dir` also
+writes the log-mel input, forced prompt, and eager greedy ids, and the exporter
+prints the model's EOS ids. The runner projects cross-attention K/V once, then
+preserves those inputs and its self-attention cache across prefill and decode,
+including GGML graph rebuilds. It greedily decodes until EOS or
+`--max_new_tokens` (default 32, matching the exporter), capped by the remaining
+decoder context. `--max_cached_graphs` defaults to 1; 0 rebuilds each call.
+When `--expected` is given, it exits nonzero if the generated ids differ from
+the reference. Use the same `--max_new_tokens` value when exporting reference
+vectors and running the comparison.
+
 ## Native LLM runner
 
 `EXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON` builds `run_hf_llm_vulkan` with Native
@@ -334,6 +386,9 @@ install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
 The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
 enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
+GGML quantizes the activations of its quantized matmuls, so it rejects
+weight-only quantized linears, including GGUF k-quants, unless
+`--allow_activation_quant_for_weight_only` accepts that loss of precision.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.

@@ -23,24 +23,36 @@ DEFINE_int32(
     max_cached_graphs,
     1,
     "Graphs kept per executable by input shapes; 0 rebuilds every call.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Run weight-only quantized linears, such as GGUF k-quants, with ggml's "
+    "quantized activations.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage(
       "Generate text from an LLM .ptn with the native ggml engine.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  return ptn::run_llm([] {
-    ptn::GgmlEngineOptions options;
-    if (FLAGS_device == "gpu") {
-      options.device = ptn::GgmlDevice::Gpu;
-    } else if (FLAGS_device != "cpu") {
-      throw std::invalid_argument("--device must be cpu or gpu");
-    }
-    options.device_index = FLAGS_device_index;
-    options.cpu_threads = FLAGS_cpu_threads;
-    if (FLAGS_max_cached_graphs < 0) {
-      throw std::invalid_argument("--max_cached_graphs must be non-negative");
-    }
-    options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
-    return ptn::GgmlEngineHost::create(options);
-  });
+  ptn::register_ggml_cache_builders();
+  return ptn::run_llm(
+      [] {
+        ptn::GgmlEngineOptions options;
+        if (FLAGS_device == "gpu") {
+          options.device = ptn::GgmlDevice::Gpu;
+        } else if (FLAGS_device != "cpu") {
+          throw std::invalid_argument("--device must be cpu or gpu");
+        }
+        options.device_index = FLAGS_device_index;
+        options.cpu_threads = FLAGS_cpu_threads;
+        if (FLAGS_max_cached_graphs < 0) {
+          throw std::invalid_argument(
+              "--max_cached_graphs must be non-negative");
+        }
+        options.max_cached_graphs =
+            static_cast<size_t>(FLAGS_max_cached_graphs);
+        options.allow_activation_quant_for_weight_only =
+            FLAGS_allow_activation_quant_for_weight_only;
+        return ptn::GgmlEngineHost::create(options);
+      },
+      ptn::kGgmlCacheBackendId);
 }

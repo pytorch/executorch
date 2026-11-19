@@ -270,7 +270,7 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
     add_library(
       muse_glimmer_batching_runtime STATIC
       runtime/backend_factory.cpp ${_batching_executor}
-      runtime/runners/batching_bootstrap.cpp
+      runtime/model_embeddings.cpp runtime/runners/batching_bootstrap.cpp
     )
     target_link_libraries(
       muse_glimmer_batching_runtime

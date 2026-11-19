@@ -16,10 +16,10 @@ import torch
 
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -49,7 +49,7 @@ def main(args):
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
         attention_mask = create_bidirectional_mask(
             config=module.config,
-            input_embeds=module.albert.embeddings(random_ids),
+            inputs_embeds=module.albert.embeddings(random_ids),
             attention_mask=torch.zeros((1, 100), dtype=torch.float32),
         )
         inputs = [
@@ -70,7 +70,7 @@ def main(args):
                 input_ids,
                 create_bidirectional_mask(
                     config=module.config,
-                    input_embeds=module.albert.embeddings(input_ids),
+                    inputs_embeds=module.albert.embeddings(input_ids),
                     attention_mask=attention_mask,
                 ),
             )
@@ -97,7 +97,7 @@ def main(args):
 
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = f"{args.artifact}/{pte_filename}.pte"
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
@@ -106,9 +106,9 @@ def main(args):
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs)
-    adb.execute()
-    adb.pull(host_output_path=args.artifact)
+    device.push(inputs=inputs)
+    device.execute()
+    device.pull(host_output_path=args.artifact)
     # since the original nn.Module could not perform well on this task either
     # we only measure the relative accuracy here
     goldens, predictions, nominal_predictions = [], [], []

@@ -257,8 +257,6 @@ CONV_TRANSPOSE_TARGETS = {
     torch.ops.aten.conv_transpose1d.default,
     torch.ops.aten.conv_transpose2d,
     torch.ops.aten.conv_transpose2d.input,
-    torch.ops.aten.conv_transpose3d,
-    torch.ops.aten.conv_transpose3d.input,
 }
 
 LINEAR_TARGETS = {

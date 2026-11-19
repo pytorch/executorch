@@ -76,12 +76,31 @@ enum class ET_EXPERIMENTAL ErrorCode {
   SessionBusy,
   CapacityExceeded,
   Internal,
+  SessionCapacityExceeded,
+  ContextLengthExceeded,
+};
+
+struct ET_EXPERIMENTAL ContextOverflow {
+  std::size_t prompt_tokens;
+  std::size_t context_length;
+  std::size_t completion_tokens = 1;
 };
 
 struct ET_EXPERIMENTAL ServingError {
   ErrorCode code = ErrorCode::Internal;
   std::string message;
+  std::optional<ContextOverflow> context_overflow;
 };
+
+inline ServingError context_length_error(
+    std::size_t prompt_tokens,
+    std::size_t context_length,
+    std::size_t completion_tokens = 1) {
+  return {
+      ErrorCode::ContextLengthExceeded,
+      "context length exceeded",
+      ContextOverflow{prompt_tokens, context_length, completion_tokens}};
+}
 
 // Valid only during preparation on the runtime's control thread. The callback
 // must do bounded work and may poll cancelled while preparing a large prompt.
@@ -131,6 +150,8 @@ struct ET_EXPERIMENTAL GenerationStats {
   // suffix. Present only for Stop/Length completion without a matched string
   // stop or rendering error. An empty vector is distinct from absent.
   std::optional<std::vector<batching::Token>> generated_token_ids;
+  // Exact string stop removed from visible output; absent for token EOS.
+  std::optional<std::string> matched_stop;
 };
 
 struct ET_EXPERIMENTAL TextEvent {

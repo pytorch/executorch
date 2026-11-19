@@ -181,7 +181,7 @@ function Assert-GeneratorSupported([string]$Generator) {
 #     and CMAKE_SYSTEM_PROCESSOR=ARM64 so CMake selects the MSVC/Clang-CL
 #     cross-compiler for arm64.
 #   - No ANDROID_ABI / ANDROID_PLATFORM flags.
-#   - Example runners are built for Windows (no adb push needed).
+#   - Example runners are built for Windows.
 # ---------------------------------------------------------------------------
 if (-not $SkipArm64Windows) {
     $BuildRoot = Join-Path $PrjRoot $CmakeArm64

@@ -71,7 +71,7 @@ def _run_pytest(entrypoints: list[Path], output_root: Path) -> None:
             sys.executable,
             "-m",
             "pytest",
-            "--config-file",
+            "-c",
             str(REPO_ROOT / PYTEST_CONFIG),
             *[str(path) for path in entrypoints],
         ],

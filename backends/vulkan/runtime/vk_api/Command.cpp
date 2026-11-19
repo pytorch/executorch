@@ -152,13 +152,21 @@ void CommandBuffer::record_barrier(PipelineBarrier& pipeline_barrier) {
     for (const ImageMemoryBarrier& memory_barrier : pipeline_barrier.images) {
       pipeline_barrier.image_barrier_handles.push_back(memory_barrier.handle);
     }
+    const VkMemoryBarrier global_barrier{
+        VK_STRUCTURE_TYPE_MEMORY_BARRIER, // sType
+        nullptr, // pNext
+        pipeline_barrier.global_access.src, // srcAccessMask
+        pipeline_barrier.global_access.dst, // dstAccessMask
+    };
+    const bool has_global_barrier = (pipeline_barrier.global_access.src |
+                                     pipeline_barrier.global_access.dst) != 0u;
     vkCmdPipelineBarrier(
         handle_, // commandBuffer
         pipeline_barrier.stage.src, // srcStageMask
         pipeline_barrier.stage.dst, // dstStageMask
         0u, // dependencyFlags
-        0u, // memoryBarrierCount
-        nullptr, // pMemoryBarriers
+        has_global_barrier ? 1u : 0u, // memoryBarrierCount
+        has_global_barrier ? &global_barrier : nullptr, // pMemoryBarriers
         pipeline_barrier.buffers.size(), // bufferMemoryBarrierCount
         !pipeline_barrier.buffers.empty()
             ? pipeline_barrier.buffer_barrier_handles.data()
@@ -254,9 +262,10 @@ void CommandBuffer::blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst) {
 void CommandBuffer::write_timestamp(VkQueryPool querypool, const uint32_t idx)
     const {
   VK_CHECK_COND(
-      state_ == CommandBuffer::State::RECORDING,
+      state_ == CommandBuffer::State::RECORDING ||
+          state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called write_timestamp() on a command buffer whose state "
-      "is not RECORDING.");
+      "is not RECORDING or BARRIERS_INSERTED.");
 
   vkCmdWriteTimestamp(
       handle_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, querypool, idx);

@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef BILINEAR_BORDER_SAMPLE_GLSLH
+#define BILINEAR_BORDER_SAMPLE_GLSLH
+
+/*
+ * Bilinear sample of a channels-packed texture at pixel coordinate c on texel
+ * slice z, with border padding: c is clamped to [0, max_xy].
+ */
+VEC4_T bilinear_border_sample(
+    sampler3D tex,
+    vec2 c,
+    const int z,
+    const ivec2 max_xy) {
+  c = clamp(c, vec2(0.0), vec2(max_xy));
+  const ivec2 lower = ivec2(floor(c));
+  const ivec2 upper = min(lower + ivec2(1), max_xy);
+  const vec2 w = c - vec2(lower);
+
+  const VEC4_T s00 = VEC4_T(texelFetch(tex, ivec3(lower.x, lower.y, z), 0));
+  const VEC4_T s10 = VEC4_T(texelFetch(tex, ivec3(upper.x, lower.y, z), 0));
+  const VEC4_T s01 = VEC4_T(texelFetch(tex, ivec3(lower.x, upper.y, z), 0));
+  const VEC4_T s11 = VEC4_T(texelFetch(tex, ivec3(upper.x, upper.y, z), 0));
+  return mix(mix(s00, s10, w.x), mix(s01, s11, w.x), w.y);
+}
+
+#endif // BILINEAR_BORDER_SAMPLE_GLSLH

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -33,6 +34,7 @@
 #include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
 #include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
+#include <executorch/backends/native/runtime/engine/ggml/GgmlCache.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlGraphBuilder.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlHostInts.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlTypes.h>
@@ -48,6 +50,8 @@ namespace ptn {
 namespace {
 
 using namespace ggml_detail;
+using executorch::extension::llm::cache::Run;
+using executorch::extension::llm::cache::SeqStepPlan;
 
 // Multiplies each slice of the leading dimension by its scale.
 // data is a byte buffer holding count floats, as ggml tensor data is.
@@ -161,17 +165,20 @@ class GgmlExecutable final : public EngineExecutable {
       const GgmlEngineOptions& options,
       size_t* materialized_constant_bytes,
       size_t* heap_copied_constant_bytes,
-      GgmlMutableKeyOwners& mutable_key_owners)
+      GgmlMutableKeyOwners& mutable_key_owners,
+      GgmlSequenceCache* kv_cache)
       : mutable_key_claim_(mutable_key_owners, method),
         method_(method),
         package_(package),
-        options_(options) {
+        options_(options),
+        kv_cache_(kv_cache) {
     index_signature();
     initialize_backends();
     fold_batch_norms();
     initialize_persistent_tensors(materialized_constant_bytes);
     index_rope_frequencies();
     index_mask_extents();
+    index_offgraph_attention();
     if (heap_copied_constant_bytes != nullptr) {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
@@ -256,10 +263,19 @@ class GgmlExecutable final : public EngineExecutable {
         })) {
       throw std::logic_error("ggml: every input must be set before execute");
     }
+    // A step starts at the sequence's length and commits only once it has
+    // run, so one that fails leaves the sequence unchanged: whatever it wrote
+    // lies past the length.
+    if (valid(offgraph_position_)) {
+      offgraph_step_ = checked_offgraph_step();
+      bind_offgraph(offgraph_step_->start + offgraph_step_->tokens);
+    }
 
+    std::optional<SeqStepPlan> step;
     if (options_.max_cached_graphs == 0) {
       ggml_backend_sched_reset(scheduler_.get());
       GraphInstance instance = build_graph(evaluate_key_extents());
+      step = prepare_offgraph(instance);
       allocate(scheduler_.get(), instance);
       try {
         run(scheduler_.get(), instance);
@@ -270,6 +286,7 @@ class GgmlExecutable final : public EngineExecutable {
       ggml_backend_sched_reset(scheduler_.get());
     } else {
       CachedGraph& cached = cached_graph();
+      step = prepare_offgraph(cached.instance);
       try {
         run(cached.scheduler.get(), cached.instance);
       } catch (...) {
@@ -277,6 +294,9 @@ class GgmlExecutable final : public EngineExecutable {
         cached_graphs_.pop_back();
         throw;
       }
+    }
+    if (step) {
+      kv_cache_->commit(*step);
     }
     executed_ = true;
   }
@@ -491,11 +511,13 @@ class GgmlExecutable final : public EngineExecutable {
     std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
       return backend.get();
     });
+    // The scheduler hashes a graph's leafs as well as its nodes, and a graph
+    // holds up to graph_size of each.
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
         static_cast<int>(raw.size()),
-        options_.graph_size,
+        2 * options_.graph_size,
         /*parallel=*/false,
         /*op_offload=*/true));
     if (!scheduler) {
@@ -542,7 +564,27 @@ class GgmlExecutable final : public EngineExecutable {
             "' may only feed linear or embedding weights, not '" + node.target +
             "'");
       }
+      if (op == "aten.linear.default" &&
+          !options_.allow_activation_quant_for_weight_only &&
+          !has_dequantized_input(node)) {
+        throw std::runtime_error(
+            "ggml: weight-only quantized linear '" + node.name +
+            "' needs allow_activation_quant_for_weight_only, since ggml "
+            "quantizes its activations");
+      }
     }
+  }
+
+  bool has_dequantized_input(const Node& linear) const {
+    const NamedArgument* input = find_arg(linear, "input", 0);
+    if (input == nullptr || input->arg.kind() != ArgKind::Tensor) {
+      return false;
+    }
+    const NodeId producer =
+        method_.graph.value(input->arg.as_tensor().id).producer_id;
+    return valid(producer) &&
+        op_key(method_.graph.node(producer).target) ==
+        "torchao.dequantize_affine.default";
   }
 
   // Converters read some dtypes through typed pointers, so the package's bytes
@@ -570,8 +612,32 @@ class GgmlExecutable final : public EngineExecutable {
     return bytes;
   }
 
-  std::vector<uint8_t> load_q4_0(const TensorMeta& meta, ByteSpan packed)
-      const {
+  // Scales that fp16 would round, of an int4 constant only embeddings read.
+  // Q4_0 blocks hold fp16 scales, and a linear's mul_mat reads them there, so
+  // only such a weight loads as unit-scale blocks whose gathered rows are
+  // multiplied by these scales.
+  std::optional<std::vector<float>> exact_row_scales(ValueId id) const {
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    const AffineGroupQuant* quant = affine_quant(meta);
+    if (quant == nullptr || quant->scale_dtype == ScalarType::Half ||
+        constant_binding(id) == nullptr ||
+        !std::ranges::all_of(
+            method_.graph.value(id).consumer_ids, [this](NodeId consumer) {
+              return op_key(method_.graph.node(consumer).target) ==
+                  "aten.embedding.default";
+            })) {
+      return std::nullopt;
+    }
+    std::vector<float> scales = load_q4_scales(meta);
+    if (std::ranges::all_of(scales, [](float scale) {
+          return ggml_fp16_to_fp32(ggml_fp32_to_fp16(scale)) == scale;
+        })) {
+      return std::nullopt;
+    }
+    return scales;
+  }
+
+  std::vector<float> load_q4_scales(const TensorMeta& meta) const {
     const AffineGroupQuant& quant = q4_affine(meta);
     const std::optional<OwnedBytes> scales =
         read_constant(quant.scale_data_key);
@@ -590,8 +656,7 @@ class GgmlExecutable final : public EngineExecutable {
             quant.zero_point_data_key + "'");
       }
     }
-    return affine_int4_to_q4_0(
-        meta, packed, to_float_vector(scales->span(), quant.scale_dtype));
+    return to_float_vector(scales->span(), quant.scale_dtype);
   }
 
   // The binding of a constant with data that no op writes.
@@ -819,14 +884,29 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
-    const size_t count = static_cast<size_t>(std::ranges::count_if(
-        method_.data_bindings,
-        [this](const DataBinding& binding) { return is_persistent(binding); }));
+    size_t count = 0;
+    // The float scales of int4 weights that load as unit-scale blocks.
+    std::unordered_map<ValueId, std::vector<float>> float_scales;
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (!is_persistent(binding)) {
+        continue;
+      }
+      ++count;
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
+        check_q4_consumers(binding.value_id, binding.key);
+      }
+      if (std::optional<std::vector<float>> scales =
+              exact_row_scales(binding.value_id)) {
+        float_scales.emplace(binding.value_id, std::move(*scales));
+      }
+    }
     if (count == 0) {
       return;
     }
     ggml_init_params params{
-        .mem_size = ggml_tensor_overhead() * (count + 16),
+        .mem_size = ggml_tensor_overhead() * (count + float_scales.size() + 16),
         .mem_buffer = nullptr,
         .no_alloc = true,
     };
@@ -842,13 +922,19 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
-        check_q4_consumers(binding.value_id, binding.key);
-      }
       ggml_tensor* tensor =
           new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
+      if (float_scales.contains(binding.value_id)) {
+        const AffineGroupQuant& quant = q4_affine(meta);
+        ggml_tensor* scales = new_tensor(
+            persistent_context_.get(),
+            GGML_TYPE_F32,
+            {meta.sizes[0], meta.sizes[1] / quant.group_size});
+        ggml_set_name(scales, quant.scale_data_key.c_str());
+        row_scales_.emplace(binding.value_id, scales);
+      }
     }
 
     persistent_buffer_.reset(ggml_backend_alloc_ctx_tensors(
@@ -917,7 +1003,17 @@ class GgmlExecutable final : public EngineExecutable {
       ByteSpan span = bytes->span();
       std::vector<uint8_t> converted;
       if (is_q4) {
-        converted = load_q4_0(meta, span);
+        const auto entry = float_scales.find(binding.value_id);
+        if (entry == float_scales.end()) {
+          converted = affine_int4_to_q4_0(meta, span, load_q4_scales(meta));
+        } else {
+          converted = affine_int4_to_q4_0(
+              meta, span, std::vector<float>(entry->second.size(), 1.0f));
+          ggml_tensor* row_scales = row_scales_.at(binding.value_id);
+          ggml_backend_tensor_set(
+              row_scales, entry->second.data(), 0, ggml_nbytes(row_scales));
+          loaded += ggml_nbytes(row_scales);
+        }
         span = converted;
       } else if (narrow) {
         converted = narrow_to_int32(span);
@@ -969,13 +1065,13 @@ class GgmlExecutable final : public EngineExecutable {
       }
       std::vector<float> factors = to_float_vector(
           bytes->span(), method_.graph.value(inv_freq).tensor_meta().dtype);
-      // ggml_rope_ext with freq_base 1 computes theta = pos / factor.
-      for (float& factor : factors) {
-        if (factor == 0.0f) {
-          throw std::runtime_error("ggml: rope inv_freq has a zero entry");
-        }
-        factor = 1.0f / factor;
-      }
+      // ggml_rope_ext with freq_base 1 computes theta = pos / factor. A zero
+      // frequency leaves its dims unrotated, as partial RoPE does: an
+      // infinite factor gives theta = 0.
+      std::ranges::transform(factors, factors.begin(), [](float factor) {
+        return factor == 0.0f ? std::numeric_limits<float>::infinity()
+                              : 1.0f / factor;
+      });
       std::vector<uint8_t> raw(factors.size() * sizeof(float));
       std::memcpy(raw.data(), factors.data(), raw.size());
       rope_freq_factors_.emplace(inv_freq, std::move(raw));
@@ -1182,18 +1278,25 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<int64_t> full_key_extents() const {
     std::vector<int64_t> out(mask_extents_.size());
     std::ranges::transform(mask_extents_, out.begin(), &MaskExtent::keys);
+    if (valid(offgraph_position_)) {
+      out.push_back(offgraph_storage_->rows);
+    }
     return out;
   }
 
-  std::vector<int64_t> evaluate_key_extents() {
-    if (mask_extents_.empty()) {
-      return full_key_extents();
-    }
-    HostIntEvaluator host(
+  HostIntEvaluator host_evaluator() {
+    return HostIntEvaluator(
         method_,
         inputs_,
         [this](ValueId id) { return host_constant(id); },
         host_static_values_);
+  }
+
+  std::vector<int64_t> evaluate_key_extents() {
+    if (mask_extents_.empty() && !valid(offgraph_position_)) {
+      return full_key_extents();
+    }
+    HostIntEvaluator host = host_evaluator();
     std::vector<int64_t> out;
     for (const MaskExtent& mask : mask_extents_) {
       const HostInts* key_index = host.tensor(mask.key_operand);
@@ -1203,7 +1306,192 @@ class GgmlExecutable final : public EngineExecutable {
               ? attended_key_extent(mask, *key_index, *query)
               : mask.keys);
     }
+    if (valid(offgraph_position_)) {
+      // The cache rows up to the step's last position, bucketed like masks.
+      const int64_t needed = offgraph_step_->start + offgraph_step_->tokens;
+      out.push_back(std::min<int64_t>(
+          offgraph_storage_->rows,
+          (needed + kKeyExtentBucket - 1) / kKeyExtentBucket *
+              kKeyExtentBucket));
+    }
     return out;
+  }
+
+  // Binds the off-graph cache to a method that calls update_and_attend.
+  void index_offgraph_attention() {
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (!node.is_call() ||
+          op_key(node.target) != "kvcache.update_and_attend.default") {
+        continue;
+      }
+      const NamedArgument* position = find_arg(node, "position", 3);
+      if (position == nullptr || position->arg.kind() != ArgKind::Tensor) {
+        throw std::runtime_error(
+            "ggml: update_and_attend is missing its position tensor");
+      }
+      const ValueId position_id = position->arg.as_tensor().id;
+      if (valid(offgraph_position_) && position_id != offgraph_position_) {
+        throw std::runtime_error(
+            "ggml: every update_and_attend in a method must read the same "
+            "position tensor");
+      }
+      offgraph_position_ = position_id;
+    }
+    if (!valid(offgraph_position_)) {
+      return;
+    }
+    if (kv_cache_ == nullptr) {
+      throw std::runtime_error(
+          "ggml: method '" + method_.name +
+          "' calls kvcache.update_and_attend but its context has no KV "
+          "cache; create the context with the llm_cache_registry_key option");
+    }
+    bind_offgraph(1);
+  }
+
+  // Grows the cache to `rows` and, if its storage moved, rebinds it and drops
+  // the graphs built over the old storage, which this executable keeps alive
+  // until then.
+  void bind_offgraph(int64_t rows) {
+    kv_cache_->reserve(primary_backend_, static_cast<int>(rows));
+    if (kv_cache_->storage() == offgraph_storage_) {
+      return;
+    }
+    for (CachedGraph& cached : cached_graphs_) {
+      ggml_backend_sched_synchronize(cached.scheduler.get());
+    }
+    cached_graphs_.clear();
+    offgraph_storage_ = kv_cache_->storage();
+    offgraph_cache_.layers.clear();
+    for (const GgmlSequenceCache::Layer& layer : offgraph_storage_->layers) {
+      offgraph_cache_.layers.push_back(
+          {.k = layer.k, .v = layer.v, .window = layer.window});
+    }
+  }
+
+  struct OffGraphStep {
+    int64_t start;
+    int64_t tokens;
+  };
+
+  // Reads the step's positions on the host and checks there is one per token,
+  // consecutive, fitting the cache, and starting at the sequence's length.
+  // Re-running positions takes an explicit rewind of the cache.
+  OffGraphStep checked_offgraph_step() {
+    HostIntEvaluator host = host_evaluator();
+    const HostInts* values = host.tensor(offgraph_position_);
+    if (values == nullptr || values->data.empty()) {
+      throw std::runtime_error(
+          "ggml: update_and_attend positions must be computable on the host "
+          "from graph inputs");
+    }
+    const std::vector<int64_t>& sizes = values->sizes;
+    if (sizes.empty() || sizes.size() > 2 ||
+        (sizes.size() == 2 && sizes[1] != 1)) {
+      throw std::invalid_argument(
+          "ggml: update_and_attend positions must be [T] or [T, 1]");
+    }
+    const std::vector<int64_t>& positions = values->data;
+    const int64_t start = positions.front();
+    for (size_t i = 0; i < positions.size(); ++i) {
+      if (positions[i] != start + static_cast<int64_t>(i)) {
+        throw std::invalid_argument(
+            "ggml: update_and_attend positions must be consecutive");
+      }
+    }
+    const auto tokens = static_cast<int64_t>(positions.size());
+    if (start < 0 || start + tokens > kv_cache_->capacity()) {
+      throw std::out_of_range(
+          "ggml: KV cache step [" + std::to_string(start) + ", " +
+          std::to_string(start + tokens) + ") exceeds the cache capacity of " +
+          std::to_string(kv_cache_->capacity()));
+    }
+    if (start != kv_cache_->length()) {
+      throw std::invalid_argument(
+          "ggml: KV cache step starts at position " + std::to_string(start) +
+          ", not at the sequence's length of " +
+          std::to_string(kv_cache_->length()) +
+          "; rewind the cache to run earlier positions again");
+    }
+    return {start, tokens};
+  }
+
+  // Plans the step on the cache and fills each window's cache rows and mask.
+  // Returns a plan to commit once the step has run.
+  std::optional<SeqStepPlan> prepare_offgraph(GraphInstance& instance) {
+    if (!instance.offgraph) {
+      return std::nullopt;
+    }
+    const OffGraphUploads& slots = *instance.offgraph;
+    if (offgraph_step_->tokens != slots.tokens) {
+      throw std::runtime_error(
+          "ggml: update_and_attend needs one position per token");
+    }
+    const int64_t start = offgraph_step_->start;
+    const auto plan_layer = [&](int layer) {
+      const std::optional<SeqStepPlan> plan = kv_cache_->plan(
+          layer, static_cast<int>(start), static_cast<int>(slots.tokens));
+      if (!plan) {
+        throw std::runtime_error(
+            "ggml: the KV cache cannot plan a " + std::to_string(slots.tokens) +
+            "-token step at position " + std::to_string(start) + " for layer " +
+            std::to_string(layer));
+      }
+      return *plan;
+    };
+    // Layers outside the method's calls must fit the step too.
+    for (size_t layer = 0; layer < offgraph_cache_.layers.size(); ++layer) {
+      plan_layer(static_cast<int>(layer));
+    }
+    const ggml_fp16_t attend = ggml_fp32_to_fp16(0.0f);
+    const ggml_fp16_t masked =
+        ggml_fp32_to_fp16(-std::numeric_limits<float>::infinity());
+    std::optional<SeqStepPlan> committed;
+    for (const OffGraphUploads::Group& group : slots.groups) {
+      const SeqStepPlan plan = plan_layer(group.layer);
+      // The logical position each row holds this step, or -1 if it is unread.
+      std::vector<int64_t> positions(static_cast<size_t>(group.keys), -1);
+      int64_t position = plan.read_base_pos;
+      for (int r = 0; r < plan.n_read; ++r) {
+        const Run read = plan.read[r];
+        if (read.start < 0 || read.start + read.len > group.keys) {
+          throw std::logic_error(
+              "ggml: KV cache read exceeds the graph's keys");
+        }
+        for (int i = 0; i < read.len; ++i) {
+          positions[static_cast<size_t>(read.start + i)] = position++;
+        }
+      }
+      std::vector<uint8_t>& rows = instance.uploads[group.rows].bytes;
+      rows.resize(static_cast<size_t>(slots.tokens) * sizeof(int32_t));
+      auto* row = reinterpret_cast<int32_t*>(rows.data());
+      int64_t written = 0;
+      for (int w = 0; w < plan.n_write; ++w) {
+        for (int i = 0; i < plan.write[w].len && written < slots.tokens; ++i) {
+          row[written++] = plan.write[w].start + i;
+        }
+      }
+      if (written != slots.tokens) {
+        throw std::logic_error("ggml: KV cache planned the wrong rows");
+      }
+      std::vector<uint8_t>& mask = instance.uploads[group.mask].bytes;
+      mask.resize(
+          static_cast<size_t>(slots.tokens * group.keys) * sizeof(ggml_fp16_t));
+      auto* bias = reinterpret_cast<ggml_fp16_t*>(mask.data());
+      for (int64_t i = 0; i < slots.tokens; ++i) {
+        const int64_t query = start + i;
+        for (int64_t j = 0; j < group.keys; ++j) {
+          const int64_t key = positions[static_cast<size_t>(j)];
+          bias[i * group.keys + j] = key >= 0 && key <= query &&
+                  (group.window == 0 || query - key < group.window)
+              ? attend
+              : masked;
+        }
+      }
+      committed = plan;
+    }
+    return committed;
   }
 
   // Small integer constants, e.g. a key offset, read once from the package.
@@ -1275,6 +1563,16 @@ class GgmlExecutable final : public EngineExecutable {
   const Method& method_;
   const Package& package_;
   GgmlEngineOptions options_;
+  GgmlSequenceCache* kv_cache_;
+  // The position tensor of the method's update_and_attend calls, if any.
+  ValueId offgraph_position_ = kInvalid;
+  // Cache storage; build_graph sets the keys per graph.
+  OffGraphCacheBinding offgraph_cache_;
+  // The storage offgraph_cache_ and cached graphs point into. Declared before
+  // cached_graphs_ so it outlives them.
+  std::shared_ptr<const GgmlSequenceCache::Storage> offgraph_storage_;
+  // The step execute() is running, checked once.
+  std::optional<OffGraphStep> offgraph_step_;
   std::vector<InputSlot> inputs_;
   std::vector<OutputSlot> outputs_;
   std::vector<ggml_backend_ptr> backends_;
@@ -1289,6 +1587,8 @@ class GgmlExecutable final : public EngineExecutable {
   ggml_backend_buffer_ptr output_staging_;
   std::vector<uint8_t> output_host_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
+  // Float scales of the Q4_0 weights with unit block scales, by weight.
+  std::unordered_map<ValueId, ggml_tensor*> row_scales_;
   bool executed_ = false;
   std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
   // Per-output-channel factors applied to convolution weights at load.
@@ -1308,16 +1608,23 @@ GraphInstance GgmlExecutable::build_graph(
       }
     }
   }
-  GraphInstance instance = GraphBuilder(
-                               method_,
-                               inputs_,
-                               outputs_,
-                               persistent_,
-                               rope_freq_factors_,
-                               batch_norms_,
-                               std::move(truncated),
-                               options_.graph_size)
-                               .build();
+  OffGraphCacheBinding offgraph_cache = offgraph_cache_;
+  if (valid(offgraph_position_)) {
+    offgraph_cache.keys = key_extents.back();
+  }
+  GraphInstance instance =
+      GraphBuilder(
+          method_,
+          inputs_,
+          outputs_,
+          persistent_,
+          row_scales_,
+          rope_freq_factors_,
+          batch_norms_,
+          std::move(truncated),
+          options_.graph_size,
+          valid(offgraph_position_) ? &offgraph_cache : nullptr)
+          .build();
   if (options_.print_graph_ops) {
     std::map<std::string, int> counts;
     for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
@@ -1360,14 +1667,16 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
-    GgmlMutableKeyOwners& mutable_key_owners) {
+    GgmlMutableKeyOwners& mutable_key_owners,
+    GgmlSequenceCache* kv_cache) {
   return std::make_unique<GgmlExecutable>(
       method,
       package,
       options,
       materialized_constant_bytes,
       heap_copied_constant_bytes,
-      mutable_key_owners);
+      mutable_key_owners,
+      kv_cache);
 }
 
 } // namespace ptn

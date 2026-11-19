@@ -34,12 +34,22 @@ class TestPasses(unittest.TestCase):
         )
 
         const_nodes = [
-            node.name
+            node
             for node in edge.exported_program().graph.nodes
             if node.op == "placeholder" and is_buffer(edge.exported_program(), node)
         ]
+        # Users in one program share the original.
+        self.assertEqual(
+            duplicate_constant_node(edge.exported_program(), const_nodes[0].name),
+            set(),
+        )
+        # A copy is made for a user in another delegate.
+        for i, user in enumerate(const_nodes[0].users):
+            user.meta["delegation_tag"] = f"tag{i}"
 
-        copied_nodes = duplicate_constant_node(edge.exported_program(), const_nodes[0])
+        copied_nodes = duplicate_constant_node(
+            edge.exported_program(), const_nodes[0].name
+        )
         self.assertEqual(len(copied_nodes), 1)
 
         # Check that the new constant node is in the graph
@@ -76,6 +86,9 @@ class TestPasses(unittest.TestCase):
         user = users[1]
         user.args = tuple(a for a in user.args if a is not buffer_node)
         user.kwargs = {"other": buffer_node}
+        # A copy is made for a user in another delegate.
+        for i, u in enumerate(users):
+            u.meta["delegation_tag"] = f"tag{i}"
 
         # Patch validation since we modified the graph
         edge.exported_program()._validate = lambda: None
@@ -86,3 +99,26 @@ class TestPasses(unittest.TestCase):
 
         self.assertEqual(len(copied_nodes), 1)
         self.assertNotEqual(user.kwargs["other"], buffer_node)
+
+    def test_duplicate_constant_node_refuses_a_mutated_buffer(self) -> None:
+        class UpdateConst(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("const", torch.zeros(2))
+
+            def forward(self, x):
+                y = x * self.const
+                self.const.add_(1)
+                return y
+
+        program = exir.to_edge(
+            export(UpdateConst(), (torch.ones(2),), strict=True)
+        ).exported_program()
+        name = next(
+            node.name
+            for node in program.graph.nodes
+            if node.op == "placeholder" and is_buffer(program, node)
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "would not see its updates"):
+            duplicate_constant_node(program, name)

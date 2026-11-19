@@ -180,6 +180,24 @@ def define_common_targets(is_fbcode = False):
             env = modules_env,
         )
 
+        for aten_mode in get_aten_mode_options():
+            aten_suffix = ("_aten" if aten_mode else "")
+
+            runtime.cxx_test(
+                name = "method_input_layout_test" + aten_suffix,
+                srcs = [
+                    "method_input_layout_test.cpp",
+                ],
+                deps = [
+                    ":managed_memory_manager",
+                    "//executorch/extension/data_loader:file_data_loader",
+                    "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                    "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                    "//executorch/runtime/executor:program" + aten_suffix,
+                ],
+                env = modules_env,
+            )
+
         runtime.cxx_test(
             name = "method_meta_test",
             srcs = [

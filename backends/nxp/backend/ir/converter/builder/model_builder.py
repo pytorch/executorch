@@ -314,6 +314,9 @@ class ModelBuilder:
              is called with an operator that references 'from_tensor', it will be replaced by 'to_tensor'. This ensures
              that future operators will not use output tensors of operators, which are not actually in the model.
 
+            For converting no-op compute ops, `turn_operator_to_identity()` should be used instead of skipping as it is
+             more robust.
+
             This method should be explicitly used when an operator is skipped during conversion, so that other operators
              which used the output tensors of the skipped operator will be redirected to valid tensors, such as an
              appropriate input tensor of the skipped operator.

@@ -138,7 +138,8 @@ void group_norm_reduce_C_packed() {
   const float count = float(group_size);
 
   // Convert global index to (group_idx, batch_idx)
-  const ivec4 mean_tidx = bufi_to_tidx(global_idx, mean_strides, mean_dim_order);
+  const ivec4 mean_tidx = ivec4(global_idx % group, global_idx / group, 0, 0);
+  const int mean_bufi = tidx_to_bufi(mean_tidx, mean_strides);
 
   // Calculate the range of channels for this group
   const int group_start_channel = mean_tidx.x * D;
@@ -223,8 +224,8 @@ void group_norm_reduce_C_packed() {
     const float rstd_val = 1.0 / sqrt(variance + epsilon);
 
     // Write to buffer-backed tensors
-    t_mean[global_idx] = BUF_T(mean_val);
-    t_rstd[global_idx] = BUF_T(rstd_val);
+    t_mean[mean_bufi] = BUF_T(mean_val);
+    t_rstd[mean_bufi] = BUF_T(rstd_val);
   }
 }
 

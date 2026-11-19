@@ -94,6 +94,10 @@ void main() {
 
   // Convert output buffer index to tensor index
   TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
+  if (out_of_bounds(out_tidx, outp)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
 
   const int idx = load_index(out_tidx);
 

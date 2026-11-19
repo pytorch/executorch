@@ -562,7 +562,7 @@ class CudaDLPackTest(unittest.TestCase):
         self._close_after_teardown(stream)
 
     def test_torch_free_caller_shares_one_stream_across_programs(self):
-        self._require_libgomp_without_torch()
+        self._require_linux()
         programs = [
             self._export_to_directory(
                 f"torch_free_{index}", module, (torch.ones(4, 8),)
@@ -615,9 +615,9 @@ stream.close()
 np.testing.assert_allclose(outputs[0], np.maximum(value, 0), atol=1e-6)
 np.testing.assert_allclose(outputs[1], np.tanh(value), atol=1e-6)
 assert "torch" not in sys.modules
-assert re.search(
-    r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
-) is None
+# libgomp as well, since these programs never call OpenMP.
+maps = Path("/proc/self/maps").read_text().lower()
+assert re.search(r"/lib(?:torch|aten|c10|gomp)[^/]*$", maps, re.M) is None
 """
         arguments = [item or "" for program in programs for item in program]
         result = subprocess.run(
@@ -1188,6 +1188,56 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def test_float8_host_bits_run_through_a_method(self):
+        # Python buffers have no float8 format, so the values come as bytes. exir
+        # cannot export fnuz dtypes, so only the others run through a method.
+        for dtype in (
+            torch.float8_e4m3fn,
+            torch.float8_e4m3fnuz,
+            torch.float8_e5m2,
+            torch.float8_e5m2fnuz,
+        ):
+            name = str(dtype).removeprefix("torch.")
+            with self.subTest(dtype=name):
+                value = torch.tensor([[1.0, -2.0, 0.5], [3.0, 0.0, -0.25]]).to(dtype)
+                host = memoryview(
+                    bytes(value.view(torch.uint8).flatten().tolist())
+                ).cast("B", value.shape)
+                uploaded = self.bindings.ExecuTorchResult.from_host(
+                    host, self.device.index, dtype=name
+                )
+                self.assertEqual(uploaded.dtype, name)
+                expected = value.to(self.device).view(torch.uint8)
+                as_torch = torch.from_dlpack(uploaded)
+                self.assertEqual(as_torch.dtype, dtype)
+                torch.testing.assert_close(as_torch.view(torch.uint8), expected)
+                if name.endswith("fnuz"):
+                    continue
+                data = self._device_identity(self.device.index, value)
+                method = self.bindings._load_program_from_buffer(data).load_method(
+                    "forward"
+                )
+                output = self._tensor(method(uploaded)[0])
+                self.assertEqual(output.dtype, dtype)
+                torch.testing.assert_close(output.view(torch.uint8), expected)
+
+    def test_bfloat16_host_bits_move_to_the_device(self):
+        # Host data without torch has no bfloat16 buffer format, so it comes as
+        # 16-bit unsigned integers and from_host is told the dtype.
+        value = torch.arange(6, dtype=torch.bfloat16).reshape(2, 3)
+        words = array.array("H", value.view(torch.int16).flatten().tolist())
+        host = memoryview(words).cast("B").cast("H", value.shape)
+        uploaded = self.bindings.ExecuTorchResult.from_host(
+            host, self.device.index, dtype="bfloat16"
+        )
+        self.assertEqual(uploaded.dtype, "bfloat16")
+        self.assertEqual(uploaded.shape, (2, 3))
+        data = self._device_identity(self.device.index, value)
+        method = self.bindings._load_program_from_buffer(data).load_method("forward")
+        torch.testing.assert_close(
+            self._tensor(method(uploaded)[0]), value.to(self.device)
+        )
+
     def _device_waits(self, body):
         from torch.profiler import profile, ProfilerActivity
 
@@ -1264,27 +1314,16 @@ print("Input on a non-current device was read")
             torch.from_dlpack(final), torch.full(self.shape, expected)
         )
 
-    def _require_libgomp_without_torch(self):
+    def _require_linux(self):
         # The torch-free chain checks loaded libraries through /proc.
         if not sys.platform.startswith("linux"):
             self.skipTest("needs Linux")
-        # The CUDA delegate's compiled kernels link libgomp, which a host may
-        # provide only inside the torch package.
-        probe = subprocess.run(
-            [sys.executable, "-c", "import ctypes; ctypes.CDLL('libgomp.so.1')"],
-            capture_output=True,
-        )
-        if probe.returncode != 0:
-            message = "libgomp.so.1 is not loadable without torch"
-            if os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1":
-                raise AssertionError(message)
-            self.skipTest(message)
 
     def test_device_chain_runs_with_torch_blocked(self):
         # The device-resident chain path, in a process where `import torch`
         # fails: upload host data, run, feed the output straight into a second
         # run on the GPU, then read the result back.
-        self._require_libgomp_without_torch()
+        self._require_linux()
         script = """
 import importlib.abc
 import re
@@ -1318,9 +1357,9 @@ for executor in (module, method):
         np.asarray(second.to_host()), np.full(shape, 18.0, dtype=np.float32)
     )
 assert "torch" not in sys.modules
-assert re.search(
-    r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
-) is None
+# libgomp as well, since these programs never call OpenMP.
+maps = Path("/proc/self/maps").read_text().lower()
+assert re.search(r"/lib(?:torch|aten|c10|gomp)[^/]*$", maps, re.M) is None
 print("Device chain ran without torch")
 """
         environment = os.environ.copy()
@@ -1349,7 +1388,6 @@ print("Device chain ran without torch")
     def test_device_input_works_beside_a_torch_without_cuda(self):
         # A torch built without CUDA cannot select a CUDA device. Inputs from
         # other producers must not depend on it.
-        self._require_libgomp_without_torch()
         script = """
 import sys
 import types

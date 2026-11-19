@@ -19,6 +19,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -29,6 +30,8 @@
 #include <executorch/backends/native/runtime/deserialize/test/PackageTestData.h>
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/runtime/backend/options.h>
 #include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
 
@@ -80,6 +83,12 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 }
 
 constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ4_0BlockBytes = 18;
+
+// The safetensors header of the affine linear program's constants.
+constexpr const char* kQ4_0SafeTensorsHeader =
+    R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
+    R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
 
 // A [1, 256] x [256] linear with gguf:q4_k weights, or with symmetric int4
 // AffineGroup weights whose fp16 scales `weight_scale` cover groups of 32.
@@ -232,9 +241,14 @@ std::vector<uint8_t> make_linear_program(
       builder.GetBufferPointer() + builder.GetSize()};
 }
 
+// For tests of quantized linears whose activation numerics aren't under test.
+constexpr GgmlEngineOptions kAllowActivationQuant{
+    .allow_activation_quant_for_weight_only = true};
+
 std::unique_ptr<GgmlEngineContext> make_context(
     GgmlEngineHost& host,
-    const std::vector<uint8_t>& program_bytes) {
+    const std::vector<uint8_t>& program_bytes,
+    const EngineContextOptions& options = {}) {
   // One block_q4_K: d = 1.0 (fp16), dmin = 0, every sub-block scale 1 and
   // min 0, and nibbles 1 (low) / 2 (high), so half the weights are 1 and
   // half are 2.
@@ -257,12 +271,23 @@ std::unique_ptr<GgmlEngineContext> make_context(
       }))));
   auto program = std::make_shared<const Program>(
       Program::load(program_bytes.data(), program_bytes.size()));
-  return host.create_ggml_context(std::move(program), std::move(package));
+  return host.create_ggml_context(
+      std::move(program), std::move(package), options);
 }
 
-// A tensor (by name), an int, a float, an int list, or None.
-using TestArg = std::
-    variant<std::string, int64_t, double, std::vector<int64_t>, std::monostate>;
+// A bool argument, wrapped so that string literals never convert to it.
+struct BoolValue {
+  bool value = false;
+};
+
+// A tensor (by name), an int, a float, an int list, None, or a bool.
+using TestArg = std::variant<
+    std::string,
+    int64_t,
+    double,
+    std::vector<int64_t>,
+    std::monostate,
+    BoolValue>;
 
 // A one-method program assembled value by value; every node's output value
 // carries the node's name.
@@ -310,6 +335,40 @@ class TestProgram {
     placeholder(name, meta);
     bindings_.push_back(fbs::CreateNamedTensorRefDirect(
         builder_, name.c_str(), "weight", meta, fbs::InputKind::PARAMETER));
+  }
+
+  // Symmetric int4 AffineGroup weights `weight` with float scales
+  // `weight_scale` per group of 32, in a persistent buffer if `mutated`.
+  void affine_weight(
+      const std::string& name,
+      const std::vector<int64_t>& shape,
+      bool mutated = false) {
+    const auto quant = fbs::CreateQuantSpec(
+        builder_,
+        fbs::QuantScheme::AffineGroup,
+        fbs::CreateAffineGroupDirect(
+            builder_, "weight_scale", fbs::ScalarType::FLOAT, -8, 7, 32)
+            .Union());
+    const auto meta =
+        create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
+    placeholder(name, meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_,
+        name.c_str(),
+        "weight",
+        meta,
+        mutated ? fbs::InputKind::BUFFER : fbs::InputKind::PARAMETER,
+        mutated));
+    const std::string scale = name + "_scale";
+    const auto scale_meta = create_tensor_meta(
+        builder_, fbs::ScalarType::FLOAT, {shape.at(0), shape.at(1) / 32});
+    placeholder(scale, scale_meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_,
+        scale.c_str(),
+        "weight_scale",
+        scale_meta,
+        fbs::InputKind::PARAMETER));
   }
 
   void call(
@@ -423,6 +482,12 @@ class TestProgram {
     if (std::holds_alternative<std::monostate>(arg)) {
       return create_none_arg(builder_);
     }
+    if (const auto* flag = std::get_if<BoolValue>(&arg)) {
+      return fbs::CreateArgument(
+          builder_,
+          fbs::ArgumentValue::BoolArg,
+          fbs::CreateBoolArgDirect(builder_, flag->value).Union());
+    }
     if (const auto* list = std::get_if<std::vector<int64_t>>(&arg)) {
       return fbs::CreateArgument(
           builder_,
@@ -473,7 +538,7 @@ std::vector<uint8_t> make_cache_update_program(
 
 // cppcheck-suppress syntaxError
 TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, make_linear_program());
   auto executable = context->compile("forward");
 
@@ -491,8 +556,9 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
 TEST(GgmlEngineTest, RepeatedExecutionsReadFreshInputs) {
   for (const size_t max_cached_graphs : {size_t{0}, size_t{1}}) {
     SCOPED_TRACE(max_cached_graphs);
-    auto host = GgmlEngineHost::create(
-        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .max_cached_graphs = max_cached_graphs,
+        .allow_activation_quant_for_weight_only = true});
     auto context = make_context(*host, make_linear_program());
     auto executable = context->compile("forward");
     for (const float value : {1.0f, 2.0f, -1.0f}) {
@@ -580,7 +646,7 @@ TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
 }
 
 TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -590,16 +656,286 @@ TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
 }
 
 void expect_compile_error(
-    const std::vector<uint8_t>& program,
+    GgmlEngineContext& context,
     const std::string& message) {
-  auto host = GgmlEngineHost::create();
-  auto context = make_context(*host, program);
   try {
-    context->compile("forward");
+    context.compile("forward");
     FAIL() << "compile accepted the program";
   } catch (const std::runtime_error& error) {
     EXPECT_NE(std::string(error.what()).find(message), std::string::npos)
         << error.what();
+  }
+}
+
+void expect_compile_error(
+    const std::vector<uint8_t>& program,
+    const std::string& message) {
+  auto host = GgmlEngineHost::create();
+  expect_compile_error(*make_context(*host, program), message);
+}
+
+TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
+  expect_compile_error(
+      make_linear_program(), "allow_activation_quant_for_weight_only");
+  const std::vector<uint8_t> program_bytes = make_linear_program(
+      "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
+  auto host = GgmlEngineHost::create();
+  auto context = host->create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry,
+               testing::make_safetensors(
+                   kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
+          })))));
+  expect_compile_error(*context, "allow_activation_quant_for_weight_only");
+}
+
+TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const size_t cached : {size_t{0}, size_t{1}}) {
+    for (const bool transposed : {false, true}) {
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, {2, 4});
+      std::string input = "x";
+      if (transposed) {
+        program.call(
+            "xt",
+            "torch.ops.aten.permute_copy.default",
+            {{"self", input}, {"dims", std::vector<int64_t>{1, 0}}},
+            fbs::ScalarType::FLOAT,
+            {4, 2});
+        input = "xt";
+      }
+      program.call(
+          "y",
+          "torch.ops.aten.sqrt.default",
+          {{"self", input}},
+          fbs::ScalarType::FLOAT,
+          transposed ? std::vector<int64_t>{4, 2} : std::vector<int64_t>{2, 4});
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.cpu_threads = 4, .max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, 4.0f}) {
+        const std::vector<float> x{
+            0.0f,
+            -0.0f,
+            scale * 4.0f,
+            scale * 2.0f,
+            inf,
+            -scale,
+            nan,
+            scale * 9.0f};
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(x.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          const size_t source = transposed ? (i % 2) * 4 + i / 2 : i;
+          const float expected =
+              static_cast<float>(std::sqrt(static_cast<double>(x[source])));
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i]));
+          } else {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
+  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
+    TestProgram program;
+    program.input("x", dtype, {2, 4});
+    program.call(
+        "y",
+        "torch.ops.aten.sqrt.default",
+        {{"self", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {2, 4});
+    expect_compile_error(program.finish("y"), "F32");
+  }
+}
+
+// tanh of x [4, 3], or of its transpose.
+std::vector<uint8_t> make_tanh_program(
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.tanh.default",
+      {{"self", self}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of tanh in double; NaN, +-1 and signed zero exactly.
+TEST(GgmlEngineTest, TanhMatchesLibmIncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -30.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f,
+      3e38f,
+      0.75f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_tanh_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+          const auto expected =
+              static_cast<float>(std::tanh(static_cast<double>(input[source])));
+          SCOPED_TRACE(input[source]);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (std::abs(expected) == 1.0f || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsIntegerTanh) {
+  expect_compile_error(
+      make_tanh_program(false, fbs::ScalarType::INT),
+      "supports floating-point tensors only");
+}
+
+std::vector<uint8_t> make_elu_program(
+    bool transposed,
+    double alpha = 1.0,
+    double scale = 1.0,
+    double input_scale = 1.0) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        fbs::ScalarType::FLOAT,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.elu.default",
+      {{"self", self},
+       {"alpha", alpha},
+       {"scale", scale},
+       {"input_scale", input_scale}},
+      fbs::ScalarType::FLOAT,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of expm1 in double; NaN, -1, infinities and zero
+// exactly.
+TEST(GgmlEngineTest, EluMatchesExpm1IncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      -1e-7f,
+      -120.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      -1e-30f,
+      3e38f,
+      -0.75f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_elu_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const double v = input[transposed ? (i % 4) * 3 + i / 4 : i];
+          const auto expected = static_cast<float>(v > 0 ? v : std::expm1(v));
+          SCOPED_TRACE(v);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (
+              std::isinf(expected) || expected == -1.0f || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsEluWithOtherParameters) {
+  for (const auto& [alpha, scale, input_scale] :
+       {std::tuple{0.5, 1.0, 1.0},
+        std::tuple{1.0, 2.0, 1.0},
+        std::tuple{1.0, 1.0, 0.5}}) {
+    expect_compile_error(
+        make_elu_program(false, alpha, scale, input_scale),
+        "supports only alpha, scale and input_scale 1");
   }
 }
 
@@ -613,6 +949,204 @@ TEST(GgmlEngineTest, RejectsIntegerGelu) {
       fbs::ScalarType::LONG,
       {2, 3});
   expect_compile_error(program.finish("y"), "floating-point");
+}
+
+// exp of x [4, 3], or of its transpose.
+std::vector<uint8_t> make_exp_program(
+    bool transposed,
+    fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+  TestProgram program;
+  program.input("x", dtype, {4, 3});
+  std::string self = "x";
+  if (transposed) {
+    program.call(
+        "xt",
+        "torch.ops.aten.permute_copy.default",
+        {{"self", std::string("x")}, {"dims", std::vector<int64_t>{1, 0}}},
+        dtype,
+        {3, 4});
+    self = "xt";
+  }
+  program.call(
+      "y",
+      "torch.ops.aten.exp.default",
+      {{"self", self}},
+      dtype,
+      transposed ? std::vector<int64_t>{3, 4} : std::vector<int64_t>{4, 3});
+  return program.finish("y");
+}
+
+// Within 1e-6 relative of exp in double; NaN, infinities and zero exactly.
+TEST(GgmlEngineTest, ExpMatchesLibmIncludingNonFiniteValues) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const std::vector<float> x = {
+      -0.0f,
+      0.0f,
+      1.5f,
+      -2.25f,
+      30.0f,
+      -30.0f,
+      100.0f,
+      -80.0f,
+      kInf,
+      -kInf,
+      std::nanf(""),
+      1e-20f};
+  for (const bool transposed : {false, true}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(transposed) + std::to_string(cached));
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, make_exp_program(transposed));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -0.5f}) {
+        std::vector<float> input = x;
+        for (float& value : input) {
+          value *= scale;
+        }
+        executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(input.size());
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t i = 0; i < y.size(); ++i) {
+          // y[r][c] reads x[c][r] when transposed.
+          const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+          const auto expected =
+              static_cast<float>(std::exp(static_cast<double>(input[source])));
+          SCOPED_TRACE(input[source]);
+          if (std::isnan(expected)) {
+            EXPECT_TRUE(std::isnan(y[i])) << y[i];
+          } else if (std::isinf(expected) || expected == 0.0f) {
+            EXPECT_EQ(y[i], expected);
+            EXPECT_EQ(std::signbit(y[i]), std::signbit(expected));
+          } else {
+            EXPECT_NEAR(y[i], expected, 1e-6 * std::abs(expected));
+          }
+        }
+      }
+    }
+  }
+}
+
+// The Half or BFloat16 bits of x, which must be exact in that dtype.
+uint16_t to_16_bit(float x, fbs::ScalarType dtype) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &x, sizeof(bits));
+  if (dtype == fbs::ScalarType::BFLOAT16) {
+    return static_cast<uint16_t>(bits >> 16);
+  }
+  const auto sign = static_cast<uint16_t>((bits >> 16) & 0x8000);
+  if (std::isnan(x)) {
+    return sign | 0x7E00;
+  }
+  if (std::isinf(x)) {
+    return sign | 0x7C00;
+  }
+  if (x == 0.0f) {
+    return sign;
+  }
+  const uint32_t exponent = ((bits >> 23) & 0xFF) - 127 + 15;
+  return static_cast<uint16_t>(
+      sign | (exponent << 10) | ((bits >> 13) & 0x3FF));
+}
+
+// Within one unit in the last place of exp in double, overflowing to infinity
+// and underflowing to zero at the range of each dtype.
+TEST(GgmlEngineTest, ExpOfHalfAndBFloat16) {
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  struct Case {
+    fbs::ScalarType dtype;
+    ScalarType runtime_dtype;
+    // Each exact in dtype.
+    std::vector<float> x;
+    // The smallest exp that rounds to infinity in dtype.
+    float overflow;
+    float epsilon;
+    float min_subnormal;
+  };
+  const std::vector<Case> cases = {
+      {fbs::ScalarType::HALF,
+       ScalarType::Half,
+       {-0.0f,
+        0.0f,
+        1.5f,
+        -2.25f,
+        0.75f,
+        -8.0f,
+        11.0f,
+        12.0f,
+        -20.0f,
+        kInf,
+        -kInf,
+        std::nanf("")},
+       65520.0f,
+       0x1p-10f,
+       0x1p-24f},
+      {fbs::ScalarType::BFLOAT16,
+       ScalarType::BFloat16,
+       {-0.0f,
+        0.0f,
+        1.5f,
+        -2.25f,
+        -8.0f,
+        80.0f,
+        100.0f,
+        -80.0f,
+        -110.0f,
+        kInf,
+        -kInf,
+        std::nanf("")},
+       std::numeric_limits<float>::max(),
+       0x1p-7f,
+       0x1p-133f},
+  };
+  for (const Case& test_case : cases) {
+    for (const bool transposed : {false, true}) {
+      SCOPED_TRACE(
+          std::to_string(static_cast<int>(test_case.dtype)) +
+          std::to_string(transposed));
+      auto host = GgmlEngineHost::create();
+      auto context =
+          make_context(*host, make_exp_program(transposed, test_case.dtype));
+      auto executable = context->compile("forward");
+      std::vector<uint16_t> input(test_case.x.size());
+      std::ranges::transform(
+          test_case.x, input.begin(), [&test_case](float value) {
+            return to_16_bit(value, test_case.dtype);
+          });
+      executable->set_input(
+          0, input.data(), input.size(), test_case.runtime_dtype);
+      executable->execute();
+      std::vector<float> y(input.size());
+      executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+      for (size_t i = 0; i < y.size(); ++i) {
+        // y[r][c] reads x[c][r] when transposed.
+        const size_t source = transposed ? (i % 4) * 3 + i / 4 : i;
+        const double expected =
+            std::exp(static_cast<double>(test_case.x[source]));
+        SCOPED_TRACE(test_case.x[source]);
+        if (std::isnan(expected)) {
+          EXPECT_TRUE(std::isnan(y[i])) << y[i];
+        } else if (expected >= test_case.overflow) {
+          EXPECT_EQ(y[i], kInf);
+        } else {
+          EXPECT_NEAR(
+              y[i],
+              expected,
+              test_case.epsilon * expected + test_case.min_subnormal);
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsIntegerExp) {
+  for (const fbs::ScalarType dtype :
+       {fbs::ScalarType::INT, fbs::ScalarType::LONG}) {
+    SCOPED_TRACE(static_cast<int>(dtype));
+    expect_compile_error(
+        make_exp_program(false, dtype), "supports floating-point tensors only");
+  }
 }
 
 TEST(GgmlEngineTest, RejectsUserInputMutation) {
@@ -773,7 +1307,7 @@ TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
 }
 
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(
       *host,
       make_linear_program(
@@ -1067,7 +1601,7 @@ TEST(GgmlEngineTest, Q4KLinearOfAHalfInput) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::HALF,
       {1, 1});
-  auto host = GgmlEngineHost::create();
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
   auto context = make_context(*host, program.finish("y"));
   auto executable = context->compile("forward");
   // The IEEE half bit pattern of 1.0.
@@ -1329,6 +1863,525 @@ TEST(GgmlEngineTest, CustomSdpaMatchesReferenceWithoutMask) {
   }
 }
 
+namespace kv = ::executorch::extension::llm::cache;
+
+constexpr int64_t kOffGraphHeads = 4;
+constexpr int64_t kOffGraphKvHeads = 2;
+constexpr int64_t kOffGraphDim = 8;
+const double kOffGraphScale =
+    1.0 / std::sqrt(static_cast<double>(kOffGraphDim));
+
+// One kvcache::update_and_attend over q [1, 4, T, 8] and k, v [1, 2, T, 8] at
+// positions [T, 1], addressing cache layer `layer`. With `gather_row`, the
+// program returns the row of the output, viewed as [4 * T, 8], that a fifth
+// input [1] names; the engine checks it on the host while building the graph.
+std::vector<uint8_t> make_update_and_attend_program(
+    int64_t tokens,
+    int64_t layer = 0,
+    bool gather_row = false) {
+  TestProgram program;
+  program.input(
+      "q", fbs::ScalarType::FLOAT, {1, kOffGraphHeads, tokens, kOffGraphDim});
+  program.input(
+      "k", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input(
+      "v", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input("position", fbs::ScalarType::LONG, {tokens, 1});
+  if (gather_row) {
+    program.input("row", fbs::ScalarType::LONG, {1});
+  }
+  program.call(
+      "attention",
+      "torch.ops.kvcache.update_and_attend.default",
+      {{"q", std::string("q")},
+       {"k", std::string("k")},
+       {"v", std::string("v")},
+       {"position", std::string("position")},
+       {"layer_id", layer},
+       {"scale", kOffGraphScale}},
+      fbs::ScalarType::FLOAT,
+      {1, kOffGraphHeads, tokens, kOffGraphDim});
+  if (!gather_row) {
+    return program.finish("attention");
+  }
+  program.call(
+      "rows",
+      "torch.ops.aten.view_copy.default",
+      {{"self", std::string("attention")},
+       {"size", std::vector<int64_t>{kOffGraphHeads * tokens, kOffGraphDim}}},
+      fbs::ScalarType::FLOAT,
+      {kOffGraphHeads * tokens, kOffGraphDim});
+  program.call(
+      "selected",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("rows")}, {"indices", std::string("row")}},
+      fbs::ScalarType::FLOAT,
+      {1, kOffGraphDim});
+  return program.finish("selected");
+}
+
+// make_update_and_attend_program's attention once per cache layer in
+// [0, layers), over the same q, k and v, summed.
+std::vector<uint8_t> make_layered_attention_program(
+    int64_t tokens,
+    int64_t layers) {
+  TestProgram program;
+  program.input(
+      "q", fbs::ScalarType::FLOAT, {1, kOffGraphHeads, tokens, kOffGraphDim});
+  program.input(
+      "k", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input(
+      "v", fbs::ScalarType::FLOAT, {1, kOffGraphKvHeads, tokens, kOffGraphDim});
+  program.input("position", fbs::ScalarType::LONG, {tokens, 1});
+  std::string sum;
+  for (int64_t layer = 0; layer < layers; ++layer) {
+    const std::string attention = "attention" + std::to_string(layer);
+    program.call(
+        attention,
+        "torch.ops.kvcache.update_and_attend.default",
+        {{"q", std::string("q")},
+         {"k", std::string("k")},
+         {"v", std::string("v")},
+         {"position", std::string("position")},
+         {"layer_id", layer},
+         {"scale", kOffGraphScale}},
+        fbs::ScalarType::FLOAT,
+        {1, kOffGraphHeads, tokens, kOffGraphDim});
+    if (sum.empty()) {
+      sum = attention;
+      continue;
+    }
+    const std::string next = "sum" + std::to_string(layer);
+    program.call(
+        next,
+        "torch.ops.aten.add.Tensor",
+        {{"self", sum}, {"other", attention}},
+        fbs::ScalarType::FLOAT,
+        {1, kOffGraphHeads, tokens, kOffGraphDim});
+    sum = next;
+  }
+  return program.finish(sum);
+}
+
+// A ggml cache built through the factory and published under a registry key,
+// with the context option that names it.
+struct InstalledCache {
+  std::shared_ptr<kv::Cache> cache;
+  std::unique_ptr<kv::InstallGuard> guard;
+  EngineContextOptions options;
+
+  kv::SequenceControl& control() {
+    return *cache->as<kv::SequenceControl>();
+  }
+};
+
+// One layer per entry of `windows`: flat for 0, else a ring of that window.
+InstalledCache install_cache(
+    int capacity,
+    int initial_capacity,
+    ScalarType kv_dtype = ScalarType::Float,
+    int head_dim = static_cast<int>(kOffGraphDim),
+    const std::vector<int>& windows = {0},
+    std::optional<int> max_write = std::nullopt) {
+  register_ggml_cache_builders();
+  kv::CacheGeometry geometry;
+  for (const int window : windows) {
+    geometry.layers.push_back(kv::LayerGeometry{
+        .policy = window > 0
+            ? kv::LayerPolicy{kv::LayerPolicy::Kind::Ring, window}
+            : kv::LayerPolicy{},
+        .n_kv_heads = static_cast<int>(kOffGraphKvHeads),
+        .head_dim = head_dim});
+  }
+  const kv::CacheConfig cfg{
+      .capacity = capacity,
+      .kv_dtype = static_cast<int>(kv_dtype),
+      .initial_capacity = initial_capacity,
+      .max_write = max_write};
+  auto built = kv::CacheFactory::global().build(
+      kGgmlCacheBackendId, kv::kind::kSingle, geometry, cfg);
+  if (!built.ok()) {
+    throw std::runtime_error("failed to build the test cache");
+  }
+  InstalledCache out;
+  out.cache = built.get();
+  out.guard = std::make_unique<kv::InstallGuard>(out.cache);
+  ::executorch::runtime::BackendOptions<1> options;
+  const char* key = nullptr;
+  if (out.guard->set_option(options) != ::executorch::runtime::Error::Ok ||
+      options.get_option(kv::kCacheKeyOption, key) !=
+          ::executorch::runtime::Error::Ok) {
+    throw std::runtime_error("failed to publish the test cache");
+  }
+  out.options.emplace(kv::kCacheKeyOption, key);
+  return out;
+}
+
+// What the cache should hold: K and V [Hkv, D] per position, written by each
+// step, attended causally by naive softmax attention once per entry of
+// `windows`, over the last `window` positions when it is nonzero, and summed.
+class OffGraphReference {
+ public:
+  explicit OffGraphReference(std::vector<int> windows = {0})
+      : windows_(std::move(windows)) {}
+
+  // Runs `tokens` tokens from `start` through `executable`, with inputs that
+  // depend on the position and `seed`, and returns the largest difference
+  // from the reference.
+  float step(
+      EngineExecutable& executable,
+      int64_t start,
+      int64_t tokens,
+      int seed = 0) {
+    const int64_t kv_row = kOffGraphKvHeads * kOffGraphDim;
+    std::vector<float> q(kOffGraphHeads * tokens * kOffGraphDim);
+    std::vector<float> k(kOffGraphKvHeads * tokens * kOffGraphDim);
+    std::vector<float> v(k.size());
+    std::vector<int64_t> positions(tokens);
+    for (int64_t t = 0; t < tokens; ++t) {
+      const int64_t pos = start + t;
+      positions[t] = pos;
+      if (static_cast<int64_t>(k_.size()) <= pos) {
+        k_.resize(pos + 1, std::vector<float>(kv_row));
+        v_.resize(pos + 1, std::vector<float>(kv_row));
+      }
+      for (int64_t h = 0; h < kOffGraphHeads; ++h) {
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          q[(h * tokens + t) * kOffGraphDim + d] = static_cast<float>(
+              std::sin(0.17 * pos + 0.9 * h - 0.21 * d + seed));
+        }
+      }
+      for (int64_t h = 0; h < kOffGraphKvHeads; ++h) {
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          const auto key = static_cast<float>(
+              std::sin(0.3 * pos + 0.7 * h + 0.13 * d + 2 * seed));
+          const auto value = static_cast<float>(
+              std::cos(0.2 * pos - 0.5 * h + 0.31 * d + seed) * (1 + pos % 3));
+          k[(h * tokens + t) * kOffGraphDim + d] = key;
+          v[(h * tokens + t) * kOffGraphDim + d] = value;
+          k_[pos][h * kOffGraphDim + d] = key;
+          v_[pos][h * kOffGraphDim + d] = value;
+        }
+      }
+    }
+    executable.set_input(0, q.data(), q.size(), ScalarType::Float);
+    executable.set_input(1, k.data(), k.size(), ScalarType::Float);
+    executable.set_input(2, v.data(), v.size(), ScalarType::Float);
+    executable.set_input(
+        3, positions.data(), positions.size(), ScalarType::Long);
+    executable.execute();
+    std::vector<float> out(q.size());
+    executable.get_output(0, out.data(), out.size(), ScalarType::Float);
+
+    float worst = 0.0f;
+    for (int64_t h = 0; h < kOffGraphHeads; ++h) {
+      const int64_t kv_head = h / (kOffGraphHeads / kOffGraphKvHeads);
+      for (int64_t t = 0; t < tokens; ++t) {
+        const float* query = &q[(h * tokens + t) * kOffGraphDim];
+        const int64_t keys = start + t + 1;
+        std::vector<double> want(kOffGraphDim, 0.0);
+        for (const int window : windows_) {
+          const int64_t first =
+              window > 0 ? std::max<int64_t>(0, keys - window) : 0;
+          std::vector<double> weights(keys);
+          for (int64_t s = first; s < keys; ++s) {
+            weights[s] = std::exp(
+                std::inner_product(
+                    query,
+                    query + kOffGraphDim,
+                    &k_[s][kv_head * kOffGraphDim],
+                    0.0) *
+                kOffGraphScale);
+          }
+          const double total =
+              std::accumulate(weights.begin() + first, weights.end(), 0.0);
+          for (int64_t d = 0; d < kOffGraphDim; ++d) {
+            double sum = 0.0;
+            for (int64_t s = first; s < keys; ++s) {
+              sum += weights[s] * v_[s][kv_head * kOffGraphDim + d];
+            }
+            want[d] += sum / total;
+          }
+        }
+        for (int64_t d = 0; d < kOffGraphDim; ++d) {
+          worst = std::max(
+              worst,
+              std::abs(
+                  out[(h * tokens + t) * kOffGraphDim + d] -
+                  static_cast<float>(want[d])));
+        }
+      }
+    }
+    return worst;
+  }
+
+ private:
+  std::vector<int> windows_;
+  std::vector<std::vector<float>> k_;
+  std::vector<std::vector<float>> v_;
+};
+
+// A three-token prefill and decode steps in two contexts sharing one cache,
+// across graph caching modes and both storage types. Storage starts at one
+// row, so it regrows in the prefill and twice while decoding.
+TEST(GgmlEngineTest, OffGraphAttentionMatchesReferenceAsTheCacheGrows) {
+  for (const size_t graphs : {size_t{0}, size_t{1}, size_t{4}}) {
+    for (const auto& [dtype, tol] :
+         {std::pair{ScalarType::Float, 1e-4f},
+          std::pair{ScalarType::Half, 2e-2f}}) {
+      SCOPED_TRACE(
+          "graphs " + std::to_string(graphs) + ", " +
+          std::string(scalar_type_name(dtype)));
+      InstalledCache cache = install_cache(64, 1, dtype);
+      auto host = GgmlEngineHost::create({.max_cached_graphs = graphs});
+      auto prefill_context =
+          make_context(*host, make_update_and_attend_program(3), cache.options);
+      auto decode_context =
+          make_context(*host, make_update_and_attend_program(1), cache.options);
+      auto prefill = prefill_context->compile("forward");
+      auto decode = decode_context->compile("forward");
+      OffGraphReference reference;
+      EXPECT_LT(reference.step(*prefill, 0, 3), tol);
+      for (int64_t pos = 3; pos < 12; ++pos) {
+        SCOPED_TRACE(pos);
+        EXPECT_LT(reference.step(*decode, pos, 1), tol);
+      }
+    }
+  }
+}
+
+// After a clear, the old rows are masked out, including in an executable
+// whose storage binding went stale when another regrew the cache.
+TEST(GgmlEngineTest, OffGraphAttentionReplaysFromEmptyAfterClear) {
+  InstalledCache cache = install_cache(64, 2);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  {
+    OffGraphReference reference;
+    EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+    for (int64_t pos = 3; pos < 10; ++pos) {
+      EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+    }
+  }
+  cache.control().clear();
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3, /*seed=*/5), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1, /*seed=*/5), 1e-4f);
+}
+
+// After a rewind, the next step overwrites the rewound rows and attends
+// nothing past them.
+TEST(GgmlEngineTest, OffGraphAttentionContinuesFromARewind) {
+  InstalledCache cache = install_cache(64, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 8; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  ASSERT_TRUE(cache.control().rewind(2));
+  EXPECT_LT(reference.step(*decode, 2, 1, /*seed=*/9), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1, /*seed=*/9), 1e-4f);
+}
+
+// A step starts at the sequence's length: one past it would attend rows
+// nothing wrote, and running earlier positions again takes an explicit rewind.
+TEST(GgmlEngineTest, OffGraphStepsStartAtTheLength) {
+  InstalledCache cache = install_cache(64, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  EXPECT_THROW(reference.step(*prefill, 0, 3), std::invalid_argument);
+  EXPECT_THROW(reference.step(*decode, 4, 1), std::invalid_argument);
+  for (int64_t pos = 3; pos < 8; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  ASSERT_TRUE(cache.control().rewind(0));
+  EXPECT_LT(reference.step(*prefill, 0, 3, /*seed=*/3), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1, /*seed=*/3), 1e-4f);
+}
+
+// A step that fails, here on a row outside the output, leaves the sequence's
+// length where it was.
+TEST(GgmlEngineTest, FailedOffGraphStepLeavesTheSequence) {
+  InstalledCache cache = install_cache(64, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto gather_context = make_context(
+      *host, make_update_and_attend_program(1, 0, true), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  auto gather = gather_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 6; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  const std::vector<float> q(kOffGraphHeads * kOffGraphDim);
+  const std::vector<float> kv_step(kOffGraphKvHeads * kOffGraphDim);
+  const int64_t position = 6;
+  const int64_t row = kOffGraphHeads;
+  gather->set_input(0, q.data(), q.size(), ScalarType::Float);
+  gather->set_input(1, kv_step.data(), kv_step.size(), ScalarType::Float);
+  gather->set_input(2, kv_step.data(), kv_step.size(), ScalarType::Float);
+  gather->set_input(3, &position, 1, ScalarType::Long);
+  gather->set_input(4, &row, 1, ScalarType::Long);
+  EXPECT_THROW(gather->execute(), std::out_of_range);
+  EXPECT_LT(reference.step(*decode, 6, 1), 1e-4f);
+}
+
+TEST(GgmlEngineTest, RejectsOffGraphStepsPastCapacityOrNotConsecutive) {
+  InstalledCache cache = install_cache(4, 4);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference;
+  EXPECT_THROW(reference.step(*decode, 1, 1), std::invalid_argument);
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 3, 1), 1e-4f);
+  EXPECT_THROW(reference.step(*decode, 4, 1), std::out_of_range);
+  EXPECT_THROW(reference.step(*prefill, 2, 3), std::out_of_range);
+
+  const std::vector<float> q(kOffGraphHeads * 3 * kOffGraphDim);
+  const std::vector<float> kv_step(kOffGraphKvHeads * 3 * kOffGraphDim);
+  const std::vector<int64_t> positions = {0, 2, 3};
+  prefill->set_input(0, q.data(), q.size(), ScalarType::Float);
+  prefill->set_input(1, kv_step.data(), kv_step.size(), ScalarType::Float);
+  prefill->set_input(2, kv_step.data(), kv_step.size(), ScalarType::Float);
+  prefill->set_input(3, positions.data(), positions.size(), ScalarType::Long);
+  EXPECT_THROW(prefill->execute(), std::invalid_argument);
+}
+
+// A ring layer attends each query's window, within a prefill wider than the
+// window too, while decoding wraps the ring several times.
+TEST(GgmlEngineTest, OffGraphRingAttentionMatchesReference) {
+  for (const size_t graphs : {size_t{0}, size_t{4}}) {
+    for (const int window : {2, 5}) {
+      for (const auto& [dtype, tol] :
+           {std::pair{ScalarType::Float, 1e-4f},
+            std::pair{ScalarType::Half, 2e-2f}}) {
+        SCOPED_TRACE(
+            "graphs " + std::to_string(graphs) + ", window " +
+            std::to_string(window) + ", " +
+            std::string(scalar_type_name(dtype)));
+        InstalledCache cache = install_cache(
+            64, 1, dtype, static_cast<int>(kOffGraphDim), {window}, 3);
+        auto host = GgmlEngineHost::create({.max_cached_graphs = graphs});
+        auto prefill_context = make_context(
+            *host, make_update_and_attend_program(3), cache.options);
+        auto decode_context = make_context(
+            *host, make_update_and_attend_program(1), cache.options);
+        auto prefill = prefill_context->compile("forward");
+        auto decode = decode_context->compile("forward");
+        OffGraphReference reference({window});
+        EXPECT_LT(reference.step(*prefill, 0, 3), tol);
+        for (int64_t pos = 3; pos < 20; ++pos) {
+          SCOPED_TRACE(pos);
+          EXPECT_LT(reference.step(*decode, pos, 1), tol);
+        }
+        EXPECT_LT(reference.step(*prefill, 20, 3), tol);
+      }
+    }
+  }
+}
+
+// A flat and a ring layer share one sequence in one forward.
+TEST(GgmlEngineTest, OffGraphFlatAndRingLayersShareASequence) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {0, 3}, 3);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_layered_attention_program(3, 2), cache.options);
+  auto decode_context =
+      make_context(*host, make_layered_attention_program(1, 2), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference({0, 3});
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 12; ++pos) {
+    SCOPED_TRACE(pos);
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+}
+
+// A ring layer can rewind only as far as the rows it still holds.
+TEST(GgmlEngineTest, OffGraphRingRewindsWithinTheRowsItHolds) {
+  InstalledCache cache = install_cache(
+      64, 1, ScalarType::Float, static_cast<int>(kOffGraphDim), {4}, 3);
+  auto host = GgmlEngineHost::create();
+  auto prefill_context =
+      make_context(*host, make_update_and_attend_program(3), cache.options);
+  auto decode_context =
+      make_context(*host, make_update_and_attend_program(1), cache.options);
+  auto prefill = prefill_context->compile("forward");
+  auto decode = decode_context->compile("forward");
+  OffGraphReference reference({4});
+  EXPECT_LT(reference.step(*prefill, 0, 3), 1e-4f);
+  for (int64_t pos = 3; pos < 10; ++pos) {
+    EXPECT_LT(reference.step(*decode, pos, 1), 1e-4f);
+  }
+  // The ring holds positions 4..9; the step after a rewind to 7 reads 4..7.
+  EXPECT_FALSE(cache.control().rewind(6));
+  ASSERT_TRUE(cache.control().rewind(7));
+  EXPECT_LT(reference.step(*decode, 7, 1, /*seed=*/4), 1e-4f);
+  EXPECT_LT(reference.step(*decode, 8, 1, /*seed=*/4), 1e-4f);
+}
+
+TEST(GgmlEngineTest, OffGraphAttentionNeedsAMatchingCache) {
+  auto host = GgmlEngineHost::create();
+  // No cache option.
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1))
+          ->compile("forward"),
+      std::runtime_error);
+  // A key nothing is installed under, and an option the engine does not know.
+  EXPECT_THROW(
+      make_context(
+          *host,
+          make_update_and_attend_program(1),
+          {{std::string(kv::kCacheKeyOption), "no-such-cache"}}),
+      std::invalid_argument);
+  EXPECT_THROW(
+      make_context(
+          *host, make_update_and_attend_program(1), {{"unknown", "value"}}),
+      std::invalid_argument);
+  // A layer the cache does not have, and K/V shaped unlike the cache.
+  InstalledCache cache = install_cache(8, 8);
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1, 1), cache.options)
+          ->compile("forward"),
+      std::runtime_error);
+  InstalledCache narrow = install_cache(8, 8, ScalarType::Float, 4);
+  EXPECT_THROW(
+      make_context(*host, make_update_and_attend_program(1), narrow.options)
+          ->compile("forward"),
+      std::runtime_error);
+}
+
 TEST(GgmlEngineTest, RejectsQuantizedGraphInputsAndOutputs) {
   TestProgram as_input;
   as_input.input("x", fbs::ScalarType::FLOAT, {1, 256});
@@ -1376,6 +2429,195 @@ TEST(GgmlEngineTest, ChecksEmbeddingIndicesOnTheHost) {
   }
 }
 
+// A context for `program_bytes` with a `rows`-row int4 weight of 32-weight
+// groups and float `scales`. Row r holds q = r + 1, stored as the nibble q + 8.
+std::unique_ptr<GgmlEngineContext> make_int4_context(
+    GgmlEngineHost& host,
+    const std::vector<uint8_t>& program_bytes,
+    size_t rows,
+    const std::vector<float>& scales) {
+  const size_t scale_bytes = scales.size() * sizeof(float);
+  const size_t weight_bytes = scales.size() * 16;
+  std::vector<uint8_t> safetensors = testing::make_safetensors(
+      R"({"weight_scale":{"dtype":"F32","shape":[)" + std::to_string(rows) +
+          "," + std::to_string(scales.size() / rows) +
+          R"(],"data_offsets":[0,)" + std::to_string(scale_bytes) +
+          R"(]},"weight":{"dtype":"U8","shape":[)" +
+          std::to_string(weight_bytes) + R"(],"data_offsets":[)" +
+          std::to_string(scale_bytes) + "," +
+          std::to_string(scale_bytes + weight_bytes) + "]}}",
+      scale_bytes + weight_bytes);
+  uint8_t* payload =
+      safetensors.data() + safetensors.size() - scale_bytes - weight_bytes;
+  if (!scales.empty()) {
+    std::memcpy(payload, scales.data(), scale_bytes);
+  }
+  const size_t row_bytes = weight_bytes / rows;
+  for (size_t r = 0; r < rows; ++r) {
+    std::fill_n(
+        payload + scale_bytes + r * row_bytes,
+        row_bytes,
+        static_cast<uint8_t>(0x99 + 0x11 * r));
+  }
+  return host.create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry, std::move(safetensors)},
+          })))));
+}
+
+TEST(GgmlEngineTest, EmbedsInt4RowsWithExactFloatScales) {
+  // Three rows of two groups, with scales fp16 can't hold.
+  const std::vector<float> scales = {0.1f, 0.3f, 0.7f, 1.1f, 1.3f, 1.7f};
+  TestProgram program;
+  program.affine_weight("weight", {3, 64});
+  program.input("ids", fbs::ScalarType::LONG, {2, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {2, 2, 64});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 3, scales);
+  auto executable = context->compile("forward");
+  EXPECT_EQ(
+      context->materialized_constant_bytes(),
+      6 * kQ4_0BlockBytes + 6 * sizeof(float));
+  const std::vector<int64_t> ids = {2, 0, 1, 2};
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->execute();
+  std::vector<float> rows(4 * 64);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 64];
+    EXPECT_EQ(
+        rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+        << i;
+  }
+}
+
+TEST(GgmlEngineTest, KeepsFp16ExactScalesOfInt4EmbeddingsInBlocks) {
+  const std::vector<float> scales = {0.5f, 0.25f, 0.125f, 2.0f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 64});
+  program.input("ids", fbs::ScalarType::LONG, {3});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {3, 64});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 2, scales);
+  auto executable = context->compile("forward");
+  EXPECT_EQ(context->materialized_constant_bytes(), 4 * kQ4_0BlockBytes);
+  const std::vector<int64_t> ids = {1, 0, 1};
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->execute();
+  std::vector<float> rows(3 * 64);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 64];
+    EXPECT_EQ(
+        rows[i], static_cast<float>(id + 1) * scales[2 * id + i % 64 / 32])
+        << i;
+  }
+}
+
+// Only an embedding reads the weight, but its write-back updates the Q4_0
+// blocks, so they keep the scales: 0.1 and 0.3 narrow to fp16.
+TEST(GgmlEngineTest, KeepsScalesOfMutableInt4EmbeddingsInBlocks) {
+  const std::vector<float> narrowed = {0.0999755859375f, 0.300048828125f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 32}, /*mutated=*/true);
+  program.input("ids", fbs::ScalarType::LONG, {2});
+  program.input("update", fbs::ScalarType::FLOAT, {2, 32});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {2, 32});
+  program.mutate("weight", "update");
+  auto host = GgmlEngineHost::create();
+  auto context =
+      make_int4_context(*host, program.finish("rows"), 2, {0.1f, 0.3f});
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> ids = {0, 1};
+  const std::vector<float> update(2 * 32, 2.0f);
+  std::vector<float> initial;
+  for (const int64_t id : ids) {
+    initial.insert(
+        initial.end(), 32, static_cast<float>(id + 1) * narrowed[id]);
+  }
+  std::vector<float> rows(2 * 32);
+  for (const std::vector<float>& expected : {initial, update}) {
+    executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+    executable->set_input(1, update.data(), update.size(), ScalarType::Float);
+    executable->execute();
+    executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+    EXPECT_EQ(rows, expected);
+  }
+}
+
+// It passes with or without the float row scales;
+// EmbedsInt4RowsWithExactFloatScales is the test that needs them.
+TEST(GgmlEngineTest, NarrowsScalesOfInt4EmbeddingsSharedWithLinear) {
+  // A linear also reads the weight, so its Q4_0 blocks hold the scales in
+  // fp16: 0.1 and 0.3 narrow to these.
+  const std::vector<float> narrowed = {0.0999755859375f, 0.300048828125f};
+  TestProgram program;
+  program.affine_weight("weight", {2, 32});
+  program.input("ids", fbs::ScalarType::LONG, {3});
+  program.input("x", fbs::ScalarType::FLOAT, {1, 32});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {3, 32});
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  auto context =
+      make_int4_context(*host, program.finish("rows"), 2, {0.1f, 0.3f});
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> ids = {1, 0, 1};
+  const std::vector<float> x(32, 1.0f);
+  executable->set_input(0, ids.data(), ids.size(), ScalarType::Long);
+  executable->set_input(1, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  std::vector<float> rows(3 * 32);
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const int64_t id = ids[i / 32];
+    EXPECT_EQ(rows[i], static_cast<float>(id + 1) * narrowed[id]) << i;
+  }
+}
+
+TEST(GgmlEngineTest, RejectsZeroWidthInt4Weights) {
+  TestProgram program;
+  program.affine_weight("weight", {2, 0});
+  program.input("ids", fbs::ScalarType::LONG, {1});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {1, 0});
+  auto host = GgmlEngineHost::create();
+  auto context = make_int4_context(*host, program.finish("rows"), 2, {});
+  expect_compile_error(*context, "affine weights must be int4 [N, K]");
+}
+
 TEST(GgmlEngineTest, RejectsPackedWeightOutsideLinearOrEmbedding) {
   TestProgram program;
   program.q4_k_weight("weight");
@@ -1399,7 +2641,9 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
       {{"input", std::string("x")}, {"weight", std::string("weight")}},
       fbs::ScalarType::FLOAT,
       {1, 1});
-  expect_compile_error(program.finish("y"), "divisible by 256");
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, program.finish("y")), "divisible by 256");
 }
 
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
@@ -1478,9 +2722,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     // alternate fp16 scales 0.5 and 1.0.
     constexpr size_t kScaleBytes = 16;
     constexpr size_t kWeightBytes = 128;
-    std::string header =
-        R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
-        R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+    std::string header = kQ4_0SafeTensorsHeader;
     // The safetensors member comes first, so its payload starts right after
     // the local header, name, size prefix and JSON header. read_constant views
     // the scales in place only at an even offset.
@@ -1522,7 +2764,7 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
     ASSERT_TRUE(view.has_value());
     ASSERT_EQ(reinterpret_cast<uintptr_t>(view->span().data()) % 2, misaligned);
 
-    auto host = GgmlEngineHost::create();
+    auto host = GgmlEngineHost::create(kAllowActivationQuant);
     auto context = host->create_ggml_context(
         std::make_shared<const Program>(
             Program::load(program_bytes.data(), program_bytes.size())),
@@ -1563,6 +2805,137 @@ TEST(GgmlEngineTest, CastsInt64ToHalfAndBFloat16) {
     executable->get_output(0, y.data(), y.size(), ScalarType::Float);
     EXPECT_EQ(y, (std::vector<float>{0, 1, 2, 3, 4, 5}));
   }
+}
+
+TEST(GgmlEngineTest, SumOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  for (const Case& c :
+       {Case{{3}, true, 5, {2, 3, 4, 1}},
+        Case{{-1}, false, 5, {2, 3, 4}},
+        Case{{2, 3}, true, 20, {2, 3, 1, 1}},
+        Case{{3, -2}, false, 20, {2, 3}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.sum.dim_IntList",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        for (size_t row = 0; row < y.size(); ++row) {
+          double expected = 0.0;
+          for (size_t i = 0; i < c.width; ++i) {
+            expected += x[row * c.width + i];
+          }
+          EXPECT_NEAR(y[row], expected, 1e-5) << row;
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.sum.dim_IntList",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "sum supports trailing dimensions only");
+}
+
+TEST(GgmlEngineTest, AmaxOverTrailingDims) {
+  const std::vector<int64_t> shape = {2, 3, 4, 5};
+  struct Case {
+    std::vector<int64_t> dims;
+    bool keepdim;
+    size_t width;
+    std::vector<int64_t> out_shape;
+  };
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  for (const Case& c :
+       {Case{{-1}, true, 5, {2, 3, 4, 1}},
+        Case{{2, 3}, false, 20, {2, 3}},
+        Case{{0, 1, 2, 3}, false, 120, {}}}) {
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      SCOPED_TRACE(std::to_string(c.width) + std::to_string(cached));
+      TestProgram program;
+      program.input("x", fbs::ScalarType::FLOAT, shape);
+      program.call(
+          "y",
+          "torch.ops.aten.amax.default",
+          {{"self", std::string("x")},
+           {"dim", c.dims},
+           {"keepdim", BoolValue{c.keepdim}}},
+          fbs::ScalarType::FLOAT,
+          c.out_shape);
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.max_cached_graphs = cached});
+      auto context = make_context(*host, program.finish("y"));
+      auto executable = context->compile("forward");
+      for (const float scale : {1.0f, -3.0f}) {
+        std::vector<float> x(120);
+        for (size_t i = 0; i < x.size(); ++i) {
+          x[i] = scale * std::cos(static_cast<float>(i) * 1.3f);
+        }
+        // The first row is all -inf, and the last holds +inf.
+        std::fill_n(x.begin(), c.width, -kInf);
+        x.back() = kInf;
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> y(120 / c.width);
+        executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+        std::vector<float> expected(y.size(), -kInf);
+        for (size_t i = 0; i < x.size(); ++i) {
+          expected[i / c.width] = std::max(expected[i / c.width], x[i]);
+        }
+        EXPECT_EQ(y, expected);
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.amax.default",
+      {{"self", std::string("x")},
+       {"dim", std::vector<int64_t>{1}},
+       {"keepdim", BoolValue{false}}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(
+      program.finish("y"), "amax supports trailing dimensions only");
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {

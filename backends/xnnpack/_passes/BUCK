@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -11,6 +11,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/backends/transforms:lib",
+        "//executorch/backends/xnnpack:custom_ops_lib",
         "//executorch/backends/xnnpack/partition:partitioner_graphs",
         "//executorch/backends/xnnpack/serialization:xnnpack_schema",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",

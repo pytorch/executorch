@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import torch
@@ -46,7 +47,10 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
+from executorch.backends.cortex_m.quantizer_reporter import (
+    logger as quantizer_reporter_logger,
+    QuantizerReporter,
+)
 from executorch.exir.graph_module import (
     _get_control_flow_submodules,
     get_cond_while_submodules,
@@ -592,6 +596,39 @@ def _for_each_filtered_node(
             yield node
 
 
+def _strip_exported_program_guards(model: GraphModule) -> None:
+    """Discard torch.export's side-effect-only input-guard call before PT2E.
+
+    Since torch 2.15, ExportedProgram.module() may insert a call_module node
+    targeting ``_guards_fn``. The Arm annotation passes cannot lower that node.
+    This is equivalent to using ``module(check_guards=False)`` for PT2E;
+    unrelated call_module nodes must not be removed.
+
+    """
+    guard_nodes = [
+        node
+        for node in model.graph.nodes
+        if node.op == "call_module" and node.target == "_guards_fn"
+    ]
+    if not guard_nodes:
+        return
+
+    # The generated guard returns None and has no consumers. Never erase a
+    # call whose result is used, even if it happens to have this name.
+    if any(node.users for node in guard_nodes):
+        raise RuntimeError("Cannot remove _guards_fn: its result is in use")
+
+    for node in guard_nodes:
+        model.graph.erase_node(node)
+
+    # PyTorch's exported-module pre-hook tests for this attribute. Removing it
+    # also restores the standard input constraint checks provided by the hook,
+    # as happens with module(check_guards=False).
+    if hasattr(model, "_guards_fn"):
+        delattr(model, "_guards_fn")
+    model.recompile()
+
+
 class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends.
 
@@ -618,9 +655,6 @@ class TOSAQuantizer(Quantizer):
         self.use_composable_quantizer = use_composable_quantizer
         self.quantizer: _TOSAQuantizerV1 | _TOSAQuantizerV2
         if use_composable_quantizer:
-            logger.info(
-                "Using composable quantizer implementation in the arm backend. See https://github.com/pytorch/executorch/issues/17701"
-            )
             self.quantizer = _TOSAQuantizerV2(compile_spec_or_tosa_spec)
         else:
             logger.info(
@@ -898,6 +932,7 @@ class TOSAQuantizer(Quantizer):
             GraphModule: Transformed model prepared for annotation.
 
         """
+        _strip_exported_program_guards(model)
         return self.quantizer.transform_for_annotation(model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
@@ -1316,7 +1351,25 @@ class _TOSAQuantizerV2(ComposableQuantizer):
     def annotate(self, model):
         reporter = QuantizerReporter(self.quantizers, "FINAL QUANTIZATION REPORT")
         model = super().annotate(model)
-        reporter.log_quantizer_report(model)
+        intermediate_path = self.compile_spec._get_intermediate_path()
+        file_handler = None
+        if (
+            intermediate_path is not None
+            and quantizer_reporter_logger.getEffectiveLevel() <= logging.INFO
+        ):
+            report_path = Path(intermediate_path) / "quantization_report.txt"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(report_path)
+            quantizer_reporter_logger.addHandler(file_handler)
+        try:
+            reporter.log_quantizer_report(model)
+        finally:
+            if file_handler is not None:
+                quantizer_reporter_logger.removeHandler(file_handler)
+                logger.info(
+                    "Saved quantization report to %s.", file_handler.baseFilename
+                )
+                file_handler.close()
         return model
 
     def _remove_annotations(self, model: GraphModule) -> GraphModule:
@@ -1350,7 +1403,21 @@ The following nodes are not marked for quantization and will not be decomposed i
             for node in non_quantized_nodes:
                 msg += f"   {node.name}\n"
 
-            logger.debug(msg)
+            intermediate_path = self.compile_spec._get_intermediate_path()
+            file_handler = None
+            if intermediate_path is not None and logger.isEnabledFor(logging.DEBUG):
+                report_path = (
+                    Path(intermediate_path) / "pre_transform_quantization_report.txt"
+                )
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                file_handler = logging.FileHandler(report_path)
+                logger.addHandler(file_handler)
+            try:
+                logger.debug(msg)
+            finally:
+                if file_handler is not None:
+                    logger.removeHandler(file_handler)
+                    file_handler.close()
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         # Transform_for_annotation should only decompose ops if quantized, which is

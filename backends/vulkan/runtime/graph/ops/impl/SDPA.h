@@ -25,6 +25,11 @@ namespace vkcompute {
 //
 enum class SDPAMode { LLM, FUSED };
 
+void sdpa_impl_with_shader_override(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    ValueRef shader_override);
+
 void add_sdpa_compute_attn_weights_node(
     ComputeGraph& graph,
     const ValueRef q,

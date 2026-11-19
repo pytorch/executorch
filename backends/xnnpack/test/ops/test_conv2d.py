@@ -6,6 +6,7 @@
 
 import itertools
 import unittest
+from dataclasses import replace
 from typing import Optional
 
 import torch
@@ -355,6 +356,34 @@ class TestConv2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_qs8_quantizer_skips_conv3d(self) -> None:
+        # XNNPACK has no conv3d support, so its quantizer leaves 3d convs in float,
+        # with or without a fused relu. The same model in 2d gets its activations
+        # and weights quantized. The weights are quantized ahead of time, so only
+        # their dequantize nodes remain.
+        quant_config = get_symmetric_quantization_config(is_per_channel=True)
+        ops = "torch.ops.quantized_decomposed"
+        for dims, conv, conv_transpose, quantized_activations, quantized_weights in (
+            (2, torch.nn.Conv2d, torch.nn.ConvTranspose2d, 4, 3),
+            (3, torch.nn.Conv3d, torch.nn.ConvTranspose3d, 0, 0),
+        ):
+            m = torch.nn.Sequential(
+                conv(2, 2, 2), torch.nn.ReLU(), conv(2, 2, 2), conv_transpose(2, 2, 2)
+            )
+            (
+                Tester(m.eval(), (torch.randn([1, 2] + [4] * dims),))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .check_count(
+                    {
+                        f"{ops}.quantize_per_tensor.default": quantized_activations,
+                        f"{ops}.dequantize_per_tensor.default": quantized_activations,
+                        f"{ops}.quantize_per_channel.default": 0,
+                        f"{ops}.dequantize_per_channel.default": quantized_weights,
+                    }
+                )
+            )
+
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
             for perm_order in list(itertools.permutations([0, 1, 2, 3])):
@@ -374,6 +403,26 @@ class TestConv2d(unittest.TestCase):
                 Conv2d(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
             )
+
+    def test_qs8_conv2d_float_output(self) -> None:
+        # XNNPACK leaves out a quantized conv whose output is not quantized. The
+        # quantize and dequantize of its input then run in a delegate of their own.
+        quant_config = replace(
+            get_symmetric_quantization_config(is_per_channel=True),
+            output_activation=None,
+        )
+        m = Conv2d()
+        (
+            Tester(m.eval(), m.get_inputs())
+            .quantize(Quantize(quantization_config=quant_config))
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_qs8_conv2d_even_kernel_same_padding(self) -> None:
         # An even-kernel 'same'-padding conv decomposes into
@@ -832,14 +881,27 @@ class TestConv2d(unittest.TestCase):
                         conv_count=1,
                     )
                 else:
-                    with self.assertRaises(RuntimeError):
-                        self._test(
-                            PerChannelConvTranspose2d(
-                                3 * groups, 5 * groups, groups, ch_axis
-                            ),  # ch_axis=0
-                            quant_config=None,
-                            conv_count=1,
+                    # XNNPACK leaves this conv out, and the quantize and dequantize
+                    # nodes around it then run in delegates of their own.
+                    m = PerChannelConvTranspose2d(
+                        3 * groups, 5 * groups, groups, ch_axis
+                    )
+                    (
+                        Tester(m.eval(), m.get_inputs())
+                        .export()
+                        .to_edge_transform_and_lower()
+                        .check(
+                            [
+                                "executorch_exir_dialects_edge__ops_aten_convolution_default"
+                            ]
                         )
+                        .check_count(
+                            {"torch.ops.higher_order.executorch_call_delegate": 2}
+                        )
+                        .to_executorch()
+                        .serialize()
+                        .run_method_and_compare_outputs(qtol=1)
+                    )
 
     def test_fp32_tconv_output_padding(self):
         """Test transposed convolution with non-zero output padding."""

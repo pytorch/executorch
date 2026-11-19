@@ -37,6 +37,7 @@ def define_compute_api_test_targets():
             deps = [
                 ":test_shader_lib{}".format(suffix),
                 "//third-party/googletest:gtest_main",
+                "//xplat/executorch/backends/vulkan:vulkan_backend_lib{}".format(suffix),
                 "//xplat/executorch/backends/vulkan:vulkan_graph_runtime{}".format(suffix),
                 "//xplat/executorch/runtime/core/exec_aten:lib",
             ],
@@ -67,6 +68,7 @@ def define_compute_api_test_targets():
         deps = [
             ":test_shader_lib{}".format(suffix),
             "//third-party/googletest:gtest_main",
+            "//xplat/executorch/backends/vulkan:vulkan_backend_lib{}".format(suffix),
             "//xplat/executorch/backends/vulkan:vulkan_graph_runtime{}".format(suffix),
             "//xplat/executorch/runtime/core/exec_aten:lib",
         ],

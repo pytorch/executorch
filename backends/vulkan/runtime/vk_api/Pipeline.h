@@ -100,6 +100,13 @@ struct PipelineBarrier final {
     VkPipelineStageFlags dst;
   } stage;
 
+  // Access masks of a global memory barrier, recorded if either is set. Covers
+  // memory whose accesses are not tracked per buffer or image.
+  struct Access final {
+    VkAccessFlags src;
+    VkAccessFlags dst;
+  } global_access;
+
   std::vector<BufferMemoryBarrier> buffers;
   std::vector<ImageMemoryBarrier> images;
   std::vector<VkBufferMemoryBarrier> buffer_barrier_handles;
@@ -119,6 +126,10 @@ enum PipelineStage : PipelineStageFlags {
   HOST = 1u << 1u,
   TRANSFER = 1u << 2u,
 };
+
+// A barrier that waits for all prior GPU work, including host writes, and makes
+// its writes visible to all later work.
+PipelineBarrier full_pipeline_barrier();
 
 VkAccessFlags vk_access(const PipelineStageFlags, const MemoryAccessFlags);
 VkPipelineStageFlags vk_stage(const PipelineStageFlags);

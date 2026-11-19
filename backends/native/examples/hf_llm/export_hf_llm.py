@@ -12,22 +12,43 @@ adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. Reports which operators
 the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
-packed in the PTN. ``--samples`` appends a ``golden`` sample set: eager logits
+packed in the PTN. ``--offgraph_cache`` exports attention as
+``kvcache::update_and_attend`` with no KV cache in the graph; the runner owns the
+cache. ``--samples`` appends a ``golden`` sample set: eager logits
 for a prefill and a few greedy decode steps per prompt.
 """
 
 import argparse
+import contextlib
 import logging
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
+    check_config_tensors,
     gguf_architecture,
     gguf_to_hf,
 )
-from executorch.backends.native.examples.hf_llm.hf_utils import report_lowering
+from executorch.backends.native.examples.hf_llm.hf_utils import (
+    PositionedStaticLayer,
+    report_lowering,
+)
+from executorch.backends.native.examples.hf_llm.muse_glimmer import MuseGlimmerTextLM
 from executorch.exir.native import Call, Sample, SampleSet, to_native, write_samples
+from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
+from executorch.extension.llm.cache.reference_cache import (
+    CacheConfig,
+    LayerPolicy,
+    SequenceReferenceCache,
+)
+from executorch.extension.llm.cache.update_and_attend import REGISTRY
+from executorch.extension.llm.export.gguf import iter_gguf
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
+from executorch.extension.llm.export.model_metadata import (
+    write_cache_geometry,
+    write_max_context_len,
+)
 from torch.export import Dim, export
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -40,11 +61,11 @@ from transformers import (
     AttentionInterface,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoTokenizer,
     PreTrainedModel,
 )
 from transformers.cache_utils import StaticLayer
-from transformers.integrations.accelerate import init_empty_weights
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
@@ -53,38 +74,89 @@ from transformers.masking_utils import (
 )
 
 
+_OFFGRAPH_ATTENTION = "offgraph"
+
+
+@contextlib.contextmanager
+def _parameters_on_meta() -> Iterator[None]:
+    """Create parameters on the meta device and buffers as usual, so computed
+    buffers such as RoPE frequencies keep their values. Weights are assigned
+    later. What accelerate's ``init_empty_weights`` did, which transformers no
+    longer re-exports."""
+    register = nn.Module.register_parameter
+
+    def register_on_meta(module, name, param):
+        register(module, name, param)
+        if param is not None:
+            module._parameters[name] = nn.Parameter(
+                param.to("meta"), requires_grad=param.requires_grad
+            )
+
+    nn.Module.register_parameter = register_on_meta
+    try:
+        yield
+    finally:
+        nn.Module.register_parameter = register
+
+
+# Models Transformers builds only with their vision tower: the class that
+# builds one, and the text-only module to export instead.
+_TEXT_ONLY = {"muse_glimmer": (AutoModelForImageTextToText, MuseGlimmerTextLM)}
+# Per-layer config lists, kept for the layers --layers keeps.
+_PER_LAYER = ("layer_types", "layer_rope_theta")
+
+
 def _load(
-    path: str, layers: int, random_weights: bool, empty_weights: bool
-) -> PreTrainedModel:
+    path: str,
+    layers: int,
+    random_weights: bool,
+    empty_weights: bool,
+    offgraph_cache: bool = False,
+) -> nn.Module:
     config = AutoConfig.from_pretrained(path)
     text_config = config.get_text_config()
     if layers:
         text_config.num_hidden_layers = layers
-        if getattr(text_config, "layer_types", None):
-            text_config.layer_types = text_config.layer_types[:layers]
-    kwargs = {"torch_dtype": torch.float32, "attn_implementation": "sdpa"}
+        for name in _PER_LAYER:
+            if getattr(text_config, name, None):
+                setattr(text_config, name, getattr(text_config, name)[:layers])
+    auto_class, text_only = _TEXT_ONLY.get(
+        config.model_type, (AutoModelForCausalLM, None)
+    )
+    if text_only and not offgraph_cache:
+        raise ValueError(f"{config.model_type} exports only with --offgraph_cache")
+    if offgraph_cache:
+        register_offgraph_attention(_OFFGRAPH_ATTENTION)
+    attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
+    kwargs = {"dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
-        with init_empty_weights():
-            model = AutoModelForCausalLM.from_config(config, **kwargs)
+        with _parameters_on_meta():
+            model = auto_class.from_config(config, **kwargs)
     elif random_weights:
-        model = AutoModelForCausalLM.from_config(config, **kwargs)
+        model = auto_class.from_config(config, **kwargs)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, config=config, **kwargs)
+        model = auto_class.from_pretrained(path, config=config, **kwargs)
+    if text_only:
+        model = text_only(model)
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     return model.eval()
 
 
 def load_gguf(
-    model: PreTrainedModel,
+    model: nn.Module,
     path: str,
     architecture: str | None = None,
     raw_iter: RawIter | None = None,
+    truncated: bool = False,
 ) -> None:
     """Replace every parameter with a GGUF file's weights; quantized ones stay
     ``ExportableGGUFTensor`` so the PTN carries the GGUF blocks. ``architecture``
-    defaults to the file's ``general.architecture``."""
-    key_map, convert = gguf_to_hf(model, architecture or gguf_architecture(path))
+    defaults to the file's ``general.architecture``. ``truncated`` loads a model
+    built with fewer layers from the file's first blocks."""
+    architecture = architecture or gguf_architecture(path)
+    key_map, convert = gguf_to_hf(model, architecture, truncated)
+    read = raw_iter or iter_gguf
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
     loaded = set()
@@ -94,7 +166,7 @@ def load_gguf(
         convert=convert,
         tie_map={"model.embed_tokens.weight": ("lm_head.weight", False)},
         dtype=torch.float32,
-        raw_iter=raw_iter,
+        raw_iter=lambda p: check_config_tensors(model, architecture, read(p)),
     ):
         if fqn not in expected:
             raise ValueError(f"GGUF tensor maps to unknown parameter {fqn!r}")
@@ -114,15 +186,6 @@ def load_gguf(
 # to ExecuTorch's off-graph KV cache (extension/llm/cache), where the KV dtype is
 # runtime cache configuration rather than part of the exported graph.
 _CACHE_DTYPE_SDPA = "sdpa_in_cache_dtype"
-
-
-class _CastingStaticLayer(StaticLayer):
-    """A static cache layer that casts K/V writes to its own dtype."""
-
-    def update(self, key_states, value_states, cache_kwargs=None):
-        return super().update(
-            key_states.to(self.dtype), value_states.to(self.dtype), cache_kwargs
-        )
 
 
 def _sdpa_in_cache_dtype(module, query, key, value, attention_mask, **kwargs):
@@ -153,20 +216,29 @@ class LastTokenLM(nn.Module):
             if hasattr(self.cached, "static_cache")
             else self.cached.cache
         )
-        if kv_cache_dtype != model.dtype:
-            self._store_kv_as(model, kv_cache_dtype)
+        change_dtype = kv_cache_dtype != model.dtype
+        self._write_cache_at_input_positions(kv_cache_dtype, change_dtype)
+        if change_dtype:
+            self._attend_in_cache_dtype(model)
 
-    def _store_kv_as(self, model: PreTrainedModel, dtype: torch.dtype) -> None:
+    def _write_cache_at_input_positions(
+        self, dtype: torch.dtype, change_dtype: bool
+    ) -> None:
         for i, old in enumerate(self.cache.layers):
             if type(old) is not StaticLayer:
-                raise ValueError(f"cannot change the KV dtype of {type(old).__name__}")
-            layer = _CastingStaticLayer(old.max_cache_len)
-            layer.lazy_initialization(old.keys[:, :, :1].to(dtype))
+                if change_dtype:
+                    raise ValueError(
+                        f"cannot change the KV dtype of {type(old).__name__}"
+                    )
+                continue
+            layer = PositionedStaticLayer.replacing(old, dtype)
             self.cache.layers[i] = layer
             self.cached.register_buffer(f"key_cache_{i}", layer.keys, persistent=False)
             self.cached.register_buffer(
                 f"value_cache_{i}", layer.values, persistent=False
             )
+
+    def _attend_in_cache_dtype(self, model: PreTrainedModel) -> None:
         # Keep the vmap-free mask TorchExportableModuleForDecoderOnlyLM selected.
         mask = ALL_MASK_ATTENTION_FUNCTIONS[model.config._attn_implementation]
         AttentionInterface.register(_CACHE_DTYPE_SDPA, _sdpa_in_cache_dtype)
@@ -176,6 +248,11 @@ class LastTokenLM(nn.Module):
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
     ) -> torch.Tensor:
+        # transformers 5 takes positions from the cache's length, not cache_position.
+        for layer in self.cache.layers:
+            layer.cumulative_length = cache_position[:1].clone()
+            if isinstance(layer, PositionedStaticLayer):
+                layer.positions = cache_position
         return self.cached.model(
             input_ids=input_ids,
             cache_position=cache_position,
@@ -184,6 +261,109 @@ class LastTokenLM(nn.Module):
             use_cache=True,
             logits_to_keep=1,
         ).logits
+
+    def reset_cache(self) -> None:
+        self.cache.reset()
+
+    def cache_scope(self) -> contextlib.AbstractContextManager:
+        return contextlib.nullcontext()
+
+
+def _cache_windows(config) -> list[int]:
+    """Per layer, the sliding window HF attends over, or 0 for full attention.
+
+    Without layer_types (e.g. Mistral), HF windows every layer when
+    sliding_window is set.
+    """
+    window = getattr(config, "sliding_window", None)
+    layer_types = getattr(config, "layer_types", None)
+    if not layer_types:
+        return [window or 0] * config.num_hidden_layers
+    unsupported = set(layer_types) - {"full_attention", "sliding_attention"}
+    if unsupported:
+        raise ValueError(
+            f"--offgraph_cache does not support {sorted(unsupported)} layers "
+            f"({config.model_type})"
+        )
+    if "sliding_attention" in layer_types and not window:
+        raise ValueError(f"{config.model_type} has sliding layers but no window")
+    return [window if t == "sliding_attention" else 0 for t in layer_types]
+
+
+class OffGraphLastTokenLM(nn.Module):
+    """Last-position logits with the KV cache outside the graph.
+
+    Each attention layer emits ``kvcache::update_and_attend`` over this step's
+    K/V; the cache, not the graph, applies a sliding layer's window, so the
+    runner learns the windows from ``metadata()``. Eager calls (golden
+    samples) run inside ``cache_scope()``, which makes a reference cache of
+    ``capacity`` positions the active one.
+    """
+
+    def __init__(self, model: nn.Module, capacity: int) -> None:
+        super().__init__()
+        self.model = model
+        config = model.config.get_text_config()
+        self._windows = _cache_windows(config)
+        self._head_dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
+        self._kv_heads = config.num_key_value_heads
+        # The longest context the model supports, else the reference cache's.
+        self._max_context_len = (
+            getattr(config, "max_position_embeddings", None) or capacity
+        )
+        self._reference = SequenceReferenceCache(
+            CacheConfig(
+                n_layers=config.num_hidden_layers,
+                n_kv_heads=self._kv_heads,
+                head_dim=self._head_dim,
+                capacity=capacity,
+                layers=[
+                    LayerPolicy.ring(w) if w else LayerPolicy.flat()
+                    for w in self._windows
+                ],
+            )
+        )
+        self._key = f"export_hf_llm/{id(self)}"
+
+    def metadata(self) -> dict[str, int | list[int]]:
+        """The cache geometry and the model's context length, under the names
+        LLM runners read them by."""
+        n = len(self._windows)
+        geometry = write_cache_geometry(
+            [self._kv_heads] * n, [self._head_dim] * n, self._windows
+        )
+        return {
+            name: value.tolist() if isinstance(value, torch.Tensor) else value
+            for name, value in geometry.items()
+        } | write_max_context_len(self._max_context_len)
+
+    def forward(
+        self, input_ids: torch.Tensor, cache_position: torch.Tensor
+    ) -> torch.Tensor:
+        return self.model(
+            input_ids=input_ids,
+            cache_position=cache_position,
+            # The model would derive positions from its (absent) cache's length.
+            position_ids=cache_position.unsqueeze(0),
+            use_cache=False,
+            past_key_values=None,
+            logits_to_keep=1,
+        ).logits
+
+    def reset_cache(self) -> None:
+        self._reference.reset()
+
+    @contextlib.contextmanager
+    def cache_scope(self) -> Iterator[None]:
+        REGISTRY.install(self._key, self._reference)
+        try:
+            with REGISTRY.active(self._key):
+                yield
+        finally:
+            REGISTRY.uninstall(self._key)
 
 
 # TEMPORARY: use torchao-based 8da4w quantization until PTN export has its own
@@ -238,15 +418,17 @@ def _sample_prompts(
 
 
 def golden_samples(
-    wrapper: LastTokenLM, prompts: list[list[int]], decode_steps: int
+    wrapper: LastTokenLM | OffGraphLastTokenLM,
+    prompts: list[list[int]],
+    decode_steps: int,
 ) -> SampleSet:
     """Per tokenized prompt, from an empty cache: a prefill call, then
     `decode_steps` calls each fed the previous call's eager argmax."""
     quantized = any(isinstance(p, TorchAOBaseTensor) for p in wrapper.parameters())
     samples = []
-    with torch.no_grad():
+    with torch.no_grad(), wrapper.cache_scope():
         for ids in prompts:
-            wrapper.cache.reset()
+            wrapper.reset_cache()
             input_ids = torch.tensor([ids], dtype=torch.long)
             positions = torch.arange(len(ids), dtype=torch.long)
             calls = []
@@ -256,7 +438,7 @@ def golden_samples(
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
             samples.append(Sample(calls))
-    wrapper.cache.reset()
+    wrapper.reset_cache()
     tol = _QUANTIZED_TOL if quantized else _FLOAT_TOL
     return SampleSet(samples, source="eager/cpu", tol=tol)
 
@@ -271,7 +453,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use only the model's config, with random weights.",
     )
-    parser.add_argument("--layers", type=int, default=0)
+    parser.add_argument(
+        "--layers",
+        type=int,
+        default=0,
+        help="Keep only the first N layers; with --gguf, load their weights.",
+    )
     parser.add_argument("--max_seq_length", type=int, default=128)
     parser.add_argument("--max_context_length", type=int, default=0)
     parser.add_argument("--output", default="")
@@ -286,6 +473,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--kv_cache_dtype", choices=["fp32", "fp16"], default="fp32")
     parser.add_argument(
+        "--offgraph_cache",
+        action="store_true",
+        help="Export attention as kvcache::update_and_attend with no KV cache in "
+        "the graph; the runner owns the cache and sets its capacity and dtype.",
+    )
+    parser.add_argument(
         "--samples",
         type=int,
         default=0,
@@ -296,10 +489,16 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if not 0 <= args.samples <= len(_PROMPTS) or (args.samples and not args.output):
         parser.error(f"--samples takes 0 to {len(_PROMPTS)} and needs --output")
-    if args.gguf and (args.layers or args.random_weights or args.quantize != "none"):
+    if args.gguf and (args.random_weights or args.quantize != "none"):
         parser.error(
-            "--gguf loads every weight; it excludes --layers, --random_weights "
-            "and --quantize"
+            "--gguf loads every weight; it excludes --random_weights and --quantize"
+        )
+    if args.offgraph_cache and (
+        args.max_context_length or args.kv_cache_dtype != "fp32"
+    ):
+        parser.error(
+            "--offgraph_cache leaves the KV cache to the runner; it excludes "
+            "--max_context_length and --kv_cache_dtype"
         )
     if args.max_seq_length < 7:
         parser.error(
@@ -323,14 +522,23 @@ def main() -> None:
     torch.manual_seed(0)
 
     model = _load(
-        args.model, args.layers, args.random_weights, empty_weights=bool(args.gguf)
+        args.model,
+        args.layers,
+        args.random_weights,
+        empty_weights=bool(args.gguf),
+        offgraph_cache=args.offgraph_cache,
     )
     if args.gguf:
-        load_gguf(model, args.gguf)
+        load_gguf(model, args.gguf, truncated=bool(args.layers))
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
-    kv_cache_dtype = torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
-    wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
+    if args.offgraph_cache:
+        wrapper = OffGraphLastTokenLM(model, cache_len).eval()
+    else:
+        kv_cache_dtype = (
+            torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
+        )
+        wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
 
     input_ids = torch.zeros((1, 6), dtype=torch.long)
     cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
@@ -345,9 +553,14 @@ def main() -> None:
     report_lowering(ep, "forward")
 
     if args.output:
-        to_native(ep).save(args.output)
+        metadata = wrapper.metadata() if args.offgraph_cache else None
+        to_native(ep, metadata=metadata).save(args.output)
         print(f"saved {args.output}")
     if prompts:
         samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
         write_samples(args.output, "golden", samples)
         print(f"wrote {len(prompts)} golden samples")
+
+
+if __name__ == "__main__":
+    main()

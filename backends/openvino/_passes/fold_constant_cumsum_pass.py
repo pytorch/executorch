@@ -64,10 +64,12 @@ def _constant_nodes(graph_module: torch.fx.GraphModule) -> set:
     return constants
 
 
-def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
-    """Values of targets, computing only what they read, on the CPU."""
+def _evaluate(
+    graph_module: torch.fx.GraphModule, target: torch.fx.Node
+) -> torch.Tensor:
+    """Value of target, computing only what it reads, on the CPU."""
     needed = set()
-    stack = list(targets)
+    stack: list = [target]
     while stack:
         node = stack.pop()
         if node not in needed:
@@ -82,7 +84,10 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
             continue
         if _reads_only_shape(node):
             like = node.args[0].meta["val"]
-            args = (torch.empty(like.shape, dtype=like.dtype), *node.args[1:])
+            args = (
+                torch.empty(like.shape, dtype=like.dtype, device="cpu"),
+                *node.args[1:],
+            )
             kwargs = dict(node.kwargs)
         else:
             args, kwargs = torch.fx.node.map_arg(
@@ -95,15 +100,15 @@ def _evaluate(graph_module: torch.fx.GraphModule, targets: list) -> dict:
             kwargs = {**kwargs, "pin_memory": False}
         values[node] = node.target(*args, **kwargs)
         for i in _inputs(node):
-            if last_use[i] is node and i not in targets:
+            if last_use[i] is node:
                 del values[i]
-    return values
+    return values[target]
 
 
 class FoldConstantCumsumPass(PassBase):
     """Replace an integer cumsum that reads only constants with its result.
 
-    With an integer cumsum over a constant, OpenVINO's CPU plugin (2025.4 to
+    With an integer cumsum over a constant, OpenVINO's CPU plugin (2025.1 to
     2026.4) gives wrong results from the second inference on: masks built from
     it keep only what earlier calls allowed. pi0 builds its attention masks
     this way. The OpenVINO nightly no longer does this, so the pass can go once
@@ -130,7 +135,7 @@ class FoldConstantCumsumPass(PassBase):
         # the others from being folded.
         for node in cumsums:
             try:
-                value = _evaluate(graph_module, [node])[node]
+                value = _evaluate(graph_module, node)
             except RuntimeError as e:
                 # Some ops have modes the CPU lacks.
                 logging.warning(

@@ -22,8 +22,18 @@ format, including the exact newline placement used by the reference renderer.
 
 import json
 
-from executorch.examples.models.muse_glimmer.serving.tool_parsers import (
+import pytest
+
+pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+pytest.importorskip("jsonschema", reason="requires llm_server serving dependencies")
+pytest.importorskip("regex", reason="requires llm_server serving dependencies")
+
+from executorch.examples.models.muse_glimmer.serving.tool_parsers import (  # noqa: E402
     AtemToolCallDetector,
+)
+from executorch.examples.models.muse_glimmer.serving.tool_parsers.schema import (  # noqa: E402
+    ToolOutputError,
+    ToolSchema,
 )
 
 # Harmony framing fragments, assembled by hand into model-output strings.
@@ -61,7 +71,9 @@ _TOOLS = {
 
 
 def _parse(text, tools=_TOOLS):
-    return AtemToolCallDetector().detect_and_parse(text, tools)
+    return AtemToolCallDetector().detect_and_parse(
+        text, {name: ToolSchema(schema) for name, schema in tools.items()}
+    )
 
 
 def test_basic_call_terminated():
@@ -74,6 +86,50 @@ def test_basic_call_terminated():
     assert r.calls[0].name == "get_weather"
     assert json.loads(r.calls[0].arguments) == {"city": "Paris"}
     assert r.normal_text == ""
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '<atem:parameter name="city">Paris',
+        '<atem:parameter name="city">Paris</atem:parameter>'
+        '<atem:parameter name="city">Rome</atem:parameter>',
+        'unparsed<atem:parameter name="city">Paris</atem:parameter>',
+    ],
+)
+def test_malformed_parameter_never_becomes_a_call(body):
+    text = (
+        '<atem:function_calls><atem:invoke name="get_weather">'
+        + body
+        + "</atem:invoke></atem:function_calls>"
+    )
+    with pytest.raises(ToolOutputError):
+        _parse(text)
+
+
+def test_malformed_invocation_does_not_emit_partial_set():
+    text = '<atem:invoke name="bad">unfinished' + _atem(
+        "get_weather", [("city", "Paris")]
+    )
+    with pytest.raises(ToolOutputError):
+        _parse(text)
+
+
+@pytest.mark.parametrize(
+    "raw,expected", [("123", "123"), ("null", None), (" true ", " true ")]
+)
+def test_nullable_string_preserves_schema_type(raw, expected):
+    tools = {"f": {"properties": {"value": {"type": ["string", "null"]}}}}
+    calls = _parse(_atem("f", [("value", raw)]), tools).calls
+    assert json.loads(calls[0].arguments) == {"value": expected}
+
+
+def test_known_qualified_alias_returns_canonical_tool_name():
+    calls = _parse(_atem("get_weather.get_weather", [("city", "Paris")])).calls
+    assert calls[0].name == "get_weather"
+    assert json.loads(calls[0].arguments) == {"city": "Paris"}
+    with pytest.raises(ToolOutputError):
+        _parse(_atem("other.get_weather", [("city", "Paris")]))
 
 
 def test_basic_call_without_terminator():
@@ -208,30 +264,17 @@ def test_plain_text_passes_through():
     assert r.normal_text == text
 
 
-def test_undefined_tool_degrades_to_full_text():
-    # A well-formed call to a tool not in the request degrades the WHOLE response
-    # to the raw text (surface intent, never a partial set).
-    text = (
-        f" to=delete_everything{_MESSAGE}"
-        + _atem("delete_everything", [("target", "all")])
-        + _EOM
-    )
-    r = _parse(text)
-    assert r.calls == []
-    assert r.normal_text == text
+def test_undefined_tool_is_an_explicit_error():
+    with pytest.raises(ToolOutputError, match="undefined tool"):
+        _parse(_atem("delete_everything", [("target", "all")]))
 
 
-def test_truncated_call_degrades_without_leaking_markup():
-    # A call cut off by max_tokens (no </atem:invoke>) must NOT leak the partial
-    # markup -- only the leading text survives.
-    text = (
-        'Sure! <atem:function_calls>\n<atem:invoke name="get_weather">\n'
-        '<atem:parameter name="city">Paris'
-    )
-    r = _parse(text)
-    assert not r.calls
-    assert "<atem:" not in r.normal_text
-    assert r.normal_text == "Sure!"
+def test_truncated_call_is_an_explicit_error():
+    with pytest.raises(ToolOutputError, match="Incomplete"):
+        _parse(
+            'Sure!\n<atem:function_calls><atem:invoke name="get_weather">'
+            '<atem:parameter name="city">Paris'
+        )
 
 
 def test_no_calls_when_block_absent_but_prose_only():
@@ -326,36 +369,28 @@ _TYPED = {
 }
 
 
-def test_declared_integer_with_float_string_kept_raw():
-    text = _atem("calc", [("n", "10.0")])
-    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["n"]
-    assert val == "10.0" and isinstance(val, str)  # not float 10.0
+def test_integral_json_number_satisfies_integer_schema():
+    val = json.loads(_parse(_atem("calc", [("n", "10.0")]), _TYPED).calls[0].arguments)[
+        "n"
+    ]
+    assert val == 10 and not isinstance(val, str)
 
 
-def test_declared_boolean_with_one_kept_raw():
-    text = _atem("calc", [("flag", "1")])
-    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["flag"]
-    assert val == "1" and isinstance(val, str)  # not int 1
-
-
-def test_declared_integer_with_underscores_kept_raw():
-    text = _atem("calc", [("n", "1_000")])
-    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["n"]
-    assert val == "1_000" and isinstance(val, str)  # not int 1000
-
-
-def _reject_bare_constant(c):
-    # json.loads parse_constant hook: fires only for bare NaN/Infinity/-Infinity.
-    raise AssertionError(f"emitted bare non-finite constant: {c}")
-
-
-def test_declared_number_non_finite_never_emitted():
-    for bad in ("NaN", "Infinity", "-Infinity", "1e999"):
-        text = _atem("calc", [("x", bad)])
-        args = _parse(text, _TYPED).calls[0].arguments
-        # Strict-client safe: no bare NaN/Infinity constant in the emitted JSON.
-        json.loads(args, parse_constant=_reject_bare_constant)
-        assert json.loads(args)["x"] == bad  # kept as the raw string
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("n", "1_000"),
+        ("n", "1.5"),
+        ("flag", "1"),
+        ("x", "NaN"),
+        ("x", "Infinity"),
+        ("x", "-Infinity"),
+        ("x", "1e999"),
+    ],
+)
+def test_invalid_scalar_does_not_escape_as_wrong_type(key, value):
+    with pytest.raises(ToolOutputError):
+        _parse(_atem("calc", [(key, value)]), _TYPED)
 
 
 def test_param_value_with_literal_parameter_close_preserved():
@@ -398,7 +433,7 @@ def test_value_with_angle_brackets_kept_as_string():
 def test_per_request_index_is_isolated():
     # A fresh detector per request restarts tool_index at 0.
     text = f" to=add{_MESSAGE}" + _atem("add", [("a", "1"), ("b", "2")])
-    first = AtemToolCallDetector().detect_and_parse(text, _TOOLS)
-    second = AtemToolCallDetector().detect_and_parse(text, _TOOLS)
+    first = _parse(text)
+    second = _parse(text)
     assert first.calls[0].tool_index == 0
     assert second.calls[0].tool_index == 0

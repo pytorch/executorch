@@ -73,7 +73,10 @@ class I64toI32(ExportPass):
             # Keep track of original output dtype so we ensure the dtype of the graph is consistent with nn.Module
             if is_graph_output(n):
                 if isinstance(n.meta["val"], (tuple, list)):
-                    dtype_list = [tensor.dtype for tensor in n.meta["val"]]
+                    dtype_list = [
+                        tensor.dtype if tensor is not None else None
+                        for tensor in n.meta["val"]
+                    ]
                     n.meta[QCOM_ORIG_DTYPE] = dtype_list
                 else:
                     n.meta[QCOM_ORIG_DTYPE] = n.meta["val"].dtype
@@ -84,6 +87,8 @@ class I64toI32(ExportPass):
                 if isinstance(n.meta["val"], (tuple, list)):
                     for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
                         # TODO: Enable this in future to support OP such as topK
+                        if n.meta["val"][i] is None or dtype is None:
+                            continue
                         if n.meta["val"][i].dtype != dtype:
                             raise AssertionError(
                                 "Multi output nodes currently don't support casting dtype back."
@@ -115,10 +120,10 @@ class I64toI32(ExportPass):
     def _update_meta(self, node: torch.fx.node) -> None:
         meta_val = node.meta["val"]
         if isinstance(meta_val, tuple):
-            node.meta["val"] = (
+            node.meta["val"] = tuple(
                 (
                     fake_tensor.to(torch.int32)
-                    if fake_tensor.dtype == torch.int64
+                    if fake_tensor is not None and fake_tensor.dtype == torch.int64
                     else fake_tensor
                 )
                 for fake_tensor in meta_val
