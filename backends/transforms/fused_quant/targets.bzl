@@ -46,6 +46,7 @@ def define_common_targets():
         visibility = _VISIBILITY,
         deps = [
             ":constant_fold",
+            ":fold_relu_into_producer",
             ":fold_scalar_mul",
             ":fuse_add_into_linear",
             ":fuse_mul_into_linear",
@@ -147,6 +148,21 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fold_relu_into_producer",
+        srcs = ["optimization_passes/fold_relu_into_producer.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            ":graph_utils",
+            "//executorch/exir/dialects/fused_quant:ops",
+            "//caffe2:torch",
+            "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
         ],
     )
 

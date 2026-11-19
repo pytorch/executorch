@@ -30,6 +30,9 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
 from executorch.backends.transforms.fused_quant.optimization_passes.constant_fold import (
     ConstantFold,
 )
+from executorch.backends.transforms.fused_quant.optimization_passes.fold_relu_into_producer import (
+    FoldReluIntoProducer,
+)
 from executorch.backends.transforms.fused_quant.optimization_passes.fold_scalar_mul import (
     FoldScalarMul,
 )
@@ -204,6 +207,7 @@ def get_optimization_passes(
     symmetric_quant_input_ops: frozenset[EdgeOpOverload] = frozenset(),
     extra_quantizable_ops: dict[EdgeOpOverload, tuple[int, ...]] | None = None,
     channels_last: bool = False,
+    fold_relu_into_producer: bool = False,
     fold_into_linear: bool = False,
     prequantize_embedding: bool = False,
     split_linear_at_slices: bool = False,
@@ -229,6 +233,9 @@ def get_optimization_passes(
 
     - ``channels_last``: ``ToChannelsLast`` runs convolutions and pools in NHWC,
       which a backend with its own layout pass has to undo.
+    - ``fold_relu_into_producer``: ``FoldReluIntoProducer`` has the conv or linear
+      before a relu quantize straight to the relu's output, dropping the rounding
+      between the two.
     - ``fold_into_linear``: ``FuseAddIntoLinear`` and ``FuseMulIntoLinear`` fold a
       scalar add or a constant multiply into the linear or convolution before it,
       dropping the rounding between the two.
@@ -252,6 +259,7 @@ def get_optimization_passes(
             ),
             *([ToChannelsLast()] if channels_last else []),
             HoistActivations(),
+            *([FoldReluIntoProducer()] if fold_relu_into_producer else []),
             CSEPass(banned_ops=get_CSE_banned_ops()),
             *([FuseAddIntoLinear(), FuseMulIntoLinear()] if fold_into_linear else []),
             # After QuantAbsorptionPass and FuseMulIntoLinear: absorption makes an
@@ -330,6 +338,7 @@ def get_fused_quant_passes(
     symmetric_quant_input_ops: frozenset[EdgeOpOverload] = frozenset(),
     extra_quantizable_ops: dict[EdgeOpOverload, tuple[int, ...]] | None = None,
     channels_last: bool = False,
+    fold_relu_into_producer: bool = False,
     fold_into_linear: bool = False,
     prequantize_embedding: bool = False,
     split_linear_at_slices: bool = False,
@@ -356,6 +365,7 @@ def get_fused_quant_passes(
             symmetric_quant_input_ops=symmetric_quant_input_ops,
             extra_quantizable_ops=extra_quantizable_ops,
             channels_last=channels_last,
+            fold_relu_into_producer=fold_relu_into_producer,
             fold_into_linear=fold_into_linear,
             prequantize_embedding=prequantize_embedding,
             split_linear_at_slices=split_linear_at_slices,

@@ -9,6 +9,9 @@ import unittest
 import executorch.exir.dialects.fused_quant.ops  # noqa: F401
 import torch
 from executorch.backends.test.program_builder import ProgramBuilder
+from executorch.backends.transforms.fused_quant.optimization_passes.fold_relu_into_producer import (
+    FoldReluIntoProducer,
+)
 from executorch.backends.transforms.fused_quant.optimization_passes.fuse_add_into_linear import (
     FuseAddIntoLinear,
 )
@@ -41,6 +44,7 @@ from torch.fx.passes.dialect.common.cse_pass import CSEPass
 
 _PASSES_BY_FLAG: dict[str, set[type]] = {
     "channels_last": {ToChannelsLast},
+    "fold_relu_into_producer": {FoldReluIntoProducer},
     "fold_into_linear": {FuseAddIntoLinear, FuseMulIntoLinear},
     "prequantize_embedding": {PrequantizeEmbedding},
     "split_linear_at_slices": {SplitLinearAtSlices},
