@@ -30,17 +30,8 @@ Report read_gpu_clock(GpuClock* clock) {
   return frequency ? Report(*frequency) : Report();
 }
 
-double median(std::vector<double> values) {
-  if (values.empty()) {
-    return std::nan("");
-  }
-  const size_t mid = values.size() / 2;
-  std::nth_element(values.begin(), values.begin() + mid, values.end());
-  const double upper = values[mid];
-  if (values.size() % 2 == 1) {
-    return upper;
-  }
-  return (*std::max_element(values.begin(), values.begin() + mid) + upper) / 2;
+double median(const std::vector<double>& values) {
+  return latency_statistics(values).at("p50").get<double>();
 }
 
 int64_t monotonic_ns(Clock::time_point time) {
@@ -106,9 +97,7 @@ Report profile_operator_shaders(
         shaders_per_invocation,
         {std::nullopt, std::nullopt, {"Shader binding metadata unavailable"}});
   }
-  // Each dispatch records previous work, barrier, and shader execution finish.
-  constexpr uint32_t kQueriesPerDispatch = 3;
-  if (shaders_per_invocation > query_limit / kQueriesPerDispatch) {
+  if (shaders_per_invocation > query_limit / vkapi::kQueriesPerDispatch) {
     throw UnsupportedRoute(
         "Operator dispatch chain exceeds timestamp query capacity");
   }
@@ -117,7 +106,8 @@ Report profile_operator_shaders(
       : std::min(
             count,
             static_cast<uint32_t>(
-                query_limit / (kQueriesPerDispatch * shaders_per_invocation)));
+                query_limit /
+                (vkapi::kQueriesPerDispatch * shaders_per_invocation)));
   // Re-record the batch inside a timestamp pair to measure profiling overhead.
   context.flush();
   context.set_cmd(true);

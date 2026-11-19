@@ -278,6 +278,7 @@ class GraphBuilder {
   void lower_mean(const Node& node);
   void lower_sum(const Node& node);
   void lower_amax(const Node& node);
+  void lower_softmax(const Node& node);
   // The `self` of a mean, sum or amax over trailing dims as ggml rows of the
   // reduced elements, and the result sizes.
   std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(

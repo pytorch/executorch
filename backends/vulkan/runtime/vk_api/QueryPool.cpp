@@ -28,9 +28,6 @@ namespace {
 // TODO: Figure out what is special about 52.08
 constexpr int64_t kDefaultNsPerTick = 52; // lround(52.08f);
 
-// Previous work finish, barrier finish, and shader execution finish.
-constexpr uint32_t kQueriesPerDispatch = 3u;
-
 } // namespace
 
 size_t count_order_violations(const std::vector<ShaderTimestamp>& timestamps) {
