@@ -203,9 +203,8 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         narrower integer dtype.
 
         Operators that CastZeroDimInt64OperandsPass casts qualify, and so do
-        comparisons in int32. A cast qualifies when its users compute in an
-        integer dtype at least as wide as the cast. Quantized users do not
-        qualify.
+        comparisons. A cast qualifies when its users compute in an integer dtype
+        at least as wide as the cast. Quantized users do not qualify.
 
         """
         if node.meta["val"].dim() != 0:
@@ -213,8 +212,6 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         integer_dtypes = (torch.int8, torch.int16, torch.int32, torch.int64)
         dtype = get_compute_dtype(user)
         if dtype not in integer_dtypes[:3]:
-            return False
-        if user.meta["val"].dtype == torch.bool and dtype != torch.int32:
             return False
         if user.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
             return user.target in cls._zero_dim_ops and not user.meta.get(

@@ -1263,9 +1263,9 @@ def _can_handle_int64_operands(node: fx.Node) -> bool:
     compute_dtype = get_compute_dtype(node)
     if compute_dtype == torch.int64:
         return True
-    if node.target in ZERO_DIM_NARROW_OPS:
+    if node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_NARROW_OPS:
         narrow_dtypes: tuple[torch.dtype, ...] = (torch.int8, torch.int16, torch.int32)
-    elif node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_INT32_OPS:
+    elif node.target in ZERO_DIM_INT32_OPS:
         narrow_dtypes = (torch.int32,)
     else:
         return False

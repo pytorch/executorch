@@ -7,6 +7,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.test.harness.stages import StageType
 
 
 class ConstAdd(torch.nn.Module):
@@ -165,6 +166,12 @@ int64_extension_partition_suite = {
     "cat_byte_promoted": (lambda x, y: torch.cat([x, y]), (_WIDE, _BYTES), 1),
     "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 1),
     "or_short": (torch.bitwise_or, (_WIDE, _BYTES.to(torch.int16)), 1),
+    "gt_byte_zero_dim": (lambda x, y: x > y, (_BYTES, torch.tensor(-(2**31))), 1),
+    "gt_byte_zero_dim_buffer": (
+        Int64Buffer(lambda value, x: x > value, torch.tensor(2**40 + 255)),
+        (_BYTES,),
+        1,
+    ),
     "where_byte_zero_dim": (
         torch.where,
         (_COND, _BYTES, torch.tensor(2**40 + 7)),
@@ -306,3 +313,46 @@ def test_int64_extension_widening_cast_placement_tosa_INT(test_data: Tuple):
             }
         )
     )
+
+
+# Quantization keeps int64 under the int64 extension and only narrows index
+# arguments. Operators without int64 support fall back to the CPU.
+int64_extension_quantized_suite = {
+    "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
+    "where_gt": (lambda x, y: torch.where(x > y, x, y), (_WIDE, _WIDE_2), 1),
+    "add_const": (lambda x: x + 2**40, (_WIDE,), 1),
+    "widen_narrow_add": (lambda x: x.to(torch.int64) + 2**40, (_NARROW,), 1),
+    "arange_add": (
+        lambda x: torch.arange(4) + (2**31 - 2) + x,
+        (torch.tensor([1, 2, 3, 4]),),
+        1,
+    ),
+    "full_like": (lambda x: torch.full_like(x, 2**35) + x, (_WIDE,), 1),
+    "cat_slice": (lambda x, y: torch.cat([x[1:3], y[::2]]), (_WIDE, _WIDE_2), 1),
+    "index_select": (
+        lambda x, index: torch.index_select(x, 0, index),
+        (_NARROW, torch.tensor([3, 0])),
+        1,
+    ),
+    "index_wide_data": (lambda x, index: x[index], (_WIDE, torch.tensor([3, 0])), 1),
+    "sum": (lambda x: x.sum(), (_WIDE,), 0),
+    "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 1),
+}
+
+
+@common.parametrize("test_data", int64_extension_quantized_suite)
+def test_int64_extension_quantized_tosa_INT(test_data: Tuple):
+    op, inputs, delegates = test_data
+    tester = (
+        ArmTester(
+            Int64Op(op), inputs, common.get_tosa_compile_spec("TOSA-1.1+INT+int64")
+        )
+        .quantize()
+        .export()
+        .to_edge_transform_and_lower()
+        .check_count({"torch.ops.higher_order.executorch_call_delegate": delegates})
+    )
+    if delegates:
+        tester.to_executorch().run_method_and_compare_outputs(
+            inputs, reference_stage_type=StageType.INITIAL_MODEL
+        )
