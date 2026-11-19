@@ -127,6 +127,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         )
         from executorch.backends.cuda.triton.kernels.conv.core import (
             implicit_gemm,
+            weight_stream,
             winograd,
         )
         from executorch.backends.cuda.triton.kernels.conv.core.common import (
@@ -178,6 +179,8 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         ]
         if implicit_gemm.schedule_supports("winograd_f4", call) is None:
             candidates.append(("winograd_f4", winograd.CONFIGS))
+        if implicit_gemm.schedule_supports("stream_ffma", call) is None:
+            candidates.append(("stream_ffma", weight_stream.CONFIGS))
         for schedule, configs in candidates:
             with tf32:
                 self.assertIsNone(implicit_gemm.schedule_supports(schedule, call))
@@ -450,6 +453,95 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         strides = _dense_strides((1, 72, 4, 6, 7), (0, 2, 3, 4, 1))
         with self.subTest(output_strides=strides):
             self.check(x, w, b, (1, 1, 1), (1, 1, 1), (1, 1, 1), output_strides=strides)
+
+    def test_weight_stream(self):
+        from executorch.backends.cuda.triton.kernels.conv.core import (
+            implicit_gemm,
+            weight_stream,
+        )
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            ConvCall,
+            ConvParams,
+        )
+
+        # input, C_out, kernel, stride, before, after: deep reductions split
+        # over many programs, the most output rows, few channels, and an
+        # asymmetric pad.
+        geometries = (
+            ((1, 1024, 4), 512, (5,), (1,), (2,), (2,)),
+            ((2, 256, 8), 96, (3,), (2,), (1,), (1,)),
+            ((16, 64, 4), 32, (5,), (1,), (2,), (2,)),
+            ((1, 7, 9), 5, (4,), (3,), (2,), (1,)),
+        )
+        for (i, geometry), bias in itertools.product(
+            enumerate(geometries), (True, False)
+        ):
+            shape, c_out, kernel, stride, before, after = geometry
+            x, w, b = self.tensors(shape, c_out, kernel, bias=bias)
+            params = ConvParams(stride, before, after, (1,), False, (0,), 1)
+            call = ConvCall(x, w, b, params)
+            self.assertIsNone(implicit_gemm.schedule_supports("stream_ffma", call))
+            for j, input_ in enumerate(
+                (x, x.transpose(1, 2).contiguous().transpose(1, 2))
+            ):
+                if not _swept(i, bias and j == 0):
+                    continue
+                with self.subTest(shape=shape, bias=bias, input=input_.stride()):
+                    self.check(input_, w, b, stride, before, after)
+        self.assertGreater(weight_stream.MAX_SPLIT, 1)
+        x, w, b = self.tensors((2, 256, 8), 96, (3,))
+        with self.subTest(every_config=True):
+            self.check(x, w, b, (1,), (1,), (1,), True)
+        with self.subTest(output_strides=(768, 1, 96)):
+            self.check(x, w, b, (1,), (1,), (1,), output_strides=(768, 1, 96))
+        params = ConvParams((1,), (1,), (1,), (1,), False, (0,), 1)
+        for name, call in (
+            ("rows", ConvCall(*self.tensors((9, 8, 8), 8, (3,)), params)),
+            (
+                "weight",
+                ConvCall(x, w.transpose(1, 2).contiguous().transpose(1, 2), b, params),
+            ),
+            (
+                "2-D",
+                ConvCall(
+                    *self.tensors((1, 8, 4, 4), 8, (3, 3)),
+                    dataclasses.replace(
+                        params,
+                        stride=(1, 1),
+                        padding_before=(1, 1),
+                        padding_after=(1, 1),
+                        dilation=(1, 1),
+                        output_padding=(0, 0),
+                    ),
+                ),
+            ),
+        ):
+            with self.subTest(refused=name):
+                self.assertIsNotNone(
+                    implicit_gemm.schedule_supports("stream_ffma", call)
+                )
+        # Offsets past 32 bits: in the output (64 rows), and in the partial sums
+        # alone (one row, whose output still fits).
+        int32_max = 2**31 - 1
+        for name, rows, c_out in (
+            ("output", 64, int32_max // 64 + 1),
+            ("partial sums", 1, int32_max // weight_stream.MAX_SPLIT + 1),
+        ):
+            with self.subTest(refused=name), FakeTensorMode():
+                x = torch.empty(rows, 1, 1, device="cuda")
+                w = torch.empty(c_out, 1, 1, device="cuda")
+                call = ConvCall(
+                    x,
+                    w,
+                    None,
+                    dataclasses.replace(
+                        params, padding_before=(0,), padding_after=(0,)
+                    ),
+                )
+                self.assertLessEqual(max(rows, c_out), int32_max)
+                self.assertIn(
+                    "32-bit", implicit_gemm.schedule_supports("stream_ffma", call)
+                )
 
     def test_winograd(self):
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
