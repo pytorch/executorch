@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -93,14 +94,15 @@ class TorchciImageOverrideTest(unittest.TestCase):
     def test_docker_forwards_the_domain_pins_and_checks_installed_torch(self):
         dockerfile = (ROOT / ".ci/docker/ubuntu/Dockerfile").read_text()
         script = (ROOT / ".ci/docker/common/install_pytorch.sh").read_text()
+        installer = (ROOT / ".ci/docker/common/install_pinned_pytorch.sh").read_text()
         for variable in (*PACKAGES.values(), "TORCHCI_REPORTS"):
             self.assertIn(f"ARG {variable}\n", dockerfile)
-        self.assertIn("TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION:-release/2.11}", script)
-        self.assertIn(
-            "TORCHVISION_VERSION=${TORCHVISION_VERSION:-release/0.29}", script
-        )
+        self.assertIn("${TORCHAUDIO_VERSION:-release/2.11}", installer)
+        self.assertIn("${TORCHVISION_VERSION:-release/0.29}", installer)
         self.assertLess(
-            script.index("  install_domains\n"),
+            script.index(
+                'conda_run bash "$(dirname "${BASH_SOURCE[0]}")/install_pinned_pytorch.sh"'
+            ),
             script.index("if torch.version.git_version"),
         )
         self.assertIn('report.SCHEMA_VERSION != "1.0"', script)
