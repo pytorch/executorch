@@ -33,8 +33,9 @@ import triton
 
 # Older FLA raises ValueError (not ImportError) at import under triton 3.9, which
 # would break importing the whole CUDA backend; fail as ImportError first instead.
+# The calls below use 0.6's private kernel signatures, so accept only 0.6.x.
 _FLA_VERSION = importlib.metadata.version("fla-core")
-if tuple(int(p) for p in _FLA_VERSION.split(".")[:2]) < (0, 6):
+if not _FLA_VERSION.startswith("0.6."):
     raise ImportError(
         f"chunk_gated_delta_rule needs fla-core 0.6.0, found {_FLA_VERSION}: "
         'pip install "fla-core==0.6.0"'

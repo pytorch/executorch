@@ -185,7 +185,8 @@ int32_t aoti_torch_dtype_bool() {
 }
 
 size_t aoti_torch_dtype_element_size(int32_t dtype) {
-  // ScalarType is int8_t-backed; range-check before the cast truncates.
+  // ScalarType is int8_t-backed, so the cast truncates; scalar_type is read
+  // only after the range check passes.
   const auto scalar_type = static_cast<slim::c10::ScalarType>(dtype);
   if (dtype < 0 || dtype > INT8_MAX ||
       !slim::c10::isValidScalarType(scalar_type)) {
