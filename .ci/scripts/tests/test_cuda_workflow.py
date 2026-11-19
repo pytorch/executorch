@@ -33,10 +33,14 @@ def _matrix_cuda_versions(job):
     assert expression, job["with"]["gpu-arch-version"]
     key = expression.group(1)
     matrix = job["strategy"]["matrix"]
-    versions = list(matrix.get(key, []))
-    versions += [row[key] for row in matrix.get("include", []) if key in row]
-    excluded = {row[key] for row in matrix.get("exclude", []) if key in row}
-    return [version for version in versions if version not in excluded]
+    axis = matrix.get(key, [])
+    assert isinstance(axis, list), axis
+    # GitHub drops a combination only when it matches every key of an exclude row, and
+    # applies include after exclude. Ignoring multi-key excludes can only add a version
+    # that never runs, never skip one that does.
+    excluded = {row[key] for row in matrix.get("exclude", []) if row.keys() == {key}}
+    versions = [version for version in axis if version not in excluded]
+    return versions + [row[key] for row in matrix.get("include", []) if key in row]
 
 
 def _rendered_names(job):
@@ -111,13 +115,14 @@ class CudaWorkflowTest(unittest.TestCase):
                 self.assertEqual(
                     job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}"
                 )
-                # GitHub cuts check names at 100 characters, so the train goes first.
+                # GitHub cuts job names at 100 characters, so the train goes first.
                 self.assertTrue(
                     job["name"].startswith(f"{name}-${{{{ matrix.cuda-version }}}}"),
                     job["name"],
                 )
-                # An explicit name stops GitHub appending the matrix values, so the name
-                # itself has to tell every row apart, within the 100 characters.
+                # A name that uses a matrix expression stops GitHub appending the matrix
+                # values, so the name itself has to tell every row apart, within 100
+                # characters.
                 if "include" in job["strategy"]["matrix"]:
                     rendered = _rendered_names(job)
                     self.assertEqual(len(set(rendered)), len(rendered), rendered)

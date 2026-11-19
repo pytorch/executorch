@@ -7,11 +7,12 @@
 
 """Assemble part of a CUDA toolkit from NVIDIA's redistributable component archives.
 
-The Windows CUDA wheel end-to-end jobs and cuda-windows.yml cover several CUDA trains while
-the CI images carry one toolkit, and NVIDIA publishes no full Windows installer for every release. The redist
-archives exist for every release on both platforms, need no installer or admin rights, and
-are checksummed in a JSON index. Merging the components a job needs into one directory
-gives the layout nvcc, CMake's FindCUDAToolkit and torch's cross-compile step expect.
+The Windows CUDA wheel end-to-end jobs and cuda-windows.yml cover several CUDA trains
+while the CI images carry one toolkit, and NVIDIA publishes no full Windows installer for
+every release. The redist archives exist for every release on both platforms, need no
+installer or admin rights, and are checksummed in a JSON index. Merging the components a
+job needs into one directory gives the layout nvcc, CMake's FindCUDAToolkit and torch's
+cross-compile step expect.
 
     install_cuda_redist.py --train 13.4 --platform linux-x86_64 --dest /opt/cuda-13.4
     install_cuda_redist.py --train 13.4 --platform windows-x86_64 --dest DIR --components cuda_cudart

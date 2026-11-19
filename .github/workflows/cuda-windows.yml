@@ -173,7 +173,7 @@ jobs:
           echo "::endgroup::"
         fi
 
-        echo "::group::Verify pre-installed dependencies"
+        echo "::group::Verify the toolchain"
         x86_64-w64-mingw32-g++ --version
         nvcc --version
         echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
