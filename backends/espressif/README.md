@@ -267,14 +267,8 @@ for (;;) {
 
 Use the shared export API with `get_esp_fused_quant_recipe()`. The recipe
 configures `get_esp_fused_quant_quantizer`, calibrates the model, fuses Q/DQ into Fused
-Quant operators, and runs `EspPassManager`. The pass manager uses the shared Fused
-Quant pipeline with `channels_last=True` to convert spatial operators to NHWC,
-simplify layout operations, and fold eligible positive, finite scalar multiplies
-into quantization parameters before ESP lowering. Zero and negative scalar
-multiplies use portable kernels and are rejected by `allow_cpu_fallback=False`.
-Other shared opt-in rewrites keep their default settings. Unlowered Fused Quant
-operators decompose to portable kernels before serialization.
-No delegate partitions are created.
+Quant operators, and runs `EspPassManager`. Unsupported operators decompose
+to portable kernels before serialization. No delegate partitions are created.
 
 ```python
 from executorch.backends.espressif import (
