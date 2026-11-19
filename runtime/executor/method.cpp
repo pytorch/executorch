@@ -24,7 +24,6 @@
 #include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -1462,9 +1461,25 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     // Nothing at load checks this for a dynamic input. Program validation, when
     // enabled, leaves it to set_input(), since a bound written for a 64-bit
     // machine may overflow on a 32-bit one. A memory-planned input sized from
-    // such a bound has a buffer too small for the copy below.
+    // such a bound has a buffer too small for the copy below. Not
+    // validate_tensor(), so that builds without program verification do not
+    // link program_validation.cpp.
+    size_t bound_numel = 1;
+    for (const int32_t size : *s_tensor->sizes()) {
+      ET_CHECK_OR_RETURN_ERROR(
+          !c10::mul_overflows(
+              bound_numel, static_cast<size_t>(size), &bound_numel),
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          " has serialized sizes whose element count overflows",
+          input_idx);
+    }
+    size_t bound_nbytes;
     ET_CHECK_OR_RETURN_ERROR(
-        validate_tensor(s_tensor) == Error::Ok,
+        !c10::mul_overflows(
+            bound_numel,
+            executorch::runtime::elementSize(t_dst.scalar_type()),
+            &bound_nbytes),
         InvalidArgument,
         "Input %" ET_PRIsize_t
         " has serialized sizes whose byte count overflows",
