@@ -185,10 +185,16 @@ void GraphBuilder::lower_rope(const Node& node) {
   ggml_context* ctx = instance_.context.get();
   ggml_tensor* pos = ggml_reshape_1d(
       ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+  // ggml-cpu ropes F32 and F16 only; a BF16 input is rotated in F32 and its
+  // result rounded back when it is set.
+  ggml_tensor* source = input.tensor;
+  if (source->type != GGML_TYPE_F32 && source->type != GGML_TYPE_F16) {
+    source = ggml_cast(ctx, source, GGML_TYPE_F32);
+  }
   // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
   ggml_tensor* rotated = ggml_rope_ext(
       ctx,
-      ggml_permute(ctx, input.tensor, 0, 2, 1, 3),
+      ggml_permute(ctx, source, 0, 2, 1, 3),
       pos,
       factors,
       n_dims,

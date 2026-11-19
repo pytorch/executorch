@@ -12,6 +12,7 @@ fbcode_target(
         "embedding.py",
         "linear.py",
         "ops.py",
+        "pad_pool.py",
         "record.py",
         "schemes.py",
     ],

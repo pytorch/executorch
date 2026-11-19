@@ -203,7 +203,12 @@ void GraphBuilder::lower_unary(const Node& node, Unary fn) {
 
 void GraphBuilder::lower_sqrt(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
-  require_f32(node, input.tensor);
+  // ggml's sqrt reads F16 and BF16 as they are and computes in F32, as eager
+  // does.
+  if (input.tensor->type != GGML_TYPE_F16 &&
+      input.tensor->type != GGML_TYPE_BF16) {
+    require_f32(node, input.tensor);
+  }
   set_single_output(
       node,
       TensorRef{
@@ -242,7 +247,9 @@ void GraphBuilder::lower_elu(const Node& node) {
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
     const std::string& op) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const NamedArgument* dtype = find_arg(node, "dtype", 3);
   if (dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
@@ -323,7 +330,9 @@ void GraphBuilder::lower_amax(const Node& node) {
 
 // ggml normalizes each row, so only the last dimension.
 void GraphBuilder::lower_softmax(const Node& node) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const size_t rank = input.sizes.size();
   if (rank == 0 ||

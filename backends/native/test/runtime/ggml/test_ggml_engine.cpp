@@ -772,17 +772,15 @@ TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
 }
 
 TEST(GgmlEngineTest, SqrtRejectsUnsupportedTypes) {
-  for (const auto dtype : {fbs::ScalarType::HALF, fbs::ScalarType::LONG}) {
-    TestProgram program;
-    program.input("x", dtype, {2, 4});
-    program.call(
-        "y",
-        "torch.ops.aten.sqrt.default",
-        {{"self", std::string("x")}},
-        fbs::ScalarType::FLOAT,
-        {2, 4});
-    expect_compile_error(program.finish("y"), "F32");
-  }
+  TestProgram program;
+  program.input("x", fbs::ScalarType::LONG, {2, 4});
+  program.call(
+      "y",
+      "torch.ops.aten.sqrt.default",
+      {{"self", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {2, 4});
+  expect_compile_error(program.finish("y"), "F32");
 }
 
 // tanh of x [4, 3], or of its transpose.
