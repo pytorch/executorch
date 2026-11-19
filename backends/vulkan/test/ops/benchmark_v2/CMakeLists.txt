@@ -26,7 +26,9 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/backends/vulkan/cmake/ShaderLibrary.cmake)
 
-set(VULKAN_CXX_FLAGS -fexceptions -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK)
+set(VULKAN_CXX_FLAGS -fexceptions -Wswitch -Werror=switch -DUSE_VULKAN_WRAPPER
+                     -DUSE_VULKAN_VOLK
+)
 
 set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
 set(COMMON_INCLUDES
