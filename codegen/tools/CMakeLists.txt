@@ -8,8 +8,7 @@
 # Check if pybind11 is available
 
 # Create the selective_build pybind11 module
-pybind11_add_module(selective_build SHARED selective_build.cpp)
-strip_python_lib(selective_build)
+executorch_add_pybind_module(selective_build selective_build.cpp)
 
 # Set the output name to match the module name
 set_target_properties(selective_build PROPERTIES OUTPUT_NAME "selective_build")

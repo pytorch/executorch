@@ -68,33 +68,74 @@ function verify_md5() {
     fi
 }
 
+function verify_sha256() {
+    # Compare the SHA-256 of a file with a provided expected value.
+
+    [[ $# -ne 2 ]] \
+        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 2, but got $#"; exit 1; }
+    local ref_checksum="${1}"
+    local file="${2}"
+
+    if [[ "${OS}" == "Darwin" ]]; then
+        local file_checksum="$(shasum -a 256 "${file}" | awk '{print $1}')"
+    else
+        local file_checksum="$(sha256sum "${file}" | awk '{print $1}')"
+    fi
+    if [[ ${ref_checksum} != ${file_checksum} ]]; then
+        echo "Mismatched SHA-256 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}."
+        return 2
+    fi
+}
+
 function download_with_retry() {
-    # Download a URL to a path and validate its MD5, retrying on transport
+    # Download a URL to a path and validate its checksum, retrying on transport
     # or checksum errors. developer.arm.com's CDN intermittently aborts the
     # download mid-stream with HTTP/2 INTERNAL_ERROR (curl exit 92), and
     # rare cases return a short error body that curl treats as success;
-    # both are caught here. --fail rejects HTTP errors,
-    # --retry-all-errors handles transport errors, and verify_md5 catches
-    # truncation / wrong-content via the published archive checksum.
+    # both are caught here. --fail rejects HTTP errors and
+    # --retry-all-errors handles transport errors. Checksum validation catches
+    # truncation or wrong content.
+    # If the absolute path ARM_SETUP_DOWNLOAD_CACHE holds a file named after
+    # the URL with the expected checksum, it is copied instead; the CI images
+    # cache them there.
 
     # Arg 1: log context (passed to log_step)
     # Arg 2: URL to download
     # Arg 3: Output path
-    # Arg 4: Expected MD5 checksum
+    # Arg 4: Expected checksum
+    # Arg 5: Checksum type, md5 (default) or sha256
 
-    [[ $# -ne 4 ]] \
-        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 4, but got $#"; exit 1; }
+    [[ $# -lt 4 || $# -gt 5 ]] \
+        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 4 or 5, but got $#"; exit 1; }
     local context="${1}"
     local url="${2}"
     local output="${3}"
-    local expected_md5="${4}"
+    local expected_checksum="${4}"
+    local checksum_type="${5:-md5}"
+    local verify_checksum="verify_${checksum_type}"
+
+    if [[ "${checksum_type}" != "md5" && "${checksum_type}" != "sha256" ]]; then
+        echo "[${FUNCNAME[0]}] Unsupported checksum type: ${checksum_type}"
+        exit 1
+    fi
+
+    if [[ -n "${ARM_SETUP_DOWNLOAD_CACHE:-}" ]]; then
+        local cached="${ARM_SETUP_DOWNLOAD_CACHE}/$(basename "${url}")"
+        if [[ -f "${cached}" ]] && "${verify_checksum}" \
+                "${expected_checksum}" "${cached}" \
+           && cp "${cached}" "${output}"; then
+            log_step "${context}" "Using cached ${cached}"
+            return 0
+        fi
+        echo "::warning::[Arm Setup/${context}] No usable ${cached}; downloading"
+    fi
 
     local max_attempts=5
     for attempt in $(seq 1 ${max_attempts}); do
         rm -f "${output}"
         if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
              ${ARM_SETUP_CURL_PROGRESS_ARGS[@]+"${ARM_SETUP_CURL_PROGRESS_ARGS[@]}"} -L --output "${output}" "${url}" \
-           && verify_md5 "${expected_md5}" "${output}"; then
+           && "${verify_checksum}" "${expected_checksum}" "${output}"; then
             return 0
         fi
         ls -l "${output}" 2>&1 || true

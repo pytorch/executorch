@@ -1406,7 +1406,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_target_prefill_chunk = min_target_prefill_chunk.get();
       dflash_max_target_prefill_chunk = max_target_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_target_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_target_prefill_chunk > dflash_block_size &&
               dflash_max_target_prefill_chunk >=
                   dflash_min_target_prefill_chunk,
           InvalidProgram,
@@ -1426,7 +1426,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_draft_prefill_chunk = min_draft_prefill_chunk.get();
       dflash_max_draft_prefill_chunk = max_draft_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_draft_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_draft_prefill_chunk > dflash_block_size &&
               dflash_max_draft_prefill_chunk >= dflash_min_draft_prefill_chunk,
           InvalidProgram,
           "Invalid DFlash draft prefill chunk interval [%" PRId64 ", %" PRId64

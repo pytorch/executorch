@@ -28,8 +28,9 @@ set(COMMON_INCLUDE_DIRS ${EXECUTORCH_ROOT}/..)
 # Include utility CMake scripts from ExecuteTorch
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-# The backend resolves OpenVINO C API symbols via dlopen/dlsym at runtime, so
-# there is no build-time dependency on the OpenVINO SDK.
+# The backend resolves OpenVINO C API symbols at runtime (dlopen on Linux,
+# LoadLibrary on Windows), so there is no build-time dependency on the OpenVINO
+# SDK.
 
 # Shared when the wheel build asks for it, static otherwise.
 if(EXECUTORCH_BUILD_SHARED)
@@ -39,8 +40,13 @@ else()
 endif()
 add_library(openvino_backend ${_openvino_backend_library_type})
 
-# Enable exceptions and RTTI for OpenVINO backend
-target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
+# Enable exceptions and RTTI for OpenVINO backend. MSVC is also set for
+# clang-cl, which takes the cl spellings.
+if(MSVC)
+  target_compile_options(openvino_backend PRIVATE /EHsc /GR)
+else()
+  target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
+endif()
 
 # Add source files for OpenVINO backend
 target_sources(

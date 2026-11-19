@@ -42,6 +42,10 @@ void main() {
   }
 
   TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
+  if (out_of_bounds(out_tidx, outp)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
 
   TensorIndex input_tidx = out_tidx;
   input_tidx.data[div_4(split_dim)][mod_4(split_dim)] += split_offset;

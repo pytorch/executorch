@@ -760,6 +760,24 @@ def test_index_tensor_vgf_leading_full_slices(test_data: input_params):
     pipeline.run()
 
 
+@common.parametrize("test_data", IndexTensor.test_data_fp8)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_no_quant_fp8(test_data):
+    input_, indices, _ = test_data
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_params](
+            IndexTensor(),
+            (input_, indices),
+            IndexTensorTestCommon.aten_op,
+            IndexTensorTestCommon.exir_op,
+            tosa_extensions=["fp8e4m3", "fp8e5m2"],
+            quantize=False,
+            atol=0,
+            rtol=0,
+        )
+        pipeline.run()
+
+
 @common.parametrize("test_data", leading_full_slice_test_data)
 @common.SkipIfNoModelConverter
 def test_index_tensor_leading_full_slice_indexing_vgf_no_quant(test_data):

@@ -78,6 +78,7 @@ xcuserdata/
 /devtools/bundled_program/serialize/*.fbs
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
+/extension/pybindings/_C.pyi
 /include/
 /share/
 /version.py

@@ -288,6 +288,10 @@ class NodeVisitor:
             if quant_params.per_channel_group:
                 scale = scale.to(torch.bfloat16)
 
+            # The bytes are read from the start of the storage in memory order.
+            # Scales are small, so always copy them into storage of their own.
+            scale = scale.clone(memory_format=torch.contiguous_format)
+
             num_bytes = scale.untyped_storage().nbytes()
             scale_array = ctypes.cast(
                 scale.untyped_storage().data_ptr(),
@@ -412,10 +416,16 @@ class NodeVisitor:
             swap_in_out_for_weights or groups == 1
         ), "groups is option for swap_in_out_for_weights"
 
-        if tensor in vals_to_ids:
+        # A statically quantized bias is scaled by the input and weight scales of
+        # the node that consumes it, so a bias shared by several nodes needs one
+        # value per consumer.
+        is_quantized_bias = (
+            quant_params is not None and quant_params.dtype == torch.int32
+        )
+        if tensor in vals_to_ids and not is_quantized_bias:
             return
 
-        if quant_params is not None:
+        if quant_params is not None and not is_quantized_bias:
             if quant_params.q_input in vals_to_ids:
                 vals_to_ids[tensor] = vals_to_ids[quant_params.q_input]
                 return
@@ -618,6 +628,11 @@ class NodeVisitor:
 
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
+
+        # The bytes are read from the start of the storage, so a view of a
+        # larger tensor needs its own copy.
+        if const_val.nbytes != const_val.untyped_storage().nbytes():
+            const_val = const_val.clone()
 
         size = const_val.untyped_storage().nbytes()
         array_type = ctypes.c_char * size

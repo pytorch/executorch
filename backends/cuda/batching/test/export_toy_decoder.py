@@ -18,6 +18,9 @@ CudaExecutor drives, lowered in the cell layout:
 - ``device_sampling/``: dense's methods with their logits kept on the device,
   plus the ``sample`` and ``sample_argmax`` device samplers
   (extension/llm/batching/sampler.py).
+- ``mg_widths/``: Muse Glimmer's method set: forward_{1,2,4,...,64}, and
+  forward_others from 64 tokens selecting at least five rows, over longer
+  prompts, so steps of every width up to 65 can be formed.
 
 Each has ``expected.txt``: one ``prompt;continuation`` line per prompt, the
 greedy continuation computed eagerly with the neutral reference cache.
@@ -94,14 +97,14 @@ class ToyDecoder(nn.Module):
         return self.head(x[:, logits_to_keep, :])[0].float()
 
 
-def _manifest() -> str:
+def _manifest(max_step: int, max_cells: int) -> str:
     return json.dumps(
         {
             "version": 1,
             "layout": "cell",
-            "maximum_capacity": MAX_CELLS,
-            "max_cells": MAX_CELLS,
-            "max_write": MAX_STEP,
+            "maximum_capacity": max_cells,
+            "max_cells": max_cells,
+            "max_write": max_step,
             "layers": [
                 {"layer_id": i, "policy": "ring" if w else "flat", "window": w}
                 for i, w in enumerate(WINDOWS)
@@ -110,7 +113,7 @@ def _manifest() -> str:
     )
 
 
-def _greedy(model: ToyDecoder, prompt) -> list:
+def _greedy(model: ToyDecoder, prompt, new_tokens: int = NEW_TOKENS) -> list:
     from executorch.extension.llm.cache.reference_cache import (
         CacheConfig,
         LayerPolicy,
@@ -136,7 +139,7 @@ def _greedy(model: ToyDecoder, prompt) -> list:
             generated = []
             tokens = list(prompt)
             start = 0
-            for _ in range(NEW_TOKENS):
+            for _ in range(new_tokens):
                 step = torch.tensor([tokens[start:]])
                 logits = model(
                     step,
@@ -156,11 +159,31 @@ ARTIFACTS = {
     "dense": {"static": (1, 2, 4, 8), "min_rows": 1},
     "sparse": {"static": (1, 4), "min_rows": 5},
     "device_sampling": {"static": (1, 2, 4, 8), "min_rows": 1, "device_sampling": True},
+    # Each prompt plus its continuation fits MAX_CONTEXT; together they hold
+    # far more than the widest static step.
+    "mg_widths": {
+        "static": (1, 2, 4, 8, 16, 32, 64),
+        "min_rows": 5,
+        "max_step": 96,
+        "max_cells": 1024,
+        "new_tokens": 12,
+        "prompts": tuple(
+            [(7 * i + 3 * j) % VOCAB for j in range(n)]
+            for i, n in enumerate((1, 3, 7, 12, 20, 28, 40, 50))
+        ),
+    },
 }
 
 
 def export(
-    output_dir: str, static_widths, min_rows: int, device_sampling: bool = False
+    output_dir: str,
+    static_widths,
+    min_rows: int,
+    device_sampling: bool = False,
+    max_step: int = MAX_STEP,
+    max_cells: int = MAX_CELLS,
+    prompts=PROMPTS,
+    new_tokens: int = NEW_TOKENS,
 ) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -194,7 +217,7 @@ def export(
     inductor_config.aot_inductor.precompile_headers = False
     torch.manual_seed(0)
     model = ToyDecoder().eval()
-    expected = [_greedy(model, prompt) for prompt in PROMPTS]
+    expected = [_greedy(model, prompt, new_tokens) for prompt in prompts]
 
     model = model.to(dtype=torch.bfloat16)
     long = {"dtype": torch.long}
@@ -207,8 +230,8 @@ def export(
         )
 
     widest_static = max(static_widths)
-    width = Dim("width", min=widest_static, max=MAX_STEP)
-    rows = Dim("rows", min=min_rows, max=MAX_STEP)
+    width = Dim("width", min=widest_static, max=max_step)
+    rows = Dim("rows", min=min_rows, max=max_step)
     programs = {}
     with torch.no_grad():
         for n in static_widths:
@@ -217,7 +240,7 @@ def export(
             )
         programs["forward_others"] = torch.export.export(
             model,
-            inputs(MAX_STEP),
+            inputs(max_step),
             dynamic_shapes=({1: width}, {0: width}, {0: rows}),
             strict=True,
         )
@@ -244,20 +267,22 @@ def export(
             [
                 CudaBackend.generate_method_name_compile_spec(name),
                 CompileSpec("low_memory_mode", b"ON"),
-                CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, _manifest().encode()),
+                CompileSpec(
+                    OFFGRAPH_KV_COMPILE_SPEC, _manifest(max_step, max_cells).encode()
+                ),
                 CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"1:0"),
             ]
         )
 
     constant_methods = {
         **write_max_context_len(MAX_CONTEXT),
-        **write_max_seq_len(MAX_STEP),
+        **write_max_seq_len(max_step),
         **write_vocab_size(VOCAB),
         **write_logits_to_keep_mode("selected"),
         **write_cache_geometry(
             [N_KV_HEADS] * len(WINDOWS), [HEAD_DIM] * len(WINDOWS), list(WINDOWS)
         ),
-        "get_offgraph_kv_max_cells": MAX_CELLS,
+        "get_offgraph_kv_max_cells": max_cells,
     }
     if min_rows > 1:
         constant_methods["get_min_prefill_chunk"] = min_rows
@@ -290,7 +315,7 @@ def export(
         program.write_to_file(f)
     program.write_tensor_data_to_file(output_dir)
     with open(os.path.join(output_dir, "expected.txt"), "w") as f:
-        for prompt, continuation in zip(PROMPTS, expected):
+        for prompt, continuation in zip(prompts, expected):
             f.write(
                 " ".join(map(str, prompt))
                 + ";"
@@ -310,6 +335,10 @@ def main() -> None:
             artifact["static"],
             artifact["min_rows"],
             artifact.get("device_sampling", False),
+            artifact.get("max_step", MAX_STEP),
+            artifact.get("max_cells", MAX_CELLS),
+            artifact.get("prompts", PROMPTS),
+            artifact.get("new_tokens", NEW_TOKENS),
         )
 
 

@@ -23,10 +23,6 @@ from executorch.exir._serialize._named_data_store import (
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_api import (
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
@@ -52,7 +48,9 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
+    ReplaceEmptyLikePass,
 )
+from executorch.exir.passes.constant_prop_pass import fold_constant_transposes
 from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
@@ -74,6 +72,9 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -793,6 +794,8 @@ def edge_to_executorch_passes(
             skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
             enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
+            error_on_per_call_copies=device_cfg.error_on_per_call_copies,
+            skip_h2d_for_constants=device_cfg.skip_h2d_for_constants,
         ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
@@ -823,8 +826,10 @@ def _generate_edge_program(
     program = remove_unused_parameters_pass(program)
 
     if not config._skip_dim_order:
-        # Normalize constants and buffers before MemoryFormatOpsPass rewrites
-        # preserve-format copies, which cannot represent arbitrary dim orders.
+        # Normalize constants, buffers, parameters and inputs before
+        # partitioning, so a delegate sees the layout the program stores, and before
+        # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
+        # represent arbitrary dim orders.
         program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
             program
         )
@@ -838,6 +843,13 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
+    empty_like = torch.ops.aten.empty_like.default
+    if (
+        empty_like not in (preserve_ops or [])
+        and empty_like not in config.preserve_ops
+        and contains_any_call_fn_target_op(program.graph_module, [empty_like])
+    ):
+        passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
     if not config._skip_dim_order:
         passes.append(MemoryFormatOpsPass())
@@ -870,7 +882,10 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize tensor constants introduced by the preceding passes.
+    # Normalize tensor constants introduced by the preceding passes. With
+    # _skip_dim_order this is the only call, so it fixes the layout of
+    # parameters, buffers, constants and inputs, but ops computed from them
+    # keep the old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1195,7 +1210,16 @@ def _gen_edge_manager_for_partitioners(
                     # functionalized the graph. This second call only applies
                     # operator decompositions from the remaining table, so it is
                     # safe to skip when none of those targets occur in the graph.
-                    if contains_any_call_fn_target_op(program.graph_module, table):
+                    # Unless the config preserves it, empty_like does not
+                    # count: ReplaceEmptyLikePass lowers any that is left.
+                    not_counted = (
+                        set()
+                        if torch.ops.aten.empty_like.default in config.preserve_ops
+                        else {torch.ops.aten.empty_like.default}
+                    )
+                    if contains_any_call_fn_target_op(
+                        program.graph_module, table.keys() - not_counted
+                    ):
                         program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
@@ -1229,6 +1253,8 @@ def _gen_edge_manager_for_partitioners(
                     _restore_transformed_ops_to_aten_ops(program)
             ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
 
+        # Edge programs have no complex dtypes for ops such as mul.
+        ReplaceComplexWithRealPass()(program)
         edge_programs[name] = _generate_edge_program(
             config,
             program,
@@ -1320,6 +1346,14 @@ def to_edge_transform_and_lower(  # noqa: C901
     or wrong behavior.
 
     This API is the primary recommended way to lower to the CPU based XNNPack backend.
+
+    Unlike to_edge, it replaces complex numbers with real numbers before it builds the
+    Edge programs, since the Edge dialect has no complex dtypes for ops such as mul. A
+    complex tensor becomes a real tensor with a last dim of size 2 that holds its real and
+    imaginary parts, as torch.view_as_real gives. This includes complex constants,
+    parameters and buffers, so the returned programs store them in that layout. A program
+    that the pass cannot rewrite completely keeps all its complex numbers. See
+    ReplaceComplexWithRealPass.
 
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
@@ -1476,6 +1510,8 @@ def to_edge(
                 EXIRATenDialectVerifier(
                     edge_compile_config=config,
                     class_only=False,
+                    # ReplaceEmptyLikePass lowers it in _generate_edge_program.
+                    core_aten_ops_exception_list=[torch.ops.aten.empty_like.default],
                 )(gm)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in ATen dialect.")
@@ -1546,6 +1582,7 @@ class EdgeProgramManager:
 
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
+        self._folded_methods: Set[str] = set()
 
         self._named_data_store = NamedDataStore()
         for _, program in self._edge_programs.items():
@@ -1686,6 +1723,13 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             specified subgraphs lowered.
         """
+        # backend_api imports executorch.exir.program (via program._fake_program),
+        # so importing it at module scope is circular.
+        from executorch.exir.backend.backend_api import (
+            MethodProgramsPartitionerSpec,
+            to_backend,
+        )
+
         new_edge_programs: Dict[str, ExportedProgram] = {}
         method_to_partitioner: Dict[str, Partitioner] = {}
         if not isinstance(partitioner, dict):
@@ -1723,11 +1767,39 @@ class EdgeProgramManager:
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
-            after it has been transformed to the ExecuTorch backend.
+            after it has been transformed to the ExecuTorch backend. Afterwards,
+            exported_program() of this EdgeProgramManager also returns the
+            lowered programs. An ExportedProgram taken from this manager before
+            the call is lowered in place only for methods in which
+            fold_constant_transposes folds nothing.
+
+        Raises:
+            RuntimeError: If an earlier call on this manager folded a weight
+                transpose and this call leaves fold_constant_transposes off,
+                which is the default, or uses external_constants. Copy the
+                manager before the first call to lower it more than once with
+                different settings.
         """
         config = config if config else ExecutorchBackendConfig()
+        # External constants are matched by name, which a fold would change.
+        fold = config.fold_constant_transposes and not config.external_constants
+        if self._folded_methods and not fold:
+            raise RuntimeError(
+                "An earlier to_executorch() call folded weight transposes in "
+                f"methods {sorted(self._folded_methods)}, so this manager cannot be "
+                "lowered again without fold_constant_transposes=True or with "
+                "external_constants. Copy the manager before the first call."
+            )
+        programs = self._edge_programs
+        if fold:
+            programs = fold_constant_transposes(programs, self._config_methods)
+        folded = {
+            name
+            for name, program in programs.items()
+            if program is not self._edge_programs[name]
+        }
         execution_programs: Dict[str, ExportedProgram] = {}
-        for name, program in self._edge_programs.items():
+        for name, program in programs.items():
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
                     raise Exception(
@@ -1805,6 +1877,10 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+        # A folded program was lowered on a copy. Hand it to this manager too,
+        # as every other program is lowered in place.
+        self._folded_methods.update(folded)
+        self._edge_programs.update(execution_programs)
         # After running memory planning on all entry points we can run the cross entry point memory planning
         if isinstance(config.memory_planning_pass, dict):
             for memory_planning_pass in config.memory_planning_pass.values():
@@ -1878,11 +1954,17 @@ class ExecutorchProgramManager:
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
+        reserved_external_names = set()
+        if named_data is not None:
+            reserved_external_names.update(named_data.pte_data)
+            for entries in named_data.external_data.values():
+                reserved_external_names.update(entries)
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
+            reserved_external_names=reserved_external_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/q8ta/Q8taBinary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -55,7 +56,7 @@ void add_q8ta_binary_node(
     const ValueRef output_zp,
     const ValueRef alpha,
     const ValueRef packed_int8_output,
-    const std::string& op_name) {
+    const BinaryOpType op_type) {
   // The implementation assumes that all participating tensors have the same
   // packed dimension, and that they all have the same block size for the packed
   // dimension
@@ -89,7 +90,7 @@ void add_q8ta_binary_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  std::string kernel_name = "q8ta_" + op_name;
+  std::string kernel_name = "q8ta_binary";
   add_storage_type_suffix(
       kernel_name, graph.storage_type_of(packed_int8_output));
 
@@ -133,7 +134,8 @@ void add_q8ta_binary_node(
       {graph.hashed_layout_of(packed_int8_output),
        graph.hashed_layout_of(packed_int8_input_a),
        graph.hashed_layout_of(packed_int8_input_b),
-       block_config.as_packed_int()},
+       block_config.as_packed_int(),
+       static_cast<int32_t>(op_type)},
       // Resize args
       {block_config_ref},
       // Resizing Logic
@@ -169,7 +171,7 @@ void q8ta_add(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output_zp,
       alpha,
       packed_int8_output,
-      "add");
+      BinaryOpType::kAdd);
 }
 
 REGISTER_OPERATORS {

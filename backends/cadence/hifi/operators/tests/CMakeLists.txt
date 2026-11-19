@@ -56,6 +56,7 @@ add_executable(
   test_op_permute_copy.cpp
   test_op_quantize_per_tensor.cpp
   test_op_quantized_conv2d_out.cpp
+  test_op_quantized_layer_norm.cpp
   test_op_quantized_matmul_out.cpp
   test_op_quantized_relu_out.cpp
   test_op_relu.cpp

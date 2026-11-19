@@ -13,7 +13,6 @@ from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_param_tensor,
-    get_tensor_name,
     is_param_node,
 )
 from executorch.exir.backend.utils import WhyNoPartition
@@ -184,11 +183,10 @@ class DecomposeBatchNorm(XNNPACKPass):
         new_weight_shape = [weight.shape[0], 1] + [1] * spatial_dims
         weight = weight.reshape(new_weight_shape)
 
-        # Generate names for the new weight and bias parameters based on the original
-        # batch norm gamma parameter name.
-        gamma_name = get_tensor_name(self.exported_program, bn_node.args[1])
-        weight_name = (gamma_name + "_decomposed_bn_weight").replace(".", "_")
-        bias_name = (gamma_name + "_decomposed_bn_bias").replace(".", "_")
+        # Name the new parameters after the batch norm node. The gamma name does not
+        # work: it is empty when affine=False, so all such batch norms would share it.
+        weight_name = f"{bn_node.name}_decomposed_bn_weight"
+        bias_name = f"{bn_node.name}_decomposed_bn_bias"
 
         # Insert the new weight and bias as constant placeholders in the graph.
         with graph_module.graph.inserting_before(bn_node.args[1]):

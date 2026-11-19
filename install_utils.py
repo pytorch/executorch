@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
+import importlib.util
 import os
 import platform
 import re
@@ -18,11 +19,28 @@ from typing import List, Optional, Tuple
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
 SUPPORTED_CUDA_VERSIONS = (
-    (12, 6),
-    (13, 0),
     (13, 2),
     (13, 4),
 )
+
+
+def ensure_pip() -> None:
+    """Bootstrap pip with uv when it is missing from the running Python."""
+    if importlib.util.find_spec("pip") is not None:
+        return
+
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError(
+            "Neither pip nor uv is available. "
+            f'Install pip with "{sys.executable} -m ensurepip --upgrade", '
+            "or install uv and ensure it is on PATH: "
+            "https://docs.astral.sh/uv/getting-started/installation/"
+        )
+
+    subprocess.run(
+        [uv, "pip", "install", "--python", sys.executable, "pip"], check=True
+    )
 
 
 def is_cmake_option_on(
@@ -97,6 +115,12 @@ def is_vulkan_available() -> bool:
     return False
 
 
+class UnsupportedCudaVersionError(RuntimeError):
+    def __init__(self, version: Tuple[int, int], message: str):
+        super().__init__(message)
+        self.version = version
+
+
 @functools.lru_cache(maxsize=1)
 def _get_cuda_version():
     """
@@ -114,7 +138,7 @@ def _get_cuda_version():
             _selected_nvcc(), capture_output=True, text=True, check=True
         )
         # Parse nvcc output for CUDA version
-        # Output contains line like "Cuda compilation tools, release 12.6, V12.6.68"
+        # Output contains line like "Cuda compilation tools, release 13.0, V13.0.88"
         match = re.search(r"release (\d+)\.(\d+)", nvcc_result.stdout)
         if match:
             major, minor = int(match.group(1)), int(match.group(2))
@@ -124,9 +148,10 @@ def _get_cuda_version():
                 available_versions = ", ".join(
                     [f"{maj}.{min}" for maj, min in SUPPORTED_CUDA_VERSIONS]
                 )
-                raise RuntimeError(
+                raise UnsupportedCudaVersionError(
+                    (major, minor),
                     f"Detected CUDA version {major}.{minor} is not supported. "
-                    f"Supported versions: {available_versions}."
+                    f"Supported versions: {available_versions}.",
                 )
 
             return (major, minor)
@@ -301,11 +326,11 @@ def _cuda_version_to_pytorch_suffix(major, minor):
     Generate PyTorch CUDA wheel suffix from CUDA version numbers.
 
     Args:
-        major: CUDA major version (e.g., 12)
-        minor: CUDA minor version (e.g., 6)
+        major: CUDA major version (e.g., 13)
+        minor: CUDA minor version (e.g., 2)
 
     Returns:
-        PyTorch wheel suffix string (e.g., "cu126")
+        PyTorch wheel suffix string (e.g., "cu132")
     """
     return f"cu{major}{minor}"
 
@@ -352,6 +377,13 @@ def determine_torch_url(torch_nightly_url_base):
         cuda_version = _get_cuda_version()
     except Exception as err:
         print(f"CUDA detection failed ({err}), using CPU-only PyTorch")
+        if isinstance(err, UnsupportedCudaVersionError):
+            major, minor = err.version
+            print(
+                f"WARNING: CUDA {major}.{minor} is installed but not supported, "
+                "so CPU-only PyTorch is installed.",
+                file=sys.stderr,
+            )
         return f"{torch_nightly_url_base}/cpu"
 
     major, minor = cuda_version

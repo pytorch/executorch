@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -33,6 +33,21 @@ fbcode_target(_kind = runtime.python_library,
     ],
     visibility = ["PUBLIC"],
     deps = [
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "//caffe2:torch",
+    ],
+)
+
+# Optional recorded method calls inside a .ptn; see backends/native/README.md.
+fbcode_target(_kind = runtime.python_library,
+    name = "ptn_samples",
+    typing = True,
+    srcs = [
+        "_ptn_samples.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":ptn",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "//caffe2:torch",
     ],

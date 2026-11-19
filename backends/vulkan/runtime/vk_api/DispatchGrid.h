@@ -56,9 +56,8 @@ class GlobalWorkGrid;
 
 class LocalWorkGroup final {
  private:
-  // These store the exponents e of their corresponding power-of-two values.
   uint32_t target_total_nthreads_exp_;
-  utils::uvec3 xyz_exponents_;
+  utils::uvec3 xyz_sizes_;
   LwgShape target_lwg_shape_;
 
  public:

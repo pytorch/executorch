@@ -230,9 +230,11 @@ def test_op_non_json_raises_worker_error():
         WorkerClient(proc).open_session("abc")
 
 
-def test_close_session_sends_op_and_acks():
-    proc = _FakeProc(_lines({"closed": True, "session_id": "abc"}))
-    WorkerClient(proc).close_session("abc")
+@pytest.mark.parametrize("existed", [None, False, True])
+def test_close_session_sends_op_and_acks(existed):
+    metadata = {} if existed is None else {"existed": existed}
+    proc = _FakeProc(_lines({"closed": True, "session_id": "abc", **metadata}))
+    assert WorkerClient(proc).close_session("abc") is existed
     assert json.loads(proc.stdin.written[0]) == {"op": "close", "session_id": "abc"}
 
 
@@ -710,3 +712,26 @@ def test_spawn_worker_non_posix_keeps_normal_jsonl_behavior(monkeypatch):
     assert client.supports_cancel is False
     assert client.stop() is False
     client.close()
+
+
+@pytest.mark.parametrize("matched_stop", [None, "\n\n"])
+def test_generate_preserves_matched_stop_metadata(matched_stop):
+    done = {
+        "done": True,
+        "finish_reason": "stop",
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+    }
+    if matched_stop is not None:
+        done["matched_stop"] = matched_stop
+    proc = _FakeProc(_lines({"token": "prefix"}, done))
+    seen = []
+    WorkerClient(proc).generate("hi", _Cfg(stop=["\n\n"]), stats_callback=seen.append)
+    assert seen[0].matched_stop == matched_stop
+
+
+def test_explicit_null_stop_metadata_is_distinct_from_old_worker():
+    from executorch.examples.llm_server.python.worker_client import WorkerStats
+
+    assert WorkerStats.from_message({"matched_stop": None}).matched_stop == ""
+    assert WorkerStats.from_message({}).matched_stop is None

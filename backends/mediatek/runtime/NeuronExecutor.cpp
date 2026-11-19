@@ -36,8 +36,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
   std::vector<NeuronOperandType> mInputOperand;
   std::vector<NeuronOperandType> mOutputOperand;
   // ---------------------------Model------------------------------------
-  int err = NEURON_NO_ERROR;
-  err |= NeuronModel_create(&model);
+  int err = NeuronModel_create(&model);
   CHECK_NO_ERROR(err);
 
   mModel = std::unique_ptr<NeuronModel, NeuronDeleter>(model);
@@ -55,7 +54,8 @@ int NeuronExecutor::LoadFromCompiledNetwork(
     mInputOperand.push_back(fakeInputOperandType);
   }
   for (int i = 0; i < mInputOperand.size(); i++) {
-    err |= NeuronModel_addOperand(model, &mInputOperand[i]);
+    err = NeuronModel_addOperand(model, &mInputOperand[i]);
+    CHECK_NO_ERROR(err);
     input_op_number.emplace_back(i);
   }
 
@@ -63,7 +63,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
   const uint16_t network_operand_restore_data =
       RESTORE_DLA_EXTENSION_OPERAND_TYPE;
   const char* extensionRestoreCompiledNetwork = RESTORE_DLA_EXTENSION_NAME;
-  err |= NeuronModel_getExtensionOperandType(
+  err = NeuronModel_getExtensionOperandType(
       model,
       extensionRestoreCompiledNetwork,
       network_operand_restore_data,
@@ -77,7 +77,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
       .zeroPoint = 0,
   };
 
-  err |= NeuronModel_addOperand(model, &extenOperandType);
+  err = NeuronModel_addOperand(model, &extenOperandType);
   CHECK_NO_ERROR(err);
   input_op_number.emplace_back(input_op_number.size());
 
@@ -95,19 +95,19 @@ int NeuronExecutor::LoadFromCompiledNetwork(
 
   std::vector<uint32_t> output_op_number;
   for (int i = 0; i < mOutputOperand.size(); i++) {
-    err |= NeuronModel_addOperand(model, &mOutputOperand[i]);
+    err = NeuronModel_addOperand(model, &mOutputOperand[i]);
+    CHECK_NO_ERROR(err);
     output_op_number.emplace_back(i + input_op_number.size());
   }
 
-  CHECK_NO_ERROR(err);
-
-  err |=
+  err =
       NeuronModel_setOperandValue(model, input_op_number.back(), buffer, size);
+  CHECK_NO_ERROR(err);
 
   int32_t operationType = 0;
   const uint16_t network_operation_type_restore =
       RESTORE_DLA_EXTENSION_OPERATION_TYPE;
-  err |= NeuronModel_getExtensionOperationType(
+  err = NeuronModel_getExtensionOperationType(
       model,
       extensionRestoreCompiledNetwork,
       network_operation_type_restore,
@@ -116,7 +116,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
   CHECK_NO_ERROR(err);
 
   // Add extension operation
-  err |= NeuronModel_addOperation(
+  err = NeuronModel_addOperation(
       model,
       (NeuronOperationType)operationType,
       input_op_number.size(),
@@ -127,7 +127,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
   CHECK_NO_ERROR(err);
 
   // Identify input and output
-  err |= NeuronModel_identifyInputsAndOutputs(
+  err = NeuronModel_identifyInputsAndOutputs(
       model,
       input_op_number.size() - 1,
       input_op_number.data(),
@@ -136,7 +136,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(
 
   CHECK_NO_ERROR(err);
 
-  err |= NeuronModel_finish(model);
+  err = NeuronModel_finish(model);
   CHECK_NO_ERROR(err);
   // ---------------------------Compilation------------------------------------
   // err = NeuronCompilation_e(model, &compilation) != NEURON_NO_ERROR;
@@ -146,9 +146,9 @@ int NeuronExecutor::LoadFromCompiledNetwork(
 
   mCompilation = std::unique_ptr<NeuronCompilation, NeuronDeleter>(compilation);
 
-  err |=
-      NeuronCompilation_setPreference(compilation, NEURON_PREFER_TURBO_BOOST);
-  err |= NeuronCompilation_setPriority(compilation, NEURON_PRIORITY_HIGH);
+  err = NeuronCompilation_setPreference(compilation, NEURON_PREFER_TURBO_BOOST);
+  CHECK_NO_ERROR(err);
+  err = NeuronCompilation_setPriority(compilation, NEURON_PRIORITY_HIGH);
   CHECK_NO_ERROR(err);
 
   err = NeuronCompilation_finish(compilation);

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from executorch.examples.llm_server.python import multiplexed_worker_client
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -343,10 +342,10 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
     worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
-    async def generate(key):
+    async def generate(key, prompt="hello"):
         async with runtime.generate_stream(
             key,
-            PromptInput(text="hello"),
+            PromptInput(text=prompt),
             GenerationOptions(max_new_tokens=1, temperature=0.0, seed=123),
         ) as generation:
             pieces = [piece async for piece in generation]
@@ -366,10 +365,19 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
         assert replacement.prefilled_prompt_tokens == 1
         await asyncio.wait_for(worker.reset_session("first"), 5)
         reset = await asyncio.wait_for(generate("first"), 10)
-        assert reset.reused_prompt_tokens == 0
+        assert reset.reused_prompt_tokens == 4
+        assert reset.prefilled_prompt_tokens == 1
+        assert reset.session_reset_reason == "prefix_clone"
         await asyncio.wait_for(worker.open_session("explicit"), 5)
         explicit = await asyncio.wait_for(generate("explicit"), 10)
-        assert explicit.reused_prompt_tokens == 0
+        assert explicit.reused_prompt_tokens == 4
+        assert explicit.prefilled_prompt_tokens == 1
+        assert explicit.session_reset_reason == "prefix_clone"
+        await asyncio.wait_for(worker.reset_session("first"), 5)
+        fresh = await asyncio.wait_for(generate("first", "world"), 10)
+        assert fresh.prompt_tokens == 5
+        assert fresh.reused_prompt_tokens == 0
+        assert fresh.prefilled_prompt_tokens == 5
     finally:
         await asyncio.wait_for(runtime.aclose_worker(), 15)
 
@@ -584,3 +592,63 @@ async def test_slow_consumer_does_not_stall_another_request(native_worker):
     text, stats = await collect(generate(client, "still healthy", key="c", count=2))
     assert len(text) == stats.num_generated_tokens == 2
     assert client.healthy
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_http_ignore_eos_reaches_native_worker_and_is_request_scoped(
+    native_worker, stream
+):
+    worker, trace = await native_worker(stop_immediately=True, gate=True)
+    runtime = SessionRuntime(worker)
+    serving = ServingChat(
+        runtime, ChatTemplate(hf_tokenizer_path=None, allow_fallback=True), "test-model"
+    )
+    transport = httpx.ASGITransport(app=build_app(serving, "test-model"))
+    try:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",  # @lint-ignore: in-process ASGI endpoint
+        ) as client:
+
+            async def request(ignore):
+                return await client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "test-model",
+                        "messages": [{"role": "user", "content": "hello"}],
+                        "max_tokens": 8,
+                        "ignore_eos": ignore,
+                        "stream": stream,
+                        "stream_options": {"include_usage": True},
+                    },
+                )
+
+            continued, stopped = await asyncio.wait_for(
+                asyncio.gather(request(True), request(False)), 10
+            )
+            for response, expected_tokens, reason in [
+                (continued, 8, "length"),
+                (stopped, 0, "stop"),
+            ]:
+                assert response.status_code == 200
+                if stream:
+                    chunks = [
+                        json.loads(line[6:])
+                        for line in response.text.splitlines()
+                        if line.startswith("data: ") and line != "data: [DONE]"
+                    ]
+                    usage = next(c["usage"] for c in chunks if "usage" in c)
+                    finish = next(
+                        c["choices"][0]["finish_reason"]
+                        for c in chunks
+                        if c["choices"] and c["choices"][0].get("finish_reason")
+                    )
+                else:
+                    usage = response.json()["usage"]
+                    finish = response.json()["choices"][0]["finish_reason"]
+                assert usage["completion_tokens"] == expected_tokens
+                assert finish == reason
+            assert 2 in [int(line) for line in trace.read_text().splitlines()]
+    finally:
+        await runtime.aclose_worker()

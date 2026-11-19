@@ -145,7 +145,7 @@ class TOSABackend(BackendDetails):
         if dump_debug_info is not None:
             debug_hook = DebugHook(dump_debug_info)
 
-        logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
+        logger.debug(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
@@ -341,9 +341,15 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
-                    if len(node.users) == 0 and submodule_name is None:
-                        # In top level module, we don't need to handle unused placeholders.
-                        # In submodules, we do need to handle them to preserve call signature.
+                    if (
+                        len(node.users) == 0
+                        and submodule_name is None
+                        and node.name not in edge_program.graph_signature.user_inputs
+                    ):
+                        # Unused parameters, buffers and constants are skipped.
+                        # Unused user inputs stay because the runtime binds
+                        # delegate arguments by position. In submodules, all
+                        # placeholders are kept to preserve the call signature.
                         continue
                     process_placeholder(
                         node,

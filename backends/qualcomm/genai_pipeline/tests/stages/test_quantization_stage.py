@@ -36,9 +36,7 @@ class TestQuantizationStage(unittest.TestCase):
 
     def test_invoke_delegates_to_strategy(self):
         mock_strategy = MagicMock(spec=QuantizationStrategy)
-        mock_strategy.invoke.return_value = QuantizationOutputConfig(
-            quantized_model="quantized"
-        )
+        mock_strategy.invoke.return_value = QuantizationOutputConfig(graphs={})
         stage = QuantizationStage(mock_strategy)
         context = make_test_context()
         input_config = QuantizationInputConfig(

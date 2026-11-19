@@ -507,6 +507,7 @@ def generate_python_schema(schema: FBSSchema) -> str:  # noqa: C901
             "    mutable_buffer_map: Optional[List[SlotVariant]] = None",
             "    named_slots: Optional[List[NamedSlot]] = None",
             "    tensor_meta: Optional[List[TensorMeta]] = None",
+            "    mutated_inputs: Optional[List[int]] = None",
             "",
         ]
     )

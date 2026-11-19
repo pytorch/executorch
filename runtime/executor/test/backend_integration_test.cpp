@@ -610,6 +610,34 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringInitSuccess) {
   ASSERT_EQ(program.error(), Error::Ok);
 }
 
+TEST_P(BackendIntegrationTest, MethodMetaPassedToBackendInitContext) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  bool init_called = false;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& context) -> Result<DelegateHandle*> {
+        init_called = true;
+        const auto* meta = context.method_meta();
+        EXPECT_NE(meta, nullptr);
+        if (meta != nullptr) {
+          EXPECT_STREQ(meta->name(), "forward");
+          EXPECT_TRUE(meta->uses_backend(StubBackend::kName));
+        }
+        processed->Free();
+        return nullptr;
+      });
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+  EXPECT_TRUE(init_called);
+}
+
 TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   Result<FileDataLoader> loader = FileDataLoader::from(program_path());
   ASSERT_EQ(loader.error(), Error::Ok);

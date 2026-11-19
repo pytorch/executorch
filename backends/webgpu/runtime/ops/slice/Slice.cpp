@@ -152,7 +152,7 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.step = static_cast<uint32_t>(step);
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, kSliceWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, out_meta.numel, wg_size, "slice");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -186,7 +186,12 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "slice",
+       workgroup_count.y});
   const size_t dispatch_idx = graph.num_dispatches() - 1;
 
   // Dynamic shapes: live start/end -> out[dim] len + meta/params/dispatch.
@@ -228,9 +233,10 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     p.start = static_cast<uint32_t>(start);
     p.step = static_cast<uint32_t>(step);
     wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-    g.dispatch_at(dispatch_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            g.device(), om.numel, wg_size, "slice(resize)");
+    const utils::WgCount wg = utils::compute_2d_workgroup_count(
+        g.device(), om.numel, wg_size, "slice(resize)");
+    g.dispatch_at(dispatch_idx).workgroup_count_x = wg.x;
+    g.dispatch_at(dispatch_idx).workgroup_count_y = wg.y;
   };
   if (is_symint(graph, start_id)) {
     graph.add_resize_hook(start_id, recompute);

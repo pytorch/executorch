@@ -8,6 +8,7 @@ conv2d_prepack_weights:
   parameter_names_with_default_values:
     DTYPE: float
     BUF_DTYPE: float
+    OUTPUT_BUFFER: false
   generate_variant_forall:
     combination:
       parameter_names: [DTYPE, BUF_DTYPE]
@@ -17,3 +18,11 @@ conv2d_prepack_weights:
         - parameter_values: [half, half]
   shader_variants:
     - NAME: conv2d_prepack_weights
+    - NAME: conv2d_prepack_weights_buffer
+      OUTPUT_BUFFER: true
+      generate_variant_forall:
+        combination:
+          parameter_names: [DTYPE, BUF_DTYPE]
+          combos:
+            - parameter_values: [half, float]
+            - parameter_values: [half, half]
