@@ -44,6 +44,8 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/nxp:quantizer",
         "//executorch/backends/nxp:neutron_backend",
         "//executorch/backends/nxp:edge_passes",
+        "//executorch/backends/nxp:recipes",
+        "//executorch/export:lib",
     ]
 )
 

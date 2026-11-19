@@ -57,6 +57,9 @@ struct ShaderTimestamp final {
   ShaderMetadata metadata;
 };
 
+// Previous work finish, barrier finish, and shader execution finish.
+constexpr uint32_t kQueriesPerDispatch = 3u;
+
 // Counts entries whose timestamps are out of order: within an entry, or between
 // an entry's shader execution finish and the next entry's previous work finish.
 // Dispatches serialized by full barriers never violate this order.

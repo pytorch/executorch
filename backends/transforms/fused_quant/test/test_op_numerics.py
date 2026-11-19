@@ -38,6 +38,10 @@ def _int8(*shape: int) -> Callable[[], torch.Tensor]:
     return lambda: torch.randint(-128, 128, shape, dtype=torch.int8)
 
 
+def _positive_int8(*shape: int) -> Callable[[], torch.Tensor]:
+    return lambda: torch.randint(1, 128, shape, dtype=torch.int8)
+
+
 def _float(*shape: int) -> Callable[[], torch.Tensor]:
     return lambda: torch.randn(*shape)
 
@@ -89,7 +93,7 @@ _CASES: list[_Case] = [
             {"inp": _int8(2, 4), "other": _int8(2, 4)},
             frozenset({"inp", "other"}),
         )
-        for name in ("add", "mul", "sub")
+        for name in ("add", "mul", "sub", "minimum", "maximum")
     ),
     _Case("add.Scalar", {"inp": _int8(2, 4)}, frozenset({"inp"}), {"other": 2.0}),
     _Case("mul.Scalar", {"inp": _int8(2, 4)}, frozenset({"inp"}), {"other": 2.0}),
@@ -190,6 +194,32 @@ _CASES: list[_Case] = [
         "embedding",
         {"weight": _int8(10, 4), "indices": lambda: torch.tensor([0, 3, 9])},
         frozenset({"weight"}),
+    ),
+    *(
+        _Case(name, {"inp": _int8(2, 3, 4)}, frozenset({"inp"}), extras)
+        for name, extras in (
+            ("mean.dim", {"dim": [-1], "keepdim": True}),
+            ("mean.dim", {"dim": [1, 2]}),
+            ("sum.dim_IntList", {"dim": [1], "keepdim": True}),
+            ("amax", {"dim": [-1]}),
+            ("_softmax", {"dim": -1, "half_to_float": False}),
+            ("_log_softmax", {"dim": 1, "half_to_float": False}),
+            ("pow.Tensor_Scalar", {"exponent": 2}),
+            ("clamp", {"min": -3.0, "max": 5.0}),
+            ("clamp", {"min": 0.0}),
+            ("div.Scalar", {"other": 3.0}),
+            ("leaky_relu", {"negative_slope": 0.1}),
+        )
+    ),
+    # Positive operands, so the results stay finite.
+    *(
+        _Case(name, {"inp": _positive_int8(2, 4)}, frozenset({"inp"}))
+        for name in ("rsqrt", "sqrt")
+    ),
+    _Case(
+        "div",
+        {"inp": _int8(2, 4), "other": _positive_int8(2, 4)},
+        frozenset({"inp", "other"}),
     ),
 ]
 
@@ -336,8 +366,13 @@ class DecomposeNumericsTest(unittest.TestCase):
         reference = program.module()(*user_inputs)
         # The documented fallback: channels-last ops go back to channels-first
         # before decomposition, which only knows the ATen layouts.
+        # Linear's core ATen decomposition accumulates in a different order, so
+        # it is kept whole to compare the q/dq around it exactly.
         decomposed = ExportedProgramPassManager(
-            [ToChannelsFirst(), DecomposeFusedQuant()]
+            [
+                ToChannelsFirst(),
+                DecomposeFusedQuant(keep_whole=[torch.ops.aten.linear.default]),
+            ]
         )(program).exported_program
 
         self.assertFalse(

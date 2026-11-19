@@ -229,6 +229,16 @@ TEST_F(ProfilingApiTest, ProfiledIndependentDispatchesDoNotOverlap) {
   EXPECT_EQ(vkapi::count_order_violations(ticks), 0u);
   graph.context()->querypool().extract_results();
   EXPECT_EQ(graph.context()->querypool().num_order_violations(), 0u);
+  // The second execute replays the recorded command buffers, which must reset
+  // and rewrite every query.
+  graph.execute();
+  const auto replayed =
+      graph.context()->querypool().get_shader_timestamp_ticks();
+  ASSERT_EQ(replayed.size(), ticks.size());
+  EXPECT_EQ(vkapi::count_order_violations(replayed), 0u);
+  EXPECT_GT(
+      replayed.front().previous_work_finish_ticks,
+      ticks.back().shader_exec_finish_ticks);
 }
 
 } // namespace
