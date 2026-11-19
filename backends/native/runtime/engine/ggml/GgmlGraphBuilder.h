@@ -94,12 +94,13 @@ struct OffGraphCacheBinding {
     // K and V storage, ggml [head_dim, rows, n_kv_heads].
     ggml_tensor* k = nullptr;
     ggml_tensor* v = nullptr;
-    // Sliding window of a ring layer, which attends all its rows; 0 for a
-    // flat layer.
+    // The layer's sliding window, 0 for none; layers sharing one share a mask.
     int window = 0;
+    // A ring layer attends all its rows; any other, the first `keys`.
+    bool ring = false;
   };
   std::vector<Layer> layers;
-  // Rows a flat layer's attention reads, a prefix of its storage.
+  // Rows a non-ring layer's attention reads, a prefix of its storage.
   int64_t keys = 0;
 };
 
