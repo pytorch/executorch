@@ -110,9 +110,12 @@ class TestCu134Dependencies(unittest.TestCase):
                         cuda, machine
                     )
                     self.assertIn("torch==2.14.0", core)
-                    self.assertIn(
-                        f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                    torchao_version = (
+                        self.installer.CU130_TORCHAO_NIGHTLY_VERSION
+                        if cuda == (13, 0)
+                        else self.installer.TORCHAO_NIGHTLY_VERSION
                     )
+                    self.assertIn(f"torchao=={torchao_version}", core)
                     self.assertIn("torchvision==0.29.0", domains)
                     self.assertIn("torchaudio==2.11.0", domains)
                     self.assertFalse(any("==" in arg for arg in local))
@@ -409,12 +412,11 @@ class TestCu134Dependencies(unittest.TestCase):
                 )
 
     def test_wheel_torchao_bound_matches_selected_train(self):
-        for cuda in ((13, 4), (13, 2), None):
-            version = (
-                self.installer.CU134_TORCHAO_NIGHTLY_VERSION
-                if cuda == (13, 4)
-                else self.installer.TORCHAO_NIGHTLY_VERSION
-            )
+        for cuda in ((13, 4), (13, 2), (13, 0), None):
+            version = {
+                (13, 4): self.installer.CU134_TORCHAO_NIGHTLY_VERSION,
+                (13, 0): self.installer.CU130_TORCHAO_NIGHTLY_VERSION,
+            }.get(cuda, self.installer.TORCHAO_NIGHTLY_VERSION)
             major, minor = (int(part) for part in version.split(".")[:2])
             expected = f"torchao>={version},<{major}.{minor + 1}"
             self.utils.determine_torch_url.cache_clear()
