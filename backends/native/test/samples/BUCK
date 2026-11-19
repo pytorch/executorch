@@ -28,11 +28,17 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_library,
+    name = "generate_lib",
+    srcs = ["generate.py"],
+    deps = [":record"],
+)
+
+fbcode_target(
     _kind = runtime.python_binary,
     name = "generate",
-    srcs = ["generate.py"],
     main_function = "executorch.backends.native.test.samples.generate.main",
-    deps = [":record"],
+    deps = [":generate_lib"],
 )
 
 fbcode_target(
@@ -40,6 +46,7 @@ fbcode_target(
     name = "test_record",
     srcs = ["test_record.py"],
     deps = [
+        ":generate_lib",
         ":record",
         "//caffe2:torch",
         "//executorch/exir/native:native",
