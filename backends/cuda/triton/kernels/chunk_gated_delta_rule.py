@@ -23,11 +23,22 @@ FLA kernels use @triton.heuristics which wrap_triton doesn't support directly.
 We unwrap via kernel.fn to get the inner @triton.autotune kernel and pass the
 heuristic-computed constexprs explicitly.
 
-Requires: pip install fla-core>=0.6.0
+Requires: pip install "fla-core==0.6.0"
 """
+
+import importlib.metadata
 
 import torch
 import triton
+
+# Older FLA raises ValueError (not ImportError) at import under triton 3.9, which
+# would break importing the whole CUDA backend; fail as ImportError first instead.
+_FLA_VERSION = importlib.metadata.version("fla-core")
+if tuple(int(p) for p in _FLA_VERSION.split(".")[:2]) < (0, 6):
+    raise ImportError(
+        f"chunk_gated_delta_rule needs fla-core 0.6.0, found {_FLA_VERSION}: "
+        'pip install "fla-core==0.6.0"'
+    )
 
 from fla.ops.common.chunk_delta_h import chunk_gated_delta_rule_fwd_kernel_h_blockdim64
 from fla.ops.common.chunk_o import chunk_fwd_kernel_o

@@ -35,6 +35,8 @@ TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
 # The rocm7.2 index publishes no torch release newer than 2.14.0.
 ROCM_TORCH_VERSION = "2.14.0"
+
+# The domain releases that go with torch_pin.py's TORCH_VERSION; bump them with it.
 TORCHVISION_VERSION = "0.29.2"
 TORCHAUDIO_VERSION = "2.11.1"
 

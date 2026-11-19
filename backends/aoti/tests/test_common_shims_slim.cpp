@@ -719,6 +719,9 @@ TEST_F(CommonShimsSlimTest, DTypeElementSize) {
   EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_uint8()), 1);
   EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bool()), 1);
   EXPECT_EQ(aoti_torch_dtype_element_size(9), 0); // ComplexFloat
+  // Out of int8_t range: 262 would truncate to 6 (Float) without a range check.
+  EXPECT_EQ(aoti_torch_dtype_element_size(262), 0);
+  EXPECT_EQ(aoti_torch_dtype_element_size(-1), 0);
 }
 
 // ============================================================================

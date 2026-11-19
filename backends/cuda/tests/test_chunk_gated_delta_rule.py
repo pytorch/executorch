@@ -7,7 +7,7 @@
 """
 Export and validate chunk_gated_delta_rule triton kernel on CUDA backend.
 
-Requires: pip install fla-core>=0.6.0
+Requires: pip install "fla-core==0.6.0"
 
 Usage:
   python -m pytest backends/cuda/tests/test_chunk_gated_delta_rule.py -v
@@ -43,6 +43,14 @@ from torch.export import export
 
 
 B, T, H, K, V = 1, 128, 4, 64, 64
+
+# B > 1 and several V blocks exercise the flattened kernel grids, K = V = 128 is
+# Qwen3.5's head size, and T = 100 leaves a partial final chunk.
+GRID_SHAPES = [
+    (2, 128, 4, 64, 64),
+    (1, 128, 4, 128, 128),
+    (2, 100, 4, 128, 128),
+]
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
 RUNNER_PATH = os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner")
@@ -90,8 +98,10 @@ def _make_inputs_from_fla(
     nonzero_h0=False,
     dtype=torch.bfloat16,
     device="cuda",
+    shape=(B, T, H, K, V),
 ):
     """Generate inputs following FLA test_chunk() conventions."""
+    B, T, H, K, V = shape
     torch.manual_seed(seed)
     q = torch.rand(B, T, H, K, dtype=dtype, device=device)
     k = torch.rand(B, T, H, K, dtype=dtype, device=device)
@@ -200,12 +210,19 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
 
     def test_eager_fla_configs(self):
         """Run FLA-style test configurations and verify against naive reference."""
+        configs = [(c, (B, T, H, K, V)) for c in FLA_TEST_CONFIGS]
+        configs += [(FLA_TEST_CONFIGS[3], shape) for shape in GRID_SHAPES]
+        self._check_against_naive(configs)
+
+    def _check_against_naive(self, configs):
         from fla.ops.gated_delta_rule.naive import naive_recurrent_gated_delta_rule
 
         model = ChunkGatedDeltaModel().eval()
-        for seed, norm, mask_p, nonzero_h0, desc in FLA_TEST_CONFIGS:
-            with self.subTest(desc=desc):
-                inputs = _make_inputs_from_fla(seed, norm, mask_p, nonzero_h0)
+        for (seed, norm, mask_p, nonzero_h0, desc), shape in configs:
+            with self.subTest(desc=desc, shape=shape):
+                inputs = _make_inputs_from_fla(
+                    seed, norm, mask_p, nonzero_h0, shape=shape
+                )
                 q, k, v, g, beta, h0 = inputs
 
                 with torch.no_grad():

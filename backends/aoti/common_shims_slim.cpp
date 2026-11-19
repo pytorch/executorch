@@ -185,8 +185,10 @@ int32_t aoti_torch_dtype_bool() {
 }
 
 size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  // ScalarType is int8_t-backed; range-check before the cast truncates.
   const auto scalar_type = static_cast<slim::c10::ScalarType>(dtype);
-  if (!slim::c10::isValidScalarType(scalar_type)) {
+  if (dtype < 0 || dtype > INT8_MAX ||
+      !slim::c10::isValidScalarType(scalar_type)) {
     ET_LOG(Error, "Unsupported dtype %d for element size", dtype);
     return 0;
   }

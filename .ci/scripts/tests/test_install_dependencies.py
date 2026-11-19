@@ -201,9 +201,11 @@ class TestInstallDependencies(unittest.TestCase):
                     self.assertIn("https://download.pytorch.org/whl/test/cpu", domains)
 
     def test_rocm_scripts_install_the_rocm_torch_pin(self):
-        self.assertNotEqual(
-            self.installer.ROCM_TORCH_VERSION, self.installer.TORCH_VERSION
-        )
+        if self.installer.ROCM_TORCH_VERSION == self.installer.TORCH_VERSION:
+            self.skipTest(
+                "ROCM_TORCH_VERSION equals TORCH_VERSION, so this cannot tell "
+                "which pin the ROCm scripts install"
+            )
         for script in ("test-rocm-aoti.sh", "test-rocm-voxtral.sh"):
             with self.subTest(script=script):
                 text = (ROOT / ".ci" / "scripts" / script).read_text()

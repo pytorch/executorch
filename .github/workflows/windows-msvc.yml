@@ -12,6 +12,7 @@ on:
       - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/**
       - .github/workflows/windows-msvc.yml
+      - torch_pin.py
   workflow_dispatch:
 
 concurrency:
@@ -66,6 +67,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     # test-infra's Windows setup assumes the AWS runner image; use the GitHub
     # hosted Windows ARM64 image directly.
