@@ -136,15 +136,19 @@ Report benchmark_operator(
         validate_outputs(spec, graph, tensors, outputs, host_data);
     return result;
   }
+  auto& context = *graph.context();
   auto encode_batch = [&](uint32_t count) {
     for (uint32_t i = 0; i < count; ++i) {
+      // Barriers derived from tensor accesses alone let some drivers overlap
+      // consecutive repetitions.
+      vkapi::PipelineBarrier barrier = vkapi::full_pipeline_barrier();
+      context.register_barrier(barrier);
       for (size_t j = first; j < end; ++j) {
         graph.execute_nodes()[j]->encode(&graph);
       }
     }
   };
   // Warm once to establish the layout state used at each replay boundary.
-  auto& context = *graph.context();
   context.set_cmd();
   encode_batch(1);
   vkapi::VulkanFence fence(context.device());
