@@ -44,14 +44,15 @@ from torch.export import export
 
 B, T, H, K, V = 1, 128, 4, 64, 64
 
-# B > 1 and several V blocks exercise the flattened kernel grids, K = V = 128 is
-# Qwen3.5's head size, T = 100 leaves a partial final chunk, and K != V catches a
-# grid sized with the wrong head dimension.
+# B > 1 exercises the flattened kernel grids, K = V = 128 is Qwen3.5's head size,
+# and T = 100 leaves a partial final chunk. V = 256 with K = 64 gives several V
+# blocks, and a V block count different from K's, for every BV autotune offers
+# (at most 128), so a grid sized with the wrong head dimension fails.
 GRID_SHAPES = [
     (2, 128, 4, 64, 64),
     (1, 128, 4, 128, 128),
     (2, 100, 4, 128, 128),
-    (2, 100, 4, 64, 128),
+    (2, 100, 4, 64, 256),
 ]
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))

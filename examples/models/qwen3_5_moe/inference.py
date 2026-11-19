@@ -144,7 +144,7 @@ def main():
     args = parser.parse_args()
 
     # Register Triton kernels (fused MoE, GatedDeltaNet). Import the submodule, not the
-    # package: the package's __init__ silently skips it when fla-core is missing or too old.
+    # package: the package's __init__ silently skips it when fla-core is missing or not 0.6.x.
     import executorch.backends.cuda.triton.kernels.chunk_gated_delta_rule  # noqa: F401
 
     # Load model

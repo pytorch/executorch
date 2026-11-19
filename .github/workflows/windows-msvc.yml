@@ -13,6 +13,7 @@ on:
       - .ci/scripts/**
       - .github/workflows/windows-msvc.yml
       - torch_pin.py
+      - install_requirements.py
   workflow_dispatch:
 
 concurrency:
@@ -45,6 +46,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
       contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
@@ -69,6 +71,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
       contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     # test-infra's Windows setup assumes the AWS runner image; use the GitHub
     # hosted Windows ARM64 image directly.
@@ -95,8 +98,10 @@ jobs:
       - name: Install build dependencies
         shell: pwsh
         run: |
-          $torchVersion = python -c "from torch_pin import TORCH_VERSION; print(TORCH_VERSION)"
-          python -m pip install pyyaml "torch==$torchVersion" --extra-index-url https://download.pytorch.org/whl/test/cpu
+          $PSNativeCommandUseErrorActionPreference = $true
+          $ErrorActionPreference = 'Stop'
+          $torchVersion, $torchIndex = python -c "from install_requirements import TORCH_URL_BASE; from torch_pin import TORCH_VERSION; print(TORCH_VERSION); print(TORCH_URL_BASE)"
+          python -m pip install pyyaml "torch==$torchVersion" --extra-index-url "$torchIndex/cpu"
 
       - name: Build ExecuTorch
         shell: pwsh
