@@ -757,11 +757,7 @@ TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(
   for cache maintenance is driver-dependent.
 - `gpu_timestamp_gap_us`: from the preceding dispatch's shader execution finish
   to this dispatch's previous work finish; omitted for a batch's first dispatch.
-  Near zero unless other GPU work runs in between. For an operator's first
-  dispatch, it contains the full barrier between repetitions, which also makes
-  the previous repetition's writes visible; that dispatch's
-  `gpu_timestamp_barrier_us` therefore understates the barrier cost it would
-  pay after a different producer.
+  Near zero unless other GPU work runs in between.
 
 While shaders are profiled, every dispatch's barrier is widened to a full
 pipeline barrier, so profiled dispatches never overlap. The report adds

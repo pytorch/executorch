@@ -172,7 +172,7 @@ static Tensor& quantized_conv2d_out_impl(
   const cmsis_nn_dims bias_dims{1, 1, 1, output_channels};
   const cmsis_nn_dims upscale_dims{1, 1, 1, 1};
 
-  cmsis_nn_conv_params conv_params;
+  cmsis_nn_conv_params conv_params{};
   conv_params.input_offset = input_offset_val;
   conv_params.output_offset = output_offset_val;
   conv_params.stride.h = static_cast<const int32_t>(stride[0]);

@@ -319,7 +319,7 @@ void process_querypool_results(
     QueryPoolResults& results,
     ShaderTimes& shader_times) {{
   for (const vkcompute::vkapi::ShaderResult& r : results) {{
-    uint64_t duration_ns = r.end_time_ns - r.start_time_ns;
+    uint64_t duration_ns = r.shader_exec_finish_ns - r.barrier_finish_ns;
     if (shader_times.find(r.kernel_name) == shader_times.end()) {{
       shader_times[r.kernel_name] = std::vector<uint64_t>();
     }}
