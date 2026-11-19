@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
+#include <limits>
 
 using namespace ::testing;
 using executorch::aten::Scalar;
@@ -29,6 +30,29 @@ class OpDivOutTest : public OperatorTest {
  protected:
   Tensor& op_div_out(const Tensor& a, const Tensor& b, Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, out);
+  }
+
+  Tensor& op_div_out_mode(
+      const Tensor& a,
+      const Tensor& b,
+      std::optional<std::string_view> mode,
+      Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
@@ -195,6 +219,29 @@ class OpDivScalarOutTest : public OperatorTest {
  protected:
   Tensor& op_div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, out);
+  }
+
+  Tensor& op_div_scalar_mode_out(
+      const Tensor& a,
+      const Scalar& b,
+      std::optional<std::string_view> mode,
+      Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 };
 
@@ -601,6 +648,27 @@ TEST_F(OpDivScalarOutTest, OptimizedSanityCheck) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.65, 1.05, 2.3, 4.1}));
+}
+
+TEST_F(OpDivOutTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarOutTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarOutTest, EmptyInputWithZeroScalarDivisor) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor self = tf.make({0}, {});
+  Tensor out = tf.make({0}, {});
+
+  op_div_scalar_mode_out(self, 0, "trunc", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
+  op_div_scalar_mode_out(self, 0, "floor", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
 }
 
 //

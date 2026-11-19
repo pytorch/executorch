@@ -14,6 +14,7 @@
 #include <ATen/cpu/vec/vec.h>
 #endif
 
+#include <limits>
 #include <type_traits>
 
 namespace torch {
@@ -32,6 +33,13 @@ template <
     typename INT_T,
     typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
 INT_T floor_divide(INT_T a, INT_T b) {
+  if constexpr (std::is_signed<INT_T>::value) {
+    // Like ATen, the most negative value divided by -1 wraps to itself instead
+    // of overflowing.
+    if (a == std::numeric_limits<INT_T>::min() && b == -1) {
+      return a;
+    }
+  }
   const auto quot = a / b;
   // MSVC does not like signbit on integral types.
   if ((a < 0) == (b < 0)) {
@@ -63,6 +71,22 @@ FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
     floordiv += 1;
   }
   return floordiv;
+}
+
+template <typename T>
+T trunc_divide(T a, T b) {
+  if constexpr (std::is_integral_v<T>) {
+    if constexpr (std::is_signed_v<T>) {
+      // Like floor_divide, the most negative value divided by -1 wraps to
+      // itself instead of overflowing.
+      if (a == std::numeric_limits<T>::min() && b == -1) {
+        return a;
+      }
+    }
+    return static_cast<T>(a / b);
+  } else {
+    return std::trunc(a / b);
+  }
 }
 
 /**
