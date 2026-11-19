@@ -738,6 +738,57 @@ class TestCudaExport(unittest.TestCase):
         self.assertTrue(offered)
         self.assertNotIn("conv1x1_via_mm", offered)
 
+    def test_matmul_contiguity_hints_only_for_full_blocks(self):
+        """A LayerNorm of channel-first features seen as 147 tokens, fused as
+        a prologue into the matmul that follows, runs: the mm template's last
+        row block wraps, where its contiguity hint let Triton vectorize the
+        prologue's loads across the wrap and fault with a misaligned address.
+        Outside the backend's compile the template keeps its hint."""
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+            _hint_matmul_contiguity_only_for_full_blocks,
+        )
+        from torch._inductor.utils import run_and_get_code
+
+        def tokens_then_linear(x, w, b, weight):
+            t = x.flatten(2).transpose(1, 2)
+            t = torch.nn.functional.layer_norm(t, (t.shape[-1],), w, b)
+            return t @ weight.t()
+
+        def compiled_code(batch, extent):
+            torch._dynamo.reset()
+            torch.manual_seed(0)
+            args = (
+                torch.randn(batch, 256, extent, extent, device="cuda"),
+                torch.randn(256, device="cuda"),
+                torch.randn(256, device="cuda"),
+                torch.randn(768, 256, device="cuda"),
+            )
+            # Triton-only autotuning, as in the backend's compile, which also
+            # keeps the mm templates on GPUs below Inductor's SM floor.
+            with torch._inductor.config.patch(
+                max_autotune=True,
+                max_autotune_gemm_backends="TRITON",
+                benchmark_epilogue_fusion=False,
+            ), _allow_triton_templates_on_small_gpus():
+                out, code = run_and_get_code(
+                    torch.compile(tokens_then_linear, fullgraph=True), *args
+                )
+            torch.cuda.synchronize()
+            torch.testing.assert_close(
+                out, tokens_then_linear(*args), atol=1e-3, rtol=1e-4
+            )
+            return "".join(code)
+
+        hint = "(M >= BLOCK_M and K > 1)"
+        with _hint_matmul_contiguity_only_for_full_blocks():
+            code = compiled_code(3, 7)
+        self.assertIn("(M % BLOCK_M == 0 and K > 1)", code)
+        self.assertNotIn(hint, code)
+        self.assertIn("(N % BLOCK_N == 0 and K > 1)", code)
+        self.assertNotIn("(N >= BLOCK_N and K > 1)", code)
+        self.assertIn(hint, compiled_code(4, 8))
+
     def test_linear(self):
         """Test CUDA export for linear layer."""
 
