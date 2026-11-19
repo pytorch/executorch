@@ -45,11 +45,13 @@ from torch.export import export
 B, T, H, K, V = 1, 128, 4, 64, 64
 
 # B > 1 and several V blocks exercise the flattened kernel grids, K = V = 128 is
-# Qwen3.5's head size, and T = 100 leaves a partial final chunk.
+# Qwen3.5's head size, T = 100 leaves a partial final chunk, and K != V catches a
+# grid sized with the wrong head dimension.
 GRID_SHAPES = [
     (2, 128, 4, 64, 64),
     (1, 128, 4, 128, 128),
     (2, 100, 4, 128, 128),
+    (2, 100, 4, 64, 128),
 ]
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -211,6 +213,7 @@ class TestChunkGatedDeltaRule(unittest.TestCase):
     def test_eager_fla_configs(self):
         """Run FLA-style test configurations and verify against naive reference."""
         configs = [(c, (B, T, H, K, V)) for c in FLA_TEST_CONFIGS]
+        # FLA_TEST_CONFIGS[3] is nonzero_h0_norm1.
         configs += [(FLA_TEST_CONFIGS[3], shape) for shape in GRID_SHAPES]
         self._check_against_naive(configs)
 

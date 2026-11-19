@@ -1315,8 +1315,9 @@ def main():  # noqa: C901
         parser.error("--hqq requires --qlinear")
 
     if args.backend == "cuda":
-        # Register FLA Triton kernel (CUDA only)
-        import executorch.backends.cuda.triton.kernels  # noqa: F401
+        # Register FLA Triton kernel (CUDA only). The submodule, not just the package,
+        # whose __init__ skips it silently when fla-core is missing or too old.
+        import executorch.backends.cuda.triton.kernels.chunk_gated_delta_rule  # noqa: F401
 
         # Reset peak GPU memory stats so we can report the actual peak
         # consumed during the export pipeline (load + quantize + lowering)

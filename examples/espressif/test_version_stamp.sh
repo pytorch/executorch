@@ -80,7 +80,7 @@ expect_error() {
 
 expect_error "release stamp off a tag" "release tag" --version --version-suffix ""
 echo 'TORCH_VERSION = "2.15"' >> "${repo}/torch_pin.py"
-expect_error "a torch pin the generator cannot read" "TORCH_VERSION must be X.Y.Z" \
+expect_error "a torch pin that is not X.Y.Z" "TORCH_VERSION must be X.Y.Z" \
     --version --allow-dev-stamp
 git checkout -q -- torch_pin.py
 echo "import no_such_module" >> "${repo}/install_utils.py"

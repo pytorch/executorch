@@ -27,12 +27,12 @@ The archive has to be built at a fresh path. Updating it in place keeps the reve
 member order the generator produced, so the same export list would not give the same
 bytes twice.
 
-mingw-w64 binutils 2.40 and 2.42 reproduce the checked-in file byte for byte; 2.46
-numbers the import hints from 0 instead of 1, so its output differs in every member.
-
 Then check the result is a superset of what it replaced and that no member carries a
 timestamp, since this file ships in the wheel and a stamped one makes two builds of
 the same source differ.
+
+mingw-w64 binutils 2.40 and 2.42 reproduce the checked-in file byte for byte; 2.46
+numbers the import hints from 0 instead of 1, so its output differs in every member.
 
 A name only resolves if something in the DLL defines it. The DLL is built from the
 CUDA shims plus the SlimTensor common shims, so a shim added to the ETensor common

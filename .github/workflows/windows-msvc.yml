@@ -44,6 +44,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
