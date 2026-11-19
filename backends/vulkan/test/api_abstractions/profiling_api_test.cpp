@@ -197,7 +197,41 @@ TEST_F(ProfilingApiTest, TimestampTogglePreservesExecutionAndArgumentMetadata) {
   }
 }
 
-TEST_F(ProfilingApiTest, ProfiledIndependentDispatchesDoNotOverlap) {
+TEST_F(ProfilingApiTest, ShaderProfilingWidensBarriersToFullBarriers) {
+  executorch::runtime::runtime_init();
+  ComputeGraph probe{GraphConfig{}};
+  if (!timestamps_available(probe)) {
+    GTEST_SKIP() << "GPU timestamps are unavailable";
+  }
+  GraphConfig config;
+  config.enable_querypool = true;
+  ComputeGraph graph(config);
+  graph.prepare();
+  api::Context& context = *graph.context();
+  vkapi::PipelineBarrier narrow{};
+  narrow.stage = {
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT};
+
+  context.set_shader_profiling_enabled(false);
+  vkapi::PipelineBarrier unprofiled = narrow;
+  context.serialize_if_profiling(unprofiled);
+  EXPECT_EQ(unprofiled.stage.src, narrow.stage.src);
+  EXPECT_EQ(unprofiled.stage.dst, narrow.stage.dst);
+  EXPECT_EQ(unprofiled.global_access.src, 0u);
+  EXPECT_EQ(unprofiled.global_access.dst, 0u);
+
+  context.set_shader_profiling_enabled(true);
+  vkapi::PipelineBarrier profiled = narrow;
+  context.serialize_if_profiling(profiled);
+  const vkapi::PipelineBarrier full = vkapi::full_pipeline_barrier();
+  EXPECT_EQ(profiled.stage.src, narrow.stage.src | full.stage.src);
+  EXPECT_EQ(profiled.stage.dst, narrow.stage.dst | full.stage.dst);
+  EXPECT_EQ(profiled.global_access.src, full.global_access.src);
+  EXPECT_EQ(profiled.global_access.dst, full.global_access.dst);
+}
+
+TEST_F(ProfilingApiTest, ProfiledTimestampsAreRewrittenOnReplay) {
   executorch::runtime::runtime_init();
   ComputeGraph probe{GraphConfig{}};
   if (!timestamps_available(probe)) {
@@ -212,8 +246,6 @@ TEST_F(ProfilingApiTest, ProfiledIndependentDispatchesDoNotOverlap) {
   const auto b = graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer);
   const auto out_a = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
   const auto out_b = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
-  // No data dependency between the two adds, so only profiling serializes
-  // them.
   VK_GET_OP_FN("aten.add.Tensor")
   (graph, {a.value, a.value, graph.add_scalar(1.0), out_a});
   VK_GET_OP_FN("aten.add.Tensor")
