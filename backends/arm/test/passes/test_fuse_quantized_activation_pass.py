@@ -12,10 +12,14 @@ import torch
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
-from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
+    TosaPipelineINT,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 input_t = Tuple[torch.Tensor]
+input_t2 = Tuple[torch.Tensor, torch.Tensor]
 
 
 class ConvRelu(torch.nn.Module):
@@ -31,6 +35,22 @@ class ConvRelu(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.relu(self.conv(x))
+
+
+class ConvReluCat(torch.nn.Module):
+    """The ReLU output shares its qparams with negative values in the
+    concatenation, so its zero point is above qmin.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 4, 1)
+
+    def get_inputs(self) -> input_t2:
+        return (torch.randn(1, 4, 8, 13), torch.randn(1, 4, 8, 13))
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return torch.cat([y, torch.relu(self.conv(x))])
 
 
 def _activation_and_quant(
@@ -139,24 +159,30 @@ def test_fuse_relu_after_conv_quantized() -> None:
     pipeline.run()
 
 
-def test_relu_fusion_rewrites_qmin_to_zero_point() -> None:
-    activation, quant = _activation_and_quant(
+def test_relu_with_zero_point_at_qmin_is_fuseable() -> None:
+    activation, _ = _activation_and_quant(
+        exir_ops.edge.aten.relu.default,
+        (),
+        zp=-128,
+    )
+
+    assert FuseQuantizedActivationPass._is_fuseable_quantized_activation(activation)
+
+
+def test_relu_with_zero_point_above_qmin_is_not_fuseable() -> None:
+    activation, _ = _activation_and_quant(
         exir_ops.edge.aten.relu.default,
         (),
     )
 
-    assert FuseQuantizedActivationPass._is_fuseable_quantized_activation(activation)
-    FuseQuantizedActivationPass._set_quant_qmin_to_zp(quant)
-
-    assert quant.args[3] == 0
-    assert quant.args[4] == 127
+    assert not FuseQuantizedActivationPass._is_fuseable_quantized_activation(activation)
 
 
 def test_relu_fusion_preserves_quantized_values() -> None:
     graph_module = _activation_quant_graph(
         exir_ops.edge.aten.relu.default,
         (),
-        zp=-3,
+        zp=-128,
     )
 
     _assert_fusion_preserves_output(graph_module)
@@ -164,6 +190,12 @@ def test_relu_fusion_preserves_quantized_values() -> None:
         node.target for node in graph_module.graph.nodes if node.op == "call_function"
     )
     assert counts[exir_ops.edge.aten.relu.default] == 0
+
+
+def test_relu_with_zero_point_above_qmin_tosa_INT() -> None:
+    module = ConvReluCat()
+    pipeline = TosaPipelineINT[input_t2](module, module.get_inputs(), [], [])
+    pipeline.run()
 
 
 def test_relu_with_tensor_qparams_is_not_fuseable() -> None:
@@ -188,23 +220,21 @@ def test_hardtanh_with_non_saturating_max_is_not_fuseable() -> None:
     assert quant.args[4] == 127
 
 
-def test_hardtanh_with_saturating_max_rewrites_qmin_to_zero_point() -> None:
-    activation, quant = _activation_and_quant(
+def test_hardtanh_with_saturating_max_is_fuseable() -> None:
+    activation, _ = _activation_and_quant(
         exir_ops.edge.aten.hardtanh.default,
-        (0.0, 13.0),
+        (0.0, 26.0),
+        zp=-128,
     )
 
     assert FuseQuantizedActivationPass._is_fuseable_quantized_activation(activation)
-    FuseQuantizedActivationPass._set_quant_qmin_to_zp(quant)
-
-    assert quant.args[3] == 0
-    assert quant.args[4] == 127
 
 
 def test_saturating_hardtanh_fusion_preserves_quantized_values() -> None:
     graph_module = _activation_quant_graph(
         exir_ops.edge.aten.hardtanh.default,
-        (0.0, 13.0),
+        (0.0, 26.0),
+        zp=-128,
     )
 
     _assert_fusion_preserves_output(graph_module)

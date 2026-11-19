@@ -29,7 +29,10 @@ class FuseQuantizedActivationPass(ArmPass):
 
     @staticmethod
     def _is_fuseable_quantized_activation(node: Node):
-        """Fuse activations that have a 0 lower bound."""
+        """Fuse activations that have a 0 lower bound and are quantized with a
+        qmin zero point, so that the producer's output RESCALE, which saturates
+        at qmin, applies them.
+        """
         is_fuseable = node.target == exir_ops.edge.aten.relu.default
         if node.target == exir_ops.edge.aten.hardtanh.default:
             min_val = node.args[1]
@@ -37,24 +40,18 @@ class FuseQuantizedActivationPass(ArmPass):
 
         is_quantized = (
             len(node.users) == 1
-            # qmin is an int argument; only copy scalar zero points into it.
             and next(iter(node.users)).target == QUANT_PER_TENSOR_OP
         )
         if is_fuseable and is_quantized:
             quant_node = next(iter(node.users))
             quant_args = QuantArgs.from_operator(quant_node.target, quant_node.args)
-            if quant_args.per_channel:
+            if quant_args.per_channel or quant_args.zp != quant_args.qmin:
                 return False
             if node.target == exir_ops.edge.aten.hardtanh.default:
                 max_val = node.args[2]
                 return quant_args.quantize_value(max_val).item() == quant_args.qmax
             return True
         return False
-
-    @staticmethod
-    def _set_quant_qmin_to_zp(quant_node: Node):
-        quant_args = QuantArgs.from_operator(quant_node.target, quant_node.args)
-        quant_node.update_arg(3, quant_args.zp)
 
     @staticmethod
     def _is_fuseable_input(node: Node):
@@ -80,8 +77,6 @@ class FuseQuantizedActivationPass(ArmPass):
             if not FuseQuantizedActivationPass._is_fuseable_input(input_node):
                 continue
 
-            quant_node = next(iter(node.users))
-            FuseQuantizedActivationPass._set_quant_qmin_to_zp(quant_node)
             node.replace_all_uses_with(input_node)
             graph_module.graph.erase_node(node)
             modified = True
