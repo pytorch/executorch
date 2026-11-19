@@ -26,10 +26,24 @@ def _supported_cuda_versions():
 
 
 def _matrix_cuda_versions(job):
+    """The versions a job's gpu-arch-version takes, read from the key it names."""
+    expression = re.fullmatch(
+        r"\$\{\{ matrix\.([\w-]+) \}\}", job["with"]["gpu-arch-version"]
+    )
+    assert expression, job["with"]["gpu-arch-version"]
+    key = expression.group(1)
     matrix = job["strategy"]["matrix"]
-    if "include" in matrix:
-        return [row["cuda"] for row in matrix["include"]]
-    return list(matrix.get("cuda") or matrix["cuda-version"])
+    if key in matrix:
+        assert isinstance(matrix[key], list), matrix[key]
+        return list(matrix[key])
+    return [row[key] for row in matrix["include"]]
+
+
+WINDOWS_TRAIN_JOBS = (
+    "export-model-cuda-windows-artifact",
+    "test-model-cuda-windows-e2e",
+    "unittest-cuda-runtime-windows",
+)
 
 
 def _all_keys(value):
@@ -63,13 +77,12 @@ class CudaWorkflowTest(unittest.TestCase):
             )["jobs"]
             for name, job in jobs.items():
                 with_ = job.get("with", {})
-                version = with_.get("gpu-arch-version")
                 if with_.get("gpu-arch-type") != "cuda":
                     continue
-                if "${{" in str(version):
+                if "${{" in str(with_["gpu-arch-version"]):
                     versions = _matrix_cuda_versions(job)
                 else:
-                    versions = [version]
+                    versions = [with_["gpu-arch-version"]]
                 for version in versions:
                     checked += 1
                     with self.subTest(workflow=workflow, job=name, version=version):
@@ -80,24 +93,43 @@ class CudaWorkflowTest(unittest.TestCase):
         jobs = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
         )["jobs"]
-        for name in (
-            "export-model-cuda-windows-artifact",
-            "test-model-cuda-windows-e2e",
-            "unittest-cuda-runtime-windows",
-        ):
+        for name in WINDOWS_TRAIN_JOBS:
             with self.subTest(job=name):
+                job = jobs[name]
                 self.assertEqual(
-                    sorted(set(_matrix_cuda_versions(jobs[name]))),
+                    job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}"
+                )
+                self.assertEqual(
+                    sorted(set(_matrix_cuda_versions(job))),
                     sorted(_supported_cuda_versions()),
                 )
-        export, e2e = (
-            jobs[name]["strategy"]["matrix"]["include"]
-            for name in (
-                "export-model-cuda-windows-artifact",
-                "test-model-cuda-windows-e2e",
-            )
+        for name in WINDOWS_TRAIN_JOBS[1:]:
+            with self.subTest(job=name):
+                script = jobs[name]["with"]["script"]
+                self.assertIn("CUDA\\v${{ matrix.cuda-version }}'", script)
+                self.assertNotRegex(script, r"CUDA\\v\d")
+        e2e_script = jobs["test-model-cuda-windows-e2e"]["with"]["script"]
+        # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin.
+        self.assertIn(
+            r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;", e2e_script
         )
-        self.assertEqual(export, e2e)
+        e2e_script = jobs["test-model-cuda-windows-e2e"]["with"]["script"]
+        # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin.
+        self.assertIn(
+            r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;", e2e_script
+        )
+        export = jobs["export-model-cuda-windows-artifact"]["strategy"]["matrix"]
+        e2e = jobs["test-model-cuda-windows-e2e"]["strategy"]["matrix"]
+        self.assertEqual(export["include"], e2e["include"])
+
+    def test_one_train_failing_its_export_does_not_skip_the_others(self):
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        gate = jobs["test-model-cuda-windows-e2e"]["if"]
+        self.assertNotIn("export-model-cuda-windows-artifact.result == 'success'", gate)
+        self.assertIn("!cancelled()", gate)
+        self.assertIn("export-model-cuda-windows-artifact.result != 'skipped'", gate)
 
     def test_windows_export_image_matches_the_export_job(self):
         build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
@@ -111,10 +143,30 @@ class CudaWorkflowTest(unittest.TestCase):
             (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
         )["jobs"]
         export = jobs["export-model-cuda-windows-artifact"]
-        self.assertIn(image_version, _matrix_cuda_versions(export))
+        rows = export["strategy"]["matrix"]["include"]
+        # Every model runs on the image's own train, so only the extra rows download.
+        models = {(row["model_repo"], row["model_name"], row["quant"]) for row in rows}
+        on_image = {
+            (row["model_repo"], row["model_name"], row["quant"])
+            for row in rows
+            if row["cuda-version"] == image_version
+        }
+        self.assertEqual(on_image, models)
         script = export["with"]["script"]
-        self.assertIn('!= "${{ matrix.cuda }}" ]; then', script)
-        self.assertIn('install_cuda_redist.py --train "${{ matrix.cuda }}"', script)
+        self.assertIn('!= "${{ matrix.cuda-version }}" ]; then', script)
+        for platform, destination in (
+            ("linux-x86_64", "cuda-${{ matrix.cuda-version }}"),
+            ("windows-x86_64", "cuda-windows-${{ matrix.cuda-version }}"),
+        ):
+            with self.subTest(platform=platform):
+                self.assertIn(
+                    f'--platform {platform} --dest "${{TOOLKITS}}/{destination}"',
+                    script,
+                )
+        self.assertIn(
+            'export WINDOWS_CUDA_HOME="${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}"',
+            script,
+        )
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
