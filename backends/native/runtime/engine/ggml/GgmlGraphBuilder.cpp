@@ -767,7 +767,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_sym_size(node);
   } else if (
       key == "_operator.add" || key == "_operator.sub" ||
-      key == "_operator.mul" || key == "_operator.floordiv") {
+      key == "_operator.mul" || key == "_operator.floordiv" ||
+      key == "_operator.neg") {
     lower_symbolic(node, key);
   } else {
     throw std::runtime_error("ggml: unsupported PTG op '" + node.target + "'");
@@ -1089,14 +1090,17 @@ int64_t GraphBuilder::symbolic_operand(const Argument& arg) const {
 }
 
 void GraphBuilder::lower_symbolic(const Node& node, const std::string& key) {
-  if (node.inputs.size() < 2) {
+  const size_t operands = key == "_operator.neg" ? 1 : 2;
+  if (node.inputs.size() < operands) {
     throw std::runtime_error("ggml: symbolic arithmetic is missing operands");
   }
   const int64_t a = symbolic_operand(node.inputs[0].arg);
-  const int64_t b = symbolic_operand(node.inputs[1].arg);
+  const int64_t b = operands == 2 ? symbolic_operand(node.inputs[1].arg) : 0;
   int64_t result = 0;
   bool overflow = false;
-  if (key == "_operator.add") {
+  if (key == "_operator.neg") {
+    overflow = __builtin_sub_overflow(int64_t{0}, a, &result);
+  } else if (key == "_operator.add") {
     overflow = __builtin_add_overflow(a, b, &result);
   } else if (key == "_operator.sub") {
     overflow = __builtin_sub_overflow(a, b, &result);
