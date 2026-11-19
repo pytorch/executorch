@@ -9,9 +9,35 @@ from executorch.backends.qualcomm.genai_pipeline.compilation.compile_spec_builde
     resolve_backend_type,
     resolve_soc_model,
 )
+from executorch.backends.qualcomm.genai_pipeline.compilation.component_spec_policy import (
+    build_component_compile_specs,
+    build_executorch_config,
+    ComponentSpecPolicy,
+    get_component_policy,
+)
+from executorch.backends.qualcomm.genai_pipeline.compilation.model_layout import (
+    ModelLayout,
+)
+from executorch.backends.qualcomm.genai_pipeline.compilation.pass_policy import (
+    build_component_pass_config,
+    build_pass_config,
+    get_pass_policy,
+    PassPolicy,
+    resolve_num_sharding,
+)
 
 __all__ = [
+    "build_component_compile_specs",
+    "build_component_pass_config",
+    "build_executorch_config",
+    "build_pass_config",
+    "ComponentSpecPolicy",
+    "get_component_policy",
+    "get_pass_policy",
+    "ModelLayout",
+    "PassPolicy",
     "QnnCompileSpecBuilder",
     "resolve_backend_type",
+    "resolve_num_sharding",
     "resolve_soc_model",
 ]

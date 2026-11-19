@@ -1473,7 +1473,7 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 18> kOps{{
+  static constexpr XNNOp kOps[] = {
       {"torch.ops.aten.add.Tensor",
        &E::supports_binary,
        &E::binary<xnn_binary_add>},
@@ -1517,12 +1517,12 @@ const XNNOp* find_op(std::string_view target) {
       {"torch.ops.aten.view_copy.default",
        &E::supports_shape_copy,
        &E::static_reshape},
-  }};
-  const auto found =
-      std::find_if(kOps.begin(), kOps.end(), [&](const auto& candidate) {
+  };
+  const auto found = std::find_if(
+      std::begin(kOps), std::end(kOps), [&](const auto& candidate) {
         return candidate.target == target;
       });
-  return found == kOps.end() ? nullptr : &*found;
+  return found == std::end(kOps) ? nullptr : found;
 }
 
 // XNNPACK packs constants in these positions while creating the runtime and

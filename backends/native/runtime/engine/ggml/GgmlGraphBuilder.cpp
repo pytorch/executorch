@@ -717,6 +717,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_sum(node);
   } else if (key == "aten.amax.default") {
     lower_amax(node);
+  } else if (key == "aten._softmax.default") {
+    lower_softmax(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
