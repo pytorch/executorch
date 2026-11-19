@@ -935,6 +935,13 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
+    def test_softmax_last_dim(self):
+        self._check(
+            Lambda(lambda x: torch.softmax(x, dim=-1)),
+            (torch.randn(2, 3, 5, 40) * 4.0,),
+            atol=1e-6,
+        )
+
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
 
